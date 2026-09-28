@@ -1,8 +1,21 @@
 # Served Address Book: CardDAV Server in the Daemon
 
 Design for serving msgvault people to iOS and macOS Contacts directly from the
-daemon over a Tailscale network. Date: 2026-09-28. Status: agreed, not
-implemented. This is a fork-local feature; it is not intended for upstream.
+daemon over a Tailscale network. Date: 2026-09-28. Status: agreed; the first slice
+is implemented. This is a fork-local feature; it is not intended for upstream.
+
+Implementation status:
+
+- **Landed:** `vcardmap.RenderPersonCard` and `SeedEnvelope` as the shared
+  render core, with the client's `preparePublicationEnvelope` calling them;
+  `store.PersonCatalogDigestContext` for the ctag; `internal/carddavserver`
+  with the full read-only protocol surface and curated-only projection; a
+  roundtrip test in `internal/carddav` that discovers and pulls the served
+  book through msgvault's own client.
+- **Not yet:** mounting the handler in the daemon, the device credential and
+  auth mode, the encrypted-path rule and throttle, config, CLI, API, Web UI,
+  and the user docs. The handler is not reachable from a running daemon until
+  the auth slice lands.
 Nothing in this document changes the existing CardDAV **client** described in
 [People and CardDAV](../usage/people-carddav.md).
 

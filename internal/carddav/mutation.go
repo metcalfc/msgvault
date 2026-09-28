@@ -260,7 +260,6 @@ func (s *Service) renderPublicationSource(source *store.CardDAVPublicationReview
 
 func (s *Service) preparePublicationEnvelope(source *store.CardDAVPublicationReviewSource) (vcard.ResourceEnvelope, error) {
 	person, book, resource, snapshot := source.Person, source.Book, source.Resource, source.Snapshot
-	var err error
 	var envelope vcard.ResourceEnvelope
 	version := publicationVersion(book.SupportedVCardVersions)
 	if resource != nil {
@@ -276,39 +275,16 @@ func (s *Service) preparePublicationEnvelope(source *store.CardDAVPublicationRev
 		if err != nil {
 			return vcard.ResourceEnvelope{}, err
 		}
-		fullName := person.VCardUID
-		if person.DisplayName != nil && strings.TrimSpace(*person.DisplayName) != "" {
-			fullName = strings.TrimSpace(*person.DisplayName)
+		displayName := ""
+		if person.DisplayName != nil {
+			displayName = *person.DisplayName
 		}
-		raw := []byte("BEGIN:VCARD\r\nVERSION:4.0\r\nUID:" + vcard.EscapeText(person.VCardUID) +
-			"\r\nFN:" + vcard.EscapeText(fullName) + "\r\nEND:VCARD\r\n")
-		envelope, err = vcard.ParseResourceEnvelope(raw)
-		if err != nil {
-			return vcard.ResourceEnvelope{}, err
-		}
-		envelope.SourceRef = fmt.Sprintf("carddav:%d", book.ID)
-		envelope.SourceResourceUID = href
-		envelope.Href = envelope.SourceResourceUID
-		envelope.CanonicalPersonUID = person.VCardUID
-	}
-	prepared, err := vcardmap.ProjectPersonEnvelope(*snapshot, envelope)
-	if err != nil {
-		return vcard.ResourceEnvelope{}, fmt.Errorf("project person for CardDAV publication: %w", err)
-	}
-
-	edits := []vcard.PropertyEdit{}
-	for _, occurrence := range prepared.PropertyTree {
-		if serverOwnedProperties[strings.ToUpper(occurrence.Property.Name)] {
-			edits = append(edits, vcard.PropertyEdit{Identity: occurrence.Identity, Delete: true})
-		}
-	}
-	if len(edits) > 0 {
-		prepared, err = prepared.MergeProperties(edits)
+		envelope, err = vcardmap.SeedEnvelope(person.VCardUID, displayName, fmt.Sprintf("carddav:%d", book.ID), href)
 		if err != nil {
 			return vcard.ResourceEnvelope{}, err
 		}
 	}
-	return prepared.PrepareWireRender(version)
+	return vcardmap.RenderPersonCard(*snapshot, envelope, version)
 }
 
 func (s *Service) publicationHref(collectionURL, uid string) (string, error) {
@@ -347,17 +323,9 @@ func stripServerOwnedProperties(body []byte, version vcard.Version) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	edits := make([]vcard.PropertyEdit, 0)
-	for _, occurrence := range envelope.PropertyTree {
-		if serverOwnedProperties[strings.ToUpper(occurrence.Property.Name)] {
-			edits = append(edits, vcard.PropertyEdit{Identity: occurrence.Identity, Delete: true})
-		}
-	}
-	if len(edits) > 0 {
-		envelope, err = envelope.MergeProperties(edits)
-		if err != nil {
-			return nil, err
-		}
+	envelope, err = vcardmap.StripServerOwnedProperties(envelope)
+	if err != nil {
+		return nil, err
 	}
 	return envelope.RenderView(version)
 }
