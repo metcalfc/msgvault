@@ -17,7 +17,7 @@ For maintenance rules, see the [documentation contributor guide](../README.md).
 | Slack ingestion and reply discovery | [Ingestion](slack-ingestion-design.md), [reply sweep](slack-reply-sweep-design.md) | [Slack](../usage/slack.md) |
 | Message exports | [Design](message-export-design.md) and [plan](message-export-plan.md) | [Exporting](../usage/exporting.md) |
 | People and relationships | [Relationship index](relationship-list-index-design.md), [merge reversal](person-merge-reversal.md), [conversation brief](last-time-we-talked-design.md) | [People and profiles](../usage/people.md) |
-| Served address book (CardDAV server, proposal) | [Design](carddav-server-design.md) | [People and CardDAV](../usage/people-carddav.md) |
+| Served address book (CardDAV server, fork-local) | [Design](carddav-server-design.md) | [People and CardDAV](../usage/people-carddav.md) |
 | Daemon command routing | [CLI audit](daemon-cli-request-audit.md) | [Daemon guide](../guides/daemon-migration.md) |
 | PostgreSQL | [Original implementation tracker](PG_STATUS.md) | [PostgreSQL backend](../architecture/postgresql.md) |
 | Recovery | [Recovery notes](recovery.md) | [Backup](../usage/backup.md) and [troubleshooting](../troubleshooting.md) |
