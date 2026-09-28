@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -867,6 +868,10 @@ func (m Model) peopleFooterView() string {
 		}
 		if m.peopleState.tab == peopleTabAttributes {
 			keys = []string{helpLabelVertical, "Enter add", "e edit", "n field", "p promote", "Tab", helpLabelEsc}
+		}
+		// A contact with a durable profile has nothing left to promote.
+		if contact := m.peopleState.contact; contact != nil && contact.Profile != nil {
+			keys = slices.DeleteFunc(keys, func(key string) bool { return key == "p promote" })
 		}
 		if m.peopleState.level == peopleLevelContact &&
 			(m.peopleState.tab == peopleTabMeetings || m.peopleState.tab == peopleTabFiles ||

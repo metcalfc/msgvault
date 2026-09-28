@@ -196,8 +196,15 @@
    * durable person in Directory. Failures stay with the Relationships header
    * so the guidance appears next to the person it is about. */
   async function promoteRelationshipParticipant(participantID: number): Promise<DirectoryPromotionResult> {
+    const context = relationshipsController.personMergeContextSnapshot();
     const result = await directoryController.promote(participantID);
-    if (result.ok) openDirectoryPerson(result.personID);
+    if (result.ok) {
+      // The hub skips reopening an unchanged target on re-entry, so refresh
+      // its detail now or the header would still offer promotion for a person
+      // who just gained a profile.
+      void relationshipsController.reconcilePersonMerge(context);
+      openDirectoryPerson(result.personID);
+    }
     return result;
   }
   function openDirectoryPerson(personID: number): void {

@@ -1408,7 +1408,8 @@ describe('AppShell', () => {
       if (path === '/api/v1/participants/11') return Response.json({
         id: 11, display_label: 'Synthetic Candidate', partial_label: false, identifiers: [],
         activity_count: 1, file_count: 0, source_counts: [], first_at: '2026-07-19T10:00:00Z',
-        last_at: '2026-07-19T10:00:00Z', cache_revision: 'cache-rel'
+        last_at: '2026-07-19T10:00:00Z', cache_revision: 'cache-rel',
+        ...(promoted ? { profile: { id: 42, revision: 1 } } : {})
       });
       if (path === '/api/v1/relationships/11/timeline') return Response.json({
         canonical_id: 11, identity_revision: 1, cache_revision: 'cache-rel', rows: [], total_count: 0
@@ -1459,6 +1460,11 @@ describe('AppShell', () => {
     await expect(promotion!.clone().json()).resolves.toEqual({ participant_id: 11 });
     expect(requests.filter((request) => new URL(request.url).pathname === '/api/v1/people/directory').length)
       .toBeGreaterThanOrEqual(1);
+
+    // Returning to the same relationship must reflect the new profile.
+    state.commitNavigation({ workspace: 'relationships', relationshipTarget: 'cluster:11' });
+    expect(await screen.findByRole('button', { name: 'Open in Directory' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Promote to person' })).toBeNull();
 
     rendered.unmount();
     state.destroy();
