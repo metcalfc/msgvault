@@ -1115,7 +1115,9 @@ func TestApplyPreparedPersonFactGenerationDoesNotEndCallerTransaction(t *testing
 	require.ErrorIs(err, injected)
 	person, err := st.GetPersonContext(t.Context(), personID)
 	require.NoError(err)
-	assert.Nil(person.DisplayName)
+	if person.DisplayName != nil {
+		assert.NotEqual("sentinel", *person.DisplayName)
+	}
 	assert.Equal(int64(0), personFactProjectionRowCount(t, st, "person_fact_generations"))
 }
 

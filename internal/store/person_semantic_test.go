@@ -303,7 +303,7 @@ func TestPersonSemanticDocumentMutationListAndDeletion(t *testing.T) {
 	f := storetest.New(t)
 	ctx := t.Context()
 	emptyParticipant := f.EnsureParticipant(
-		"semantic-empty@example.invalid", "observed-only", "example.invalid")
+		"semantic-empty@example.invalid", "", "example.invalid")
 	emptyPerson, _, err := f.Store.CreatePersonFromParticipantContext(ctx, emptyParticipant)
 	require.NoError(err)
 	populatedID := mustPerson(t, f, "semantic-list@example.invalid", "Before Mutation")
@@ -350,7 +350,7 @@ func TestResolvePersonSemanticCandidatesReturnsOnlyCurrentRootsInCandidateOrder(
 	deletedID := mustPerson(t, f, "semantic-candidate-deleted@example.invalid", "Synthetic Deleted")
 	lastID := mustPerson(t, f, "semantic-candidate-last@example.invalid", "Synthetic Last")
 	emptyParticipant := f.EnsureParticipant(
-		"semantic-candidate-empty@example.invalid", "observed-only", "example.invalid")
+		"semantic-candidate-empty@example.invalid", "", "example.invalid")
 	emptyPerson, _, err := f.Store.CreatePersonFromParticipantContext(ctx, emptyParticipant)
 	require.NoError(err)
 	require.Greater(lastID, secondID, "precondition: candidates will reverse durable ID order")

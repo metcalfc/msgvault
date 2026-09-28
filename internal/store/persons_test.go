@@ -33,7 +33,8 @@ func TestPersonPromoteGetListUpdateAndRevisionConflict(t *testing.T) {
 	assert.Equal(revisionBeforePromotion+1, revisionAfterPromotion)
 	assert.Positive(created.ID)
 	assert.Regexp(`^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$`, created.VCardUID)
-	assert.Nil(created.DisplayName)
+	require.NotNil(created.DisplayName)
+	assert.Equal("alice", *created.DisplayName)
 	assert.Equal(int64(1), created.Revision)
 	assert.Equal([]int64{alice, alias}, created.ParticipantIDs)
 
@@ -66,6 +67,52 @@ func TestPersonPromoteGetListUpdateAndRevisionConflict(t *testing.T) {
 
 	_, err = f.Store.UpdatePersonDisplayName(created.ID, created.Revision, &displayName)
 	assert.ErrorIs(err, store.ErrPersonRevisionConflict)
+}
+
+func TestCreatePersonSeedsDisplayNameFromSmallestNamedMember(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		names []string
+		want  *string
+	}{
+		{name: "smallest named member wins", names: []string{"", "  Dana Example  ", "Other Name"}, want: seededName("Dana Example")},
+		{name: "unnamed cluster stays unnamed", names: []string{"", "   "}, want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			f := storetest.New(t)
+			var members []int64
+			for index, name := range tt.names {
+				address := fmt.Sprintf("member%d@example.com", index)
+				members = append(members, f.EnsureParticipant(address, name, "example.com"))
+				if index > 0 {
+					_, err := f.Store.LinkParticipants(members[0], members[index])
+					require.NoError(err)
+				}
+			}
+			before, err := f.Store.PersonDisplayNameRevision()
+			require.NoError(err)
+
+			created, wasCreated, err := f.Store.CreatePersonFromParticipant(members[len(members)-1])
+			require.NoError(err)
+			require.True(wasCreated)
+			after, err := f.Store.PersonDisplayNameRevision()
+			require.NoError(err)
+			// Promotion bumps the identity revision, which already republishes
+			// derived person display names; seeding must not bump the
+			// curated-name revision on its own.
+			assert.Equal(t, before, after)
+			if tt.want == nil {
+				assert.Nil(t, created.DisplayName)
+				return
+			}
+			require.NotNil(created.DisplayName)
+			assert.Equal(t, *tt.want, *created.DisplayName)
+		})
+	}
 }
 
 func TestListPersonUIDsIncludesCanonicalAndRetiredAliases(t *testing.T) {
@@ -502,3 +549,5 @@ func participantCount(t *testing.T, st *store.Store, id int64) int64 {
 	).Scan(&count))
 	return count
 }
+
+func seededName(value string) *string { return &value }

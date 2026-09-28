@@ -21,9 +21,12 @@ func TestPersonDisplayNameRevision(t *testing.T) {
 		assertions.Equal(want, got)
 	}
 	counter(0)
-	alice := f.EnsureParticipant("alice@example.com", "Alice Observed", "example.com")
+	// An unnamed participant keeps the promoted person unnamed, so every
+	// later step below is a curated-name mutation rather than a seeded one.
+	alice := f.EnsureParticipant("alice@example.com", "", "example.com")
 	person, _, err := f.Store.CreatePersonFromParticipant(alice)
 	requirements.NoError(err)
+	requirements.Nil(person.DisplayName)
 	counter(0)
 	person, err = f.Store.UpdatePersonDisplayName(person.ID, person.Revision, nil)
 	requirements.NoError(err)

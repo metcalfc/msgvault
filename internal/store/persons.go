@@ -106,8 +106,15 @@ func (s *Store) CreatePersonFromParticipantContext(
 			if err != nil {
 				return err
 			}
+			displayName, err := clusterBestDisplayNameTx(ctx, tx, members)
+			if err != nil {
+				return err
+			}
+			// The identity revision bump below already republishes derived
+			// person display names, so seeding needs no separate name bump.
 			if err := tx.QueryRowContext(ctx,
-				`INSERT INTO persons (vcard_uid) VALUES (?) RETURNING id`, uid,
+				`INSERT INTO persons (vcard_uid, display_name) VALUES (?, ?) RETURNING id`,
+				uid, displayName,
 			).Scan(&personID); err != nil {
 				return fmt.Errorf("create person: %w", err)
 			}
@@ -144,6 +151,35 @@ func (s *Store) CreatePersonFromParticipantContext(
 		return nil, false, err
 	}
 	return person, created, nil
+}
+
+// clusterBestDisplayNameTx returns the observed name a new person starts
+// with: the non-empty display name of the smallest-ID cluster member, the
+// same rule the Relationships label uses, so a promoted person keeps the
+// name the user just saw. It returns nil when no member is named, leaving
+// the person unnamed until the user curates one.
+func clusterBestDisplayNameTx(
+	ctx context.Context, tx *loggedTx, members []int64,
+) (*string, error) {
+	if len(members) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(members)), ",")
+	args := make([]any, 0, len(members))
+	for _, member := range members {
+		args = append(args, member)
+	}
+	var name string
+	err := tx.QueryRowContext(ctx, `SELECT TRIM(display_name) FROM participants
+		WHERE id IN (`+placeholders+`) AND TRIM(COALESCE(display_name, '')) <> ''
+		ORDER BY id LIMIT 1`, args...).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read cluster display name: %w", err)
+	}
+	return &name, nil
 }
 
 // bindPersonParticipantsTx binds every member to the person, ignoring

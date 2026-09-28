@@ -45,9 +45,14 @@ create profiles when imported.
 Directory starts empty until you save profiles or import contacts. In
 **Relationships**, select a person and choose **Promote to person**. This
 creates a saved profile from the contact already observed in your archive and
-opens it in Directory. A person who already has a profile shows **Open in
-Directory** instead. If promotion fails, the reason appears beside the person
-in Relationships.
+opens it in Directory. The profile starts with the name shown in
+Relationships; change it any time with `person set-display-name`. A person
+who already has a profile shows **Open in Directory** instead. If promotion
+fails, the reason appears beside the person in Relationships.
+
+Contact state, primary channel, and last contact for a new profile fill in
+after the next activity projection. `msgvault serve` runs it hourly by
+default; run `msgvault activity build` to update it now.
 
 With the CLI, use the contact's participant ID. Replace `42` with that ID and
 `7` with the person ID returned by promotion:
