@@ -242,6 +242,14 @@ func (s *Server) requestAuthentication(r *http.Request) requestAuthentication {
 }
 
 func (s *Server) classifyAPIRequestDirect(r *http.Request) requestAuthentication {
+	// The served address book has its own credential domain: no owner
+	// credential, session, agent grant, or keyless-loopback trust applies
+	// there, and its device credential applies nowhere else. Classifying it
+	// as required keeps the keyless Host guard and the operation gate out of
+	// its way; the gate handler does the actual authentication.
+	if s.cardDAVServed != nil && s.cardDAVServed.servedPath(r.URL.Path) {
+		return requestAuthentication{Mode: AuthModeRequired}
+	}
 	// Agent token takes priority: if the header is present, the request must
 	// authenticate as a delegated caller; we never fall through to other modes.
 	if agentVal, agentPresent := agentTokenHeaderValue(r); agentPresent {

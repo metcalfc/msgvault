@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.kenn.io/msgvault/internal/api"
 	"go.kenn.io/msgvault/internal/carddav"
+	"go.kenn.io/msgvault/internal/carddavserver"
 	"go.kenn.io/msgvault/internal/circleback"
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/deletion"
@@ -417,6 +418,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err := cardDAVController.ReconcileSchedule(); err != nil {
 		return err
 	}
+	var cardDAVServed *carddavserver.Handler
+	if cfg.CardDAV.Serve.Enabled {
+		cardDAVServed, err = carddavserver.New(carddavserver.Options{
+			Store: s, DisplayName: cfg.CardDAV.Serve.DisplayName, Logger: logger,
+		})
+		if err != nil {
+			return fmt.Errorf("configure served address book: %w", err)
+		}
+		logger.Info("served CardDAV address book enabled", "path", cardDAVServed.Prefix()+"/")
+	}
 
 	// Add all scheduled accounts
 	count, errs := sched.AddAccountsFromConfig(cfg)
@@ -709,6 +720,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		ShutdownFunc:                  cancel,
 		Scheduler:                     schedAdapter,
 		CardDAV:                       cardDAVController,
+		CardDAVServed:                 cardDAVServed,
 		Logger:                        logger,
 		DaemonVersion:                 Version,
 		AnalyticsMode:                 analyticsMode,

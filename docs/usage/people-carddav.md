@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-26"
+last_edited: "2026-09-28"
 title: CardDAV Contacts
 description: Bring address-book contacts into msgvault, publish selected profiles, and resolve competing edits.
 ---
@@ -232,6 +232,96 @@ without publishing or resolving the conflict. Then run
 The preview route is the one CardDAV response that returns a raw vCard, and
 it can include Private Notes. The Directory UI directs you to the CLI review
 commands when approval is required.
+
+## Serve people to your devices
+
+Besides syncing to an external address book, the daemon can serve its own
+people as a read-only CardDAV address book. iOS and macOS Contacts subscribe
+to it directly, so the cards never pass through a third-party service. The
+book contains every saved person. Facts msgvault only inferred from messages
+or enrichment are left out; declared, imported, and observed facts are
+included, and Private Notes map to `NOTE` as they do when publishing.
+
+### Enable the book and create a device password
+
+On the daemon host:
+
+```toml
+[server]
+bind_addr = "127.0.0.1"
+api_port = 8080                    # a fixed port; tailscale serve targets it
+api_key = "replace-with-a-long-random-key"
+trusted_proxies = ["127.0.0.1"]
+
+[carddav.serve]
+enabled = true
+display_name = "msgvault"
+```
+
+Restart the daemon, then:
+
+```bash
+msgvault carddav serve password set
+msgvault carddav serve status
+```
+
+`password set` prints the username and a generated password once. Only an
+argon2id hash is stored, in the daemon's token directory. Run it again to
+replace the password, or `password clear` to revoke it. A running daemon
+notices the change on the next sign-in.
+
+The device credential works only under `/dav/`. It cannot read the API or
+Web UI, and the API key cannot read the address book.
+
+### Expose the daemon over Tailscale
+
+Device credentials are accepted only over an encrypted path. The simplest
+one is `tailscale serve`, which gives the daemon an HTTPS certificate for its
+tailnet name and keeps it unreachable from the public internet. Enable
+MagicDNS and HTTPS certificates in the tailnet admin console once, then:
+
+```bash
+tailscale serve --bg 8080
+tailscale serve status        # prints https://host.tailnet-name.ts.net/
+```
+
+This proxies the whole daemon. The Web UI shares the address behind the API
+key, and its session cookie becomes `Secure` because `trusted_proxies`
+includes loopback. Tailnet access rules can limit which devices reach the
+host.
+
+If you bind the daemon directly to its Tailscale address instead, add the
+Tailscale range to `allow_plain_http_from` and turn **Use SSL** off on the
+device. WireGuard encrypts that hop:
+
+```toml
+[carddav.serve]
+enabled = true
+allow_plain_http_from = ["100.64.0.0/10"]
+```
+
+Optionally pin the book to your Tailscale identity with
+`require_tailscale_login = "you@example.com"`. `tailscale serve` adds the
+identity header; it is honored only from a `trusted_proxies` address.
+
+### Add the account on iPhone and Mac
+
+iOS: **Settings → Contacts → Accounts → Add Account → Other → Add CardDAV
+Account**. Server `host.tailnet-name.ts.net`, the username and password from
+`password set`. iOS discovers the book through `/.well-known/carddav`.
+
+macOS: **Contacts → Settings → Accounts → Other Contacts Account → CardDAV**,
+account type **Automatic**, the same server and credentials. If discovery
+fails, choose **Advanced** with server path `/dav/principals/me/`, port 443,
+SSL on.
+
+Devices sync only while connected to Tailscale. The book is read-only:
+editing a served contact on the device shows Apple's "could not be saved"
+alert and the change reverts. Edit the person in msgvault instead; the device
+picks it up on its next refresh.
+
+Ten failed sign-ins from one client lock that username and client out for a
+minute, doubling on repeat up to an hour.
 
 ## Resolve competing edits
 

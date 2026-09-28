@@ -38,6 +38,35 @@ enabled = true
 	assert.NotContains(encoded.String(), "password")
 }
 
+func TestCardDAVServeConfigLoadsAndValidatesPlainHTTPRanges(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(os.WriteFile(path, []byte(`[carddav.serve]
+enabled = true
+display_name = "Phone book"
+allow_plain_http_from = ["100.64.0.0/10", "192.0.2.7"]
+require_tailscale_login = "owner@example.test"
+`), 0o600))
+	cfg, err := Load(path, "")
+	require.NoError(err)
+	assert.True(cfg.CardDAV.Serve.Enabled)
+	assert.Equal("Phone book", cfg.CardDAV.Serve.DisplayName)
+	assert.Equal("owner@example.test", cfg.CardDAV.Serve.RequireTailscaleLogin)
+	prefixes, err := cfg.CardDAV.Serve.PlainHTTPPrefixes()
+	require.NoError(err)
+	require.Len(prefixes, 2)
+	assert.Equal("100.64.0.0/10", prefixes[0].String())
+	assert.Equal("192.0.2.7/32", prefixes[1].String())
+
+	require.NoError(os.WriteFile(path, []byte(`[carddav.serve]
+allow_plain_http_from = ["not-a-range"]
+`), 0o600))
+	_, err = Load(path, "")
+	require.Error(err)
+	assert.Contains(err.Error(), "allow_plain_http_from")
+}
+
 func TestCardDAVTrustedDestinationLoadsBeforeAccountSetup(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

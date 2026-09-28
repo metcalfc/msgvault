@@ -12,10 +12,20 @@ Implementation status:
   with the full read-only protocol surface and curated-only projection; a
   roundtrip test in `internal/carddav` that discovers and pulls the served
   book through msgvault's own client.
-- **Not yet:** mounting the handler in the daemon, the device credential and
-  auth mode, the encrypted-path rule and throttle, config, CLI, API, Web UI,
-  and the user docs. The handler is not reachable from a running daemon until
-  the auth slice lands.
+- **Landed (slice 2):** `[carddav.serve]` config, the hashed device
+  credential in `tokens/carddav-served.json`, the gate in `internal/api`
+  that mounts the handler behind Basic auth with the encrypted-path rule,
+  per-client lockout, verified-credential cache, and the optional Tailscale
+  login pin; `msgvault carddav serve status|password set|password clear`;
+  user docs for configuration, CLI, and the Tailscale and Apple setup.
+- **Deviation from the design:** there is no `AuthModeCardDAVDevice`. The
+  served paths classify as `required` for the rest of the middleware, which
+  keeps the keyless Host guard and operation gate away from them, and the
+  gate handler does the actual authentication. The rate-limit exemption
+  asks the gate directly. Same effect, one fewer enum value to thread
+  through session status and OpenAPI.
+- **Not yet:** the management API and Web UI settings section. The CLI
+  writes the credential file locally, so it must run on the daemon host.
 Nothing in this document changes the existing CardDAV **client** described in
 [People and CardDAV](../usage/people-carddav.md).
 

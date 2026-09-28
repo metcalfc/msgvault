@@ -2048,6 +2048,9 @@ book; see the [CardDAV guide](/docs/usage/people-carddav/).
 | `carddav conflicts list` | List unresolved conflicts |
 | `carddav conflicts show <conflict-id>` | Compare bounded base, local, and remote summaries |
 | `carddav conflicts resolve <conflict-id> <keep_local\|keep_remote>` | Choose the local or remote side explicitly |
+| `carddav serve status` | Show served address book settings and whether a device credential exists |
+| `carddav serve password set [--username <name>]` | Generate a device password, store its hash on the daemon host, and print it once |
+| `carddav serve password clear` | Remove the device credential so devices can no longer sign in |
 
 Directory and integrations can also use the
 [publication API](/docs/usage/people-carddav/#sync-and-publish-selected-people).

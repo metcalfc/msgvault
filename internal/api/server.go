@@ -23,6 +23,7 @@ import (
 
 	"go.kenn.io/msgvault/internal/agentgrant"
 	"go.kenn.io/msgvault/internal/apiprotocol"
+	"go.kenn.io/msgvault/internal/carddavserver"
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/daemonauth"
 	"go.kenn.io/msgvault/internal/operations"
@@ -264,6 +265,7 @@ type Server struct {
 	shutdownFunc           func()
 	scheduler              SyncScheduler
 	cardDAV                *CardDAVController
+	cardDAVServed          *cardDAVServedGate
 	logger                 *slog.Logger
 	requestTimeout         time.Duration
 	// readTimeout is the ordinary connection read ceiling used by http.Server.
@@ -527,7 +529,10 @@ type ServerOptions struct {
 	Scheduler    SyncScheduler
 	// CardDAV owns the single configured CardDAV service used by HTTP, CLI,
 	// and scheduled synchronization.
-	CardDAV       *CardDAVController
+	CardDAV *CardDAVController
+	// CardDAVServed is the read-only address book the daemon serves to
+	// devices under /dav/. Nil leaves the routes unregistered.
+	CardDAVServed *carddavserver.Handler
 	Logger        *slog.Logger
 	IdleTracker   *IdleTracker
 	OperationGate OperationGate
@@ -658,6 +663,14 @@ func NewServerWithOptions(opts ServerOptions) *Server {
 	if s.taskIdentityResolver == nil {
 		s.taskIdentityResolver = s.resolveTaskMessageIdentity
 	}
+	if opts.CardDAVServed != nil {
+		gate, err := newCardDAVServedGate(s, opts.CardDAVServed, opts.Config, s.logger)
+		if err != nil {
+			s.logger.Error("carddav served: disabled by invalid configuration", "error", err)
+		} else {
+			s.cardDAVServed = gate
+		}
+	}
 	if s.taskLinkOperations == nil {
 		s.taskLinkOperations = newTaskLinkBackend(opts.Config)
 	}
@@ -701,6 +714,11 @@ func (s *Server) setupRouter() http.Handler {
 	spaHandler := s.spaHandler
 	if spaHandler == nil {
 		spaHandler = webapp.Handler(http.HandlerFunc(s.handleNotFound))
+	}
+	if s.cardDAVServed != nil {
+		mux.Handle(carddavserver.WellKnownPath, s.cardDAVServed)
+		mux.Handle(s.cardDAVServed.handler.Prefix()+"/", s.cardDAVServed)
+		mux.Handle(s.cardDAVServed.handler.Prefix(), s.cardDAVServed)
 	}
 	mux.Handle("/", spaHandler)
 
@@ -1428,6 +1446,12 @@ func (w *trackingResponseWriter) WroteHeader() bool {
 func (s *Server) loopbackRateLimitExempt(r *http.Request) bool {
 	if r.Method == http.MethodPost && r.URL.Path == sessionLoginPath {
 		return false
+	}
+	// A device that has already authenticated to the served address book
+	// bursts PROPFIND and multiget during a sync; unauthenticated attempts
+	// stay limited and the gate's own lockout covers the loopback-proxy case.
+	if s.cardDAVServed != nil && s.cardDAVServed.servedPath(r.URL.Path) {
+		return s.cardDAVServed.authenticated(r)
 	}
 	return isLoopbackRequest(r) && s.apiRequestAuthorized(r)
 }

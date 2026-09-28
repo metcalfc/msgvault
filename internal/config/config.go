@@ -312,6 +312,40 @@ type CardDAVConfig struct {
 	Enabled          bool     `toml:"enabled"`
 	TrustedOrigin    string   `toml:"trusted_origin"`
 	TrustedAddresses []string `toml:"trusted_addresses"`
+	// Serve configures the address book the daemon itself serves to devices.
+	Serve CardDAVServeConfig `toml:"serve"`
+}
+
+// CardDAVServeConfig controls the read-only CardDAV address book the daemon
+// serves under /dav/. The device credential lives in the token directory.
+type CardDAVServeConfig struct {
+	Enabled     bool   `toml:"enabled"`
+	DisplayName string `toml:"display_name"`
+	// AllowPlainHTTPFrom lists client CIDRs whose Basic credentials are
+	// accepted over plain HTTP. Intended for a daemon bound directly to a
+	// Tailscale address (100.64.0.0/10), where WireGuard encrypts the hop.
+	AllowPlainHTTPFrom []string `toml:"allow_plain_http_from"`
+	// RequireTailscaleLogin, when set, additionally requires the
+	// Tailscale-User-Login header from a trusted proxy to equal this value.
+	RequireTailscaleLogin string `toml:"require_tailscale_login"`
+}
+
+// PlainHTTPPrefixes parses AllowPlainHTTPFrom.
+func (c CardDAVServeConfig) PlainHTTPPrefixes() ([]netip.Prefix, error) {
+	prefixes := make([]netip.Prefix, 0, len(c.AllowPlainHTTPFrom))
+	for _, raw := range c.AllowPlainHTTPFrom {
+		raw = strings.TrimSpace(raw)
+		prefix, err := netip.ParsePrefix(raw)
+		if err != nil {
+			addr, addrErr := netip.ParseAddr(raw)
+			if addrErr != nil {
+				return nil, fmt.Errorf("carddav.serve.allow_plain_http_from: invalid CIDR %q", raw)
+			}
+			prefix = netip.PrefixFrom(addr, addr.BitLen())
+		}
+		prefixes = append(prefixes, prefix.Masked())
+	}
+	return prefixes, nil
 }
 
 // TrustedDestination parses and validates the local private-destination policy.
@@ -1017,6 +1051,9 @@ func decodeConfig(cfg *Config, path string, explicit, homeOverride bool, content
 		return nil, errors.New("carddav.provider must be empty or \"google\"")
 	}
 	if _, _, err := cfg.CardDAV.TrustedDestination(); err != nil {
+		return nil, err
+	}
+	if _, err := cfg.CardDAV.Serve.PlainHTTPPrefixes(); err != nil {
 		return nil, err
 	}
 	cfg.Integrations.Tasks.ApplyDefaults()

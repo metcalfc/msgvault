@@ -435,6 +435,27 @@ Passwords and Google tokens stay in the configured token directory, outside
 `config.toml`. See [Google Contacts setup](usage/people-carddav.md#google-contacts)
 for browser and terminal authorization.
 
+### `[carddav.serve]`
+
+The daemon can serve its own people as a read-only CardDAV address book that
+iOS and macOS Contacts subscribe to. See
+[Serve people to your devices](usage/people-carddav.md#serve-people-to-your-devices)
+for the Tailscale and device setup.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `false` | Register the `/dav/` routes and `/.well-known/carddav` |
+| `display_name` | `msgvault` | Address book name shown on the device |
+| `allow_plain_http_from` | `[]` | Client CIDRs whose device credentials are accepted over plain HTTP, for a daemon bound directly to a Tailscale address (`100.64.0.0/10`). Everything else must arrive as HTTPS through a `trusted_proxies` entry or from loopback. |
+| `require_tailscale_login` | `""` | When set, requests must also carry a matching `Tailscale-User-Login` header from a `trusted_proxies` address |
+
+The device credential is not in `config.toml`. `msgvault carddav serve
+password set` writes an argon2id hash to `tokens/carddav-served.json`; the
+daemon reads that file on each sign-in, so a new password takes effect without
+a restart. The credential is accepted only under `/dav/` and never unlocks the
+API or Web UI; the API key, browser sessions, and agent tokens are likewise
+refused under `/dav/`.
+
 ### `[microsoft]`
 
 Configuration for Microsoft 365 / Outlook.com OAuth and Microsoft Teams Graph
