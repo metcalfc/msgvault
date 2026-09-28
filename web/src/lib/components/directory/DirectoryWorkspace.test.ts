@@ -150,31 +150,6 @@ describe('DirectoryWorkspace', () => {
     expect(screen.queryByRole('option', { name: /unknown/i })).toBeNull();
   });
 
-  it('promotes an explicitly supplied participant context and commits the returned person ID', async () => {
-    const commits: Array<Partial<DirectoryURLState>> = [];
-    const fetchFn = vi.fn<typeof fetch>(async (input) => {
-      const request = input instanceof Request ? input : new Request(input);
-      const path = pathOf(request);
-      if (path === '/api/v1/people') return Response.json({ id: 42, revision: 1 }, { status: 201 });
-      if (path === '/api/v1/people/directory') return directoryResponse();
-      if (path.endsWith('/files/search')) return Response.json({ files: [], total_count: 0, cache_revision: 'synthetic', search_provenance: {} });
-      const meetingResponse = meetingFixtureResponse(path);
-      if (meetingResponse) return meetingResponse;
-      return Response.json({ id: 42, revision: 1, participant_ids: [], vcard_uid: '', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' });
-    });
-    const client = createAPIClient(fetchFn);
-    const controller = new DirectoryController(client, (patch) => commits.push(patch));
-
-    render(DirectoryWorkspace, { client, controller, state, promotionParticipantID: 11 });
-
-    await fireEvent.click(await screen.findByRole('button', { name: 'Promote to person' }));
-
-    await waitFor(() => expect(commits).toContainEqual({ directoryPersonID: 42 }));
-    await waitFor(() => expect(controller.selectedPersonID).toBe(42));
-    expect(await screen.findByText('4 meetings')).toBeDefined();
-    expect(await screen.findByText('0 matching action items')).toBeDefined();
-  });
-
   it('keeps loaded rows visible when loading another page fails and retries that page', async () => {
     let pageRequests = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
@@ -225,23 +200,6 @@ describe('DirectoryWorkspace', () => {
     expect(screen.getByText('Retained Person')).toBeDefined();
     await fireEvent.click(screen.getByRole('button', { name: 'Reload directory' }));
     expect(await screen.findByText('Reloaded Person')).toBeDefined();
-  });
-
-  it('renders actionable binding guidance from the structured promotion code', async () => {
-    const client = createAPIClient(vi.fn<typeof fetch>(async (input) => {
-      const request = input instanceof Request ? input : new Request(input);
-      if (pathOf(request) === '/api/v1/people') {
-        return Response.json({ error: 'person_binding_conflict', message: 'Different durable profiles own this cluster.' }, { status: 409 });
-      }
-      return directoryResponse();
-    }));
-    const controller = new DirectoryController(client);
-    render(DirectoryWorkspace, { client, controller, state, promotionParticipantID: 11 });
-
-    await fireEvent.click(await screen.findByRole('button', { name: 'Promote to person' }));
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('Different durable profiles own this cluster.');
-    expect(alert.textContent).toContain('already belongs to another durable person');
   });
 
   it('renders structured editing through the selection-owned profile controller', async () => {

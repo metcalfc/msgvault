@@ -41,6 +41,7 @@
   import { ExploreSelectionState, ExploreState } from '../../explore/state.svelte';
   import { RelationshipsController } from '../../relationships/controller.svelte';
   import { DirectoryController } from '../../directory/controller.svelte';
+  import type { DirectoryPromotionResult } from '../../directory/models';
   import { DirectoryReviewController } from '../../directory/review-controller.svelte';
   import { RelationshipReviewController } from '../../directory/relationship-review-controller.svelte';
   import { FactLedgerController } from '../../directory/fact-ledger-controller.svelte';
@@ -189,18 +190,18 @@
   }
   function commitWorkspace(workspace: ExploreWorkspace): void {
     beforeCommit();
-    directoryPromotionParticipantID = undefined;
     exploreState.commitWorkspace(workspace);
   }
-  function openDirectoryFromRelationship(participantID: number): void {
-    beforeCommit();
-    directoryController.resetForPromotion();
-    directoryPromotionParticipantID = participantID;
-    exploreState.commitNavigation({ workspace: 'directory', directoryPersonID: null });
+  /** Promotes a Relationships participant and, on success, opens the new
+   * durable person in Directory. Failures stay with the Relationships header
+   * so the guidance appears next to the person it is about. */
+  async function promoteRelationshipParticipant(participantID: number): Promise<DirectoryPromotionResult> {
+    const result = await directoryController.promote(participantID);
+    if (result.ok) openDirectoryPerson(result.personID);
+    return result;
   }
   function openDirectoryPerson(personID: number): void {
     beforeCommit();
-    directoryPromotionParticipantID = undefined;
     exploreState.commitNavigation({ workspace: 'directory', directoryPersonID: personID });
   }
   function announceOperation(message: string): void {
@@ -314,11 +315,6 @@
     untrack(() => client),
     (patch) => commitNavigation(patch)
   );
-  // Participant IDs only enter here from a successfully loaded
-  // /participants/{id} Relationship detail. It is intentionally ephemeral:
-  // browser restoration and ordinary Directory navigation never invent a
-  // promotion context.
-  let directoryPromotionParticipantID = $state<number>();
   let cardDAVSettingsRequest = $state<CardDAVSettingsRequest>();
   let cardDAVSettingsRequestKey = 0;
   const settingsNavigationTarget = $derived(exploreState.current.workspace === 'settings'
@@ -1242,7 +1238,7 @@
           scrollAnchor: null,
         })}
       onOpenEverything={() => commitWorkspace('everything')}
-      onOpenDirectory={openDirectoryFromRelationship}
+      onPromotePerson={promoteRelationshipParticipant}
       onOpenDirectoryPerson={openDirectoryPerson}
       onAnnounce={announceOperation}
       onOpenFileItem={openFileItem}
@@ -1254,7 +1250,6 @@
       {client}
       controller={directoryController}
       onOpenMeeting={(meeting) => void openArchivedMeeting(meeting)}
-      promotionParticipantID={directoryPromotionParticipantID}
       state={{
         directoryQuery: exploreState.current.directoryQuery,
         directoryContactState: exploreState.current.directoryContactState,

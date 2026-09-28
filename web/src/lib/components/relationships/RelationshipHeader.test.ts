@@ -137,17 +137,18 @@ describe('RelationshipHeader', () => {
     expect(onOpenDirectoryPerson).toHaveBeenCalledWith(7);
   });
 
-  it('opens the durable Directory person without starting participant promotion', async () => {
-    const onOpenDirectory = vi.fn();
+  it('opens the durable Directory person instead of offering promotion', async () => {
+    const onPromotePerson = vi.fn();
     const onOpenDirectoryPerson = vi.fn();
     render(RelationshipHeader, baseProps({
       detail: { ...person(), profile: { id: 7, revision: 1 } },
-      onOpenDirectory, onOpenDirectoryPerson
+      onPromotePerson, onOpenDirectoryPerson
     }));
 
+    expect(screen.queryByRole('button', { name: 'Promote to person' })).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Open in Directory' }));
     expect(onOpenDirectoryPerson).toHaveBeenCalledWith(7);
-    expect(onOpenDirectory).not.toHaveBeenCalled();
+    expect(onPromotePerson).not.toHaveBeenCalled();
   });
 
   it('ignores attributes that finish loading after selecting another person', async () => {
@@ -270,20 +271,40 @@ describe('RelationshipHeader', () => {
     expect(onFilesToggle).toHaveBeenCalledWith(true);
   });
 
-  it('hands the selected API participant ID to Directory and never offers domains', async () => {
-    const onOpenDirectory = vi.fn();
-    const { rerender } = render(RelationshipHeader, baseProps({ onOpenDirectory }));
+  it('promotes the selected API participant ID and never offers domains', async () => {
+    const onPromotePerson = vi.fn(async () => ({ ok: true as const, personID: 42 }));
+    const { rerender } = render(RelationshipHeader, baseProps({ onPromotePerson }));
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Open in Directory' }));
-    expect(onOpenDirectory).toHaveBeenCalledWith(12);
-
-    onOpenDirectory.mockClear();
-    await rerender(baseProps({ detail: { ...person(), profile: { id: 7, revision: 1 } }, onOpenDirectory }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Open in Directory' }));
-    expect(onOpenDirectory).toHaveBeenCalledWith(12);
-
-    await rerender(baseProps({ detail: domain(), onOpenDirectory }));
     expect(screen.queryByRole('button', { name: 'Open in Directory' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Promote to person' }));
+    expect(onPromotePerson).toHaveBeenCalledWith(12);
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+
+    await rerender(baseProps({ detail: domain(), onPromotePerson }));
+    expect(screen.queryByRole('button', { name: 'Promote to person' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open in Directory' })).toBeNull();
+  });
+
+  it('renders actionable binding guidance from the structured promotion code', async () => {
+    const onPromotePerson = vi.fn(async () => ({
+      ok: false as const, code: 'person_binding_conflict' as const, message: 'Different durable profiles own this cluster.'
+    }));
+    render(RelationshipHeader, baseProps({ onPromotePerson }));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Promote to person' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Different durable profiles own this cluster.');
+    expect(alert.textContent).toContain('already belongs to another durable person');
+  });
+
+  it('drops a promotion failure that belongs to a person no longer open', async () => {
+    const onPromotePerson = vi.fn(async () => ({ ok: false as const, code: 'error' as const, message: 'Synthetic failure.' }));
+    const { rerender } = render(RelationshipHeader, baseProps({ onPromotePerson }));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Promote to person' }));
+    await screen.findByRole('alert');
+    await rerender(baseProps({ detail: { ...person(), id: 13 }, onPromotePerson }));
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('hides the identities section entirely for a single identity with nothing linked', () => {

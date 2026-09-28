@@ -10,6 +10,7 @@
   import type { LinkOutcome, RelationshipsMergeContext } from '../../relationships/controller.svelte';
   import { identityChipText } from '../../relationships/identity-chip';
   import type { PersonMergeSuccess, ValidatedPersonMergeRequired } from '../../directory/person-merge';
+  import type { DirectoryPromotionResult } from '../../directory/models';
   import IdentityAvatar from '../common/IdentityAvatar.svelte';
   import AttributeSummary from '../directory/AttributeSummary.svelte';
   import PersonBindingConflictModal from '../directory/PersonBindingConflictModal.svelte';
@@ -26,7 +27,10 @@
     client: APIClient;
     onLinkParticipants: (a: number, b: number) => Promise<LinkOutcome>;
     onUnlinkParticipants: (a: number, b: number) => Promise<LinkOutcome>;
-    onOpenDirectory?: (participantID: number) => void;
+    /** Promotes the loaded, API-validated participant cluster to a durable
+     * Directory person. The caller owns navigation on success; the header
+     * reports failures in place. */
+    onPromotePerson?: (participantID: number) => Promise<DirectoryPromotionResult>;
     capturePersonMergeContext?: () => RelationshipsMergeContext;
     onReconcilePersonMerge?: (context: RelationshipsMergeContext) => Promise<void>;
     onOpenDirectoryPerson?: (personID: number) => void;
@@ -42,7 +46,7 @@
     client,
     onLinkParticipants,
     onUnlinkParticipants,
-    onOpenDirectory = undefined,
+    onPromotePerson = undefined,
     capturePersonMergeContext = undefined,
     onReconcilePersonMerge = undefined,
     onOpenDirectoryPerson = undefined,
@@ -62,6 +66,8 @@
   let confirmingParticipantID = $state<number | null>(null);
   let unlinking = $state(false);
   let unlinkError = $state<string | null>(null);
+  let promoting = $state(false);
+  let promotionFailure = $state<Extract<DirectoryPromotionResult, { ok: false }> | null>(null);
   let identitiesOpen = $state(false);
   let attributeGroups = $state<PersonAttributeGroup[]>([]);
 
@@ -168,6 +174,7 @@
     lastMutation = null;
     confirmingParticipantID = null;
     unlinkError = null;
+    promotionFailure = null;
     activeDialog = undefined;
     identitiesOpen = false;
   });
@@ -208,6 +215,21 @@
     // for whoever is showing now with a result that was never about them.
     if (currentPersonID() === id) applyOutcome(outcome, 'link', id, participantID);
     return outcome;
+  }
+
+  async function promote(): Promise<void> {
+    if (!detail || !isPersonDetail(detail) || !onPromotePerson || promoting) return;
+    const id = detail.id;
+    promoting = true;
+    promotionFailure = null;
+    try {
+      const result = await onPromotePerson(id);
+      // A failure for a person no longer open must not surface under
+      // whoever is showing now.
+      if (!result.ok && currentPersonID() === id) promotionFailure = result;
+    } finally {
+      promoting = false;
+    }
   }
 
   function openLinkDialog(): void {
@@ -324,13 +346,18 @@
           onchange={(value) => onFilesToggle(value === 'files')}
         />
         {#if isPersonDetail(detail)}
-          {#if onOpenDirectory || (detail.profile?.id && onOpenDirectoryPerson)}
+          {#if detail.profile?.id && onOpenDirectoryPerson}
             <Button
               label="Open in Directory"
               surface="outline"
-              onclick={() => detail.profile?.id && onOpenDirectoryPerson
-                ? onOpenDirectoryPerson(detail.profile.id)
-                : onOpenDirectory?.(detail.id)}
+              onclick={() => onOpenDirectoryPerson(detail.profile!.id)}
+            />
+          {:else if !detail.profile?.id && onPromotePerson}
+            <Button
+              label="Promote to person"
+              tone="workflow"
+              disabled={promoting}
+              onclick={() => void promote()}
             />
           {/if}
           <Button
@@ -346,6 +373,14 @@
       <section class="named-state" role="alert">
         <span>{STALE_CACHE_MESSAGE}</span>
         <Button label="Retry" surface="outline" size="sm" disabled={retrying} onclick={() => void retryRefresh()} />
+      </section>
+    {/if}
+    {#if promotionFailure}
+      <section class="named-state" role="alert">
+        <span>
+          {promotionFailure.message}
+          {#if promotionFailure.code === 'person_binding_conflict'} This participant already belongs to another durable person; resolve that binding before promoting it.{/if}
+        </span>
       </section>
     {/if}
     <p class="counts" data-mono>

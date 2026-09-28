@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, DetailDrawer, SearchInput, SelectDropdown, TextInput } from '@kenn-io/kit-ui';
+  import { DetailDrawer, SearchInput, SelectDropdown, TextInput } from '@kenn-io/kit-ui';
   import { onDestroy, onMount, tick, untrack } from 'svelte';
 
   import type { MeetingRef } from '../../api/generated/models';
@@ -14,8 +14,6 @@
     client: APIClient;
     controller: DirectoryController;
     state: DirectoryURLState;
-    /** A caller may offer promotion only with an actual participant/cluster context. */
-    promotionParticipantID?: number;
     onOpenCardDAVConflict?: (conflictID: number) => void;
     onOpenCardDAVSettings?: () => void;
     onAnnounce?: (message: string) => void;
@@ -26,7 +24,6 @@
     client,
     controller,
     state: urlState,
-    promotionParticipantID = undefined,
     onOpenCardDAVConflict = () => undefined,
     onOpenCardDAVSettings = () => undefined,
     onAnnounce = () => undefined,
@@ -121,19 +118,11 @@
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     root?.querySelector<HTMLElement>('[role="row"][tabindex="0"]')?.focus();
   }
-
-  async function promote(): Promise<void> {
-    if (promotionParticipantID === undefined) return;
-    await controller.promote(promotionParticipantID);
-  }
 </script>
 
 <main class="directory-workspace" bind:this={root} aria-label="Directory">
   <header class="directory-toolbar">
     <div><h1>Directory</h1><p>Durable people and their recorded contact context.</p></div>
-    {#if promotionParticipantID !== undefined}
-      <Button label="Promote to person" tone="workflow" onclick={() => void promote()} />
-    {/if}
   </header>
   <div class="filters">
     <SearchInput value={textFilters.directoryQuery} ariaLabel="Search directory" placeholder="Search people, email, or organization…" block oninput={(value) => editTextFilter('directoryQuery', value)} />
@@ -152,12 +141,6 @@
     <SelectDropdown title="Directory order" value={controller.sort} options={sortOptions}
       onchange={(value) => selectFilter({ directorySort: value as DirectoryURLState['directorySort'] })} />
   </div>
-  {#if controller.promotionResult && !controller.promotionResult.ok}
-    <div role="alert" class="promotion-error">
-      {controller.promotionResult.message}
-      {#if controller.promotionResult.code === 'person_binding_conflict'} This participant already belongs to another durable person; resolve that binding before promoting it.{/if}
-    </div>
-  {/if}
   <div class="directory-content" class:has-detail={controller.selectedPersonID !== null && !narrow}>
     <DirectoryList
       rows={controller.rows}
@@ -194,6 +177,5 @@
   .directory-content > :global(*) { min-height: 0; overflow: auto; }
   .directory-content.has-detail { grid-template-columns: minmax(260px, 0.8fr) minmax(360px, 1.2fr); gap: var(--space-4); }
   .detail-pane { border-left: 1px solid var(--border-default); min-width: 0; min-height: 0; overflow: auto; }
-  .promotion-error { padding: var(--space-3); background: var(--bg-inset); color: var(--text-secondary); }
   @media (max-width: 760px) { .directory-workspace { padding: var(--space-3); } }
 </style>

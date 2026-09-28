@@ -16,6 +16,7 @@
   import { onDestroy, onMount, tick, untrack } from 'svelte';
 
   import type { MeetingRef } from '../../api/generated/models';
+  import type { DirectoryPromotionResult } from '../../directory/models';
   import MeetingPanel from '../meetings/MeetingPanel.svelte';
   import { relationshipMeetingScope } from '../../meetings/scopes';
   import type { APIClient } from '../../api/client';
@@ -55,8 +56,9 @@
      * Everything. Not part of the frozen Task 4 Props contract — AppShell
      * (Task 6) wires it to its own workspace-change callback. */
     onOpenEverything?: () => void;
-    /** Opens Directory with the currently loaded, API-validated participant. */
-    onOpenDirectory?: (participantID: number) => void;
+    /** Promotes the currently loaded, API-validated participant to a durable
+     * Directory person. */
+    onPromotePerson?: (participantID: number) => Promise<DirectoryPromotionResult>;
     onOpenDirectoryPerson?: (personID: number) => void;
     onAnnounce?: (message: string) => void;
     onOpenMeeting?: (meeting: MeetingRef) => void;
@@ -88,7 +90,7 @@
     onPersonFilePresentationChange = undefined,
     onPersonFileDirectionsChange = undefined,
     onOpenEverything = undefined,
-    onOpenDirectory = undefined,
+    onPromotePerson = undefined,
     onOpenDirectoryPerson = undefined,
     onAnnounce = undefined,
     onOpenMeeting = undefined,
@@ -392,7 +394,7 @@
                 {filesOpen}
                 {onFilesToggle}
                 {client}
-                {onOpenDirectory}
+                {onPromotePerson}
                 {onOpenDirectoryPerson}
                 loadAttributes={async (id) => (await listPersonAttributes({ id }, { history: false }, { ...client })).data?.attributes ?? []}
                 {onAnnounce}

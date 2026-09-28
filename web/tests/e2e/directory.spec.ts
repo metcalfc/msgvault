@@ -94,44 +94,6 @@ test('Directory person detail scrolls independently at desktop width', async ({ 
   expect((await filters.boundingBox())?.y).toBe(before.filters?.y);
 });
 
-test('Directory list stays in its flexible row when a promotion alert appears', async ({ page }) => {
-  await installMixedArchive(page);
-  await installTallDirectory(page);
-  await page.setViewportSize({ width: 1280, height: 720 });
-  await page.goto('/');
-  await page.getByRole('grid', { name: 'Relationship results' }).getByText('Archive Person').click();
-  await page.getByRole('button', { name: 'Open in Directory' }).click();
-  const directory = page.getByRole('main', { name: 'Directory' });
-  await expect(directory.getByRole('button', { name: 'Promote to person' })).toBeVisible();
-
-  async function expectContentContained(): Promise<void> {
-    const metrics = await directory.evaluate((root) => {
-      const content = root.querySelector('.directory-content');
-      if (!(content instanceof HTMLElement)) throw new Error('Directory content missing');
-      return {
-        rootBottom: root.getBoundingClientRect().bottom,
-        contentBottom: content.getBoundingClientRect().bottom,
-        contentHeight: content.getBoundingClientRect().height
-      };
-    });
-    expect(metrics.contentHeight).toBeGreaterThan(0);
-    expect(metrics.contentBottom).toBeLessThanOrEqual(metrics.rootBottom + 1);
-    const list = directory.getByRole('region', { name: 'Directory results' });
-    const listMetrics = await list.evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight, overflow: getComputedStyle(el).overflowY }));
-    expect(listMetrics.scroll).toBeGreaterThan(listMetrics.client);
-    expect(listMetrics.overflow).toBe('auto');
-  }
-
-  await expectContentContained();
-  await page.route('**/api/v1/people', (route) => route.fulfill({
-    status: 409,
-    json: { error: 'person_binding_conflict', message: 'Synthetic promotion conflict.' }
-  }));
-  await directory.getByRole('button', { name: 'Promote to person' }).click();
-  await expect(directory.getByRole('alert')).toContainText('Synthetic promotion conflict.');
-  await expectContentContained();
-});
-
 test('Directory opens selected detail in an accessible narrow drawer', async ({ page }) => {
   await installMixedArchive(page);
   await page.setViewportSize({ width: 640, height: 900 });
@@ -246,15 +208,14 @@ test('Directory retains rows after an invalid cursor and reloads page one', asyn
   await expect(page.getByText('Retained Person')).toBeHidden();
 });
 
-test('Relationships supplies its selected participant to Directory promotion and commits the returned person', async ({ page }) => {
+test('Relationships promotes its selected participant and opens the returned person in Directory', async ({ page }) => {
   await installMixedArchive(page);
   await page.goto('/');
 
   const relationshipList = page.getByRole('grid', { name: 'Relationship results' });
   await relationshipList.getByText('Archive Person').click();
   await expect(page.getByRole('heading', { name: 'Archive Person' })).toBeVisible();
-  await page.getByRole('button', { name: 'Open in Directory' }).click();
-  await expect(page.getByRole('main', { name: 'Directory' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open in Directory' })).toHaveCount(0);
 
   const promotionRequest = page.waitForRequest((request) =>
     new URL(request.url()).pathname === '/api/v1/people' && request.method() === 'POST'
@@ -262,5 +223,22 @@ test('Relationships supplies its selected participant to Directory promotion and
   await page.getByRole('button', { name: 'Promote to person' }).click();
   expect((await promotionRequest).postDataJSON()).toEqual({ participant_id: 12 });
   await expect(page).toHaveURL(/directoryPersonID/);
+  await expect(page.getByRole('main', { name: 'Directory' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Archive Person' })).toBeVisible();
+});
+
+test('Relationships keeps a promotion conflict beside the person instead of opening Directory', async ({ page }) => {
+  await installMixedArchive(page);
+  await page.goto('/');
+  await page.getByRole('grid', { name: 'Relationship results' }).getByText('Archive Person').click();
+  await expect(page.getByRole('heading', { name: 'Archive Person' })).toBeVisible();
+
+  await page.route('**/api/v1/people', (route) => route.fulfill({
+    status: 409,
+    json: { error: 'person_binding_conflict', message: 'Synthetic promotion conflict.' }
+  }));
+  await page.getByRole('button', { name: 'Promote to person' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Synthetic promotion conflict.' })).toBeVisible();
+  await expect(page.getByRole('main', { name: 'Directory' })).toHaveCount(0);
+  await expect(page).not.toHaveURL(/directoryPersonID/);
 });
