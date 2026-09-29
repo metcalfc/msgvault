@@ -29,6 +29,7 @@ const (
 	VectorEmbeddingsID                       = "vector.embeddings"
 	VectorMultimodalID                       = "vector.multimodal"
 	PeopleSweepID                            = "people.sweep"
+	JevID                                    = "jev/api_key"
 	PersonEnrichmentSuppressionID            = "people.enrichment/suppression"
 	StoredSuppressionEnvironment             = "MSGVAULT_STORED_PERSON_ENRICHMENT_SUPPRESSION_KEY"
 	personEnrichmentCredentialIDPrefix       = "people.enrichment/"
@@ -90,7 +91,7 @@ func PersonEnrichmentID(name string) string {
 
 func ValidateID(id string) error {
 	switch id {
-	case VectorEmbeddingsID, VectorMultimodalID, PeopleSweepID:
+	case VectorEmbeddingsID, VectorMultimodalID, PeopleSweepID, JevID:
 		return nil
 	}
 	if !strings.HasPrefix(id, personEnrichmentCredentialIDPrefix) {
@@ -445,6 +446,8 @@ func recordKind(id string) string {
 		return "vector_multimodal"
 	case PeopleSweepID:
 		return "people_sweep"
+	case JevID:
+		return "jev"
 	case PersonEnrichmentSuppressionID:
 		return "person_enrichment_suppression"
 	default:

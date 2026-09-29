@@ -13,6 +13,7 @@ export const SettingGroupProperty = {
   sources: "sources",
   attachments: "attachments",
   enrichment: "enrichment",
+  jev: "jev",
   integrations: "integrations",
   sync: "sync",
   logging: "logging",

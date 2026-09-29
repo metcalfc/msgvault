@@ -71,7 +71,7 @@ do not invent field names.
   counters in the store (`jev_day_counters(feature, utc_day, requests,
   input_tokens, output_tokens, cost_usd_micros)`). Prices come from config;
   zero prices mean request-count accounting only, never "free".
-- [ ] **Task 0.3 Config and credentials.** Add `[jev]` with `enabled`,
+- [x] **Task 0.3 Config and credentials.** Add `[jev]` with `enabled`,
   `endpoint` (pinned default), `model`, `api_key_env` (default
   `TYPESAFE_API_KEY`), `request_timeout`, `max_requests_per_day`,
   `max_cost_usd_per_day`, `input_usd_per_million_tokens`,

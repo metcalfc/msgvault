@@ -2309,6 +2309,7 @@ const (
 	Backup                  SettingGroup0 = "backup"
 	Browser                 SettingGroup0 = "browser"
 	Integrations            SettingGroup0 = "integrations"
+	Jev                     SettingGroup0 = "jev"
 	Logging                 SettingGroup0 = "logging"
 	Search                  SettingGroup0 = "search"
 	Server                  SettingGroup0 = "server"
@@ -2320,7 +2321,7 @@ const (
 // Validate checks if the SettingGroup0 value is valid
 func (s SettingGroup0) Validate() error {
 	switch s {
-	case Activity, Archive, Attachments, Backup, Browser, Integrations, Logging, Search, Server, SettingGroup0Enrichment, Sources, Sync:
+	case Activity, Archive, Attachments, Backup, Browser, Integrations, Jev, Logging, Search, Server, SettingGroup0Enrichment, Sources, Sync:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid SettingGroup0 value, got: %v", s))

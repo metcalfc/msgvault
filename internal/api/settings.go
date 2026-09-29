@@ -26,6 +26,7 @@ const (
 	settingsGroupSources         = "sources"
 	settingsGroupAttachments     = "attachments"
 	settingsGroupEnrichment      = "enrichment"
+	settingsGroupJev             = "jev"
 	settingsCredentialETagHeader = "Credential-Etag" // #nosec G101 -- concurrency header, not a credential.
 	settingsCredentialETagSchema = "Credential-ETag" // #nosec G101 -- schema header name, not a credential.
 )
@@ -350,6 +351,20 @@ var settingsCatalog = []settingDefinition{
 	stringSetting("integrations.tasks.endpoint", "integrations", nil, func(c *config.Config) string { return c.Integrations.Tasks.Endpoint }),
 	secretSetting("integrations.tasks.api_key", "integrations", func(c *config.Config) string { return c.Integrations.Tasks.APIKey }),
 	stringSetting("integrations.tasks.default_project", "integrations", nil, func(c *config.Config) string { return c.Integrations.Tasks.DefaultProject }),
+	boolSetting("jev.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.Enabled }),
+	stringSetting("jev.endpoint", settingsGroupJev, nil, func(c *config.Config) string { return c.Jev.Endpoint }),
+	stringSetting("jev.model", settingsGroupJev, nil, func(c *config.Config) string { return c.Jev.Model }),
+	localOnlyStringSetting("jev.api_key_env", settingsGroupJev, func(c *config.Config) string { return c.Jev.APIKeyEnv }),
+	providerCredentialSetting("jev.api_key", settingsGroupJev, providercredentials.JevID,
+		func(c *config.Config) string { return c.Jev.Endpoint },
+		func(c *config.Config) string { return c.Jev.APIKeyEnv }),
+	stringSetting("jev.request_timeout", settingsGroupJev, nil, func(c *config.Config) string { return c.Jev.RequestTimeout.String() }),
+	int64Setting("jev.max_requests_per_day", settingsGroupJev, func(c *config.Config) int64 { return c.Jev.MaxRequestsPerDay }),
+	numberSetting("jev.max_cost_usd_per_day", settingsGroupJev, func(c *config.Config) float64 { return c.Jev.MaxCostUSDPerDay }),
+	numberSetting("jev.input_usd_per_million_tokens", settingsGroupJev, func(c *config.Config) float64 { return c.Jev.InputUSDPerMillionTokens }),
+	numberSetting("jev.output_usd_per_million_tokens", settingsGroupJev, func(c *config.Config) float64 { return c.Jev.OutputUSDPerMillionTokens }),
+	boolSetting("jev.identity_verification.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.IdentityVerification.Enabled }),
+	boolSetting("jev.identity_verification.automatic", settingsGroupJev, func(c *config.Config) bool { return c.Jev.IdentityVerification.Automatic }),
 	boolSetting("integrations.kata.enabled", "integrations", func(c *config.Config) bool { return c.Integrations.Kata.Enabled }),
 	stringSetting("integrations.kata.endpoint", "integrations", nil, func(c *config.Config) string { return c.Integrations.Kata.Endpoint }),
 	secretSetting("integrations.kata.api_key", "integrations", func(c *config.Config) string { return c.Integrations.Kata.APIKey }),
@@ -812,6 +827,10 @@ var storedCredentialBindings = []storedCredentialBinding{
 	{
 		credentialID:    providercredentials.VectorMultimodalID,
 		currentEndpoint: func(c *config.Config) string { return c.Vector.Multimodal.Endpoint },
+	},
+	{
+		credentialID:    providercredentials.JevID,
+		currentEndpoint: func(c *config.Config) string { return c.Jev.Endpoint },
 	},
 }
 

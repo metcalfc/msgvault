@@ -82,6 +82,7 @@ func TestGetSettingsUsesAllowlistETagAndSecretStates(t *testing.T) {
 			setting.Key == "vector.skip_extension_create" ||
 			setting.Key == "vector.embeddings.api_key_env" ||
 			setting.Key == "vector.multimodal.api_key_env" ||
+			setting.Key == "jev.api_key_env" ||
 			setting.Key == "vector.multimodal.capabilities_file" ||
 			strings.HasPrefix(setting.Key, "carddav.")
 		assertions.Equal(wantReadOnly, setting.ReadOnly, setting.Key)
@@ -137,6 +138,9 @@ func TestGetSettingsIsSelfDescribingAndIncludesSafeCatalog(t *testing.T) {
 		"vector.search.ann_nprobe", "vector.search.ann_oversample", "vector.search.ann_threads",
 		"vector.embed.backstop_interval",
 		"vector.embeddings.api_key", "vector.multimodal.api_key",
+		"jev.enabled", "jev.endpoint", "jev.model", "jev.api_key", "jev.request_timeout",
+		"jev.max_requests_per_day", "jev.max_cost_usd_per_day",
+		"jev.identity_verification.enabled", "jev.identity_verification.automatic",
 		"people.enrichment.enabled", "people.enrichment.schedule", "people.enrichment.batch_size",
 		"people.enrichment.lease_duration",
 	} {
@@ -1395,7 +1399,7 @@ func TestSettingsOpenAPIContract(t *testing.T) {
 	setting := doc.Components.Schemas.Map()["Setting"]
 	requirements.NotNil(setting)
 	assertions.ElementsMatch([]any{
-		"browser", "server", "archive", "search", "sources", "attachments", "enrichment", "integrations",
+		"browser", "server", "archive", "search", "sources", "attachments", "enrichment", "jev", "integrations",
 		"sync", "logging", "activity", "backup",
 	}, setting.Properties["group"].Enum)
 	for _, group := range settingsGroups {

@@ -226,6 +226,7 @@ func TestCredentialIDsAreStableAndValidated(t *testing.T) {
 		VectorEmbeddingsID,
 		VectorMultimodalID,
 		PeopleSweepID,
+		JevID,
 		PersonEnrichmentID("exa-primary"),
 	} {
 		require.NoError(t, ValidateID(id), id)

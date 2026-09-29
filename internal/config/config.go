@@ -24,6 +24,7 @@ import (
 	"go.kenn.io/msgvault/internal/duckdbutil"
 	"go.kenn.io/msgvault/internal/fileutil"
 	"go.kenn.io/msgvault/internal/identityops"
+	"go.kenn.io/msgvault/internal/jev"
 	"go.kenn.io/msgvault/internal/netguard"
 	"go.kenn.io/msgvault/internal/peoplesweep"
 	"go.kenn.io/msgvault/internal/personenrichment"
@@ -551,6 +552,7 @@ type Config struct {
 	Deletion       DeletionConfig                  `toml:"deletion"`
 	IMAP           IMAPConfig                      `toml:"imap"`
 	Gmail          GmailConfig                     `toml:"gmail"`
+	Jev            jev.Config                      `toml:"jev"`
 
 	// Computed paths (not from config file)
 	HomeDir    string `toml:"-"`
@@ -869,6 +871,7 @@ func NewDefaultConfig() *Config {
 	cfg.Activity.ApplyDefaults()
 	cfg.People.Sweep.ApplyDefaults()
 	cfg.People.Enrichment.ApplyDefaults()
+	cfg.Jev.ApplyDefaults()
 	return cfg
 }
 
@@ -1080,6 +1083,10 @@ func decodeConfig(cfg *Config, path string, explicit, homeOverride bool, content
 	}
 	cfg.People.Enrichment.ApplyDefaults()
 	if err := cfg.People.Enrichment.Validate(); err != nil {
+		return nil, err
+	}
+	cfg.Jev.ApplyDefaults()
+	if err := cfg.Jev.Validate(); err != nil {
 		return nil, err
 	}
 	if err := cfg.Backup.Validate(); err != nil {

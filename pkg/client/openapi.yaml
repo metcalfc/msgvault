@@ -11656,6 +11656,7 @@ components:
             - sources
             - attachments
             - enrichment
+            - jev
             - integrations
             - sync
             - logging
