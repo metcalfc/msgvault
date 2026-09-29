@@ -737,9 +737,14 @@ export class ExploreState {
     this.navigate({ query, searchMode, activeRow: null, scrollAnchor: null }, 'replace');
   }
 
-  commitSearch(query: string, searchMode: ExploreSearchMode): void {
+  /** Commits a search. `filters`, when given, replaces the filters in the
+   * same history entry (operators moved out of the query into chips). */
+  commitSearch(query: string, searchMode: ExploreSearchMode, filters?: ExploreFilter[]): void {
 	rememberSearchMode(searchMode, this.preferenceStorage);
-    this.navigate({ query, searchMode, selectedRow: null, conversationAnchor: null, activeRow: null, scrollAnchor: null }, 'push');
+    this.navigate({
+      query, searchMode, ...(filters ? { filters } : {}),
+      selectedRow: null, conversationAnchor: null, activeRow: null, scrollAnchor: null
+    }, 'push');
   }
 
   commitWorkspace(workspace: ExploreWorkspace): void {

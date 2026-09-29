@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
 import type { ExploreFilter } from '../../explore/models';
-import { chooseSelectOption } from '../../../test/kit-ui';
+import { chooseSelectOption, openTypeahead } from '../../../test/kit-ui';
 import ContextBar from './ContextBar.svelte';
 
 function baseProps(overrides: Record<string, unknown> = {}) {
@@ -153,5 +153,55 @@ describe('ContextBar date range', () => {
 
     await chooseSelectOption(screen.getByRole('combobox', { name: 'Message type: Any type' }), 'Event');
     expect(onFiltersChange).toHaveBeenLastCalledWith([{ dimension: 'message_type', values: ['calendar_event'] }]);
+  });
+});
+
+describe('ContextBar operator and filter chips', () => {
+  it('shows each text operator as its own removable chip and no query crumb', async () => {
+    const onQueryChange = vi.fn();
+    render(ContextBar, baseProps({ query: 'budget from:alice@example.com has:attachment', searchMode: 'hybrid', onQueryChange }));
+
+    expect(screen.queryByText(/hybrid:/)).toBeNull();
+    expect(screen.getByText('From: alice@example.com')).toBeDefined();
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove Has attachment' }));
+    expect(onQueryChange).toHaveBeenLastCalledWith('budget from:alice@example.com');
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove From: alice@example.com' }));
+    expect(onQueryChange).toHaveBeenLastCalledWith('budget has:attachment');
+  });
+
+  it('gives each person in a participant filter a chip that removes only that person', async () => {
+    const onFiltersChange = vi.fn();
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const id = new URL(input instanceof Request ? input.url : String(input)).pathname.split('/').pop();
+      return Response.json({ id: Number(id), display_label: id === '4' ? 'Avery Example' : 'Blake Example' });
+    });
+    render(ContextBar, baseProps({
+      client: createAPIClient(fetchFn), onFiltersChange,
+      filters: [{ dimension: 'participant', values: ['4', '9'] }]
+    }));
+
+    expect(await screen.findByText('Person: Avery Example')).toBeDefined();
+    expect(await screen.findByText('Person: Blake Example')).toBeDefined();
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove Person: Avery Example' }));
+    expect(onFiltersChange).toHaveBeenLastCalledWith([{ dimension: 'participant', values: ['9'] }]);
+  });
+
+  it('adds a person from the Filters typeahead and toggles has:attachment in the query', async () => {
+    const onFiltersChange = vi.fn();
+    const onQueryChange = vi.fn();
+    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({
+      cache_revision: 'cache-1',
+      rows: [{ participant_id: 12, display_label: 'Casey Example', kind: 'email', source: 'observed', value: 'casey@example.com' }]
+    }));
+    render(ContextBar, baseProps({ client: createAPIClient(fetchFn), query: 'notes', onFiltersChange, onQueryChange }));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const input = await openTypeahead('Name, email, or phone');
+    await fireEvent.input(input, { target: { value: 'cas' } });
+    await fireEvent.mouseDown(await screen.findByRole('option', { name: /Casey Example/ }));
+    expect(onFiltersChange).toHaveBeenLastCalledWith([{ dimension: 'participant', values: ['12'] }]);
+
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Has attachment' }));
+    expect(onQueryChange).toHaveBeenLastCalledWith('notes has:attachment');
   });
 });

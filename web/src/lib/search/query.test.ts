@@ -1,6 +1,59 @@
 import { describe, expect, it } from 'vitest';
 
-import { effectiveSearchMode, freeTextTerms, hasFreeText, tokenizeQuery } from './query';
+import { dateInputBound } from '../explore/date-range';
+import {
+  effectiveSearchMode, extractQueryFilters, freeTextTerms, hasFreeText, queryOperatorChips, tokenizeQuery,
+  withAttachmentOperator, withoutQueryToken
+} from './query';
+
+describe('extractQueryFilters', () => {
+  it('moves operators with a filter dimension into chips and keeps the rest as text', () => {
+    const existing = [{ dimension: 'after' as const, values: ['2020-01-01T00:00:00.000Z'] }];
+    const extracted = extractQueryFilters(
+      'budget after:2025-01-01 before:2025/06/30 message_type:imessage list:team.example.com from:alice@example.com subject:"q3 plan"',
+      existing,
+    );
+
+    expect(extracted.moved).toBe(true);
+    expect(extracted.query).toBe('budget from:alice@example.com subject:"q3 plan"');
+    expect(extracted.filters).toEqual([
+      { dimension: 'after', values: [dateInputBound('2025-01-01', 'after')] },
+      { dimension: 'before', values: [dateInputBound('2025-06-30', 'before')] },
+      { dimension: 'message_type', values: ['imessage'] },
+      { dimension: 'mailing_list', values: ['team.example.com'] },
+    ]);
+  });
+
+  it('merges repeated message types and leaves unparseable dates as text', () => {
+    const extracted = extractQueryFilters('message_type:sms message_type=imessage after:yesterday', [
+      { dimension: 'message_type', values: ['sms'] },
+    ]);
+    expect(extracted.query).toBe('after:yesterday');
+    expect(extracted.filters).toEqual([{ dimension: 'message_type', values: ['sms', 'imessage'] }]);
+  });
+
+  it('leaves a query with nothing to move untouched', () => {
+    const extracted = extractQueryFilters("has:attachment 'exact words'", []);
+    expect(extracted).toEqual({ query: "has:attachment 'exact words'", filters: [], moved: false });
+  });
+});
+
+describe('query operator chips', () => {
+  it('labels each text operator and removes one token at a time', () => {
+    const query = 'budget from:alice@example.com has:attachment larger:5M';
+    expect(queryOperatorChips(query).map((chip) => chip.label)).toEqual([
+      'From: alice@example.com', 'Has attachment', 'Larger than: 5M',
+    ]);
+    const [from] = queryOperatorChips(query);
+    expect(withoutQueryToken(query, from!.index)).toBe('budget has:attachment larger:5M');
+  });
+
+  it('toggles has:attachment without duplicating it', () => {
+    expect(withAttachmentOperator('notes', true)).toBe('notes has:attachment');
+    expect(withAttachmentOperator('notes has:attachment', true)).toBe('notes has:attachment');
+    expect(withAttachmentOperator('notes has:attachments', false)).toBe('notes');
+  });
+});
 
 describe('tokenizeQuery', () => {
   it.each([

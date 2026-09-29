@@ -121,6 +121,24 @@ describe('EverythingWorkspace', () => {
     state.destroy();
   });
 
+  it('moves dimensioned operators into removable chips on submit and keeps the rest as text', async () => {
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
+    const fetchFn = vi.fn<typeof fetch>(async () => Response.json(exploreResponse({ rows: [entry(1)], total_count: 1 })));
+    const state = new ExploreState(window);
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+
+    const input = await screen.findByRole('searchbox', { name: 'Search everything' });
+    await fireEvent.input(input, { target: { value: 'budget message_type:imessage subject:plans' } });
+    await fireEvent.submit(input.closest('form')!);
+
+    await waitFor(() => expect(state.current.query).toBe('budget subject:plans'));
+    expect(state.current.filters).toContainEqual({ dimension: 'message_type', values: ['imessage'] });
+    expect(await screen.findByRole('button', { name: 'Remove Type: Text (iMessage)' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Remove Subject: plans' })).toBeDefined();
+    rendered.unmount();
+    state.destroy();
+  });
+
   it('offers semantic matches when a multi-word full-text query finds almost nothing', async () => {
     window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {

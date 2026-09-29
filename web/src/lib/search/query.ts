@@ -1,4 +1,5 @@
-import type { ExploreSearchMode } from '../explore/models';
+import type { ExploreFilter, ExploreSearchMode } from '../explore/models';
+import { dateInputBound, type DateDimension } from '../explore/date-range';
 
 /**
  * Client-side mirror of the daemon's Gmail-style query tokenizer
@@ -123,4 +124,106 @@ export function effectiveSearchMode(query: string, mode: ExploreSearchMode): Exp
 /** True when the request ran as full text although another mode was chosen. */
 export function searchModeFellBack(query: string, mode: ExploreSearchMode): boolean {
   return effectiveSearchMode(query, mode) !== mode;
+}
+
+/** after:/before: take a day; the daemon also reads RFC3339 and US-style
+ * dates, which stay text operators rather than guessing a local day. */
+function operatorDateBound(value: string, dimension: DateDimension): string | undefined {
+  const day = /^\d{4}[-/]\d{2}[-/]\d{2}$/.test(value) ? value.replaceAll('/', '-') : '';
+  return day ? dateInputBound(day, dimension) : undefined;
+}
+
+function withFilterValue(filters: ExploreFilter[], dimension: ExploreFilter['dimension'], value: string): ExploreFilter[] {
+  const existing = filters.find((filter) => filter.dimension === dimension);
+  if (!existing) return [...filters, { dimension, values: [value] }];
+  if (existing.values.includes(value)) return filters;
+  return filters.map((filter) => (filter === existing ? { dimension, values: [...filter.values, value] } : filter));
+}
+
+/**
+ * Moves operators that have an Explore filter dimension out of the query
+ * and into filters, so each shows as its own removable chip:
+ * after:/before: (a YYYY-MM-DD day), message_type:, and list:/list-id:.
+ * Everything else stays in the query text for the daemon to apply —
+ * including from:/to:/cc:/bcc:, whose direction the participant filter
+ * cannot express, and has:attachment, subject:, label:, larger:/smaller:,
+ * which have no filter dimension.
+ */
+export function extractQueryFilters(
+  query: string,
+  filters: readonly ExploreFilter[],
+): { query: string; filters: ExploreFilter[]; moved: boolean } {
+  let next: ExploreFilter[] = [...filters];
+  const kept: string[] = [];
+  let moved = false;
+  for (const token of tokenizeQuery(query)) {
+    const split = isQuotedPhrase(token) ? undefined : splitOperatorToken(token);
+    const value = split ? unquoteValue(split.value).trim() : '';
+    if (split && value) {
+      if (split.operator === 'after' || split.operator === 'before') {
+        const bound = operatorDateBound(value, split.operator);
+        if (bound) {
+          next = [...next.filter((filter) => filter.dimension !== split.operator), { dimension: split.operator, values: [bound] }];
+          moved = true;
+          continue;
+        }
+      } else if (split.operator === 'message_type') {
+        next = withFilterValue(next, 'message_type', value.toLowerCase());
+        moved = true;
+        continue;
+      } else if ((split.operator === 'list' || split.operator === 'list-id') && !value.startsWith('(')) {
+        next = withFilterValue(next, 'mailing_list', value);
+        moved = true;
+        continue;
+      }
+    }
+    kept.push(token);
+  }
+  return { query: moved ? kept.join(' ') : query, filters: moved ? next : [...filters], moved };
+}
+
+export interface QueryOperatorChip {
+  /** Position of the token in tokenizeQuery(query). */
+  index: number;
+  token: string;
+  label: string;
+}
+
+const OPERATOR_LABELS: Record<string, string> = {
+  from: 'From', to: 'To', cc: 'Cc', bcc: 'Bcc', subject: 'Subject', label: 'Label', l: 'Label',
+  list: 'List', 'list-id': 'List', before: 'Before', after: 'After', older_than: 'Older than',
+  newer_than: 'Newer than', larger: 'Larger than', smaller: 'Smaller than', message_type: 'Type',
+  conversation_id: 'Conversation',
+};
+
+function operatorChipLabel(operator: string, value: string): string {
+  if (operator === 'has') return /^attachments?$/i.test(value) ? 'Has attachment' : `Has ${value}`;
+  return `${OPERATOR_LABELS[operator] ?? operator}: ${value}`;
+}
+
+/** The operators still in the query text, each as a chip the user can remove. */
+export function queryOperatorChips(query: string): QueryOperatorChip[] {
+  return tokenizeQuery(query).flatMap((token, index) => {
+    if (!isOperatorToken(token)) return [];
+    const split = splitOperatorToken(token)!;
+    return [{ index, token, label: operatorChipLabel(split.operator, unquoteValue(split.value)) }];
+  });
+}
+
+/** The query without the token at `index` (as numbered by tokenizeQuery). */
+export function withoutQueryToken(query: string, index: number): string {
+  return tokenizeQuery(query).filter((_, position) => position !== index).join(' ');
+}
+
+const HAS_ATTACHMENT = /^has:"?attachments?"?$/i;
+
+export function queryHasAttachmentOperator(query: string): boolean {
+  return tokenizeQuery(query).some((token) => HAS_ATTACHMENT.test(token));
+}
+
+/** Adds or removes has:attachment, which has no filter dimension and so
+ * lives in the query text. */
+export function withAttachmentOperator(query: string, wanted: boolean): string {
+  const tokens = tokenizeQuery(query).filter((token) => !HAS_ATTACHMENT.test(token));
+  return (wanted ? [...tokens, 'has:attachment'] : tokens).join(' ');
 }

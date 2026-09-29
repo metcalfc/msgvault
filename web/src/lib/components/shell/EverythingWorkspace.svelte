@@ -14,6 +14,7 @@
     ExploreCacheUnavailable,
     ExploreColumn,
     ExploreFileFact,
+    ExploreFilter,
     ExploreGroupDimension,
     ExploreGroupRow,
     ExploreSearchMode,
@@ -38,7 +39,7 @@
   import SearchModeControl from '../search/SearchModeControl.svelte';
   import ReadingPane, { type ReadingPaneSelection, type ReadingPaneStatus } from '../reader/ReadingPane.svelte';
   import type { SearchCoverageAction } from '../../search/modes';
-  import { freeTextTerms, hasFreeText, searchModeFellBack } from '../../search/query';
+  import { extractQueryFilters, freeTextTerms, searchModeFellBack } from '../../search/query';
   import MeetingPanel from '../meetings/MeetingPanel.svelte';
   import { exploreMeetingScope } from '../../meetings/scopes';
   import type { EverythingSessionState } from './EverythingSessionState.svelte';
@@ -62,7 +63,7 @@
     commitNavigation: (patch: Partial<ExploreURLState>) => void;
     commitWorkspace: (workspace: ExploreWorkspace) => void;
     commitGrouping: (dimension: ExploreGroupDimension) => void;
-    commitSearch: (query: string, mode: ExploreSearchMode) => void;
+    commitSearch: (query: string, mode: ExploreSearchMode, filters?: ExploreFilter[]) => void;
     fixedSortNotice: () => void;
     focusGrid: () => void;
     openRow: (row: EntryRow) => void;
@@ -567,8 +568,15 @@
 
   function submitSearch(event: SubmitEvent): void {
     event.preventDefault();
-    commitSearch(exploreState.current.query.trim(), exploreState.current.searchMode);
+    // Operators with a filter dimension become their own removable chips;
+    // the rest of the query stays in the box.
+    const extracted = extractQueryFilters(exploreState.current.query.trim(), exploreState.current.filters);
+    commitSearch(extracted.query, exploreState.current.searchMode, extracted.moved ? extracted.filters : undefined);
     focusGrid();
+  }
+
+  function commitQueryText(query: string): void {
+    commitSearch(query.trim(), exploreState.current.searchMode);
   }
 
   function trySearchMode(mode: ExploreSearchMode): void {
@@ -581,7 +589,6 @@
   const modeFellBack = $derived(
     searchModeFellBack(exploreState.current.query, exploreState.current.searchMode)
   );
-  const queryHasFreeText = $derived(hasFreeText(exploreState.current.query));
 
   // A multi-word full-text query that finds almost nothing often means the
   // words are right but the phrasing is not. A background semantic probe of
@@ -771,6 +778,8 @@
         scrollAnchor: null,
       })}
     onSort={fixedSortNotice}
+    onQueryChange={commitQueryText}
+    sourceLabelHint={(sourceID) => loader.rows.find((row) => String(row.source_id) === sourceID)?.source_identifier}
     columns={columnsPickable ? exploreState.current.columns : undefined}
     onColumnsChange={columnsPickable
       ? (columns: ExploreColumn[]) => exploreState.replaceTransient({ columns })

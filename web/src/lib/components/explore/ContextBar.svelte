@@ -1,5 +1,6 @@
 <script lang="ts">
   import XIcon from '@lucide/svelte/icons/x';
+  import { untrack } from 'svelte';
   import {
     Button, Checkbox, DateRangePicker, IconButton, SegmentedControl, SelectDropdown, type RangeSelection
   } from '@kenn-io/kit-ui';
@@ -20,12 +21,17 @@
   } from '../../grouping/catalog';
   import { shortDate } from '../../util/dates';
   import { messageTypeLabel } from '../../util/labels';
+  import { FilterLabels } from '../../explore/filter-labels.svelte';
+  import {
+    queryHasAttachmentOperator, queryOperatorChips, withAttachmentOperator, withoutQueryToken
+  } from '../../search/query';
   import IdentityFilter from './IdentityFilter.svelte';
+  import PersonFilterPicker from './PersonFilterPicker.svelte';
 
   let {
     client,
     query,
-    searchMode,
+    searchMode: _searchMode,
     filters,
     groupingChain,
     totalCount = undefined,
@@ -37,7 +43,9 @@
     onSort = undefined,
     onPresentationChange = undefined,
     columns = undefined,
-    onColumnsChange = undefined
+    onColumnsChange = undefined,
+    onQueryChange = undefined,
+    sourceLabelHint = undefined
   }: {
     client: APIClient;
     query: string;
@@ -56,9 +64,61 @@
      * both this and onColumnsChange are supplied (the table presentation). */
     columns?: ExploreColumn[];
     onColumnsChange?: (columns: ExploreColumn[]) => void;
+    /** Commits a rewritten query: removing an operator chip, or the
+     * has:attachment toggle, which has no filter dimension. */
+    onQueryChange?: (query: string) => void;
+    /** An account name already on screen for a source ID, if any. */
+    sourceLabelHint?: (sourceID: string) => string | undefined;
   } = $props();
 
   let filtersOpen = $state(false);
+  const MULTIPLE = '\u0000multiple';
+  const labels =new FilterLabels(untrack(() => client));
+  $effect(() => labels.ensure(filters));
+  $effect(() => {
+    if (filtersOpen) labels.loadSources();
+  });
+  const operatorChips = $derived(queryOperatorChips(query));
+  const hasAttachment = $derived(queryHasAttachmentOperator(query));
+  const sourceValues = $derived(filters.find((filter) => filter.dimension === 'source')?.values ?? []);
+  const sourceValue = $derived(sourceValues.length === 1 ? sourceValues[0]! : sourceValues.length > 1 ? MULTIPLE : '');
+  const sourceOptions = $derived([
+    { value: '', label: 'Any account' },
+    ...(sourceValues.length > 1 ? [{ value: MULTIPLE, label: 'Multiple', disabled: true }] : []),
+    ...(sourceValues.length === 1 && !labels.sourceOptions.some((source) => String(source.id) === sourceValues[0])
+      ? [{ value: sourceValues[0]!, label: labels.sourceLabel(sourceValues[0]!, sourceLabelHint?.(sourceValues[0]!)) }]
+      : []),
+    ...labels.sourceOptions.map((source) => ({
+      value: String(source.id),
+      label: source.display_name?.trim() || source.identifier
+    }))
+  ]);
+
+  function selectSource(value: string): void {
+    if (value === MULTIPLE || value === sourceValue) return;
+    const rest = filters.filter((filter) => filter.dimension !== 'source');
+    onFiltersChange(value ? [...rest, { dimension: 'source', values: [value] }] : rest);
+  }
+
+  function addPerson(participantID: string, label: string): void {
+    labels.rememberParticipant(participantID, label);
+    const existing = filters.find((filter) => filter.dimension === 'participant');
+    if (existing?.values.includes(participantID)) return;
+    onFiltersChange(existing
+      ? filters.map((filter) => filter === existing ? { ...filter, values: [...filter.values, participantID] } : filter)
+      : [...filters, { dimension: 'participant', values: [participantID] }]);
+  }
+
+  /** A multi-valued participant filter shows one chip per person; removing
+   * one keeps the others. */
+  function removeFilterValue(index: number, value: string): void {
+    const filter = filters[index];
+    if (!filter) return;
+    const values = filter.values.filter((item) => item !== value);
+    onFiltersChange(values.length > 0
+      ? filters.map((item, position) => position === index ? { ...item, values } : item)
+      : filters.filter((_, position) => position !== index));
+  }
   const ALL_COLUMNS = Object.keys(EXPLORE_COLUMN_LABELS) as ExploreColumn[];
 
   /** Hiding the last visible column would leave the grid empty, so the
@@ -136,13 +196,29 @@
     onFiltersChange(value ? [...rest, { dimension: 'message_type', values: [value] }] : rest);
   }
 
-  /** "After Sep 22", "Type: Text (iMessage)", or the raw dimension for the rest. */
+  /** "After Sep 22", "Type: Text (iMessage)", "List: …", or the dimension
+   * and values for the rest. People and accounts get one chip per value
+   * (see chipValues). */
   function crumbText(filter: ExploreFilter): string {
     if (isDateDimension(filter.dimension)) {
       return `${filter.dimension === 'after' ? 'After' : 'Before'} ${shortDate(filter.values[0] ?? '')}`;
     }
     if (filter.dimension === 'message_type') return `Type: ${filter.values.map(messageTypeLabel).join(', ')}`;
+    if (filter.dimension === 'mailing_list') return `List: ${filter.values.join(', ')}`;
+    if (filter.dimension === 'domain') return `Domain: ${filter.values.join(', ')}`;
+    if (filter.dimension === 'identity') return `Identity: ${filter.values[1] ?? ''}`;
+    if (filter.dimension === 'deletion') return `Deleted: ${filter.values.join(', ')}`;
     return `Filter ${filter.dimension}: ${filter.values.join(', ')}`;
+  }
+
+  function valueChipText(filter: ExploreFilter, value: string): string {
+    return filter.dimension === 'participant'
+      ? `Person: ${labels.participantLabel(value)}`
+      : `Account: ${labels.sourceLabel(value, sourceLabelHint?.(value))}`;
+  }
+
+  function perValue(filter: ExploreFilter): boolean {
+    return filter.dimension === 'participant' || filter.dimension === 'source';
   }
 </script>
 
@@ -187,17 +263,41 @@
   </div>
 
   <div class="context-crumbs">
-    {#if query}
-      <span class="crumb crumb--query">{searchMode}: “{query}”</span>
-    {/if}
     {#each filters as filter, index (`${filter.dimension}:${filter.values.join('\u0000')}`)}
-      <span class="crumb crumb--filter" class:crumb--date={isDateDimension(filter.dimension)}>
-        {crumbText(filter)}
-        <IconButton
-          size="sm"
-          ariaLabel={`Remove ${crumbText(filter)}`}
-          onclick={() => removeFilter(index)}
-        ><XIcon size="12" aria-hidden="true" /></IconButton>
+      {#if perValue(filter)}
+        {#each filter.values as value (value)}
+          <span class="crumb crumb--filter">
+            {valueChipText(filter, value)}
+            <IconButton
+              size="sm"
+              ariaLabel={`Remove ${valueChipText(filter, value)}`}
+              onclick={() => removeFilterValue(index, value)}
+            ><XIcon size="12" aria-hidden="true" /></IconButton>
+          </span>
+        {/each}
+      {:else}
+        <span class="crumb crumb--filter" class:crumb--date={isDateDimension(filter.dimension)}>
+          {crumbText(filter)}
+          <IconButton
+            size="sm"
+            ariaLabel={`Remove ${crumbText(filter)}`}
+            onclick={() => removeFilter(index)}
+          ><XIcon size="12" aria-hidden="true" /></IconButton>
+        </span>
+      {/if}
+    {/each}
+    <!-- Operators with no filter dimension stay in the query text; each
+         still reads as its own chip and can be removed on its own. -->
+    {#each operatorChips as chip (`${chip.index}:${chip.token}`)}
+      <span class="crumb crumb--operator">
+        {chip.label}
+        {#if onQueryChange}
+          <IconButton
+            size="sm"
+            ariaLabel={`Remove ${chip.label}`}
+            onclick={() => onQueryChange?.(withoutQueryToken(query, chip.index))}
+          ><XIcon size="12" aria-hidden="true" /></IconButton>
+        {/if}
       </span>
     {/each}
     {#each groupingChain as dimension, index (`${dimension}:${index}`)}
@@ -210,7 +310,7 @@
         ><XIcon size="12" aria-hidden="true" /></IconButton>
       </span>
     {/each}
-    {#if !query && filters.length === 0 && groupingChain.length === 0}
+    {#if !query.trim() && filters.length === 0 && groupingChain.length === 0}
       <span class="empty-context">All archive entries</span>
     {/if}
   </div>
@@ -253,6 +353,25 @@
           options={messageTypeOptions}
           onchange={selectMessageType}
         />
+        <SelectDropdown
+          title="Account"
+          value={sourceValue}
+          options={sourceOptions}
+          onchange={selectSource}
+        />
+        {#if onQueryChange}
+          <!-- No filter dimension carries attachments, so this toggles the
+               has:attachment operator in the query text. -->
+          <Checkbox
+            checked={hasAttachment}
+            label="Has attachment"
+            onchange={() => onQueryChange?.(withAttachmentOperator(query, !hasAttachment))}
+          />
+        {/if}
+      </div>
+      <div class="filter-field">
+        <span>Person</span>
+        <PersonFilterPicker {client} onpick={addPerson} />
       </div>
       <IdentityFilter {client} {filters} onChange={onFiltersChange} />
     </div>
@@ -337,6 +456,11 @@
   .crumb--date {
     border-color: color-mix(in srgb, var(--accent-blue) 35%, var(--border-muted));
     background: color-mix(in srgb, var(--accent-blue) 8%, var(--bg-surface));
+  }
+
+  .crumb--operator {
+    border: 1px solid var(--border-muted);
+    font-family: var(--font-mono);
   }
 
   .crumb--group {

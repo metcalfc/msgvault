@@ -23,6 +23,7 @@
   import type {
     EntryRow,
     ExploreColumn,
+    ExploreFilter,
     ExploreGroupDimension,
     ExploreGroupRow,
     ExploreFileFact,
@@ -346,9 +347,9 @@
     beforeCommit();
     exploreState.commitUngroup();
   }
-  function commitSearch(query: string, mode: ExploreSearchMode): void {
+  function commitSearch(query: string, mode: ExploreSearchMode, filters: ExploreFilter[] | undefined = undefined): void {
     beforeCommit();
-    exploreState.commitSearch(query, mode);
+    exploreState.commitSearch(query, mode, filters);
   }
   const selection = new ExploreSelectionState();
   const appearance = createAppearancePreferences(untrack(() => appearanceDefaults));
