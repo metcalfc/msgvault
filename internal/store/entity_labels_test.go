@@ -163,3 +163,47 @@ func TestEntityLabelsRejectsOversizedRequest(t *testing.T) {
 	_, err = st.EntityLabelsContext(context.Background(), store.EntityLabelRequest{PersonIDs: duplicates})
 	assert.NoError(t, err, "the cap counts distinct IDs")
 }
+
+// TestEntityLabelsParticipantPrefersBoundPersonName pins that a participant
+// bound to a renamed person reads the curated person name, as the analytics
+// labels do, whether or not the participant was observed with a name.
+func TestEntityLabelsParticipantPrefersBoundPersonName(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := context.Background()
+	st := testutil.NewTestStore(t)
+
+	observed, err := st.EnsureParticipant("jdoe@example.com", "jdoe", "example.com")
+	require.NoError(err)
+	renamed, _, err := st.CreatePersonFromParticipant(observed)
+	require.NoError(err)
+	_, err = st.UpdatePersonDisplayNameContext(ctx, renamed.ID, renamed.Revision, new("Jane Doe"))
+	require.NoError(err)
+
+	unnamed, err := st.EnsureParticipant("quiet@example.com", "", "example.com")
+	require.NoError(err)
+	quiet, _, err := st.CreatePersonFromParticipant(unnamed)
+	require.NoError(err)
+	_, err = st.UpdatePersonDisplayNameContext(ctx, quiet.ID, quiet.Revision, new("Quinn Quiet"))
+	require.NoError(err)
+
+	unboundNamed, err := st.EnsureParticipant("unbound@example.com", "Unbound Name", "example.com")
+	require.NoError(err)
+	blankPersonParticipant, err := st.EnsureParticipant("blank@example.com", "Observed Blank", "example.com")
+	require.NoError(err)
+	blank, _, err := st.CreatePersonFromParticipant(blankPersonParticipant)
+	require.NoError(err)
+	_, err = st.UpdatePersonDisplayNameContext(ctx, blank.ID, blank.Revision, nil)
+	require.NoError(err)
+
+	labels, err := st.EntityLabelsContext(ctx, store.EntityLabelRequest{
+		ParticipantIDs: []int64{observed, unnamed, unboundNamed, blankPersonParticipant},
+	})
+	require.NoError(err)
+	assert.Equal(map[int64]string{
+		observed:               "Jane Doe",
+		unnamed:                "Quinn Quiet",
+		unboundNamed:           "Unbound Name",
+		blankPersonParticipant: "Observed Blank",
+	}, labels.Participants)
+}

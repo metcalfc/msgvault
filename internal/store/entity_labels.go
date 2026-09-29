@@ -47,10 +47,21 @@ func sqlParticipantIdentifierLabelExpr(alias string) string {
 		 ORDER BY pi.is_primary DESC, pi.identifier_type, pi.identifier_value LIMIT 1))`
 }
 
-// sqlParticipantLabelExpr renders one participant's label: its trimmed
-// display name, then its identifier chain. NULL when it has neither.
+// sqlParticipantLabelExpr renders one participant's label: the trimmed
+// display name of the durable person it is bound to, then its own trimmed
+// display name, then its identifier chain. NULL when it has none of them.
+// The curated person name leads, as it does in the analytics labels
+// (sqlPersonNameOverrideExpr and the identity index); a participant binds to
+// at most one person, and the person ID order mirrors that override's pin.
 func sqlParticipantLabelExpr(alias string) string {
-	return `COALESCE(NULLIF(TRIM(` + alias + `.display_name), ''), ` + sqlParticipantIdentifierLabelExpr(alias) + `)`
+	return `COALESCE(
+		(SELECT NULLIF(TRIM(bound_person.display_name), '')
+		 FROM person_participants bound_binding
+		 JOIN persons bound_person ON bound_person.id = bound_binding.person_id
+		 WHERE bound_binding.participant_id = ` + alias + `.id
+		   AND NULLIF(TRIM(bound_person.display_name), '') IS NOT NULL
+		 ORDER BY bound_binding.person_id, bound_binding.participant_id LIMIT 1),
+		NULLIF(TRIM(` + alias + `.display_name), ''), ` + sqlParticipantIdentifierLabelExpr(alias) + `)`
 }
 
 // sqlDurablePersonLabelExpr renders the label of one durable persons row
