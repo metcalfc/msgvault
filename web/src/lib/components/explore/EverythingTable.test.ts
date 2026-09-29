@@ -508,3 +508,44 @@ describe('EverythingTable result row', () => {
     expect(screen.getByText('also in work@example.com')).toBeDefined();
   });
 });
+
+describe('EverythingTable thread grouping', () => {
+  function threadHits(): EntryRow[] {
+    return [
+      row(1, { conversation_id: 7, title: 'Quarterly plan', occurred_at: '2026-07-18T12:00:00Z' }),
+      row(2, { title: 'Unrelated' }),
+      row(3, { conversation_id: 7, title: 'Re: Quarterly plan', occurred_at: '2026-07-17T12:00:00Z' }),
+      row(4, { conversation_id: 7, title: 'Re: Quarterly plan', occurred_at: '2026-07-16T12:00:00Z' })
+    ];
+  }
+
+  it('collapses one thread into its newest match and expands it inline', async () => {
+    render(EverythingTable, { rows: threadHits(), selection: new ExploreSelectionState(), query: 'plan' });
+
+    const keys = () => [...document.querySelectorAll('[data-row-key]')].map((element) => element.getAttribute('data-row-key'));
+    expect(keys()).toEqual(['message:1', 'message:2']);
+    const toggle = screen.getByRole('button', { name: 'Show 3 matches in this thread' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    await fireEvent.click(toggle);
+    expect(keys()).toEqual(['message:1', 'message:3', 'message:4', 'message:2']);
+    expect(screen.getByRole('button', { name: 'Hide 3 matches in this thread' }).getAttribute('aria-expanded')).toBe('true');
+
+    const grid = screen.getByRole('grid', { name: 'Everything results' });
+    await fireEvent.keyDown(grid, { key: 'ArrowLeft' });
+    expect(keys()).toEqual(['message:1', 'message:2']);
+    await fireEvent.keyDown(grid, { key: 'ArrowRight' });
+    expect(keys()).toEqual(['message:1', 'message:3', 'message:4', 'message:2']);
+  });
+
+  it('keeps an inspected thread member visible and leaves unsearched lists alone', () => {
+    const { unmount } = render(EverythingTable, {
+      rows: threadHits(), selection: new ExploreSelectionState(), query: 'plan', inspectedKey: 'message:4'
+    });
+    expect(document.querySelector('[data-row-key="message:4"]')).not.toBeNull();
+    unmount();
+
+    render(EverythingTable, { rows: threadHits(), selection: new ExploreSelectionState() });
+    expect(document.querySelectorAll('[data-row-key]')).toHaveLength(4);
+  });
+});

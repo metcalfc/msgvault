@@ -15,7 +15,10 @@
   import { rebaseVirtualScroll, RowGeometry, tableViewportHeight } from '../../theme/preferences.svelte';
   import PaperclipIcon from '@lucide/svelte/icons/paperclip';
   import IdentityBadge from './IdentityBadge.svelte';
-  import { duplicateEventAccounts, highlightSegments, highlightTerms, listTime, rowPeople } from '../../explore/row-display';
+  import {
+    duplicateEventAccounts, highlightSegments, highlightTerms, listTime, rowPeople, threadRows, type ThreadRole
+  } from '../../explore/row-display';
+  import { SvelteSet } from 'svelte/reactivity';
   import { decodeHTMLEntities } from '../../util/html-text';
   import RowKind from './RowKind.svelte';
 
@@ -51,7 +54,7 @@
   }
 
   let {
-    rows,
+    rows: sourceRows,
     selection,
     columns: providedColumns = DEFAULT_EXPLORE_COLUMNS,
     columnWidths = {},
@@ -78,6 +81,22 @@
     searchMode = 'full_text',
     onTrySearchMode = undefined
   }: Props = $props();
+
+  // Email hits from one thread collapse into their newest match; the
+  // other matches follow it inline once the thread is expanded. Keys are
+  // untouched, so selection and the reading pane still address messages.
+  const expandedThreads = new SvelteSet<string>();
+  const threaded = $derived(
+    query.trim()
+      ? threadRows(sourceRows, expandedThreads, new Set([focusedKey, inspectedKey].filter((key): key is string => Boolean(key))))
+      : { rows: sourceRows, roles: new Map<string, ThreadRole>(), hidden: 0 }
+  );
+  const rows = $derived(threaded.rows);
+
+  function setThreadOpen(threadKey: string, open: boolean): void {
+    if (open) expandedThreads.add(threadKey);
+    else expandedThreads.delete(threadKey);
+  }
 
   // Semantic and hybrid need free text to embed, so they are offered only
   // for a query that has some.
@@ -200,6 +219,8 @@
   const accessibilityRowCount = $derived.by(() => {
     if (loading || loadingMore || unavailable || error || pageError) return undefined;
     if (rows.length === 0 || !slice || rowHeight === undefined) return 2;
+    // Collapsed threads make the loaded count differ from the total.
+    if (threaded.hidden > 0) return -1;
     return (totalCount ?? rows.length) + 1;
   });
 
@@ -372,6 +393,18 @@
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.key === 'j' || event.key === 'ArrowDown') await moveTo(activeIndex + 1);
     else if (event.key === 'k' || event.key === 'ArrowUp') await moveTo(activeIndex - 1);
+    else if ((event.key === 'ArrowRight' || event.key === 'ArrowLeft') && activeRow && threaded.roles.has(activeRow.key)) {
+      const role = threaded.roles.get(activeRow.key)!;
+      if (event.key === 'ArrowRight') setThreadOpen(role.threadKey, true);
+      else {
+        const lead = sourceRows.find((row) => threaded.roles.get(row.key)?.threadKey === role.threadKey && threaded.roles.get(row.key)?.lead);
+        if (lead && lead.key !== activeRow.key) {
+          activeKey = lead.key;
+          onActiveKey?.(lead.key);
+        }
+        setThreadOpen(role.threadKey, false);
+      }
+    }
     else if (event.key === 'Home') await moveTo(0);
     else if (event.key === 'End') {
       if (hasMore) await onLoadThroughEnd?.();
@@ -531,6 +564,7 @@
                 data-list-row
                 data-active={index === activeIndex}
                 data-row-key={row.key}
+                data-thread-member={threaded.roles.get(row.key) && !threaded.roles.get(row.key)!.lead ? 'true' : undefined}
                 role="row"
                 tabindex="-1"
                 aria-rowindex={index + 2}
@@ -565,7 +599,24 @@
                         />
                       {/if}
                     {:else if column === 'title'}
+                      {@const thread = threaded.roles.get(row.key)}
+                      {#if thread && !thread.lead}<span class="thread-branch" aria-hidden="true">↳</span>{/if}
                       <strong data-row-title>{row.title || '(untitled)'}</strong>
+                      {#if thread?.lead}
+                        {@const open = rows.some((other) => other.key !== row.key && threaded.roles.get(other.key)?.threadKey === thread.threadKey)}
+                        <button
+                          type="button"
+                          class="thread-toggle kit-control-states"
+                          tabindex="-1"
+                          aria-expanded={open}
+                          aria-label={`${open ? 'Hide' : 'Show'} ${thread.count} matches in this thread`}
+                          onpointerdown={(event) => event.stopPropagation()}
+                          onclick={(event) => {
+                            event.stopPropagation();
+                            setThreadOpen(thread.threadKey, !open);
+                          }}
+                        >· {thread.count} matches</button>
+                      {/if}
                     {:else if column === 'excerpt'}
                       {#each highlightSegments(decodeHTMLEntities(row.match.strongest_excerpt || row.preview), terms) as segment, segmentIndex (segmentIndex)}
                         {#if segment.match}<mark>{segment.text}</mark>{:else}{segment.text}{/if}
@@ -611,7 +662,7 @@
       {/if}
       {#if loadingMore}
         <div role="row"><div role="gridcell" aria-colspan={visibleColumns.length}>
-          <div class="page-progress" role="status">Loading more… {rows.length.toLocaleString()} loaded</div>
+          <div class="page-progress" role="status">Loading more… {sourceRows.length.toLocaleString()} loaded</div>
         </div></div>
       {/if}
     </div>
@@ -765,6 +816,31 @@
     gap: 2px;
     color: var(--artifact-ink);
     font-size: var(--font-size-2xs);
+  }
+
+  .thread-toggle {
+    margin-left: var(--space-2);
+    padding: 0 var(--space-1);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--font-size-xs);
+  }
+
+  .thread-toggle:hover {
+    color: var(--link-ink);
+  }
+
+  .thread-branch {
+    margin-right: var(--space-2);
+    color: var(--text-muted);
+  }
+
+  .data-row[data-thread-member='true'] {
+    background: var(--surface-well);
   }
 
   .people-more,

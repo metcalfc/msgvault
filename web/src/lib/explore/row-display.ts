@@ -1,4 +1,5 @@
 import type { EntryRow } from './models';
+import { isEmailMessageType } from './models';
 import { freeTextTerms, unquoteValue } from '../search/query';
 
 /** Who a row is with: the counterpart first (never the archive owner),
@@ -104,4 +105,74 @@ export function duplicateEventAccounts(rows: readonly EntryRow[]): Map<string, s
     }
   }
   return result;
+}
+
+export interface ThreadRole {
+  threadKey: string;
+  /** Matches in the thread within the loaded page. */
+  count: number;
+  /** The newest match, which stands for the thread while it is collapsed. */
+  lead: boolean;
+}
+
+export interface ThreadedRows {
+  rows: EntryRow[];
+  roles: Map<string, ThreadRole>;
+  hidden: number;
+}
+
+function threadKeyOf(row: EntryRow): string | undefined {
+  if (row.conversation_id === undefined || row.kind === 'conversation' || !isEmailMessageType(row.message_type)) return undefined;
+  return `${row.source_id}:${row.conversation_id}`;
+}
+
+/**
+ * Collapses email hits from one thread in the loaded page into one row: the
+ * newest match stands in at the thread's first position, and the other
+ * matches follow it only while the thread is expanded. Row keys are never
+ * rewritten, so selection and the reading pane keep working per message.
+ * A thread holding a key in `reveal` (the focused or inspected row) stays
+ * expanded so that row is never hidden.
+ */
+export function threadRows(
+  rows: readonly EntryRow[],
+  expanded: ReadonlySet<string>,
+  reveal: ReadonlySet<string> = new Set(),
+): ThreadedRows {
+  const groups = new Map<string, EntryRow[]>();
+  for (const row of rows) {
+    const key = threadKeyOf(row);
+    if (key) groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  const roles = new Map<string, ThreadRole>();
+  const leads = new Map<string, EntryRow>();
+  for (const [threadKey, members] of groups) {
+    if (members.length < 2) continue;
+    const lead = members.reduce((newest, row) => (row.occurred_at > newest.occurred_at ? row : newest));
+    leads.set(threadKey, lead);
+    for (const member of members) roles.set(member.key, { threadKey, count: members.length, lead: member === lead });
+  }
+  if (roles.size === 0) return { rows: [...rows], roles, hidden: 0 };
+  const output: EntryRow[] = [];
+  const emitted = new Set<string>();
+  let hidden = 0;
+  for (const row of rows) {
+    const role = roles.get(row.key);
+    if (!role) {
+      output.push(row);
+      continue;
+    }
+    if (emitted.has(role.threadKey)) continue;
+    emitted.add(role.threadKey);
+    const members = groups.get(role.threadKey)!;
+    const lead = leads.get(role.threadKey)!;
+    output.push(lead);
+    const open = expanded.has(role.threadKey) || members.some((member) => member !== lead && reveal.has(member.key));
+    for (const member of members) {
+      if (member === lead) continue;
+      if (open) output.push(member);
+      else hidden += 1;
+    }
+  }
+  return { rows: output, roles, hidden };
 }
