@@ -559,3 +559,46 @@ describe('ConversationView chat bodies', () => {
     expect(screen.queryByRole('button', { name: /full message/ })).toBeNull();
   });
 });
+
+describe('ConversationView window edges', () => {
+  // A 60-message thread served in narrow windows of the anchor ±2.
+  function windowFetch(requests: URL[]) {
+    return vi.fn<typeof fetch>(async (input) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      requests.push(url);
+      const anchor = Number(url.searchParams.get('anchor'));
+      const first = Math.max(1, anchor - 2);
+      const last = Math.min(60, anchor + 2);
+      const messages = [];
+      for (let id = first; id <= last; id += 1) {
+        messages.push({ ...message(1), id, subject: `Message ${id}`, sent_at: new Date(Date.UTC(2026, 0, 1, 0, id)).toISOString() });
+      }
+      return Response.json({ id: 7, anchor_id: anchor, messages, has_before: first > 1, has_after: last < 60, total: 60 });
+    });
+  }
+
+  it('loads the next window at its edge and steps into it instead of leaving the thread', async () => {
+    const requests: URL[] = [];
+    const onAnchorChange = vi.fn();
+    render(ConversationView, { props: { client: createAPIClient(windowFetch(requests)), conversationId: 7, anchorId: 10, onAnchorChange } });
+    await screen.findByRole('article', { name: 'Message 10' });
+
+    expect(stepThread(1)).toBe(true);
+    expect(stepThread(1)).toBe(true);
+    expect(onAnchorChange).toHaveBeenLastCalledWith(12);
+    // 12 is the loaded edge; the thread goes on.
+    expect(stepThread(1)).toBe(true);
+    await waitFor(() => expect(onAnchorChange).toHaveBeenLastCalledWith(13));
+    expect(requests.at(-1)?.searchParams.get('anchor')).toBe('12');
+    expect((await screen.findByRole('article', { name: 'Message 13' })).getAttribute('aria-current')).toBe('true');
+  });
+
+  it('hands h/l back only at the true end of the conversation', async () => {
+    const requests: URL[] = [];
+    render(ConversationView, { props: { client: createAPIClient(windowFetch(requests)), conversationId: 7, anchorId: 60 } });
+    await screen.findByRole('article', { name: 'Message 60' });
+
+    expect(stepThread(1)).toBe(false);
+    expect(requests).toHaveLength(1);
+  });
+});
