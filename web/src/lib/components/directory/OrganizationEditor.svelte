@@ -330,7 +330,7 @@
   .editor, form { display: grid; gap: var(--space-3); }
   form + form { padding-top: var(--space-3); border-top: 1px solid var(--border-default); }
   label { display: grid; gap: var(--space-1); color: var(--text-muted); font-size: var(--font-size-xs); }
-  textarea { min-height: 5rem; resize: vertical; padding: var(--space-2); border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-canvas); color: var(--text-primary); }
+  textarea { min-height: 5rem; resize: vertical; padding: var(--space-2); border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--surface-panel); color: var(--text-primary); }
   h3, h4, p, dl, dd, ul { margin: 0; } .hint { color: var(--text-muted); font-size: var(--font-size-xs); } [role="alert"] { color: var(--text-danger); }
   .current-data { display: grid; gap: var(--space-2); margin-top: var(--space-2); max-height: 20rem; overflow: auto; }
   .current-data dl { display: grid; gap: var(--space-1); } .current-data dl div { display: grid; grid-template-columns: 8rem 1fr; gap: var(--space-2); }

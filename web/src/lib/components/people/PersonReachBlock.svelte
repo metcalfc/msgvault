@@ -95,7 +95,7 @@
 
   .reach-row:hover,
   .reach-row:focus-within {
-    background: var(--bg-subtle);
+    background: var(--surface-well);
   }
 
   /* The copy control stays quiet until the row is hovered or focused;

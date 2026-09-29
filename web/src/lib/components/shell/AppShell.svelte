@@ -1569,7 +1569,7 @@
     height: 100vh;
     flex-direction: column;
     overflow: hidden;
-    background: var(--bg-primary);
+    background: var(--surface-canvas);
     color: var(--text-primary);
   }
 
@@ -1610,7 +1610,7 @@
   }
 
   .app-shell :global(.kit-top-bar__tab.active) {
-    background: var(--bg-subtle);
+    background: var(--surface-well);
     box-shadow: none;
   }
 

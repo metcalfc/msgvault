@@ -162,7 +162,7 @@
   .controls label { display: grid; gap: var(--space-1); color: var(--text-muted); font-size: var(--font-size-xs); }
   .projection { position: relative; min-height: 7rem; overflow: auto; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-inset); }
   svg { min-width: 100%; max-height: 24rem; }
-  line { stroke: var(--border-strong); stroke-width: 1.5; }
+  line { stroke: var(--edge); stroke-width: 1.5; }
   circle { fill: var(--bg-surface); stroke: var(--accent-blue); stroke-width: 2; }
   text { fill: var(--text-primary); font: var(--font-size-sm) var(--font-family); }
   .loading { position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--bg-surface) 72%, transparent); }

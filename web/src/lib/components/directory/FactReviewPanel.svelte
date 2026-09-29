@@ -41,6 +41,6 @@
   h2 { margin: 0; }
   .chooser { display: grid; justify-items: center; gap: var(--space-3); }
   .person-context { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
-  .notices { display: grid; gap: var(--space-2); padding: var(--space-3); border-left: 2px solid var(--border-strong); color: var(--text-secondary); }
+  .notices { display: grid; gap: var(--space-2); padding: var(--space-3); border-left: 2px solid var(--edge); color: var(--text-secondary); }
   .notices p { margin: 0; }
 </style>

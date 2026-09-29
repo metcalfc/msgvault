@@ -589,7 +589,7 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-    border: 1px solid var(--border-strong);
+    border: 1px solid var(--edge);
     border-radius: var(--radius-md);
     padding: var(--space-3);
     font-size: var(--font-size-sm);

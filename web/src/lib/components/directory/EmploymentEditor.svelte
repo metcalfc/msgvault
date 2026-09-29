@@ -212,7 +212,7 @@
 <style>
   .editor { display: grid; gap: var(--space-3); min-width: min(30rem, 80vw); }
   label { display: grid; gap: var(--space-1); color: var(--text-muted); font-size: var(--font-size-xs); }
-  textarea { min-height: 5rem; resize: vertical; padding: var(--space-2); border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-canvas); color: var(--text-primary); }
+  textarea { min-height: 5rem; resize: vertical; padding: var(--space-2); border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--surface-panel); color: var(--text-primary); }
   p { margin: 0; } [role="alert"] { color: var(--text-danger); }
   .checks, .actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
   .actions { justify-content: flex-end; }

@@ -183,7 +183,7 @@ for (const theme of ['light', 'dark'] as const) {
     await setKitTheme(page, theme);
     const requiredRoles = await page.locator('html').evaluate((element) => {
       const style = getComputedStyle(element);
-      return ['--bg-canvas', '--bg-subtle', '--border-strong', '--surface-raised', '--text-danger']
+      return ['--surface-canvas', '--surface-panel', '--surface-well', '--hairline', '--edge', '--text-danger']
         .map((token) => [token, style.getPropertyValue(token).trim()]);
     });
     expect(requiredRoles.filter(([, value]) => !value)).toEqual([]);

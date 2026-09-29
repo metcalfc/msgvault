@@ -329,7 +329,7 @@
 
   .show-all-chip:hover {
     color: var(--text-secondary);
-    border-color: var(--border-strong);
+    border-color: var(--edge);
   }
 
   .show-all-chip[aria-pressed='true'] {
@@ -373,7 +373,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
-    border: 1px solid var(--border-strong);
+    border: 1px solid var(--edge);
     border-radius: var(--radius-md);
     padding: var(--space-4);
     font-size: var(--font-size-sm);

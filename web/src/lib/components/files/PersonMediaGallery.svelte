@@ -92,7 +92,7 @@
   .media-gallery { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: var(--space-4); overflow: auto; }
   .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--space-3); align-content: start; }
   .media-card { display: flex; min-width: 0; padding: 0; overflow: hidden; flex-direction: column; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface); color: inherit; cursor: pointer; font: inherit; text-align: left; }
-  .media-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
+  .media-card:hover { border-color: var(--edge); box-shadow: var(--shadow-sm); }
   .media-card:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
   .card-copy { display: flex; min-width: 0; gap: var(--space-1); padding: var(--space-3); flex-direction: column; }
   .card-copy strong, .card-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

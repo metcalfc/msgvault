@@ -138,7 +138,7 @@
   [role="grid"] { display: grid; gap: 2px; outline: none; }
   [role="row"] { display: grid; gap: 2px; text-align: left; border: 1px solid transparent; border-radius: var(--radius-sm); padding: var(--space-3); background: var(--bg-surface); color: var(--text-primary); cursor: pointer; }
   [role="row"]:hover, [role="row"].active { background: var(--bg-surface-hover); }
-  [role="row"].selected { border-color: var(--border-strong); }
+  [role="row"].selected { border-color: var(--edge); }
   [role="row"]:focus-visible, [role="grid"]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .name { font-weight: var(--font-weight-semibold, 600); }
   .meta, .empty { color: var(--text-muted); font-size: var(--font-size-sm); }

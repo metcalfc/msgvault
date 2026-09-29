@@ -500,7 +500,7 @@
     padding: var(--space-3);
     border: 1px solid var(--accent-amber);
     border-radius: var(--radius-md);
-    background: var(--bg-subtle);
+    background: var(--surface-well);
   }
   .notice--error {
     border-color: var(--accent-red);

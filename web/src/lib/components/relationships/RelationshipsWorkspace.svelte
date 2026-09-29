@@ -540,7 +540,7 @@
     display: flex;
     min-height: 0;
     height: 100%;
-    background: var(--bg-canvas);
+    background: var(--surface-panel);
   }
 
   .pane-list {

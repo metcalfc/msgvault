@@ -512,7 +512,7 @@
     padding: var(--space-2);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
-    background: var(--bg-canvas);
+    background: var(--surface-panel);
     color: var(--text-primary);
   }
   .created span {

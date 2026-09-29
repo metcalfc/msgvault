@@ -416,7 +416,7 @@
   .paragraph--plain { padding: var(--space-1) 0; }
   .sentence { display: inline; margin: 0 2px 0 0; padding: 0 2px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
   .sentence:hover, .sentence[aria-expanded="true"] { background: var(--bg-surface-hover); }
-  .sentence[aria-expanded="true"] { box-shadow: inset 0 -1px 0 var(--border-strong); }
+  .sentence[aria-expanded="true"] { box-shadow: inset 0 -1px 0 var(--edge); }
   .expansion { padding: var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-inset); }
   .detail { font-weight: 600; }
   .meta, .evidence { display: grid; gap: var(--space-1); padding: 0; list-style: none; }

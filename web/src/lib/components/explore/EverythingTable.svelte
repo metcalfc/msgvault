@@ -625,7 +625,7 @@
     justify-content: flex-end;
     padding: 0 var(--space-4);
     border-bottom: 1px solid var(--border-muted);
-    background: var(--bg-subtle);
+    background: var(--surface-well);
   }
 
   details {

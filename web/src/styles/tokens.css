@@ -4,18 +4,33 @@
    * labels readable on app surfaces in both themes. */
   --text-muted: color-mix(in srgb, var(--text-primary) 66%, var(--bg-surface));
   --font-reading: Charter, 'Bitstream Charter', Georgia, serif;
-  --bg-canvas: var(--bg-surface);
-  --bg-subtle: var(--bg-inset);
-  --surface-raised: var(--bg-surface);
-  --border-strong: var(--border-default);
+
+  /* Surface ladder. Three steps that read as depth on their own, so a
+   * container is placed on a step instead of drawing a box to exist:
+   * canvas (workspace roots) < panel (lists, panes, cards) > well (an
+   * inset inside a panel). Lines are a separate vocabulary — a hairline
+   * divides rows and sections, an edge outlines a control or a popover. */
+  --surface-canvas: var(--bg-primary);
+  --surface-panel: var(--bg-surface);
+  --surface-well: var(--bg-inset);
+  --hairline: var(--border-muted);
+  --edge: var(--border-default);
   --hairline-sheen: var(--border-muted);
+
+  /* Line heights per voice: titles sit tight, section titles a touch
+   * looser, body and labels at UI leading, reading text at prose leading. */
+  --leading-title: 1.2;
+  --leading-section: 1.3;
+  --leading-body: 1.4;
+  --leading-reading: 1.55;
+
   --control-bg: var(--bg-surface);
   --control-border: var(--border-default);
   --text-danger: var(--accent-red);
   --active-ink: var(--accent-blue);
   --link-ink: var(--accent-blue);
   --focus-color: var(--accent-blue);
-  --selected-bg: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-surface));
+  --selected-bg: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-surface));
   --selected-border: var(--accent-blue);
   --artifact-ink: var(--accent-purple);
   --status-success-bg: color-mix(in srgb, var(--accent-green) 10%, var(--bg-surface));
@@ -26,6 +41,18 @@
   --status-error-ink: color-mix(in srgb, var(--accent-red) 72%, var(--text-primary));
   --status-destructive-bg: var(--status-error-bg);
   --status-destructive-ink: var(--status-error-ink);
+}
+
+/* Kit's dark panel (#16161e) sits at 1.08:1 against the canvas, so every
+ * panel needed a border to be seen. Lift it to 1.15:1 so a panel reads as a
+ * step without a line, and lift the hover wash with it so hovering a row on
+ * the new panel still shows (the old value would sit at 1.03:1). The 66%
+ * muted-ink mix above stays at 6.9:1 on this panel. */
+:root.dark {
+  /* kit-ui-check-ignore: these lines define the dark theme's surface tokens */
+  --bg-surface: #1c1c27;
+  /* kit-ui-check-ignore: theme token definition, see --bg-surface above */
+  --bg-surface-hover: #262633;
 }
 
 :where(body, button, input, select, textarea) {
@@ -49,14 +76,63 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Third voice: small-caps letterspaced section labels for pane headers,
- * month markers, and group headings — never bold-text-as-header. */
+/* Voice attributes: the type scale is four sizes and three weights, keyed
+ * by role rather than by element, so a component never restyles h2/h3/h4
+ * and two headings at the same level look the same on every screen.
+ *
+ *   data-page-title     18px / 600   the workspace or record name
+ *   data-section-title  13px / 600   a section inside a page or pane
+ *   data-row-title      12px / 500   the first line of a list row
+ *   data-meta           11px / 400   supporting detail under a title
+ *   data-meta="caps"    11px / 600   small-caps column and group labels
+ *   data-section-label  11px / 600   small-caps pane headers, month markers */
+:where([data-page-title]) {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  line-height: var(--leading-title);
+}
+
+:where([data-section-title]) {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  line-height: var(--leading-section);
+}
+
+:where([data-row-title]) {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  line-height: var(--leading-body);
+}
+
+:where([data-meta]) {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+  line-height: var(--leading-body);
+}
+
+:where([data-meta='caps']) {
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Small-caps letterspaced section labels for pane headers, month markers,
+ * and group headings — never bold-text-as-header. */
 :where([data-section-label]) {
   color: var(--text-muted);
   font-family: var(--font-sans);
   font-size: var(--font-size-xs);
   font-weight: 600;
   letter-spacing: 0.07em;
+  line-height: var(--leading-body);
   text-transform: uppercase;
 }
 

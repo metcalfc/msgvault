@@ -10,7 +10,7 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
-  background: var(--bg-primary);
+  background: var(--surface-canvas);
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: var(--font-size-root);
