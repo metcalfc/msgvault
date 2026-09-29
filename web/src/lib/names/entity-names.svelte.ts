@@ -21,8 +21,12 @@ export const UNKNOWN_LABELS: Readonly<Record<EntityKind, string>> = {
 export const MAX_IDS_PER_KIND = 500;
 /** A failed lookup is not repeated by the render its failure caused, only by a later one. */
 export const RETRY_AFTER_MS = 10_000;
+/** A settled answer older than this is still shown, and a render refreshes it. */
+export const STALE_AFTER_MS = 5 * 60_000;
 
-type Entry = { state: 'named'; label: string } | { state: 'unknown' } | { state: 'failed'; at: number };
+/** One answer. `checkedAt` is when the server last answered, or failed to. */
+type NamedEntry = { state: 'named'; label: string; identity?: string; checkedAt: number };
+type Entry = NamedEntry | { state: 'unknown'; checkedAt: number } | { state: 'failed'; checkedAt: number };
 type Queue = Record<EntityKind, Set<number>>;
 
 const KINDS: readonly EntityKind[] = ['person', 'participant', 'organization'];
@@ -52,14 +56,18 @@ function emptyQueue(): Queue {
  *
  * One resolver serves one API client. IDs asked for in the same tick go to the
  * server in one request; a pending ID is never requested twice; a settled
- * answer (a name, or definitely none) is kept; and a failed request is
- * forgotten so a later render asks again. Labels never contain the ID.
+ * answer (a name, or definitely none) is kept until it is invalidated or
+ * grows stale; and a failed request is forgotten so a later render asks
+ * again. A response never overwrites a name seeded or invalidated after its
+ * request started. Labels never contain the ID.
  */
 export class EntityNames {
   readonly #client: APIClient;
   readonly #entries = settledAnswers;
   readonly #scope = `${++resolverCount}`;
   readonly #pending = new Map<string, Promise<void>>();
+  /** Bumped when a key is seeded or invalidated; an answer to an older version is dropped. */
+  readonly #versions = new Map<string, number>();
   #queue: Queue = emptyQueue();
   #batch: Promise<void> | undefined;
 
@@ -71,22 +79,43 @@ export class EntityNames {
     return `${this.#scope}:${kind}:${id}`;
   }
 
+  #bump(key: string): void {
+    this.#versions.set(key, (this.#versions.get(key) ?? 0) + 1);
+  }
+
+  /** Whether a render should ask the server: no answer, a stale one, or a failure long enough ago. */
+  #due(entry: Entry | undefined, now = Date.now()): boolean {
+    if (!entry) return true;
+    const age = now - entry.checkedAt;
+    return age >= (entry.state === 'failed' ? RETRY_AFTER_MS : STALE_AFTER_MS);
+  }
+
   /**
-   * The display label for an entity. Reactive: a component that renders it
-   * updates when the name arrives. Returns a neutral placeholder while
-   * loading, UNAVAILABLE_LABEL after a failure, and "Unknown …" when the
-   * server has no name for the ID.
+   * Who an entity is. Reactive: a component that renders it updates when the
+   * name arrives. Returns a neutral placeholder while loading,
+   * UNAVAILABLE_LABEL after a failure, and "Unknown …" when the server has no
+   * name for the ID. A stale answer stays on screen while it refreshes.
    */
   label(kind: EntityKind, id: number | null | undefined): string {
+    return this.#text(kind, id, (entry) => entry.label);
+  }
+
+  /**
+   * A participant's own identity: its own name and address. It tells several
+   * identities of one person apart where their labels (led by that person's
+   * name) would repeat. Falls back to the label when the server gave none.
+   */
+  identity(id: number | null | undefined): string {
+    return this.#text('participant', id, (entry) => entry.identity || entry.label);
+  }
+
+  #text(kind: EntityKind, id: number | null | undefined, pick: (entry: NamedEntry) => string): string {
     if (!validID(id)) return UNKNOWN_LABELS[kind];
     const entry = this.#entries.get(this.#key(kind, id));
-    if (entry?.state === 'named') return entry.label;
+    if (this.#due(entry)) this.load(kind, [id]).catch(() => undefined);
+    if (entry?.state === 'named') return pick(entry);
     if (entry?.state === 'unknown') return UNKNOWN_LABELS[kind];
-    if (entry?.state === 'failed') {
-      if (Date.now() - entry.at >= RETRY_AFTER_MS) this.load(kind, [id]).catch(() => undefined);
-      return UNAVAILABLE_LABEL;
-    }
-    this.load(kind, [id]).catch(() => undefined);
+    if (entry?.state === 'failed') return UNAVAILABLE_LABEL;
     return LOADING_LABEL;
   }
 
@@ -115,19 +144,48 @@ export class EntityNames {
     return this.known(kind, id) ?? fallback;
   }
 
-  /** Records a name the page already has (from a listing), so it is not fetched. */
+  /**
+   * Records a name the page already has (from a listing or a save), so it is
+   * not fetched. An answer already in flight for it will not overwrite it.
+   */
   seed(kind: EntityKind, id: number | null | undefined, label: string | null | undefined): void {
     const name = label?.trim();
     if (!validID(id) || !name) return;
     const key = this.#key(kind, id);
-    const current = this.#entries.get(key);
-    if (current?.state === 'named' && current.label === name) return;
-    this.#entries.set(key, { state: 'named', label: name });
+    this.#bump(key);
+    const current = untrack(() => this.#entries.get(key));
+    if (current?.state === 'named' && current.label === name) {
+      this.#entries.set(key, { ...current, checkedAt: Date.now() });
+      return;
+    }
+    // A participant's identity is its own; a new name for "who" leaves it to the server.
+    this.#entries.set(key, { state: 'named', label: name, checkedAt: Date.now() });
   }
 
   /**
-   * Resolves the given IDs. Settles once every one has an answer; rejects
-   * when a request failed, leaving those IDs to be asked for again.
+   * Marks answers out of date after a change that can rename them (a rename,
+   * merge, split, or link). The old text stays on screen while the next
+   * render refreshes it, and answers already in flight are dropped. Without
+   * IDs, every answer of the kind is marked.
+   */
+  invalidate(kind: EntityKind, ids?: Iterable<number>): void {
+    untrack(() => {
+      const prefix = `${this.#scope}:${kind}:`;
+      const keys = ids === undefined
+        ? [...this.#entries.keys()].filter((key) => key.startsWith(prefix))
+        : [...ids].filter(validID).map((id) => this.#key(kind, id));
+      for (const key of keys) {
+        this.#bump(key);
+        this.#pending.delete(key);
+        const entry = this.#entries.get(key);
+        if (entry) this.#entries.set(key, { ...entry, checkedAt: Number.NEGATIVE_INFINITY });
+      }
+    });
+  }
+
+  /**
+   * Resolves the given IDs. Settles once every one has a current answer;
+   * rejects when a request failed, leaving those IDs to be asked for again.
    */
   load(kind: EntityKind, ids: Iterable<number | null | undefined>): Promise<void> {
     // Loading never subscribes the caller: an effect that loads must not rerun,
@@ -137,13 +195,15 @@ export class EntityNames {
 
   #load(kind: EntityKind, ids: Iterable<number | null | undefined>): Promise<void> {
     const waits: Promise<void>[] = [];
+    const now = Date.now();
     for (const id of ids) {
       if (!validID(id)) continue;
       const key = this.#key(kind, id);
-      const entry = this.#entries.get(key);
-      if (entry?.state === 'named' || entry?.state === 'unknown') continue;
       let pending = this.#pending.get(key);
       if (!pending) {
+        const entry = this.#entries.get(key);
+        // An explicit load retries a failure at once; a render waits (see #text).
+        if (entry && entry.state !== 'failed' && !this.#due(entry, now)) continue;
         this.#queue[kind].add(id);
         pending = this.#schedule();
         this.#pending.set(key, pending);
@@ -155,11 +215,11 @@ export class EntityNames {
 
   #schedule(): Promise<void> {
     if (!this.#batch) {
-      const batch = Promise.resolve().then(() => {
+      const batch: Promise<void> = Promise.resolve().then(() => {
         this.#batch = undefined;
         const queue = this.#queue;
         this.#queue = emptyQueue();
-        return this.#send(queue);
+        return this.#send(queue, batch);
       });
       // Callers observe failures through load(); keep the shared promise quiet.
       batch.catch(() => undefined);
@@ -168,7 +228,7 @@ export class EntityNames {
     return this.#batch;
   }
 
-  async #send(queue: Queue): Promise<void> {
+  async #send(queue: Queue, batch: Promise<void>): Promise<void> {
     const lists = Object.fromEntries(KINDS.map((kind) => [kind, [...queue[kind]]])) as Record<EntityKind, number[]>;
     const rounds = Math.max(...KINDS.map((kind) => Math.ceil(lists[kind].length / MAX_IDS_PER_KIND)));
     const results = await Promise.all(
@@ -176,15 +236,24 @@ export class EntityNames {
         const chunk = Object.fromEntries(
           KINDS.map((kind) => [kind, lists[kind].slice(round * MAX_IDS_PER_KIND, (round + 1) * MAX_IDS_PER_KIND)])
         ) as Record<EntityKind, number[]>;
-        return this.#request(chunk);
+        return this.#request(chunk, batch);
       })
     );
     if (results.some((ok) => !ok)) throw new Error('Name lookup failed');
   }
 
-  async #request(chunk: Record<EntityKind, number[]>): Promise<boolean> {
+  async #request(chunk: Record<EntityKind, number[]>, batch: Promise<void>): Promise<boolean> {
     const params: GetEntityLabelsParams = {};
     for (const kind of KINDS) if (chunk[kind].length) params[PARAM[kind]] = chunk[kind];
+    // The versions this request answers: a seed or invalidation after this
+    // point makes its answer for that key out of date.
+    const started = new Map<string, number>();
+    for (const kind of KINDS) {
+      for (const id of chunk[kind]) {
+        const key = this.#key(kind, id);
+        started.set(key, this.#versions.get(key) ?? 0);
+      }
+    }
     let answers: Record<EntityKind, EntityLabel[]> | undefined;
     try {
       const { data, response } = await getEntityLabels(params, this.#client);
@@ -194,23 +263,28 @@ export class EntityNames {
     } catch {
       answers = undefined;
     }
-    const failedAt = Date.now();
+    const checkedAt = Date.now();
     for (const kind of KINDS) {
-      const names = new Map<number, string>();
+      const found = new Map<number, { label: string; identity?: string }>();
       for (const answer of answers?.[kind] ?? []) {
         const label = typeof answer?.label === 'string' ? answer.label.trim() : '';
-        if (validID(answer?.id) && label) names.set(answer.id, label);
+        const identity = typeof answer?.identity === 'string' ? answer.identity.trim() : '';
+        if (validID(answer?.id) && label) found.set(answer.id, { label, ...(identity ? { identity } : {}) });
       }
       for (const id of chunk[kind]) {
         const key = this.#key(kind, id);
-        this.#pending.delete(key);
-        // A seeded name that arrived meanwhile is fresher than a failure.
+        if (this.#pending.get(key) === batch) this.#pending.delete(key);
+        if ((this.#versions.get(key) ?? 0) !== started.get(key)) continue;
+        const current = this.#entries.get(key);
         if (!answers) {
-          if (this.#entries.get(key)?.state !== 'named') this.#entries.set(key, { state: 'failed', at: failedAt });
+          // A failed refresh keeps the answer on screen until it is due again.
+          this.#entries.set(key, current && current.state !== 'failed'
+            ? { ...current, checkedAt }
+            : { state: 'failed', checkedAt });
           continue;
         }
-        const label = names.get(id);
-        this.#entries.set(key, label ? { state: 'named', label } : { state: 'unknown' });
+        const name = found.get(id);
+        this.#entries.set(key, name ? { state: 'named', ...name, checkedAt } : { state: 'unknown', checkedAt });
       }
     }
     return answers !== undefined;
@@ -227,6 +301,18 @@ export function entityNames(client: APIClient): EntityNames {
     resolvers.set(client, resolver);
   }
   return resolver;
+}
+
+/**
+ * Marks every person and participant name out of date after a change that
+ * can rename them or move identities between people: a person rename, merge,
+ * split, or identity link. Participant labels lead with the bound person's
+ * name, and an unnamed person is named by its participants.
+ */
+export function invalidatePeopleNames(client: APIClient): void {
+  const names = entityNames(client);
+  names.invalidate('person');
+  names.invalidate('participant');
 }
 
 export function personLabel(client: APIClient, id: number | null | undefined): string {

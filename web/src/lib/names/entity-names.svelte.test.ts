@@ -7,8 +7,10 @@ import {
   LOADING_LABEL,
   MAX_IDS_PER_KIND,
   RETRY_AFTER_MS,
+  STALE_AFTER_MS,
   UNAVAILABLE_LABEL,
   entityNames,
+  invalidatePeopleNames,
   organizationLabel,
   participantLabel,
   personLabel
@@ -24,13 +26,19 @@ type Names = Record<string, Record<number, string>>;
 function labelsServer(names: Names = {}) {
   const requests: URL[] = [];
   let fail = false;
+  let gate: Promise<void> | undefined;
   const fetchFn = vi.fn<typeof fetch>(async (input) => {
     const request = input instanceof Request ? input : new Request(input);
     const url = new URL(request.url);
     requests.push(url);
+    // The answer reflects the names at request time, as a server would.
+    const snapshot = structuredClone(names);
+    if (gate) await gate;
     if (fail) return Response.json({ error: 'unavailable', message: 'down' }, { status: 503 });
     const answer = (kind: string) =>
-      url.searchParams.getAll(kind).map(Number).filter((id) => names[kind]?.[id]).map((id) => ({ id, label: names[kind][id] }));
+      url.searchParams.getAll(kind).map(Number).filter((id) => snapshot[kind]?.[id]).map((id) => ({
+        id, label: snapshot[kind][id], ...(kind === 'participant' && snapshot.identity?.[id] ? { identity: snapshot.identity[id] } : {})
+      }));
     return Response.json({
       people: answer('person'),
       participants: answer('participant'),
@@ -42,6 +50,12 @@ function labelsServer(names: Names = {}) {
     requests,
     setFailing(value: boolean) {
       fail = value;
+    },
+    /** Holds every response until the returned release is called. */
+    hold(): () => void {
+      let release!: () => void;
+      gate = new Promise<void>((resolve) => { release = resolve; });
+      return () => { gate = undefined; release(); };
     }
   };
 }
@@ -188,6 +202,96 @@ describe('EntityNames', () => {
     await vi.waitFor(() => expect(seen.at(-1)).toBe('Avery Example'));
     expect(seen[0]).toBe(LOADING_LABEL);
     stop();
+  });
+
+  it('tells a person\'s identities apart by their own identity while their labels repeat', async () => {
+    const server = labelsServer({
+      participant: { 701: 'Avery Example', 702: 'Avery Example', 703: 'Avery Example' },
+      identity: { 701: 'Avery E · avery@example.com', 702: 'avery.home@example.org' }
+    });
+    const names = new EntityNames(server.client);
+
+    await names.load('participant', [701, 702, 703]);
+
+    expect([701, 702, 703].map((id) => names.label('participant', id))).toEqual(['Avery Example', 'Avery Example', 'Avery Example']);
+    expect([701, 702, 703].map((id) => names.identity(id))).toEqual(['Avery E · avery@example.com', 'avery.home@example.org', 'Avery Example']);
+  });
+
+  it('refreshes a stale answer on a later render and keeps showing it meanwhile', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const names = { person: { 7: 'Avery Example' } } as Names;
+    const server = labelsServer(names);
+    const resolver = new EntityNames(server.client);
+    await resolver.load('person', [7]);
+    names.person[7] = 'Avery Renamed';
+
+    expect(resolver.label('person', 7)).toBe('Avery Example');
+    await settle();
+    expect(server.requests).toHaveLength(1);
+
+    vi.setSystemTime(Date.now() + STALE_AFTER_MS);
+    expect(resolver.label('person', 7)).toBe('Avery Example');
+    await vi.waitFor(() => expect(resolver.label('person', 7)).toBe('Avery Renamed'));
+    expect(server.requests).toHaveLength(2);
+  });
+
+  it('refetches invalidated answers, including one that had no name, and drops answers already in flight', async () => {
+    const names = { person: { 7: 'Avery Example' } } as Names;
+    const server = labelsServer(names);
+    const resolver = new EntityNames(server.client);
+    await resolver.load('person', [7, 8]);
+    expect(resolver.label('person', 8)).toBe('Unknown person');
+
+    const release = server.hold();
+    resolver.invalidate('person', [7]);
+    resolver.label('person', 7);
+    await vi.waitFor(() => expect(server.requests).toHaveLength(2));
+    names.person[7] = 'Avery Renamed';
+    names.person[8] = 'Blair Named';
+    resolver.invalidate('person');
+    expect(resolver.label('person', 7)).toBe('Avery Example');
+    expect(resolver.label('person', 8)).toBe('Unknown person');
+    await vi.waitFor(() => expect(server.requests).toHaveLength(3));
+    release();
+
+    await vi.waitFor(() => expect(resolver.label('person', 7)).toBe('Avery Renamed'));
+    expect(resolver.label('person', 8)).toBe('Blair Named');
+    await settle();
+    expect(server.requests).toHaveLength(3);
+  });
+
+  it('never lets an answer requested before a seed overwrite the seeded name', async () => {
+    const server = labelsServer({ person: { 9: 'Casey Old' } });
+    const resolver = new EntityNames(server.client);
+    const release = server.hold();
+
+    const loading = resolver.load('person', [9, 10]);
+    await vi.waitFor(() => expect(server.requests).toHaveLength(1));
+    resolver.seed('person', 9, 'Casey New');
+    resolver.seed('person', 10, 'Drew Seeded');
+    release();
+    await loading;
+
+    expect(resolver.label('person', 9)).toBe('Casey New');
+    expect(resolver.label('person', 10)).toBe('Drew Seeded');
+    await settle();
+    expect(server.requests).toHaveLength(1);
+  });
+
+  it('marks every person and participant answer out of date after a people change', async () => {
+    const server = labelsServer({ person: { 7: 'Avery Example' }, participant: { 70: 'Avery Example' }, organization: { 3: 'Example Works' } });
+    const resolver = entityNames(server.client);
+    await Promise.all([resolver.load('person', [7]), resolver.load('participant', [70]), resolver.load('organization', [3])]);
+
+    invalidatePeopleNames(server.client);
+    resolver.label('person', 7);
+    resolver.label('participant', 70);
+    resolver.label('organization', 3);
+    await settle();
+
+    expect(server.requests).toHaveLength(2);
+    const refresh = server.requests[1]!.searchParams;
+    expect([refresh.getAll('person'), refresh.getAll('participant'), refresh.getAll('organization')]).toEqual([['7'], ['70'], []]);
   });
 
   it('shares one resolver per client', () => {
