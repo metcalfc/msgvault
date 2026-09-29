@@ -170,7 +170,7 @@ profile is removed and re-imported.
   otherwise. Exclude owner participants using the rule at
   `cmd/msgvault/cmd/build_cache.go:603` widened to their clusters, exclude
   rejected rows, and mark published or conflicted sides as blocked.
-- [ ] **Task 1b.2 Candidate rows (0.5 to 1 day).** Endpoints
+- [x] **Task 1b.2 Candidate rows (0.5 to 1 day).** Endpoints
   participant-to-person, basis `email` or `phone`, source `system`,
   confidence 1.0, `normalized_value` set. Record the contact point id and
   matched identifier in `identity_match_evidence`. The unique index gives

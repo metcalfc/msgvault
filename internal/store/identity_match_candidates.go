@@ -423,50 +423,62 @@ func (s *Store) AddIdentityMatchEvidenceContext(
 		if exists == 0 {
 			return ErrIdentityMatchNotFound
 		}
-		var id int64
-		evidenceRef := stringValue(input.EvidenceRef)
-		detail := stringValue(input.Detail)
-		err := tx.QueryRowContext(ctx, `SELECT id FROM identity_match_evidence
-			WHERE candidate_id = ? AND evidence_kind = ?
-			  AND evidence_ref IS NOT DISTINCT FROM ?
-			  AND detail IS NOT DISTINCT FROM ?
-			  AND source = ?
-			ORDER BY id LIMIT 1`,
-			candidateID, kind, evidenceRef, detail, input.Source,
-		).Scan(&id)
-		inserted := false
-		if errors.Is(err, sql.ErrNoRows) {
-			if err := tx.QueryRowContext(ctx, `INSERT INTO identity_match_evidence (
-				candidate_id, evidence_kind, evidence_ref, detail, source
-			) VALUES (?, ?, ?, ?, ?) RETURNING id`,
-				candidateID, kind, evidenceRef, detail, input.Source,
-			).Scan(&id); err != nil {
-				return fmt.Errorf("add identity match evidence: %w", err)
-			}
-			inserted = true
-		} else if err != nil {
-			return fmt.Errorf("find matching identity match evidence: %w", err)
-		}
-		if input.SourceID != nil && *input.SourceID != 0 {
-			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO identity_match_evidence_sources
-					(evidence_id, source_id, is_conservative) VALUES (?, ?, FALSE)
-				ON CONFLICT (evidence_id, source_id) DO UPDATE
-				SET is_conservative = FALSE`, id, *input.SourceID); err != nil {
-				return fmt.Errorf("record identity match evidence source: %w", err)
-			}
-		}
-		if inserted {
-			if _, err := tx.ExecContext(ctx, `UPDATE identity_match_candidates
-				SET updated_at = `+s.dialect.Now()+` WHERE id = ?`, candidateID,
-			); err != nil {
-				return fmt.Errorf("touch identity match candidate: %w", err)
-			}
-		}
-		evidence, err = getIdentityMatchEvidenceTx(ctx, tx, id)
+		var err error
+		evidence, _, err = s.addIdentityMatchEvidenceTx(ctx, tx, candidateID, kind, input)
 		return err
 	})
 	return evidence, err
+}
+
+// addIdentityMatchEvidenceTx inserts evidence unless an identical row exists,
+// records its source support, and touches the candidate on insert. The caller
+// holds the identity-mutation lock and has verified the candidate exists.
+func (s *Store) addIdentityMatchEvidenceTx(
+	ctx context.Context, tx *loggedTx, candidateID int64, kind string,
+	input IdentityMatchEvidenceInput,
+) (*IdentityMatchEvidence, bool, error) {
+	var id int64
+	evidenceRef := stringValue(input.EvidenceRef)
+	detail := stringValue(input.Detail)
+	err := tx.QueryRowContext(ctx, `SELECT id FROM identity_match_evidence
+		WHERE candidate_id = ? AND evidence_kind = ?
+		  AND evidence_ref IS NOT DISTINCT FROM ?
+		  AND detail IS NOT DISTINCT FROM ?
+		  AND source = ?
+		ORDER BY id LIMIT 1`,
+		candidateID, kind, evidenceRef, detail, input.Source,
+	).Scan(&id)
+	inserted := false
+	if errors.Is(err, sql.ErrNoRows) {
+		if err := tx.QueryRowContext(ctx, `INSERT INTO identity_match_evidence (
+			candidate_id, evidence_kind, evidence_ref, detail, source
+		) VALUES (?, ?, ?, ?, ?) RETURNING id`,
+			candidateID, kind, evidenceRef, detail, input.Source,
+		).Scan(&id); err != nil {
+			return nil, false, fmt.Errorf("add identity match evidence: %w", err)
+		}
+		inserted = true
+	} else if err != nil {
+		return nil, false, fmt.Errorf("find matching identity match evidence: %w", err)
+	}
+	if input.SourceID != nil && *input.SourceID != 0 {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO identity_match_evidence_sources
+				(evidence_id, source_id, is_conservative) VALUES (?, ?, FALSE)
+			ON CONFLICT (evidence_id, source_id) DO UPDATE
+			SET is_conservative = FALSE`, id, *input.SourceID); err != nil {
+			return nil, false, fmt.Errorf("record identity match evidence source: %w", err)
+		}
+	}
+	if inserted {
+		if _, err := tx.ExecContext(ctx, `UPDATE identity_match_candidates
+			SET updated_at = `+s.dialect.Now()+` WHERE id = ?`, candidateID,
+		); err != nil {
+			return nil, false, fmt.Errorf("touch identity match candidate: %w", err)
+		}
+	}
+	evidence, err := getIdentityMatchEvidenceTx(ctx, tx, id)
+	return evidence, inserted, err
 }
 
 // AttachIdentityMatchEvidenceSourceContext records another archive source

@@ -661,3 +661,155 @@ func contactMatchBlockReasonsTx(
 	}
 	return blocks, nil
 }
+
+// ContactMatchBuildResult summarizes one contact-match refresh.
+type ContactMatchBuildResult struct {
+	Matches       int `json:"matches"`
+	Created       int `json:"created"`
+	Existing      int `json:"existing"`
+	EvidenceAdded int `json:"evidence_added"`
+	Bind          int `json:"bind"`
+	Merge         int `json:"merge"`
+	Ambiguous     int `json:"ambiguous"`
+	Blocked       int `json:"blocked"`
+}
+
+// BuildContactMatchCandidatesContext writes one reviewable identity match
+// candidate per contact-only profile and matched participant cluster. The
+// participant endpoint is the lowest matched cluster member, the basis is
+// email when any email matched and phone otherwise, the source is system with
+// confidence 1.0 (exact identifiers), and every matching contact point is
+// recorded as evidence. Reruns are idempotent: a cluster that already has a
+// contact-match candidate for the profile, in any state, gains only new
+// evidence. Nothing is accepted automatically.
+func (s *Store) BuildContactMatchCandidatesContext(
+	ctx context.Context,
+) (*ContactMatchBuildResult, error) {
+	result := &ContactMatchBuildResult{}
+	err := s.withTxContext(ctx, func(tx *loggedTx) error {
+		*result = ContactMatchBuildResult{}
+		if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
+			return err
+		}
+		matches, err := s.findContactMatchesTx(ctx, tx)
+		if err != nil {
+			return err
+		}
+		existing, err := existingContactMatchCandidatesTx(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for _, match := range matches {
+			if err := s.writeContactMatchCandidateTx(ctx, tx, match, existing, result); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *Store) writeContactMatchCandidateTx(
+	ctx context.Context, tx *loggedTx, match ContactMatch,
+	existing map[participantPersonPair]int64, result *ContactMatchBuildResult,
+) error {
+	result.Matches++
+	switch match.Classification {
+	case ContactMatchBind:
+		result.Bind++
+	case ContactMatchMerge:
+		result.Merge++
+	case ContactMatchAmbiguous:
+		result.Ambiguous++
+	case ContactMatchLinked:
+	}
+	if match.BlockedReason != nil {
+		result.Blocked++
+	}
+	var candidateID int64
+	for _, member := range match.ClusterMembers {
+		if id, ok := existing[participantPersonPair{
+			participantID: member, personID: match.ContactPersonID,
+		}]; ok {
+			candidateID = id
+			break
+		}
+	}
+	if candidateID != 0 {
+		result.Existing++
+	} else {
+		primary := match.Identifiers[0]
+		normalized := primary.NormalizedValue
+		confidence := 1.0
+		sourceRef := ContactMatchSourceRef
+		candidate, created, err := s.upsertIdentityMatchCandidateTx(ctx, tx,
+			IdentityMatchCandidateInput{
+				LeftKind: IdentityMatchParticipant, LeftID: match.ParticipantID,
+				RightKind: IdentityMatchPerson, RightID: match.ContactPersonID,
+				Basis: primary.Basis, NormalizedValue: &normalized,
+				State: IdentityMatchStateCandidate, Confidence: &confidence,
+				Source: ProvenanceSystem, SourceRef: &sourceRef,
+			},
+			IdentityMatchParticipant, match.ParticipantID,
+			IdentityMatchPerson, match.ContactPersonID, nil, false)
+		if err != nil {
+			return fmt.Errorf("write contact match candidate: %w", err)
+		}
+		candidateID = candidate.ID
+		existing[participantPersonPair{
+			participantID: match.ParticipantID, personID: match.ContactPersonID,
+		}] = candidateID
+		if created {
+			result.Created++
+		} else {
+			result.Existing++
+		}
+	}
+	for _, identifier := range match.Identifiers {
+		ref := fmt.Sprintf("person_contact_point:%d", identifier.ContactPointID)
+		detail := fmt.Sprintf("participant %d %s=%s",
+			identifier.ParticipantID, identifier.MatchedField, identifier.MatchedValue)
+		_, inserted, err := s.addIdentityMatchEvidenceTx(ctx, tx, candidateID,
+			ContactMatchEvidenceKind, IdentityMatchEvidenceInput{
+				EvidenceRef: &ref, Detail: &detail, Source: ProvenanceSystem,
+			})
+		if err != nil {
+			return err
+		}
+		if inserted {
+			result.EvidenceAdded++
+		}
+	}
+	return nil
+}
+
+// existingContactMatchCandidatesTx maps each contact-match candidate's
+// participant and person endpoints to its ID.
+func existingContactMatchCandidatesTx(
+	ctx context.Context, tx *loggedTx,
+) (map[participantPersonPair]int64, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id, left_id, right_id
+		FROM identity_match_candidates
+		WHERE source_ref = ? AND left_kind = ? AND right_kind = ?
+		ORDER BY id`,
+		ContactMatchSourceRef, IdentityMatchParticipant, IdentityMatchPerson)
+	if err != nil {
+		return nil, fmt.Errorf("load contact match candidates: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	existing := map[participantPersonPair]int64{}
+	for rows.Next() {
+		var id int64
+		var pair participantPersonPair
+		if err := rows.Scan(&id, &pair.participantID, &pair.personID); err != nil {
+			return nil, fmt.Errorf("scan contact match candidate: %w", err)
+		}
+		if _, seen := existing[pair]; !seen {
+			existing[pair] = id
+		}
+	}
+	return existing, rows.Err()
+}

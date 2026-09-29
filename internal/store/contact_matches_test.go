@@ -127,3 +127,50 @@ func TestFindContactMatchesClassifiesBindAndMergeAtClusterLevel(t *testing.T) {
 	assert.Equal(store.ContactMatchMerge, bo[0].Classification)
 	assert.Equal([]int64{existing.ID}, bo[0].ClusterPersonIDs)
 }
+
+func TestBuildContactMatchCandidatesWritesIdempotentSystemRowsWithEvidence(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	participant := f.emailParticipant("cy@example.test", "Cy")
+	people := f.importCards(f.card("card-cy", "Cy Contact", []string{"cy@example.test"}, nil))
+
+	first, err := f.st.BuildContactMatchCandidatesContext(t.Context())
+	require.NoError(err)
+	assert.Equal(store.ContactMatchBuildResult{
+		Matches: 1, Created: 1, EvidenceAdded: 1, Bind: 1,
+	}, *first)
+
+	candidates, err := f.st.ListIdentityMatchCandidatesContext(t.Context(), nil, 100, 0)
+	require.NoError(err)
+	require.Len(candidates, 1)
+	candidate := candidates[0]
+	assert.Equal(store.IdentityMatchParticipant, candidate.LeftKind)
+	assert.Equal(participant, candidate.LeftID)
+	assert.Equal(store.IdentityMatchPerson, candidate.RightKind)
+	assert.Equal(people["card-cy"], candidate.RightID)
+	assert.Equal(store.IdentityMatchEmail, candidate.Basis)
+	require.NotNil(candidate.NormalizedValue)
+	assert.Equal("cy@example.test", *candidate.NormalizedValue)
+	assert.Equal(store.ProvenanceSystem, candidate.Source)
+	require.NotNil(candidate.Confidence)
+	assert.InDelta(1.0, *candidate.Confidence, 0)
+	require.NotNil(candidate.SourceRef)
+	assert.Equal(store.ContactMatchSourceRef, *candidate.SourceRef)
+	assert.Equal(store.IdentityMatchStateCandidate, candidate.State)
+	require.Len(candidate.Evidence, 1)
+	assert.Equal(store.ContactMatchEvidenceKind, candidate.Evidence[0].EvidenceKind)
+	require.NotNil(candidate.Evidence[0].EvidenceRef)
+	assert.Contains(*candidate.Evidence[0].EvidenceRef, "person_contact_point:")
+	require.NotNil(candidate.Evidence[0].Detail)
+	assert.Contains(*candidate.Evidence[0].Detail, "participants.email_address=cy@example.test")
+
+	second, err := f.st.BuildContactMatchCandidatesContext(t.Context())
+	require.NoError(err)
+	assert.Equal(store.ContactMatchBuildResult{Matches: 1, Existing: 1, Bind: 1}, *second)
+	again, err := f.st.ListIdentityMatchCandidatesContext(t.Context(), nil, 100, 0)
+	require.NoError(err)
+	require.Len(again, 1)
+	assert.Len(again[0].Evidence, 1)
+}
