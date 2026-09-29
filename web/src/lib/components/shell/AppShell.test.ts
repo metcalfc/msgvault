@@ -9,6 +9,7 @@ import { LOAD_THROUGH_END_MAX_PAGES } from '../../explore/paging';
 import { ExploreState, parseExploreURLState, serializeExploreURLState } from '../../explore/state.svelte';
 import { chooseSelectOption } from '../../../test/kit-ui';
 import AppShell from './AppShell.svelte';
+import { exploreLink } from '../../../test/explore-url';
 
 function exploreResponse(overrides: Record<string, unknown> = {}) {
   return {
@@ -89,7 +90,7 @@ describe('AppShell', () => {
   }
 
   it('focuses search with slash and leaves Escape to the search input', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
     render(AppShell, { client: createAPIClient(vi.fn()), state, enabled: false });
 
@@ -103,7 +104,7 @@ describe('AppShell', () => {
 
 
   it('suspends the shortcut registry without preventing defaults in every editable control', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
     const rendered = render(AppShell, { client: createAPIClient(vi.fn()), state, enabled: false });
     const handleKeydown = vi.spyOn(appShortcuts, 'handleKeydown');
@@ -178,7 +179,7 @@ describe('AppShell', () => {
 
 
   it('guards slash for modifiers and every editable contenteditable value except false', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
     render(AppShell, { client: createAPIClient(vi.fn()), state, enabled: false });
     const search = screen.getByRole('searchbox', { name: 'Search everything' });
@@ -211,7 +212,7 @@ describe('AppShell', () => {
 
 
   it('does not steal table shortcuts from editable controls', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
     render(AppShell, { client: createAPIClient(vi.fn()), state, enabled: false });
     const search = screen.getByRole('searchbox', { name: 'Search everything' });
@@ -225,7 +226,7 @@ describe('AppShell', () => {
 
 
   it('commits workspace navigation to URL history', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
     const push = vi.spyOn(window.history, 'pushState');
     render(AppShell, { client: createAPIClient(vi.fn()), state, enabled: false });
@@ -239,7 +240,7 @@ describe('AppShell', () => {
 
 
   it('acknowledges history restoration immediately in a workspace without a result grid', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
     state.replaceTransient({
       workspace: 'settings', activeRow: 'message:stale',
@@ -259,7 +260,7 @@ describe('AppShell', () => {
 
 
   it('keeps the Kit theme toggle in sync with the session appearance override', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
     const rendered = render(AppShell, {
       client: createAPIClient(vi.fn()), state, enabled: false,
@@ -279,7 +280,7 @@ describe('AppShell', () => {
 
 
   it('restores the daemon theme after a temporary Kit theme selection', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
     const rendered = render(AppShell, {
       client: createAPIClient(vi.fn()), state, enabled: false,
@@ -299,7 +300,7 @@ describe('AppShell', () => {
 
 
   it('renders every archive management destination from primary navigation', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
       if (path.endsWith('/saved-views')) return Response.json({ saved_views: [] });
@@ -329,7 +330,7 @@ describe('AppShell', () => {
 
 
   it('presents the primary navigation tabs with Relationships first and People/Domains retired', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
     const rendered = render(AppShell, {
       client: createAPIClient(vi.fn<typeof fetch>(async () => Response.json(exploreResponse()))),
@@ -1939,7 +1940,7 @@ describe('AppShell', () => {
 
   it('debounces filename search typing into one committed state write', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const searchRequests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -1975,7 +1976,7 @@ describe('AppShell', () => {
 
   it('flushes a pending debounced filename patch before a MIME-filter navigation commits', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const searchRequests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -2021,7 +2022,7 @@ describe('AppShell', () => {
 
   it('discards a pending debounced filename patch on Back instead of letting it clobber restored state', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const searchRequests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -2057,7 +2058,7 @@ describe('AppShell', () => {
 
 
   it('drills a Files group into a canonical filter without opening a stale group selection', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const requests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -2098,7 +2099,7 @@ describe('AppShell', () => {
 
 
   it('clears a stale Everything sortNotice when the workspace changes', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const path = new URL(request.url).pathname;
@@ -2124,7 +2125,7 @@ describe('AppShell', () => {
 
 
   it('announces the End cap outside Everything in the files-shell grouped workspace', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let groupPostCount = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -2156,7 +2157,7 @@ describe('AppShell', () => {
 
 
   it('clears a stale Files End-cap notice when switching presentation to Everything, but not on mere paging', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let groupPostCount = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -2201,7 +2202,7 @@ describe('AppShell', () => {
 
 
   it('shares nested grouping between the context picker and command palette', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
     const rendered = render(AppShell, {
       client: createAPIClient(vi.fn()), state, enabled: false

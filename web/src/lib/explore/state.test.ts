@@ -28,9 +28,15 @@ describe('Explore URL state', () => {
       scrollAnchor: { key: 'message:7', offset: 10 },
     });
 
-    expect(search).toBe('?workspace=everything&mode=full_text');
+    // Besides the workspace and mode shorthand, an Everything link without
+    // date bounds carries only the marker that makes it explicit.
+    const parameters = new URLSearchParams(search);
+    expect([...parameters.keys()]).toEqual(['workspace', 'mode', 'explore']);
+    expect(parameters.get('workspace')).toBe('everything');
+    expect(parameters.get('mode')).toBe('full_text');
+    expect(JSON.parse(parameters.get('explore')!)).toEqual({ schemaVersion: 2, dateBoundsChosen: true });
     expect(parseExploreURLState(search)).toMatchObject({
-      workspace: 'everything', relationshipTarget: null, directoryQuery: '', fileFilenameQuery: '',
+      workspace: 'everything', relationshipTarget: null, directoryQuery: '', fileFilenameQuery: '', dateBoundsChosen: true,
     });
   });
 
@@ -1437,7 +1443,9 @@ describe('Everything date default', () => {
     expect(bounded.current.filters).toEqual([{ dimension: 'after', values: ['2020-01-01T00:00:00Z'] }]);
     bounded.destroy();
 
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything', filters: [] }))}`);
+    // An app-generated Everything link without bounds (as the serializer
+    // writes it) opens exactly as shared.
+    window.history.replaceState(null, '', `/${serializeExploreURLState({ ...defaultExploreURLState, workspace: 'everything', filters: [] })}`);
     const explicit = new ExploreState(window);
     expect(explicit.current.workspace).toBe('everything');
     expect(explicit.current.filters).toEqual([]);
@@ -1475,10 +1483,9 @@ describe('Everything date default after a reload', () => {
     expect(onEverything.current.filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
     onEverything.destroy();
 
-    // An explore payload is the user's view — its filters list stays as
-    // shared, even when empty.
-    window.history.replaceState(null, '', `/?workspace=everything&mode=full_text&explore=${
-      encodeURIComponent(JSON.stringify({ workspace: 'everything', filters: [] }))}`);
+    // A serialized Everything link is the user's view — its filters list
+    // stays as shared, even when empty.
+    window.history.replaceState(null, '', `/${serializeExploreURLState({ ...defaultExploreURLState, workspace: 'everything', filters: [] })}`);
     const allTime = new ExploreState(window);
     expect(allTime.current.filters).toEqual([]);
     allTime.commitWorkspace('directory');
@@ -1507,11 +1514,25 @@ describe('Everything date default after a reload', () => {
     reopened.destroy();
 
     const bounds = [{ dimension: 'after' as const, values: ['2020-01-01T00:00:00Z'] }];
-    window.history.replaceState(null, '', `/?workspace=everything&mode=full_text&explore=${
-      encodeURIComponent(JSON.stringify({ workspace: 'everything', filters: bounds }))}`);
+    window.history.replaceState(null, '', `/${serializeExploreURLState({ ...defaultExploreURLState, workspace: 'everything', filters: bounds })}`);
     const shared = new ExploreState(window);
     expect(shared.current.filters).toEqual(bounds);
     shared.destroy();
+
+    // A drill from Files into Everything sets a non-date filter and no
+    // bounds; the link the app writes for it reopens cold without the
+    // default being added.
+    window.history.replaceState(null, '', '/');
+    const driller = new ExploreState(window);
+    driller.commitWorkspace('files');
+    driller.commitNavigation({ workspace: 'everything', filters: [{ dimension: 'source', values: ['2'] }] });
+    const drilled = window.location.search;
+    driller.destroy();
+    expect(new URLSearchParams(drilled).get('explore')).toContain('"dateBoundsChosen":true');
+    window.history.replaceState(null, '', `/${drilled}`);
+    const cold = new ExploreState(window);
+    expect(cold.current.filters).toEqual([{ dimension: 'source', values: ['2'] }]);
+    cold.destroy();
 
     // A bare cold load still gets the default.
     window.history.replaceState(null, '', '/');

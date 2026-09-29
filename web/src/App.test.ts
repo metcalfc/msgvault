@@ -6,6 +6,7 @@ import { createAPIClient } from './lib/api/client';
 import { createSessionController } from './lib/api/session.svelte';
 import { SEARCH_MODE_PREFERENCE_KEY } from './lib/search/modes';
 import { chooseSelectOption } from './test/kit-ui';
+import { exploreLink } from './test/explore-url';
 describe('application foundation', () => {
   it('mounts the Relationships landmark once bootstrap succeeds', async () => {
     const session = createSessionController(async () =>
@@ -186,10 +187,13 @@ describe('application foundation', () => {
     'starts in the configured default search mode %s when URL and browser preference are silent',
     async (configured, expectedLabel) => {
       localStorage.removeItem(SEARCH_MODE_PREFERENCE_KEY);
+      // This URL must stay silent about the mode (the serializer always
+      // writes ?mode=), so it is written by hand with the bounds marker an
+      // app-generated Everything link carries.
       window.history.replaceState(
         null,
         '',
-        `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`,
+        `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything', dateBoundsChosen: true }))}`,
       );
       const fetchFn = vi.fn<typeof fetch>(async (input) => {
         const request = input instanceof Request ? input : new Request(input);

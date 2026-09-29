@@ -582,6 +582,13 @@ export function serializeExploreURLState(state: ExploreURLState, baseSearch = ''
   // An explicit mode keeps a shared link independent of browser preferences.
   parameters.set('mode', normalized.searchMode);
   const details = sharedDetails(normalized);
+  // Any app-generated Everything link is the user's view: one without date
+  // bounds (All time, or a drill that set none) carries the marker so a
+  // cold open never adds the seven-day default to it. Bare "/" and links
+  // to other workspaces carry nothing and still get the default.
+  if (normalized.workspace === 'everything' && !normalized.filters.some((filter) => isDateDimension(filter.dimension))) {
+    details.dateBoundsChosen = true;
+  }
   if (Object.keys(details).length === 0) parameters.delete(STATE_PARAMETER);
   else parameters.set(STATE_PARAMETER, JSON.stringify({ schemaVersion: normalized.schemaVersion, ...details }));
   return `?${parameters.toString()}`;
@@ -650,29 +657,17 @@ export class ExploreState {
   }
 
   /** The user's own Everything view, to which no default bounds are added:
-   * a restored history entry, date bounds in the filters, the
-   * dateBoundsChosen marker an "All time" view serializes to, or an
-   * explore payload that names Everything as its workspace (a drilled or
-   * shared Everything link). A Directory or Operations deep link is not
-   * an Everything view, and the app's always-emitted ?workspace= and
-   * ?mode= shorthand on its own is not explicit either, so the seven-day
-   * default still applies on the first entry into Everything from those. */
+   * a restored history entry, date bounds in the filters, or the
+   * dateBoundsChosen marker (which every app-generated Everything link
+   * without bounds carries, see serializeExploreURLState). A Directory or
+   * Operations deep link is not an Everything view, and the app's
+   * always-emitted ?workspace= and ?mode= shorthand on its own is not
+   * explicit either, so the seven-day default still applies on the first
+   * entry into Everything from those. */
   private hasExplicitState(): boolean {
     const history = this.browser.history.state;
     if (isRecord(history) && isRecord(history.exploreState)) return true;
-    if (this.current.dateBoundsChosen || this.current.filters.some((filter) => isDateDimension(filter.dimension))) {
-      return true;
-    }
-    const search = this.browser.location.search;
-    const parameters = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-    const payload = parameters.get(STATE_PARAMETER);
-    if (!payload) return false;
-    try {
-      const parsed: unknown = JSON.parse(payload);
-      return isRecord(parsed) && parsed.workspace === 'everything';
-    } catch {
-      return false;
-    }
+    return this.current.dateBoundsChosen || this.current.filters.some((filter) => isDateDimension(filter.dimension));
   }
 
   /** The seven-day default, applied once per session to an Everything view

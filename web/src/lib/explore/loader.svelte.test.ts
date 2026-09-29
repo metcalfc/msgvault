@@ -5,6 +5,7 @@ import { createAPIClient } from '../api/client';
 import { ExploreLoader, type ExploreLoaderCallbacks } from './loader.svelte';
 import { LOAD_THROUGH_END_MAX_PAGES } from './paging';
 import { ExploreState } from './state.svelte';
+import { exploreLink } from '../../test/explore-url';
 
 function exploreResponse(overrides: Record<string, unknown> = {}) {
   return {
@@ -75,7 +76,7 @@ function setup(
 
 describe('ExploreLoader', () => {
   it('issues exactly one fetch for one filter commit', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let exploreCount = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
@@ -97,7 +98,7 @@ describe('ExploreLoader', () => {
   });
 
   it('does not refetch when an equal-content filters array replaces the current one by reference', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let exploreCount = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
@@ -119,7 +120,7 @@ describe('ExploreLoader', () => {
   });
 
   it('caps loadThroughEnd at LOAD_THROUGH_END_MAX_PAGES and reports a paging notice', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let explorePostCount = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
@@ -145,7 +146,7 @@ describe('ExploreLoader', () => {
   });
 
   it('clears the paging notice once a later loadThroughEnd reaches the true end', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let explorePostCount = 0;
     const totalPages = 1 + LOAD_THROUGH_END_MAX_PAGES + 2;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
@@ -175,7 +176,7 @@ describe('ExploreLoader', () => {
   });
 
   it('walks cursor pages during restoration until the durable selected row becomes visible', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let explorePostCount = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
@@ -204,7 +205,7 @@ describe('ExploreLoader', () => {
   });
 
   it('keeps loaded rows and retries the same cursor after a transient load-more failure', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const cursorsSeen: (string | undefined)[] = [];
     let cursorCalls = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
@@ -242,7 +243,7 @@ describe('ExploreLoader', () => {
   });
 
   it('does not flip the global unavailable state when a cursor page returns 503', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input as Request;
       if (new URL(request.url).pathname !== '/api/v1/explore') return Response.json(exploreResponse());
@@ -276,7 +277,7 @@ describe('ExploreLoader', () => {
 
   it('automatically retries the initial view when the analytical cache finishes building', async () => {
     vi.useFakeTimers();
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let calls = 0;
     const fetchFn = vi.fn<typeof fetch>(async () => {
       calls += 1;
@@ -312,7 +313,7 @@ describe('ExploreLoader', () => {
   });
 
   it('keeps loaded groups and retries the same grouped cursor after a failure', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let cursorCalls = 0;
     const group = (index: number) => ({
       key: String(index), label: `Group ${index}`, count: index,
@@ -350,7 +351,7 @@ describe('ExploreLoader', () => {
   });
 
   it('keeps a terminal authority-change failure inline while dropping the cursor', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input as Request;
       if (new URL(request.url).pathname !== '/api/v1/explore') return Response.json(exploreResponse());
@@ -379,7 +380,7 @@ describe('ExploreLoader', () => {
   });
 
   it('leaves initial-load failures on the global error state', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input as Request;
       if (new URL(request.url).pathname !== '/api/v1/explore') return Response.json(exploreResponse());
@@ -397,7 +398,7 @@ describe('ExploreLoader', () => {
   });
 
   it('ignores a superseded cursor-page failure', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let rejectCursorPage: ((cause: Error) => void) | undefined;
     let exploreCalls = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
@@ -435,7 +436,7 @@ describe('ExploreLoader', () => {
   });
 
   it('clears stale rows and result the moment a fresh predicate load starts', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let resolveSecond: ((response: Response) => void) | undefined;
     let exploreCalls = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
@@ -472,7 +473,7 @@ describe('ExploreLoader', () => {
   });
 
   it('ignores a superseded fresh-load response that resolves after a newer predicate load', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let resolveFirst: ((response: Response) => void) | undefined;
     let exploreCalls = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
@@ -504,7 +505,7 @@ describe('ExploreLoader', () => {
   });
 
   it('exhausts finite pages once when a distinct selected row is missing', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let explorePostCount = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const path = new URL(input instanceof Request ? input.url : String(input)).pathname;

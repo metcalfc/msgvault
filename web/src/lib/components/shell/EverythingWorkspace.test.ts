@@ -7,6 +7,7 @@ import { createAPIClient } from '../../api/client';
 import { LOAD_THROUGH_END_MAX_PAGES } from '../../explore/paging';
 import { ExploreState, parseExploreURLState } from '../../explore/state.svelte';
 import AppShell from './AppShell.svelte';
+import { exploreLink } from '../../../test/explore-url';
 
 function exploreResponse(overrides: Record<string, unknown> = {}) {
   return {
@@ -60,7 +61,7 @@ describe('EverythingWorkspace', () => {
   }
 
   it('explains how to refine a semantic search when the candidate pool is capped', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
       if (path.endsWith('/coverage')) return Response.json({
@@ -93,7 +94,7 @@ describe('EverythingWorkspace', () => {
   });
 
   it('keeps requested Semantic mode selected while showing incomplete coverage and a search error', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const path = new URL(request.url).pathname;
@@ -117,7 +118,7 @@ describe('EverythingWorkspace', () => {
 
   it('polls initializing semantic coverage until it reaches a terminal state', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let coverageCalls = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
@@ -148,7 +149,7 @@ describe('EverythingWorkspace', () => {
 
   it('polls a structured cache-building coverage response until coverage is ready', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let coverageCalls = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
@@ -182,7 +183,7 @@ describe('EverythingWorkspace', () => {
 
   it('backs off exponentially while semantic coverage stays initializing', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let coverageCalls = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
@@ -220,7 +221,7 @@ describe('EverythingWorkspace', () => {
 
   it('resets the poll backoff after a coverage error so a later retry starts at 1s again', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let coverageCalls = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
@@ -269,7 +270,7 @@ describe('EverythingWorkspace', () => {
 
   it('does not install a coverage poll after an aborted request settles during teardown', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let resolveCoverage!: (response: Response) => void;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
@@ -298,7 +299,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('runs a full rebuild for stale coverage and refreshes the named status after completion', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const requests: Request[] = [];
     let coverageCalls = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
@@ -347,7 +348,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('surfaces a streamed build failure without switching the requested mode', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const path = new URL(request.url).pathname;
@@ -378,7 +379,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('uses selection preflight as the sole authority for shell actions', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const preflightRequests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -417,7 +418,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('downloads the exact server-authorized raw message export target', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const requests: Request[] = [];
     const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:raw-message');
     const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
@@ -459,7 +460,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('exports exact explicit meeting row keys retained while later pages load', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const contextRequests: Request[] = [];
     let resolveNext!: (response: Response) => void;
     let pageRequests = 0;
@@ -538,7 +539,7 @@ describe('EverythingWorkspace', () => {
   });
 
   it('passes all-matching exclusions and full search authority to meeting context unchanged', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const preflightSelections: unknown[] = [];
     let contextSelection: unknown;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
@@ -599,7 +600,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('records a transient scroll anchor without refetching the durable predicate', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const requests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -648,7 +649,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('does not refetch when an equal-content filters array replaces the current one by reference', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const requests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -678,7 +679,7 @@ describe('EverythingWorkspace', () => {
 
   it('debounces rapid visible conversation churn into one exact-count request', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const countRequests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -723,7 +724,7 @@ describe('EverythingWorkspace', () => {
 
   it('keeps a cached exact lexical match count across a workspace round-trip away from Everything and back', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let matchCountCalls = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -769,7 +770,7 @@ describe('EverythingWorkspace', () => {
   });
 
   it('refetches a persisted group reading-pane detail after the analytical cache rebuilds', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let cacheRevision = 'cache-1';
     let count = 12;
     let label = 'Group Seven v1';
@@ -827,7 +828,7 @@ describe('EverythingWorkspace', () => {
 
   it('aborts an in-flight exact-count request on visible churn and on destroy', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const countSignals: AbortSignal[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -867,7 +868,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('uses one analytical context for grouped, timeline, and files presentations', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const requests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -949,7 +950,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('renders dense group rows and drills a supported dimension into entry filters', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const requests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -995,7 +996,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('drills and selects a People group during semantic search end-to-end', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const requests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -1077,7 +1078,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('aborts superseded and destroyed requests without destroying injected state', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const signals: AbortSignal[] = [];
     const fetchFn = vi.fn<typeof fetch>((input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -1127,7 +1128,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('loads cursor pages from grid interaction and deduplicates stable server keys', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const requests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -1307,7 +1308,10 @@ describe('EverythingWorkspace', () => {
       presentation: 'table', sort: [{ field: 'occurred_at', direction: 'desc' }],
       columns: ['kind', 'people', 'title', 'excerpt', 'time', 'attachments'], columnWidths: {},
       activeRow: null, selectedRow: 'group:participant:42', inspectorPinned: true,
-      conversationAnchor: null, scrollAnchor: null
+      conversationAnchor: null, scrollAnchor: null,
+      // A legacy payload written by hand; the marker keeps the seven-day
+      // default out of a test that is about selection rehydration.
+      dateBoundsChosen: true
     };
     window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify(initialState))}`);
     const groupRequests: Request[] = [];
@@ -1538,7 +1542,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('aborts superseded aggregate detail restoration and ignores a late stale response', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const pending: Array<{
       request: Request;
       resolve: (response: Response) => void;
@@ -1585,7 +1589,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('rejects a cursor page whose committed cache revision changed', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const body = await request.clone().json();
@@ -1612,7 +1616,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('stops End cursor draining after a network error without automatic retry', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const body = await request.clone().json();
@@ -1737,7 +1741,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('stops End cursor draining at a page-level cache-unavailable response', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const body = await request.clone().json();
@@ -1763,7 +1767,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('stops End cursor draining after a repeated cursor without retrying forever', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const requests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -1789,7 +1793,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('stops End when an advancing cursor page adds no new stable keys', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const requests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -1815,7 +1819,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('caps End at LOAD_THROUGH_END_MAX_PAGES pages per press', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let explorePostCount = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -1845,7 +1849,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('clears the End pause notice once a later press reaches the true end', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let explorePostCount = 0;
     const totalPages = 1 + LOAD_THROUGH_END_MAX_PAGES + 2;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
@@ -1932,7 +1936,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('joins an in-flight cursor request before End continues draining', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const requests: Request[] = [];
     let resolveSecond: ((response: Response) => void) | undefined;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
@@ -1964,7 +1968,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('accepts search provenance with canonical field order across cursor pages', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const body = await request.clone().json();
@@ -1987,7 +1991,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('renders grouped cache failure as a named retry panel instead of empty groups', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let calls = 0;
     const fetchFn = vi.fn<typeof fetch>(async () => {
       calls += 1;
@@ -2011,7 +2015,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('clears stale group rows while a changed grouping request is loading', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let resolveNext: ((response: Response) => void) | undefined;
     let calls = 0;
     const fetchFn = vi.fn<typeof fetch>(async () => {
@@ -2039,7 +2043,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('restores the durable grouped active key and scroll anchor after drill Back', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const groupRows = Array.from({ length: 30 }, (_, index) => ({
       key: String(index + 1), label: `Source ${index + 1}`, count: index + 1,
       estimated_bytes: 42, latest_at: '2026-07-18T12:00:00Z'
@@ -2074,7 +2078,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('restores an inspected drilled group across Back and Forward after grouped rows are cleared', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const path = new URL(request.url).pathname;
@@ -2223,7 +2227,7 @@ describe('EverythingWorkspace', () => {
       { dimension: 'before', values: ['2027-01-01T00:00:00Z'] }
     ]]
   ] as const)('drills %s groups into a changed URL predicate', async (dimension, key, expectedFilters) => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       if (new URL(request.url).pathname.endsWith('/groups')) return Response.json({
@@ -2252,7 +2256,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('removes all-matching promotion while a newer predicate generation is loading', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     let resolveNext: ((response: Response) => void) | undefined;
     let calls = 0;
     const fetchFn = vi.fn<typeof fetch>(async () => {
@@ -2285,7 +2289,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('opens, resizes, and closes the bottom reading pane with size persistence and focus restoration', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     window.localStorage.removeItem('msgvault.reading-pane.size');
     const fetchFn = vi.fn<typeof fetch>(async () => Response.json(exploreResponse({
       rows: [entry(1), entry(2)], total_count: 2
@@ -2323,7 +2327,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('carries the in-thread anchor in the URL by replacement so Back/Forward restore the same message', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const row = { ...entry(1), anchor_message_id: 1, conversation_id: 7 };
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -2387,7 +2391,7 @@ describe('EverythingWorkspace', () => {
 
 
   it('suspends application shortcuts inside editable reading-pane content and keeps reader navigation live outside it', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async () => Response.json(exploreResponse({
       rows: [entry(1), entry(2)], total_count: 2
     })));
@@ -2473,7 +2477,7 @@ describe('EverythingWorkspace', () => {
   });
 
   it.each(['semantic', 'hybrid'] as const)('discloses active-only scope for %s entry, group, and file results', async (searchMode) => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const path = new URL(request.url).pathname;
@@ -2517,7 +2521,7 @@ describe('EverythingWorkspace', () => {
   });
 
   it('shows no deletion-scope notice when a lexical response declares none', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const path = new URL(request.url).pathname;
