@@ -96,7 +96,15 @@
       if (current !== generation || controller.signal.aborted) return;
       items = [];
       truncated = false;
-      error = cause instanceof Error ? cause.message : 'Task service is unavailable';
+      const message = cause instanceof Error ? cause.message : 'Task service is unavailable';
+      // A status request that threw never resolved the integration state:
+      // say so in the one quiet line instead of rendering nothing.
+      if (integrationState === 'loading') {
+        integrationState = 'unreachable';
+        integrationMessage = message;
+        return;
+      }
+      error = message;
     } finally {
       if (current === generation) loading = false;
     }

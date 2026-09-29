@@ -210,6 +210,23 @@ describe('PersonAgenda', () => {
     expect((screen.getByRole('button', { name: 'Unlink Ask' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it('renders one quiet line when the status request itself fails', async () => {
+    const requests: Request[] = [];
+    const client = createAPIClient(vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      requests.push(request);
+      if (isStatus(request)) throw new TypeError('network down');
+      return Response.json({ project: 'msgvault', items: [item('one', 'Ask')] });
+    }));
+
+    render(PersonAgenda, { client, personID: 7 });
+    expect(await screen.findByText('Agenda unavailable: network down')).toBeDefined();
+    expect(screen.queryByRole('heading', { name: 'Agenda' })).toBeNull();
+    expect(screen.queryByLabelText('New agenda item')).toBeNull();
+    // The list route is never requested while the status is unknown.
+    expect(requests.every(isStatus)).toBe(true);
+  });
+
   it('renders one quiet line while the Kata API is incompatible, then enables mutations', async () => {
     let compatible = false;
     const client = createAPIClient(vi.fn<typeof fetch>(async (input) => {
