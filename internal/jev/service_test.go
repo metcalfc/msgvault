@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -132,10 +133,12 @@ func TestServiceJudgeSendsExactPolicyOnlyWhenEveryGatePasses(t *testing.T) {
 	cfg := serviceConfig(server.URL)
 	consents := &fakeConsents{active: map[string]string{}}
 	credential := "secret-key"
+	var credentialReads atomic.Int32
 	service, err := NewService(ServiceOptions{
 		Config:   func() (Config, error) { return cfg, nil },
 		Consents: consents,
 		Credential: func(endpoint, apiKeyEnv string) (string, bool, error) {
+			credentialReads.Add(1)
 			assert.Equal(server.URL, endpoint)
 			assert.Equal(DefaultAPIKeyEnv, apiKeyEnv)
 			return credential, credential != "", nil
@@ -159,9 +162,11 @@ func TestServiceJudgeSendsExactPolicyOnlyWhenEveryGatePasses(t *testing.T) {
 	assert.Equal("manual_only", Skipped(err))
 	assert.Empty(*recorded, "automatic callers need automatic = true")
 
+	credentialReads.Store(0)
 	response, err := service.Judge(context.Background(), testSpec(), false, state, time.Time{})
 	require.NoError(err)
 	assert.InDelta(0.93, response.Answers["same"].Noul, 1e-9)
+	assert.Equal(int32(1), credentialReads.Load(), "one judgment reads the credential store once")
 	require.Len(*recorded, 1)
 	sent := (*recorded)[0]
 	assert.Equal("Bearer secret-key", sent.Authorization)

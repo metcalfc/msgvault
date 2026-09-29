@@ -155,71 +155,82 @@ func (s *Service) Policy(spec FeatureSpec) (Policy, error) {
 	return spec.Policy(cfg)
 }
 
+// clearance is everything one passed gate resolved: the configuration and
+// policy the request runs under and the credential it sends. Judge reuses it
+// so the credential store and the fingerprint are read once per request.
+type clearance struct {
+	config Config
+	policy Policy
+	key    string
+}
+
 // Check reports whether the feature may send right now and returns the
 // policy the request would run under. automatic marks unattended callers.
 func (s *Service) Check(ctx context.Context, spec FeatureSpec, automatic bool) (Policy, error) {
+	cleared, err := s.check(ctx, spec, automatic)
+	return cleared.policy, err
+}
+
+// check runs every gate once and hands back what it resolved. On error the
+// policy is still returned when it could be computed, so callers can report
+// the fingerprint consent is missing for.
+func (s *Service) check(ctx context.Context, spec FeatureSpec, automatic bool) (clearance, error) {
 	if s == nil {
-		return Policy{}, errServiceUnavailable
+		return clearance{}, errServiceUnavailable
 	}
 	cfg, err := s.options.Config()
 	if err != nil {
-		return Policy{}, fmt.Errorf("%w: %w", ErrPolicyUnavailable, err)
+		return clearance{}, fmt.Errorf("%w: %w", ErrPolicyUnavailable, err)
 	}
 	policy, err := spec.Policy(cfg)
 	if err != nil {
-		return Policy{}, fmt.Errorf("%w: %w", ErrPolicyUnavailable, err)
+		return clearance{}, fmt.Errorf("%w: %w", ErrPolicyUnavailable, err)
 	}
+	cleared := clearance{config: cfg, policy: policy}
 	if !cfg.Enabled {
-		return policy, ErrDisabled
+		return cleared, ErrDisabled
 	}
 	feature, known := cfg.FeatureConfigFor(spec.Name)
 	if !known {
-		return policy, fmt.Errorf("%w: %s", ErrUnknownFeature, spec.Name)
+		return cleared, fmt.Errorf("%w: %s", ErrUnknownFeature, spec.Name)
 	}
 	if !feature.Enabled {
-		return policy, fmt.Errorf("%w: %s", ErrFeatureDisabled, spec.Name)
+		return cleared, fmt.Errorf("%w: %s", ErrFeatureDisabled, spec.Name)
 	}
 	if automatic && !feature.Automatic {
-		return policy, fmt.Errorf("%w: %s", ErrAutomaticDisabled, spec.Name)
+		return cleared, fmt.Errorf("%w: %s", ErrAutomaticDisabled, spec.Name)
 	}
-	if _, ok, err := s.options.Credential(cfg.Endpoint, cfg.APIKeyEnv); err != nil {
-		return policy, fmt.Errorf("%w: resolve credential: %w", ErrPolicyUnavailable, err)
-	} else if !ok {
-		return policy, ErrCredentialMissing
+	key, ok, err := s.options.Credential(cfg.Endpoint, cfg.APIKeyEnv)
+	if err != nil {
+		return cleared, fmt.Errorf("%w: resolve credential: %w", ErrPolicyUnavailable, err)
+	}
+	if !ok || key == "" {
+		return cleared, ErrCredentialMissing
 	}
 	active, err := s.options.Consents.HasActiveJevFeatureConsent(ctx, spec.Name, policy.Fingerprint)
 	if err != nil {
-		return policy, fmt.Errorf("%w: check consent: %w", ErrPolicyUnavailable, err)
+		return cleared, fmt.Errorf("%w: check consent: %w", ErrPolicyUnavailable, err)
 	}
 	if !active {
-		return policy, fmt.Errorf("%w (fingerprint %s)", ErrConsentRequired, policy.Fingerprint)
+		return cleared, fmt.Errorf("%w (fingerprint %s)", ErrConsentRequired, policy.Fingerprint)
 	}
-	return policy, nil
+	cleared.key = key
+	return cleared, nil
 }
 
 // Judge asks the feature's questions about one state. Every gate is
 // rechecked first; nothing leaves the process on any error. The state must
 // contain only the fields the spec discloses; that is the caller's contract.
 func (s *Service) Judge(ctx context.Context, spec FeatureSpec, automatic bool, state any, deadline time.Time) (Response, error) {
-	policy, err := s.Check(ctx, spec, automatic)
+	cleared, err := s.check(ctx, spec, automatic)
 	if err != nil {
 		return Response{}, err
 	}
-	cfg, err := s.options.Config()
-	if err != nil {
-		return Response{}, fmt.Errorf("%w: %w", ErrPolicyUnavailable, err)
-	}
-	key, ok, err := s.options.Credential(cfg.Endpoint, cfg.APIKeyEnv)
-	if err != nil {
-		return Response{}, fmt.Errorf("%w: resolve credential: %w", ErrPolicyUnavailable, err)
-	}
-	if !ok {
-		return Response{}, ErrCredentialMissing
-	}
-	client, err := s.clientFor(cfg, key)
+	client, err := s.clientFor(cleared.config, cleared.key)
 	if err != nil {
 		return Response{}, err
 	}
+	policy := cleared.policy
 	started := s.options.Now()
 	response, err := client.Ask(ctx, Request{
 		State: state, Questions: policy.Questions, Deadline: deadline, Feature: spec.Name,
