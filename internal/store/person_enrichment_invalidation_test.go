@@ -565,8 +565,12 @@ func enrichmentInvalidationProviderIDs(
 	t *testing.T, st *Store, personID int64, namespace string,
 ) []string {
 	t.Helper()
-	ids, err := st.LoadProviderPersonIDs(t.Context(), personID, namespace)
+	identities, err := st.LoadProviderPersonIDs(t.Context(), personID, namespace)
 	require.NoError(t, err)
+	ids := make([]string, len(identities))
+	for i, identity := range identities {
+		ids[i] = identity.ID
+	}
 	return ids
 }
 

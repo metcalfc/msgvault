@@ -273,7 +273,7 @@ func (w *Worker) processLease(
 			safeFailure(FailureTransient, 0, "", "provider identity state unavailable"))
 	}
 	authorization, err := w.gate.Authorize(ctx, EgressInput{
-		Request: request, Profile: profile, KnownProviderPersonIDs: knownIDs,
+		Request: request, Profile: profile, KnownProviderPersonIDs: providerPersonIDValues(knownIDs),
 	})
 	if err != nil {
 		switch {
@@ -337,7 +337,7 @@ func (w *Worker) beginAndStart(
 	config ProviderConfig,
 	provider Provider,
 	authorization Authorization,
-	knownIDs []string,
+	knownIDs []ProviderPersonID,
 	tokens *leaseTokenState,
 ) error {
 	guaranteed, ok := guaranteedCharge(ctx, provider, request, profileHasHardCostCap(profile))
@@ -414,7 +414,7 @@ func (w *Worker) resumeAttempt(
 	config ProviderConfig,
 	provider Provider,
 	authorization Authorization,
-	knownIDs []string,
+	knownIDs []ProviderPersonID,
 	tokens *leaseTokenState,
 ) error {
 	active := lease.ActiveAttempt
@@ -476,7 +476,7 @@ func (w *Worker) startAttempt(
 	profile ProviderProfile,
 	config ProviderConfig,
 	provider Provider,
-	knownIDs []string,
+	knownIDs []ProviderPersonID,
 ) error {
 	if err := w.work.AuthorizeAttemptDispatch(ctx, lease.Token); err != nil {
 		if errors.Is(err, ErrSuppressed) {
@@ -541,7 +541,7 @@ func (w *Worker) retryWithNameVariant(
 	profile ProviderProfile,
 	config ProviderConfig,
 	provider Provider,
-	knownIDs []string,
+	knownIDs []ProviderPersonID,
 	noEntity *NoEntityError,
 ) (Attempt, error) {
 	variants := NameVariants(request.Identity.Name)
@@ -551,7 +551,7 @@ func (w *Worker) retryWithNameVariant(
 	retryRequest := request
 	retryRequest.Identity.Name = variants[0]
 	_, checked, err := w.gate.suppressionDigests(EgressInput{
-		Request: retryRequest, Profile: profile, KnownProviderPersonIDs: knownIDs,
+		Request: retryRequest, Profile: profile, KnownProviderPersonIDs: providerPersonIDValues(knownIDs),
 	})
 	if err != nil {
 		return Attempt{}, noEntity
@@ -665,7 +665,7 @@ func (w *Worker) pollAttempt(
 	profile ProviderProfile,
 	config ProviderConfig,
 	provider Provider,
-	knownIDs []string,
+	knownIDs []ProviderPersonID,
 ) error {
 	active := lease.ActiveAttempt
 	if err := validateDurablePollAttempt(active); err != nil {
@@ -769,14 +769,11 @@ func (w *Worker) completeAttempt(
 	lease WorkLease,
 	request Request,
 	profile ProviderProfile,
-	knownIDs []string,
+	knownIDs []ProviderPersonID,
 	result Result,
 ) error {
-	verified := make([]ProviderPersonID, len(knownIDs))
-	for i, id := range knownIDs {
-		verified[i] = ProviderPersonID{ID: id}
-	}
-	assessment := w.assessIdentity(ctx, request, result, verified)
+	assessment := w.assessIdentity(ctx, request, result, knownIDs)
+	result = StampIdentityConfidence(assessment, result)
 	commit, err := NewClaimCommit(ClaimCommitInput{
 		AttemptID: lease.Token.AttemptID, RunID: lease.RunID, PersonID: lease.PersonID,
 		LeaseFence: lease.Token.Fence, ProfileFingerprint: lease.ProfileFingerprint,

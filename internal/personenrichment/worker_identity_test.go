@@ -447,3 +447,69 @@ func TestWorkerSkipsTheNameVariantRetryWhenTheRequestCapWouldBeExceeded(t *testi
 	assert.Equal(int64(1), runRequestsStarted(t, f), "a refused retry counts nothing")
 	assert.Equal(int64(1), nameCompanyIdentifierCount(t, f, attempt.ID), "only the consented identity was recorded")
 }
+
+// runAnotherAttempt enqueues the fixture person again under a new trigger
+// generation and returns the attempt the worker made for it.
+func runAnotherAttempt(t *testing.T, f *workerFixture, factories map[string]personenrichment.ProviderFactory,
+	configs map[string]personenrichment.ProviderConfig, judge personenrichment.IdentityJudge, generation string,
+) store.PersonEnrichmentAttempt {
+	t.Helper()
+	require.NoError(t, f.store.PutPersonEnrichmentWorkContext(t.Context(), store.PersonEnrichmentWorkInput{
+		PersonID: f.person.ID, ProfileFingerprint: f.profile.Fingerprint,
+		Trigger: personenrichment.Trigger{Kind: personenrichment.TriggerTracked, Generation: generation},
+		DueAt:   f.now,
+	}))
+	options := f.options(configs)
+	options.IdentityJudge = judge
+	worker, err := personenrichment.NewWorker(f.store, f.store, f.gate(t, func(string) (string, bool) { return "test-key", true }), factories, options)
+	require.NoError(t, err)
+	processed, err := worker.RunOnce(t.Context(), f.run.ID)
+	require.NoError(t, err)
+	require.True(t, processed)
+	attempts, err := f.store.ListPersonEnrichmentAttemptsContext(t.Context(), store.PersonEnrichmentAttemptFilter{
+		PersonID: f.person.ID, RunID: f.run.ID, Limit: 10,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, attempts)
+	latest := attempts[0]
+	for _, attempt := range attempts[1:] {
+		if attempt.ID > latest.ID {
+			latest = attempt
+		}
+	}
+	return latest
+}
+
+func TestWorkerStoresASemanticAcceptanceAtItsScoreAndOnlyVerifiedIDsSkipTheCheck(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	f, factories, configs := partialIdentityFixture(t, "exa-second-run", "priya ramanathan", "example capital",
+		personenrichment.ReturnedIdentity{
+			Name: "Priya R.", CurrentRoles: []personenrichment.ReturnedRole{{Title: "Partner", Company: "Example Capital"}},
+		},
+		personenrichment.IdentityMatch{Class: personenrichment.IdentifierCurrentCompany, Value: "Example Capital", Confidence: 900},
+	)
+	seedNameAndCompany(t, f, "Priya Ramanathan", "Example Capital")
+	first := runPartialIdentityCase(t, f, factories, configs,
+		&fixedJudge{nameCompatible: 0.95, companySame: 0.99, nameConflict: 0.02})
+	require.Equal("succeeded", first.State)
+	stored, err := f.store.LoadProviderPersonIDs(t.Context(), f.person.ID, f.profile.ProviderNamespace)
+	require.NoError(err)
+	assert.Equal([]personenrichment.ProviderPersonID{{
+		ID: "provider-person-partial", Confidence: personenrichment.SemanticIdentityScore,
+	}}, stored, "a semantic acceptance is stored at the score it was accepted with, not zero")
+
+	unavailable := &fixedJudge{err: jev.ErrBreakerOpen}
+	second := runAnotherAttempt(t, f, factories, configs, unavailable, "revision:2")
+	assert.NotEqual(first.ID, second.ID)
+	assert.Equal("succeeded", second.State, "an ID verified at the semantic score is trusted on the next attempt")
+	assert.Empty(unavailable.reviews, "the verified ID answers before any judgment is asked")
+
+	_, err = f.store.DB().ExecContext(t.Context(), f.store.Rebind(`UPDATE person_enrichment_provider_identities
+		SET confidence = 0 WHERE person_id = ?`), f.person.ID)
+	require.NoError(err)
+	third := runAnotherAttempt(t, f, factories, configs, nil, "revision:3")
+	assert.NotEqual(second.ID, third.ID)
+	assert.Equal("identity_rejected", third.State,
+		"an ID stored below the verified confidence does not skip the name and company check")
+}

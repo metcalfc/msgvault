@@ -39,7 +39,7 @@ type WorkStore interface {
 	ClaimWork(ctx context.Context, options ClaimOptions) (*WorkLease, error)
 	LoadProviderProfile(ctx context.Context, fingerprint string) (ProviderProfile, error)
 	LoadRequestInput(ctx context.Context, lease WorkLease) (RequestInput, error)
-	LoadProviderPersonIDs(ctx context.Context, personID int64, providerNamespace string) ([]string, error)
+	LoadProviderPersonIDs(ctx context.Context, personID int64, providerNamespace string) ([]ProviderPersonID, error)
 	RenewLease(ctx context.Context, token LeaseToken, until time.Time) error
 	ReleaseWork(ctx context.Context, token LeaseToken, release WorkRelease) error
 	BeginAttempt(ctx context.Context, token LeaseToken, start AttemptStart) (*DurableAttempt, bool, error)

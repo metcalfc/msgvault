@@ -364,11 +364,15 @@ func sha256Hex(value []byte) string {
 	return hex.EncodeToString(digest[:])
 }
 
+// AssessIdentity applies the exact identity rule. verified lists the
+// provider person IDs already attached to the person with the confidence they
+// were verified at; only an ID stored at VerifiedProviderPersonIDConfidence or
+// above short-circuits the name and company check.
 func AssessIdentity(request Request, result Result, verified []ProviderPersonID) IdentityAssessment {
 	verifiedIDs := make(map[string]struct{}, len(verified))
 	for _, candidate := range verified {
 		value := strings.TrimSpace(candidate.ID)
-		if value != "" {
+		if value != "" && candidate.Confidence >= VerifiedProviderPersonIDConfidence {
 			verifiedIDs[value] = struct{}{}
 		}
 	}

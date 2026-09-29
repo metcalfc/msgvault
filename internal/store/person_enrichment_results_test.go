@@ -250,7 +250,7 @@ func TestCommitEnrichmentClaimsAppliesAtomicallyAndReplaysRichResult(t *testing.
 
 	identities, err := f.store.LoadProviderPersonIDs(t.Context(), f.person.ID, f.profile.ProviderNamespace)
 	requirements.NoError(err)
-	checks.Equal([]string{"Opaque/Person:Case?part=1"}, identities)
+	checks.Equal([]personenrichment.ProviderPersonID{{ID: "Opaque/Person:Case?part=1", Confidence: 975}}, identities)
 	attempt, err := f.store.GetPersonEnrichmentAttemptContext(t.Context(), f.attempt.ID)
 	requirements.NoError(err)
 	checks.Equal("succeeded", attempt.State)
@@ -613,7 +613,7 @@ func TestPersonEnrichmentResultDeduplicatesMetadataAndPreservesOpaqueIDs(t *test
 	checks.Equal(int64(2), enrichmentTableCount(t, f.store, "person_enrichment_attempt_sources"))
 	identities, err := f.store.LoadProviderPersonIDs(t.Context(), f.person.ID, f.profile.ProviderNamespace)
 	requirements.NoError(err)
-	checks.Equal([]string{"Opaque ID/Not-A-URL:MiXeD?x=1#fragment"}, identities)
+	checks.Equal([]personenrichment.ProviderPersonID{{ID: "Opaque ID/Not-A-URL:MiXeD?x=1#fragment", Confidence: 901}}, identities)
 }
 
 func TestCommitEnrichmentClaimsReusesCitationAcrossAttempts(t *testing.T) {

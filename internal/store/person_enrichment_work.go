@@ -2270,9 +2270,11 @@ func valueEnvelopeActiveFrom(envelope ValueEnvelope) time.Time {
 	return envelope.CreatedAt.UTC()
 }
 
+// LoadProviderPersonIDs returns the provider person IDs attached to a person
+// in one namespace with the confidence each was verified at.
 func (s *Store) LoadProviderPersonIDs(
 	ctx context.Context, personID int64, providerNamespace string,
-) ([]string, error) {
+) ([]personenrichment.ProviderPersonID, error) {
 	if personID <= 0 || strings.TrimSpace(providerNamespace) == "" {
 		return nil, errors.New("provider identity lookup is invalid")
 	}
@@ -2280,7 +2282,7 @@ func (s *Store) LoadProviderPersonIDs(
 	if !ok || !validPersonEnrichmentProviderNamespace(providerNamespace, kind) {
 		return nil, errors.New("provider identity namespace is invalid")
 	}
-	rows, err := s.db.QueryContext(ctx, s.Rebind(`SELECT provider_person_id
+	rows, err := s.db.QueryContext(ctx, s.Rebind(`SELECT provider_person_id, confidence
 		FROM person_enrichment_provider_identities
 		WHERE person_id = ? AND provider_namespace = ?
 		ORDER BY provider_person_id`), personID, providerNamespace)
@@ -2288,10 +2290,10 @@ func (s *Store) LoadProviderPersonIDs(
 		return nil, fmt.Errorf("load provider person identities: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	identities := make([]string, 0)
+	identities := make([]personenrichment.ProviderPersonID, 0)
 	for rows.Next() {
-		var identity string
-		if err := rows.Scan(&identity); err != nil {
+		var identity personenrichment.ProviderPersonID
+		if err := rows.Scan(&identity.ID, &identity.Confidence); err != nil {
 			return nil, fmt.Errorf("scan provider person identity: %w", err)
 		}
 		identities = append(identities, identity)

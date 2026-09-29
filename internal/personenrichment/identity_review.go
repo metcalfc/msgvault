@@ -24,6 +24,11 @@ const (
 	// carries: the same as an exact name-and-company match, so the resolver's
 	// MinimumIdentityScore treats both alike.
 	SemanticIdentityScore = 900
+	// VerifiedProviderPersonIDConfidence is the lowest stored confidence at
+	// which a provider person ID attached to a person skips the identity
+	// check on a later attempt: the score of the weakest accepted match, an
+	// exact or semantic name-and-company match.
+	VerifiedProviderPersonIDConfidence = SemanticIdentityScore
 	// SemanticIdentityReason is the accepted assessment reason.
 	SemanticIdentityReason = "semantic_name_company"
 	// IdentityUncertainReason is the not-accepted assessment reason whose
@@ -225,6 +230,31 @@ func ApplyIdentityJudgment(assessment IdentityAssessment, judgment IdentityJudgm
 	default:
 		return assessment
 	}
+}
+
+// StampIdentityConfidence records a semantic acceptance on the result the
+// sink stores: the returned provider person IDs and the identity confidence
+// carry SemanticIdentityScore instead of the zero the exact rule left, so a
+// later attempt sees the ID as verified at the score it was accepted with.
+// Any other assessment returns the result unchanged.
+func StampIdentityConfidence(assessment IdentityAssessment, result Result) Result {
+	if !assessment.Accepted || assessment.Reason != SemanticIdentityReason {
+		return result
+	}
+	result.IdentityConfidence = max(result.IdentityConfidence, SemanticIdentityScore)
+	result.ProviderPersonIDs = slices.Clone(result.ProviderPersonIDs)
+	for i := range result.ProviderPersonIDs {
+		result.ProviderPersonIDs[i].Confidence = max(result.ProviderPersonIDs[i].Confidence, SemanticIdentityScore)
+	}
+	return result
+}
+
+func providerPersonIDValues(identities []ProviderPersonID) []string {
+	values := make([]string, len(identities))
+	for i, identity := range identities {
+		values[i] = identity.ID
+	}
+	return values
 }
 
 // Question IDs and state fields of the enrichment identity feature.

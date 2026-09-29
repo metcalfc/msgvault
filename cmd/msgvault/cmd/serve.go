@@ -3008,14 +3008,20 @@ func (a *storeAPIAdapter) personEnrichmentDeletionDigests(
 			return nil, 0, loadErr
 		}
 		for i := range providerIDs {
-			if err := appendDigest(namespace, personenrichment.SuppressionProviderPersonID, providerIDs[i]); err != nil {
-				clearPersonEnrichmentStrings(providerIDs)
+			if err := appendDigest(namespace, personenrichment.SuppressionProviderPersonID, providerIDs[i].ID); err != nil {
+				clearPersonEnrichmentProviderIDs(providerIDs)
 				return nil, 0, fmt.Errorf("normalize stored provider identity for deletion: %w", err)
 			}
 		}
-		clearPersonEnrichmentStrings(providerIDs)
+		clearPersonEnrichmentProviderIDs(providerIDs)
 	}
 	return digests, person.Revision, nil
+}
+
+func clearPersonEnrichmentProviderIDs(values []personenrichment.ProviderPersonID) {
+	for i := range values {
+		values[i].ID = ""
+	}
 }
 
 func clearPersonEnrichmentCandidates(values []personenrichment.IdentityCandidate) {

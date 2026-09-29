@@ -391,8 +391,14 @@ func TestAssessIdentityAcceptsOnlyExactStrongEvidenceOrNameCompanyThreshold(t *t
 		{
 			name:     "previously verified opaque provider ID exact bytes",
 			result:   personenrichment.Result{ProviderPersonIDs: []personenrichment.ProviderPersonID{{ID: " Provider/AbC "}}},
-			verified: []personenrichment.ProviderPersonID{{ID: "Provider/AbC"}},
+			verified: []personenrichment.ProviderPersonID{{ID: "Provider/AbC", Confidence: 900}},
 			want:     personenrichment.IdentityAssessment{Accepted: true, Score: 1000, Reason: "verified_provider_person_id"},
+		},
+		{
+			name:     "provider ID stored below the verified confidence",
+			result:   personenrichment.Result{ProviderPersonIDs: []personenrichment.ProviderPersonID{{ID: "Provider/AbC"}}},
+			verified: []personenrichment.ProviderPersonID{{ID: "Provider/AbC", Confidence: 899}},
+			want:     personenrichment.IdentityAssessment{Reason: "identity_not_verified"},
 		},
 		{
 			name:   "strong email exact after normalization",
@@ -410,7 +416,7 @@ func TestAssessIdentityAcceptsOnlyExactStrongEvidenceOrNameCompanyThreshold(t *t
 		{
 			name:     "provider ID case mismatch",
 			result:   personenrichment.Result{ProviderPersonIDs: []personenrichment.ProviderPersonID{{ID: "provider/abc"}}},
-			verified: []personenrichment.ProviderPersonID{{ID: "Provider/AbC"}},
+			verified: []personenrichment.ProviderPersonID{{ID: "Provider/AbC", Confidence: 1000}},
 			want:     personenrichment.IdentityAssessment{Reason: "identity_not_verified"},
 		},
 		{
