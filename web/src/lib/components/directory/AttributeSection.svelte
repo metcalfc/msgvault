@@ -336,7 +336,10 @@
         {/each}
       </ul>
 
-      <div class="field-actions" data-detail-actions="hover">
+      <!-- A field with no value has nothing else to show, so its Add (and
+           Reveal) actions stay visible; a field with values keeps them
+           quiet until the row is hovered or focused. -->
+      <div class="field-actions" data-detail-actions={field.current.length > 0 ? 'hover' : ''}>
         {#if field.definition.is_sensitive}
           <Button
             label={`${isRevealed(field.definition) ? 'Hide' : 'Reveal'} ${field.definition.label} values`}

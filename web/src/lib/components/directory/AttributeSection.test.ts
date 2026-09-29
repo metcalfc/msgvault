@@ -100,6 +100,12 @@ describe('AttributeSection', () => {
     expect(screen.queryByRole('heading', { name: 'Employer' })).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Show empty fields (1)' }));
     expect(screen.getByRole('heading', { name: 'Employer' })).toBeDefined();
+    // An empty field's Add action is its only affordance, so it stays visible
+    // without hover; a field with a value keeps its actions hover-revealed.
+    expect(screen.getByRole('button', { name: 'Add Employer value' }).closest('[data-detail-actions]')
+      ?.getAttribute('data-detail-actions')).toBe('');
+    expect(screen.getByRole('button', { name: 'Add Nickname value' }).closest('[data-detail-actions]')
+      ?.getAttribute('data-detail-actions')).toBe('hover');
     await fireEvent.click(screen.getByRole('button', { name: 'Hide empty fields' }));
     expect(screen.queryByRole('heading', { name: 'Employer' })).toBeNull();
   });
