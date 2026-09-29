@@ -326,15 +326,14 @@ func TestGetPersonWithClusterMemberIDsSpansIdentifiersAndMetricsAcrossCluster(t 
 	clustered, err := engine.GetPerson(context.Background(), primary, Context{}, []int64{primary, secondary})
 	requirements.NoError(err)
 	requirements.NotNil(clustered)
-	requirements.Len(clustered.Identifiers, 2, "with cluster member IDs, identifiers span every member")
-	byParticipant := map[int64]PersonIdentifier{}
+	// The alias's stored phone row and its own address both surface.
+	requirements.Len(clustered.Identifiers, 3, "with cluster member IDs, identifiers span every member")
+	kinds := map[int64][]string{}
 	for _, identifier := range clustered.Identifiers {
-		byParticipant[identifier.ParticipantID] = identifier
+		kinds[identifier.ParticipantID] = append(kinds[identifier.ParticipantID], identifier.Type)
 	}
-	requirements.Contains(byParticipant, primary)
-	requirements.Contains(byParticipant, secondary)
-	assertions.Equal("email", byParticipant[primary].Type)
-	assertions.Equal("phone", byParticipant[secondary].Type)
+	assertions.Equal([]string{"email"}, kinds[primary])
+	assertions.ElementsMatch([]string{"email", "phone"}, kinds[secondary])
 	// Metrics aggregate every member: counts, files, date range, and source
 	// coverage all include activity owned only by the linked alias, matching
 	// what the cluster-aware relationship timeline shows.
@@ -797,9 +796,10 @@ func TestGetPersonByAliasUsesCanonicalRelationshipTemperature(t *testing.T) {
 // address on the participant row only, with no participant_identifiers rows,
 // so search, the unfiltered list, and the person detail must all surface that
 // address as an identifier with provenance "participants" — never an empty
-// list. A participant that DOES have stored rows keeps exactly those, and a
-// linked cluster reports each member's own fallback, skipping any value a
-// stored row already covers.
+// list. A participant whose stored rows cover its address reports it once,
+// one whose stored rows cover only some of its addresses still surfaces the
+// rest, and a linked cluster reports each member's own fallback, skipping
+// any value a stored row already covers (phone numbers by digits).
 func TestPeopleIdentifiersFallBackToParticipantAddress(t *testing.T) {
 	assertions := assert.New(t)
 	requirements := require.New(t)
@@ -817,15 +817,24 @@ func TestPeopleIdentifiersFallBackToParticipantAddress(t *testing.T) {
 	// its fallback must not duplicate it.
 	b.AddParticipantIdentifier(clusterStored, "email", "alias@example.com", "alias@example.com", true)
 	b.LinkCluster(clusterPrimary, clusterAlias, clusterStored)
+	// A stored phone row does not hide the participant's own email.
+	mixed := b.AddParticipant("mixed@example.com", "example.com", "Mixed Rows")
+	b.AddParticipantIdentifier(mixed, "phone", "+15550100010", "+1 555 010 0010", true)
+	// A stored number written differently is still the same number.
+	formatted := b.AddPhoneParticipant("+1 (555) 010-0011", "Formatted Phone")
+	b.AddParticipantIdentifier(formatted, "phone", "+15550100011", "+15550100011", true)
 
 	start := time.Date(2026, 7, 10, 9, 0, 0, 0, time.UTC)
-	for i, participant := range []int64{emailOnly, stored, clusterPrimary, clusterAlias, clusterStored} {
+	for i, participant := range []int64{emailOnly, stored, clusterPrimary, clusterAlias, clusterStored, mixed} {
 		message := b.AddMessage(MessageOpt{SourceID: source, ConversationID: int64(700 + i), Subject: "mail", SentAt: start.Add(time.Duration(i) * time.Hour)})
 		b.AddFrom(message, participant, "")
 	}
 	chat := b.AddMessage(MessageOpt{SourceID: chatSource, ConversationID: 790, SentAt: start, MessageType: "imessage", ConversationType: "direct_chat"})
 	b.AddFrom(chat, phoneOnly, "Phone Only")
 	b.AddConversationParticipant(790, phoneOnly)
+	formattedChat := b.AddMessage(MessageOpt{SourceID: chatSource, ConversationID: 791, SentAt: start, MessageType: "imessage", ConversationType: "direct_chat"})
+	b.AddFrom(formattedChat, formatted, "Formatted Phone")
+	b.AddConversationParticipant(791, formatted)
 	engine := b.BuildEngine()
 	ctx := context.Background()
 
@@ -839,11 +848,21 @@ func TestPeopleIdentifiersFallBackToParticipantAddress(t *testing.T) {
 	wantEmailOnly := []PersonIdentifier{{Type: "email", Value: "mail-only@example.com", DisplayValue: "mail-only@example.com", IsPrimary: true, Provenance: "participants", ParticipantID: emailOnly}}
 	wantStored := []PersonIdentifier{{Type: "email", Value: "stored@example.com", DisplayValue: "Stored <stored@example.com>", IsPrimary: true, Provenance: "participant_identifiers", ParticipantID: stored}}
 	wantPhoneOnly := []PersonIdentifier{{Type: "phone", Value: "+15550100009", DisplayValue: "+15550100009", IsPrimary: true, Provenance: "participants", ParticipantID: phoneOnly}}
+	// clusterStored has a stored row (for the alias's address) but not for
+	// its own address, which still surfaces from the participant row.
 	wantCluster := []PersonIdentifier{
 		{Type: "email", Value: "alias@example.com", DisplayValue: "alias@example.com", IsPrimary: true, Provenance: "participant_identifiers", ParticipantID: clusterStored},
+		{Type: "email", Value: "covered@example.com", DisplayValue: "covered@example.com", IsPrimary: true, Provenance: "participants", ParticipantID: clusterStored},
 		{Type: "email", Value: "primary@example.com", DisplayValue: "primary@example.com", IsPrimary: true, Provenance: "participants", ParticipantID: clusterPrimary},
 	}
 
+	wantMixed := []PersonIdentifier{
+		{Type: "email", Value: "mixed@example.com", DisplayValue: "mixed@example.com", IsPrimary: true, Provenance: "participants", ParticipantID: mixed},
+		{Type: "phone", Value: "+15550100010", DisplayValue: "+1 555 010 0010", IsPrimary: true, Provenance: "participant_identifiers", ParticipantID: mixed},
+	}
+	wantFormatted := []PersonIdentifier{
+		{Type: "phone", Value: "+15550100011", DisplayValue: "+15550100011", IsPrimary: true, Provenance: "participant_identifiers", ParticipantID: formatted},
+	}
 	for name, request := range map[string]PersonSearchRequest{
 		"unfiltered list": {Page: PageSpec{Limit: 25}},
 		"filtered search": {Explore: ExploreRequest{Context: Context{SourceIDs: []int64{source, chatSource}}}, Page: PageSpec{Limit: 25}},
@@ -851,7 +870,9 @@ func TestPeopleIdentifiersFallBackToParticipantAddress(t *testing.T) {
 		result, err := engine.SearchPeople(ctx, request)
 		requirements.NoError(err, name)
 		rows := byID(result.Rows)
-		requirements.Len(rows, 4, name)
+		requirements.Len(rows, 6, name)
+		assertions.Equal(wantMixed, rows[mixed].Identifiers, "%s: a stored phone row does not hide the participant's email", name)
+		assertions.Equal(wantFormatted, rows[formatted].Identifiers, "%s: a differently written stored number is not repeated", name)
 		assertions.Equal(wantEmailOnly, rows[emailOnly].Identifiers, "%s: email-only participant falls back to its address", name)
 		assertions.Equal(wantStored, rows[stored].Identifiers, "%s: stored rows are reported once, with no fallback duplicate", name)
 		assertions.Equal(wantPhoneOnly, rows[phoneOnly].Identifiers, "%s: phone-only participant falls back to its number", name)

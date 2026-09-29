@@ -819,29 +819,33 @@ func sqlInt64ListLiteral(ids []int64) string {
 // cluster member participant IDs.
 //
 // Stored identifier rows (provenance participant_identifiers) come first.
-// A member with NO stored identifier rows at all — every email participant
-// the message importers create, since they record the address on the
-// participant row only — contributes its own email_address and phone_number
-// with provenance "participants" instead, so an email-only person is never
-// reported as having no identifiers. A fallback is suppressed when the same
-// value is already a stored identifier elsewhere in the cluster, so a linked
-// alias never surfaces twice. Both people SQL paths (the indexed rollup and
+// Each member also contributes its own email_address and phone_number with
+// provenance "participants" — every email participant the message importers
+// create records its address only there — so an email-only person is never
+// reported as having no identifiers, and a member whose stored rows cover
+// only some of its addresses (a phone row, say) still surfaces its email.
+// A fallback is suppressed when the same value is already a stored
+// identifier anywhere in the cluster (phone numbers compare by digits), so a
+// stored or linked address never surfaces twice. Both people SQL paths (the indexed rollup and
 // the filtered legacy query) share this expression, and both evaluate it at
 // read time over the committed participants dataset, so search, listing,
 // and detail agree without an analytics rebuild.
 func sqlPersonIdentifiersJSON(identifiersTable, participantsTable, memberListExpr string) string {
 	fallback := func(kind, column string) string {
+		same := `lower(TRIM(px.identifier_value)) = lower(TRIM(pf.` + column + `))`
+		if kind == "phone" {
+			same = `regexp_replace(px.identifier_value, '[^0-9]', '', 'g') = regexp_replace(pf.` + column + `, '[^0-9]', '', 'g')`
+		}
 		return `
 		SELECT '` + kind + `' AS type, TRIM(pf.` + column + `) AS value, TRIM(pf.` + column + `) AS display_value,
 			TRUE AS is_primary, 'participants' AS provenance, pf.id AS participant_id
 		FROM ` + participantsTable + ` pf
 		WHERE list_contains(` + memberListExpr + `, pf.id)
 			AND NULLIF(TRIM(pf.` + column + `), '') IS NOT NULL
-			AND NOT EXISTS (SELECT 1 FROM ` + identifiersTable + ` px WHERE px.participant_id = pf.id)
 			AND NOT EXISTS (SELECT 1 FROM ` + identifiersTable + ` px
 				WHERE list_contains(` + memberListExpr + `, px.participant_id)
 					AND lower(TRIM(px.identifier_type)) = '` + kind + `'
-					AND lower(TRIM(px.identifier_value)) = lower(TRIM(pf.` + column + `)))`
+					AND ` + same + `)`
 	}
 	return `COALESCE(CAST((SELECT to_json(list(struct_pack(
 		type := ids.type, value := ids.value, display_value := ids.display_value,
