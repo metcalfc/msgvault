@@ -192,12 +192,18 @@ profile is removed and re-imported.
   successful `carddav.Service.Sync`, and add a small dedicated daily job
   modeled on the SQLite maintenance job, not the people sweep, since mail
   and chat syncs also create participants.
-- [ ] **Task 1b.7 Tests (1.5 to 2 days).** Cluster-level bind and merge,
+- [x] **Task 1b.7 Tests (1.5 to 2 days).** Cluster-level bind and merge,
   ambiguity, owner exclusion by email and by phone identifier, a
   Beeper-style non-canonical phone, rejected pair suppressed across reruns
   plus the re-import gap, published and conflict blocking, remote card update
   and deletion after absorption, split restoring the card mapping, idempotent
   reruns.
+  > The re-import gap does not occur: a rejected (or accepted) candidate is
+  > user-owned state (`personHasUserOwnedStateTx`), so removing the card keeps
+  > the profile and its decision, and the re-imported card binds back to it
+  > by address. The test pins that behavior instead. Owner exclusion also
+  > compares phone-shaped owner identities after normalization, because
+  > participant phones are not stored in one form.
 - [ ] **Deferred: auto-apply.** Needs an explicit exception to the
   system-accept rule; if added later, limit to `bind` with one contact
   profile, one cluster, not blocked, no rejection. Auto-merge stays out.
