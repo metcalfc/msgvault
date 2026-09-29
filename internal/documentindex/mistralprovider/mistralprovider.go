@@ -26,6 +26,12 @@ const (
 	MinUnits = mistral.MinUnits
 
 	defaultAPIKeyEnv = "MISTRAL_API_KEY" // #nosec G101 -- environment variable name, not a credential.
+
+	// csvFormatID is the only candidate format Mistral cannot bound as a raw
+	// upload; it is routed through local CSV-to-PDF conversion instead.
+	csvFormatID        = "csv"
+	csvMediaType       = "text/csv"
+	conversionTargetID = "pdf"
 )
 
 // Provider is the Mistral OCR adapter. The zero value is ready to use.
@@ -97,12 +103,11 @@ func (Provider) EncodeManifest(writer io.Writer, manifest provider.Manifest) err
 	return mistral.EncodeCapabilityManifest(writer, vendor) //nolint:wrapcheck // callers add the write context
 }
 
-// NewProcessor implements provider.Provider. Policy and manifest are
-// immutable, so every format's upload authority is derived once here rather
-// than per document.
+// NewProcessor implements provider.Provider. The authorizations are the
+// authority a build already resolved; nothing is re-derived here.
 func (Provider) NewProcessor(
 	policy provider.Policy,
-	manifest provider.Manifest,
+	authorizations []provider.Authorization,
 	client provider.ClientConfig,
 	staging provider.Staging,
 ) (provider.Processor, error) {
@@ -110,23 +115,26 @@ func (Provider) NewProcessor(
 	if err != nil {
 		return nil, err
 	}
-	vendorManifest, err := vendorManifestRef(manifest)
-	if err != nil {
-		return nil, err
-	}
 	if staging.Directory == "" || staging.MaxBytes < vendorPolicy.Values().MaxDocumentBytes || staging.MinFreeBytes <= 0 {
 		return nil, errors.New("mistral document staging bounds are invalid")
 	}
-	fingerprint, err := vendorPolicy.Fingerprint(vendorManifest)
-	if err != nil {
-		return nil, fmt.Errorf("validate Mistral capability policy: %w", err)
+	if len(authorizations) == 0 {
+		return nil, errors.New("mistral document processor requires at least one authorized format")
 	}
-	authorizations := make(map[string]mistral.FormatAuthorization)
-	for _, format := range mistral.CandidateFormats() {
-		authorization, authorizeErr := vendorPolicy.Authorize(vendorManifest, format.ID)
-		if authorizeErr == nil {
-			authorizations[format.ID] = authorization
+	byFormat := make(map[string]mistral.FormatAuthorization, len(authorizations))
+	fingerprint := ""
+	for _, candidate := range authorizations {
+		wrapped, ok := candidate.(Authorization)
+		if !ok {
+			return nil, fmt.Errorf("document authorization %T does not belong to the %s provider", candidate, Name)
 		}
+		if fingerprint == "" {
+			fingerprint = wrapped.PolicyFingerprint()
+		}
+		if wrapped.PolicyFingerprint() == "" || wrapped.PolicyFingerprint() != fingerprint {
+			return nil, errors.New("mistral document authorizations belong to different policies or manifests")
+		}
+		byFormat[wrapped.authorization.Format().ID] = wrapped.authorization
 	}
 	vendorClient, err := newClient(vendorPolicy, client)
 	if err != nil {
@@ -134,7 +142,7 @@ func (Provider) NewProcessor(
 	}
 	return &Processor{
 		client: vendorClient, policy: vendorPolicy, staging: staging,
-		authorizations: authorizations, policyFingerprint: fingerprint,
+		authorizations: byFormat, policyFingerprint: fingerprint,
 	}, nil
 }
 
@@ -242,14 +250,26 @@ func (Policy) FormatByID(id string) (provider.Format, bool) {
 	return neutralFormat(format), true
 }
 
+// ConversionTarget implements provider.Policy. CSV is the only source
+// converted locally; the generated PDF carries an enforceable page bound.
+func (p Policy) ConversionTarget(sourceMediaType string) (provider.Format, bool) {
+	if sourceMediaType != csvMediaType {
+		return provider.Format{}, false
+	}
+	return p.FormatByID(conversionTargetID)
+}
+
 // Authorize implements provider.Policy.
-func (p Policy) Authorize(manifest provider.Manifest, formatID string) error {
+func (p Policy) Authorize(manifest provider.Manifest, formatID string) (provider.Authorization, error) {
 	vendorManifest, err := vendorManifestRef(manifest)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	_, err = p.policy.Authorize(vendorManifest, formatID)
-	return err //nolint:wrapcheck // callers decide on presence or add route context; the vendor text is the contract
+	authorization, err := p.policy.Authorize(vendorManifest, formatID)
+	if err != nil {
+		return nil, err //nolint:wrapcheck // callers decide on presence or add route context; the vendor text is the contract
+	}
+	return Authorization{authorization: authorization}, nil
 }
 
 // Fingerprint implements provider.Policy.
@@ -260,6 +280,19 @@ func (p Policy) Fingerprint(manifest provider.Manifest) (string, error) {
 	}
 	return p.policy.Fingerprint(vendorManifest) //nolint:wrapcheck // callers add the fingerprint context
 }
+
+// Authorization wraps the vendor's opaque format authority.
+type Authorization struct {
+	authorization mistral.FormatAuthorization
+}
+
+var _ provider.Authorization = Authorization{}
+
+// Format implements provider.Authorization.
+func (a Authorization) Format() provider.Format { return neutralFormat(a.authorization.Format()) }
+
+// PolicyFingerprint implements provider.Authorization.
+func (a Authorization) PolicyFingerprint() string { return a.authorization.PolicyFingerprint() }
 
 // Manifest wraps validated vendor capability evidence.
 type Manifest struct {
@@ -320,12 +353,20 @@ func neutralFormats(formats []mistral.CandidateFormat) []provider.Format {
 }
 
 func neutralFormat(format mistral.CandidateFormat) provider.Format {
-	return provider.Format{ID: format.ID, Family: format.Family, MediaType: format.MediaType, UnitKind: format.UnitKind}
+	return provider.Format{
+		ID: format.ID, Family: format.Family, MediaType: format.MediaType, UnitKind: format.UnitKind,
+		RawUploadBounded: format.ID != csvFormatID,
+	}
 }
 
 // Processor stages one source in a private spool, checks its detected format
-// against the authority derived at construction, sends it, and removes the
-// spool.
+// against the authority the build resolved, sends it, and removes the spool.
+//
+// This mirrors docbank's own mistral.Processor pipeline rather than wrapping
+// it: the vendor processor re-derives authority per upload, joins cleanup
+// errors unconditionally, and normalizes internally, each of which conflicts
+// with the seam's contract. Its error classification is reproduced verbatim
+// in classifyProcessorError and pinned by tests.
 type Processor struct {
 	client            *mistral.Client
 	policy            mistral.Policy
@@ -360,7 +401,7 @@ func (p *Processor) Process(ctx context.Context, source provider.Source) (result
 		MaxSpoolBytes: p.staging.MaxBytes, MinFreeBytes: p.staging.MinFreeBytes,
 	})
 	if err != nil {
-		return provider.Result{}, translateStagingError(err)
+		return provider.Result{}, classifyProcessorError(ctx, err, mistral.RequestMetrics{})
 	}
 	defer func() {
 		cleanupErr := prepared.Release()
@@ -385,7 +426,7 @@ func (p *Processor) Process(ctx context.Context, source provider.Source) (result
 	}
 	response, err := p.client.Process(ctx, prepared, authorization)
 	if err != nil {
-		return provider.Result{}, translateRequestError(err)
+		return provider.Result{}, classifyProcessorError(ctx, err, mistral.MetricsFromError(err))
 	}
 	return provider.Result{
 		Document: response.Document, ReturnedModel: response.ReturnedModel,
@@ -400,26 +441,26 @@ func closeSource(source provider.Source) {
 	}
 }
 
-// translateStagingError classifies a failure before any provider request.
-// Everything that is not a retryable staging refusal or an interruption is a
-// permanent local-source problem.
-func translateStagingError(err error) error {
-	kind := provider.ErrorInvalidInput
+// classifyProcessorError reproduces docbank's mistral.Processor classification
+// exactly: an interrupted context outranks every kind; the staging and
+// response sentinels map to their neutral kinds; a failure with no provider
+// request behind it (Requests == 0, such as a spool open error) is transient
+// and retried; anything else is malformed output. The neutral and vendor
+// metrics structs share one field set, so the conversion fails to compile if
+// either drifts.
+func classifyProcessorError(ctx context.Context, err error, metrics mistral.RequestMetrics) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return &provider.Error{Metrics: provider.RequestMetrics(metrics), Cause: errors.Join(ctxErr, err)}
+	}
+	kind := provider.ErrorMalformedOutput
 	switch {
 	case errors.Is(err, mistral.ErrSpoolCapacity):
 		kind = provider.ErrorCapacity
-	case errors.Is(err, mistral.ErrSpoolUnavailable), isInterruption(err):
+	case errors.Is(err, mistral.ErrSpoolUnavailable):
 		kind = provider.ErrorTransient
-	}
-	return &provider.Error{Kind: kind, Cause: err}
-}
-
-// translateRequestError classifies a failure from the provider request and
-// keeps its request accounting. Unrecognized failures are malformed output.
-func translateRequestError(err error) error {
-	kind := provider.ErrorMalformedOutput
-	switch {
-	case errors.Is(err, mistral.ErrTransientResponse), isInterruption(err):
+	case errors.Is(err, mistral.ErrInvalidSource):
+		kind = provider.ErrorInvalidInput
+	case errors.Is(err, mistral.ErrTransientResponse):
 		kind = provider.ErrorTransient
 	case errors.Is(err, mistral.ErrPermanentResponse):
 		kind = provider.ErrorRejected
@@ -427,12 +468,8 @@ func translateRequestError(err error) error {
 		kind = provider.ErrorResponseTooLarge
 	case errors.Is(err, mistral.ErrCapabilityContract):
 		kind = provider.ErrorCapabilityChanged
+	case metrics.Requests == 0:
+		kind = provider.ErrorTransient
 	}
-	// The neutral and vendor metrics structs share one field set, so the
-	// conversion fails to compile if either drifts.
-	return &provider.Error{Kind: kind, Metrics: provider.RequestMetrics(mistral.MetricsFromError(err)), Cause: err}
-}
-
-func isInterruption(err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+	return &provider.Error{Kind: kind, Metrics: provider.RequestMetrics(metrics), Cause: err}
 }

@@ -55,6 +55,9 @@ const (
 
 var envNamePattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 
+// csvSourceMediaType is the source the local csvpdf converter accepts.
+const csvSourceMediaType = "text/csv"
+
 // DocumentsConfigDecodeTarget returns the value a configuration file is
 // decoded over. Provider-independent limits are populated so an explicit
 // zero remains distinguishable from an omitted field (Validate rejects the
@@ -126,17 +129,39 @@ type CSVConversionConfig struct {
 }
 
 // InputRoute maps one accepted source media type to the format the provider
-// receives. Conversion is set when the source is converted locally first.
-// Upload authority is re-derived by the provider at request time from the
-// same policy and manifest that produced the route.
+// receives and the authority that admits it. Conversion is set when the
+// source is converted locally first; the authority then belongs to the
+// converted format.
 type InputRoute struct {
-	Format     provider.Format
-	Conversion *csvpdf.Policy
+	Format        provider.Format
+	Authorization provider.Authorization
+	Conversion    *csvpdf.Policy
 }
 
 type ResolvedInputPolicy struct {
 	AllowedMediaTypes []string
 	Routes            map[string]InputRoute
+}
+
+// Authorizations returns the distinct upload authority behind every route,
+// ordered by format ID, for handing to the provider's processor factory.
+func (p ResolvedInputPolicy) Authorizations() []provider.Authorization {
+	byFormat := make(map[string]provider.Authorization, len(p.Routes))
+	for _, route := range p.Routes {
+		if route.Authorization != nil {
+			byFormat[route.Format.ID] = route.Authorization
+		}
+	}
+	ids := make([]string, 0, len(byFormat))
+	for id := range byFormat {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	authorizations := make([]provider.Authorization, 0, len(ids))
+	for _, id := range ids {
+		authorizations = append(authorizations, byFormat[id])
+	}
+	return authorizations
 }
 
 // ScopeConfig limits extraction to selected message families. Empty includes
@@ -167,7 +192,7 @@ type DocumentEmbeddingsConfig struct {
 // the decode target.
 func (c *DocumentsConfig) ApplyDefaults() {
 	if c.Provider == "" {
-		c.Provider = defaultProviderName
+		c.Provider = defaultProvider().Name()
 	}
 	defaults := providerDefaults(c.Provider)
 	if c.Region == "" {
@@ -384,28 +409,30 @@ func ResolveInputPolicy(c *DocumentsConfig, manifest provider.Manifest) (Resolve
 	}
 	routes := make(map[string]InputRoute)
 	for _, format := range policy.Formats() {
-		// Raw CSV has no enforceable provider unit bound. The enabled conversion
-		// route below transfers CSV's bound to the authorized PDF upload.
-		if format.ID == "csv" {
+		// A format the provider cannot bound as a raw upload is never routed
+		// as-is; the enabled conversion route below transfers its bound to the
+		// authorized converted upload.
+		if !format.RawUploadBounded {
 			continue
 		}
-		if authorizeErr := policy.Authorize(manifest, format.ID); authorizeErr == nil {
-			routes[format.MediaType] = InputRoute{Format: format}
+		if authorization, authorizeErr := policy.Authorize(manifest, format.ID); authorizeErr == nil {
+			routes[format.MediaType] = InputRoute{Format: format, Authorization: authorization}
 		}
 	}
 	if c.Conversion.CSV.Enabled {
-		pdfFormat, found := policy.FormatByID("pdf")
+		target, found := policy.ConversionTarget(csvSourceMediaType)
 		if !found {
-			return ResolvedInputPolicy{}, errors.New("document input policy cannot find PDF format")
+			return ResolvedInputPolicy{}, errors.New("document input policy has no conversion target for CSV")
 		}
-		if authorizeErr := policy.Authorize(manifest, pdfFormat.ID); authorizeErr != nil {
-			return ResolvedInputPolicy{}, fmt.Errorf("CSV conversion requires PDF upload authority: %w", authorizeErr)
+		authorization, authorizeErr := policy.Authorize(manifest, target.ID)
+		if authorizeErr != nil {
+			return ResolvedInputPolicy{}, fmt.Errorf("CSV conversion requires %s upload authority: %w", target.ID, authorizeErr)
 		}
 		csvPolicy, policyErr := c.CSVPolicy()
 		if policyErr != nil {
 			return ResolvedInputPolicy{}, fmt.Errorf("configure CSV conversion policy: %w", policyErr)
 		}
-		routes["text/csv"] = InputRoute{Format: pdfFormat, Conversion: &csvPolicy}
+		routes[csvSourceMediaType] = InputRoute{Format: target, Authorization: authorization, Conversion: &csvPolicy}
 	}
 	if len(routes) == 0 {
 		return ResolvedInputPolicy{}, errors.New("no format has authorized upload authority; run the authenticated capability probe and supply its manifest")

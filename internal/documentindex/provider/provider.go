@@ -159,6 +159,10 @@ type Format struct {
 	Family    string
 	MediaType string
 	UnitKind  string
+	// RawUploadBounded is false when the provider can never enforce a unit
+	// bound on the format as uploaded, so it is routed only through a local
+	// conversion (see Policy.ConversionTarget) and never as-is.
+	RawUploadBounded bool
 }
 
 // Manifest is a provider's validated capability evidence. Its concrete type
@@ -168,6 +172,17 @@ type Manifest interface {
 	MaxUnits() int
 }
 
+// Authorization is non-persistable evidence that one format has enforceable
+// upload authority under a policy and manifest. Its concrete type belongs to
+// the adapter that issued it; NewProcessor consumes the set a build resolved
+// so authority is derived once per build, not per document.
+type Authorization interface {
+	Format() Format
+	// PolicyFingerprint is Policy.Fingerprint(manifest) for the pair that
+	// issued the authorization.
+	PolicyFingerprint() string
+}
+
 // Policy is an immutable processing policy bound to one provider.
 type Policy interface {
 	Values() PolicyValues
@@ -175,9 +190,12 @@ type Policy interface {
 	// Formats lists every candidate format in the provider's stable order.
 	Formats() []Format
 	FormatByID(id string) (Format, bool)
-	// Authorize reports whether manifest gives formatID enforceable upload
-	// authority under this policy.
-	Authorize(manifest Manifest, formatID string) error
+	// ConversionTarget names the format the provider receives when a source
+	// of sourceMediaType is converted locally before upload.
+	ConversionTarget(sourceMediaType string) (Format, bool)
+	// Authorize derives formatID's upload authority from manifest, or reports
+	// why the manifest grants none.
+	Authorize(manifest Manifest, formatID string) (Authorization, error)
 	// Fingerprint digests the policy together with the manifest evidence.
 	Fingerprint(manifest Manifest) (string, error)
 }
@@ -223,9 +241,11 @@ type Provider interface {
 	NewPolicy(config PolicyConfig) (Policy, error)
 	DecodeManifest(reader io.Reader) (Manifest, error)
 	EncodeManifest(writer io.Writer, manifest Manifest) error
-	// NewProcessor binds a policy, its capability evidence, credentials, and
-	// staging bounds into a Processor. It makes no network request.
-	NewProcessor(policy Policy, manifest Manifest, client ClientConfig, staging Staging) (Processor, error)
+	// NewProcessor binds a policy, the upload authority a build resolved
+	// under it, credentials, and staging bounds into a Processor. Every
+	// authorization must come from the same policy and manifest. It makes no
+	// network request.
+	NewProcessor(policy Policy, authorizations []Authorization, client ClientConfig, staging Staging) (Processor, error)
 	// ValidateProbeFixtures stages the fixture matrix locally without
 	// credentials or network access.
 	ValidateProbeFixtures(ctx context.Context, policy Policy, fixtures ProbeFixtureConfig) error

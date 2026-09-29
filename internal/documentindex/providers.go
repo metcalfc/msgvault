@@ -15,13 +15,15 @@ const (
 	ModelMistralOCR = mistralprovider.DefaultModel
 	// RegionMistralEU is the only region the Mistral provider serves.
 	RegionMistralEU = mistralprovider.RegionEU
-
-	defaultProviderName = ProviderMistral
 )
+
+// defaultAdapter is the provider an omitted configuration selects. It is held
+// directly so defaults never depend on a runtime lookup.
+var defaultAdapter provider.Provider = mistralprovider.New()
 
 // providers lists every document extraction backend msgvault can configure.
 // Adding a provider means registering its adapter here.
-var providers = provider.MustRegistry(mistralprovider.New())
+var providers = provider.MustRegistry(defaultAdapter)
 
 // LookupProvider resolves a configured provider name to its adapter.
 func LookupProvider(name string) (provider.Provider, error) {
@@ -34,11 +36,7 @@ func ProviderNames() []string {
 }
 
 func defaultProvider() provider.Provider {
-	registered, err := LookupProvider(defaultProviderName)
-	if err != nil {
-		panic(fmt.Sprintf("default document provider is not registered: %v", err))
-	}
-	return registered
+	return defaultAdapter
 }
 
 // providerDefaults returns the defaults for name, falling back to the default

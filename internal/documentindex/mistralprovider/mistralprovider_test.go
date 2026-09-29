@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -54,7 +55,7 @@ func TestPolicyExposesVendorValuesAndFormats(t *testing.T) {
 	assert.Positive(values.Normalization.Version)
 	pdf, found := policy.FormatByID("pdf")
 	require.True(found)
-	assert.Equal(provider.Format{ID: "pdf", Family: "pdf", MediaType: "application/pdf", UnitKind: "page"}, pdf)
+	assert.Equal(provider.Format{ID: "pdf", Family: "pdf", MediaType: "application/pdf", UnitKind: "page", RawUploadBounded: true}, pdf)
 	_, found = policy.FormatByID("unknown")
 	assert.False(found)
 	assert.Equal(CandidateFormats(), policy.Formats())
@@ -80,8 +81,12 @@ func TestManifestRoundTripsThroughEncodeAndDecode(t *testing.T) {
 	decoded, err := New().DecodeManifest(bytes.NewReader(encoded.Bytes()))
 	require.NoError(err)
 	assert.Equal(100, decoded.MaxUnits())
-	require.NoError(policy.Authorize(decoded, "pdf"))
-	require.ErrorContains(policy.Authorize(decoded, "docx"), "no enforceable unit bound")
+	authorization, err := policy.Authorize(decoded, "pdf")
+	require.NoError(err)
+	assert.Equal("pdf", authorization.Format().ID)
+	assert.NotEmpty(authorization.PolicyFingerprint())
+	_, err = policy.Authorize(decoded, "docx")
+	require.ErrorContains(err, "no enforceable unit bound")
 	first, err := policy.Fingerprint(manifest)
 	require.NoError(err)
 	second, err := policy.Fingerprint(decoded)
@@ -95,73 +100,119 @@ func (foreignManifest) MaxUnits() int { return 1 }
 
 type foreignPolicy struct{ provider.Policy }
 
-func TestAdapterRejectsForeignPolicyAndManifest(t *testing.T) {
+type foreignAuthorization struct{}
+
+func (foreignAuthorization) Format() provider.Format   { return provider.Format{ID: "pdf"} }
+func (foreignAuthorization) PolicyFingerprint() string { return "foreign" }
+
+func TestFormatsMarkOnlyCSVAsUnboundedRawUpload(t *testing.T) {
+	policy := testPolicy(t)
+	for _, format := range policy.Formats() {
+		assert.Equal(t, format.ID != "csv", format.RawUploadBounded, format.ID)
+	}
+	target, found := policy.ConversionTarget("text/csv")
+	require.True(t, found)
+	assert.Equal(t, "pdf", target.ID)
+	_, found = policy.ConversionTarget("application/pdf")
+	assert.False(t, found)
+}
+
+func TestAdapterRejectsForeignPolicyManifestAndAuthority(t *testing.T) {
 	require := require.New(t)
 	policy := testPolicy(t)
 	manifest := testManifest(t, policy)
+	authorizations := testAuthorizations(t, policy, manifest, "pdf")
 	staging := provider.Staging{Directory: t.TempDir(), MaxBytes: 2 << 20, MinFreeBytes: 1}
 	client := provider.ClientConfig{APIKey: "synthetic-key"}
 
-	require.ErrorContains(policy.Authorize(foreignManifest{}, "pdf"), "does not belong to the mistral provider")
-	_, err := policy.Fingerprint(foreignManifest{})
+	_, err := policy.Authorize(foreignManifest{}, "pdf")
+	require.ErrorContains(err, "does not belong to the mistral provider")
+	_, err = policy.Fingerprint(foreignManifest{})
 	require.ErrorContains(err, "does not belong to the mistral provider")
 	require.ErrorContains(New().EncodeManifest(io.Discard, foreignManifest{}), "does not belong to the mistral provider")
-	_, err = New().NewProcessor(foreignPolicy{}, manifest, client, staging)
+	_, err = New().NewProcessor(foreignPolicy{}, authorizations, client, staging)
 	require.ErrorContains(err, "does not belong to the mistral provider")
-	_, err = New().NewProcessor(policy, foreignManifest{}, client, staging)
+	_, err = New().NewProcessor(policy, []provider.Authorization{foreignAuthorization{}}, client, staging)
 	require.ErrorContains(err, "does not belong to the mistral provider")
-	_, err = New().NewProcessor(policy, manifest, client, provider.Staging{Directory: "", MaxBytes: 2 << 20, MinFreeBytes: 1})
+	_, err = New().NewProcessor(policy, nil, client, staging)
+	require.ErrorContains(err, "at least one authorized format")
+	otherManifest, err := mistraltest.SyntheticManifest(mustVendorPolicy(t, policy), true)
+	require.NoError(err)
+	for index := range otherManifest.Results {
+		if otherManifest.Results[index].FormatID == "pdf" {
+			otherManifest.Results[index].FixtureDigest = strings.Repeat("1", 16)
+		}
+	}
+	mixed := slices.Concat(authorizations, testAuthorizations(t, policy, NewManifest(otherManifest), "pdf"))
+	_, err = New().NewProcessor(policy, mixed, client, staging)
+	require.ErrorContains(err, "different policies or manifests")
+	_, err = New().NewProcessor(policy, authorizations, client, provider.Staging{Directory: "", MaxBytes: 2 << 20, MinFreeBytes: 1})
 	require.ErrorContains(err, "staging bounds are invalid")
-	_, err = New().NewProcessor(policy, manifest, provider.ClientConfig{APIKey: " padded "}, staging)
+	_, err = New().NewProcessor(policy, authorizations, provider.ClientConfig{APIKey: " padded "}, staging)
 	require.ErrorContains(err, "configure mistral document client")
 	require.ErrorContains(New().ValidateProbeFixtures(t.Context(), foreignPolicy{}, provider.ProbeFixtureConfig{}), "does not belong")
 	_, err = New().RunCapabilityProbe(t.Context(), foreignPolicy{}, client, provider.ProbeConfig{})
 	require.ErrorContains(err, "does not belong")
 }
 
-func TestTranslateStagingErrorClassifiesLocalFailures(t *testing.T) {
+// TestClassifyProcessorErrorPinsDocbankMapping pins the adapter's error
+// classification to docbank's mistral.Processor switch so the two cannot
+// drift silently: each vendor sentinel maps to its neutral kind, a failure
+// with no provider request behind it (Requests == 0) is transient, and only a
+// failure after a request is malformed output.
+func TestClassifyProcessorErrorPinsDocbankMapping(t *testing.T) {
+	requested := mistral.RequestMetrics{Requests: 1, Latency: time.Millisecond}
 	tests := []struct {
-		name string
-		err  error
-		kind provider.ErrorKind
+		name    string
+		err     error
+		metrics mistral.RequestMetrics
+		kind    provider.ErrorKind
 	}{
-		{name: "capacity", err: fmt.Errorf("%w: quota", mistral.ErrSpoolCapacity), kind: provider.ErrorCapacity},
-		{name: "unavailable", err: fmt.Errorf("%w: io", mistral.ErrSpoolUnavailable), kind: provider.ErrorTransient},
+		{name: "spool capacity", err: fmt.Errorf("%w: quota", mistral.ErrSpoolCapacity), kind: provider.ErrorCapacity},
+		{name: "spool unavailable", err: fmt.Errorf("%w: io", mistral.ErrSpoolUnavailable), kind: provider.ErrorTransient},
 		{name: "invalid source", err: fmt.Errorf("%w: hash", mistral.ErrInvalidSource), kind: provider.ErrorInvalidInput},
-		{name: "unknown local failure", err: errors.New("count units failed"), kind: provider.ErrorInvalidInput},
-		{name: "canceled", err: context.Canceled, kind: provider.ErrorTransient},
-		{name: "deadline", err: fmt.Errorf("wrapped: %w", context.DeadlineExceeded), kind: provider.ErrorTransient},
+		{name: "transient response", err: fmt.Errorf("%w: 503", mistral.ErrTransientResponse), metrics: requested, kind: provider.ErrorTransient},
+		{name: "permanent response", err: fmt.Errorf("%w: 400", mistral.ErrPermanentResponse), metrics: requested, kind: provider.ErrorRejected},
+		{name: "response too large", err: mistral.ErrResponseTooLarge, metrics: requested, kind: provider.ErrorResponseTooLarge},
+		{name: "capability contract", err: fmt.Errorf("drift: %w", mistral.ErrCapabilityContract), metrics: requested, kind: provider.ErrorCapabilityChanged},
+		{name: "spool open failure before any request", err: fmt.Errorf("open Mistral OCR spool: %w", os.ErrNotExist), kind: provider.ErrorTransient},
+		{name: "unknown local failure before any request", err: errors.New("count units failed"), kind: provider.ErrorTransient},
+		{name: "unknown failure after a request", err: errors.New("mistral OCR response omitted pages"), metrics: requested, kind: provider.ErrorMalformedOutput},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			translated := translateStagingError(test.err)
-			assert.Equal(t, test.kind, provider.ErrorKindOf(translated))
-			assert.Equal(t, provider.RequestMetrics{}, provider.MetricsFromError(translated))
-			require.ErrorIs(t, translated, test.err)
+			classified := classifyProcessorError(t.Context(), test.err, test.metrics)
+			assert.Equal(t, test.kind, provider.ErrorKindOf(classified))
+			assert.Equal(t, provider.RequestMetrics(test.metrics), provider.MetricsFromError(classified))
+			require.ErrorIs(t, classified, test.err)
 		})
 	}
 }
 
-func TestTranslateRequestErrorClassifiesProviderFailures(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		kind provider.ErrorKind
-	}{
-		{name: "transient", err: fmt.Errorf("%w: 503", mistral.ErrTransientResponse), kind: provider.ErrorTransient},
-		{name: "permanent", err: fmt.Errorf("%w: 400", mistral.ErrPermanentResponse), kind: provider.ErrorRejected},
-		{name: "too large", err: mistral.ErrResponseTooLarge, kind: provider.ErrorResponseTooLarge},
-		{name: "capability", err: fmt.Errorf("drift: %w", mistral.ErrCapabilityContract), kind: provider.ErrorCapabilityChanged},
-		{name: "canceled", err: context.Canceled, kind: provider.ErrorTransient},
-		{name: "unrecognized", err: errors.New("authorization belongs to a different policy"), kind: provider.ErrorMalformedOutput},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			translated := translateRequestError(test.err)
-			assert.Equal(t, test.kind, provider.ErrorKindOf(translated))
-			require.ErrorIs(t, translated, test.err)
-		})
-	}
+func TestClassifyProcessorErrorReportsInterruptionWithoutKind(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	cause := errors.New("copy interrupted")
+	classified := classifyProcessorError(ctx, cause, mistral.RequestMetrics{Requests: 1})
+	assert.Empty(t, provider.ErrorKindOf(classified), "docbank leaves an interrupted request unclassified")
+	assert.False(t, provider.IsRetryable(classified))
+	require.ErrorIs(t, classified, context.Canceled)
+	require.ErrorIs(t, classified, cause)
+	assert.Equal(t, 1, provider.MetricsFromError(classified).Requests)
+}
+
+func TestProcessorClassifiesMalformedResponseAfterRequest(t *testing.T) {
+	require := require.New(t)
+	content := mistraltest.MinimalPDF("adapter test")
+	transport := &syntheticTransport{omitPages: true, sourceLen: len(content)}
+	processor, _ := testProcessor(t, transport)
+	source, _ := pdfSource(t, content)
+
+	_, err := processor.Process(t.Context(), source)
+	require.Error(err)
+	assert.Equal(t, provider.ErrorMalformedOutput, provider.ErrorKindOf(err))
+	assert.Equal(t, 1, provider.MetricsFromError(err).Requests)
+	assert.False(t, provider.IsRetryable(err))
 }
 
 func TestProcessorStagesAuthorizesSendsAndCleansUp(t *testing.T) {
@@ -320,11 +371,29 @@ func testProcessor(t *testing.T, transport http.RoundTripper) (provider.Processo
 	spoolDirectory := filepath.Join(t.TempDir(), "spool")
 	require.NoError(t, fileutil.SecureMkdirAll(spoolDirectory, 0o700))
 	policy := testPolicy(t)
-	processor, err := New().NewProcessor(policy, testManifest(t, policy), provider.ClientConfig{
+	processor, err := New().NewProcessor(policy, testAuthorizations(t, policy, testManifest(t, policy), "pdf"), provider.ClientConfig{
 		APIKey: "synthetic-key", MaxRetries: 1, HTTPClient: &http.Client{Transport: transport},
 	}, provider.Staging{Directory: spoolDirectory, MaxBytes: 2 << 20, MinFreeBytes: 1})
 	require.NoError(t, err)
 	return processor, spoolDirectory
+}
+
+func testAuthorizations(t *testing.T, policy provider.Policy, manifest provider.Manifest, ids ...string) []provider.Authorization {
+	t.Helper()
+	authorizations := make([]provider.Authorization, 0, len(ids))
+	for _, id := range ids {
+		authorization, err := policy.Authorize(manifest, id)
+		require.NoError(t, err)
+		authorizations = append(authorizations, authorization)
+	}
+	return authorizations
+}
+
+func mustVendorPolicy(t *testing.T, policy provider.Policy) mistral.Policy {
+	t.Helper()
+	vendorPolicy, err := VendorPolicy(policy)
+	require.NoError(t, err)
+	return vendorPolicy
 }
 
 // pdfSource returns a validated PDF source and the close-counting stream
@@ -355,6 +424,7 @@ type syntheticTransport struct {
 	markdown  string
 	sourceLen int
 	status    int
+	omitPages bool
 	calls     atomic.Int32
 }
 
@@ -374,10 +444,14 @@ func (s *syntheticTransport) RoundTrip(request *http.Request) (*http.Response, e
 	for index := range pages {
 		pages[index] = map[string]any{"index": index, "markdown": s.markdown}
 	}
-	body, err := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"model": mistral.DefaultModel, "pages": pages,
 		"usage_info": map[string]any{"pages_processed": s.processed, "doc_size_bytes": s.sourceLen},
-	})
+	}
+	if s.omitPages {
+		delete(payload, "pages")
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}

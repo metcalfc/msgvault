@@ -47,11 +47,14 @@ func TestProbeMistralCommandWritesCompleteSanitizedManifest(t *testing.T) {
 	cfg.Attachments.Documents.RetentionPosture = documentindex.RetentionStandard
 	cfg.Attachments.Documents.TrainingPosture = documentindex.TrainingOptedOut
 
+	t.Setenv(cfg.Attachments.Documents.APIKeyEnv, "synthetic-key")
 	probeCalled := false
 	deps := documentsCommandDeps{
-		runCapabilityProbe: func(_ context.Context, got *documentindex.DocumentsConfig, _ docprovider.Policy, probe docprovider.ProbeConfig) (docprovider.Manifest, error) {
+		runCapabilityProbe: func(_ context.Context, policy docprovider.Policy, client docprovider.ClientConfig, probe docprovider.ProbeConfig) (docprovider.Manifest, error) {
 			probeCalled = true
-			assert.Same(&cfg.Attachments.Documents, got)
+			assert.Equal(cfg.Attachments.Documents.Model, policy.Values().Model)
+			assert.Equal("synthetic-key", client.APIKey)
+			assert.Equal(cfg.Attachments.Documents.RequestTimeout, client.Timeout)
 			assert.Equal("synthetic-fixtures", probe.Fixtures.FixtureDirectory)
 			assert.Equal(cfg.Attachments.Documents.MaxSpoolBytes, probe.Fixtures.Staging.MaxBytes)
 			return commandCapabilityManifest(t, cfg.Attachments.Documents.MaxPagesPerDocument), nil
@@ -88,11 +91,11 @@ func TestProbeMistralValidateOnlyNeedsNoProviderConfiguration(t *testing.T) {
 	providerCalled := false
 	validationCalled := false
 	deps := documentsCommandDeps{
-		runCapabilityProbe: func(context.Context, *documentindex.DocumentsConfig, docprovider.Policy, docprovider.ProbeConfig) (docprovider.Manifest, error) {
+		runCapabilityProbe: func(context.Context, docprovider.Policy, docprovider.ClientConfig, docprovider.ProbeConfig) (docprovider.Manifest, error) {
 			providerCalled = true
 			return nil, errors.New("unexpected provider probe")
 		},
-		validateProbeFixtures: func(_ context.Context, _ *documentindex.DocumentsConfig, _ docprovider.Policy, got docprovider.ProbeFixtureConfig) error {
+		validateProbeFixtures: func(_ context.Context, _ docprovider.Policy, got docprovider.ProbeFixtureConfig) error {
 			validationCalled = true
 			assert.Equal("synthetic-fixtures", got.FixtureDirectory)
 			return nil
@@ -131,6 +134,7 @@ func TestDocumentsConsentBuildAndStatusUseExactAuthenticatedProfile(t *testing.T
 	cfg.Attachments.Documents.TrainingPosture = documentindex.TrainingOptedOut
 	cfg.Attachments.Documents.EstimatedCostUSDPerKUnits = 4
 	cfg.Attachments.Documents.PricingAssumptionOn = "2026-08-13"
+	t.Setenv(cfg.Attachments.Documents.APIKeyEnv, "synthetic-key")
 
 	fixture := storetest.New(t)
 	content := mistralprovidertest.MinimalPDF("synthetic document")
@@ -147,8 +151,10 @@ func TestDocumentsConsentBuildAndStatusUseExactAuthenticatedProfile(t *testing.T
 	processor := &commandBuildProcessor{}
 	attachmentOpened := false
 	deps := documentsCommandDeps{
-		newDocumentProcessor: func(documentsConfig *documentindex.DocumentsConfig, manifest docprovider.Manifest, _ docprovider.Staging) (docprovider.Processor, error) {
-			processor.fingerprint = commandPolicyFingerprint(t, documentsConfig, manifest)
+		newDocumentProcessor: func(_ docprovider.Policy, authorizations []docprovider.Authorization, client docprovider.ClientConfig, _ docprovider.Staging) (docprovider.Processor, error) {
+			require.NotEmpty(authorizations)
+			assert.Equal("synthetic-key", client.APIKey)
+			processor.fingerprint = authorizations[0].PolicyFingerprint()
 			return processor, nil
 		},
 		openStore: func(context.Context) (*store.Store, func(), error) {
@@ -632,7 +638,7 @@ func TestDocumentsBuildRefusesAPIUseBeforeExactConsent(t *testing.T) {
 	fixture := storetest.New(t)
 	providerCalled := false
 	deps := documentsCommandDeps{
-		newDocumentProcessor: func(*documentindex.DocumentsConfig, docprovider.Manifest, docprovider.Staging) (docprovider.Processor, error) {
+		newDocumentProcessor: func(docprovider.Policy, []docprovider.Authorization, docprovider.ClientConfig, docprovider.Staging) (docprovider.Processor, error) {
 			providerCalled = true
 			return &commandBuildProcessor{}, nil
 		},
@@ -663,6 +669,7 @@ func TestDocumentFullRebuildResumesDurableTargetSnapshot(t *testing.T) {
 	cfg.Attachments.Documents.RetentionPosture = documentindex.RetentionStandard
 	cfg.Attachments.Documents.TrainingPosture = documentindex.TrainingOptedOut
 	fixture := storetest.New(t)
+	t.Setenv(cfg.Attachments.Documents.APIKeyEnv, "synthetic-key")
 	contents := make(map[string][]byte)
 	for index, content := range [][]byte{
 		mistralprovidertest.MinimalPDF("first rebuild document"),
@@ -682,8 +689,10 @@ func TestDocumentFullRebuildResumesDurableTargetSnapshot(t *testing.T) {
 	manifestPath := writeCommandCapabilityManifest(t, cfg.Attachments.Documents.MaxPagesPerDocument)
 	processor := &commandBuildProcessor{}
 	deps := documentsCommandDeps{
-		newDocumentProcessor: func(documentsConfig *documentindex.DocumentsConfig, manifest docprovider.Manifest, _ docprovider.Staging) (docprovider.Processor, error) {
-			processor.fingerprint = commandPolicyFingerprint(t, documentsConfig, manifest)
+		newDocumentProcessor: func(_ docprovider.Policy, authorizations []docprovider.Authorization, client docprovider.ClientConfig, _ docprovider.Staging) (docprovider.Processor, error) {
+			require.NotEmpty(authorizations)
+			assert.Equal("synthetic-key", client.APIKey)
+			processor.fingerprint = authorizations[0].PolicyFingerprint()
 			return processor, nil
 		},
 		openStore: func(context.Context) (*store.Store, func(), error) { return fixture.Store, func() {}, nil },
@@ -787,7 +796,7 @@ func TestDocumentBuildRecordsOversizedCandidateAndContinues(t *testing.T) {
 		t.Context(), fixture.Store, testOperationPassScope("document:oversized"),
 		fixture.Store, commandAttachmentMapOpener{contents: contents},
 		&commandBuildProcessor{fingerprint: commandPolicyFingerprint(t, &documentsConfig, manifest)},
-		&documentsConfig, manifest, inputPolicy.AllowedMediaTypes, profile, 2,
+		&documentsConfig, commandBuildPolicy(t, &documentsConfig), manifest, inputPolicy, profile, 2,
 		"documents-isolation-test", testDocumentStaging(t), documentBuildIncremental, nil,
 	)
 	require.ErrorContains(err, "1 extraction failure")
@@ -809,7 +818,7 @@ func TestDocumentBuildRecordsOversizedCandidateAndContinues(t *testing.T) {
 func TestDocumentBuildRequiresRecorderBeforeWork(t *testing.T) {
 	result, err := executeDocumentBuild(
 		t.Context(), nil, testOperationPassScope("document:missing-recorder"),
-		nil, nil, nil, nil, nil, nil, store.DocumentExtractionProfile{}, 1,
+		nil, nil, nil, nil, nil, nil, documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{}, 1,
 		"documents-recorder-test", testDocumentStaging(t), documentBuildIncremental, nil,
 	)
 
@@ -908,7 +917,7 @@ func TestDocumentBuildStopsOnCancellation(t *testing.T) {
 		ctx, fixture.Store, testOperationPassScope("document:cancelled"),
 		fixture.Store, commandAttachmentMapOpener{contents: map[string][]byte{digest: content}},
 		commandCancelingProcessor{cancel: cancel, fingerprint: commandPolicyFingerprint(t, &documentsConfig, manifest)},
-		&documentsConfig, manifest, inputPolicy.AllowedMediaTypes, profile, 1,
+		&documentsConfig, commandBuildPolicy(t, &documentsConfig), manifest, inputPolicy, profile, 1,
 		"documents-cancellation-test", testDocumentStaging(t), documentBuildIncremental, nil,
 	)
 	require.ErrorIs(err, context.Canceled)
@@ -965,7 +974,7 @@ func TestDocumentBuildContinuesAfterProviderTimeout(t *testing.T) {
 		t.Context(), fixture.Store, testOperationPassScope("document:timeout"),
 		fixture.Store, commandAttachmentMapOpener{contents: contents},
 		&commandBuildProcessor{firstErr: context.DeadlineExceeded, fingerprint: commandPolicyFingerprint(t, &documentsConfig, manifest)},
-		&documentsConfig, manifest, inputPolicy.AllowedMediaTypes, profile, 2,
+		&documentsConfig, commandBuildPolicy(t, &documentsConfig), manifest, inputPolicy, profile, 2,
 		"documents-timeout-test", testDocumentStaging(t), documentBuildIncremental, nil,
 	)
 	require.ErrorContains(err, "1 extraction failure")
@@ -1106,7 +1115,7 @@ func TestProbeMistralCommandRequiresExplicitEnablementAndPosture(t *testing.T) {
 	_ = testCtx
 	providerCalled := false
 	deps := documentsCommandDeps{
-		runCapabilityProbe: func(context.Context, *documentindex.DocumentsConfig, docprovider.Policy, docprovider.ProbeConfig) (docprovider.Manifest, error) {
+		runCapabilityProbe: func(context.Context, docprovider.Policy, docprovider.ClientConfig, docprovider.ProbeConfig) (docprovider.Manifest, error) {
 			providerCalled = true
 			return nil, errors.New("unexpected provider probe")
 		},
@@ -1168,15 +1177,80 @@ type commandCancelingProcessor struct {
 
 func (p commandCancelingProcessor) PolicyFingerprint() string { return p.fingerprint }
 
+func commandBuildPolicy(t *testing.T, documentsConfig *documentindex.DocumentsConfig) docprovider.Policy {
+	t.Helper()
+	policy, err := documentsConfig.ExtractionPolicy()
+	require.NoError(t, err)
+	return policy
+}
+
 // commandPolicyFingerprint binds a fake processor to the policy and manifest a
 // build resolves, as the real processor factory does.
 func commandPolicyFingerprint(t *testing.T, documentsConfig *documentindex.DocumentsConfig, manifest docprovider.Manifest) string {
 	t.Helper()
-	policy, err := documentsConfig.ExtractionPolicy()
-	require.NoError(t, err)
-	fingerprint, err := policy.Fingerprint(manifest)
+	fingerprint, err := commandBuildPolicy(t, documentsConfig).Fingerprint(manifest)
 	require.NoError(t, err)
 	return fingerprint
+}
+
+func TestDocumentBuildAndProbeRefuseEmptyDataDirectory(t *testing.T) {
+	cfg := testConfigValue()
+
+	markDaemonCLISubprocessForTest(t)
+	require := require.New(t)
+	assert := assert.New(t)
+	previousConfig := cfg
+	t.Cleanup(func() { cfg = previousConfig })
+	cfg = config.NewDefaultConfig()
+	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
+	_ = testCtx
+	cfg.Data.DataDir = ""
+	cfg.Attachments.Documents.Enabled = true
+	cfg.Attachments.Documents.RetentionPosture = documentindex.RetentionStandard
+	cfg.Attachments.Documents.TrainingPosture = documentindex.TrainingOptedOut
+	t.Setenv(cfg.Attachments.Documents.APIKeyEnv, "synthetic-key")
+	fixture := storetest.New(t)
+	manifestPath := writeCommandCapabilityManifest(t, cfg.Attachments.Documents.MaxPagesPerDocument)
+	processorCalled := false
+	validationCalled := false
+	deps := documentsCommandDeps{
+		newDocumentProcessor: func(docprovider.Policy, []docprovider.Authorization, docprovider.ClientConfig, docprovider.Staging) (docprovider.Processor, error) {
+			processorCalled = true
+			return &commandBuildProcessor{}, nil
+		},
+		validateProbeFixtures: func(context.Context, docprovider.Policy, docprovider.ProbeFixtureConfig) error {
+			validationCalled = true
+			return nil
+		},
+		openStore: func(context.Context) (*store.Store, func(), error) { return fixture.Store, func() {}, nil },
+		openAttachments: func(context.Context, *store.Store) (documentindex.DocumentAttachmentOpener, func() error, error) {
+			return commandAttachmentOpener{}, func() error { return nil }, nil
+		},
+	}
+	consent := newDocumentsCmd(deps)
+	consent.SetOut(&bytes.Buffer{})
+	consent.SetErr(&bytes.Buffer{})
+	consent.SetArgs([]string{"consent-mistral", "--capabilities", manifestPath, "--yes"})
+	require.NoError(consent.ExecuteContext(testCtx))
+
+	build := newDocumentsCmd(deps)
+	build.SetOut(&bytes.Buffer{})
+	build.SetErr(&bytes.Buffer{})
+	build.SetArgs([]string{documentBuildSubcommand, "--capabilities", manifestPath, "--yes"})
+	require.ErrorContains(build.ExecuteContext(testCtx), "document build requires a data directory")
+	assert.False(processorCalled, "no processor may be built before the staging location is known to be private")
+
+	probe := newDocumentsCmd(deps)
+	probe.SetOut(&bytes.Buffer{})
+	probe.SetErr(&bytes.Buffer{})
+	probe.SetArgs([]string{"probe-mistral", "--fixtures", "synthetic-fixtures", "--validate-only"})
+	require.ErrorContains(probe.ExecuteContext(testCtx), "document probe requires a data directory")
+	assert.False(validationCalled)
+
+	_, err := os.Stat(filepath.Join("tmp", "document-index"))
+	require.ErrorIs(err, os.ErrNotExist, "nothing may be staged relative to the working directory")
+	_, err = os.Stat(filepath.Join("tmp", "document-probe"))
+	require.ErrorIs(err, os.ErrNotExist)
 }
 
 func (p commandCancelingProcessor) Process(

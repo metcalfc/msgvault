@@ -237,7 +237,7 @@ func (w *Worker) ProcessCandidate(
 		receipt := converted.Receipt()
 		conversion = &store.DocumentExtractionConversion{
 			SourceSHA256: receipt.SourceSHA256, SourceBytes: receipt.SourceBytes,
-			ProviderMediaType: "application/pdf", PDFSHA256: receipt.PDFSHA256,
+			ProviderMediaType: route.Format.MediaType, PDFSHA256: receipt.PDFSHA256,
 			PDFBytes: receipt.PDFBytes, Pages: receipt.Pages,
 			PolicyFingerprint: receipt.PolicyFingerprint, ConverterVersion: receipt.ConverterVersion,
 			Spans: make([]store.DocumentExtractionConversionSpan, len(receipt.Spans)),
@@ -249,7 +249,7 @@ func (w *Worker) ProcessCandidate(
 		if sourceErr != nil {
 			return result, failPreparation(sourceErr)
 		}
-		source, sourceErr = provider.NewSource(generated.Content, "application/pdf", receipt.PDFBytes, receipt.PDFSHA256)
+		source, sourceErr = provider.NewSource(generated.Content, route.Format.MediaType, receipt.PDFBytes, receipt.PDFSHA256)
 		if sourceErr != nil {
 			return result, failPreparation(errors.Join(sourceErr, generated.Content.Close()))
 		}

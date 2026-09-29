@@ -386,7 +386,8 @@ func newCSVTestWorker(
 	manifest := testCapabilityManifest(t, policy)
 	pdfFormat, found := policy.FormatByID("pdf")
 	require.True(t, found)
-	require.NoError(t, policy.Authorize(manifest, pdfFormat.ID))
+	authorization, err := policy.Authorize(manifest, pdfFormat.ID)
+	require.NoError(t, err)
 	csvPolicy, err := csvpdf.NewPolicy(csvpdf.DefaultLimits())
 	require.NoError(t, err)
 	bindFakeProcessor(t, processor, policy, manifest)
@@ -394,7 +395,7 @@ func newCSVTestWorker(
 		ProfileID: "profile-test", LeaseOwner: "worker-test", LeaseDuration: 30 * time.Minute,
 		RetryDelay: 5 * time.Minute, Policy: policy, CapabilityPolicy: manifest,
 		InputPolicy: ResolvedInputPolicy{Routes: map[string]InputRoute{
-			"text/csv": {Format: pdfFormat, Conversion: &csvPolicy},
+			"text/csv": {Format: pdfFormat, Authorization: authorization, Conversion: &csvPolicy},
 		}},
 	})
 	require.NoError(t, err)
@@ -641,7 +642,7 @@ func TestNewWorkerRejectsProcessorBuiltFromDifferentManifest(t *testing.T) {
 	require.NoError(err)
 	spoolDirectory := filepath.Join(t.TempDir(), "spool")
 	require.NoError(fileutil.SecureMkdirAll(spoolDirectory, 0o700))
-	processor, err := mistralprovider.New().NewProcessor(policy, other, provider.ClientConfig{
+	processor, err := mistralprovider.New().NewProcessor(policy, testPDFInputPolicy(t, policy, other).Authorizations(), provider.ClientConfig{
 		APIKey: "synthetic-key", MaxRetries: 1,
 	}, provider.Staging{Directory: spoolDirectory, MaxBytes: 2 << 20, MinFreeBytes: 1})
 	require.NoError(err)
@@ -742,9 +743,10 @@ func testPDFInputPolicy(
 	t.Helper()
 	pdfFormat, found := policy.FormatByID("pdf")
 	require.True(t, found)
-	require.NoError(t, policy.Authorize(manifest, pdfFormat.ID))
+	authorization, err := policy.Authorize(manifest, pdfFormat.ID)
+	require.NoError(t, err)
 	return ResolvedInputPolicy{Routes: map[string]InputRoute{
-		pdfFormat.MediaType: {Format: pdfFormat},
+		pdfFormat.MediaType: {Format: pdfFormat, Authorization: authorization},
 	}}
 }
 
@@ -855,13 +857,14 @@ func newPPTXTestWorker(t *testing.T, catalog DocumentExtractionCatalog, content 
 	manifest := testPPTXCapabilityManifest(t, policy)
 	input := ResolvedInputPolicy{Routes: map[string]InputRoute{}}
 	for _, id := range []string{"pdf", "pptx"} {
-		require.NoError(policy.Authorize(manifest, id))
+		authorization, err := policy.Authorize(manifest, id)
+		require.NoError(err)
 		format, found := policy.FormatByID(id)
 		require.True(found)
-		input.Routes[format.MediaType] = InputRoute{Format: format}
+		input.Routes[format.MediaType] = InputRoute{Format: format, Authorization: authorization}
 		input.AllowedMediaTypes = append(input.AllowedMediaTypes, format.MediaType)
 	}
-	processor, err := mistralprovider.New().NewProcessor(policy, manifest, provider.ClientConfig{
+	processor, err := mistralprovider.New().NewProcessor(policy, input.Authorizations(), provider.ClientConfig{
 		APIKey: "synthetic-key", MaxRetries: 1, HTTPClient: &http.Client{Transport: transport},
 	}, provider.Staging{Directory: spoolDirectory, MaxBytes: 2 << 20, MinFreeBytes: 1})
 	require.NoError(err)

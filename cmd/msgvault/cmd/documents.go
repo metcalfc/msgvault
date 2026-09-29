@@ -192,12 +192,14 @@ type documentBuildFailure struct {
 }
 
 // documentsCommandDeps are the provider-neutral seams the documents commands
-// use. Production wiring resolves the configured provider and its credential;
-// tests substitute fakes without naming any vendor type.
+// use. The three provider fields carry the exact signatures of the
+// docprovider.Provider methods they stand in for; nil selects the method of
+// the provider the configuration resolves. Tests substitute fakes without
+// naming any vendor type.
 type documentsCommandDeps struct {
-	newDocumentProcessor  func(*documentindex.DocumentsConfig, docprovider.Manifest, docprovider.Staging) (docprovider.Processor, error)
-	validateProbeFixtures func(context.Context, *documentindex.DocumentsConfig, docprovider.Policy, docprovider.ProbeFixtureConfig) error
-	runCapabilityProbe    func(context.Context, *documentindex.DocumentsConfig, docprovider.Policy, docprovider.ProbeConfig) (docprovider.Manifest, error)
+	newDocumentProcessor  func(docprovider.Policy, []docprovider.Authorization, docprovider.ClientConfig, docprovider.Staging) (docprovider.Processor, error)
+	validateProbeFixtures func(context.Context, docprovider.Policy, docprovider.ProbeFixtureConfig) error
+	runCapabilityProbe    func(context.Context, docprovider.Policy, docprovider.ClientConfig, docprovider.ProbeConfig) (docprovider.Manifest, error)
 	openStore             func(context.Context) (*store.Store, func(), error)
 	openAttachments       func(context.Context, *store.Store) (documentindex.DocumentAttachmentOpener, func() error, error)
 	openReadClient        func(context.Context) (documentReadClient, func(), error)
@@ -217,9 +219,6 @@ type documentReadClient interface {
 
 func defaultDocumentsCommandDeps() documentsCommandDeps {
 	return documentsCommandDeps{
-		newDocumentProcessor:  newConfiguredDocumentProcessor,
-		validateProbeFixtures: validateConfiguredProbeFixtures,
-		runCapabilityProbe:    runConfiguredCapabilityProbe,
 		openStore: func(ctx context.Context) (*store.Store, func(), error) {
 			return openWritableStoreAndInitForInvocation(invocationFromContext(ctx))
 		},
@@ -235,6 +234,33 @@ func defaultDocumentsCommandDeps() documentsCommandDeps {
 			return client, func() { _ = client.Close() }, nil
 		},
 	}
+}
+
+func (deps documentsCommandDeps) processorFactory(
+	documentProvider docprovider.Provider,
+) func(docprovider.Policy, []docprovider.Authorization, docprovider.ClientConfig, docprovider.Staging) (docprovider.Processor, error) {
+	if deps.newDocumentProcessor != nil {
+		return deps.newDocumentProcessor
+	}
+	return documentProvider.NewProcessor
+}
+
+func (deps documentsCommandDeps) probeFixtureValidator(
+	documentProvider docprovider.Provider,
+) func(context.Context, docprovider.Policy, docprovider.ProbeFixtureConfig) error {
+	if deps.validateProbeFixtures != nil {
+		return deps.validateProbeFixtures
+	}
+	return documentProvider.ValidateProbeFixtures
+}
+
+func (deps documentsCommandDeps) capabilityProbe(
+	documentProvider docprovider.Provider,
+) func(context.Context, docprovider.Policy, docprovider.ClientConfig, docprovider.ProbeConfig) (docprovider.Manifest, error) {
+	if deps.runCapabilityProbe != nil {
+		return deps.runCapabilityProbe
+	}
+	return documentProvider.RunCapabilityProbe
 }
 
 func newDocumentsCmd(deps documentsCommandDeps) *cobra.Command {
@@ -551,7 +577,10 @@ func runProbeMistral(
 	if err != nil {
 		return err
 	}
-	spoolDirectory := filepath.Join(cfg.Data.DataDir, "tmp", "document-probe")
+	spoolDirectory, err := documentSpoolDirectory(cfg.Data.DataDir, "document-probe", "document probe")
+	if err != nil {
+		return err
+	}
 	if err := fileutil.SecureMkdirAll(spoolDirectory, 0o700); err != nil {
 		return fmt.Errorf("create private document probe spool directory: %w", err)
 	}
@@ -560,7 +589,7 @@ func runProbeMistral(
 		Staging:          documentStaging(documentsConfig, spoolDirectory),
 	}
 	if validateOnly {
-		if err := deps.validateProbeFixtures(command.Context(), documentsConfig, policy, fixtureConfig); err != nil {
+		if err := deps.probeFixtureValidator(documentProvider)(command.Context(), policy, fixtureConfig); err != nil {
 			return err
 		}
 		_, _ = fmt.Fprintf(command.OutOrStdout(),
@@ -568,7 +597,11 @@ func runProbeMistral(
 			len(policy.Formats()), documentProvider.DisplayName())
 		return nil
 	}
-	manifest, err := deps.runCapabilityProbe(command.Context(), documentsConfig, policy, docprovider.ProbeConfig{
+	client, err := configuredDocumentClient(documentsConfig)
+	if err != nil {
+		return err
+	}
+	manifest, err := deps.capabilityProbe(documentProvider)(command.Context(), policy, client, docprovider.ProbeConfig{
 		Fixtures: fixtureConfig,
 	})
 	if err != nil {
@@ -588,8 +621,14 @@ func documentStaging(documentsConfig *documentindex.DocumentsConfig, directory s
 	}
 }
 
-func documentBuildSpoolDirectory(dataDirectory string) string {
-	return filepath.Join(dataDirectory, "tmp", "document-index")
+// documentSpoolDirectory places a private spool under the data directory. An
+// empty data directory is refused before any path is derived, so attachment
+// bytes are never staged relative to the process working directory.
+func documentSpoolDirectory(dataDirectory, name, operation string) (string, error) {
+	if dataDirectory == "" {
+		return "", fmt.Errorf("%s requires a data directory", operation)
+	}
+	return filepath.Join(dataDirectory, "tmp", name), nil
 }
 
 func runConsentMistral(
@@ -766,18 +805,34 @@ func runBuildDocuments(
 		return err
 	}
 	defer func() { runErr = errors.Join(runErr, closeAttachments()) }()
-	// One staging value feeds both the processor and the build so the
-	// directory that is created and scavenged is the one bytes are staged in.
-	staging := documentStaging(documentsConfig, documentBuildSpoolDirectory(cfg.Data.DataDir))
-	processor, err := deps.newDocumentProcessor(documentsConfig, manifest, staging)
+	// The provider, policy, routes, and staging resolved here are the ones
+	// the processor and the build both use; nothing is derived twice.
+	documentProvider, err := documentsConfig.ResolveProvider()
+	if err != nil {
+		return err
+	}
+	policy, err := documentsConfig.ExtractionPolicy()
+	if err != nil {
+		return err
+	}
+	client, err := configuredDocumentClient(documentsConfig)
+	if err != nil {
+		return err
+	}
+	spoolDirectory, err := documentSpoolDirectory(cfg.Data.DataDir, "document-index", "document build")
+	if err != nil {
+		return err
+	}
+	staging := documentStaging(documentsConfig, spoolDirectory)
+	processor, err := deps.processorFactory(documentProvider)(policy, inputPolicy.Authorizations(), client, staging)
 	if err != nil {
 		return err
 	}
 	result, err := executeDocumentBuild(
 		command.Context(), st,
 		newOperationPassScope("cli:document-extraction", operations.TriggerManual),
-		st, attachments, processor, documentsConfig, manifest,
-		inputPolicy.AllowedMediaTypes, profile, limit, "documents-cli", staging, mode, &reconcileResult,
+		st, attachments, processor, documentsConfig, policy, manifest, inputPolicy,
+		profile, limit, "documents-cli", staging, mode, &reconcileResult,
 	)
 	_, _ = fmt.Fprintf(command.OutOrStdout(),
 		"Reconciled %d attachment(s), consumed %d change(s); indexed %d document(s), %d unit(s), skipped %d, failed %d.\n",
@@ -841,8 +896,9 @@ func executeDocumentBuild(
 	attachments documentindex.DocumentAttachmentOpener,
 	processor docprovider.Processor,
 	documentsConfig *documentindex.DocumentsConfig,
+	policy docprovider.Policy,
 	manifest docprovider.Manifest,
-	allowedMediaTypes []string,
+	inputPolicy documentindex.ResolvedInputPolicy,
 	profile store.DocumentExtractionProfile,
 	limit int,
 	leaseOwner string,
@@ -850,6 +906,7 @@ func executeDocumentBuild(
 	mode documentBuildMode,
 	preReconciled *documentindex.ReconcileResult,
 ) (result documentBuildResult, runErr error) {
+	allowedMediaTypes := inputPolicy.AllowedMediaTypes
 	pass, terminal, err := beginCommandOperationPass(
 		ctx, recorder, operations.KindDocumentExtraction, scope,
 	)
@@ -919,13 +976,8 @@ func executeDocumentBuild(
 	); err != nil {
 		return result, fmt.Errorf("scavenge %s document spool: %w", documentProvider.DisplayName(), err)
 	}
-	policy, err := documentsConfig.ExtractionPolicy()
-	if err != nil {
-		return result, err
-	}
-	inputPolicy, err := documentindex.ResolveInputPolicy(documentsConfig, manifest)
-	if err != nil {
-		return result, err
+	if policy == nil || len(inputPolicy.Routes) == 0 {
+		return result, errors.New("document build requires a resolved policy and input routes")
 	}
 	workerConfig := documentindex.WorkerConfig{
 		ProfileID: profile.ID, LeaseOwner: leaseOwner, LeaseDuration: documentsConfig.RequestTimeout + time.Minute,
@@ -1476,56 +1528,6 @@ func configuredDocumentClient(
 	return docprovider.ClientConfig{
 		APIKey: apiKey, Timeout: documentsConfig.RequestTimeout, MaxRetries: documentsConfig.MaxRetries,
 	}, nil
-}
-
-func newConfiguredDocumentProcessor(
-	documentsConfig *documentindex.DocumentsConfig,
-	manifest docprovider.Manifest,
-	staging docprovider.Staging,
-) (docprovider.Processor, error) {
-	documentProvider, err := documentsConfig.ResolveProvider()
-	if err != nil {
-		return nil, err
-	}
-	client, err := configuredDocumentClient(documentsConfig)
-	if err != nil {
-		return nil, err
-	}
-	policy, err := documentsConfig.ExtractionPolicy()
-	if err != nil {
-		return nil, err
-	}
-	return documentProvider.NewProcessor(policy, manifest, client, staging)
-}
-
-func validateConfiguredProbeFixtures(
-	ctx context.Context,
-	documentsConfig *documentindex.DocumentsConfig,
-	policy docprovider.Policy,
-	fixtures docprovider.ProbeFixtureConfig,
-) error {
-	documentProvider, err := documentsConfig.ResolveProvider()
-	if err != nil {
-		return err
-	}
-	return documentProvider.ValidateProbeFixtures(ctx, policy, fixtures)
-}
-
-func runConfiguredCapabilityProbe(
-	ctx context.Context,
-	documentsConfig *documentindex.DocumentsConfig,
-	policy docprovider.Policy,
-	probe docprovider.ProbeConfig,
-) (docprovider.Manifest, error) {
-	documentProvider, err := documentsConfig.ResolveProvider()
-	if err != nil {
-		return nil, err
-	}
-	client, err := configuredDocumentClient(documentsConfig)
-	if err != nil {
-		return nil, err
-	}
-	return documentProvider.RunCapabilityProbe(ctx, policy, client, probe)
 }
 
 func init() {
