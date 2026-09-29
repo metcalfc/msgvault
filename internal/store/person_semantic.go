@@ -366,8 +366,8 @@ func renderPersonSemanticDocument(
 	}
 	for _, relationship := range snapshot.relationships {
 		value := relationship.CounterpartLabel
-		if relationship.CounterpartDisplayName != nil {
-			counterpart := normalizePersonSemanticText(*relationship.CounterpartDisplayName)
+		if relationship.counterpartCuratedName != nil {
+			counterpart := normalizePersonSemanticText(*relationship.counterpartCuratedName)
 			if counterpart != "" {
 				value += " — " + counterpart
 			}

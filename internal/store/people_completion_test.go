@@ -133,3 +133,25 @@ func TestCompletePersonProfilesValidatesAndCapsResults(t *testing.T) {
 func completionEnvelope() store.ValueEnvelopeInput {
 	return store.ValueEnvelopeInput{Source: store.ProvenanceUser}
 }
+
+func TestCompletePersonProfilesLabelsUnnamedPersonByMatchedValue(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	st := storetest.New(t).Store
+	participantID, err := st.EnsureParticipant("unnamed@example.test", "", "example.test")
+	require.NoError(err)
+	person, _, err := st.CreatePersonFromParticipantContext(ctx, participantID)
+	require.NoError(err)
+	require.Nil(person.DisplayName)
+	_, err = st.AddPersonNameContext(ctx, person.ID, store.PersonNameInput{
+		NameKind: store.PersonNameNickname, Formatted: new("Quill"), Envelope: completionEnvelope(),
+	})
+	require.NoError(err)
+
+	rows, err := st.CompletePersonProfilesContext(ctx, store.PersonCompletionQuery{Query: "quill"})
+	require.NoError(err)
+	assert.Equal(t, []store.PersonCompletion{{
+		ParticipantID: participantID, DisplayLabel: "Quill", Kind: "name",
+		Value: "Quill", MatchValue: "quill", Source: "nickname",
+	}}, rows)
+}

@@ -242,3 +242,37 @@ func TestCounterpartLabelHelperMatchesTheQueryProjection(t *testing.T) {
 		assert.Equal(relationshipType.CounterpartLabel(direction), views[0].CounterpartLabel)
 	}
 }
+
+// TestListPersonRelationshipsNamesUnnamedCounterpartFromParticipants pins
+// that a counterpart without a display name is named by its bound
+// participant rather than left for callers to label by UID, while the
+// semantic person document keeps disclosing only curated names.
+func TestListPersonRelationshipsNamesUnnamedCounterpartFromParticipants(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	f := storetest.New(t)
+	ctx := context.Background()
+	named := mustPerson(t, f, "named@example.com", "Named Person")
+	participant := f.EnsureParticipant("unnamed@example.com", "", "example.com")
+	unnamed, _, err := f.Store.CreatePersonFromParticipant(participant)
+	require.NoError(err)
+	require.Nil(unnamed.DisplayName)
+
+	_, err = f.Store.AddPersonRelationshipContext(ctx, store.PersonRelationshipInput{
+		SourcePersonID: named, TargetPersonID: unnamed.ID, TypeSlug: "parent",
+		Source: store.ProvenanceUser, Actor: "user",
+	})
+	require.NoError(err)
+
+	views, err := f.Store.ListPersonRelationshipsContext(ctx, named, store.PersonRelationshipListOptions{})
+	require.NoError(err)
+	require.Len(views, 1)
+	require.NotNil(views[0].CounterpartDisplayName)
+	assert.Equal("unnamed@example.com", *views[0].CounterpartDisplayName)
+
+	document, err := f.Store.LoadPersonSemanticDocumentContext(ctx, named)
+	require.NoError(err)
+	assert.Contains(document.Text, "Relationship: child")
+	assert.NotContains(document.Text, "unnamed@example.com",
+		"the semantic document must not disclose a participant address")
+}

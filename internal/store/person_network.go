@@ -266,9 +266,7 @@ func (s *Store) personNetworkLayerSourcesQuery(
 		addCTE("seen_employments", ids)
 		employmentFilter += ` AND NOT EXISTS (SELECT 1 FROM seen_employments seen WHERE seen.id = employment.id)`
 	}
-	personLabel := func(alias string) string {
-		return `COALESCE(NULLIF(` + alias + `.display_name, ''), ` + alias + `.vcard_uid)`
-	}
+	personLabel := sqlPersonNetworkLabelExpr
 	// CROSS JOIN pins the frontier as the outer loop on SQLite, so each
 	// frontier node probes its adjacency index instead of the planner
 	// scanning every edge and filtering by the small frontier set.
@@ -384,9 +382,9 @@ func (s *Store) hydratePersonNetworkRelationships(
 		WITH `+cte+`
 		SELECT relationship.id,
 		       relationship.source_person_id,
-		       COALESCE(NULLIF(source_person.display_name, ''), source_person.vcard_uid),
+		       `+sqlPersonNetworkLabelExpr("source_person")+`,
 		       relationship.target_person_id,
-		       COALESCE(NULLIF(target_person.display_name, ''), target_person.vcard_uid),
+		       `+sqlPersonNetworkLabelExpr("target_person")+`,
 		       relationship_type.slug,
 		       relationship_type.forward_label,
 		       relationship.start_year, relationship.start_month, relationship.start_day,
@@ -450,7 +448,7 @@ func (s *Store) hydratePersonNetworkEmployments(
 		WITH `+cte+`
 		SELECT employment.id,
 		       employment.person_id,
-		       COALESCE(NULLIF(person.display_name, ''), person.vcard_uid),
+		       `+sqlPersonNetworkLabelExpr("person")+`,
 		       employment.organization_id,
 		       organization.name,
 		       COALESCE(NULLIF(employment.title, ''), NULLIF(employment.role, ''), 'employment'),
@@ -530,26 +528,31 @@ func personNetworkDateFromColumns(year, month, day sql.NullInt64) *string {
 
 func (s *Store) personNetworkPersonNode(ctx context.Context, personID int64, hop int) (NetworkNode, error) {
 	var (
-		id          int64
-		displayName sql.NullString
-		vcardUID    string
+		id    int64
+		label string
 	)
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, display_name, vcard_uid
-		FROM persons
-		WHERE id = ?
-	`, personID).Scan(&id, &displayName, &vcardUID)
+		SELECT person.id, `+sqlPersonNetworkLabelExpr("person")+`
+		FROM persons person
+		WHERE person.id = ?
+	`, personID).Scan(&id, &label)
 	if errors.Is(err, sql.ErrNoRows) {
 		return NetworkNode{}, ErrPersonNotFound
 	}
 	if err != nil {
 		return NetworkNode{}, fmt.Errorf("get person network node %d: %w", personID, err)
 	}
-	label := vcardUID
-	if displayName.Valid && displayName.String != "" {
-		label = displayName.String
-	}
 	return NetworkNode{ID: personNetworkNodeID("person", id), Kind: "person", EntityID: id, Label: label, Hop: hop}, nil
+}
+
+// unnamedPersonLabel names a person that nothing else names. It never
+// carries the person's ID or vCard UID.
+const unnamedPersonLabel = "Unknown person"
+
+// sqlPersonNetworkLabelExpr renders a network node's person label: the
+// durable person label, else unnamedPersonLabel.
+func sqlPersonNetworkLabelExpr(alias string) string {
+	return `COALESCE(` + sqlDurablePersonLabelExpr(alias) + `, '` + unnamedPersonLabel + `')`
 }
 
 func personNetworkNodeID(kind string, entityID int64) string {

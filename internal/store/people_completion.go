@@ -108,8 +108,7 @@ func (s *Store) CompletePersonProfilesContext(
 			       ? AS query_digits
 		), candidates AS (
 			SELECT participant_id,
-			       COALESCE(NULLIF(TRIM(profile_label), ''), value,
-			                'Person #' || CAST(participant_id AS TEXT)) AS display_label,
+			       COALESCE(NULLIF(TRIM(profile_label), ''), value) AS display_label,
 			       kind, value, match_value, source,
 			       CASE
 			           WHEN kind = 'phone' THEN

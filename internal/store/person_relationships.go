@@ -617,6 +617,12 @@ type PersonRelationshipView struct {
 	CounterpartLabel       string                `json:"counterpart_label"`
 	CounterpartDisplayName *string               `json:"counterpart_display_name,omitzero" nullable:"false"`
 	CounterpartVCardUID    string                `json:"counterpart_vcard_uid"`
+
+	// counterpartCuratedName is the counterpart's own display name, without
+	// the participant fallbacks CounterpartDisplayName applies. The semantic
+	// person document discloses only curated names, never a participant's
+	// address or phone number.
+	counterpartCuratedName *string
 }
 
 // PersonRelationshipListOptions scopes an endpoint view. The default shows
@@ -657,15 +663,16 @@ func (s *Store) listPersonRelationshipsContext(
 		       CASE WHEN r.source_person_id = ? THEN ? ELSE ? END AS direction,
 		       CASE WHEN r.source_person_id = ? THEN t.reverse_label
 		            ELSE t.forward_label END AS counterpart_label,
-		       cp.display_name AS counterpart_display_name,
-		       cp.vcard_uid AS counterpart_vcard_uid
+		       ` + sqlDurablePersonLabelExpr("cp") + ` AS counterpart_display_name,
+		       cp.vcard_uid AS counterpart_vcard_uid,
+		       cp.display_name AS counterpart_curated_name
 		` + personRelationshipFrom + `
 		JOIN persons cp ON cp.id = CASE WHEN r.source_person_id = ?
 		                                THEN r.target_person_id
 		                                ELSE r.source_person_id END
 		WHERE (r.source_person_id = ? OR r.target_person_id = ?)` + currentFilter + `
 		ORDER BY CASE WHEN r.end_year IS NULL THEN 0 ELSE 1 END,
-		         LOWER(COALESCE(cp.display_name, cp.vcard_uid)),
+		         LOWER(COALESCE(` + sqlDurablePersonLabelExpr("cp") + `, '')),
 		         t.slug, r.id
 	`
 	rows, err := queryer.QueryContext(ctx, query,
@@ -700,11 +707,12 @@ func scanPersonRelationshipView(row scanner) (*PersonRelationshipView, error) {
 		view        PersonRelationshipView
 		direction   string
 		displayName sql.NullString
+		curatedName sql.NullString
 	)
 	destinations := scan.destinations()
 	destinations = append(destinations,
 		&view.CounterpartPersonID, &direction, &view.CounterpartLabel,
-		&displayName, &view.CounterpartVCardUID,
+		&displayName, &view.CounterpartVCardUID, &curatedName,
 	)
 	if err := row.Scan(destinations...); err != nil {
 		return nil, err
@@ -713,6 +721,9 @@ func scanPersonRelationshipView(row scanner) (*PersonRelationshipView, error) {
 	view.Direction = RelationshipDirection(direction)
 	if displayName.Valid {
 		view.CounterpartDisplayName = &displayName.String
+	}
+	if curatedName.Valid {
+		view.counterpartCuratedName = &curatedName.String
 	}
 	return &view, nil
 }

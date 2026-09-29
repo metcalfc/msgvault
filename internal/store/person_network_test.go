@@ -483,3 +483,48 @@ func employmentEdgeID(t *testing.T, s *store.Store, personID int64) int64 {
 	require.NoError(t, s.DB().QueryRow(s.Rebind(`SELECT id FROM employments WHERE person_id = ?`), personID).Scan(&id))
 	return id
 }
+
+// TestGetPersonNetworkContextNamesUnnamedPeopleWithoutUIDs pins that a person
+// with no display name is labelled from its bound participants, on the root,
+// relationship, and employment paths, and never by its vCard UID.
+func TestGetPersonNetworkContextNamesUnnamedPeopleWithoutUIDs(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := storetest.New(t)
+	s := f.Store
+	unnamed := func(email, participantName string) *store.Person {
+		participantID, err := s.EnsureParticipant(email, participantName, "example.test")
+		require.NoError(err)
+		person, _, err := s.CreatePersonFromParticipantContext(t.Context(), participantID)
+		require.NoError(err)
+		person, err = s.UpdatePersonDisplayNameContext(t.Context(), person.ID, person.Revision, nil)
+		require.NoError(err)
+		require.Nil(person.DisplayName)
+		return person
+	}
+	root := unnamed("root@example.test", "Root Participant")
+	peer := unnamed("peer@example.test", "")
+	colleague := unnamed("colleague@example.test", "Colleague Participant")
+	organization := createNetworkOrganization(t, s, "Example Works")
+	createNetworkRelationship(t, s, root.ID, peer.ID, "friend")
+	createNetworkEmployment(t, s, root.ID, organization.ID, true)
+	createNetworkEmployment(t, s, colleague.ID, organization.ID, true)
+
+	graph, err := s.GetPersonNetworkContext(t.Context(), root.ID, store.PersonNetworkOptions{Depth: 2})
+	require.NoError(err)
+	labels := make(map[string]string, len(graph.Nodes))
+	for _, node := range graph.Nodes {
+		labels[node.ID] = node.Label
+	}
+	assert.Equal(map[string]string{
+		fmt.Sprintf("person:%d", root.ID):               "Root Participant",
+		fmt.Sprintf("person:%d", peer.ID):               "peer@example.test",
+		fmt.Sprintf("organization:%d", organization.ID): "Example Works",
+		fmt.Sprintf("person:%d", colleague.ID):          "Colleague Participant",
+	}, labels)
+	for _, person := range []*store.Person{root, peer, colleague} {
+		for _, node := range graph.Nodes {
+			assert.NotContains(node.Label, person.VCardUID)
+		}
+	}
+}
