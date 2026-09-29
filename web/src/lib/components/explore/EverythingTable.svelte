@@ -488,7 +488,7 @@
           class={`header-cell header-cell--${column}`}
           aria-label={column === 'attachments' ? 'Attachments' : undefined}
         >
-          {#if column === 'attachments'}<PaperclipIcon size={12} aria-hidden="true" />{:else}{EXPLORE_COLUMN_LABELS[column]}{/if}
+          {#if column === 'attachments'}<PaperclipIcon size={12} aria-hidden="true" /><span class="kit-sr-only">Attachments</span>{:else}{EXPLORE_COLUMN_LABELS[column]}{/if}
         </span>
       {/each}
     </div>
