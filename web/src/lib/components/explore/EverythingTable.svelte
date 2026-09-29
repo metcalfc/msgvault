@@ -20,7 +20,7 @@
   } from '../../explore/row-display';
   import { SvelteSet } from 'svelte/reactivity';
   import { decodeHTMLEntities } from '../../util/html-text';
-  import RowKind from './RowKind.svelte';
+  import RowKind, { rowModality } from './RowKind.svelte';
 
   interface Props {
     rows: EntryRow[];
@@ -293,7 +293,8 @@
       .map((column) => {
         const configured = columnWidths[column];
         if (configured !== undefined) return `${configured}px`;
-        if (column === 'kind') return 'minmax(86px, 0.7fr)';
+        // The kind reads as a colored glyph; its word is the accessible name.
+        if (column === 'kind') return '40px';
         if (column === 'people') return 'minmax(150px, 1.2fr)';
         if (column === 'title') return 'minmax(180px, 1.5fr)';
         if (column === 'excerpt') return 'minmax(220px, 2fr)';
@@ -634,7 +635,7 @@
                       {#if selection.isSelected(row.key)}
                         <span class="selection-marker" aria-hidden="true">✓</span>
                       {/if}
-                      <RowKind kind={row.kind} messageType={row.message_type} />
+                      <RowKind kind={row.kind} messageType={row.message_type} compact />
                     {:else if column === 'people'}
                       {@const who = rowPeople(row)}
                       <span class="people" title={who.title}>{who.primary}</span>
@@ -656,6 +657,9 @@
                         <strong data-row-title>{thread.count} events</strong>
                       {:else}
                         <strong data-row-title>{row.title || '(untitled)'}</strong>
+                        {#if !thread && row.message_count > 1 && rowModality(row.kind, row.message_type) === 'email'}
+                          <span class="in-thread">· {row.message_count.toLocaleString()} in thread</span>
+                        {/if}
                       {/if}
                       {#if thread?.lead}
                         <button
@@ -915,10 +919,16 @@
     border-radius: var(--radius-sm);
   }
 
+  /* Row anatomy: counterpart in secondary ink, subject in primary with its
+   * thread count muted beside it, and the excerpt muted with matches marked. */
+  .cell--people { color: var(--text-secondary); }
+  .cell--excerpt { color: var(--text-muted); }
+  .in-thread { margin-left: var(--space-1); color: var(--text-muted); font-size: var(--font-size-xs); }
+
   .cell--excerpt mark {
     border-radius: 2px;
     background: color-mix(in srgb, var(--accent-amber) 24%, transparent);
-    color: inherit;
+    color: var(--text-primary);
   }
 
   .selection-marker {

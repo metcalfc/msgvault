@@ -34,11 +34,13 @@
   --artifact-ink: var(--accent-purple);
   /* One ink per modality for list glyphs, so a row's kind reads at a
    * glance without its word. */
-  --modality-email: var(--accent-blue);
-  --modality-text: var(--accent-green);
-  --modality-chat: var(--accent-teal);
-  --modality-event: var(--accent-amber);
-  --modality-meeting: var(--accent-purple);
+  /* Each hue is pulled toward primary ink so the glyph clears AA (4.5:1)
+   * on the panel in both themes: darker in light, lighter in dark. */
+  --modality-email: color-mix(in srgb, var(--accent-blue) 78%, var(--text-primary));
+  --modality-text: color-mix(in srgb, var(--accent-green) 70%, var(--text-primary));
+  --modality-chat: color-mix(in srgb, var(--accent-teal) 70%, var(--text-primary));
+  --modality-event: color-mix(in srgb, var(--accent-amber) 62%, var(--text-primary));
+  --modality-meeting: color-mix(in srgb, var(--accent-purple) 78%, var(--text-primary));
   --modality-other: var(--text-muted);
   --status-success-bg: color-mix(in srgb, var(--accent-green) 10%, var(--bg-surface));
   --status-success-ink: color-mix(in srgb, var(--accent-green) 72%, var(--text-primary));
