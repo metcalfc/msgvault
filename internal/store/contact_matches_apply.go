@@ -2,9 +2,16 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 )
+
+// ErrContactMatchOwnerIdentity reports that the matched participant cluster
+// contains one of the owner's own identities, so it must not be bound to a
+// contact profile.
+var ErrContactMatchOwnerIdentity = errors.New(
+	"the matched archive identity belongs to the archive owner")
 
 // contactMatchMergeActor records who performed the merge half of an accepted
 // bind. Only an explicit user decision reaches it.
@@ -89,6 +96,9 @@ func (s *Store) acceptParticipantPersonMatchTx(
 		return nil, err
 	}
 	members := sortedComponentMembers(candidate.LeftID, edges)
+	if err := contactMatchAcceptGuardsTx(ctx, tx, members); err != nil {
+		return nil, err
+	}
 	persons, err := personIDsForParticipantsTx(ctx, tx, members)
 	if err != nil {
 		return nil, err
@@ -120,6 +130,22 @@ func (s *Store) acceptParticipantPersonMatchTx(
 		return nil, fmt.Errorf("accept participant-to-person identity candidate: %w", err)
 	}
 	return getIdentityMatchCandidateTx(ctx, tx, candidate.ID)
+}
+
+// contactMatchAcceptGuardsTx re-checks, under the identity lock, the rules
+// that decided the candidate when it was built, because the archive may have
+// changed since: the cluster must not contain an owner identity.
+func contactMatchAcceptGuardsTx(ctx context.Context, tx *loggedTx, members []int64) error {
+	owners, err := ownerParticipantIDsTx(ctx, tx)
+	if err != nil {
+		return err
+	}
+	for _, member := range members {
+		if _, owner := owners[member]; owner {
+			return ErrContactMatchOwnerIdentity
+		}
+	}
+	return nil
 }
 
 // bindClusterIntoPersonTx promotes the participant's unbound cluster and

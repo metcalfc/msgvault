@@ -397,6 +397,9 @@ func (s *Server) writeIdentityMatchError(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrPersonCardDAVPublished):
 		writeError(w, http.StatusConflict, "person_carddav_published",
 			"Unpublish the person profile or resolve its CardDAV conflict before linking")
+	case errors.Is(err, store.ErrContactMatchOwnerIdentity):
+		writeError(w, http.StatusConflict, "contact_match_owner_identity",
+			"The matched archive identity belongs to the archive owner and is not linked to contacts")
 	case errors.Is(err, store.ErrIdentityMatchEndpointNotFound):
 		writeError(w, http.StatusNotFound, "identity_match_endpoint_not_found", err.Error())
 	case errors.Is(err, store.ErrPersonBindingConflict):

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -666,9 +667,12 @@ func contactMatchBlockReasonsTx(
 
 // ContactMatchBuildResult summarizes one contact-match refresh.
 type ContactMatchBuildResult struct {
-	Matches       int `json:"matches"`
-	Created       int `json:"created"`
-	Existing      int `json:"existing"`
+	Matches  int `json:"matches"`
+	Created  int `json:"created"`
+	Existing int `json:"existing"`
+	// Retired counts undecided candidates removed because they no longer
+	// qualify, for example because their cluster became an owner identity.
+	Retired       int `json:"retired"`
 	EvidenceAdded int `json:"evidence_added"`
 	Bind          int `json:"bind"`
 	Merge         int `json:"merge"`
@@ -693,6 +697,11 @@ func (s *Store) BuildContactMatchCandidatesContext(
 		if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
 			return err
 		}
+		retired, err := s.retireStaleContactMatchCandidatesTx(ctx, tx)
+		if err != nil {
+			return err
+		}
+		result.Retired = retired
 		matches, err := s.findContactMatchesTx(ctx, tx)
 		if err != nil {
 			return err
@@ -814,4 +823,69 @@ func existingContactMatchCandidatesTx(
 		}
 	}
 	return existing, rows.Err()
+}
+
+// retireStaleContactMatchCandidatesTx deletes undecided contact-match
+// candidates that no longer qualify. Decided rows are the user's record and
+// are never removed.
+func (s *Store) retireStaleContactMatchCandidatesTx(ctx context.Context, tx *loggedTx) (int, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id, left_id, right_id
+		FROM identity_match_candidates
+		WHERE source_ref = ? AND left_kind = ? AND right_kind = ? AND state = ?
+		ORDER BY id`,
+		ContactMatchSourceRef, IdentityMatchParticipant, IdentityMatchPerson,
+		IdentityMatchStateCandidate)
+	if err != nil {
+		return 0, fmt.Errorf("load undecided contact match candidates: %w", err)
+	}
+	pending := []IdentityMatchCandidate{}
+	for rows.Next() {
+		var row IdentityMatchCandidate
+		if err := rows.Scan(&row.ID, &row.LeftID, &row.RightID); err != nil {
+			_ = rows.Close()
+			return 0, fmt.Errorf("scan undecided contact match candidate: %w", err)
+		}
+		row.LeftKind, row.RightKind = IdentityMatchParticipant, IdentityMatchPerson
+		pending = append(pending, row)
+	}
+	if err := rows.Close(); err != nil {
+		return 0, fmt.Errorf("close undecided contact match candidates: %w", err)
+	}
+	if len(pending) == 0 {
+		return 0, nil
+	}
+	edges, err := s.loadLinkEdgesTxContext(ctx, tx)
+	if err != nil {
+		return 0, err
+	}
+	adjacency := buildAdjacency(edges)
+	retired := 0
+	for _, row := range pending {
+		component := componentOfAdj(row.LeftID, adjacency)
+		members := make([]int64, 0, len(component))
+		for id := range component {
+			members = append(members, id)
+		}
+		slices.Sort(members)
+		guardErr := contactMatchAcceptGuardsTx(ctx, tx, members)
+		if guardErr == nil {
+			continue
+		}
+		if !isContactMatchRetirement(guardErr) {
+			return retired, guardErr
+		}
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM identity_match_candidates WHERE id = ? AND state = ?`,
+			row.ID, IdentityMatchStateCandidate); err != nil {
+			return retired, fmt.Errorf("retire contact match candidate %d: %w", row.ID, err)
+		}
+		retired++
+	}
+	return retired, nil
+}
+
+// isContactMatchRetirement reports whether an accept guard failure means the
+// candidate no longer qualifies, as opposed to an operational error.
+func isContactMatchRetirement(err error) bool {
+	return errors.Is(err, ErrContactMatchOwnerIdentity)
 }
