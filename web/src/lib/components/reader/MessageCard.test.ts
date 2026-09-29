@@ -20,6 +20,42 @@ function detail(overrides: Partial<ArchiveMessageDetail> = {}): ArchiveMessageDe
 }
 
 describe('MessageCard', () => {
+  it('renders a calendar event description that carries markup through the sanitized frame, not a <pre>', async () => {
+    const { container } = render(MessageCard, {
+      props: {
+        message: detail({
+          messageType: 'calendar_event',
+          body: '<p>Agenda: <b>planning</b></p><script>alert(1)</script><a href="https://example.test/join">Join</a>'
+        }),
+        expanded: true
+      }
+    });
+
+    expect(container.querySelector('pre')).toBeNull();
+    const frame = await waitFor(() => {
+      const element = container.querySelector<HTMLIFrameElement>('iframe[title="Event description"]');
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts');
+    expect(frame.getAttribute('srcdoc')).toContain('planning');
+    expect(frame.getAttribute('srcdoc')).not.toContain('alert(1)');
+    expect(container.textContent).not.toContain('<p>');
+  });
+
+  it('keeps plain calendar descriptions and plain-text view mode in a <pre>', () => {
+    const plain = render(MessageCard, {
+      props: { message: detail({ messageType: 'calendar_event', body: 'Bring the deck' }), expanded: true }
+    });
+    expect(plain.container.querySelector('pre')?.textContent).toBe('Bring the deck');
+    plain.unmount();
+
+    const text = render(MessageCard, {
+      props: { message: detail({ messageType: 'calendar_event', body: '<p>Agenda</p>' }), expanded: true, viewMode: 'text' }
+    });
+    expect(text.container.querySelector('pre')?.textContent).toBe('<p>Agenda</p>');
+  });
+
   it('collapses to one line of sender, snippet, and date that expands on click', async () => {
     const onToggle = vi.fn();
     render(MessageCard, {

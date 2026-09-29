@@ -9,6 +9,7 @@
     ExploreScrollAnchor
   } from '../../explore/models';
   import { rebaseVirtualScroll, RowGeometry, tableViewportHeight } from '../../theme/preferences.svelte';
+  import { messageTypeLabel } from '../../util/labels';
 
   let {
     rows,
@@ -273,6 +274,12 @@
     }
     if (!restoring && hasMore && !loadingMore && slice.end >= rows.length - OVERSCAN) void onLoadMore?.();
   }
+
+  /** Message-type groups arrive keyed by the raw archive type; every other
+   * dimension already carries a display label. */
+  function rowLabel(row: { label: string }): string {
+    return dimension === 'message_type' ? messageTypeLabel(row.label) : row.label;
+  }
 </script>
 
 <section class="group-table" aria-label={`Grouped by ${dimension}`}>
@@ -348,7 +355,7 @@
               }}
               ondblclick={() => { if (drillable) onDrill(row); }}
             >
-              <div role="gridcell"><strong>{row.label}</strong></div>
+              <div role="gridcell"><strong>{rowLabel(row)}</strong></div>
               <span role="gridcell" class="numeric" data-mono>{row.count.toLocaleString()}</span>
               <span role="gridcell" class="numeric" data-mono>{bytes(row.estimated_bytes)}</span>
               <div role="gridcell"><time datetime={row.latest_at} data-mono>{date(row.latest_at)}</time></div>
@@ -358,7 +365,7 @@
                     size="sm"
                     surface="soft"
                     label="Drill"
-                    ariaLabel={`Drill into ${row.label}`}
+                    ariaLabel={`Drill into ${rowLabel(row)}`}
                     onclick={() => onDrill(row)}
                   />
                 {:else}

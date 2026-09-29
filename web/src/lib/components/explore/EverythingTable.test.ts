@@ -90,16 +90,30 @@ describe('EverythingTable', () => {
     expect(screen.getByText('3 lexical matches')).toBeDefined();
   });
 
+  it('decodes HTML character references in excerpts and previews', () => {
+    render(EverythingTable, {
+      rows: [
+        row(1, { preview: 'Tom &amp; Jerry &#39;quoted&#39;' }),
+        row(2, { match: { strongest_excerpt: 'caf&eacute; &lt;3' } })
+      ],
+      selection: new ExploreSelectionState()
+    });
+
+    expect(screen.getByRole('row', { name: /Synthetic subject 1/ }).textContent).toContain("Tom & Jerry 'quoted'");
+    expect(screen.getByRole('row', { name: /Synthetic subject 2/ }).textContent).toContain('café <3');
+    expect(document.body.textContent).not.toContain('&amp;');
+  });
+
   it('leaves row height to the computed CSS token with initial columns and textual modality', () => {
     render(EverythingTable, { rows: [row(1)], selection: new ExploreSelectionState() });
 
-    const rendered = screen.getByRole('row', { name: /Email item/ });
+    const rendered = screen.getByRole('row', { name: /Email/ });
     expect((rendered as HTMLElement).style.height).toBe('');
     expect(getComputedStyle(document.documentElement).getPropertyValue('--row-height').trim()).toBe('36px');
     expect(screen.getByRole('columnheader', { name: 'Kind' })).toBeDefined();
     expect(screen.getByRole('columnheader', { name: 'People / source' })).toBeDefined();
     expect(screen.getByRole('columnheader', { name: 'Attachments' }).textContent).toBe('⌕');
-    expect(screen.getByLabelText('Email item')).toBeDefined();
+    expect(screen.getByLabelText('Email')).toBeDefined();
   });
 
   it('shows identity intersections on email rows without replacing participant labels', () => {

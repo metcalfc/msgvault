@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Spinner } from '@kenn-io/kit-ui';
+  import { Button, Spinner, formatTimestamp } from '@kenn-io/kit-ui';
   import { onDestroy, onMount, tick, untrack } from 'svelte';
 
   import type { APIClient } from '../../api/client';
@@ -91,7 +91,7 @@
           <tbody>
             {#each controller.history as item (item.merge.id)}
               <tr>
-                <th scope="row">{item.merge.id}</th><td>{item.merge.created_at}</td>
+                <th scope="row">{item.merge.id}</th><td><time datetime={item.merge.created_at}>{formatTimestamp(item.merge.created_at)}</time></td>
                 <td>Person {item.merge.survivor_person_id}</td><td>Person {item.merge.absorbed_person_id}</td>
                 <td>{item.merge.current_person_id ? `Person ${item.merge.current_person_id}` : 'None'}</td>
                 <td>{item.participant_count}</td><td>{item.row_count}</td><td>{rowActionCounts(item.row_action_counts)}</td>
@@ -117,7 +117,7 @@
   {:else if controller.detail}
     <section class="merge-detail" aria-labelledby={`merge-${controller.detail.merge.id}-detail-heading`}>
       <div class="section-heading">
-        <div><h4 id={`merge-${controller.detail.merge.id}-detail-heading`}>Merge {controller.detail.merge.id} detail</h4><p>Recorded by {controller.detail.merge.actor} at {controller.detail.merge.created_at}.</p></div>
+        <div><h4 id={`merge-${controller.detail.merge.id}-detail-heading`}>Merge {controller.detail.merge.id} detail</h4><p>Recorded by {controller.detail.merge.actor} at <time datetime={controller.detail.merge.created_at}>{formatTimestamp(controller.detail.merge.created_at)}</time>.</p></div>
         {#if controller.canOfferSplit}<Button label="Split merged profile" tone="info" onclick={openSplit} />
         {:else if !controller.detail.merge.current_person_id}<p>No current source profile is recorded, so this merge cannot be split.</p>{/if}
       </div>
@@ -135,12 +135,12 @@
       </div>
       <div class="table-scroll">
         <table aria-label="Prior splits"><thead><tr><th scope="col">Split</th><th scope="col">Source</th><th scope="col">Created person</th><th scope="col">Revision change</th><th scope="col">Restoration</th><th scope="col">Actor</th><th scope="col">Created</th></tr></thead>
-          <tbody>{#each controller.detail.splits ?? [] as split}<tr><th scope="row">{split.id}</th><td>Person {split.source_person_id}</td><td>Person {split.new_person_id}</td><td>{split.source_revision_before} → {split.source_revision_after}</td><td>{split.exact_reversal ? 'Exact' : 'Partial'}</td><td>{split.actor}</td><td>{split.created_at}</td></tr>{/each}</tbody>
+          <tbody>{#each controller.detail.splits ?? [] as split}<tr><th scope="row">{split.id}</th><td>Person {split.source_person_id}</td><td>Person {split.new_person_id}</td><td>{split.source_revision_before} → {split.source_revision_after}</td><td>{split.exact_reversal ? 'Exact' : 'Partial'}</td><td>{split.actor}</td><td><time datetime={split.created_at}>{formatTimestamp(split.created_at)}</time></td></tr>{/each}</tbody>
         </table>
       </div>
       <div class="table-scroll">
         <table aria-label="Merge review candidates"><thead><tr><th scope="col">Candidate</th><th scope="col">Person</th><th scope="col">Definition</th><th scope="col">Survivor value</th><th scope="col">Absorbed value</th><th scope="col">Resolution</th><th scope="col">State</th><th scope="col">Reviewed</th><th scope="col">Reviewer</th><th scope="col">Created</th></tr></thead>
-          <tbody>{#each controller.detail.review_candidates ?? [] as candidate}<tr><th scope="row">{candidate.id}</th><td>{candidate.person_id}</td><td>{candidate.definition_id}</td><td>{candidate.survivor_value_id}</td><td>{candidate.absorbed_value_id}</td><td>{candidate.resolution_value_id ?? 'None'}</td><td>{candidate.state}</td><td>{candidate.reviewed_at ?? 'Not reviewed'}</td><td>{candidate.reviewed_by ?? 'None'}</td><td>{candidate.created_at}</td></tr>{/each}</tbody>
+          <tbody>{#each controller.detail.review_candidates ?? [] as candidate}<tr><th scope="row">{candidate.id}</th><td>{candidate.person_id}</td><td>{candidate.definition_id}</td><td>{candidate.survivor_value_id}</td><td>{candidate.absorbed_value_id}</td><td>{candidate.resolution_value_id ?? 'None'}</td><td>{candidate.state}</td><td>{candidate.reviewed_at ? formatTimestamp(candidate.reviewed_at) : 'Not reviewed'}</td><td>{candidate.reviewed_by ?? 'None'}</td><td><time datetime={candidate.created_at}>{formatTimestamp(candidate.created_at)}</time></td></tr>{/each}</tbody>
         </table>
       </div>
 

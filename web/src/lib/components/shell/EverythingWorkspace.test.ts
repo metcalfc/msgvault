@@ -2233,7 +2233,8 @@ describe('EverythingWorkspace', () => {
       scrollAnchor: { key: `group:${dimension}:${key}`, offset: 4 }
     });
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
-    await fireEvent.click(await screen.findByRole('button', { name: `Drill into ${key}` }));
+    // Message-type groups are labelled in human words ("email" → "Email").
+    await fireEvent.click(await screen.findByRole('button', { name: new RegExp(`^Drill into ${key}$`, 'i') }));
 
     expect(state.current.filters).toEqual(expectedFilters);
     expect(parseExploreURLState(window.location.search).filters).toEqual(expectedFilters);

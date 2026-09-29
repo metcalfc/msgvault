@@ -33,6 +33,16 @@
     label: string;
     lastAt: string;
     summary: string;
+    /** The primary email or phone when the row carries identifiers and it
+     * differs from the label — so two "J. Example" rows can be told apart. */
+    identifier?: string;
+  }
+
+  function primaryIdentifier(row: PersonSummary): string | undefined {
+    const candidates = (row.identifiers ?? []).filter((identifier) => identifier.type === 'email' || identifier.type === 'phone');
+    const primary = candidates.find((identifier) => identifier.is_primary) ?? candidates[0];
+    const value = primary?.value.trim();
+    return value && value.toLowerCase() !== row.display_label.trim().toLowerCase() ? value : undefined;
   }
 
   let {
@@ -119,7 +129,8 @@
       target: `cluster:${row.id}`,
       label: row.display_label,
       lastAt: row.last_at,
-      summary: `${row.activity_count.toLocaleString()} items`
+      summary: `${row.activity_count.toLocaleString()} items`,
+      identifier: primaryIdentifier(row)
     };
   }
 
@@ -262,6 +273,7 @@
                   <span class="label">{view.label}</span>
                   <span class="last-at" data-mono>{compactDate(view.lastAt)}</span>
                 </div>
+                {#if view.identifier}<span class="row-identifier" data-mono>{view.identifier}</span>{/if}
                 <span class="row-summary" data-mono>{view.summary}</span>
               </div>
             </div>
@@ -439,6 +451,14 @@
     color: var(--text-muted);
     font-size: var(--font-size-2xs);
     font-variant-numeric: tabular-nums;
+  }
+
+  .row-identifier {
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: var(--font-size-2xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .row-summary {

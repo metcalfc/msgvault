@@ -25,6 +25,11 @@ const messageTypeLabels: Record<string, string> = {
   conversation: 'Conversation'
 };
 
+/** True for archive message types with a curated label. */
+export function isKnownMessageType(type: string | null | undefined): boolean {
+  return Boolean(type) && (type!.trim().toLowerCase() in messageTypeLabels);
+}
+
 /** "imessage" → "Text (iMessage)", "calendar_event" → "Event"; unknown
  * values are title-cased with underscores turned into spaces so nothing
  * renders as a raw token. An empty value stays empty. */

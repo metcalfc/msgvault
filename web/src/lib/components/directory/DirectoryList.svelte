@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { Button, EmptyState } from '@kenn-io/kit-ui';
+  import { Button, Chip, EmptyState } from '@kenn-io/kit-ui';
 
   import type { DirectoryPerson } from '../../directory/models';
+  import { humanizeDate } from '../../util/dates';
 
   interface Props {
     rows: DirectoryPerson[];
@@ -20,17 +21,26 @@
   let { rows, loading, loadingMore, error, pageError, pageRecovery, hasMore, selectedPersonID, onSelect, onLoadMore, onReload }: Props = $props();
   let gridElement = $state<HTMLDivElement>();
   let activeID = $state<number | null>(null);
-  const activeIndex = $derived(activeID === null ? -1 : rows.findIndex((row) => row.id === activeID));
+  // Unnamed contact-only records ("Person 42" rows with nothing to tell
+  // them apart) sit behind a chip so the list opens on recognizable people.
+  // Client-side over the loaded pages: the server has no such filter yet.
+  let showQuiet = $state(false);
+  function isQuiet(person: DirectoryPerson): boolean {
+    return !person.display_name?.trim();
+  }
+  const quietCount = $derived(rows.filter(isQuiet).length);
+  const visibleRows = $derived(showQuiet ? rows : rows.filter((person) => !isQuiet(person)));
+  const activeIndex = $derived(activeID === null ? -1 : visibleRows.findIndex((row) => row.id === activeID));
 
   $effect(() => {
-    if (activeID !== null && rows.some((row) => row.id === activeID)) return;
-    activeID = rows[0]?.id ?? null;
+    if (activeID !== null && visibleRows.some((row) => row.id === activeID)) return;
+    activeID = visibleRows[0]?.id ?? null;
   });
 
   async function moveTo(index: number): Promise<void> {
-    if (rows.length === 0) return;
-    const next = Math.max(0, Math.min(rows.length - 1, index));
-    activeID = rows[next]!.id;
+    if (visibleRows.length === 0) return;
+    const next = Math.max(0, Math.min(visibleRows.length - 1, index));
+    activeID = visibleRows[next]!.id;
     await Promise.resolve();
     const row = gridElement?.querySelector<HTMLElement>(`[data-person-id="${activeID}"]`);
     row?.scrollIntoView({ block: 'nearest' });
@@ -38,11 +48,11 @@
   }
 
   function handleKeydown(event: KeyboardEvent): void {
-    if (event.metaKey || event.ctrlKey || event.altKey || rows.length === 0) return;
+    if (event.metaKey || event.ctrlKey || event.altKey || visibleRows.length === 0) return;
     if (event.key === 'ArrowDown' || event.key === 'j') void moveTo(activeIndex + 1);
     else if (event.key === 'ArrowUp' || event.key === 'k') void moveTo(activeIndex - 1);
     else if (event.key === 'Home') void moveTo(0);
-    else if (event.key === 'End') void moveTo(rows.length - 1);
+    else if (event.key === 'End') void moveTo(visibleRows.length - 1);
     else if ((event.key === 'Enter' || event.key === ' ') && activeID !== null) onSelect(activeID);
     else return;
     event.preventDefault();
@@ -66,10 +76,25 @@
     {#if loading && rows.length > 0}
       <p role="status" class="empty">Updating people…</p>
     {/if}
+    {#if quietCount > 0 && rows.length > 0}
+      <div class="quiet-toggle">
+        <Chip
+          interactive
+          tone="muted"
+          size="sm"
+          uppercase={false}
+          expanded={showQuiet}
+          ariaLabel={showQuiet ? `Hide ${quietCount} unnamed` : `Show ${quietCount} unnamed`}
+          onclick={() => { showQuiet = !showQuiet; }}
+        >{showQuiet ? 'Hide' : 'Show'} {quietCount.toLocaleString()} unnamed</Chip>
+      </div>
+    {/if}
     {#if loading && rows.length === 0}
       <p role="status" class="empty">Loading people…</p>
     {:else if rows.length === 0}
       <EmptyState title="No people found" description="Try a different search or filter." />
+    {:else if visibleRows.length === 0}
+      <p class="empty">Only unnamed records on this page.</p>
     {:else}
       <div
         bind:this={gridElement}
@@ -78,7 +103,7 @@
         aria-busy={loading || loadingMore}
         tabindex="-1"
       >
-        {#each rows as person (person.id)}
+        {#each visibleRows as person (person.id)}
           <div
             role="row"
             data-person-id={person.id}
@@ -91,7 +116,7 @@
           >
             <span role="gridcell" class="name">{person.display_name ?? `Person ${person.id}`}</span>
             <span role="gridcell" class="meta">{person.primary_channel ?? 'No primary channel'} · {person.contact_state}</span>
-            <span role="gridcell" class="meta">{person.last_contact_at ? `Last contact ${person.last_contact_at}` : 'Never contacted'}</span>
+            <span role="gridcell" class="meta">{#if person.last_contact_at}Last contact <time datetime={person.last_contact_at}>{humanizeDate(person.last_contact_at)}</time>{:else}Never contacted{/if}</span>
             {#if person.organizations?.length}<span role="gridcell" class="meta">{person.organizations.join(' · ')}</span>{/if}
             {#if person.categories?.length}<span role="gridcell" class="meta">{person.categories.join(' · ')}</span>{/if}
           </div>
@@ -116,4 +141,5 @@
   .notice { padding: var(--space-3); color: var(--text-secondary); background: var(--bg-inset); border-radius: var(--radius-sm); }
   .page-error { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
   .more { display: flex; justify-content: center; }
+  .quiet-toggle { display: flex; }
 </style>

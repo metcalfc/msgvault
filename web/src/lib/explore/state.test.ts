@@ -1448,3 +1448,12 @@ describe('Everything date default', () => {
     landing.destroy();
   });
 });
+
+describe('Directory order default', () => {
+  it('opens Directory on most recently contacted first and keeps an explicit Name order', () => {
+    expect(parseExploreURLState('').directorySort).toBe('last_contact_desc');
+    const directory = { ...defaultExploreURLState, workspace: 'directory' as const };
+    expect(parseExploreURLState(serializeExploreURLState({ ...directory, directorySort: 'name' })).directorySort).toBe('name');
+    expect(parseExploreURLState(serializeExploreURLState({ ...directory, directorySort: 'bogus' as never })).directorySort).toBe('last_contact_desc');
+  });
+});

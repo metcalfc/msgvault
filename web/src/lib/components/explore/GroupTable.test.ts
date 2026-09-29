@@ -31,6 +31,20 @@ describe('GroupTable', () => {
     expect(grid.getAttribute('aria-rowcount')).toBe('2');
   });
 
+  it('labels message-type groups in human words', () => {
+    render(GroupTable, {
+      rows: [
+        { key: 'imessage', label: 'imessage', count: 3, estimated_bytes: 0, latest_at: '2026-07-18T12:00:00Z' },
+        { key: 'calendar_event', label: 'calendar_event', count: 1, estimated_bytes: 0, latest_at: '2026-07-17T12:00:00Z' }
+      ],
+      dimension: 'message_type', onDrill: vi.fn()
+    });
+
+    expect(screen.getByRole('row', { name: /Text \(iMessage\)/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Drill into Event' })).toBeDefined();
+    expect(document.body.textContent).not.toContain('calendar_event');
+  });
+
   it('leaves aggregate row height to CSS and drills with keyboard focus retained', async () => {
     const onDrill = vi.fn();
     render(GroupTable, { rows, dimension: 'source', onDrill });

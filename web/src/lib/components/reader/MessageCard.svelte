@@ -3,6 +3,7 @@
 
   import type { APIClient } from '../../api/client';
   import type { ArchiveMessageDetail, MessageViewMode } from '../../archive/types';
+  import { looksLikeHTML } from '../../util/html-text';
   import IdentityAvatar from '../common/IdentityAvatar.svelte';
   import ContentFrame from './ContentFrame.svelte';
 
@@ -42,6 +43,14 @@
     typeof message.bodyHtml === 'string' && message.bodyHtml.trim() !== '' && !sanitizationFailed
   );
   const renderAsHTML = $derived(hasRenderableHTML && viewMode === 'html');
+
+  // Calendar event descriptions arrive in the plain body but are often
+  // authored as HTML; showing them in a <pre> leaks the tags. They take the
+  // same sanitized-frame path as an email body (ContentFrame runs
+  // lib/content/sanitize) unless the reader asked for plain text.
+  const renderCalendarMarkup = $derived(
+    !renderAsHTML && viewMode === 'html' && message.messageType === 'calendar_event' && looksLikeHTML(message.body)
+  );
 
   function formatDate(value: string): string {
     const parsed = new Date(value);
@@ -112,6 +121,13 @@
             messageId={message.id}
             html={message.bodyHtml ?? ''}
             title="Message body"
+          />
+        {:else if renderCalendarMarkup}
+          <ContentFrame
+            {client}
+            messageId={message.id}
+            html={message.body}
+            title="Event description"
           />
         {:else}
           <pre>{message.body}</pre>

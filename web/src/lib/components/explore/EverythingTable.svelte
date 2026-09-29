@@ -12,6 +12,7 @@
   import type { ExploreSelectionState } from '../../explore/state.svelte';
   import { rebaseVirtualScroll, RowGeometry, tableViewportHeight } from '../../theme/preferences.svelte';
   import IdentityBadge from './IdentityBadge.svelte';
+  import { decodeHTMLEntities } from '../../util/html-text';
   import RowKind from './RowKind.svelte';
 
   interface Props {
@@ -557,7 +558,7 @@
                     {:else if column === 'title'}
                       <strong>{row.title || '(untitled)'}</strong>
                     {:else if column === 'excerpt'}
-                      {row.match.strongest_excerpt || row.preview}
+                      {decodeHTMLEntities(row.match.strongest_excerpt || row.preview)}
                       {#if row.match.lexical_match_count !== undefined}
                         <span class="match-count">{row.match.lexical_match_count} lexical matches</span>
                       {/if}

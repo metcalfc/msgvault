@@ -55,6 +55,8 @@ export interface ArchiveAttachment {
 export interface ArchiveMessageDetail extends ArchiveMessageSummary {
   body: string;
   bodyHtml?: string;
+  /** Archive message type ("email", "calendar_event", …) when known. */
+  messageType?: string;
   attachments: ArchiveAttachment[];
 }
 

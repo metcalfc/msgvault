@@ -48,7 +48,7 @@ export class DirectoryController {
   primaryChannel = $state('');
   lastContactAfter = $state('');
   lastContactBefore = $state('');
-  sort = $state<DirectoryURLState['directorySort']>('name');
+  sort = $state<DirectoryURLState['directorySort']>('last_contact_desc');
   rows = $state<DirectoryPerson[]>([]);
   cursor = $state<string | null>(null);
   loading = $state(false);

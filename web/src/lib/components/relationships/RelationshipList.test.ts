@@ -151,7 +151,15 @@ describe('RelationshipList', () => {
     await fireEvent.input(screen.getByRole('searchbox', { name: 'Search people and domains' }), { target: { value: 'ali' } });
     expect(props.onQueryChange).toHaveBeenCalledWith('ali');
 
-    await view.rerender({ ...props, query: 'ali', rows: [person(3, 'Alicia Searched')] });
+    await view.rerender({ ...props, query: 'ali', rows: [{
+      ...person(3, 'Alicia Searched'),
+      identifiers: [
+        { type: 'phone', value: '+15550100003', participant_id: 3, is_primary: false, provenance: 'participant_identifiers' },
+        { type: 'email', value: 'alicia@example.com', participant_id: 3, is_primary: true, provenance: 'participant_identifiers' }
+      ]
+    }] });
+    // Search rows carry their primary identifier so same-named people can be told apart.
+    expect(screen.getByRole('row', { name: /Alicia Searched/ }).querySelector('.row-identifier')?.textContent).toBe('alicia@example.com');
     expect(screen.getByText('Alicia Searched')).toBeDefined();
     expect(screen.getByText('4 items')).toBeDefined();
     expect(screen.queryByText('Alice Example')).toBeNull();

@@ -85,7 +85,11 @@ describe('PersonTrackingControl', () => {
     expect(puts).toBe(1);
     expect(onAnnounce).toHaveBeenCalledWith('Profile maintenance tracking enabled.');
     expect(screen.getByText('Tracked since')).toBeDefined();
-    expect(document.querySelector('time')?.getAttribute('datetime')).toBe('2026-08-29T01:00:00Z');
+    const time = document.querySelector('time')!;
+    expect(time.getAttribute('datetime')).toBe('2026-08-29T01:00:00Z');
+    // Humanized, not the raw ISO string.
+    expect(time.textContent).toMatch(/Aug 2[89]/);
+    expect(time.textContent).not.toContain('2026-08-29T01:00:00Z');
   });
 
   it('locks an unknown mutation result behind a GET-only retry', async () => {

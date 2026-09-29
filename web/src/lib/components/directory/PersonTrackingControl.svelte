@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Card, EmptyState, Spinner, Toggle } from '@kenn-io/kit-ui';
+  import { Button, Card, EmptyState, Spinner, Toggle, formatTimestamp } from '@kenn-io/kit-ui';
   import { onDestroy, tick, untrack } from 'svelte';
 
   import type { APIClient } from '../../api/client';
@@ -102,7 +102,7 @@
           {#if controller.tracking.tracked_at}
             <span class="tracked-time">
               Tracked since
-              <time datetime={controller.tracking.tracked_at}>{controller.tracking.tracked_at}</time>
+              <time datetime={controller.tracking.tracked_at}>{formatTimestamp(controller.tracking.tracked_at)}</time>
             </span>
           {/if}
         </div>
