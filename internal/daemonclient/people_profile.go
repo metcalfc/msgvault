@@ -84,13 +84,20 @@ func (b *PeopleBrowser) GetPersonProfile(
 		return nil, err
 	}
 
-	attributes, err := b.ListAttributes(ctx, personID)
+	attributes, err := b.listAttributes(ctx, personID, "", "")
+	labelRequest := store.EntityLabelRequest{PersonIDs: []int64{personID}}
 	switch {
 	case err == nil:
 		profile.Attributes = attributes.Groups
+		labelRequest.PersonIDs = append(labelRequest.PersonIDs, attributes.RecordReferencePersonIDs()...)
 	case !absentAPIResource(err):
 		return nil, err
 	}
+	// One lookup names the person and every record reference; a daemon
+	// without the endpoint leaves them unnamed rather than failing the read.
+	labels, _ := b.EntityLabels(ctx, labelRequest)
+	profile.Label = labels.People[personID]
+	profile.RecordLabels = labels.People
 
 	profile.Employments, err = b.currentEmployments(ctx, personID)
 	if err != nil {

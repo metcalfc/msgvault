@@ -30,6 +30,13 @@ type Backend interface {
 	GetMessage(ctx context.Context, messageID int64) (*query.MessageDetail, error)
 }
 
+// EntityLabeler resolves durable labels for people, participants, and
+// organizations in one call. A backend that cannot name an entity leaves it
+// out; callers never substitute its ID or vCard UID.
+type EntityLabeler interface {
+	EntityLabels(ctx context.Context, request store.EntityLabelRequest) (store.EntityLabels, error)
+}
+
 // ProfileLister exposes the deliberately small, unpaginated durable profile
 // set to consumers that merge curated identities with analytical contacts.
 type ProfileLister interface {

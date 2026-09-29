@@ -20,7 +20,14 @@ type ProfileReader interface {
 // nil when the daemon could not report tracking state; Brief is nil when the
 // person has no current "last time we talked" version.
 type PersonProfile struct {
-	Person        store.Person
+	Person store.Person
+	// Label is the person's durable display label (curated name, person
+	// name, or a bound participant's name or identifier); empty when
+	// nothing names the person. The vCard UID is never a label.
+	Label string
+	// RecordLabels names the people that record-reference attribute values
+	// point at, keyed by person ID.
+	RecordLabels  map[int64]string
 	Tracked       *bool
 	ContactState  *store.ContactState
 	Brief         *PersonBrief

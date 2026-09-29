@@ -203,7 +203,25 @@ func (b *PeopleBrowser) Promote(
 func (b *PeopleBrowser) ListAttributes(
 	ctx context.Context, personID int64,
 ) (*peoplebrowser.Attributes, error) {
-	return b.listAttributes(ctx, personID, "", "")
+	attributes, err := b.listAttributes(ctx, personID, "", "")
+	if err != nil {
+		return nil, err
+	}
+	// Record references are named in one lookup; a daemon without the
+	// entity-labels endpoint leaves them unnamed rather than failing.
+	if ids := attributes.RecordReferencePersonIDs(); len(ids) > 0 {
+		labels, _ := b.EntityLabels(ctx, store.EntityLabelRequest{PersonIDs: ids})
+		attributes.RecordLabels = labels.People
+	}
+	return attributes, nil
+}
+
+// EntityLabels resolves durable labels through the daemon's entity-labels
+// endpoint.
+func (b *PeopleBrowser) EntityLabels(
+	ctx context.Context, request store.EntityLabelRequest,
+) (store.EntityLabels, error) {
+	return b.engine.store.EntityLabels(ctx, request)
 }
 
 // ListAttributesBySlug returns one definition group through the same daemon
@@ -252,12 +270,6 @@ func (b *PeopleBrowser) listAttributes(
 			Definition: attributeDefinitionFromGenerated(group.Definition),
 			Current:    current,
 		}
-	}
-	// Record references are named in one lookup; a daemon without the
-	// entity-labels endpoint leaves them unnamed rather than failing.
-	if ids := attributes.RecordReferencePersonIDs(); len(ids) > 0 {
-		labels, _ := b.engine.store.EntityLabels(ctx, store.EntityLabelRequest{PersonIDs: ids})
-		attributes.RecordLabels = labels.People
 	}
 	return attributes, nil
 }

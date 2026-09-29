@@ -545,8 +545,10 @@ func writeMarkdownParticipants(builder *strings.Builder, participants []Particip
 			builder.WriteString(participant.Email)
 			builder.WriteByte('>')
 		}
-		if participant.ParticipantID != nil {
-			fmt.Fprintf(builder, " (participant %d)", *participant.ParticipantID)
+		// A participant ID is an internal key, never a label: a participant
+		// with neither name nor email is named neutrally instead.
+		if participant.Name == "" && participant.Email == "" {
+			builder.WriteString(": Unknown participant")
 		}
 		builder.WriteByte('\n')
 	}

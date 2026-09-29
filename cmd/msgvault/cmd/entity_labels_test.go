@@ -257,9 +257,9 @@ func TestDaemonEntityLabelsBatchesPastTheServerCap(t *testing.T) {
 	assert.Equal(t, "Batch Person "+strconv.Itoa(total-1), labels.Participants[ids[total-1]])
 }
 
-// The TUI reads through the daemon client in daemon mode, so these cover the
-// labels it shows arriving over the production API.
-func TestDaemonClientCarriesLabelsTheTUIShows(t *testing.T) {
+// The TUI and MCP server read through the daemon client in daemon mode, so
+// these cover the labels they show arriving over the production API.
+func TestDaemonClientCarriesLabelsTheTUIAndMCPShow(t *testing.T) {
 	daemon := newEntityLabelTestDaemon(t)
 	owner, _ := daemon.person(t, "kai@example.com", "Kai Example")
 	referenced, _ := daemon.person(t, "lane@example.com", "Lane Example")
@@ -300,6 +300,11 @@ func TestDaemonClientCarriesLabelsTheTUIShows(t *testing.T) {
 	attributes, err := browser.ListAttributes(t.Context(), owner.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "Lane Example", attributes.RecordLabels[referenced.ID])
+
+	profile, err := browser.GetPersonProfile(t.Context(), owner.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Kai Example", profile.Label, "the MCP profile names an uncurated person by its durable label")
+	assert.Equal(t, "Lane Example", profile.RecordLabels[referenced.ID])
 
 	page, err := browser.ListConversations(t.Context(), query.TextFilter{})
 	require.NoError(t, err)

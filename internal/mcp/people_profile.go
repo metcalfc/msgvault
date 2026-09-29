@@ -149,12 +149,42 @@ type personProfileBriefEvidence struct {
 }
 
 type personProfileAttribute struct {
-	Slug        string                       `json:"slug"`
-	Label       string                       `json:"label"`
-	UniversalID string                       `json:"universal_id"`
-	ValueType   store.AttributeValueType     `json:"value_type"`
-	Cardinality store.AttributeCardinality   `json:"cardinality"`
-	Current     []store.PersonAttributeValue `json:"current"`
+	Slug        string                        `json:"slug"`
+	Label       string                        `json:"label"`
+	UniversalID string                        `json:"universal_id"`
+	ValueType   store.AttributeValueType      `json:"value_type"`
+	Cardinality store.AttributeCardinality    `json:"cardinality"`
+	Current     []personProfileAttributeValue `json:"current"`
+}
+
+// personProfileAttributeValue is one current attribute value. Its value
+// object adds record_label beside record_type and record_id when the value
+// references a person, so a reader never has to present the bare ID.
+type personProfileAttributeValue struct {
+	store.PersonAttributeValue
+	Value personProfileValue `json:"value"`
+}
+
+type personProfileValue struct {
+	store.AttributeValue
+	RecordLabel string `json:"record_label,omitempty"`
+}
+
+func personProfileAttributeValues(
+	values []store.PersonAttributeValue, recordLabels map[int64]string,
+) []personProfileAttributeValue {
+	out := make([]personProfileAttributeValue, len(values))
+	for i, value := range values {
+		out[i] = personProfileAttributeValue{
+			PersonAttributeValue: value,
+			Value:                personProfileValue{AttributeValue: value.Value},
+		}
+		if value.Value.RecordType != nil && *value.Value.RecordType == string(store.AttributeObjectPerson) &&
+			value.Value.RecordID != nil {
+			out[i].Value.RecordLabel = recordLabels[*value.Value.RecordID]
+		}
+	}
+	return out
 }
 
 type personProfileEmployment struct {
@@ -269,7 +299,7 @@ func (h *handlers) getPersonProfile(ctx context.Context, req toolRequest) (*tool
 func personProfileResponse(profile peoplebrowser.PersonProfile) getPersonProfileResponse {
 	response := getPersonProfileResponse{
 		PersonID:      profile.Person.ID,
-		DisplayName:   profileDisplayLabel(profile.Person),
+		DisplayName:   profileDisplayLabel(profile.Person, profile.Label),
 		VCardUID:      profile.Person.VCardUID,
 		Tracked:       profile.Tracked,
 		ContactState:  profile.ContactState,
@@ -303,10 +333,7 @@ func personProfileResponse(profile peoplebrowser.PersonProfile) getPersonProfile
 				}
 			}
 		}
-		current := group.Current
-		if current == nil {
-			current = []store.PersonAttributeValue{}
-		}
+		current := personProfileAttributeValues(group.Current, profile.RecordLabels)
 		response.Attributes = append(response.Attributes, personProfileAttribute{
 			Slug: definition.Slug, Label: definition.Label, UniversalID: definition.UniversalID,
 			ValueType: definition.ValueType, Cardinality: definition.Cardinality, Current: current,

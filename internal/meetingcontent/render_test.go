@@ -315,3 +315,28 @@ func mustRenderTime(t *testing.T, value string) *time.Time {
 func jsonNumber(value int64) string {
 	return strconv.FormatInt(value, 10)
 }
+
+func TestRenderMarkdownNeverLabelsParticipantsByID(t *testing.T) {
+	assertions := assert.New(t)
+	requirements := require.New(t)
+	result, err := Render("synthetic-archive", []Entry{{
+		Meeting: MeetingRef{MessageID: 12, Title: "Weekly", ArchivePath: "/api/v1/messages/12"},
+		Participants: []Participant{
+			{ParticipantID: new(int64(41)), Name: "Avery Example", Email: "avery@example.com", Role: "from"},
+			{ParticipantID: new(int64(42)), Email: "blake@example.com", Role: "to"},
+			{ParticipantID: new(int64(43)), Role: "cc"},
+		},
+		Content: Content{
+			Summary: Section{State: StateEmpty}, Notes: Section{State: StateEmpty},
+			Transcript: Transcript{State: StateEmpty}, Actions: []Action{}, ActionCoverage: CoverageAvailable,
+		},
+	}}, PacketOptions{Format: FormatMarkdown, MaxBytes: 16384})
+	requirements.NoError(err)
+	assertions.Contains(result.Content, "- from: Avery Example <avery@example.com>\n")
+	assertions.Contains(result.Content, "- to <blake@example.com>\n")
+	assertions.Contains(result.Content, "- cc: Unknown participant\n")
+	assertions.NotContains(result.Content, "(participant ")
+	for _, id := range []string{"41", "42", "43"} {
+		assertions.NotContains(result.Content, id)
+	}
+}

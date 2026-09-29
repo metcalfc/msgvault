@@ -146,7 +146,7 @@ func (h *handlers) searchPeople(ctx context.Context, req toolRequest) (*toolResu
 	if err != nil {
 		return nil, newInternalError("list durable people", err)
 	}
-	prepared := h.prepareCuratedPeopleSearch(ctx, profiles, queryText)
+	prepared := h.prepareCuratedPeopleSearch(ctx, profiles, h.profileLabels(ctx, profiles), queryText)
 	cursor, err := decodeSearchPeopleCursor(rawCursor, queryText, limit, prepared.fingerprint)
 	if err != nil {
 		return toolErrorResult(err.Error()), nil
@@ -214,16 +214,33 @@ func (h *handlers) searchPeople(ctx context.Context, req toolRequest) (*toolResu
 type curatedPeopleSearch struct {
 	rows          []searchPeopleRow
 	byParticipant map[int64]store.Person
+	labels        map[int64]string
 	excludedIDs   map[int64]struct{}
 	fingerprint   string
 	hasProfiles   bool
 }
 
+// profileLabels resolves every durable profile's label in one lookup. A
+// backend without the lookup, or a failed one, leaves profiles named only by
+// their curated display names.
+func (h *handlers) profileLabels(ctx context.Context, profiles []store.Person) map[int64]string {
+	labeler, ok := h.peopleBackend.(peoplebrowser.EntityLabeler)
+	if !ok || len(profiles) == 0 {
+		return nil
+	}
+	ids := make([]int64, len(profiles))
+	for i, profile := range profiles {
+		ids[i] = profile.ID
+	}
+	labels, _ := labeler.EntityLabels(ctx, store.EntityLabelRequest{PersonIDs: ids})
+	return labels.People
+}
+
 func (h *handlers) prepareCuratedPeopleSearch(
-	ctx context.Context, profiles []store.Person, queryText string,
+	ctx context.Context, profiles []store.Person, labels map[int64]string, queryText string,
 ) curatedPeopleSearch {
 	slices.SortFunc(profiles, func(a, b store.Person) int {
-		aLabel, bLabel := profileDisplayLabel(a), profileDisplayLabel(b)
+		aLabel, bLabel := profileDisplayLabel(a, labels[a.ID]), profileDisplayLabel(b, labels[b.ID])
 		if order := strings.Compare(strings.ToLower(aLabel), strings.ToLower(bLabel)); order != 0 {
 			return order
 		}
@@ -232,6 +249,7 @@ func (h *handlers) prepareCuratedPeopleSearch(
 	prepared := curatedPeopleSearch{
 		rows:          []searchPeopleRow{},
 		byParticipant: make(map[int64]store.Person),
+		labels:        labels,
 		excludedIDs:   make(map[int64]struct{}),
 		fingerprint:   peopleProfilesFingerprint(profiles),
 		hasProfiles:   len(profiles) > 0,
@@ -240,7 +258,7 @@ func (h *handlers) prepareCuratedPeopleSearch(
 		for _, participantID := range profile.ParticipantIDs {
 			prepared.byParticipant[participantID] = profile
 		}
-		if !profileMatchesPeopleQuery(profile, queryText) {
+		if !profileMatchesPeopleQuery(profile, labels[profile.ID], queryText) {
 			continue
 		}
 		summary := query.PersonSummary{
@@ -275,7 +293,7 @@ func (h *handlers) prepareCuratedPeopleSearch(
 		if summary.ID == 0 && len(profile.ParticipantIDs) > 0 {
 			summary.ID = slices.Min(profile.ParticipantIDs)
 		}
-		applyProfileToPeopleSummary(&summary, profile)
+		applyProfileToPeopleSummary(&summary, profile, labels[profile.ID])
 		prepared.rows = append(prepared.rows, searchPeopleRow{
 			PersonSummary: summary, PersonID: profile.ID,
 		})
@@ -311,7 +329,7 @@ func (h *handlers) searchObservedPeoplePage(
 			}
 			row := searchPeopleRow{PersonSummary: summary}
 			if hasProfile {
-				applyProfileToPeopleSummary(&row.PersonSummary, profile)
+				applyProfileToPeopleSummary(&row.PersonSummary, profile, prepared.labels[profile.ID])
 				row.PersonID = profile.ID
 			}
 			rows = append(rows, row)
@@ -364,21 +382,24 @@ func encodeSearchPeopleCursor(cursor searchPeopleCursor) (string, error) {
 	return searchPeopleCursorPrefix + base64.RawURLEncoding.EncodeToString(data), nil
 }
 
-func profileDisplayLabel(profile store.Person) string {
+// profileDisplayLabel names a durable profile: its curated display name,
+// else its durable label from the entity-label lookup. It is empty when
+// nothing names the person; the vCard UID is an opaque key, never a label.
+func profileDisplayLabel(profile store.Person, durableLabel string) string {
 	if profile.DisplayName != nil {
 		if label := strings.TrimSpace(*profile.DisplayName); label != "" {
 			return label
 		}
 	}
-	return profile.VCardUID
+	return strings.TrimSpace(durableLabel)
 }
 
-func profileMatchesPeopleQuery(profile store.Person, queryText string) bool {
+func profileMatchesPeopleQuery(profile store.Person, durableLabel, queryText string) bool {
 	queryText = strings.ToLower(strings.TrimSpace(queryText))
 	if queryText == "" {
 		return true
 	}
-	return strings.Contains(strings.ToLower(profileDisplayLabel(profile)), queryText) ||
+	return strings.Contains(strings.ToLower(profileDisplayLabel(profile, durableLabel)), queryText) ||
 		strings.Contains(strings.ToLower(profile.VCardUID), queryText)
 }
 
@@ -414,7 +435,7 @@ func peopleProfilesFingerprint(profiles []store.Person) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
-func applyProfileToPeopleSummary(summary *query.PersonSummary, profile store.Person) {
+func applyProfileToPeopleSummary(summary *query.PersonSummary, profile store.Person, durableLabel string) {
 	if profile.DisplayName != nil {
 		if displayName := strings.TrimSpace(*profile.DisplayName); displayName != "" {
 			summary.DisplayLabel = displayName
@@ -422,7 +443,7 @@ func applyProfileToPeopleSummary(summary *query.PersonSummary, profile store.Per
 		}
 	}
 	if summary.DisplayLabel == "" {
-		summary.DisplayLabel = profile.VCardUID
+		summary.DisplayLabel = strings.TrimSpace(durableLabel)
 	}
 	if summary.Identifiers == nil {
 		summary.Identifiers = []query.PersonIdentifier{}
