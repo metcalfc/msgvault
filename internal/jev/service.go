@@ -43,8 +43,12 @@ type ConsentChecker interface {
 	HasActiveJevFeatureConsent(ctx context.Context, feature, fingerprint string) (bool, error)
 }
 
-// ConfigSource returns the current configuration. In a long-running process
-// it must not be a startup snapshot.
+// ConfigSource returns the [jev] configuration the service runs under. The
+// daemon supplies the snapshot it started with: [jev] edits take effect
+// after a restart, which is what the settings API reports for every jev.*
+// key. Consent and the credential are not part of the snapshot; both are
+// rechecked live on every request, so `msgvault jev revoke` and a key
+// pasted in Settings act at once.
 type ConfigSource func() (Config, error)
 
 // CredentialSource resolves the API key for an endpoint. It returns ok=false

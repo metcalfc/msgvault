@@ -1306,8 +1306,10 @@ recorded per generation by `msgvault multimodal build --yes`.
 Consent-gated judgments from TypeSafe's System One model (Jev). Everything is
 off by default; a feature sends nothing until `[jev] enabled`, its own
 section's `enabled`, a resolvable API key, and `msgvault jev consent
-<feature> --yes` all hold. See [Jev judgments](/docs/usage/jev-judgments/) for
-what each feature sends, thresholds, and budgets.
+<feature> --yes` all hold. The daemon reads this section at startup, so
+changes take effect after a restart; consent and the stored key are checked
+on every request. See [Jev judgments](/docs/usage/jev-judgments/) for what
+each feature sends, thresholds, and budgets.
 
 | Key | Default | Description |
 |---|---|---|

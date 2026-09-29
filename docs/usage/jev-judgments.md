@@ -26,6 +26,13 @@ in.
    resolves, and consent is active for the feature's current policy. Scheduled
    and other unattended paths additionally need the feature's `automatic = true`.
 
+The daemon reads `[jev]` when it starts. Editing the section, in `config.toml`
+or in Settings, takes effect after the daemon restarts, and Settings marks
+every `jev.*` key restart-required. Consent and the API key are checked live:
+`msgvault jev revoke` stops the next request and a key pasted in Settings is
+used by the next request, no restart needed. `msgvault jev status` reports the
+configuration on disk.
+
 The policy a consent covers is a fingerprint of the feature name, the exact
 question wording, the list of state fields that leave the machine, the model,
 and the endpoint. Changing any of them changes the fingerprint and requires a
@@ -149,11 +156,12 @@ No message content, no addresses, no identifiers.
 ## Turn it off
 
 - `msgvault jev revoke --all` stops every feature at the next request without
-  touching configuration.
+  touching configuration or restarting anything.
+- Delete the stored key in Settings, or unset the environment variable and
+  restart, to make the credential check fail closed at the next request.
 - `enabled = false` under `[jev]` or under a feature section turns the gate
-  off; the exact rules apply exactly as before Jev existed.
-- Delete the stored key in Settings, or unset the environment variable, to
-  make the credential check fail closed.
+  off once the daemon restarts; the exact rules then apply exactly as before
+  Jev existed.
 
 Stored judgments and counters stay in the archive for audit; they hold
 probabilities and outcomes, not the compared values.

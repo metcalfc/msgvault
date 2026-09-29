@@ -90,7 +90,7 @@ var settingsGroups = []SettingGroup{
 	},
 	{
 		ID: settingsGroupJev, Label: "Jev judgments",
-		Description: "Narrow typed judgments from TypeSafe's Jev model. Each feature stays off until it is enabled here and consented to with `msgvault jev consent`.",
+		Description: "Narrow typed judgments from TypeSafe's Jev model. Each feature stays off until it is enabled here and consented to with `msgvault jev consent`. Changes to these settings take effect after the daemon restarts; consent and the stored key apply at once.",
 		Sections: []SettingSection{
 			{ID: sectionProvider, Label: "Provider", Description: "Save endpoint changes before storing a credential."},
 			{ID: "limits", Label: "Daily limits and prices"},

@@ -40,8 +40,12 @@ func jevCredentialSource(cfg *config.Config) jev.CredentialSource {
 }
 
 // newJevService builds the shared Jev door for one process, or returns nil
-// when [jev] is off so callers wire nothing. Enablement, consent, and the
-// credential are still rechecked on every request.
+// when [jev] is off so callers wire nothing.
+//
+// The service runs under the [jev] section this process started with: like
+// every jev.* setting the settings API marks restart-required, a change to
+// [jev] takes effect after the daemon restarts. Consent and the credential
+// are outside that snapshot and are rechecked on every request.
 func newJevService(cfg *config.Config, st jevRuntimeStore) (*jev.Service, error) {
 	if cfg == nil || st == nil || !cfg.Jev.Enabled {
 		return nil, nil //nolint:nilnil // nil means "no service"; callers treat it as disabled.
@@ -73,8 +77,9 @@ func jevCredentialRevision(cfg *config.Config) jev.CredentialRevision {
 }
 
 // newJevIdentityJudge wires the enrichment identity check, or returns nil
-// when Jev or the feature is off so the exact rule alone applies. automatic
-// marks unattended callers such as the daemon's scheduled runs.
+// when Jev or the feature is off in the startup configuration so the exact
+// rule alone applies until the daemon restarts with them on. automatic marks
+// unattended callers such as the daemon's scheduled runs.
 func newJevIdentityJudge(cfg *config.Config, st jevRuntimeStore, automatic bool) (personenrichment.IdentityJudge, error) {
 	if cfg == nil || !cfg.Jev.Enabled || !cfg.Jev.IdentityVerification.Enabled {
 		return nil, nil //nolint:nilnil // nil means "no judge"; the worker keeps the exact rule.
