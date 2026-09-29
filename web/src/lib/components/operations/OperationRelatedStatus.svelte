@@ -99,7 +99,7 @@
 
 <section class="related-status" aria-label={labels[authority]}>
   <header>
-    <div><p>Live authority</p><h1>{labels[authority]}</h1></div>
+    <div><p>Live authority</p><h1 data-page-title>{labels[authority]}</h1></div>
     <Button size="sm" surface="soft" label="Back to operations" onclick={onClose} />
   </header>
 
@@ -164,7 +164,7 @@
   .related-status { display: grid; align-content: start; gap: var(--space-4); min-height: 0; padding: var(--space-5) var(--space-6); overflow: auto; }
   header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
   header p, h1, .summary p { margin: 0; }
-  header p { color: var(--status-warning-ink); font-size: var(--font-size-2xs); font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+  header p { color: var(--status-warning-ink); font-size: var(--font-size-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
   .summary { display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface); }
   .summary p { display: flex; align-items: center; gap: var(--space-2); color: var(--text-muted); }
   .notice { padding: var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); }

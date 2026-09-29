@@ -366,8 +366,7 @@
     }
   }
 
-  /* Machined hairline under the pane header: darker line plus a faint
-   * sheen below it. */
+  /* One hairline rules the pane header from the body. */
   .pane-header {
     display: flex;
     min-height: 40px;
@@ -376,8 +375,7 @@
     justify-content: space-between;
     gap: var(--space-4);
     padding: var(--space-2) var(--space-4);
-    border-bottom: 1px solid var(--border-muted);
-    box-shadow: 0 1px 0 var(--hairline-sheen);
+    border-bottom: 1px solid var(--hairline);
   }
 
   .pane-heading {

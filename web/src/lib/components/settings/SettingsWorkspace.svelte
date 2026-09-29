@@ -646,7 +646,7 @@
           {#each settingsGroups.filter((candidate) => candidate.id === activeId) as group (group.id)}
             {@const posture = restartPosture(group.settings)}
             <header class="category">
-              <h2>{group.label}</h2>
+              <h2 data-page-title>{group.label}</h2>
               {#if group.description}<p>{group.description}</p>{/if}
               <p class="posture" data-posture={posture}>
                 {#if posture === 'live'}
@@ -752,7 +752,7 @@
     font-size: var(--font-size-sm);
   }
   .notice strong {
-    font-weight: 650;
+    font-weight: 600;
   }
   .notice--error {
     border-color: var(--status-error-ink);
@@ -763,12 +763,6 @@
   .category {
     display: grid;
     gap: var(--space-1);
-  }
-  .category h2 {
-    margin: 0;
-    font-size: var(--font-size-xl);
-    font-weight: 650;
-    letter-spacing: -0.01em;
   }
   .category p {
     margin: 0;

@@ -89,7 +89,7 @@
   <header>
     <div>
       <p>Run detail</p>
-      <h2>{kindLabels[detail.kind]}</h2>
+      <h2 data-page-title>{kindLabels[detail.kind]}</h2>
     </div>
     {#if showClose}<Button size="sm" surface="soft" label="Close operation detail" onclick={onClose} />{/if}
   </header>
@@ -103,7 +103,7 @@
   </dl>
 
   <section aria-labelledby="detail-counters-heading">
-    <h3 id="detail-counters-heading">Counters</h3>
+    <h3 id="detail-counters-heading" data-section-title>Counters</h3>
     {#if detail.counters.length === 0}
       <p class="muted">No counters reported.</p>
     {:else}
@@ -149,9 +149,8 @@
   .detail { display: grid; align-content: start; gap: var(--space-4); min-width: 0; padding: var(--space-4); }
   header { display: flex; align-items: start; justify-content: space-between; gap: var(--space-3); }
   h2, h3, p, dl, dd { margin: 0; }
-  header p { color: var(--text-muted); font-size: var(--font-size-2xs); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-  h2 { font-size: var(--font-size-lg); }
-  h3 { margin-bottom: var(--space-2); font-size: var(--font-size-sm); }
+  header p { color: var(--text-muted); font-size: var(--font-size-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+  h3 { margin-bottom: var(--space-2); }
   .facts, .counters { display: grid; gap: var(--space-2); }
   .facts div, .counters div { display: grid; grid-template-columns: minmax(100px, .45fr) 1fr; gap: var(--space-3); }
   dt { color: var(--text-muted); font-size: var(--font-size-xs); text-transform: capitalize; }

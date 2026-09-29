@@ -39,7 +39,7 @@
 
 <section class="timeline" aria-label="Canonical activity timeline">
   <header>
-    <div><p>Canonical context</p><h2>Activity</h2></div>
+    <div><p>Canonical context</p><h2 data-section-title>Activity</h2></div>
     <span>{totalCount === undefined ? 'Bounded timeline' : `${totalCount.toLocaleString()} items`}</span>
   </header>
   <EverythingTable {rows} {selection} {loading} {loadingMore} {hasMore} {generation} {error}
@@ -51,7 +51,6 @@
   .timeline { display: flex; min-height: 320px; flex-direction: column; gap: var(--space-3); }
   header { display: flex; align-items: end; justify-content: space-between; }
   header p, header h2 { margin: 0; }
-  header p { color: var(--accent-amber); font-size: var(--font-size-2xs); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-  header h2 { font-size: var(--font-size-lg); }
+  header p { color: var(--status-warning-ink); font-size: var(--font-size-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
   header span { color: var(--text-muted); font-size: var(--font-size-xs); }
 </style>

@@ -434,9 +434,8 @@
     top: 0;
     flex: 0 0 auto;
     min-height: 30px;
-    border-bottom: 1px solid var(--border-default);
-    background: var(--bg-surface);
-    box-shadow: 0 1px 0 var(--hairline-sheen);
+    border-bottom: 1px solid var(--hairline);
+    background: var(--surface-canvas);
     color: var(--text-muted);
     font-size: var(--font-size-2xs);
     font-weight: 600;

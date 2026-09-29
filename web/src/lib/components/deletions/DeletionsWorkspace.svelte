@@ -269,7 +269,7 @@
   <header>
     <div>
       <p>Archive workspace</p>
-      <h1>Deletions</h1>
+      <h1 data-page-title>Deletions</h1>
     </div>
     <span>Staged manifest lifecycle</span>
   </header>
@@ -456,9 +456,9 @@
   }
   header p {
     color: var(--status-warning-ink);
-    font-size: var(--font-size-2xs);
-    font-weight: 800;
-    letter-spacing: 0.1em;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
   }
   header span,

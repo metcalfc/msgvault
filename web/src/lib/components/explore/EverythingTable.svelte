@@ -616,7 +616,6 @@
     min-height: 30px;
     border-bottom: 1px solid var(--hairline);
     background: var(--surface-canvas);
-    box-shadow: 0 1px 0 var(--hairline-sheen);
     color: var(--text-muted);
     font-size: var(--font-size-2xs);
     font-weight: 600;
@@ -711,7 +710,7 @@
   .selection-marker {
     margin-right: var(--space-2);
     color: var(--active-ink);
-    font-weight: 800;
+    font-weight: 600;
   }
 
   .empty {

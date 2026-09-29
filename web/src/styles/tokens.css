@@ -15,7 +15,6 @@
   --surface-well: var(--bg-inset);
   --hairline: var(--border-muted);
   --edge: var(--border-default);
-  --hairline-sheen: var(--border-muted);
 
   /* Line heights per voice: titles sit tight, section titles a touch
    * looser, body and labels at UI leading, reading text at prose leading. */

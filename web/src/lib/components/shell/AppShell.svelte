@@ -1580,18 +1580,13 @@
     color: var(--text-primary);
     font-family: var(--font-sans);
     font-size: var(--font-size-md);
-    font-weight: 650;
+    font-weight: 600;
     letter-spacing: 0.01em;
   }
 
   .brand span {
     color: var(--artifact-ink);
     font-size: var(--font-size-sm);
-  }
-
-  /* Machined app-bar boundary: darker hairline plus a faint sheen line. */
-  .app-shell :global(.kit-top-bar) {
-    box-shadow: 0 1px 0 var(--hairline-sheen);
   }
 
   /* Integrated app-bar tabs: quiet text buttons with a soft active pill

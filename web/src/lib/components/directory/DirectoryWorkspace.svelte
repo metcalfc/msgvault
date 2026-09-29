@@ -126,7 +126,7 @@
 
 <main class="directory-workspace" bind:this={root} aria-label="Directory">
   <header class="directory-toolbar">
-    <div><h1>Directory</h1><p>People you know and their recorded contact context.</p></div>
+    <div><h1 data-page-title>Directory</h1><p>People you know and their recorded contact context.</p></div>
   </header>
   <div class="filters">
     <SearchInput value={textFilters.directoryQuery} ariaLabel="Search directory" placeholder="Search people, email, or organization…" block oninput={(value) => editTextFilter('directoryQuery', value)} />

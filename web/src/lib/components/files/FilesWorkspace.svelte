@@ -721,7 +721,7 @@
 
 <svelte:element this={embedded ? 'section' : 'main'} class="files-workspace" aria-label="Files">
   <header class="workspace-header">
-    <div><h1>{personScoped ? 'Attachments' : 'Files'}</h1></div>
+    <div><h1 data-page-title>{personScoped ? 'Attachments' : 'Files'}</h1></div>
     {#if !loading && !error && !unavailable}
       <span aria-live="polite"
         >{totalCount.toLocaleString()} {personPresentation === 'media' && personScoped ? 'media items' : 'files'}</span
@@ -1017,13 +1017,6 @@
     align-items: baseline;
     justify-content: space-between;
   }
-  h1 {
-    margin: 0;
-    font-family: var(--font-sans);
-    font-size: var(--font-size-xl);
-    font-weight: 650;
-    line-height: 1.2;
-  }
   .workspace-header span {
     color: var(--text-muted);
     font-size: var(--font-size-xs);
@@ -1097,9 +1090,8 @@
     top: 0;
     min-height: var(--table-header-height);
     flex: 0 0 auto;
-    border-bottom: 1px solid var(--border-default);
-    background: var(--bg-surface);
-    box-shadow: 0 1px 0 var(--hairline-sheen);
+    border-bottom: 1px solid var(--hairline);
+    background: var(--surface-canvas);
     color: var(--text-muted);
     font-size: var(--font-size-2xs);
     font-weight: 600;

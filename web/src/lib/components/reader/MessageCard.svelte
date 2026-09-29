@@ -345,16 +345,16 @@
     padding: var(--space-3) var(--space-4) var(--space-4);
   }
 
-  /* Plain text renders on the theme surface with theme text, in the same
-   * reading type and measure as themed HTML mail. */
+  /* Plain text renders on the theme surface with theme text in the reading
+   * voice: a 70ch measure, the reading face at 14px on prose leading. */
   pre {
-    max-width: 680px;
+    max-width: 70ch;
     margin: 0;
     overflow-wrap: break-word;
     color: var(--text-primary);
-    font-family: var(--font-sans);
+    font-family: var(--font-reading);
     font-size: 14px;
-    line-height: 1.55;
+    line-height: var(--leading-reading);
     white-space: pre-wrap;
   }
 </style>

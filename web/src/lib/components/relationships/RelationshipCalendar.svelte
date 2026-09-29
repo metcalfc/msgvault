@@ -1,7 +1,7 @@
 <script lang="ts">
   import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
   import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-  import { Button, Card, IconButton } from '@kenn-io/kit-ui';
+  import { Button, IconButton } from '@kenn-io/kit-ui';
 
   import type {
     RelationshipCalendar as RelationshipCalendarModel,
@@ -231,10 +231,9 @@
   </div>
 {/snippet}
 
-<Card padding="sm">
 <section class="relationship-calendar" aria-label="Relationship activity calendar" bind:this={root}>
-  <div class="calendar-heading">
-    <h2>Relationship</h2>
+  <div class="calendar-heading" data-section-header>
+    <h2 data-section-title>Relationship</h2>
     <div class="year-navigation">
       {#if multiYear}
         <IconButton
@@ -293,7 +292,6 @@
     <p class="calendar-state">Relationship activity has not loaded.</p>
   {/if}
 </section>
-</Card>
 
 <style>
   .relationship-calendar {
@@ -311,12 +309,6 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-  }
-
-  h2 {
-    margin: 0;
-    font-size: var(--text-sm);
-    font-weight: 650;
   }
 
   .year-navigation {
@@ -357,7 +349,7 @@
     gap: var(--relationship-cell-gap);
     margin-left: var(--relationship-label-gutter);
     color: var(--text-muted);
-    font-size: var(--text-xs);
+    font-size: var(--font-size-2xs);
   }
 
   .month-row span {
@@ -377,7 +369,7 @@
     grid-template-rows: repeat(7, var(--relationship-cell-size));
     gap: var(--relationship-cell-gap);
     color: var(--text-muted);
-    font-size: 9px;
+    font-size: var(--font-size-2xs);
     line-height: var(--relationship-cell-size);
   }
 
@@ -431,7 +423,7 @@
     align-items: center;
     gap: 4px;
     color: var(--text-muted);
-    font-size: var(--text-xs);
+    font-size: var(--font-size-xs);
   }
 
   .legend .heat-cell {
@@ -440,7 +432,8 @@
 
   .temperature-summary {
     flex-wrap: wrap;
-    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
   }
 
@@ -462,7 +455,7 @@
   .empty-year {
     margin: var(--space-3) 0 0;
     color: var(--text-muted);
-    font-size: var(--text-sm);
+    font-size: var(--font-size-sm);
   }
 
   .calendar-state {

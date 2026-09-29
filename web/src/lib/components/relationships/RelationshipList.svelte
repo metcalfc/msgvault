@@ -373,13 +373,14 @@
     text-align: center;
   }
 
+  /* A named state reads as a toned row with a 2px bar, not a box. */
   .named-state {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
-    border: 1px solid var(--edge);
-    border-radius: var(--radius-md);
-    padding: var(--space-4);
+    border-left: 2px solid var(--status-warning-ink);
+    padding: var(--space-3);
+    background: var(--status-warning-bg);
     font-size: var(--font-size-sm);
   }
 

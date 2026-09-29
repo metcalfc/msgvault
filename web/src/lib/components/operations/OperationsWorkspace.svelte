@@ -281,7 +281,7 @@
   {:else if narrow && urlState.operationRunID !== null}
     <section class="focused-detail" aria-label="Operation detail focused content">
       <header class="focused-header">
-        <h1>Operation detail</h1>
+        <h1 data-page-title>Operation detail</h1>
         <Button size="sm" surface="soft" label="Back to operation history" onclick={() => void closeDetail()} />
       </header>
       {@render operationNotices()}
@@ -302,7 +302,7 @@
     </section>
   {:else}
     <header class="workspace-header">
-      <div><p>Archive operations</p><h1>Operations</h1></div>
+      <div><p>Archive operations</p><h1 data-page-title>Operations</h1></div>
       <Button size="sm" surface="soft" label="Refresh operations" disabled={current.backgroundLoading} onclick={() => void controller.refresh()} />
     </header>
 
@@ -374,7 +374,7 @@
   .workspace-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
   .focused-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
   .workspace-header p, h1, .notice { margin: 0; }
-  .workspace-header p { color: var(--status-warning-ink); font-size: var(--font-size-2xs); font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+  .workspace-header p { color: var(--status-warning-ink); font-size: var(--font-size-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
   .filters { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
   .content { display: grid; min-width: 0; min-height: 0; }
   .content.has-detail { grid-template-columns: minmax(520px, 1fr) minmax(340px, .6fr); gap: var(--space-4); }

@@ -109,7 +109,7 @@
   </details>
 {:else}
   <section class="meeting-panel" aria-label="Meeting activity">
-    <header><h2>Meeting activity and follow-ups</h2></header>
+    <header><h2 data-section-title>Meeting activity and follow-ups</h2></header>
     {@render body()}
   </section>
 {/if}
@@ -117,8 +117,8 @@
 <style>
   .meeting-panel { display: grid; gap: var(--space-3); padding: var(--space-4); min-width: 0; }
   .meeting-panel--nested { max-height: 42vh; padding-inline: 0; overflow: auto; }
-  h2, p { margin: 0; font-size: var(--font-size-sm); color: var(--text-secondary); }
-  h2 { color: var(--text-primary); }
+  h2, p { margin: 0; }
+  p { font-size: var(--font-size-sm); color: var(--text-secondary); }
   .action-filters { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
   .meeting-overview { flex: none; min-width: 0; }
   .meeting-overview summary { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-sm); }

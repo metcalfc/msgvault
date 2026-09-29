@@ -592,7 +592,7 @@
 <main class="everything-workspace" aria-label="Everything">
   <header class="workspace-header">
     <div>
-      <h1>Everything</h1>
+      <h1 data-page-title>Everything</h1>
     </div>
     <div class="workspace-view-controls">
       {#if canPreviewRight}
@@ -895,14 +895,6 @@
   .preview-position {
     color: var(--text-muted);
     font-size: var(--font-size-xs);
-  }
-
-  h1 {
-    margin: 0;
-    font-family: var(--font-sans);
-    font-size: var(--font-size-xl);
-    font-weight: 650;
-    line-height: 1.2;
   }
 
   .result-count {

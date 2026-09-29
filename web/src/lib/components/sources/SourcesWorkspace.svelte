@@ -304,7 +304,7 @@
   <header>
     <div>
       <p>Archive workspace</p>
-      <h1>Sources</h1>
+      <h1 data-page-title>Sources</h1>
     </div>
     <div class="header-actions">
       <span>Status and incremental sync</span>
@@ -467,9 +467,9 @@
   }
   header p {
     color: var(--status-warning-ink);
-    font-size: var(--font-size-2xs);
-    font-weight: 800;
-    letter-spacing: 0.1em;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
   }
   header span,

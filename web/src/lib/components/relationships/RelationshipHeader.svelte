@@ -397,7 +397,7 @@
         shape={isPersonDetail(detail) ? 'person' : 'domain'}
         size={36}
       />
-      <h2>{displayLabel(detail)}</h2>
+      <h2 data-page-title>{displayLabel(detail)}</h2>
       <div class="actions">
         <SegmentedControl
           ariaLabel="Relationship view"
@@ -553,10 +553,6 @@
 
   h2 {
     overflow: hidden;
-    margin: 0;
-    font-size: var(--font-size-xl);
-    font-weight: 650;
-    line-height: 1.2;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -583,15 +579,17 @@
     font-size: var(--font-size-xs);
   }
 
+  /* A failure reads as a toned row with a 2px bar, not a box. */
   .named-state {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-    border: 1px solid var(--edge);
-    border-radius: var(--radius-md);
-    padding: var(--space-3);
+    border-left: 2px solid var(--status-error-ink);
+    padding: var(--space-2) var(--space-3);
+    background: var(--status-error-bg);
+    color: var(--text-primary);
     font-size: var(--font-size-sm);
   }
 
