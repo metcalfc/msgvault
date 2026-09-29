@@ -73,6 +73,8 @@
   import DirectoryWorkspace from '../directory/DirectoryWorkspace.svelte';
   import DirectoryReviewWorkspace from '../directory/DirectoryReviewWorkspace.svelte';
   import KeyboardHelp from './KeyboardHelp.svelte';
+  import MessagePage from '../reader/MessagePage.svelte';
+  import { routeTitle } from '../../routing/routes';
   import ArchivedMeetingReader from '../meetings/ArchivedMeetingReader.svelte';
   import { ArchiveMeetingNavigation, archiveMeetingSelection, parseArchiveMeetingSelection } from '../../meetings/archive-navigation.svelte';
   import { getMessage } from '../../api/generated/api/api';
@@ -88,6 +90,11 @@
   import { stepThread } from '../../reader/thread-stepper';
   import { EverythingSessionState } from './EverythingSessionState.svelte';
   import { bufferedCallback } from '../../util/buffered-callback';
+  /** The settings category the address names, and how to change it. */
+  interface SettingsSectionBinding {
+    value: string;
+    change: (section: string) => void;
+  }
   interface Props {
     client: APIClient;
     state?: ExploreState;
@@ -95,7 +102,8 @@
     settings?: Snippet<[
       CardDAVSettingsRequest | undefined,
       (key: number) => void,
-      SettingsNavigationTarget | undefined
+      SettingsNavigationTarget | undefined,
+      SettingsSectionBinding
     ]>;
     appearanceDefaults?: AppearanceDefaults;
     searchModeDefault?: ExploreSearchMode;
@@ -440,10 +448,9 @@
   // popstate (see `handleHistoryFocus` below) — so a user who lands by
   // default, navigates elsewhere, then explicitly clicks back into
   // Relationships later is never silently bounced away again.
-  let arrivedWithoutExploreParam = untrack(() => {
-    const parameters = new URLSearchParams(window.location.search);
-    return !parameters.has('workspace') && !parameters.has('explore');
-  });
+  // Read from the state, not the address: the state has already rewritten
+  // a legacy or bare address to its readable path by now.
+  let arrivedWithoutExploreParam = untrack(() => exploreState.arrivedAtDefault);
   let landingFallbackApplied = false;
   let contextualViewerFile = $state<FileViewerTarget>();
   let contextualViewerReturnFocus = $state<HTMLElement>();
@@ -1198,6 +1205,23 @@
       scrollAnchor: null,
     });
   }
+  // The page title names the surface (and the message, once loaded) so
+  // browser history and tabs read as places.
+  let pageSubject = $state('');
+  $effect(() => {
+    void exploreState.current.messageID;
+    pageSubject = '';
+  });
+  $effect(() => {
+    const surface = exploreState.current.workspace === 'message' && pageSubject
+      ? pageSubject
+      : routeTitle(exploreState.current);
+    document.title = `${surface} · msgvault`;
+  });
+  function leaveMessagePage(): void {
+    if (exploreState.canGoBack()) window.history.back();
+    else commitWorkspace('everything');
+  }
   onMount(() => {
     const detachShortcuts = initShortcuts();
     let disposed = false;
@@ -1320,7 +1344,17 @@
   </TopBar>
 
   {#if exploreState.current.workspace === 'settings'}
-    {#if settings}{@render settings(cardDAVSettingsRequest, consumeCardDAVSettingsRequest, settingsNavigationTarget)}{/if}
+    {#if settings}{@render settings(cardDAVSettingsRequest, consumeCardDAVSettingsRequest, settingsNavigationTarget, {
+      value: exploreState.current.settingsSection,
+      change: (settingsSection) => replaceCommittedNavigation({ settingsSection }),
+    })}{/if}
+  {:else if exploreState.current.workspace === 'message' && exploreState.current.messageID !== null}
+    <MessagePage
+      {client}
+      messageID={exploreState.current.messageID}
+      onBack={leaveMessagePage}
+      onSubject={(subject) => (pageSubject = subject)}
+    />
   {:else if exploreState.current.workspace === 'saved_views'}
     <SavedViewsWorkspace
       {client}

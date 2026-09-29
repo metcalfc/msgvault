@@ -37,6 +37,7 @@ import type {
   SourceIdentityResponse as GeneratedSourceIdentityResponse,
 } from '../api/generated/models';
 import type { SettingsNavigationAuthority } from '../carddav/navigation';
+import type { PersonTab } from '../routing/routes';
 
 export type EntryRow = GeneratedEntryRow;
 export type ExploreCacheUnavailable = GeneratedExploreCacheUnavailableResponse;
@@ -116,7 +117,8 @@ export type ExploreWorkspace =
   | 'saved_views'
   | 'sources'
   | 'deletions'
-  | 'settings';
+  | 'settings'
+  | 'message';
 export type OperationKind = GeneratedOperationKind;
 export type OperationLane = GeneratedOperationLane;
 export type OperationState = GeneratedOperationState;
@@ -157,6 +159,8 @@ export interface ExploreURLState {
   directoryLastContactBefore: string;
   directorySort: 'name' | 'last_contact_desc' | 'last_contact_asc';
   directoryPersonID: number | null;
+  /** Which tab of a person page is open (`/people/:id/<tab>`). */
+  personTab: PersonTab;
   reviewKind: DirectoryReviewKind;
   identityState: IdentityReviewState;
   relationshipReviewState: RelationshipReviewState;
@@ -192,6 +196,10 @@ export interface ExploreURLState {
   operationRunID: string | null;
   operationStatus: '' | OperationStatusAuthority;
   settingsAuthority: '' | SettingsNavigationAuthority;
+  /** The open settings category (`/settings/<section>`), or '' for the first. */
+  settingsSection: string;
+  /** The message a `/messages/:id` page shows. */
+  messageID: number | null;
   columns: ExploreColumn[];
   columnWidths: Partial<Record<ExploreColumn, number>>;
   activeRow: string | null;

@@ -1081,7 +1081,7 @@ describe('EverythingWorkspace', () => {
     await waitFor(() => expect(state.current.selectedRow).toBe('attachment:7'));
     expect(await screen.findByRole('dialog', { name: 'View analysis.pdf' })).toBeDefined();
     expect(state.current.selectedRow).toBe('attachment:7');
-    expect(parseExploreURLState(window.location.search).selectedRow).toBe('attachment:7');
+    expect(parseExploreURLState(window.location.search, window.location.pathname).selectedRow).toBe('attachment:7');
     await fireEvent.click(screen.getByRole('button', { name: 'Close file viewer' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'View analysis.pdf' })).toBeNull());
     expect(state.current.selectedRow).toBeNull();
@@ -2402,7 +2402,7 @@ describe('EverythingWorkspace', () => {
     await fireEvent.click(await screen.findByRole('button', { name: new RegExp(`^Drill into ${key}$`, 'i') }));
 
     expect(state.current.filters).toEqual(expectedFilters);
-    expect(parseExploreURLState(window.location.search).filters).toEqual(expectedFilters);
+    expect(parseExploreURLState(window.location.search, window.location.pathname).filters).toEqual(expectedFilters);
     expect(state.current.groupingChain).toEqual([]);
     expect(state.current.scrollAnchor).toBeNull();
     rendered.unmount();
@@ -2466,7 +2466,7 @@ describe('EverythingWorkspace', () => {
     await fireEvent.keyDown(screen.getByRole('separator', { name: 'Resize reading pane' }), { key: 'ArrowUp' });
     const persisted = window.localStorage.getItem('msgvault.reading-pane.size');
     expect(persisted).not.toBeNull();
-    expect(parseExploreURLState(window.location.search)).not.toHaveProperty('inspectorWidth');
+    expect(parseExploreURLState(window.location.search, window.location.pathname)).not.toHaveProperty('inspectorWidth');
     await fireEvent.click(screen.getByRole('button', { name: 'Close reading pane' }));
 
     await waitFor(() => expect(document.activeElement).toBe(grid));

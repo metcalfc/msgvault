@@ -28,13 +28,11 @@ describe('Explore URL state', () => {
       scrollAnchor: { key: 'message:7', offset: 10 },
     });
 
-    // Besides the workspace and mode shorthand, an Everything link without
-    // date bounds carries only the marker that makes it explicit.
-    const parameters = new URLSearchParams(search);
-    expect([...parameters.keys()]).toEqual(['workspace', 'mode', 'explore']);
-    expect(parameters.get('workspace')).toBe('everything');
-    expect(parameters.get('mode')).toBe('full_text');
-    expect(JSON.parse(parameters.get('explore')!)).toEqual({ schemaVersion: 2, dateBoundsChosen: true });
+    // The path names the Inbox; a link without date bounds says so with
+    // since=all so a cold open never adds the seven-day default to it.
+    const url = new URL(search, 'http://msgvault.invalid');
+    expect(url.pathname).toBe('/inbox');
+    expect([...url.searchParams.entries()]).toEqual([['since', 'all']]);
     expect(parseExploreURLState(search)).toMatchObject({
       workspace: 'everything', relationshipTarget: null, directoryQuery: '', fileFilenameQuery: '', dateBoundsChosen: true,
     });
@@ -58,10 +56,9 @@ describe('Explore URL state', () => {
     const state = new ExploreState(window);
     state.commitNavigation({ relationshipTarget: 'cluster:42' });
     state.commitWorkspace('everything');
-    const params = new URLSearchParams(window.location.search);
-    expect(params.get('workspace')).toBe('everything');
-    expect(params.get('mode')).toBe('full_text');
-    expect(parseExploreURLState(window.location.search).filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
+    expect(window.location.pathname).toBe('/inbox');
+    expect(new URLSearchParams(window.location.search).get('since')).toBe('7d');
+    expect(parseExploreURLState(window.location.search, window.location.pathname).filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
 
     window.history.back();
     await new Promise((resolve) => window.addEventListener('popstate', resolve, { once: true }));
@@ -613,7 +610,7 @@ describe('relationships workspace state', () => {
     expect(state.current.query).toBe('');
     expect(state.predicate()).not.toHaveProperty('query');
     expect(state.predicate()).not.toHaveProperty('search_mode');
-    expect(parseExploreURLState(window.location.search).query).toBe('');
+    expect(parseExploreURLState(window.location.search, window.location.pathname).query).toBe('');
 
     window.history.back();
     await new Promise((resolve) => window.addEventListener('popstate', resolve, { once: true }));
@@ -672,7 +669,7 @@ describe('ExploreState history ownership', () => {
       operationState: 'failed',
       operationRunID: null
     });
-    expect(parseExploreURLState(window.location.search).operationRunID).toBeNull();
+    expect(parseExploreURLState(window.location.search, window.location.pathname).operationRunID).toBeNull();
     state.destroy();
   });
 
@@ -701,7 +698,7 @@ describe('ExploreState history ownership', () => {
       operationStartedBefore: '',
       operationRunID: null
     });
-    expect(parseExploreURLState(window.location.search)).toMatchObject({
+    expect(parseExploreURLState(window.location.search, window.location.pathname)).toMatchObject({
       operationLane: 'contacts',
       operationKind: '',
       operationStartedFrom: '',
@@ -799,7 +796,7 @@ describe('ExploreState history ownership', () => {
     remembered.destroy();
 
     window.history.replaceState(null, '', serializeExploreURLState({
-      ...defaultExploreURLState, searchMode: 'full_text'
+      ...defaultExploreURLState, workspace: 'everything', query: 'plan', searchMode: 'full_text'
     }));
     const explicit = new ExploreState(window, storage);
     expect(explicit.current.searchMode).toBe('full_text');
@@ -811,7 +808,7 @@ describe('ExploreState history ownership', () => {
       getItem: () => null,
       setItem: () => undefined
     };
-    window.history.replaceState(null, '', '/');
+    window.history.replaceState(null, '', '/inbox');
     const state = new ExploreState(window, emptyStorage);
     expect(state.current.searchMode).toBe('full_text');
 
@@ -819,7 +816,7 @@ describe('ExploreState history ownership', () => {
 
     expect(state.current.searchMode).toBe('semantic');
     state.commitNavigation({ selectedRow: 'message:1' });
-    expect(parseExploreURLState(window.location.search).searchMode).toBe('semantic');
+    expect(parseExploreURLState(window.location.search, window.location.pathname).searchMode).toBe('semantic');
     state.destroy();
   });
 
@@ -840,7 +837,7 @@ describe('ExploreState history ownership', () => {
 
   it('keeps an explicit URL mode over the configured default', () => {
     window.history.replaceState(null, '', serializeExploreURLState({
-      ...defaultExploreURLState, searchMode: 'hybrid'
+      ...defaultExploreURLState, workspace: 'everything', query: 'plan', searchMode: 'hybrid'
     }));
     const state = new ExploreState(window, null);
 
@@ -919,7 +916,7 @@ describe('ExploreState history ownership', () => {
     expect(state.current.searchMode).toBe('semantic');
     expect(state.current.groupingChain).toEqual(['source']);
     expect(state.current.selectedRow).toBe('message:2');
-    expect(parseExploreURLState(window.location.search)).toMatchObject({
+    expect(parseExploreURLState(window.location.search, window.location.pathname)).toMatchObject({
       query: 'quarter',
       searchMode: 'semantic',
       groupingChain: ['source'],
@@ -945,7 +942,7 @@ describe('ExploreState history ownership', () => {
 
     expect(window.history.length).toBe(preReplaceLength);
     expect(state.current.conversationAnchor).toBe('2');
-    expect(parseExploreURLState(window.location.search).conversationAnchor).toBe('2');
+    expect(parseExploreURLState(window.location.search, window.location.pathname).conversationAnchor).toBe('2');
     window.history.back();
     await new Promise((resolve) => window.addEventListener('popstate', resolve, { once: true }));
     expect(state.current.conversationAnchor).toBeNull();
@@ -1037,7 +1034,7 @@ describe('ExploreState history ownership', () => {
       grouping: ['participant', 'year'],
       filters: [{ dimension: 'domain', values: ['example.com'] }]
     });
-    expect(parseExploreURLState(window.location.search)).toMatchObject({
+    expect(parseExploreURLState(window.location.search, window.location.pathname)).toMatchObject({
       groupingChain: ['participant', 'year'],
       filters: [{ dimension: 'domain', values: ['example.com'] }]
     });
@@ -1445,7 +1442,7 @@ describe('Everything date default', () => {
 
     // An app-generated Everything link without bounds (as the serializer
     // writes it) opens exactly as shared.
-    window.history.replaceState(null, '', `/${serializeExploreURLState({ ...defaultExploreURLState, workspace: 'everything', filters: [] })}`);
+    window.history.replaceState(null, '', serializeExploreURLState({ ...defaultExploreURLState, workspace: 'everything', filters: [] }));
     const explicit = new ExploreState(window);
     expect(explicit.current.workspace).toBe('everything');
     expect(explicit.current.filters).toEqual([]);
@@ -1485,7 +1482,7 @@ describe('Everything date default after a reload', () => {
 
     // A serialized Everything link is the user's view — its filters list
     // stays as shared, even when empty.
-    window.history.replaceState(null, '', `/${serializeExploreURLState({ ...defaultExploreURLState, workspace: 'everything', filters: [] })}`);
+    window.history.replaceState(null, '', serializeExploreURLState({ ...defaultExploreURLState, workspace: 'everything', filters: [] }));
     const allTime = new ExploreState(window);
     expect(allTime.current.filters).toEqual([]);
     allTime.commitWorkspace('directory');
@@ -1501,11 +1498,11 @@ describe('Everything date default after a reload', () => {
     const chooser = new ExploreState(window);
     chooser.commitWorkspace('everything');
     chooser.commitNavigation({ filters: [] });
-    const bookmark = window.location.search;
+    const bookmark = `${window.location.pathname}${window.location.search}`;
     chooser.destroy();
-    expect(new URLSearchParams(bookmark).get('explore')).toContain('"dateBoundsChosen":true');
+    expect(bookmark).toBe('/inbox?since=all');
 
-    window.history.replaceState(null, '', `/${bookmark}`);
+    window.history.replaceState(null, '', bookmark);
     const reopened = new ExploreState(window);
     expect(reopened.current).toMatchObject({ workspace: 'everything', filters: [], dateBoundsChosen: true });
     reopened.commitWorkspace('directory');
@@ -1514,7 +1511,7 @@ describe('Everything date default after a reload', () => {
     reopened.destroy();
 
     const bounds = [{ dimension: 'after' as const, values: ['2020-01-01T00:00:00Z'] }];
-    window.history.replaceState(null, '', `/${serializeExploreURLState({ ...defaultExploreURLState, workspace: 'everything', filters: bounds })}`);
+    window.history.replaceState(null, '', serializeExploreURLState({ ...defaultExploreURLState, workspace: 'everything', filters: bounds }));
     const shared = new ExploreState(window);
     expect(shared.current.filters).toEqual(bounds);
     shared.destroy();
@@ -1526,10 +1523,10 @@ describe('Everything date default after a reload', () => {
     const driller = new ExploreState(window);
     driller.commitWorkspace('files');
     driller.commitNavigation({ workspace: 'everything', filters: [{ dimension: 'source', values: ['2'] }] });
-    const drilled = window.location.search;
+    const drilled = `${window.location.pathname}${window.location.search}`;
     driller.destroy();
-    expect(new URLSearchParams(drilled).get('explore')).toContain('"dateBoundsChosen":true');
-    window.history.replaceState(null, '', `/${drilled}`);
+    expect(new URL(drilled, 'http://msgvault.invalid').searchParams.get('since')).toBe('all');
+    window.history.replaceState(null, '', drilled);
     const cold = new ExploreState(window);
     expect(cold.current.filters).toEqual([{ dimension: 'source', values: ['2'] }]);
     cold.destroy();

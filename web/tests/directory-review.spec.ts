@@ -184,7 +184,7 @@ for (const profile of [
     await merge.getByRole('button', { name: `Open ${profile.name} profile` }).focus();
     await page.keyboard.press('Enter');
 
-    await expect(page).toHaveURL(new RegExp(`directoryPersonID%22%3A${profile.id}`));
+    await expect(page).toHaveURL(new RegExp(`/people/${profile.id}$`));
     await expect(page.getByRole('heading', { name: profile.name })).toBeVisible();
     // Merge history sits behind the Overview's closed "Maintenance" disclosure.
     await page.getByText('Maintenance', { exact: true }).click();
@@ -452,5 +452,5 @@ test('imported relationship reviews are safe, read-only, keyboard navigable, and
   await owner.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: 'Synthetic One' })).toBeVisible();
-  expect(parseExploreURLState(new URL(page.url()).search).directoryPersonID).toBe(7);
+  expect(parseExploreURLState(new URL(page.url()).search, new URL(page.url()).pathname).directoryPersonID).toBe(7);
 });

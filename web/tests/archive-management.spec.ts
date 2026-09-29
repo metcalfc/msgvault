@@ -97,5 +97,5 @@ test('archive management workspaces preserve reviewed authority and daemon job b
   await page.getByRole('button', { name: 'Open Invoices' }).click();
   await expect(page.getByRole('searchbox', { name: 'Search everything' })).toHaveValue('invoice');
   await expect(page.getByRole('grid', { name: 'Everything results' })).toBeFocused();
-  await expect.poll(() => JSON.parse(new URL(page.url()).searchParams.get('explore') ?? '{}').query).toBe('invoice');
+  await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBe('invoice');
 });

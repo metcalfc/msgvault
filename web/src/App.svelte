@@ -8,7 +8,6 @@
   import Login from './lib/components/auth/Login.svelte';
   import SettingsWorkspace from './lib/components/settings/SettingsWorkspace.svelte';
   import AppShell from './lib/components/shell/AppShell.svelte';
-  import MessagePage from './lib/components/reader/MessagePage.svelte';
   import type { ExploreSearchMode } from './lib/explore/models';
   import { parseSearchMode } from './lib/search/modes';
   import { createAppearancePreferences, type AppearanceDefaults } from './lib/theme/preferences.svelte';
@@ -18,8 +17,6 @@
     session?: SessionController;
   } = $props();
   let oauthCallback = $state(false);
-  let pathname = $state(window.location.pathname);
-  const messageID = $derived(Number(/^\/messages\/([1-9]\d*)\/?$/.exec(pathname)?.[1]) || undefined);
   let appearanceDefaults = $state<AppearanceDefaults>({ theme: 'system', density: 'compact' });
   let shellMounted = $derived(session.status !== undefined && session.authMode !== 'required');
   let searchModeDefault = $state<ExploreSearchMode | undefined>();
@@ -33,7 +30,7 @@
   // AppShell owns appearance while mounted; the boot and login screens apply
   // the same defaults and stored override so they render in the right theme.
   $effect(() => {
-    if (shellMounted && messageID === undefined) return;
+    if (shellMounted) return;
     const appearance = createAppearancePreferences(appearanceDefaults);
     return () => appearance.destroy();
   });
@@ -83,10 +80,8 @@
   }
 </script>
 
-<svelte:window onpopstate={() => pathname = window.location.pathname} />
-
 <svelte:head>
-  <title>Everything · msgvault</title>
+  <title>msgvault</title>
 </svelte:head>
 
 {#if oauthCallback}
@@ -94,21 +89,19 @@
 {:else if session.authMode === 'required'}
   <Login {session} />
 {:else if shellMounted}
-  {#if messageID !== undefined}
-    <MessagePage client={session.client} {messageID} />
-  {:else}
   <AppShell client={session.client} {appearanceDefaults} {searchModeDefault} {embeddingsLocal}>
-    {#snippet settings(cardDAVRequest, onCardDAVRequestConsumed, navigationTarget)}
+    {#snippet settings(cardDAVRequest, onCardDAVRequestConsumed, navigationTarget, section)}
       <SettingsWorkspace
         client={session.client}
         plainHTTPWarning={session.status?.plain_http_warning ?? false}
         {cardDAVRequest}
         {onCardDAVRequestConsumed}
         {navigationTarget}
+        section={section.value}
+        onSectionChange={section.change}
       />
     {/snippet}
   </AppShell>
-  {/if}
 {:else if session.error !== undefined}
   <main class="boot" aria-label="Connection error">
     <p class="eyebrow">msgvault</p>

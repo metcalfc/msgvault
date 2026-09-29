@@ -39,7 +39,17 @@ import {
 } from '../search/modes';
 import { effectiveSearchMode } from '../search/query';
 
-import { defaultEverythingFilters, isDateDimension } from './date-range';
+import { defaultEverythingFilters, isDateDimension, withoutDateRange } from './date-range';
+import {
+  DEFAULT_WORKSPACE,
+  PERSON_TABS,
+  isRoutedField,
+  ROUTE_PARAMETERS,
+  routeForState,
+  stateFromRoute,
+  withRoutedDateBounds,
+  type PersonTab
+} from '../routing/routes';
 
 const STATE_PARAMETER = 'explore';
 const FILTER_DIMENSIONS = new Set([
@@ -71,6 +81,7 @@ const RESTORATION_INVALIDATING_FIELDS = new Set<keyof ExploreURLState>([
   'directoryLastContactBefore',
   'directorySort',
   'directoryPersonID',
+  'personTab',
   'reviewKind',
   'identityState',
   'relationshipReviewState',
@@ -97,7 +108,9 @@ const RESTORATION_INVALIDATING_FIELDS = new Set<keyof ExploreURLState>([
   'operationStartedFrom',
   'operationStartedBefore',
   'operationStatus',
-  'settingsAuthority'
+  'settingsAuthority',
+  'settingsSection',
+  'messageID'
 ]);
 const FILE_MIME_FAMILIES = new Set<FileMIMEFamily>([
   'image', 'pdf', 'audio', 'video', 'text', 'document', 'archive', 'other'
@@ -150,6 +163,7 @@ export const defaultExploreURLState: ExploreURLState = {
   directoryLastContactBefore: '',
   directorySort: 'last_contact_desc',
   directoryPersonID: null,
+  personTab: 'overview',
   reviewKind: 'identity',
   identityState: 'candidate',
   relationshipReviewState: 'pending',
@@ -181,6 +195,8 @@ export const defaultExploreURLState: ExploreURLState = {
   operationRunID: null,
   operationStatus: '',
   settingsAuthority: '',
+  settingsSection: '',
+  messageID: null,
   columns: [...DEFAULT_EXPLORE_COLUMNS],
   columnWidths: {},
   activeRow: null,
@@ -331,6 +347,14 @@ function directoryPersonID(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
+function personTab(value: unknown): PersonTab {
+  return PERSON_TABS.includes(value as PersonTab) ? value as PersonTab : 'overview';
+}
+
+function settingsSection(value: unknown): string {
+  return typeof value === 'string' && /^[a-z0-9_-]{1,64}$/.test(value) ? value : '';
+}
+
 function operationDateBound(value: unknown): string {
   if (typeof value !== 'string' ||
     !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{0,8}[1-9])?Z$/.test(value)) return '';
@@ -403,9 +427,10 @@ function normalize(value: unknown): ExploreURLState {
   const workspace = value.workspace === 'everything' || value.workspace === 'directory' || value.workspace === 'directory_review' || value.workspace === 'settings' ||
     value.workspace === 'files' || value.workspace === 'relationships' ||
     value.workspace === 'saved_views' || value.workspace === 'sources' ||
-    value.workspace === 'deletions' || value.workspace === 'operations'
+    value.workspace === 'deletions' || value.workspace === 'operations' ||
+    (value.workspace === 'message' && directoryPersonID(value.messageID) !== null)
     ? value.workspace
-    : 'relationships';
+    : DEFAULT_WORKSPACE;
   const analysisTarget = typeof value.analysisTarget === 'string' &&
     (/^person:[1-9][0-9]*$/.test(value.analysisTarget) || /^domain:[a-z0-9.-]+$/.test(value.analysisTarget))
     ? value.analysisTarget : null;
@@ -468,6 +493,7 @@ function normalize(value: unknown): ExploreURLState {
     directoryLastContactBefore: typeof value.directoryLastContactBefore === 'string' ? value.directoryLastContactBefore : '',
     directorySort: value.directorySort === 'name' || value.directorySort === 'last_contact_asc' ? value.directorySort : 'last_contact_desc',
     directoryPersonID: directoryPersonID(value.directoryPersonID),
+    personTab: personTab(value.personTab),
     reviewKind,
     identityState,
     relationshipReviewState,
@@ -508,6 +534,8 @@ function normalize(value: unknown): ExploreURLState {
       ? value.operationStatus as OperationStatusAuthority
       : '',
     settingsAuthority: normalizeSettingsNavigationAuthority(value.settingsAuthority),
+    settingsSection: settingsSection(value.settingsSection),
+    messageID: directoryPersonID(value.messageID),
     columns: columns(value.columns),
     columnWidths: widths(value.columnWidths),
     activeRow:
@@ -560,47 +588,74 @@ const WORKSPACE_FIELDS: Partial<Record<keyof ExploreURLState, ReadonlyArray<Expl
   operationRunID: ['operations'],
   operationStatus: ['operations'],
   settingsAuthority: ['settings'],
+  settingsSection: ['settings'],
+  personTab: ['directory', 'relationships'],
+  messageID: ['message'],
   dateBoundsChosen: ['everything']
 };
 // Keyboard focus and scroll position live only in browser history.
 const SESSION_ONLY_FIELDS = new Set<keyof ExploreURLState>(['activeRow', 'scrollAnchor']);
 
-function sharedDetails(state: ExploreURLState): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(state).filter(([key, value]) => {
+function sharedDetails(state: ExploreURLState, routesDateBounds: boolean): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(state).flatMap(([key, value]) => {
     const field = key as keyof ExploreURLState;
-    if (field === 'schemaVersion' || field === 'workspace' || field === 'searchMode') return false;
-    if (SESSION_ONLY_FIELDS.has(field)) return false;
+    if (field === 'schemaVersion') return [];
+    if (isRoutedField(state.workspace, field)) return [];
+    if (SESSION_ONLY_FIELDS.has(field)) return [];
     const owners = WORKSPACE_FIELDS[field];
-    if (owners && !owners.includes(state.workspace)) return false;
-    return JSON.stringify(value) !== JSON.stringify(defaultExploreURLState[field]);
+    if (owners && !owners.includes(state.workspace)) return [];
+    // Date bounds the path already names as readable parameters.
+    const shared = field === 'filters' && routesDateBounds ? withoutDateRange(state.filters) : value;
+    return JSON.stringify(shared) === JSON.stringify(defaultExploreURLState[field]) ? [] : [[key, shared]];
   }));
 }
 
+/**
+ * The address for a state: a readable path (`/inbox`, `/people/42`,
+ * `/activity/operations`), readable parameters where people type or share
+ * (`q`, `mode`, `since`), and the `explore` JSON for the rest. Parameters
+ * the router does not own (feature flags) are kept from `baseSearch`.
+ */
 export function serializeExploreURLState(state: ExploreURLState, baseSearch = ''): string {
   const parameters = new URLSearchParams(baseSearch.startsWith('?') ? baseSearch.slice(1) : baseSearch);
+  for (const name of ROUTE_PARAMETERS) parameters.delete(name);
   const normalized = normalize(state);
-  parameters.set('workspace', normalized.workspace);
+  const route = routeForState(normalized);
+  const routed = new URLSearchParams(route.parameters);
   // An explicit mode keeps a shared link independent of browser preferences.
-  parameters.set('mode', normalized.searchMode);
-  const details = sharedDetails(normalized);
-  // Any app-generated Everything link is the user's view: one without date
-  // bounds (All time, or a drill that set none) carries the marker so a
-  // cold open never adds the seven-day default to it. Bare "/" and links
-  // to other workspaces carry nothing and still get the default.
-  if (normalized.workspace === 'everything' && !normalized.filters.some((filter) => isDateDimension(filter.dimension))) {
-    details.dateBoundsChosen = true;
+  if (normalized.workspace !== 'everything' && normalized.query.trim()) routed.set('mode', normalized.searchMode);
+  for (const [name, value] of parameters) routed.append(name, value);
+  const details = sharedDetails(normalized, route.routesDateBounds);
+  if (Object.keys(details).length > 0) {
+    routed.set(STATE_PARAMETER, JSON.stringify({ schemaVersion: normalized.schemaVersion, ...details }));
   }
-  if (Object.keys(details).length === 0) parameters.delete(STATE_PARAMETER);
-  else parameters.set(STATE_PARAMETER, JSON.stringify({ schemaVersion: normalized.schemaVersion, ...details }));
-  return `?${parameters.toString()}`;
+  const search = routed.toString();
+  return `${route.pathname}${search ? `?${search}` : ''}`;
 }
 
-function historyEntry(search: string, state: ExploreURLState): { exploreSearch: string; exploreState: unknown } {
+const HISTORY_DEPTH_KEY = 'exploreDepth';
+
+function historyEntry(url: string, state: ExploreURLState, depth: number):
+  { exploreSearch: string; exploreState: unknown; [HISTORY_DEPTH_KEY]: number } {
   // History entries must be structured-cloneable, so strip reactive proxies.
-  return { exploreSearch: search, exploreState: JSON.parse(JSON.stringify(state)) };
+  return { exploreSearch: url, exploreState: JSON.parse(JSON.stringify(state)), [HISTORY_DEPTH_KEY]: depth };
 }
 
-export function parseExploreURLState(search: string): ExploreURLState {
+/**
+ * Reads an address. A path the router owns names the surface; the root
+ * path (and any path the app does not own) falls back to the legacy
+ * `?workspace=` parameter and the workspace inside the JSON payload, so
+ * bookmarks from before readable paths keep opening the same view.
+ */
+export function parseExploreURLState(address: string, pathname = '/'): ExploreURLState {
+  // Accepts a search string with its pathname, or a whole address such as
+  // serializeExploreURLState returns.
+  let search = address;
+  if (address.startsWith('/')) {
+    const url = new URL(address, 'http://msgvault.invalid');
+    pathname = url.pathname;
+    search = url.search;
+  }
   const parameters = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
   const encoded = parameters.get(STATE_PARAMETER);
   let details: unknown = {};
@@ -609,16 +664,39 @@ export function parseExploreURLState(search: string): ExploreURLState {
   } catch {
     // A malformed detail payload must not discard the selected workspace.
   }
+  const payload = isRecord(details) ? details : {};
+  const route = stateFromRoute(pathname, parameters);
+  if (!route) {
+    return normalize({
+      ...payload,
+      ...(parameters.has('workspace') ? { workspace: parameters.get('workspace') } : {}),
+      ...(parameters.has('mode') ? { searchMode: parameters.get('mode') } : {}),
+    });
+  }
+  const { dateFilters, ...routeFields } = route as Record<string, unknown> & { dateFilters?: ExploreFilter[] };
+  const payloadFilters = Array.isArray(payload.filters) ? payload.filters as ExploreFilter[] : [];
   return normalize({
-    ...(isRecord(details) ? details : {}),
-    ...(parameters.has('workspace') ? { workspace: parameters.get('workspace') } : {}),
+    ...payload,
     ...(parameters.has('mode') ? { searchMode: parameters.get('mode') } : {}),
+    ...routeFields,
+    ...(dateFilters ? { filters: withRoutedDateBounds(payloadFilters, dateFilters) } : {}),
   });
+}
+
+/** True for an address that names no view: the bare root with no legacy
+ * workspace or payload, or a path the app does not own. */
+export function isDefaultLanding(pathname: string, search: string): boolean {
+  const parameters = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+  return stateFromRoute(pathname, parameters) === undefined &&
+    !parameters.has('workspace') && !parameters.has(STATE_PARAMETER);
 }
 
 export class ExploreState {
   current = $state<ExploreURLState>(freshDefaults());
   restorationEpoch = $state(1);
+  /** The page opened on an address that names no view (a bare `/`), so the
+   * shell may step down from an unavailable default surface. */
+  readonly arrivedAtDefault: boolean;
   private readonly browser: ExploreWindow;
   private readonly preferenceStorage: SearchModeStorage | null;
   private configuredDefaultSearchMode: ExploreSearchMode | undefined;
@@ -645,6 +723,7 @@ export class ExploreState {
   ) {
     this.browser = browser;
     this.preferenceStorage = preferenceStorage;
+    this.arrivedAtDefault = isDefaultLanding(browser.location.pathname, browser.location.search);
     this.current = this.readURLState();
     // A shared or restored URL is the user's view, bounds and all; the
     // dateBoundsChosen marker says so even for an "All time" bookmark whose
@@ -654,7 +733,33 @@ export class ExploreState {
       this.current = { ...this.current, ...this.everythingBoundsPatch(this.current.filters) };
     }
     this.committed = normalize(this.current);
+    this.canonicalizeAddress();
     browser.addEventListener('popstate', this.handlePopState);
+  }
+
+  /** Rewrites a legacy (`/?workspace=…&explore=…`) or partial address to
+   * the readable path for the same view, in place: the old link keeps
+   * working and Back does not return to the legacy form. */
+  private canonicalizeAddress(): void {
+    const location = this.browser.location;
+    const url = serializeExploreURLState(this.current, location.search);
+    if (url === `${location.pathname}${location.search}`) return;
+    const state = isRecord(this.browser.history.state) ? this.browser.history.state : {};
+    this.browser.history.replaceState({ ...state, ...historyEntry(url, this.current, this.historyDepth()) }, '', `${url}${location.hash}`);
+  }
+
+  /** How many in-app entries precede the current one: 0 on a page opened
+   * from a link or bookmark, so Back buttons know whether Back stays in
+   * the app. */
+  private historyDepth(): number {
+    const state = this.browser.history.state;
+    const depth = isRecord(state) ? state[HISTORY_DEPTH_KEY] : undefined;
+    return typeof depth === 'number' && Number.isSafeInteger(depth) && depth > 0 ? depth : 0;
+  }
+
+  /** True when browser Back returns to an earlier view of this app. */
+  canGoBack(): boolean {
+    return this.historyDepth() > 0;
   }
 
   /** The user's own Everything view, to which no default bounds are added:
@@ -828,10 +933,12 @@ export class ExploreState {
 
   private readURLState(): ExploreURLState {
     const history = this.browser.history.state;
-    const parsed = isRecord(history) && history.exploreSearch === this.browser.location.search &&
-      isRecord(history.exploreState)
-      ? normalize(history.exploreState)
-      : parseExploreURLState(this.browser.location.search);
+    const { pathname, search } = this.browser.location;
+    // A history entry this state wrote is the exact view, mode included.
+    if (isRecord(history) && history.exploreSearch === `${pathname}${search}` && isRecord(history.exploreState)) {
+      return normalize(history.exploreState);
+    }
+    const parsed = parseExploreURLState(search, pathname);
     parsed.searchMode = resolveInitialSearchMode(
       explicitSearchModeFromURL(this.browser.location.search),
       this.preferenceStorage,
@@ -875,9 +982,9 @@ export class ExploreState {
           .map((key) => [key, this.current[key]])
       ) as Partial<ExploreURLState>;
       const priorEntry = normalize({ ...this.committed, ...transient, ...priorFocus });
-      const priorSearch = serializeExploreURLState(priorEntry, baseSearch);
-      const committedURL = `${this.browser.location.pathname}${priorSearch}${this.browser.location.hash}`;
-      this.browser.history.replaceState({ ...historyEntry(priorSearch, priorEntry), ...this.archiveHistoryState(priorEntry.selectedRow) }, '', committedURL);
+      const priorURL = serializeExploreURLState(priorEntry, baseSearch);
+      const committedURL = `${priorURL}${this.browser.location.hash}`;
+      this.browser.history.replaceState({ ...historyEntry(priorURL, priorEntry, this.historyDepth()), ...this.archiveHistoryState(priorEntry.selectedRow) }, '', committedURL);
     }
     const next = normalize({ ...this.current, ...effectivePatch });
     // Preserve per-field reactivity: transient scroll/column changes must not
@@ -889,14 +996,14 @@ export class ExploreState {
     for (const key of keysToApply) {
       if (key in next) this.current[key] = next[key];
     }
-    const search = serializeExploreURLState(this.current, baseSearch);
-    const url = `${this.browser.location.pathname}${search}${this.browser.location.hash}`;
-    const history = historyEntry(search, this.current);
+    const address = serializeExploreURLState(this.current, baseSearch);
+    const url = `${address}${this.browser.location.hash}`;
+    const depth = this.historyDepth();
     if (mode === 'push') {
-      this.browser.history.pushState(history, '', url);
+      this.browser.history.pushState(historyEntry(address, this.current, depth + 1), '', url);
       this.committed = normalize(this.current);
       this.pendingSearchPriorFocus = undefined;
-    } else this.browser.history.replaceState({ ...history, ...this.archiveHistoryState(this.current.selectedRow) }, '', url);
+    } else this.browser.history.replaceState({ ...historyEntry(address, this.current, depth), ...this.archiveHistoryState(this.current.selectedRow) }, '', url);
   }
 
   private archiveHistoryState(selectedRow: string | null): { [ARCHIVE_MEETING_HISTORY_KEY]: ArchiveMeetingHistory } | null {

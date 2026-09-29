@@ -72,14 +72,14 @@ test.beforeEach(async ({ page }) => {
 test('compact workspace links preserve browser navigation and reopen the selected tab', async ({ page }) => {
   await selectKitTopBarTab(page, 'Files');
   await expect(page.getByText('synthetic.pdf', { exact: true })).toBeVisible();
-  await expect(page).toHaveURL(/\?workspace=files&mode=full_text$/);
+  await expect(page).toHaveURL(/\/files$/);
   const filesURL = page.url();
 
   await selectKitTopBarTab(page, 'Everything');
   await expect(page.getByText('Synthetic archive subject', { exact: true })).toBeVisible();
-  // An Everything link without date bounds carries only the bounds marker,
-  // so it reopens as shared instead of on the seven-day default.
-  await expect(page).toHaveURL(/\?workspace=everything&mode=full_text&explore=%7B%22schemaVersion%22%3A2%2C%22dateBoundsChosen%22%3Atrue%7D$/);
+  // An Inbox link without date bounds says since=all, so it reopens as
+  // shared instead of on the seven-day default.
+  await expect(page).toHaveURL(/\/inbox\?since=all$/);
   await page.goBack();
   await expect(page.getByText('synthetic.pdf', { exact: true })).toBeVisible();
   await page.goto(filesURL);

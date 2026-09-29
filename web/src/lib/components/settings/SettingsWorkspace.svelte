@@ -37,7 +37,7 @@
   import LockIcon from '@lucide/svelte/icons/lock';
   import RotateCwIcon from '@lucide/svelte/icons/rotate-cw';
   import ZapIcon from '@lucide/svelte/icons/zap';
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import type { APIClient } from '../../api/client';
   import type {
     PersonEnrichmentProviderSetting as GeneratedPersonEnrichmentProviderSetting,
@@ -85,12 +85,18 @@
     cardDAVRequest = undefined,
     navigationTarget = undefined,
     onCardDAVRequestConsumed = () => undefined,
+    section = '',
+    onSectionChange = () => undefined,
   }: {
     client: APIClient;
     plainHTTPWarning?: boolean;
     cardDAVRequest?: CardDAVSettingsRequest;
     navigationTarget?: SettingsNavigationTarget;
     onCardDAVRequestConsumed?: (key: number) => void;
+    /** The category the address names (`/settings/<section>`); '' opens the first. */
+    section?: string;
+    /** Reports a category change so the address follows it. */
+    onSectionChange?: (section: string) => void;
   } = $props();
   let settings = $state<SettingState[]>([]);
   let groups = $state<SettingGroupState[]>([]);
@@ -103,7 +109,8 @@
   let loading = $state(true);
   let saving = $state(false);
   let error = $state('');
-  let activeCategory = $state('browser');
+  const DEFAULT_CATEGORY = 'browser';
+  let activeCategory = $state(untrack(() => section) || DEFAULT_CATEGORY);
   let root = $state<HTMLElement>();
   let consumedCategoryRequestKey: number | undefined;
   let focusedNavigationSettingKey: string | undefined;
@@ -123,6 +130,23 @@
   );
   onMount(() => {
     void loadSettings(false);
+  });
+  // The address names the category: follow it (Back/Forward, links) and
+  // report the reader's own choices back to it.
+  let followedSection = untrack(() => section);
+  $effect(() => {
+    const named = section;
+    untrack(() => {
+      if (named === followedSection) return;
+      followedSection = named;
+      if ((named || DEFAULT_CATEGORY) !== activeCategory) activeCategory = named || DEFAULT_CATEGORY;
+    });
+  });
+  $effect(() => {
+    const current = activeCategory;
+    untrack(() => {
+      if (current !== (section || DEFAULT_CATEGORY)) onSectionChange(current);
+    });
   });
   $effect(() => {
     const target = navigationTarget;

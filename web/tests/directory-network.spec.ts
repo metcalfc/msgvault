@@ -57,6 +57,6 @@ test('Directory network shows curated connections, omits message-only contacts, 
 
   await page.getByRole('tab', { name: 'Network' }).click();
   await page.getByRole('button', { name: 'Open person Curated Peer' }).first().click();
-  await expect(page).toHaveURL(/directoryPersonID%22%3A43/);
+  await expect(page).toHaveURL(/\/people\/43$/);
   await expect(page.getByRole('heading', { name: 'Curated Peer' })).toBeVisible();
 });

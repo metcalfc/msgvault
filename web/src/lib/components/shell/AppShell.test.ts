@@ -1126,7 +1126,7 @@ describe('AppShell', () => {
     expect(state.current).toMatchObject({ workspace: 'everything', presentation: 'table', conversationAnchor: '42', query: '', groupingChain: [] });
     // Bounded to the day the message was sent and its source so the row is on page one.
     expect(state.current.filters.map((filter) => filter.dimension)).toEqual(['after', 'before', 'source']);
-    expect(window.location.pathname).toBe('/');
+    expect(window.location.pathname).toBe('/inbox');
     expect(await screen.findByRole('complementary', { name: 'Reading pane: Last note' })).toBeDefined();
     expect(exploreFilters.at(-1)).toEqual(['after', 'before', 'source']);
 
@@ -1761,7 +1761,7 @@ describe('AppShell', () => {
     await waitFor(() => expect(state.current.workspace).toBe('directory'));
     expect(state.current.directoryPersonID).toBe(42);
     expect(await screen.findByRole('main', { name: 'Directory' })).toBeDefined();
-    expect(new URL(window.location.href).searchParams.get('explore')).toContain('directoryPersonID');
+    expect(window.location.pathname).toBe('/people/42');
     const promotion = requests.find((request) =>
       new URL(request.url).pathname === '/api/v1/people' && request.method === 'POST'
     );

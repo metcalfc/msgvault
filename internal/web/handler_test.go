@@ -124,7 +124,16 @@ func TestWebHandlerServesShellForSafeNavigation(t *testing.T) {
 		"index.html": &fstest.MapFile{Data: []byte(testIndex)},
 	}, jsonNotFoundHandler())
 
-	for _, path := range []string{"/", "/index.html", "/not/a/real/route"} {
+	// The web app's readable routes are extension-less paths; each must
+	// load the shell so a reload or a pasted link opens the same view.
+	appRoutes := []string{
+		"/inbox", "/search", "/people", "/people/42", "/people/42/timeline",
+		"/people/contact-7", "/people/domains", "/files", "/reviews",
+		"/saved-views", "/activity/sources", "/activity/operations",
+		"/activity/deletions", "/settings", "/settings/search",
+		"/messages/42001",
+	}
+	for _, path := range append([]string{"/", "/index.html", "/not/a/real/route"}, appRoutes...) {
 		t.Run(path, func(t *testing.T) {
 			assert := assert.New(t)
 			recorder := httptest.NewRecorder()

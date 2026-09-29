@@ -235,7 +235,7 @@ test('Relationships promotes its selected participant and opens the returned per
   );
   await page.getByRole('button', { name: 'Save to Directory' }).click();
   expect((await promotionRequest).postDataJSON()).toEqual({ participant_id: 12 });
-  await expect(page).toHaveURL(/directoryPersonID/);
+  await expect(page).toHaveURL(/\/people\/\d+$/);
   await expect(page.getByRole('main', { name: 'Directory' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Archive Person' })).toBeVisible();
 });
@@ -253,5 +253,5 @@ test('Relationships keeps a promotion conflict beside the person instead of open
   await page.getByRole('button', { name: 'Save to Directory' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'Synthetic promotion conflict.' })).toBeVisible();
   await expect(page.getByRole('main', { name: 'Directory' })).toHaveCount(0);
-  await expect(page).not.toHaveURL(/directoryPersonID/);
+  await expect(page).not.toHaveURL(/\/people\/\d+$/);
 });

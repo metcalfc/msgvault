@@ -49,6 +49,21 @@ const initialSettings = {
 afterEach(() => vi.useRealTimers());
 
 describe('SettingsWorkspace', () => {
+  it('opens the category the address names and reports category changes back to it', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => settingsResponse(initialSettings, '"etag-a"'));
+    const onSectionChange = vi.fn();
+    const rendered = render(SettingsWorkspace, { client: createAPIClient(fetchFn), section: 'search', onSectionChange });
+
+    expect(await screen.findByRole('heading', { name: 'Search' })).toBeDefined();
+    expect(onSectionChange).not.toHaveBeenCalled();
+    await openSettingsCategory('Daemon');
+    expect(onSectionChange).toHaveBeenLastCalledWith('server');
+
+    await rendered.rerender({ client: createAPIClient(fetchFn), section: 'browser', onSectionChange });
+    expect(await screen.findByRole('heading', { name: 'Appearance' })).toBeDefined();
+    rendered.unmount();
+  });
+
   it('reads a host-configured environment profile and waits for daemon credentials before checking', async () => {
     const requests: Request[] = [];
     const created = true;
