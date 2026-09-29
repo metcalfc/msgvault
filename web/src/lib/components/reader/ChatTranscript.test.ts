@@ -44,7 +44,8 @@ describe('ChatTranscript', () => {
       chat(2),
       chat(3, { from: '+15555550199', from_phone: '+15555550199' })
     ];
-    const speaker = speakerNames(messages, 'Group label');
+    // A group chat passes no counterpart name.
+    const speaker = speakerNames(messages, '');
     expect(messages.map(speaker)).toEqual(['Blake Example', 'Blake Example', '+15555550199']);
   });
 

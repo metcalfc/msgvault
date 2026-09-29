@@ -210,7 +210,10 @@ describe('ReadingPane chat transcript', () => {
         client: createAPIClient(fetchFn),
         selection: {
           kind: 'entry',
-          row: entryRow({ message_type: messageType, conversation_type: conversationType, conversation_id: 7, counterpart_label: 'Avery Example' })
+          row: entryRow({
+            message_type: messageType, conversation_type: conversationType, conversation_id: 7,
+            counterpart_label: 'Avery Example', counterpart_participant_id: 3, other_participant_count: 0
+          })
         },
         predicate: {} satisfies ExplorePredicate
       }
@@ -219,5 +222,38 @@ describe('ReadingPane chat transcript', () => {
     await screen.findByText('Hello there');
     expect(screen.queryByRole('list', { name: 'Chat transcript' }) !== null).toBe(transcript);
     if (transcript) expect(screen.getByText('Avery Example')).toBeDefined();
+  });
+});
+
+describe('ReadingPane group chat names', () => {
+  it.each([
+    ['group_chat', 0],
+    ['', 2],
+  ])('never gives a %j conversation with %s others the counterpart name', async (conversationType, others) => {
+    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({
+      id: 7, anchor_id: 42, has_before: false, has_after: false, total: 1,
+      messages: [{
+        id: 42, conversation_id: 7, subject: '', message_type: 'imessage', from: '+15555550199',
+        from_phone: '+15555550199', to: [], sent_at: '2026-07-18T12:00:00Z', snippet: 'Hello group',
+        body: 'Hello group', labels: [], has_attachments: false, size_bytes: 1, attachments: []
+      }]
+    }));
+    render(ReadingPane, {
+      props: {
+        client: createAPIClient(fetchFn),
+        selection: {
+          kind: 'entry',
+          row: entryRow({
+            message_type: 'imessage', conversation_type: conversationType, conversation_id: 7,
+            counterpart_label: 'Avery Example', counterpart_participant_id: 3, other_participant_count: others
+          })
+        },
+        predicate: {} satisfies ExplorePredicate
+      }
+    });
+
+    await screen.findByText('Hello group');
+    expect(screen.queryByText('Avery Example')).toBeNull();
+    expect(screen.getByText('+15555550199')).toBeDefined();
   });
 });

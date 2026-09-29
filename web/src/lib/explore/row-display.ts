@@ -175,3 +175,20 @@ export function threadRows(
   }
   return { rows: output, roles, hidden };
 }
+
+const GROUP_CONVERSATION_TYPES = new Set(['group_chat', 'channel']);
+
+/**
+ * The counterpart's name when the conversation is one-to-one, for naming an
+ * unnamed chat partner; '' for a group chat or when that cannot be told.
+ * One-to-one comes from the conversation itself: its type, or a known
+ * counterpart with nobody else besides the owner.
+ */
+export function oneToOneCounterpartLabel(row: EntryRow): string {
+  const label = typeof row.counterpart_label === 'string' ? row.counterpart_label.trim() : '';
+  if (!label) return '';
+  const type = row.conversation_type.toLowerCase();
+  if (GROUP_CONVERSATION_TYPES.has(type)) return '';
+  if (type === 'direct_chat') return label;
+  return row.counterpart_participant_id !== undefined && (row.other_participant_count ?? 0) === 0 ? label : '';
+}

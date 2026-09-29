@@ -36,6 +36,7 @@
   import type { ExploreCacheUnavailable, ExploreFileFact, ExploreFilter, FileViewerTarget } from '../../explore/models';
   import { isEmailMessageType } from '../../explore/models';
   import { isChatEntry } from '../../explore/entry-key';
+  import { oneToOneCounterpartLabel } from '../../explore/row-display';
   import IdentityBadge from '../explore/IdentityBadge.svelte';
   import TaskLinks from '../tasks/TaskLinks.svelte';
   import MeetingPanel from '../meetings/MeetingPanel.svelte';
@@ -321,7 +322,7 @@
         {onOpenPerson}
         {onFilterPerson}
         chat={chatThread}
-        counterpartLabel={selection?.kind === 'entry' ? (selection.row.counterpart_label ?? '') : ''}
+        counterpartLabel={selection?.kind === 'entry' ? oneToOneCounterpartLabel(selection.row) : ''}
       />
     {:else if !selection}
       <section class="pane-status" aria-label="Reading pane status">

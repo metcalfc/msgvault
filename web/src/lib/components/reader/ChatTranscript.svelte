@@ -15,7 +15,10 @@
    * Names each speaker for a transcript. A chat participant is often known
    * only by phone number; the name comes from, in order, the message's own
    * sender name, a name the same number carried on another message in the
-   * window, and — in a one-to-one chat — the row's counterpart name.
+   * window, and the counterpart name. The caller passes a counterpart name
+   * only for a one-to-one conversation (see oneToOneCounterpartLabel); the
+   * loaded window cannot tell, since a group chat's window may hold only
+   * one other speaker.
    */
   export function speakerNames(messages: readonly MessageDetail[], counterpartLabel = ''): (message: MessageDetail) => string {
     const byNumber = new Map<string, string>();
@@ -24,10 +27,6 @@
       const name = message.from_name?.trim();
       if (number && name && !PHONE.test(name)) byNumber.set(number, name);
     }
-    const otherSenders = new Set(
-      messages.filter((message) => !message.is_from_me).map((message) => (message.from_phone || message.from_email || message.from).trim())
-    );
-    const oneToOne = otherSenders.size === 1;
     return (message) => {
       if (message.is_from_me) return 'You';
       const name = message.from_name?.trim();
@@ -35,7 +34,7 @@
       const number = (message.from_phone || message.from_email || '').trim();
       const known = number ? byNumber.get(number) : undefined;
       if (known) return known;
-      if (oneToOne && counterpartLabel.trim() && !PHONE.test(counterpartLabel.trim())) return counterpartLabel.trim();
+      if (counterpartLabel.trim() && !PHONE.test(counterpartLabel.trim())) return counterpartLabel.trim();
       return message.from || number || 'Unknown sender';
     };
   }
@@ -71,7 +70,7 @@
     messages: MessageDetail[];
     anchorId: number;
     conversationId: number;
-    /** The row's counterpart name, used for an unnamed one-to-one partner. */
+    /** The counterpart's name, given only for a one-to-one conversation. */
     counterpartLabel?: string;
     onSelect?: (id: number) => void;
     onOpenAttachment?: (file: FileViewerTarget) => void;
