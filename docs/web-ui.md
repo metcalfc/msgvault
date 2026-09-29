@@ -1,27 +1,34 @@
 ---
-last_edited: "2026-09-22"
+last_edited: "2026-09-29"
 title: Web UI
 description: Browse messages and files, maintain people, and monitor archive work from your browser.
 ---
 
 # Web UI
 
-The Web UI lets you search across your archive, read messages, browse files,
-maintain your contact directory, and see whether sync and indexing work has
-finished. It is embedded in the release binary and served by `msgvault serve`;
-you do not need a separate web application process.
+The Web UI lets you search across your archive, read messages, browse files
+and meetings, maintain the people you know, and see whether sync and indexing
+work has finished. It is embedded in the release binary and served by
+`msgvault serve`; you do not need a separate web application process.
 
-| Your question | Workspace |
+This page describes current `main`. The navigation below (People, Inbox,
+Files, Meetings, and Activity, with readable addresses) is newer than the
+latest release, which uses Everything, Relationships, and Directory
+workspaces instead. Check the [changelog](changelog.md) for the release it
+ships in.
+
+| Your question | Where to go |
 |---|---|
-| Where is that message, conversation, or meeting? | Everything |
-| Who have I been in contact with? | Relationships, People, and Domains |
-| Where is an attachment, image, or video? | Files |
-| What do I know about this person? | Directory |
-| Which identity matches or profile facts need my decision? | Reviews |
-| Can I return to this search later? | Saved Views |
-| Did sync, enrichment, or indexing finish? | Operations and Sources |
-| What is staged for deletion? | Deletions |
-| How do I change the daemon's configuration? | Settings |
+| Where is that message, conversation, or meeting? | [Inbox](#inbox-and-search), or [Search](#inbox-and-search) when you type a query |
+| Who have I been in contact with? | [People](#people) |
+| What do I know about this person? | A person's page in [People](#people) |
+| Where is an attachment, image, or video? | [Files](#files-and-containing-context) |
+| Which meetings happened, and what came out of them? | [Meetings](#meetings) |
+| Which identity matches or profile facts need my decision? | [Reviews](#reviews), in the gear menu |
+| Can I return to this search later? | [Saved Views](#saved-views) |
+| Did sync, enrichment, or indexing finish? | [Activity](#activity): Sources and Operations |
+| What is staged for deletion? | [Activity](#activity): Deletions |
+| How do I change the daemon's configuration, theme, or density? | [Settings](#settings-and-restart-behavior) |
 
 ## Start and discover the URL
 
@@ -77,11 +84,71 @@ on an encrypted private network is supported as an explicit tradeoff, but the UI
 warns that its session cookie travels without TLS. `HttpOnly` and
 `SameSite=Strict` do not encrypt that traffic.
 
-## Explore and search
+## Find your way around
+
+Primary navigation has five places: **People**, **Inbox**, **Files**,
+**Meetings**, and **Activity**.
+
+- The header search field submits to Search. It appears on every surface
+  except Inbox and Search, which keep their own full search bar with modes
+  and chips.
+- The bookmark button beside the header search field opens your
+  [Saved Views](#saved-views).
+- The gear menu holds **Settings**, **Reviews**, and **Saved Views**. When
+  you open the menu, Reviews shows how many decisions are waiting.
+- The archive status dot stays in the header. Theme and density live in
+  [Settings > Appearance](#appearance).
+
+The command palette (`Cmd/Ctrl+Shift+P`) runs the same moves by name:
+
+- **Go to People**, **Go to Inbox**, **Go to Files**, **Go to Meetings**,
+  **Go to Activity**, **Go to Settings**, and **Go to Saved Views**.
+- **Go to person…** opens People with its search box ready for a name.
+- **Theme: Light**, **Theme: Dark**, **Theme: System**, and **Theme: Daemon
+  default** set this browser's theme. **Density: …** commands set its density.
+
+See [Keyboard controls](#keyboard-controls) for search and other shortcuts.
+
+### Addresses and bookmarks
+
+Every place has a readable address you can bookmark or share. The person
+opening it still needs access to the archive.
+
+| Address | Opens |
+|---|---|
+| `/people` | The People list |
+| `/people/<id>` | A saved person's Overview |
+| `/people/<id>/timeline`, `/files`, `/meetings`, `/profile`, `/maintenance` | A saved person's tab |
+| `/people/contact-<id>` and `/people/contact-<id>/<tab>` | An archive contact who is not saved yet |
+| `/people/domains?domain=example.com` | The domains view for one domain |
+| `/inbox` | The Inbox, on the last 7 days (`/inbox?since=7d`) |
+| `/inbox?since=30d`, `/inbox?since=all` | The Inbox over 30 days or all time |
+| `/inbox?after=…&before=…` | The Inbox between two instants |
+| `/search?q=…&mode=full_text` | Search results; `mode` is `full_text`, `semantic`, or `hybrid` |
+| `/files` | Files |
+| `/meetings` | Meetings; filter with `?person=<participant id>`, `&account=<source id>`, and `&since=30d`, `90d`, or `all` |
+| `/meetings/<id>` | One meeting |
+| `/messages/<id>` | One message |
+| `/activity/sources`, `/activity/operations`, `/activity/deletions` | An Activity tab |
+| `/settings/<section>`, such as `/settings/search` | A Settings section |
+| `/reviews`, `/saved-views` | Reviews or Saved Views |
+
+The `explore` query parameter remains only for advanced state such as
+grouping chains, columns, and per-surface filters. It appears only when that
+state differs from the defaults. Keyboard focus and scroll position stay out
+of the address; browser history keeps them so Back and Forward restore them.
+The page title names the surface, such as `Inbox · msgvault`, or the subject
+of the open message or meeting.
+
+Older `/?workspace=…&explore=…` links still open the same view, and the
+address is rewritten to the new form. An old ranked relationships link
+(`?workspace=relationships`) opens People filtered to **Not saved**.
+
+## Inbox and search
 
 <figure class="screenshot" data-lightbox>
-  <img src="/docs/assets/static/analytical-light-compact-darwin.png" alt="Everything workspace showing archived email in light theme with compact rows" loading="lazy">
-  <figcaption>Browse archived email in Everything. Select the image to view it at full size.</figcaption>
+  <img src="/docs/assets/static/analytical-light-compact-darwin.png" alt="Table of archived email in light theme with compact rows" loading="lazy">
+  <figcaption>Browse archived email. Select the image to view it at full size.</figcaption>
 </figure>
 
 The screenshots use a curated public Enron research-data fixture. Authentic
@@ -89,15 +156,19 @@ names and message text are intentional; the repository's `docs-fixtures`
 branch records provenance, attribution, and the content review. This fixture
 contains email only; it does not illustrate chat, calendar, or attachment content.
 
-Everything opens as a compact, sortable table of logical entries: one row per
-email, calendar event, meeting note, other durable item, or chat conversation.
-Raw chat fragments appear only after drilling into a conversation. Filter,
-Group by, Show as, and Search form a shareable view. Ordinary tabs use short
-URLs such as `?workspace=everything&mode=full_text`. Filters, layout changes,
-and the selected item appear in the link only when they differ from the
-defaults. Keyboard focus, scroll position, and choices from other workspaces
-stay out of the link; browser history keeps them so Back and Forward restore
-them.
+The Inbox opens on the last seven days, newest first. It is a compact,
+sortable table of logical entries: one row per email, calendar event, meeting
+note, other durable item, or chat conversation. Raw chat fragments appear
+only after drilling into a conversation.
+
+Each day's calendar events fold into one **N events** line that previews
+their titles. Select **Show** to expand them inline and **Hide** to fold them
+again, so mail and texts interleave around them.
+
+Type a query and the Inbox becomes Search; headings and landmarks say which
+one you are in. Search results keep their per-thread grouping. Filter,
+Group by, Show as, and Search form a shareable view; see
+[Addresses and bookmarks](#addresses-and-bookmarks).
 
 Search mode is always explicit:
 
@@ -128,7 +199,11 @@ the person opening it still needs access to the archive. Links to chat messages
 open a bounded part of the conversation around the selected message, with
 controls to load earlier or later messages.
 
-Click an entry in Everything to open its preview below the results. On wide
+A message page opens inside the app, with the header and navigation. Its
+**Back** button returns to where you were when you opened it from inside the
+app, and to the Inbox otherwise.
+
+Click an entry in the Inbox or Search to open its preview below the results. On wide
 windows, choose **Preview position → Right** to read beside the results.
 Drag the divider to resize either layout, or focus it and use the arrow keys.
 Double-click the divider to reset its size. The browser remembers your layout
@@ -141,12 +216,29 @@ background, and border colors. Images keep their original colors. Choose
 background, or **Use app colors** to return to dark reading. This override
 applies to the open message. Light mode preserves designed email colors.
 
+## Meetings
+
+Meetings lists calendar events and meeting transcripts that already happened,
+newest first. It shows the last 30 days by default. Narrow it by person,
+account, and window (30 days, 90 days, or all time); the choices appear in
+the [address](#addresses-and-bookmarks).
+
+Open a meeting to see its page:
+
+- A calendar event shows its event card.
+- A transcript shows the transcript, plus action items with their assignee
+  and status.
+- Attendees and speakers are person pills that open the person.
+
+When a person's last contact was a meeting, their page links to that meeting.
+
 ## Meeting context and follow-ups
 
-Filter Everything to meetings to see **Meeting activity and follow-ups**.
+Filter the Inbox to meetings to see **Meeting activity and follow-ups**.
 Select meeting rows to export their context as JSON or Markdown, with transcripts
-included only when requested. Participant/domain reading panes, Directory, and
-Relationships show meeting metrics and recorded actions for their current scope.
+included only when requested. Participant and domain reading panes and a
+person's **Meetings** tab show meeting metrics and recorded actions for their
+current scope.
 **Open archived meeting** opens the source evidence; Back restores the originating
 view. See the [meeting guide](usage/meetings.md#export-context-and-read-follow-ups)
 for selection limits, source coverage, unknown duration, and action filters.
@@ -167,7 +259,7 @@ PDFs open in application-controlled viewers. Metadata-only, missing,
 unsupported, and previewable content remain distinct. From a file, navigate to
 its containing item and then its email or chat conversation.
 
-Filter by filename and file type. In a person's Media & Files view, choose a
+Filter by filename and file type. On a person's **Files** tab, choose a
 media gallery or file table and narrow the relationship to **From them**,
 **To them**, or **Group conversations**. These directions describe the
 containing messages; they do not identify people pictured in an image.
@@ -189,68 +281,97 @@ For unattended, offline preservation of remote images, see
 to load an image and permission to archive remote images during ingest are
 separate choices.
 
-## People and domains
+## People
 
 <figure class="screenshot" data-lightbox>
-  <img src="/docs/assets/static/relationships-dark-comfortable-darwin.png" alt="Relationships workspace showing a selected person's activity calendar and email timeline in dark theme" loading="lazy">
+  <img src="/docs/assets/static/relationships-dark-comfortable-darwin.png" alt="A selected person's activity calendar and email timeline in dark theme" loading="lazy">
   <figcaption>Select a person to explore their activity and messages.</figcaption>
 </figure>
 
-People combines identifiers backed by explicit archive identity evidence; it
-does not merge records merely because their display names match. Select a
-person to inspect contextual activity across email, chat, calendar events, and
-meeting notes, plus the files associated with that person. The active search
-and filters continue to scope both the timeline and file table.
+People is one list of everyone you have been in contact with, most recent
+contact first. It combines two kinds of rows:
 
-People in this workspace are observed identity clusters. Source identities
-that mean “me,” explicit durable profile promotion, display-name overrides, and
-typed profile attributes are separate curated operations; see [People,
-Profiles, and Source Identities](/docs/usage/people/).
+- **Saved people** are profiles you keep in the Directory across sources.
+- **Archive contacts** are identity clusters observed in your archive that
+  you have not saved yet. Their rows are marked **Not saved**.
 
-### Directory and Reviews
+Each row shows one identifier: the best email address, else a phone number,
+else a handle. Narrow the list with the search box and the **Saved**, **Not
+saved**, **Has name**, **Category**, and **Organization** filters. **Domains**
+opens the [domains view](#domains).
 
-Directory holds durable people: the profiles you explicitly curate and keep
-across sources. Search by name, email, or organization; filter by contact
-state, category, primary channel, or last-contact dates; and sort by most or
-least recently contacted.
+Every human has one page. Opening someone from the list, a message's name
+pill (**Open person**), or a search result lands on that page. An archive
+contact who has already been saved opens the saved person instead.
 
-Its person detail keeps
-Overview, Organizations, Relationships, Network, and Media & Files together.
+Archive contacts combine identifiers backed by explicit archive identity
+evidence; msgvault does not merge records merely because their display names
+match. Source identities that mean "me," saving a profile, display-name
+overrides, and typed profile attributes are separate curated operations; see
+[People, Profiles, and Source Identities](/docs/usage/people/).
+
+### A saved person's page
+
+| Tab | What it shows |
+|---|---|
+| Overview | Name, contact methods, last contact, and an attribute summary |
+| Timeline | Mail, texts, and meetings interleaved for their busiest archive identity, with a switch between identities |
+| Files | Files exchanged with them |
+| Meetings | Their meetings, with [meeting activity and follow-ups](#meeting-context-and-follow-ups) |
+| Profile | Structured profile, attributes, organizations, relationships, and network |
+| Maintenance | Profile maintenance tracking, briefs, CardDAV publication, merge history, and identities |
+
 Edit structured profile information, attributes, employment, and typed
-relationships here. Curated display names also appear in message views,
-analytics, and exports while source identifiers remain available.
+relationships on the Profile tab. Curated display names also appear in
+message views, analytics, and exports while source identifiers remain
+available.
 
-The Overview tab's **Last time we talked** card summarizes the person's recent
-chat and text messages. Enroll the person, generate a brief, and expand a
-sentence to check its sources. You can reject a brief or inspect the dates and status of earlier
-versions. Generation requires a consented provider and uses its budget; see
-[person briefs](/docs/usage/people-briefs/)
+The Profile tab's network view can request one, two, or three hops and
+optionally include ended records. It visualizes at most 250 nodes and 500
+connections, while an always-present list groups the same connections by hop
+for keyboard and screen reader use. Person and organization names in this
+view come from durable profiles. Edges come only from curated typed
+relationships and employments (including shared organizations), never
+messages, participant co-occurrence, or inferred communication activity.
+
+On the Maintenance tab, the **Last time we talked** card summarizes the
+person's recent chat and text messages. Enroll the person, generate a brief,
+and expand a sentence to check its sources. You can reject a brief or inspect
+the dates and status of earlier versions. Generation requires a consented
+provider and uses its budget; see [person briefs](/docs/usage/people-briefs/)
 for setup and supported sources.
 
-The Network tab can request one, two, or three hops and optionally include
-ended records. It visualizes at most 250 nodes and 500 connections, while an
-always-present list groups the same connections by hop for keyboard and screen
-reader use. Person and organization names in this view come from durable
-profiles. Edges come only from curated typed relationships and employments
-(including shared organizations), never messages, participant co-occurrence,
-or inferred communication activity.
+The Maintenance tab also lists the person's identities. Link or unlink an
+identity there, or use **Same person…** to connect another one.
 
-Reviews brings together identity matches, fact review, and imported
-relationships. Inspect the evidence before accepting or rejecting a candidate.
-Conflicts between existing profiles require an explicit merge decision.
-Merge history and reversal follow the boundaries documented in
-[People](/docs/usage/people/).
+### An archive contact's page
 
-Domains provides the same activity-and-files analysis for an exact domain
-fact. A domain is not treated as an inferred organization identity. Selecting
-a grouped person or domain in Everything opens its inspector in the current
-context, including chronologically ordered related files.
+An archive contact's page has **Overview** (an activity calendar),
+**Timeline**, **Files**, and **Meetings** tabs. Choose **Save to Directory**
+to keep the contact as a saved person. If saving fails, the reason appears
+on the page.
+
+### Domains
+
+The domains view provides the same activity-and-files analysis for an exact
+domain fact. A domain is not treated as an inferred organization identity.
+Selecting a grouped person or domain in the Inbox opens its inspector in the
+current context, including chronologically ordered related files.
+
+### Reviews
+
+Open **Reviews** from the gear menu. It brings together identity matches,
+fact review, and imported relationships. Inspect the evidence before
+accepting or rejecting a candidate. Conflicts between existing profiles
+require an explicit merge decision. Merge history and reversal follow the
+boundaries documented in [People](/docs/usage/people/).
 
 ## Saved Views
 
 Saved Views persist useful analytical contexts in the daemon, so the same
 library is available from every authenticated browser connected to this
-single-user archive. A view records its query, explicit search mode, filters,
+single-user archive. Open them from the gear menu or from the bookmark button
+beside the header search field. A view records its query, explicit search mode, filters,
 grouping, presentation, sort, and visible columns.
 Selection is intentionally not saved. The inspector stays pinned; the browser
 does not save or apply inspector pin preferences.
@@ -268,9 +389,14 @@ through `POST /api/v1/saved-views/{id}/run`, or executed by an AI assistant
 with the [MCP server](/docs/usage/chat/#saved-views)'s `run_saved_view` tool.
 All three read the same records and see the same revisions.
 
+## Activity
+
+Activity has three tabs: [Sources](#sources-and-sync-status),
+[Operations](#operations), and [Deletions](#deletions).
+
 ## Sources and sync status
 
-Sources is a status workspace. For each source it shows schedule information,
+Sources is a status view. For each source it shows schedule information,
 an active run's processed, added, and error counts, the latest terminal result,
 and the last successful sync separately. A failed status request remains an
 error rather than becoming an empty source list. Failed runs expose their
@@ -323,7 +449,7 @@ has ever run.
 
 Links open source status, CardDAV settings, or detailed document and visual
 index status. The latter show coverage and the current prerequisites for
-processing. The workspace offers **Start CardDAV sync**, **Build visual
+processing. Operations offers **Start CardDAV sync**, **Build visual
 index**, or **Resume visual index** only when the daemon advertises that
 action. Source **Sync now** remains in Sources. Document extraction still
 requires the explicit CLI upload workflow in
@@ -336,10 +462,10 @@ operation history** to load a fresh snapshot.
 
 ## Deletions
 
-Everything supports explicit row selection and select-all-matching for the
-current query and filters. `d` and `D` open the Deletions workspace, where the
+The Inbox and Search support explicit row selection and select-all-matching
+for the current query and filters. `d` and `D` open Activity > Deletions, where the
 daemon first preflights the selection and reports any unavailable action before
-the UI offers a separate staging confirmation. The workspace lists, inspects,
+the UI offers a separate staging confirmation. Deletions lists, inspects,
 and cancels manifests; it cannot execute deletion against a provider. Use the
 explicit `msgvault delete-staged` CLI workflow for that final operation.
 
@@ -353,13 +479,13 @@ Tab keeps its normal browser meaning. Outside inputs and content viewers:
 | `Home` / `End`, `PgUp` / `PgDn` | Navigate large tables |
 | `Enter` | Open or drill into the focused row |
 | `Esc` | Close the current shell layer or restore prior context |
-| `/` | Focus search |
+| `/`, `Cmd/Ctrl+K` | Focus search |
 | `Space` | Toggle the focused row |
 | `A` / `x` | Select visible rows / clear selection |
 | `d` / `D` | Review deletion staging |
 | `f`, `g`, `s`, `r` | Filter, group, sort, reverse sort |
 | `?` | Searchable shortcut help |
-| `Cmd/Ctrl+K` | Command palette |
+| `Cmd/Ctrl+Shift+P` | [Command palette](#find-your-way-around) |
 
 Destructive keys open a review; they never execute deletion immediately.
 Shortcuts are suspended while typing and inside message/file content.
@@ -398,6 +524,15 @@ instead of the daemon's own clock, shown as "Server time"; the choice is
 stored as a `CRON_TZ=` prefix on the schedule. The CardDAV account form uses
 the same field, and the Sources and CardDAV status views describe stored
 schedules the same way.
+
+### Appearance
+
+Appearance holds the daemon's default theme and density. Its **This browser**
+block overrides them for the current browser only; the daemon defaults apply
+everywhere else. The command palette's **Theme** and **Density** commands set
+the same per-browser choices.
+
+### When changes take effect
 
 Each category states once how its changes take effect. Appearance settings
 apply right away. Every other `config.toml` category takes effect after the

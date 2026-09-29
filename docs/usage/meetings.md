@@ -23,8 +23,10 @@ media is not downloaded by the Notion or Circleback integrations.
 
 ## Browse and search
 
-Start `msgvault serve` and open the [Web UI](/docs/web-ui/) to find meetings in
-Everything. Filter to meeting notes or search across notes, email, and chats.
+Start `msgvault serve` and open the [Web UI](/docs/web-ui/). Its
+[Meetings](/docs/web-ui/#meetings) page lists meetings that already happened.
+In the [Inbox](/docs/web-ui/#inbox-and-search), filter to meeting notes or
+search across notes, email, and chats.
 To search only meetings from the CLI:
 
 ```bash
@@ -41,7 +43,7 @@ aggregates remain email-only unless you choose another message type.
 
 ## Export context and read follow-ups
 
-In Everything, select meeting rows and choose **Export meeting context**. You
+In the Inbox or Search, select meeting rows and choose **Export meeting context**. You
 can select explicit rows or **Select all matching items** for the current
 search and filters. The export includes exactly that selection. Mixed selections
 fail with **Select meetings only**; narrow selections larger than 100 meetings.
@@ -54,11 +56,11 @@ The default content budget is 131072 UTF-8 bytes. CLI and API clients can set
 check those fields before treating an export as complete. A missing summary
 stays missing. msgvault does not generate a replacement from the transcript.
 
-**Meeting activity and follow-ups** appears in a meeting-filtered Everything
-view, participant and domain reading panes, Directory profiles, and
-Relationships. It follows the current scope. Filter action items by source
+**Meeting activity and follow-ups** appears in a meeting-filtered Inbox view,
+participant and domain reading panes, and a person's **Meetings** tab in
+[People](/docs/web-ui/#people). It follows the current scope. Filter action items by source
 status or exact assignee email, then use **Open archived meeting** to read the
-source evidence. Back returns to the same workspace and scope.
+source evidence. Back returns to the same view and scope.
 
 Action status is the last archived source status, not a local task list.
 msgvault does not infer assignees, create follow-ups, or mark source tasks done.

@@ -62,10 +62,11 @@ manifests staged through the TUI. Creating a manifest never executes it.
 
 ## Staging in the Web UI
 
-In Everything, select individual rows or all rows matching the current
-canonical filter, then press `d` or `D` to open the Deletions workspace. The UI
+In the [Inbox or Search](/docs/web-ui/#inbox-and-search), select individual
+rows or all rows matching the current canonical filter, then press `d` or `D`
+to open [Activity > Deletions](/docs/web-ui/#deletions). The UI
 runs a server-side preflight before it enables staging and requires a separate
-confirmation to create the manifest. The Deletions workspace also lists,
+confirmation to create the manifest. Deletions also lists,
 inspects, and cancels staged manifests. It never executes remote deletion;
 that final step remains the explicit CLI command described below.
 

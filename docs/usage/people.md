@@ -6,8 +6,8 @@ description: Find people across your archive, keep their details together, and u
 
 Find someone across email, chats, and meetings, then keep their contact details
 and the things you want to remember in one profile. Start in the Web UI's
-**Relationships** workspace to explore contacts already in your archive, then
-save selected people in **Directory**. You can also use the
+[People](/docs/web-ui/#people) list, which shows saved people and archive
+contacts you have not saved yet. You can also use the
 [TUI People browser](/docs/usage/tui/#people).
 
 | I want to… | Start here |
@@ -43,12 +43,12 @@ create profiles when imported.
 ## Promote a durable person
 
 Directory starts empty until you save profiles or import contacts. In
-**Relationships**, select a person and choose **Promote to person**. This
-creates a saved profile from the contact already observed in your archive and
-opens it in Directory. The profile starts with the name shown in
-Relationships; change it any time with `person set-display-name`. A person
-who already has a profile shows **Open in Directory** instead. If promotion
-fails, the reason appears beside the person in Relationships.
+[People](/docs/web-ui/#people), open a contact marked **Not saved** and choose
+**Save to Directory**. This creates a saved profile from the contact already
+observed in your archive. The profile starts with the name shown for the
+contact; change it any time with `person set-display-name`. A contact who
+already has a profile opens that saved person instead. If saving fails, the
+reason appears on the contact's page.
 
 Contact state, primary channel, and last contact for a new profile fill in
 after the next activity projection. `msgvault serve` runs it hourly by
@@ -213,7 +213,7 @@ RFC3339 timestamp.
 
 [Person briefs](/docs/usage/people-briefs/) summarize recent chat and text
 messages with citations. The guide covers enrollment, generation, reading in
-Directory or the TUI, refresh timing, and saved versions. Email-only contacts
+the Web UI or the TUI, refresh timing, and saved versions. Email-only contacts
 cannot receive a brief yet.
 
 ## Configure provider-backed person sweeps

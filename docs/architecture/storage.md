@@ -198,7 +198,7 @@ results instantly as you group and drill down. On the default SQLite backend, ms
 Parquet so DuckDB can group and filter it without repeatedly joining the
 normalized archive tables.
 
-Ungrouped Everything and Files listings page a scalar message or attachment
+Ungrouped Inbox and Files listings page a scalar message or attachment
 population before resolving participant lists for the returned rows. Exact
 totals use separate narrow scans. This page-before-enrichment boundary keeps
 multi-million-message listings inside the daemon's interactive DuckDB memory

@@ -168,7 +168,8 @@ Use `msgvault sync-carddav --full` for a full address-book reconciliation.
 Settings shows active and recent runs, counts, and errors; Operations also
 provides CardDAV status and advertised sync actions.
 
-To publish a person, open their saved profile in **Directory** and turn on
+To publish a person, open their saved profile in
+[People](/docs/web-ui/#people), select the Maintenance tab, and turn on
 **Publish person to CardDAV**. A contact UID identifies that published person
 across syncs. Later profile changes are reconciled to the write target.
 Turning publication off removes the remote card while retaining the local
@@ -230,7 +231,7 @@ without publishing or resolving the conflict. Then run
 `POST /api/v1/carddav/conflicts/{id}/resolve` and `{"choice":"keep_local"}`.
 
 The preview route is the one CardDAV response that returns a raw vCard, and
-it can include Private Notes. The Directory UI directs you to the CLI review
+it can include Private Notes. The Web UI directs you to the CLI review
 commands when approval is required.
 
 ## Serve people to your devices
