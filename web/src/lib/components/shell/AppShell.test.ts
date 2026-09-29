@@ -895,20 +895,19 @@ describe('AppShell', () => {
     state.destroy();
   });
 
-  it('opens the Relationships timeline for a Directory person from its bound participants', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
-      workspace: 'directory', directoryPersonID: 7
-    }))}`);
+  function directoryPersonFetch(participantIDs: number[], participants: Record<number, { canonical: number; members: number[]; label: string; activity: number }>) {
+    const requests: string[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const path = new URL(request.url).pathname;
+      requests.push(path);
       const meetingResponse = meetingFixtureResponse(path);
       if (meetingResponse) return meetingResponse;
       if (path === '/api/v1/people/directory') return Response.json({ people: [{
         id: 7, revision: 1, display_name: 'Synthetic Person', contact_state: 'active', categories: [], organizations: []
       }] });
       if (path === '/api/v1/people/7') return Response.json({
-        id: 7, revision: 1, display_name: 'Synthetic Person', participant_ids: [9, 3], vcard_uid: '',
+        id: 7, revision: 1, display_name: 'Synthetic Person', participant_ids: participantIDs, vcard_uid: '',
         created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-01T00:00:00Z'
       });
       if (path === '/api/v1/people/7/profile') return Response.json({
@@ -924,22 +923,75 @@ describe('AppShell', () => {
       if (path === '/api/v1/people/7/brief-enrollment') return Response.json({ person_id: 7, enrolled: false, enabled_at: null, actor: '' });
       if (path === '/api/v1/people/7/merges') return Response.json({ merges: [], limit: 100, offset: 0 });
       if (path === '/api/v1/carddav/publications/7') return Response.json({ error: 'carddav_unavailable', message: 'unavailable' }, { status: 503 });
-      if (path.startsWith('/api/v1/participants/')) return Response.json({
-        id: Number(path.split('/').at(-1)), display_label: 'Synthetic Person', identifiers: [], activity_count: 0, file_count: 0,
-        source_counts: [], first_at: '2026-08-01T00:00:00Z', last_at: '2026-08-01T00:00:00Z', cache_revision: 'c'
-      });
+      const participant = /^\/api\/v1\/participants\/(\d+)$/.exec(path);
+      if (participant) {
+        const id = Number(participant[1]);
+        const info = participants[id]!;
+        return Response.json({
+          id, display_label: info.label, identifiers: [], activity_count: info.activity, file_count: 0, meeting_count: 0,
+          partial_label: false, current_relationship_temperature: 0, peak_relationship_temperature: 0, peak_relationship_year: 0,
+          source_counts: [], first_at: '2026-08-01T00:00:00Z', last_at: '2026-08-01T00:00:00Z', cache_revision: 'c',
+          cluster: { canonical_id: info.canonical, member_ids: info.members, edges: [] }
+        });
+      }
       if (path === '/api/v1/relationships') return Response.json({ rows: [], total_count: 0, cache_revision: 'c' });
-      if (path.endsWith('/timeline')) return Response.json({ canonical_id: 3, identity_revision: 1, cache_revision: 'c', rows: [], total_count: 0 });
+      if (path.endsWith('/timeline')) return Response.json({
+        canonical_id: Number(path.split('/').at(-2)), identity_revision: 1, cache_revision: 'c', rows: [], total_count: 0
+      });
       return Response.json(exploreResponse());
+    });
+    return { fetchFn, requests };
+  }
+
+  it('opens the Relationships timeline on the canonical cluster of a Directory person\'s bound participants', async () => {
+    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
+      workspace: 'directory', directoryPersonID: 7
+    }))}`);
+    // 9 is a non-canonical member of cluster 3: resolving 3 first covers 9.
+    const { fetchFn, requests } = directoryPersonFetch([9, 3], {
+      3: { canonical: 3, members: [3, 9], label: 'Synthetic Person', activity: 5 },
+      9: { canonical: 3, members: [3, 9], label: 'Synthetic Person', activity: 5 }
+    });
+    const state = new ExploreState(window);
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+
+    // Let the person page's own identifier lookups settle before measuring the handoff.
+    const handoff = await screen.findByRole('button', { name: 'Open timeline for Synthetic Person' });
+    await waitFor(() => expect(requests).toContain('/api/v1/participants/3'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const requestsBeforeHandoff = requests.length;
+    await fireEvent.click(handoff);
+    await waitFor(() => expect(state.current).toMatchObject({
+      workspace: 'relationships', relationshipFacet: 'people', relationshipTarget: 'cluster:3', relationshipFiles: false
+    }));
+    expect(await screen.findByRole('main', { name: 'Relationships' })).toBeDefined();
+    // The handoff resolves 3 first, whose cluster already lists 9: no second lookup.
+    expect(requests.slice(requestsBeforeHandoff).filter((path) => path === '/api/v1/participants/9')).toHaveLength(0);
+    expect(screen.queryByRole('note')).toBeNull();
+
+    rendered.unmount();
+    state.destroy();
+  });
+
+  it('opens the busiest cluster when bound participants span several and names the others', async () => {
+    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
+      workspace: 'directory', directoryPersonID: 7
+    }))}`);
+    const { fetchFn } = directoryPersonFetch([3, 9], {
+      3: { canonical: 3, members: [3], label: 'Synthetic Person', activity: 5 },
+      9: { canonical: 9, members: [9], label: 'Synthetic Alias', activity: 20 }
     });
     const state = new ExploreState(window);
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Open timeline for Synthetic Person' }));
-    await waitFor(() => expect(state.current).toMatchObject({
-      workspace: 'relationships', relationshipFacet: 'people', relationshipTarget: 'cluster:3', relationshipFiles: false
-    }));
-    expect(await screen.findByRole('main', { name: 'Relationships' })).toBeDefined();
+    await waitFor(() => expect(state.current).toMatchObject({ workspace: 'relationships', relationshipTarget: 'cluster:9' }));
+    const note = await screen.findByRole('note');
+    expect(note.textContent).toContain('other identities');
+    await fireEvent.click(screen.getByRole('button', { name: 'Open identity Synthetic Person' }));
+    await waitFor(() => expect(state.current.relationshipTarget).toBe('cluster:3'));
+    // The note follows the person: the busiest cluster is now the "other" one.
+    expect((await screen.findByRole('button', { name: 'Open identity Synthetic Alias' }))).toBeDefined();
 
     rendered.unmount();
     state.destroy();

@@ -7,6 +7,7 @@
   import type { PersonAttributeGroup, PersonContactPoint } from '../../api/generated/models';
   import type { DomainSummary, PersonSummary } from '../../explore/models';
   import type { LinkOutcome, RelationshipsMergeContext } from '../../relationships/controller.svelte';
+  import type { RelationshipSiblingCluster } from '../../relationships/models';
   import { identityChipText } from '../../relationships/identity-chip';
   import type { PersonMergeSuccess, ValidatedPersonMergeRequired } from '../../directory/person-merge';
   import type { DirectoryPromotionResult } from '../../directory/models';
@@ -38,6 +39,9 @@
     capturePersonMergeContext?: () => RelationshipsMergeContext;
     onReconcilePersonMerge?: (context: RelationshipsMergeContext) => Promise<void>;
     onOpenDirectoryPerson?: (personID: number) => void;
+    /** Clusters a Directory person is bound to besides the open one. */
+    siblingClusters?: RelationshipSiblingCluster[];
+    onOpenSibling?: (target: string) => void;
     loadAttributes?: (personID: number) => Promise<PersonAttributeGroup[]>;
     /** The Directory profile's curated contact points, merged into the
      * contact block so address-book values sit beside archive-observed ones. */
@@ -57,6 +61,8 @@
     capturePersonMergeContext = undefined,
     onReconcilePersonMerge = undefined,
     onOpenDirectoryPerson = undefined,
+    siblingClusters = [],
+    onOpenSibling = undefined,
     loadAttributes = undefined,
     loadContactPoints = undefined,
     onAnnounce = undefined
@@ -136,6 +142,15 @@
         unrepresentedMembers.map((id) => memberFor(id) ?? { participant_id: id }), edges
       )
     );
+  });
+
+  /** The other clusters of the person who opened this target, shown only
+   * while the open target is one of the set. */
+  const otherIdentities = $derived.by((): RelationshipSiblingCluster[] => {
+    if (!detail || !isPersonDetail(detail)) return [];
+    const current = `cluster:${detail.id}`;
+    if (!siblingClusters.some((cluster) => cluster.target === current)) return [];
+    return siblingClusters.filter((cluster) => cluster.target !== current);
   });
 
   function isOtherMember(participantID: number): boolean {
@@ -425,6 +440,20 @@
         · {detail.person_count.toLocaleString()} people
       {/if}
     </p>
+    {#if otherIdentities.length > 0}
+      <p class="sibling-note" role="note">
+        <span>This person's history continues under other identities:</span>
+        {#each otherIdentities as sibling (sibling.target)}
+          <Button
+            size="sm"
+            surface="soft"
+            label={`${sibling.label} · ${sibling.activityCount.toLocaleString()} items`}
+            ariaLabel={`Open identity ${sibling.label}`}
+            onclick={() => onOpenSibling?.(sibling.target)}
+          />
+        {/each}
+      </p>
+    {/if}
     {#if isPersonDetail(detail) && detail.profile?.id}
       <AttributeSummary
         groups={attributeGroups}
@@ -526,6 +555,16 @@
   .counts {
     margin: 0;
     color: var(--text-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  .sibling-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    color: var(--text-secondary);
     font-size: var(--font-size-xs);
   }
 

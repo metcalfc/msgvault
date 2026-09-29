@@ -74,8 +74,9 @@
   import KeyboardHelp from './KeyboardHelp.svelte';
   import ArchivedMeetingReader from '../meetings/ArchivedMeetingReader.svelte';
   import { ArchiveMeetingNavigation, archiveMeetingSelection, parseArchiveMeetingSelection } from '../../meetings/archive-navigation.svelte';
-  import { getMessage } from '../../api/generated/api/api';
+  import { getMessage, getParticipant } from '../../api/generated/api/api';
   import { dayWindowFilters } from '../../explore/date-range';
+  import type { RelationshipSiblingCluster } from '../../relationships/models';
   import { messageEntryKey } from '../../explore/entry-key';
   import { ARCHIVE_MEETING_HISTORY_KEY, parseArchiveMeetingHistory } from '../../meetings/archive-selection';
   import EverythingWorkspace from './EverythingWorkspace.svelte';
@@ -214,13 +215,40 @@
     beforeCommit();
     exploreState.commitNavigation({ workspace: 'directory', directoryPersonID: personID });
   }
-  /** The inverse of openDirectoryPerson: a Directory person's bound
-   * participants all resolve to one cluster, so the lowest id is enough
-   * for the hub to open the whole timeline. */
-  function openDirectoryPersonTimeline(participantIDs: number[]): void {
-    const participantID = participantIDs.filter((id) => Number.isSafeInteger(id) && id > 0).sort((a, b) => a - b)[0];
-    if (participantID === undefined) return;
-    openRelationship(participantID);
+  /** The inverse of openDirectoryPerson. Person–participant bindings are
+   * independent of participant identity links, so the bound ids can sit in
+   * one cluster or several, and a non-canonical id would not match the
+   * hub's cluster:<canonical_id> targets. Each binding is resolved to its
+   * cluster (skipping ids a fetched cluster already lists as members); the
+   * hub opens on the cluster with the most activity and, when there are
+   * others, names them so the rest of the person's history is one click
+   * away. */
+  async function openDirectoryPersonTimeline(participantIDs: number[]): Promise<void> {
+    const ids = [...new Set(participantIDs.filter((id) => Number.isSafeInteger(id) && id > 0))].sort((a, b) => a - b);
+    if (ids.length === 0) return;
+    const origin = canonicalFingerprint(exploreState.current);
+    const clusters = new Map<number, { members: Set<number>; label: string; activityCount: number }>();
+    for (const id of ids) {
+      if ([...clusters.values()].some((cluster) => cluster.members.has(id))) continue;
+      const { data } = await getParticipant({ id }, { ...client });
+      if (!data) continue;
+      const canonical = data.cluster?.canonical_id ?? data.id;
+      const known = clusters.get(canonical);
+      if (known) { known.members.add(id); continue; }
+      clusters.set(canonical, {
+        members: new Set([canonical, id, ...(data.cluster?.member_ids ?? [])]),
+        label: data.display_label,
+        activityCount: data.activity_count,
+      });
+    }
+    if (origin !== canonicalFingerprint(exploreState.current)) return;
+    const ranked = [...clusters.entries()].sort(([idA, a], [idB, b]) => b.activityCount - a.activityCount || idA - idB);
+    const first = ranked[0];
+    if (!first) return;
+    openRelationship(first[0]);
+    relationshipSiblings = ranked.length > 1
+      ? ranked.map(([id, cluster]) => ({ target: `cluster:${id}`, label: cluster.label, activityCount: cluster.activityCount }))
+      : [];
   }
   function announceOperation(message: string): void {
     operationAnnouncement = { key: ++operationAnnouncementKey, message };
@@ -1070,7 +1098,11 @@
     // they actually came from.
     exploreState.replaceCommittedNavigation({ workspace: 'everything' });
   });
+  // Set only by the Directory → timeline handoff; any other way into the
+  // hub clears it so the note never outlives the person it described.
+  let relationshipSiblings = $state<RelationshipSiblingCluster[]>([]);
   function openRelationship(participantID: number): void {
+    relationshipSiblings = [];
     commitNavigation({
       workspace: 'relationships',
       // Entering the hub never carries the text query (see
@@ -1283,6 +1315,7 @@
       onOpenEverything={() => commitWorkspace('everything')}
       onPromotePerson={promoteRelationshipParticipant}
       onOpenDirectoryPerson={openDirectoryPerson}
+      siblingClusters={relationshipSiblings}
       onAnnounce={announceOperation}
       onOpenFileItem={openFileItem}
       onOpenFileConversation={openFileConversation}

@@ -23,7 +23,7 @@
   import { getPersonStructuredProfile, listPersonAttributes } from '../../api/generated/api/api';
   import type { ExplorePredicate, FileMIMEFamily, FileSearchSort, PersonFileDirection } from '../../explore/models';
   import type { RelationshipsController } from '../../relationships/controller.svelte';
-  import type { RelationshipFacet, RelationshipTimelineRow } from '../../relationships/models';
+  import type { RelationshipFacet, RelationshipSiblingCluster, RelationshipTimelineRow } from '../../relationships/models';
   import { bufferedCallback } from '../../util/buffered-callback';
   import FilesWorkspace from '../files/FilesWorkspace.svelte';
   import SplitPane from '../layout/SplitPane.svelte';
@@ -60,6 +60,10 @@
      * Directory person. */
     onPromotePerson?: (participantID: number) => Promise<DirectoryPromotionResult>;
     onOpenDirectoryPerson?: (personID: number) => void;
+    /** Other participant clusters the Directory person that opened this
+     * target is bound to; the header names them when the open target is
+     * one of them. */
+    siblingClusters?: RelationshipSiblingCluster[];
     onAnnounce?: (message: string) => void;
     onOpenMeeting?: (meeting: MeetingRef) => void;
     /** Opening a file (or its containing conversation) from the hub's own
@@ -92,6 +96,7 @@
     onOpenEverything = undefined,
     onPromotePerson = undefined,
     onOpenDirectoryPerson = undefined,
+    siblingClusters = [],
     onAnnounce = undefined,
     onOpenMeeting = undefined,
     onOpenFileItem = undefined,
@@ -396,6 +401,8 @@
                 {client}
                 {onPromotePerson}
                 {onOpenDirectoryPerson}
+                {siblingClusters}
+                onOpenSibling={selectListRow}
                 loadAttributes={async (id) => (await listPersonAttributes({ id }, { history: false }, { ...client })).data?.attributes ?? []}
                 loadContactPoints={async (id) => (await getPersonStructuredProfile({ id }, { ...client })).data?.contact_points ?? []}
                 {onAnnounce}

@@ -159,6 +159,24 @@ describe('RelationshipHeader', () => {
     expect(onOpenDirectoryPerson).toHaveBeenCalledWith(7);
   });
 
+  it('names the other identities of a Directory person only while one of them is open', async () => {
+    const onOpenSibling = vi.fn();
+    const siblingClusters = [
+      { target: 'cluster:12', label: 'Alice Example', activityCount: 42 },
+      { target: 'cluster:34', label: 'Alias Example', activityCount: 7 }
+    ];
+    const { rerender } = render(RelationshipHeader, baseProps({ siblingClusters, onOpenSibling }));
+
+    const note = screen.getByRole('note');
+    expect(note.textContent).toContain('other identities');
+    expect(note.textContent).not.toContain('Alice Example');
+    await fireEvent.click(screen.getByRole('button', { name: 'Open identity Alias Example' }));
+    expect(onOpenSibling).toHaveBeenCalledWith('cluster:34');
+
+    await rerender(baseProps({ siblingClusters, onOpenSibling, detail: { ...person(), id: 99 } }));
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+
   it('opens the durable Directory person instead of offering promotion', async () => {
     const onPromotePerson = vi.fn();
     const onOpenDirectoryPerson = vi.fn();
