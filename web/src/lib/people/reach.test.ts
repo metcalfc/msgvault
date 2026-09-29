@@ -127,6 +127,29 @@ describe('reach entries', () => {
     expect(serviceKey('', 'beeper')).toBe('beeper');
   });
 
+  it('numbers repeated opaque labels by address, so a shared address is one unnumbered row', () => {
+    const shared = 'beeper:8:signal:9:@shared:x.y';
+    const other = 'beeper:8:signal:9:@other:x.y';
+    const opaque = { type: 'beeper', is_primary: false, service_label: 'Signal', participant_display_name: 'Avery Example' };
+    const merged = mergeReachEntries(reachEntriesFromIdentifiers({ identifiers: [
+      identifier({ ...opaque, value: shared, participant_id: 12 }),
+      identifier({ ...opaque, value: shared, participant_id: 34 })
+    ] }));
+    expect(merged.map((entry) => [entry.label, entry.participantIDs])).toEqual([
+      ['Signal identifier for Avery Example', [12, 34]]
+    ]);
+
+    const distinct = mergeReachEntries(reachEntriesFromIdentifiers({ identifiers: [
+      identifier({ ...opaque, value: shared, participant_id: 12 }),
+      identifier({ ...opaque, value: shared, participant_id: 34 }),
+      identifier({ ...opaque, value: other, participant_id: 56 })
+    ] }));
+    expect(distinct.map((entry) => entry.label)).toEqual([
+      'Signal identifier for Avery Example (1 of 2)',
+      'Signal identifier for Avery Example (2 of 2)'
+    ]);
+  });
+
   it('keeps every member that shares a value on the one visible row', () => {
     const merged = mergeReachEntries(
       reachEntriesFromIdentifiers({ identifiers: [

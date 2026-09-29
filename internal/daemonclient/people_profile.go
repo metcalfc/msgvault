@@ -90,6 +90,7 @@ func (b *PeopleBrowser) GetPersonProfile(
 	case err == nil:
 		profile.Attributes = attributes.Groups
 		labelRequest.PersonIDs = append(labelRequest.PersonIDs, attributes.RecordReferencePersonIDs()...)
+		labelRequest.OrganizationIDs = attributes.RecordReferenceOrganizationIDs()
 	case !absentAPIResource(err):
 		return nil, err
 	}
@@ -98,6 +99,7 @@ func (b *PeopleBrowser) GetPersonProfile(
 	labels, _ := b.EntityLabels(ctx, labelRequest)
 	profile.Label = labels.People[personID]
 	profile.RecordLabels = labels.People
+	profile.RecordOrganizationLabels = labels.Organizations
 
 	profile.Employments, err = b.currentEmployments(ctx, personID)
 	if err != nil {

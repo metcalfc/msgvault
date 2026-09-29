@@ -60,32 +60,47 @@ func TestConversationListsNeverLabelByConversationID(t *testing.T) {
 }
 
 func TestPeopleAttributesNameRecordReferences(t *testing.T) {
-	definition := editablePeopleDefinition("assistant", "Assistant",
-		store.AttributeValueRecordReference, store.AttributeFieldPerson, store.AttributeCardinalitySingle)
-	recordType := string(store.AttributeObjectPerson)
+	personType := string(store.AttributeObjectPerson)
+	organizationType := string(store.AttributeObjectOrganization)
 	named, unnamed := int64(42), int64(43)
 	for _, test := range []struct {
-		name     string
-		recordID int64
-		want     string
+		name       string
+		fieldType  store.AttributeFieldType
+		recordType string
+		recordID   int64
+		want       string
+		notWant    string
 	}{
-		{name: "named person", recordID: named, want: "Jordan Example"},
-		{name: "person without a label", recordID: unnamed, want: "Unknown person"},
+		{name: "named person", fieldType: store.AttributeFieldPerson, recordType: personType,
+			recordID: named, want: "Jordan Example", notWant: "Example Works"},
+		{name: "person without a label", fieldType: store.AttributeFieldPerson, recordType: personType,
+			recordID: unnamed, want: "Unknown person"},
+		{name: "named organization sharing a person's ID", fieldType: store.AttributeFieldOrganization,
+			recordType: organizationType, recordID: named, want: "Example Works", notWant: "Jordan Example"},
+		{name: "organization without a label", fieldType: store.AttributeFieldOrganization,
+			recordType: organizationType, recordID: unnamed, want: "Unknown organization", notWant: "Unknown person"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			definition := editablePeopleDefinition("assistant", "Assistant",
+				store.AttributeValueRecordReference, test.fieldType, store.AttributeCardinalitySingle)
 			model := peopleAttributesModel(&fakePeopleAttributesBackend{}, peoplebrowser.AttributeGroup{
 				Definition: definition,
 				Current: []store.PersonAttributeValue{{
 					ID: 1, DefinitionSlug: "assistant",
 					Value: store.AttributeValue{
-						Type: store.AttributeValueRecordReference, RecordType: &recordType, RecordID: &test.recordID,
+						Type: store.AttributeValueRecordReference, RecordType: &test.recordType, RecordID: &test.recordID,
 					},
 				}},
 			})
 			model.peopleState.attributes.RecordLabels = map[int64]string{named: "Jordan Example"}
+			model.peopleState.attributes.RecordOrganizationLabels = map[int64]string{named: "Example Works"}
 			rendered := strings.Join(model.peopleAttributesLines(), "\n")
-			assert.Contains(t, rendered, test.want)
-			assert.NotContains(t, rendered, "—")
+			assert := assert.New(t)
+			assert.Contains(rendered, test.want)
+			assert.NotContains(rendered, "—")
+			if test.notWant != "" {
+				assert.NotContains(rendered, test.notWant)
+			}
 		})
 	}
 }

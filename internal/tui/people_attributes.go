@@ -559,18 +559,33 @@ func peopleAttributeDefinitionSupported(definition store.AttributeDefinition) bo
 }
 
 // peopleAttributeDisplayValue renders a value for the attributes list. A
-// record reference shows the referenced person's name; the ID is never a
-// label.
-func peopleAttributeDisplayValue(value store.AttributeValue, recordLabels map[int64]string) string {
-	if value.Type == store.AttributeValueRecordReference {
-		if value.RecordID != nil {
-			if label := strings.TrimSpace(recordLabels[*value.RecordID]); label != "" {
-				return label
+// record reference shows the referenced person's or organization's name,
+// looked up in the labels for its own record type; the ID is never a label.
+func peopleAttributeDisplayValue(value store.AttributeValue, attributes *peoplebrowser.Attributes) string {
+	if value.Type != store.AttributeValueRecordReference {
+		return peopleAttributeValueString(value)
+	}
+	labels, unknown := map[int64]string(nil), "Unknown record"
+	if value.RecordType != nil {
+		switch store.AttributeObjectType(*value.RecordType) {
+		case store.AttributeObjectPerson:
+			unknown = "Unknown person"
+			if attributes != nil {
+				labels = attributes.RecordLabels
+			}
+		case store.AttributeObjectOrganization:
+			unknown = "Unknown organization"
+			if attributes != nil {
+				labels = attributes.RecordOrganizationLabels
 			}
 		}
-		return "Unknown person"
 	}
-	return peopleAttributeValueString(value)
+	if value.RecordID != nil {
+		if label := strings.TrimSpace(labels[*value.RecordID]); label != "" {
+			return label
+		}
+	}
+	return unknown
 }
 
 func peopleAttributeValueString(value store.AttributeValue) string {
@@ -679,7 +694,7 @@ func (m Model) peopleAttributesLines() []string {
 		}
 		value := group.Current[selection.valueIndex]
 		lines = append(lines, fmt.Sprintf("%s  %s", marker,
-			textutil.SanitizeTerminal(peopleAttributeDisplayValue(value.Value, m.peopleState.attributes.RecordLabels))))
+			textutil.SanitizeTerminal(peopleAttributeDisplayValue(value.Value, m.peopleState.attributes))))
 	}
 	return lines
 }

@@ -84,18 +84,30 @@ type Attributes struct {
 	PersonID int64
 	Groups   []AttributeGroup
 	// RecordLabels names the people that record-reference values point
-	// at, keyed by person ID. A missing entry means no name was available;
-	// callers must not show the ID in its place.
-	RecordLabels map[int64]string
+	// at, keyed by person ID, and RecordOrganizationLabels the
+	// organizations. A missing entry means no name was available; callers
+	// must not show the ID in its place.
+	RecordLabels             map[int64]string
+	RecordOrganizationLabels map[int64]string
 }
 
 // RecordReferencePersonIDs returns the person IDs referenced by the current
 // record-reference values, for one label lookup.
 func (a *Attributes) RecordReferencePersonIDs() []int64 {
+	return a.recordReferenceIDs(store.AttributeObjectPerson)
+}
+
+// RecordReferenceOrganizationIDs returns the organization IDs referenced by
+// the current record-reference values.
+func (a *Attributes) RecordReferenceOrganizationIDs() []int64 {
+	return a.recordReferenceIDs(store.AttributeObjectOrganization)
+}
+
+func (a *Attributes) recordReferenceIDs(kind store.AttributeObjectType) []int64 {
 	var ids []int64
 	for _, group := range a.Groups {
 		for _, value := range group.Current {
-			if value.Value.RecordType != nil && *value.Value.RecordType == string(store.AttributeObjectPerson) &&
+			if value.Value.RecordType != nil && *value.Value.RecordType == string(kind) &&
 				value.Value.RecordID != nil {
 				ids = append(ids, *value.Value.RecordID)
 			}

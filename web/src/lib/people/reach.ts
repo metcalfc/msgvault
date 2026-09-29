@@ -231,9 +231,15 @@ export function reachEntriesFromIdentifiers({ identifiers, ownID, members = [], 
     });
   }
   // Opaque identifiers of one service and member would share a label; number
-  // the repeats rather than naming a participant by its ID.
-  const labels = distinctLabels(entries.map((entry) => entry.label));
-  return entries.map((entry, index) => entry.opaque ? { ...entry, label: labels[index]! } : entry);
+  // the repeats rather than naming a participant by its ID. Numbering goes by
+  // unique key, because rows with one key are the same address and
+  // mergeReachEntries folds them into one entry.
+  const firstByKey = new Map<string, string>();
+  for (const entry of entries) if (!firstByKey.has(entry.key)) firstByKey.set(entry.key, entry.label);
+  const keys = [...firstByKey.keys()];
+  const numbered = distinctLabels([...firstByKey.values()]);
+  const labelByKey = new Map(keys.map((key, index) => [key, numbered[index]!]));
+  return entries.map((entry) => entry.opaque ? { ...entry, label: labelByKey.get(entry.key)! } : entry);
 }
 
 /** Cluster members with no identifier row but a stored email or phone. */

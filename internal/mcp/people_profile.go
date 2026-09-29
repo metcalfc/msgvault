@@ -173,7 +173,7 @@ type personProfileValue struct {
 }
 
 func personProfileAttributeValues(
-	values []store.PersonAttributeValue, recordLabels map[int64]string,
+	values []store.PersonAttributeValue, personLabels, organizationLabels map[int64]string,
 ) []personProfileAttributeValue {
 	out := make([]personProfileAttributeValue, len(values))
 	for i, value := range values {
@@ -181,9 +181,14 @@ func personProfileAttributeValues(
 			PersonAttributeValue: value,
 			Value:                personProfileValue{AttributeValue: value.Value},
 		}
-		if value.Value.RecordType != nil && *value.Value.RecordType == string(store.AttributeObjectPerson) &&
-			value.Value.RecordID != nil {
-			out[i].Value.RecordLabel = recordLabels[*value.Value.RecordID]
+		if value.Value.RecordType == nil || value.Value.RecordID == nil {
+			continue
+		}
+		switch store.AttributeObjectType(*value.Value.RecordType) {
+		case store.AttributeObjectPerson:
+			out[i].Value.RecordLabel = personLabels[*value.Value.RecordID]
+		case store.AttributeObjectOrganization:
+			out[i].Value.RecordLabel = organizationLabels[*value.Value.RecordID]
 		}
 	}
 	return out
@@ -335,7 +340,7 @@ func personProfileResponse(profile peoplebrowser.PersonProfile) getPersonProfile
 				}
 			}
 		}
-		current := personProfileAttributeValues(group.Current, profile.RecordLabels)
+		current := personProfileAttributeValues(group.Current, profile.RecordLabels, profile.RecordOrganizationLabels)
 		response.Attributes = append(response.Attributes, personProfileAttribute{
 			Slug: definition.Slug, Label: definition.Label, UniversalID: definition.UniversalID,
 			ValueType: definition.ValueType, Cardinality: definition.Cardinality, Current: current,

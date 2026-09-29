@@ -26,18 +26,20 @@ type PersonProfile struct {
 	// nothing names the person. The vCard UID is never a label.
 	Label string
 	// RecordLabels names the people that record-reference attribute values
-	// point at, keyed by person ID.
-	RecordLabels  map[int64]string
-	Tracked       *bool
-	ContactState  *store.ContactState
-	Brief         *PersonBrief
-	Attributes    []AttributeGroup
-	Employments   []PersonEmployment
-	Relationships []PersonRelationshipSummary
-	ContactPoints []PersonContactPointSummary
-	Addresses     []PersonAddressSummary
-	Dates         []PersonDateSummary
-	Categories    []string
+	// point at, keyed by person ID, and RecordOrganizationLabels the
+	// organizations.
+	RecordLabels             map[int64]string
+	RecordOrganizationLabels map[int64]string
+	Tracked                  *bool
+	ContactState             *store.ContactState
+	Brief                    *PersonBrief
+	Attributes               []AttributeGroup
+	Employments              []PersonEmployment
+	Relationships            []PersonRelationshipSummary
+	ContactPoints            []PersonContactPointSummary
+	Addresses                []PersonAddressSummary
+	Dates                    []PersonDateSummary
+	Categories               []string
 }
 
 // PersonEmployment is one current employment rendered for reading.
