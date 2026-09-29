@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
 import { DirectoryEntityController } from '../../directory/entity-controller.svelte';
+import { withEntityLabels } from '../../../test/entity-labels';
 import { chooseSelectOption } from '../../../test/kit-ui';
 import OrganizationEmploymentTab from './OrganizationEmploymentTab.svelte';
 
@@ -67,7 +68,10 @@ function collection(rows = [employment()], projection = { employment_id: 11, org
 }
 
 function controllerWith(fetchFn: typeof fetch): DirectoryEntityController {
-  return new DirectoryEntityController(createAPIClient(fetchFn), 7);
+  return new DirectoryEntityController(
+    createAPIClient(withEntityLabels(fetchFn, { person: { 7: 'Avery Example' }, organization: { 22: 'Concurrent Primary Org' } })),
+    7
+  );
 }
 
 describe('OrganizationEmploymentTab', () => {
@@ -330,14 +334,17 @@ describe('OrganizationEmploymentTab', () => {
     }));
     controller.organizations = [organization()];
     controller.employments = [employment()];
-    controller.employmentOrganizationNames.set(22, 'Concurrent Primary Org');
+    // The page never listed organization 22: the conflict pane names it, and
+    // the employment's person, through the shared resolver.
     render(OrganizationEmploymentTab, { controller, personID: 7 });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Make primary employment' }));
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('primary changed elsewhere');
-    expect(alert.textContent).toContain('Concurrent Primary Org');
+    await waitFor(() => expect(alert.textContent).toContain('Concurrent Primary Org'));
+    await waitFor(() => expect(alert.textContent).toContain('Avery Example'));
+    expect(alert.textContent).not.toContain('Unknown organization');
     expect(alert.textContent).not.toContain('Synthetic Org');
     expect(alert.textContent).not.toContain('Organization 22');
     expect(alert.textContent).toContain('Concurrent role');

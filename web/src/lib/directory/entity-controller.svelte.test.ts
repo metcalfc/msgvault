@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../api/client';
+import { entityLabelsResponse } from '../../test/entity-labels';
 import { DirectoryEntityController } from './entity-controller.svelte';
 
 function requestOf(input: RequestInfo | URL): Request {
@@ -122,7 +123,7 @@ describe('DirectoryEntityController', () => {
           projection: { employment_id: 12, organization_id: 21, organization_name: 'Synthetic Org', vcard: {} }
         });
       }
-      return defaultResponse(request);
+      return entityLabelsResponse(request, { organization: { 505: 'Synthetic Moved Employer' } }) ?? defaultResponse(request);
     }));
     const controller = new DirectoryEntityController(client, 7);
 
@@ -130,7 +131,13 @@ describe('DirectoryEntityController', () => {
 
     expect(controller.organizationName(123)).toBe('Synthetic Former Employer');
     expect(controller.organizationName(21)).toBe('Synthetic Org');
+    // An organization this page never listed, such as one another client
+    // moved the employment to, is named by the shared resolver.
+    expect(controller.organizationName(505)).not.toContain('505');
+    expect(controller.organizationName(404)).not.toContain('404');
+    await vi.waitFor(() => expect(controller.organizationName(505)).toBe('Synthetic Moved Employer'));
     expect(controller.organizationName(404)).toBe('Unknown organization');
+    await expect(controller.settledOrganizationName(505)).resolves.toBe('Synthetic Moved Employer');
     controller.organizationRecords.set(123, { ...organizationProfile(2), organization: { ...organization(2), id: 123, name: 'Renamed Employer' } });
     expect(controller.organizationName(123)).toBe('Renamed Employer');
   });

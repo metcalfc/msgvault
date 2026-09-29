@@ -4,9 +4,10 @@
   interface Props {
     employment: Employment;
     organizationName: string;
+    personName: string;
   }
 
-  let { employment, organizationName }: Props = $props();
+  let { employment, organizationName, personName }: Props = $props();
 
   function partialDate(value: { year?: number; month?: number; day?: number } | undefined): string {
     if (!value) return '';
@@ -20,7 +21,7 @@
 
 <dl aria-label="Current saved employment">
   <div><dt>Organization</dt><dd>{organizationName}</dd></div>
-  <div><dt>Person</dt><dd>{employment.person_id}</dd></div>
+  <div><dt>Person</dt><dd>{personName}</dd></div>
   <div><dt>Title</dt><dd>{employment.title || 'None'}</dd></div>
   <div><dt>Role</dt><dd>{employment.role || 'None'}</dd></div>
   <div><dt>Department</dt><dd>{employment.department || 'None'}</dd></div>

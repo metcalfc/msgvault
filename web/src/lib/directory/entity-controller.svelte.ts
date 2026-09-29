@@ -25,6 +25,7 @@ import {
   setPrimaryEmployment as generatedSetPrimaryEmployment,
 } from '../api/generated/api/api';
 import { SvelteMap } from 'svelte/reactivity';
+import { UNKNOWN_LABELS, entityNames } from '../names/entity-names.svelte';
 import type { APIClient } from '../api/client';
 import type {
   CreatePersonRelationshipRequest,
@@ -137,11 +138,25 @@ export class DirectoryEntityController {
    * Employment rows carry only an ID, so the listing's own names back the
    * organization records and search results an edit may have renamed. */
   organizationName(id: number): string {
+    return this.listedOrganizationName(id)
+      // An organization this page never listed (another client moved the
+      // employment there) is named by the shared resolver.
+      ?? entityNames(this.client).label('organization', id);
+  }
+  /** An organization's name for text kept after it is read, such as a saved selection. */
+  async settledOrganizationName(id: number): Promise<string> {
+    return this.listedOrganizationName(id)
+      ?? await entityNames(this.client).settledLabel('organization', id, UNKNOWN_LABELS.organization);
+  }
+  private listedOrganizationName(id: number): string | undefined {
     return this.organizationRecords.get(id)?.organization.name
       ?? this.organizations.find((item) => item.id === id)?.name
       ?? this.employmentOrganizationNames.get(id)
-      ?? (this.employmentProjection?.organization_id === id ? this.employmentProjection.organization_name : undefined)
-      ?? 'Unknown organization';
+      ?? (this.employmentProjection?.organization_id === id ? this.employmentProjection.organization_name : undefined);
+  }
+  /** A person's name for rows that carry only a person ID. Reactive. */
+  personName(id: number): string {
+    return entityNames(this.client).label('person', id);
   }
   /** The network stays lazy: PersonNetwork requests it when its tab opens. */
   async load(): Promise<void> {

@@ -167,7 +167,7 @@
       <div role="alert">
         <p>{actionMessage}</p>
         {#if actionConflictCurrent}
-          <EmploymentCurrentData employment={actionConflictCurrent} organizationName={organizationName(actionConflictCurrent.organization_id)} />
+          <EmploymentCurrentData employment={actionConflictCurrent} personName={controller.personName(actionConflictCurrent.person_id)} organizationName={organizationName(actionConflictCurrent.organization_id)} />
         {/if}
       </div>
     {/if}
@@ -203,7 +203,7 @@
       <div role="alert">
         <p>{deleteMessage}</p>
         {#if deleteConflictCurrent}
-          <EmploymentCurrentData employment={deleteConflictCurrent} organizationName={organizationName(deleteConflictCurrent.organization_id)} />
+          <EmploymentCurrentData employment={deleteConflictCurrent} personName={controller.personName(deleteConflictCurrent.person_id)} organizationName={organizationName(deleteConflictCurrent.organization_id)} />
         {/if}
       </div>
     {/if}
