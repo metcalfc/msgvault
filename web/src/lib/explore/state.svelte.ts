@@ -155,6 +155,7 @@ export const defaultExploreURLState: ExploreURLState = {
   query: '',
   searchMode: 'full_text',
   filters: [],
+  dateBoundsChosen: false,
   groupingChain: [],
   presentation: 'table',
   sort: [{ field: 'occurred_at', direction: 'desc' }],
@@ -467,6 +468,7 @@ function normalize(value: unknown): ExploreURLState {
     query: typeof value.query === 'string' ? value.query : '',
     searchMode,
     filters: filters(value.filters),
+    dateBoundsChosen: value.dateBoundsChosen === true,
     groupingChain: groups(value.groupingChain),
     presentation,
     sort: sorts(value.sort),
@@ -551,7 +553,8 @@ const WORKSPACE_FIELDS: Partial<Record<keyof ExploreURLState, ReadonlyArray<Expl
   operationStartedBefore: ['operations'],
   operationRunID: ['operations'],
   operationStatus: ['operations'],
-  settingsAuthority: ['settings']
+  settingsAuthority: ['settings'],
+  dateBoundsChosen: ['everything']
 };
 // Keyboard focus and scroll position live only in browser history.
 const SESSION_ONLY_FIELDS = new Set<keyof ExploreURLState>(['activeRow', 'scrollAnchor']);
@@ -630,11 +633,12 @@ export class ExploreState {
     this.browser = browser;
     this.preferenceStorage = preferenceStorage;
     this.current = this.readURLState();
-    if (this.current.workspace === 'everything' && !this.hasExplicitState()) {
-      this.current = { ...this.current, filters: this.filtersWithEverythingDefault(this.current.filters) };
-    } else if (this.hasExplicitState()) {
-      // A shared or restored URL is the user's view, bounds and all.
-      this.everythingDefaultApplied = true;
+    // A shared or restored URL is the user's view, bounds and all; the
+    // dateBoundsChosen marker says so even for an "All time" bookmark whose
+    // empty filters list the serializer omits.
+    this.everythingDefaultApplied = this.current.dateBoundsChosen || this.hasExplicitState();
+    if (this.current.workspace === 'everything') {
+      this.current = { ...this.current, ...this.everythingBoundsPatch(this.current.filters) };
     }
     this.committed = normalize(this.current);
     browser.addEventListener('popstate', this.handlePopState);
@@ -642,11 +646,11 @@ export class ExploreState {
 
   /** The user's own view, to which no default bounds are added: a restored
    * history entry, or a URL carrying an explore payload (a deep link, a
-   * drilled group, or a filters list — an empty one is a deliberate "All
-   * time"). The app's always-emitted ?workspace= and ?mode= shorthand on
-   * its own is not explicit, so the seven-day default still applies on the
-   * first bare entry into Everything after a reload or a shared workspace
-   * link. */
+   * drilled group, chosen bounds, or the dateBoundsChosen marker an "All
+   * time" view serializes to). The app's always-emitted ?workspace= and
+   * ?mode= shorthand on its own is not explicit, so the seven-day default
+   * still applies on the first bare entry into Everything after a reload
+   * or a shared workspace link. */
   private hasExplicitState(): boolean {
     const history = this.browser.history.state;
     if (isRecord(history) && isRecord(history.exploreState)) return true;
@@ -655,11 +659,16 @@ export class ExploreState {
     return parameters.has(STATE_PARAMETER);
   }
 
-  private filtersWithEverythingDefault(filters: ExploreFilter[]): ExploreFilter[] {
-    if (this.everythingDefaultApplied) return filters;
+  /** The seven-day default, applied once per session to an Everything view
+   * without date bounds, and the marker that records the bounds as the
+   * user's from then on. */
+  private everythingBoundsPatch(filters: ExploreFilter[]): Partial<ExploreURLState> {
+    if (this.everythingDefaultApplied) return {};
     this.everythingDefaultApplied = true;
-    if (filters.some((filter) => isDateDimension(filter.dimension))) return filters;
-    return [...filters, ...defaultEverythingFilters()];
+    const bounded = filters.some((filter) => isDateDimension(filter.dimension))
+      ? filters
+      : [...filters, ...defaultEverythingFilters()];
+    return { filters: bounded, dateBoundsChosen: true };
   }
 
   // The daemon-configured web.default_search_mode arrives asynchronously
@@ -724,7 +733,7 @@ export class ExploreState {
   commitWorkspace(workspace: ExploreWorkspace): void {
     this.navigate({
       workspace,
-      ...(workspace === 'everything' ? { filters: this.filtersWithEverythingDefault(this.current.filters) } : {}),
+      ...(workspace === 'everything' ? this.everythingBoundsPatch(this.current.filters) : {}),
       // The Relationships ranking and cluster-timeline endpoints accept no
       // text query (ranking is over reciprocity signals, not lexical), so a
       // carried search query could only ever half-apply (domains and files
@@ -817,6 +826,14 @@ export class ExploreState {
     mode: 'push' | 'replace'
   ): void {
     let effectivePatch = patch;
+    // A change to the filters is the user's choice of bounds (including
+    // "All time"), so it is never overwritten by the default and survives a
+    // bookmark.
+    if (patch.filters && JSON.stringify(normalize({ ...this.current, filters: patch.filters }).filters) !==
+      JSON.stringify(this.current.filters)) {
+      effectivePatch = { ...patch, dateBoundsChosen: true };
+      this.everythingDefaultApplied = true;
+    }
     if (mode === 'push' && OPERATION_FILTER_FIELDS.some((key) =>
       key in patch && normalize({ ...this.current, ...patch })[key] !== this.current[key])) {
       effectivePatch = { ...patch, operationRunID: null };

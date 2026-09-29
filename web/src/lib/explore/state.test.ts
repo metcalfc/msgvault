@@ -1486,6 +1486,40 @@ describe('Everything date default after a reload', () => {
     expect(allTime.current.filters).toEqual([]);
     allTime.destroy();
   });
+
+  it('keeps an All-time bookmark on All time and a shared URL with bounds on its bounds', () => {
+    // Choosing "All time" clears the filters; the serializer would omit an
+    // empty list, so the dateBoundsChosen marker carries the choice.
+    window.history.replaceState(null, '', '/');
+    const chooser = new ExploreState(window);
+    chooser.commitWorkspace('everything');
+    chooser.commitNavigation({ filters: [] });
+    const bookmark = window.location.search;
+    chooser.destroy();
+    expect(new URLSearchParams(bookmark).get('explore')).toContain('"dateBoundsChosen":true');
+
+    window.history.replaceState(null, '', `/${bookmark}`);
+    const reopened = new ExploreState(window);
+    expect(reopened.current).toMatchObject({ workspace: 'everything', filters: [], dateBoundsChosen: true });
+    reopened.commitWorkspace('directory');
+    reopened.commitWorkspace('everything');
+    expect(reopened.current.filters).toEqual([]);
+    reopened.destroy();
+
+    const bounds = [{ dimension: 'after' as const, values: ['2020-01-01T00:00:00Z'] }];
+    window.history.replaceState(null, '', `/?workspace=everything&mode=full_text&explore=${
+      encodeURIComponent(JSON.stringify({ workspace: 'everything', filters: bounds }))}`);
+    const shared = new ExploreState(window);
+    expect(shared.current.filters).toEqual(bounds);
+    shared.destroy();
+
+    // A bare cold load still gets the default.
+    window.history.replaceState(null, '', '/');
+    const bare = new ExploreState(window);
+    bare.commitWorkspace('everything');
+    expect(bare.current.filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
+    bare.destroy();
+  });
 });
 
 describe('Directory order default', () => {

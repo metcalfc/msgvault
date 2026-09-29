@@ -154,6 +154,11 @@ export interface ExploreURLState {
   query: string;
   searchMode: ExploreSearchMode;
   filters: ExploreFilter[];
+  /** True once Everything's date bounds are the user's own — the seven-day
+   * default was applied and then left, or "All time" or explicit bounds
+   * were chosen — so an "All time" view (an empty filters list, which the
+   * serializer otherwise omits) stays expressible in a bookmark. */
+  dateBoundsChosen: boolean;
   groupingChain: ExploreGroupDimension[];
   presentation: 'table' | 'timeline' | 'files';
   sort: ExploreSort[];
