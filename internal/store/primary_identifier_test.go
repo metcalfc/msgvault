@@ -53,6 +53,25 @@ func TestSelectPrimaryIdentifierPrefersEmailThenPhoneThenHandle(t *testing.T) {
 			want: &store.PrimaryIdentifier{Kind: store.PrimaryIdentifierEmail, Value: "a@example.com"},
 		},
 		{
+			name: "opaque chat identifiers never qualify, so there is no primary identifier",
+			candidates: []store.PrimaryIdentifierCandidate{
+				{RawKind: "slack", Value: "U0SYNTH01", Rank: []int64{0}, Archive: true},
+				{RawKind: "beeper", Value: "!room:beeper.example", Rank: []int64{0}, Archive: true},
+				{RawKind: "synctech_sms", Value: "thread-42", Rank: []int64{0}, Archive: true},
+				{RawKind: "whatsapp", Value: "synthetic-chat-id", Rank: []int64{0}, Archive: true},
+				{RawKind: "slack", Value: "U0SYNTH02", Rank: []int64{0}},
+			},
+			want: nil,
+		},
+		{
+			name: "an archive email or phone still qualifies beside opaque keys",
+			candidates: []store.PrimaryIdentifierCandidate{
+				{RawKind: "slack", Value: "U0SYNTH01", Rank: []int64{0}, Archive: true},
+				{RawKind: "phone", Value: "+15550100003", Rank: []int64{1}, Archive: true},
+			},
+			want: &store.PrimaryIdentifier{Kind: store.PrimaryIdentifierPhone, Value: "+15550100003"},
+		},
+		{
 			name: "blank values and non-identifiers yield nothing",
 			candidates: []store.PrimaryIdentifierCandidate{
 				{RawKind: "email", Value: "  "},
@@ -91,8 +110,15 @@ func TestDirectoryPeoplePageContextReturnsPrimaryIdentifier(t *testing.T) {
 		return st.EnsureParticipantByPhone("+15550100012", "Person C", "phone")
 	})
 
+	// A curated username is a handle; an archive identifier of another
+	// type is an opaque service key and never shows beneath the name.
 	handleOnly := directoryPersonFromParticipant(t, st, func() (int64, error) {
-		return st.EnsureParticipantByIdentifier("username", "synthetic.person.d", "Person D")
+		return st.EnsureParticipantByIdentifier("slack", "U0SYNTHD", "Person D")
+	})
+	addDirectoryContactPoint(t, st, handleOnly.ID, store.ContactAddressUsername, "synthetic.person.d")
+
+	opaqueOnly := directoryPersonFromParticipant(t, st, func() (int64, error) {
+		return st.EnsureParticipantByIdentifier("beeper", "!room:beeper.example", "Person E")
 	})
 
 	page, err := st.DirectoryPeoplePageContext(ctx, store.DirectoryPeopleQuery{})
@@ -101,13 +127,14 @@ func TestDirectoryPeoplePageContextReturnsPrimaryIdentifier(t *testing.T) {
 	for _, person := range page.People {
 		byID[person.ID] = person.PrimaryIdentifier
 	}
-	require.Len(byID, 4)
+	require.Len(byID, 5)
 	assert.Equal(&store.PrimaryIdentifier{Kind: "email", Value: "curated-a@example.com"}, byID[curated.ID],
 		"a curated email outranks the observed one and the curated phone")
 	assert.Equal(&store.PrimaryIdentifier{Kind: "email", Value: "observed-b@example.com"}, byID[observedEmail.ID],
 		"an observed email outranks a curated phone")
 	assert.Equal(&store.PrimaryIdentifier{Kind: "phone", Value: "+15550100012"}, byID[phoneOnly.ID])
 	assert.Equal(&store.PrimaryIdentifier{Kind: "handle", Value: "synthetic.person.d"}, byID[handleOnly.ID])
+	assert.Nil(byID[opaqueOnly.ID], "an opaque chat key is not a primary identifier")
 }
 
 // This catches name and activity filters applied after pagination (which

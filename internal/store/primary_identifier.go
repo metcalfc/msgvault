@@ -28,10 +28,16 @@ type PrimaryIdentifier struct {
 // SelectPrimaryIdentifier. RawKind is the stored kind or identifier type
 // ("email", "phone", "username", "imessage", ...). Rank orders candidates of
 // the same class; lower ranks win, and the value breaks a remaining tie.
+//
+// Archive marks a stored participant identifier row. Apart from email
+// addresses and phone numbers, those rows hold service-internal keys (a
+// Slack member ID, a Beeper room key, an SMS-bridge thread key) that the
+// people views never show as text, so they never become a handle.
 type PrimaryIdentifierCandidate struct {
 	RawKind string
 	Value   string
 	Rank    []int64
+	Archive bool
 }
 
 // PrimaryIdentifierClass maps a stored identifier kind to its display class
@@ -44,7 +50,9 @@ func PrimaryIdentifierClass(rawKind string) (string, int, bool) {
 	case "phone":
 		return PrimaryIdentifierPhone, 1, true
 	case "", "name", "url", "social", "calendar", "contact_uri", "org_directory", "language",
-		"provider_identity":
+		"provider_identity",
+		// Opaque chat-service keys, whatever row they arrive on.
+		"slack", "beeper", "synctech_sms", "discord_webhook_id":
 		return "", 0, false
 	default:
 		return PrimaryIdentifierHandle, 2, true
@@ -66,7 +74,7 @@ func SelectPrimaryIdentifier(candidates []PrimaryIdentifierCandidate) *PrimaryId
 	for _, candidate := range candidates {
 		value := strings.TrimSpace(candidate.Value)
 		kind, class, ok := PrimaryIdentifierClass(candidate.RawKind)
-		if !ok || value == "" {
+		if !ok || value == "" || (candidate.Archive && kind == PrimaryIdentifierHandle) {
 			continue
 		}
 		current := classified{kind: kind, class: class, value: value, rank: candidate.Rank}
@@ -94,29 +102,29 @@ func (s *Store) hydrateDirectoryPrimaryIdentifiersTx(
 	ctx context.Context, tx *loggedTx, placeholders string, ids []any,
 	byID map[int64]int, candidates []directoryPersonCandidate,
 ) error {
-	query := `SELECT person_id, kind, value, source_rank, rank_a, rank_b, rank_c FROM (
+	query := `SELECT person_id, kind, value, archive, source_rank, rank_a, rank_b, rank_c FROM (
 		SELECT point.person_id AS person_id, point.address_kind AS kind, point.original_value AS value,
-			0 AS source_rank, COALESCE(point.pref, 101) AS rank_a, point.ordinal AS rank_b, point.id AS rank_c
+			0 AS archive, 0 AS source_rank, COALESCE(point.pref, 101) AS rank_a, point.ordinal AS rank_b, point.id AS rank_c
 		FROM person_contact_points point
 		WHERE point.person_id IN (` + placeholders + `)
 			AND point.active_until IS NULL AND point.superseded_at IS NULL
 		UNION ALL
 		SELECT binding.person_id, 'email', participant.email_address,
-			1, binding.participant_id, 0, 0
+			0, 1, binding.participant_id, 0, 0
 		FROM person_participants binding
 		JOIN participants participant ON participant.id = binding.participant_id
 		WHERE binding.person_id IN (` + placeholders + `)
 			AND TRIM(COALESCE(participant.email_address, '')) <> ''
 		UNION ALL
 		SELECT binding.person_id, 'phone', participant.phone_number,
-			1, binding.participant_id, 0, 1
+			0, 1, binding.participant_id, 0, 1
 		FROM person_participants binding
 		JOIN participants participant ON participant.id = binding.participant_id
 		WHERE binding.person_id IN (` + placeholders + `)
 			AND TRIM(COALESCE(participant.phone_number, '')) <> ''
 		UNION ALL
 		SELECT binding.person_id, identifier.identifier_type, identifier.identifier_value,
-			1, binding.participant_id, CASE WHEN identifier.is_primary THEN 1 ELSE 2 END, identifier.id
+			1, 1, binding.participant_id, CASE WHEN identifier.is_primary THEN 1 ELSE 2 END, identifier.id
 		FROM person_participants binding
 		JOIN participant_identifiers identifier ON identifier.participant_id = binding.participant_id
 		WHERE binding.person_id IN (` + placeholders + `)
@@ -136,11 +144,12 @@ func (s *Store) hydrateDirectoryPrimaryIdentifiersTx(
 		var personID, sourceRank, rankA, rankB, rankC int64
 		var kind string
 		var value sql.NullString
-		if err := rows.Scan(&personID, &kind, &value, &sourceRank, &rankA, &rankB, &rankC); err != nil {
+		var archive bool
+		if err := rows.Scan(&personID, &kind, &value, &archive, &sourceRank, &rankA, &rankB, &rankC); err != nil {
 			return fmt.Errorf("scan directory primary identifier: %w", err)
 		}
 		offered[personID] = append(offered[personID], PrimaryIdentifierCandidate{
-			RawKind: kind, Value: value.String, Rank: []int64{sourceRank, rankA, rankB, rankC},
+			RawKind: kind, Value: value.String, Rank: []int64{sourceRank, rankA, rankB, rankC}, Archive: archive,
 		})
 	}
 	if err := rows.Err(); err != nil {

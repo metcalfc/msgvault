@@ -797,7 +797,7 @@ func TestRelationshipsParticipantFilterExpandsClusters(t *testing.T) {
 
 // TestRelationshipsPrimaryIdentifierPrefersEmailThenPhoneThenHandle pins the
 // row identifier: any member's email beats a phone on a lower-ID member, a
-// phone beats a handle, a handle is the last resort, and among emails the
+// phone beats a handle, an opaque chat key (here Slack) never qualifies, and among emails the
 // lowest participant ID wins. Both the unfiltered rollup and the filtered
 // reduction serve the same identifier.
 func TestRelationshipsPrimaryIdentifierPrefersEmailThenPhoneThenHandle(t *testing.T) {
@@ -835,7 +835,7 @@ func TestRelationshipsPrimaryIdentifierPrefersEmailThenPhoneThenHandle(t *testin
 		mixedPhone:     {Kind: store.PrimaryIdentifierEmail, Value: "mixed@example.com"},
 		twoEmailsFirst: {Kind: store.PrimaryIdentifierEmail, Value: "first@example.com"},
 		phoneOnly:      {Kind: store.PrimaryIdentifierPhone, Value: "+15550100031"},
-		handleOnly:     {Kind: store.PrimaryIdentifierHandle, Value: "synthetic.handle"},
+		handleOnly:     nil, // a Slack key is opaque, so there is no primary identifier
 	}
 	for name, request := range map[string]RelationshipsRequest{
 		"unfiltered": {Now: now, Limit: 10},

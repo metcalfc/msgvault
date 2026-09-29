@@ -334,7 +334,9 @@ WHERE canonical_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(args)), ","
 // to a cluster's primitives: lowest participant ID first, then the
 // participant's own value before identifier-derived ones. Observed values
 // keep their stored spelling; identifier rows use the normalized value, since
-// their display value may carry a name ("Name <address>").
+// their display value may carry a name ("Name <address>"). Identifier rows
+// qualify only as an email address or phone number: their other types are
+// opaque service keys.
 func relationshipPrimaryIdentifier(primitives []relationshipPrimitive) *store.PrimaryIdentifier {
 	candidates := make([]store.PrimaryIdentifierCandidate, 0, len(primitives))
 	for _, primitive := range primitives {
@@ -344,6 +346,7 @@ func relationshipPrimaryIdentifier(primitives []relationshipPrimitive) *store.Pr
 		}
 		candidates = append(candidates, store.PrimaryIdentifierCandidate{
 			RawKind: primitive.Kind, Value: value, Rank: []int64{primitive.ParticipantID, sourceRank},
+			Archive: primitive.Source != "observed",
 		})
 	}
 	return store.SelectPrimaryIdentifier(candidates)
