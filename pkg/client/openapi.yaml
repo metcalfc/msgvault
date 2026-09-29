@@ -2463,10 +2463,14 @@ components:
         merge:
           format: int64
           type: integer
+        retired:
+          format: int64
+          type: integer
       required:
         - matches
         - created
         - existing
+        - retired
         - evidence_added
         - bind
         - merge
@@ -13333,7 +13337,7 @@ components:
       type: apiKey
 info:
   title: msgvault API
-  version: 2.32.0
+  version: 2.33.0
 openapi: 3.0.3
 paths:
   /api/daemon/identity:

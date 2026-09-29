@@ -2256,6 +2256,7 @@ type ContactMatchBuildResult struct {
 	Existing      int64 `json:"existing"`
 	Matches       int64 `json:"matches"`
 	Merge         int64 `json:"merge"`
+	Retired       int64 `json:"retired"`
 }
 
 type ContactMatchStatus struct {

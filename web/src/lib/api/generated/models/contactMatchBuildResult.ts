@@ -11,5 +11,6 @@ export interface ContactMatchBuildResult {
   existing: number;
   matches: number;
   merge: number;
+  retired: number;
   [key: string]: unknown;
 }

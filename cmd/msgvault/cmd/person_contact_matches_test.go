@@ -77,6 +77,7 @@ func TestPersonContactMatchesCLIReviewsThroughTheDaemon(t *testing.T) {
 	output, err := runContactMatchesCLI(ctx, "build")
 	require.NoError(err, output)
 	assert.Contains(output, "Matches: 3 (new 3, existing 0)")
+	assert.Contains(output, "Retired: 0")
 	assert.Contains(output, "Bind: 2")
 	assert.Contains(output, "Merge: 1")
 

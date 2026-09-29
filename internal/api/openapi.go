@@ -331,7 +331,14 @@ import (
 // requests remain valid.
 // 2.32.0 adds frozen sender keys to agent-token source views and optional
 // sender selections to owner token issuance.
-const APISchemaVersion = "2.32.0"
+// 2.33.0 adds contact-match review: the identity match list's origin filter,
+// endpoint summaries, and live participant-to-person verdicts; accepting a
+// participant-to-person candidate; and POST /identity/contact-matches/build.
+// It also versions the additive changes that landed after 2.32.0 without a
+// bump: the [jev] settings keys and stored credential slot, list-row
+// identifiers, Directory name and activity filters, message conversation_type,
+// explore counterpart names, and People hub and provider preset fields.
+const APISchemaVersion = "2.33.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

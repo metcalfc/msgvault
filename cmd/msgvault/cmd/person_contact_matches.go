@@ -305,8 +305,8 @@ func newPersonContactMatchesBuildCommand() *cobra.Command {
 			}
 			result := resp.JSON200
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-				"Matches: %d (new %d, existing %d)\nBind: %d\nMerge: %d\nAmbiguous: %d\nBlocked: %d\nEvidence added: %d\n",
-				result.Matches, result.Created, result.Existing, result.Bind, result.Merge,
+				"Matches: %d (new %d, existing %d)\nRetired: %d\nBind: %d\nMerge: %d\nAmbiguous: %d\nBlocked: %d\nEvidence added: %d\n",
+				result.Matches, result.Created, result.Existing, result.Retired, result.Bind, result.Merge,
 				result.Ambiguous, result.Blocked, result.EvidenceAdded)
 			return nil
 		},
