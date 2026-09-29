@@ -412,7 +412,7 @@
   {#if detail && isPersonDetail(detail)}
     <li data-fact-row class="last-contact">
       <span data-fact-label>Last contact</span>
-      <span data-fact-value data-mono>{formatDate(detail.last_at)}</span>
+      <span data-fact-value>{formatDate(detail.last_at)}</span>
       <span data-fact-meta>{detail.activity_count.toLocaleString()} items{yearOf(detail.first_at) ? ` since ${yearOf(detail.first_at)}` : ''}</span>
     </li>
   {/if}

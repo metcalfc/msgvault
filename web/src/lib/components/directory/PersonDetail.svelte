@@ -424,7 +424,7 @@
           {#if lastContact}
             <li class="last-contact" data-fact-row>
               <span data-fact-label>Last contact</span>
-              <span data-fact-value data-mono>
+              <span data-fact-value>
                 {#if lastContact.target?.kind === 'message' && onOpenMessage}
                   {@const messageID = lastContact.target.id}
                   <button type="button" class="link-button" aria-label={lastContact.lead} onclick={() => onOpenMessage(messageID)}>{lastContact.value}</button>

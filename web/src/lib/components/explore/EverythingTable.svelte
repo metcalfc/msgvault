@@ -688,7 +688,7 @@
                         <span class="match-count">{row.match.lexical_match_count} lexical matches</span>
                       {/if}
                     {:else if column === 'time'}
-                      <time datetime={row.occurred_at} title={fullTime(row.occurred_at)} data-mono>{listTime(row.occurred_at)}</time>
+                      <time datetime={row.occurred_at} title={fullTime(row.occurred_at)}>{listTime(row.occurred_at)}</time>
                     {:else if column === 'attachments'}
                       {#if row.has_attachments}
                         <span class="attachment" aria-label={`${row.attachment_count} ${row.attachment_count === 1 ? 'attachment' : 'attachments'}`}>
@@ -861,6 +861,13 @@
   .cell--attachments,
   .cell--size {
     color: var(--text-muted);
+  }
+
+  /* Dates read in sans with tabular figures: a monospace space reads as a
+   * double gap in "Sep 27". */
+  .cell--time {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   .match-count {

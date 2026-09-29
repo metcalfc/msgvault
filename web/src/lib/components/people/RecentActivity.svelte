@@ -51,7 +51,7 @@
               <span class="title" data-row-title>{row.title || '(untitled)'}</span>
               {#if secondary(row)}<small>{secondary(row)}</small>{/if}
             </span>
-            <time class="date" datetime={row.occurred_at} data-mono>{shortDate(row.occurred_at)}</time>
+            <time class="date" datetime={row.occurred_at}>{shortDate(row.occurred_at)}</time>
           </button>
         </li>
       {/each}
@@ -87,6 +87,7 @@
   .title, small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .title { font-size: 13px; }
   small { color: var(--text-muted); font-size: 12px; }
-  .date { color: var(--text-muted); font-size: 11px; }
+  /* Sans with tabular figures: a monospace space reads as a double gap in "Sep 27". */
+  .date { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .state { margin: 0; padding: 8px 0; color: var(--text-muted); font-size: var(--font-size-sm); }
 </style>
