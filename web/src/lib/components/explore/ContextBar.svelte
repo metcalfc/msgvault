@@ -1,14 +1,22 @@
 <script lang="ts">
   import XIcon from '@lucide/svelte/icons/x';
-  import { Button, IconButton, SelectDropdown } from '@kenn-io/kit-ui';
+  import {
+    Button, DateRangePicker, IconButton, SegmentedControl, SelectDropdown, resolveRange, type RangeSelection
+  } from '@kenn-io/kit-ui';
 
   import type { APIClient } from '../../api/client';
   import type { ExploreFilter, ExploreGroupDimension, ExploreSearchMode, ExploreURLState } from '../../explore/models';
+  import {
+    DATE_RANGE_PRESETS, activeDateRangePreset, dateBound, dateInputBound, dateInputValue, isDateDimension,
+    withDateBound, withDateRange, withoutDateRange, type DateRangePreset
+  } from '../../explore/date-range';
   import {
     groupingDimensionLabel,
     groupingOptions,
     isGroupingDimension
   } from '../../grouping/catalog';
+  import { shortDate } from '../../util/dates';
+  import { messageTypeLabel } from '../../util/labels';
   import IdentityFilter from './IdentityFilter.svelte';
 
   let {
@@ -49,9 +57,63 @@
     { value: 'timeline', label: 'Timeline' },
     { value: 'files', label: 'Files' }
   ];
+  const messageTypeOptions = [
+    { value: '', label: 'Any type' },
+    ...['email', 'chat', 'imessage', 'sms', 'calendar_event', 'meeting_transcript']
+      .map((value) => ({ value, label: messageTypeLabel(value) }))
+  ];
+
+  const datePreset = $derived(activeDateRangePreset(filters));
+  const dateRangeOptions = $derived([
+    ...DATE_RANGE_PRESETS,
+    ...(datePreset === 'custom' ? [{ value: 'custom', label: 'Custom range', disabled: true }] : [])
+  ]);
+  const messageType = $derived(filters.find((filter) => filter.dimension === 'message_type')?.values[0] ?? '');
+  // The popover's picker is controlled from the after/before filters: no
+  // bounds read as "all time", a single bound as an incomplete custom range
+  // the picker reopens armed to complete.
+  const dateSelection = $derived.by((): RangeSelection => {
+    const after = dateInputValue(dateBound(filters, 'after'));
+    const before = dateInputValue(dateBound(filters, 'before'));
+    if (!after && !before) return { mode: 'relative', days: 0 };
+    return { mode: 'custom', from: after, to: before };
+  });
 
   function selectGrouping(value: string): void {
     if (isGroupingDimension(value)) onAddGroup(value);
+  }
+
+  function selectDateRange(value: string): void {
+    if (value === 'custom') return;
+    onFiltersChange(withDateRange(filters, value as DateRangePreset));
+  }
+
+  function removeFilter(index: number): void {
+    onFiltersChange(filters.filter((_, position) => position !== index));
+  }
+
+  function selectDateBounds(selection: RangeSelection): void {
+    if (selection.mode === 'relative' && selection.days <= 0) {
+      onFiltersChange(withoutDateRange(filters));
+      return;
+    }
+    const range = resolveRange(selection);
+    const bounded = withDateBound(filters, 'after', dateInputBound(range.from, 'after'));
+    onFiltersChange(withDateBound(bounded, 'before', dateInputBound(range.to, 'before')));
+  }
+
+  function selectMessageType(value: string): void {
+    const rest = filters.filter((filter) => filter.dimension !== 'message_type');
+    onFiltersChange(value ? [...rest, { dimension: 'message_type', values: [value] }] : rest);
+  }
+
+  /** "After Sep 22", "Type: Text (iMessage)", or the raw dimension for the rest. */
+  function crumbText(filter: ExploreFilter): string {
+    if (isDateDimension(filter.dimension)) {
+      return `${filter.dimension === 'after' ? 'After' : 'Before'} ${shortDate(filter.values[0] ?? '')}`;
+    }
+    if (filter.dimension === 'message_type') return `Type: ${filter.values.map(messageTypeLabel).join(', ')}`;
+    return `Filter ${filter.dimension}: ${filter.values.join(', ')}`;
   }
 </script>
 
@@ -64,6 +126,12 @@
       ariaLabel="Filters"
       ariaExpanded={filtersOpen}
       onclick={() => { filtersOpen = !filtersOpen; }}
+    />
+    <SegmentedControl
+      ariaLabel="Date range"
+      value={datePreset}
+      options={dateRangeOptions}
+      onchange={selectDateRange}
     />
     <SelectDropdown
       title="Show as"
@@ -93,8 +161,15 @@
     {#if query}
       <span class="crumb crumb--query">{searchMode}: “{query}”</span>
     {/if}
-    {#each filters as filter (`${filter.dimension}:${filter.values.join('\u0000')}`)}
-      <span class="crumb crumb--filter">Filter {filter.dimension}: {filter.values.join(', ')}</span>
+    {#each filters as filter, index (`${filter.dimension}:${filter.values.join('\u0000')}`)}
+      <span class="crumb crumb--filter" class:crumb--date={isDateDimension(filter.dimension)}>
+        {crumbText(filter)}
+        <IconButton
+          size="sm"
+          ariaLabel={`Remove ${crumbText(filter)}`}
+          onclick={() => removeFilter(index)}
+        ><XIcon size="12" aria-hidden="true" /></IconButton>
+      </span>
     {/each}
     {#each groupingChain as dimension, index (`${dimension}:${index}`)}
       <span class="crumb crumb--group">
@@ -117,11 +192,23 @@
     <div class="filter-panel">
       <div class="filter-summary">
         {#if filters.length === 0}
-          <span>No active filters. Filtering controls will expand with additional canonical dimensions.</span>
+          <span>No active filters</span>
         {:else}
           <span>{filters.length} active {filters.length === 1 ? 'filter' : 'filters'}</span>
           <Button size="sm" surface="outline" label="Clear filters" onclick={onClearFilters} />
         {/if}
+      </div>
+      <div class="filter-fields">
+        <div class="filter-field">
+          <span>Dates</span>
+          <DateRangePicker selection={dateSelection} onSelect={selectDateBounds} dialogLabel="Select date bounds" />
+        </div>
+        <SelectDropdown
+          title="Message type"
+          value={messageType}
+          options={messageTypeOptions}
+          onchange={selectMessageType}
+        />
       </div>
       <IdentityFilter {client} {filters} onChange={onFiltersChange} />
     </div>
@@ -177,6 +264,11 @@
     background: color-mix(in srgb, var(--accent-amber) 8%, var(--bg-surface));
   }
 
+  .crumb--date {
+    border-color: color-mix(in srgb, var(--accent-blue) 35%, var(--border-muted));
+    background: color-mix(in srgb, var(--accent-blue) 8%, var(--bg-surface));
+  }
+
   .crumb--group {
     border: 1px solid color-mix(in srgb, var(--accent-teal) 35%, var(--border-muted));
     background: color-mix(in srgb, var(--accent-teal) 8%, var(--bg-surface));
@@ -216,4 +308,18 @@
     justify-content: space-between;
     gap: var(--space-4);
   }
+
+  .filter-fields {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: var(--space-3);
+  }
+
+  .filter-field {
+    display: grid;
+    gap: var(--space-1);
+    color: var(--text-secondary);
+  }
+
 </style>

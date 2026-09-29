@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { compactDate, humanizeDate } from './dates';
+import { compactDate, humanizeDate, shortDate } from './dates';
 
 const now = new Date('2026-07-19T12:00:00Z');
 
@@ -63,5 +63,13 @@ describe('humanizeDate', () => {
     expect(humanizeDate(undefined, now)).toBe('—');
     expect(humanizeDate('', now)).toBe('—');
     expect(humanizeDate('not a date', now)).toBe('not a date');
+  });
+});
+
+describe('shortDate', () => {
+  it('shows month and day, adding the year only when it differs', () => {
+    expect(shortDate('2026-06-15T12:00:00Z', now)).toMatch(/^Jun 1[456]$/);
+    expect(shortDate('2027-05-11T12:00:00Z', now)).toMatch(/^May 1[012], 2027$/);
+    expect(shortDate('garbage', now)).toBe('garbage');
   });
 });

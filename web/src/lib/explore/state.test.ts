@@ -52,7 +52,10 @@ describe('Explore URL state', () => {
     const state = new ExploreState(window);
     state.commitNavigation({ relationshipTarget: 'cluster:42' });
     state.commitWorkspace('everything');
-    expect(window.location.search).toBe('?workspace=everything&mode=full_text');
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get('workspace')).toBe('everything');
+    expect(params.get('mode')).toBe('full_text');
+    expect(parseExploreURLState(window.location.search).filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
 
     window.history.back();
     await new Promise((resolve) => window.addEventListener('popstate', resolve, { once: true }));
@@ -1400,5 +1403,48 @@ describe('session-owned exploration selection', () => {
         resultGeneration: 3
       })
     ).toThrow('candidate snapshot');
+  });
+});
+
+describe('Everything date default', () => {
+  it('opens Everything on the last seven days once, then leaves the bounds to the user', async () => {
+    window.history.replaceState(null, '', '/');
+    const state = new ExploreState(window);
+    expect(state.current.filters).toEqual([]);
+
+    state.commitWorkspace('everything');
+    const dimensions = state.current.filters.map((filter) => filter.dimension);
+    expect(dimensions).toEqual(['after', 'before']);
+    const after = new Date(state.current.filters[0]!.values[0]!).getTime();
+    expect(Date.now() - after).toBeGreaterThan(6.9 * 86_400_000);
+    expect(Date.now() - after).toBeLessThan(7.1 * 86_400_000);
+    expect(state.predicate().filters).toEqual(state.current.filters);
+
+    // "All time" clears the bounds; re-entering Everything must not restore them.
+    state.commitNavigation({ filters: [] });
+    state.commitWorkspace('directory');
+    state.commitWorkspace('everything');
+    expect(state.current.filters).toEqual([]);
+    state.destroy();
+  });
+
+  it('keeps hand-set bounds and any explicit URL state untouched', () => {
+    window.history.replaceState(null, '', '/');
+    const bounded = new ExploreState(window);
+    bounded.commitNavigation({ filters: [{ dimension: 'after', values: ['2020-01-01T00:00:00Z'] }] });
+    bounded.commitWorkspace('everything');
+    expect(bounded.current.filters).toEqual([{ dimension: 'after', values: ['2020-01-01T00:00:00Z'] }]);
+    bounded.destroy();
+
+    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything', filters: [] }))}`);
+    const explicit = new ExploreState(window);
+    expect(explicit.current.workspace).toBe('everything');
+    expect(explicit.current.filters).toEqual([]);
+    explicit.destroy();
+
+    window.history.replaceState(null, '', '/?workspace=everything');
+    const landing = new ExploreState(window);
+    expect(landing.current.filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
+    landing.destroy();
   });
 });

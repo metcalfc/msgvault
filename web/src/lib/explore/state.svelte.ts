@@ -38,6 +38,8 @@ import {
   type SearchModeStorage
 } from '../search/modes';
 
+import { defaultEverythingFilters, isDateDimension } from './date-range';
+
 const STATE_PARAMETER = 'explore';
 const FILTER_DIMENSIONS = new Set([
   'source',
@@ -607,6 +609,10 @@ export class ExploreState {
   private committed: ExploreURLState;
   private pendingRestorationEpoch = $state<number | undefined>(1);
   private pendingSearchPriorFocus?: Pick<ExploreURLState, 'activeRow' | 'scrollAnchor'>;
+  // Everything opens on the last seven days once per session: the first
+  // entry without an explicit date bound gets the default; "All time" and
+  // hand-set bounds are then the user's and are never overwritten.
+  private everythingDefaultApplied = false;
   private readonly handlePopState = (): void => {
     this.current = this.readURLState();
     this.committed = normalize(this.current);
@@ -624,8 +630,28 @@ export class ExploreState {
     this.browser = browser;
     this.preferenceStorage = preferenceStorage;
     this.current = this.readURLState();
+    if (this.current.workspace === 'everything' && !this.hasExplicitState()) {
+      this.current = { ...this.current, filters: this.filtersWithEverythingDefault(this.current.filters) };
+    } else if (this.hasExplicitState()) {
+      // A shared or restored URL is the user's view, bounds and all.
+      this.everythingDefaultApplied = true;
+    }
     this.committed = normalize(this.current);
     browser.addEventListener('popstate', this.handlePopState);
+  }
+
+  private hasExplicitState(): boolean {
+    const search = this.browser.location.search;
+    const parameters = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+    const history = this.browser.history.state;
+    return parameters.has(STATE_PARAMETER) || (isRecord(history) && isRecord(history.exploreState));
+  }
+
+  private filtersWithEverythingDefault(filters: ExploreFilter[]): ExploreFilter[] {
+    if (this.everythingDefaultApplied) return filters;
+    this.everythingDefaultApplied = true;
+    if (filters.some((filter) => isDateDimension(filter.dimension))) return filters;
+    return [...filters, ...defaultEverythingFilters()];
   }
 
   // The daemon-configured web.default_search_mode arrives asynchronously
@@ -690,6 +716,7 @@ export class ExploreState {
   commitWorkspace(workspace: ExploreWorkspace): void {
     this.navigate({
       workspace,
+      ...(workspace === 'everything' ? { filters: this.filtersWithEverythingDefault(this.current.filters) } : {}),
       // The Relationships ranking and cluster-timeline endpoints accept no
       // text query (ranking is over reciprocity signals, not lexical), so a
       // carried search query could only ever half-apply (domains and files

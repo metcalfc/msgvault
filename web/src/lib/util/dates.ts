@@ -53,3 +53,13 @@ export function humanizeDate(value: string | null | undefined, now: Date = new D
   }
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
 }
+
+/** Short calendar date for crumbs and bounds: "Sep 22", or "Sep 22, 2024"
+ * once the year differs from now's. Unparseable input passes through. */
+export function shortDate(value: string, now: Date = new Date()): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return value;
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: 'numeric', ...(date.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' })
+  }).format(date);
+}
