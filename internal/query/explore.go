@@ -157,8 +157,11 @@ func (e *DuckDBEngine) Explore(ctx context.Context, request ExploreRequest) (*Ex
 // lead with the other side of the entry instead of an alphabetical label
 // list that includes the archive owner. A chat counterpart is often a
 // phone-only participant, so the label prefers, in order: the participant's
-// own display name, the identity index's person label for its cluster, any
-// named member of its identity cluster, then the phone number or address.
+// own display name, the identity index's person label for its cluster when
+// that label is a real name, any named member of its identity cluster,
+// then the phone number or address. An index label marked partial_label is
+// a fallback ("Unknown person #N", or another member's number or address)
+// and never outranks a named member or the participant's own number.
 // The lookup covers only the page's counterpart IDs.
 func (e *DuckDBEngine) labelExploreCounterparts(ctx context.Context, rows []EntryRow) error {
 	seen := make(map[int64]bool)
@@ -177,7 +180,8 @@ func (e *DuckDBEngine) labelExploreCounterparts(ctx context.Context, rows []Entr
 	peopleGlob := e.parquetPath(identityindex.DatasetPeople)
 	if matches, _ := filepath.Glob(peopleGlob); len(matches) > 0 {
 		peopleLabel = "(SELECT NULLIF(dp.display_label, '') FROM read_parquet('" +
-			quoteIdentitySQLPath(peopleGlob) + "') dp WHERE dp.canonical_id = w.canonical_id LIMIT 1)"
+			quoteIdentitySQLPath(peopleGlob) + "') dp WHERE dp.canonical_id = w.canonical_id" +
+			" AND NOT COALESCE(dp.partial_label, false) LIMIT 1)"
 	}
 	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(ids)), ", ")
 	queryText := `

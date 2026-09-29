@@ -2,7 +2,11 @@ package query
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -1335,6 +1339,65 @@ func TestExploreCounterpartLabelResolvesPhoneOnlyChatParticipants(t *testing.T) 
 	assert.Equal("Avery Example", labels[named])
 	assert.Equal("Avery Example", labels[linkedPhone])
 	assert.Equal("+15555550102", labels[unnamedPhone])
+}
+
+// TestExploreCounterpartLabelSkipsFallbackIndexLabel pins that an identity
+// index label marked partial_label (a fallback such as "Unknown person #N")
+// never outranks a named member of the counterpart's cluster.
+func TestExploreCounterpartLabelSkipsFallbackIndexLabel(t *testing.T) {
+	require := require.New(t)
+	b := NewTestDataBuilder(t)
+	srcID := b.AddSource("owner@example.com")
+	ownerID := b.AddParticipant("owner@example.com", "example.com", "Owner")
+	b.AddOwnerParticipant(srcID, ownerID)
+	named := b.AddParticipant("avery@example.com", "example.com", "Avery Example")
+	phone := b.AddPhoneParticipant("+15555550101", "")
+	b.LinkCluster(named, phone)
+	chat := b.AddMessage(MessageOpt{SourceID: srcID, Subject: "Phone", MessageType: "imessage",
+		SentAt: time.Date(2026, 7, 12, 9, 0, 0, 0, time.UTC), IsFromMe: true})
+	b.AddFrom(chat, ownerID, "Owner")
+	b.AddTo(chat, phone, "")
+
+	analyticsDir, cleanup := b.Build()
+	t.Cleanup(cleanup)
+	// Rewrite the derived people dataset so the cluster's index label is a
+	// fallback, as the identity index writes when it finds no name.
+	peopleFiles, err := filepath.Glob(filepath.Join(analyticsDir, identityindex.DatasetPeople, "*.parquet"))
+	require.NoError(err)
+	require.NotEmpty(peopleFiles)
+	db, err := sql.Open("duckdb", "")
+	require.NoError(err)
+	t.Cleanup(func() { _ = db.Close() })
+	rewritten := filepath.Join(t.TempDir(), "people.parquet")
+	_, err = db.Exec(`COPY (SELECT * REPLACE (
+			'Unknown person #' || canonical_id AS display_label, true AS partial_label)
+		FROM read_parquet('` + filepath.Join(analyticsDir, identityindex.DatasetPeople, "*.parquet") + `'))
+		TO '` + rewritten + `' (FORMAT PARQUET)`)
+	require.NoError(err)
+	for _, file := range peopleFiles {
+		require.NoError(os.Remove(file))
+	}
+	data, err := os.ReadFile(rewritten)
+	require.NoError(err)
+	require.NoError(os.WriteFile(peopleFiles[0], data, 0o600))
+	// Re-stamp the cache state for the rewritten dataset.
+	state, err := ReadCacheSyncState(analyticsDir)
+	require.NoError(err)
+	state.DatasetFingerprint, err = CacheDatasetFingerprint(analyticsDir)
+	require.NoError(err)
+	stateData, err := json.Marshal(state)
+	require.NoError(err)
+	require.NoError(os.WriteFile(CacheStatePath(analyticsDir), stateData, 0o600))
+
+	engine, err := NewDuckDBEngine(analyticsDir, "", nil)
+	require.NoError(err)
+	t.Cleanup(func() { _ = engine.Close() })
+	response, err := engine.Explore(context.Background(), ExploreRequest{})
+	require.NoError(err)
+	require.Len(response.Rows, 1)
+	require.NotNil(response.Rows[0].CounterpartParticipantID)
+	assert.Equal(t, phone, *response.Rows[0].CounterpartParticipantID)
+	assert.Equal(t, "Avery Example", response.Rows[0].CounterpartLabel)
 }
 
 // TestExploreCounterpartParticipantIDNilWhenOwnerUnknown verifies that when
