@@ -895,6 +895,56 @@ describe('AppShell', () => {
     state.destroy();
   });
 
+  it('opens the Relationships timeline for a Directory person from its bound participants', async () => {
+    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
+      workspace: 'directory', directoryPersonID: 7
+    }))}`);
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      const meetingResponse = meetingFixtureResponse(path);
+      if (meetingResponse) return meetingResponse;
+      if (path === '/api/v1/people/directory') return Response.json({ people: [{
+        id: 7, revision: 1, display_name: 'Synthetic Person', contact_state: 'active', categories: [], organizations: []
+      }] });
+      if (path === '/api/v1/people/7') return Response.json({
+        id: 7, revision: 1, display_name: 'Synthetic Person', participant_ids: [9, 3], vcard_uid: '',
+        created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-01T00:00:00Z'
+      });
+      if (path === '/api/v1/people/7/profile') return Response.json({
+        person: { id: 7, revision: 1, display_name: 'Synthetic Person' },
+        names: [], contact_points: [], addresses: [], dates: [], categories: [], media: []
+      });
+      if (path === '/api/v1/people/7/attributes') return Response.json({ person_id: 7, attributes: [] });
+      if (path === '/api/v1/people/7/contact-state') return Response.json({
+        person_id: 7, cadence_status: 'unknown', interaction_count: 0, computed_at: '2026-08-28T10:00:00Z', stale: false
+      });
+      if (path === '/api/v1/people/7/days') return Response.json({ person_id: 7, total_count: 0, days: [] });
+      if (path === '/api/v1/people/7/tracking') return Response.json({ person_id: 7, tracked: false, tracked_at: null });
+      if (path === '/api/v1/people/7/brief-enrollment') return Response.json({ person_id: 7, enrolled: false, enabled_at: null, actor: '' });
+      if (path === '/api/v1/people/7/merges') return Response.json({ merges: [], limit: 100, offset: 0 });
+      if (path === '/api/v1/carddav/publications/7') return Response.json({ error: 'carddav_unavailable', message: 'unavailable' }, { status: 503 });
+      if (path.startsWith('/api/v1/participants/')) return Response.json({
+        id: Number(path.split('/').at(-1)), display_label: 'Synthetic Person', identifiers: [], activity_count: 0, file_count: 0,
+        source_counts: [], first_at: '2026-08-01T00:00:00Z', last_at: '2026-08-01T00:00:00Z', cache_revision: 'c'
+      });
+      if (path === '/api/v1/relationships') return Response.json({ rows: [], total_count: 0, cache_revision: 'c' });
+      if (path.endsWith('/timeline')) return Response.json({ canonical_id: 3, identity_revision: 1, cache_revision: 'c', rows: [], total_count: 0 });
+      return Response.json(exploreResponse());
+    });
+    const state = new ExploreState(window);
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Open timeline for Synthetic Person' }));
+    await waitFor(() => expect(state.current).toMatchObject({
+      workspace: 'relationships', relationshipFacet: 'people', relationshipTarget: 'cluster:3', relationshipFiles: false
+    }));
+    expect(await screen.findByRole('main', { name: 'Relationships' })).toBeDefined();
+
+    rendered.unmount();
+    state.destroy();
+  });
+
   it('owns an ephemeral CardDAV conflict handoff and Browser Back restores the prior Directory person', async () => {
     window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
       workspace: 'directory', directoryPersonID: 7
@@ -1446,7 +1496,7 @@ describe('AppShell', () => {
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
 
     expect(await screen.findByRole('heading', { name: 'Synthetic Candidate' })).toBeDefined();
-    expect(screen.queryByRole('button', { name: 'Open in Directory' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Open contact record for / })).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Promote to person' }));
 
     await waitFor(() => expect(state.current.workspace).toBe('directory'));
@@ -1463,7 +1513,7 @@ describe('AppShell', () => {
 
     // Returning to the same relationship must reflect the new profile.
     state.commitNavigation({ workspace: 'relationships', relationshipTarget: 'cluster:11' });
-    expect(await screen.findByRole('button', { name: 'Open in Directory' })).toBeDefined();
+    expect(await screen.findByRole('button', { name: /^Open contact record for / })).toBeDefined();
     expect(screen.queryByRole('button', { name: 'Promote to person' })).toBeNull();
 
     rendered.unmount();

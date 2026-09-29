@@ -536,6 +536,19 @@ describe('PersonDetail', () => {
     expect(screen.getByText('Person has no resolved identities')).toBeDefined();
   });
 
+  it('offers Open timeline for a person with bound participants and passes their ids', async () => {
+    const onOpenTimeline = vi.fn();
+    const client = createAPIClient(quietOverviewFetch());
+    const person = { id: 7, revision: 2, display_name: 'Synthetic Person', participant_ids: [9, 3], vcard_uid: '', created_at: when, updated_at: when };
+    const { rerender } = render(PersonDetail, { client, personID: 7, onOpenTimeline, bundle: { person, etags: {}, errors: {} } });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Open timeline for Synthetic Person' }));
+    expect(onOpenTimeline).toHaveBeenCalledWith([9, 3]);
+
+    await rerender({ client, personID: 7, onOpenTimeline, bundle: { person: { ...person, participant_ids: [] }, etags: {}, errors: {} } });
+    expect(screen.queryByRole('button', { name: /^Open timeline/ })).toBeNull();
+  });
+
   it('moves focus to the attributes section when Edit attributes is pressed', async () => {
     const definition = nicknameDefinition();
     const client = createAPIClient(quietOverviewFetch());

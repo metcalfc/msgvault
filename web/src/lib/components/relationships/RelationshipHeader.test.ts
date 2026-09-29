@@ -168,7 +168,9 @@ describe('RelationshipHeader', () => {
     }));
 
     expect(screen.queryByRole('button', { name: 'Promote to person' })).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: 'Open in Directory' }));
+    const contactRecord = screen.getByRole('button', { name: 'Open contact record for Alice Example' });
+    expect(contactRecord.textContent).toContain('Contact record');
+    await fireEvent.click(contactRecord);
     expect(onOpenDirectoryPerson).toHaveBeenCalledWith(7);
     expect(onPromotePerson).not.toHaveBeenCalled();
   });
@@ -293,14 +295,14 @@ describe('RelationshipHeader', () => {
     const onPromotePerson = vi.fn(async () => ({ ok: true as const, personID: 42 }));
     const { rerender } = render(RelationshipHeader, baseProps({ onPromotePerson }));
 
-    expect(screen.queryByRole('button', { name: 'Open in Directory' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Open contact record for / })).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Promote to person' }));
     expect(onPromotePerson).toHaveBeenCalledWith(12);
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
 
     await rerender(baseProps({ detail: domain(), onPromotePerson }));
     expect(screen.queryByRole('button', { name: 'Promote to person' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Open in Directory' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Open contact record for / })).toBeNull();
   });
 
   it('renders actionable binding guidance from the structured promotion code', async () => {

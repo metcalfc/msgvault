@@ -382,7 +382,8 @@
         {#if isPersonDetail(detail)}
           {#if detail.profile?.id && onOpenDirectoryPerson}
             <Button
-              label="Open in Directory"
+              label="Contact record"
+              ariaLabel={`Open contact record for ${displayLabel(detail)}`}
               surface="outline"
               onclick={() => onOpenDirectoryPerson(detail.profile!.id)}
             />

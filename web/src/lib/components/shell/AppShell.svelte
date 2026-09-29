@@ -211,6 +211,14 @@
     beforeCommit();
     exploreState.commitNavigation({ workspace: 'directory', directoryPersonID: personID });
   }
+  /** The inverse of openDirectoryPerson: a Directory person's bound
+   * participants all resolve to one cluster, so the lowest id is enough
+   * for the hub to open the whole timeline. */
+  function openDirectoryPersonTimeline(participantIDs: number[]): void {
+    const participantID = participantIDs.filter((id) => Number.isSafeInteger(id) && id > 0).sort((a, b) => a - b)[0];
+    if (participantID === undefined) return;
+    openRelationship(participantID);
+  }
   function announceOperation(message: string): void {
     operationAnnouncement = { key: ++operationAnnouncementKey, message };
   }
@@ -1271,6 +1279,7 @@
       onOpenCardDAVConflict={openCardDAVConflict}
       onOpenCardDAVSettings={openCardDAVSettings}
       onAnnounce={announceOperation}
+      onOpenTimeline={openDirectoryPersonTimeline}
     />
   {:else if exploreState.current.workspace === 'directory_review'}
     <DirectoryReviewWorkspace

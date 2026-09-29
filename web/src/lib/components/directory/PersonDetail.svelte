@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { EmptyState } from '@kenn-io/kit-ui';
+  import { Button, EmptyState } from '@kenn-io/kit-ui';
   import type { MeetingRef, PersonIdentifier } from '../../api/generated/models';
   import { getParticipant } from '../../api/generated/api/api';
   import MeetingPanel from '../meetings/MeetingPanel.svelte';
@@ -38,6 +38,9 @@
     onOpenCardDAVSettings?: () => void;
     onAnnounce?: (message: string) => void;
     onOpenMeeting?: (meeting: MeetingRef) => void;
+    /** Opens the Relationships hub for this person's archive participants —
+     * the inverse of the hub's "Contact record" action. */
+    onOpenTimeline?: (participantIDs: number[]) => void;
   }
 
   type DetailTab = 'overview' | 'organizations' | 'relationships' | 'network' | 'media';
@@ -53,7 +56,8 @@
     onOpenCardDAVConflict = () => undefined,
     onOpenCardDAVSettings = () => undefined,
     onAnnounce = () => undefined,
-    onOpenMeeting = undefined
+    onOpenMeeting = undefined,
+    onOpenTimeline = undefined
   }: Props = $props();
   let activeTab = $state<DetailTab>('overview');
   let organizationRequest = $state<{ id: number; key: number }>();
@@ -240,7 +244,18 @@
     <div id={overviewPanelID} role="tabpanel" aria-labelledby={overviewTabID} tabindex="0">
       {#if bundle.person || profile}
         <header class="person-header">
-          <h2>{displayName}</h2>
+          <div class="person-title-row">
+            <h2>{displayName}</h2>
+            {#if onOpenTimeline && bundle.person?.participant_ids?.length}
+              <Button
+                label="Open timeline"
+                ariaLabel={`Open timeline for ${displayName}`}
+                surface="outline"
+                size="sm"
+                onclick={() => onOpenTimeline([...(bundle.person?.participant_ids ?? [])])}
+              />
+            {/if}
+          </div>
           {#if subtitle}<p class="person-subtitle">{subtitle}</p>{/if}
         </header>
       {/if}
@@ -322,6 +337,7 @@
   ul { padding-left: var(--space-5); }
   .section-error { margin: 0; padding: var(--space-2); background: var(--bg-inset); color: var(--text-secondary); }
   .person-header { display: grid; gap: var(--space-1); }
+  .person-title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
   .person-subtitle { color: var(--text-secondary); font-size: var(--font-size-sm); }
   .last-contact { display: flex; flex-wrap: wrap; gap: var(--space-2); color: var(--text-secondary); font-size: var(--font-size-sm); }
   .last-contact a { color: inherit; }
