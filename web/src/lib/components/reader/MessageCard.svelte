@@ -29,6 +29,8 @@
     client?: APIClient;
     /** The message's source type; a Gmail message offers "Open in Gmail". */
     sourceType?: string;
+    /** The source account (a Gmail address), so the link opens that account. */
+    sourceIdentifier?: string;
     onOpenAttachment?: (file: FileViewerTarget) => void;
     onOpenPerson?: (participantID: number) => void;
     onFilterPerson?: (participantID: number, label: string) => void;
@@ -46,12 +48,13 @@
     onViewModeChange,
     client = undefined,
     sourceType = undefined,
+    sourceIdentifier = undefined,
     onOpenAttachment = undefined,
     onOpenPerson = undefined,
     onFilterPerson = undefined
   }: Props = $props();
 
-  const gmailURL = $derived(sourceType === 'gmail' ? gmailMessageURL(message.sourceMessageId) : undefined);
+  const gmailURL = $derived(sourceType === 'gmail' ? gmailMessageURL(message.sourceMessageId, sourceIdentifier) : undefined);
   const isEvent = $derived(message.messageType === 'calendar_event');
   const fromAddress = $derived(message.isFromMe ? '' : (message.from ?? ''));
 

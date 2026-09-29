@@ -21,8 +21,15 @@ export function parseAddress(value: string): ReaderAddress {
 }
 
 /** A Gmail web link for a Gmail message's source ID (its hex message ID),
- * or undefined when the ID is not in that form. */
-export function gmailMessageURL(sourceMessageID: string | undefined): string | undefined {
+ * or undefined when the ID is not in that form. `account` (the source's
+ * Gmail address) selects that signed-in account; /mail/u/0/ would open
+ * whichever account the browser signed in first. */
+export function gmailMessageURL(sourceMessageID: string | undefined, account: string | undefined = undefined): string | undefined {
   const id = sourceMessageID?.trim() ?? '';
-  return /^[0-9a-f]{6,}$/i.test(id) ? `https://mail.google.com/mail/u/0/#all/${id}` : undefined;
+  if (!/^[0-9a-f]{6,}$/i.test(id)) return undefined;
+  const user = account?.trim() ?? '';
+  const base = user.includes('@')
+    ? `https://mail.google.com/mail/?authuser=${encodeURIComponent(user)}`
+    : 'https://mail.google.com/mail/u/0/';
+  return `${base}#all/${id}`;
 }

@@ -316,6 +316,7 @@
         end={conversationEnd}
         onAnchorChange={(anchorId) => onConversationAnchorChange?.(anchorId)}
         sourceType={selection?.kind === 'entry' ? selection.row.source_type : undefined}
+        sourceIdentifier={selection?.kind === 'entry' ? selection.row.source_identifier : undefined}
         {onOpenAttachment}
         {onOpenPerson}
         {onFilterPerson}

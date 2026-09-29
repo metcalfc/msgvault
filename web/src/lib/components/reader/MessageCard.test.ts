@@ -293,7 +293,8 @@ describe('MessageCard reader chrome', () => {
           sourceMessageId: '18c2f0a1b2c3d4e5'
         }),
         expanded: true,
-        sourceType: 'gmail'
+        sourceType: 'gmail',
+        sourceIdentifier: 'archive+work@example.com'
       }
     });
 
@@ -301,7 +302,7 @@ describe('MessageCard reader chrome', () => {
     expect(screen.getByRole('button', { name: 'bob@example.com: person actions' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Casey Example (casey@example.com): person actions' })).toBeDefined();
     expect(screen.getByRole('link', { name: 'Open in Gmail' }).getAttribute('href'))
-      .toBe('https://mail.google.com/mail/u/0/#all/18c2f0a1b2c3d4e5');
+      .toBe('https://mail.google.com/mail/?authuser=archive%2Bwork%40example.com#all/18c2f0a1b2c3d4e5');
   });
 
   it('offers no Gmail link for other sources', () => {
