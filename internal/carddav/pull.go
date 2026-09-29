@@ -953,6 +953,7 @@ func parseRemoteResource(href, etag string, body []byte) (store.CardDAVRemoteRes
 		Href: href, RemoteETag: etag, RemoteBody: append([]byte(nil), body...),
 		SemanticHash: semanticHash,
 	}
+	var fallback displayNameFallback
 	for _, occurrence := range envelope.PropertyTree {
 		property := occurrence.Property
 		identity := cardDAVVCardIdentity(occurrence)
@@ -967,8 +968,26 @@ func parseRemoteResource(href, etag string, body []byte) (store.CardDAVRemoteRes
 				if err != nil {
 					return store.CardDAVRemoteResource{}, fmt.Errorf("decode CardDAV FN: %w", err)
 				}
-				resource.DisplayName = strings.TrimSpace(value)
-				resource.DisplayNameIdentity = identity
+				if value = strings.TrimSpace(value); value != "" {
+					resource.DisplayName = value
+					resource.DisplayNameIdentity = identity
+				}
+			}
+		case "N":
+			if fallback.structuredName == "" {
+				fallback.structuredName = structuredNameLabel(property.RawValue)
+			}
+		case "NICKNAME":
+			if fallback.nickname == "" {
+				value, err := cardDAVPropertyValue(envelope.RenderMetadata.StoredVersion, property)
+				if err != nil {
+					return store.CardDAVRemoteResource{}, fmt.Errorf("decode CardDAV NICKNAME: %w", err)
+				}
+				fallback.nickname = strings.TrimSpace(value)
+			}
+		case "ORG":
+			if fallback.organization == "" {
+				fallback.organization = firstStructuredComponent(property.RawValue)
 			}
 		case "EMAIL":
 			value, err := cardDAVPropertyValue(envelope.RenderMetadata.StoredVersion, property)
@@ -992,7 +1011,75 @@ func parseRemoteResource(href, etag string, body []byte) (store.CardDAVRemoteRes
 			}
 		}
 	}
+	if resource.DisplayName == "" {
+		// A card without FN still needs a label, or the profile renders as
+		// "Person N". Google exports organization-only contacts with empty FN
+		// and N. The derived label carries no vCard identity because it did
+		// not come from a formatted-name property.
+		resource.DisplayName = fallback.label(resource.Emails, resource.Phones)
+		resource.DisplayNameDerived = resource.DisplayName != ""
+	}
 	return resource, nil
+}
+
+// displayNameFallback collects the properties that can stand in for a missing
+// FN, in preference order: the structured N, a NICKNAME, an ORG, then the
+// first email or phone.
+type displayNameFallback struct {
+	structuredName string
+	nickname       string
+	organization   string
+}
+
+func (f displayNameFallback) label(emails, phones []string) string {
+	for _, candidate := range []string{f.structuredName, f.nickname, f.organization} {
+		if candidate != "" {
+			return candidate
+		}
+	}
+	if len(emails) > 0 {
+		return emails[0]
+	}
+	if len(phones) > 0 {
+		return phones[0]
+	}
+	return ""
+}
+
+// structuredNameLabel renders an N value (Family;Given;Additional;Prefixes;
+// Suffixes) as a display label in reading order, skipping empty components.
+func structuredNameLabel(raw string) string {
+	components, err := vcard.SplitStructuredText(raw)
+	if err != nil {
+		return ""
+	}
+	for len(components) < 5 {
+		components = append(components, "")
+	}
+	ordered := []string{components[3], components[1], components[2], components[0], components[4]}
+	parts := make([]string, 0, len(ordered))
+	for _, component := range ordered {
+		component = strings.Join(strings.Fields(strings.ReplaceAll(component, ",", " ")), " ")
+		if component != "" {
+			parts = append(parts, component)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// firstStructuredComponent returns the first non-empty component of a
+// structured TEXT value such as ORG (organization;unit;...).
+func firstStructuredComponent(raw string) string {
+	components, err := vcard.SplitStructuredText(raw)
+	if err != nil {
+		return ""
+	}
+	for _, component := range components {
+		if component = strings.TrimSpace(component); component != "" {
+			return component
+		}
+	}
+	return ""
 }
 
 func cardDAVPropertyValue(version vcard.Version, property vcard.Property) (string, error) {

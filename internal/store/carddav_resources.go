@@ -65,10 +65,13 @@ type CardDAVRemoteResource struct {
 	SemanticHash        string
 	DisplayName         string
 	DisplayNameIdentity VCardIdentity
-	Emails              []string
-	EmailIdentities     []VCardIdentity
-	Phones              []string
-	PhoneIdentities     []VCardIdentity
+	// DisplayNameDerived marks a label the importer built from N, NICKNAME,
+	// ORG, or a contact value because the card carried no FN.
+	DisplayNameDerived bool
+	Emails             []string
+	EmailIdentities    []VCardIdentity
+	Phones             []string
+	PhoneIdentities    []VCardIdentity
 	// EquivalentLocalHash is sync-plan evidence that the current local
 	// projection and this remote body have the same CardDAV semantic hash.
 	EquivalentLocalHash string
@@ -884,6 +887,7 @@ func (s *Store) addCardDAVImportedProjectionTx(
 		if _, err := s.addPersonNameTx(ctx, tx, personID, PersonNameInput{
 			NameKind: PersonNameFormatted, Formatted: &input.DisplayName,
 			OriginalValue: input.DisplayName, Envelope: envelope,
+			IsDerived: input.DisplayNameDerived,
 		}); err != nil {
 			return err
 		}

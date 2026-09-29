@@ -1303,3 +1303,67 @@ func TestEnumeratedSnapshotRejectsMemberWithoutETag(t *testing.T) {
 	require.NoError(err, "a member with no ETag and no resourcetype may still exist and must not be removed")
 	assert.Equal(`"b1"`, resource.RemoteETag)
 }
+
+func TestParseRemoteResourceDerivesDisplayNameWhenFNIsEmpty(t *testing.T) {
+	cases := []struct {
+		name    string
+		body    string
+		want    string
+		derived bool
+	}{
+		{
+			name:    "FN present is not derived",
+			body:    "N:Doe;Jane;;;\r\nFN:Jane Doe\r\nORG:Example Org\r\n",
+			want:    "Jane Doe",
+			derived: false,
+		},
+		{
+			name:    "structured N in reading order",
+			body:    "N:Doe;Jane;Quinn;Dr.;PhD\r\nFN:\r\n",
+			want:    "Dr. Jane Quinn Doe PhD",
+			derived: true,
+		},
+		{
+			name:    "nickname before organization",
+			body:    "N:;;;;\r\nFN:\r\nNICKNAME:Janie\r\nORG:Example Org;Sales\r\n",
+			want:    "Janie",
+			derived: true,
+		},
+		{
+			name:    "organization-only card uses ORG",
+			body:    "N:;;;;\r\nFN:\r\nORG:Receipts at Example;Billing\r\nEMAIL;TYPE=WORK:inbox@example.test\r\n",
+			want:    "Receipts at Example",
+			derived: true,
+		},
+		{
+			name:    "email when nothing else",
+			body:    "N:;;;;\r\nFN:\r\nEMAIL:only@example.test\r\nTEL:+12025550100\r\n",
+			want:    "only@example.test",
+			derived: true,
+		},
+		{
+			name:    "phone when only phone",
+			body:    "FN:\r\nTEL;TYPE=PREF:+12025550100\r\n",
+			want:    "+12025550100",
+			derived: true,
+		},
+		{
+			name:    "nothing usable stays empty",
+			body:    "N:;;;;\r\nFN:\r\n",
+			want:    "",
+			derived: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := []byte("BEGIN:VCARD\r\nVERSION:3.0\r\nUID:derived\r\n" + tc.body + "END:VCARD\r\n")
+			resource, err := parseRemoteResource("https://contacts.example/derived.vcf", `"one"`, body)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, resource.DisplayName)
+			assert.Equal(t, tc.derived, resource.DisplayNameDerived)
+			if tc.derived {
+				assert.True(t, resource.DisplayNameIdentity.IsZero(), "derived labels carry no vCard identity")
+			}
+		})
+	}
+}
