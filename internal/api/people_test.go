@@ -488,6 +488,55 @@ func TestGetPersonAttachesDurableProfileFromStore(t *testing.T) {
 	assertions.Equal(person.Revision, body.Profile.Revision)
 }
 
+// TestPeopleSearchAttachesDurableProfilesToRows covers attachSearchRowProfiles:
+// a search page marks every row whose cluster has been promoted with that
+// person's profile, resolved through the row's own participant ID even when
+// the promotion was made from another cluster member, while unpromoted rows
+// carry no profile block. This is what lets the link-identity picker say
+// which same-named candidate already has a directory record.
+func TestPeopleSearchAttachesDurableProfilesToRows(t *testing.T) {
+	t.Parallel()
+	assertions := assert.New(t)
+	requirements := require.New(t)
+	st := testutil.NewTestStore(t)
+	primary, err := st.EnsureParticipant("primary@example.com", "Shared Name", "example.com")
+	requirements.NoError(err)
+	secondary, err := st.EnsureParticipant("secondary@example.com", "Shared Name", "example.com")
+	requirements.NoError(err)
+	other, err := st.EnsureParticipant("other@example.com", "Shared Name", "example.com")
+	requirements.NoError(err)
+	_, err = st.LinkParticipants(primary, secondary)
+	requirements.NoError(err)
+	person, _, err := st.CreatePersonFromParticipant(primary)
+	requirements.NoError(err)
+
+	engine := &peopleAPIEngine{MockEngine: &querytest.MockEngine{}, peopleResult: &query.PersonSearchResponse{
+		Rows: []query.PersonSummary{
+			{ID: secondary, DisplayLabel: "Shared Name"},
+			{ID: other, DisplayLabel: "Shared Name"},
+		},
+		TotalCount: 2, CacheRevision: "cache-people",
+	}}
+	srv := NewServerWithOptions(ServerOptions{
+		Config: &config.Config{Server: config.ServerConfig{APIPort: 8080}},
+		Store:  st, Engine: engine, Logger: testLogger(),
+	})
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/participants/search",
+		bytes.NewBufferString(`{"predicate":{},"identity_query":"Shared Name","limit":25}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	srv.Router().ServeHTTP(response, request)
+	requirements.Equal(http.StatusOK, response.Code, response.Body.String())
+
+	var body ParticipantSearchHTTPResponse
+	requirements.NoError(json.NewDecoder(response.Body).Decode(&body))
+	requirements.Len(body.Rows, 2)
+	requirements.NotNil(body.Rows[0].Profile, "a promoted cluster's row must carry its profile even via a non-canonical member")
+	assertions.Equal(person.ID, body.Rows[0].Profile.ID)
+	assertions.Equal(person.Revision, body.Rows[0].Profile.Revision)
+	assertions.Nil(body.Rows[1].Profile, "an unpromoted row must not carry a profile block")
+}
+
 // TestPersonTimelineWidensScopeToIdentityCluster covers identity consistency
 // between the person timeline and the rest of the person surface: the
 // timeline must scope to the same cluster the person summary and files

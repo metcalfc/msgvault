@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,8 +19,12 @@ const (
 	identityDisplayLabelField = "display_label"
 )
 
-// PersonIdentifier is explicit stored identity evidence. Provenance names the
-// canonical read model; it does not imply that two values are interchangeable.
+// PersonIdentifier is explicit identity evidence. Provenance names the
+// canonical read model: "participant_identifiers" for a stored identifier
+// row, or "participants" for a participant's own email address or phone
+// number, reported when it has no stored rows at all (see
+// sqlPersonIdentifiersJSON). It does not imply that two values are
+// interchangeable.
 // ParticipantID names which raw participant this evidence was stored against
 // — for a linked cluster's person detail, identifiers span every member, so
 // this is the only field that tells the caller which chip belongs to which
@@ -412,23 +417,20 @@ func (e *DuckDBEngine) searchPeopleLegacy(
 		personWhere = append(personWhere, matchExpr)
 		args = append(args, searchText, searchText, searchText, searchText, searchText, searchText)
 	}
-	// identifierFilter scopes the per-row identifiers subquery below. For
+	// identifierMembers scopes the per-row identifiers expression below. For
 	// listing/search rows the canonical identity's identifiers span its whole
 	// cluster (via canon), matching what the person-detail endpoint returns
 	// for the same row. GetPerson passes every cluster member explicitly so
 	// a linked participant's identifiers span the whole cluster; an exact-ID
-	// lookup without members stays scoped to the row's own person_id.
-	identifierFilter := "pi.participant_id = counted.person_id"
+	// lookup without members stays scoped to the row's own person_id. Member
+	// IDs are inlined as integer literals rather than bound: the expression
+	// is referenced several times and int64 values need no quoting.
+	identifierMembers := "list_value(counted.person_id)"
 	switch {
 	case exactID == nil:
-		identifierFilter = "pi.participant_id IN (SELECT cni.participant_id FROM canon cni WHERE cni.canonical_id = counted.person_id)"
+		identifierMembers = "(SELECT list(cni.participant_id) FROM canon cni WHERE cni.canonical_id = counted.person_id)"
 	case len(clusterMemberIDs) > 1:
-		placeholders := make([]string, len(clusterMemberIDs))
-		for i, memberID := range clusterMemberIDs {
-			placeholders[i] = "?"
-			args = append(args, memberID)
-		}
-		identifierFilter = "pi.participant_id IN (" + strings.Join(placeholders, ",") + ")"
+		identifierMembers = sqlInt64ListLiteral(clusterMemberIDs)
 	}
 	// Exact detail rows retain the requested participant ID, but the compact
 	// relationship scores are keyed by the resolved cluster canonical ID.
@@ -466,11 +468,7 @@ func (e *DuckDBEngine) searchPeopleLegacy(
 )
 SELECT person_id, display_label, display_name,
 	partial_label,
-	COALESCE(CAST((SELECT to_json(list(struct_pack(
-		type := pi.identifier_type, value := pi.identifier_value, display_value := pi.display_value,
-		is_primary := pi.is_primary, provenance := 'participant_identifiers', participant_id := pi.participant_id)
-		ORDER BY pi.is_primary DESC, pi.identifier_type, pi.identifier_value))
-		FROM participant_identifiers pi WHERE ` + identifierFilter + `) AS VARCHAR), '[]'),
+	` + sqlPersonIdentifiersJSON("participant_identifiers", "participants", identifierMembers) + `,
 	activity_count, meeting_count, file_count,
 	COALESCE((SELECT rp.current_temperature FROM read_parquet('` + peopleRollup + `') rp
 		WHERE rp.canonical_id = ` + relationshipPersonExpr + `), 0),
@@ -800,4 +798,61 @@ func identitySearchOrder(sort SortSpec, labelField, tieField string) (string, er
 		return "", fmt.Errorf("%w: unknown identity sort field %q", ErrInvalidExploreRequest, sort.Field)
 	}
 	return column + " " + direction + ", " + tieField + " ASC", nil
+}
+
+// sqlInt64ListLiteral renders ids as a DuckDB list literal. Integers need no
+// quoting, so inlining them lets one member set be referenced from several
+// subqueries without repeating bound placeholders.
+func sqlInt64ListLiteral(ids []int64) string {
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = strconv.FormatInt(id, 10)
+	}
+	return "list_value(" + strings.Join(parts, ", ") + ")"
+}
+
+// sqlPersonIdentifiersJSON returns the scalar SQL expression that renders one
+// identity row's identifiers as the JSON list PersonSummary.Identifiers
+// decodes. identifiersTable and participantsTable are the relations (a view
+// name or a read_parquet call) holding participant_identifiers and
+// participants; memberListExpr must evaluate to the BIGINT list of the row's
+// cluster member participant IDs.
+//
+// Stored identifier rows (provenance participant_identifiers) come first.
+// A member with NO stored identifier rows at all — every email participant
+// the message importers create, since they record the address on the
+// participant row only — contributes its own email_address and phone_number
+// with provenance "participants" instead, so an email-only person is never
+// reported as having no identifiers. A fallback is suppressed when the same
+// value is already a stored identifier elsewhere in the cluster, so a linked
+// alias never surfaces twice. Both people SQL paths (the indexed rollup and
+// the filtered legacy query) share this expression, and both evaluate it at
+// read time over the committed participants dataset, so search, listing,
+// and detail agree without an analytics rebuild.
+func sqlPersonIdentifiersJSON(identifiersTable, participantsTable, memberListExpr string) string {
+	fallback := func(kind, column string) string {
+		return `
+		SELECT '` + kind + `' AS type, TRIM(pf.` + column + `) AS value, TRIM(pf.` + column + `) AS display_value,
+			TRUE AS is_primary, 'participants' AS provenance, pf.id AS participant_id
+		FROM ` + participantsTable + ` pf
+		WHERE list_contains(` + memberListExpr + `, pf.id)
+			AND NULLIF(TRIM(pf.` + column + `), '') IS NOT NULL
+			AND NOT EXISTS (SELECT 1 FROM ` + identifiersTable + ` px WHERE px.participant_id = pf.id)
+			AND NOT EXISTS (SELECT 1 FROM ` + identifiersTable + ` px
+				WHERE list_contains(` + memberListExpr + `, px.participant_id)
+					AND lower(TRIM(px.identifier_type)) = '` + kind + `'
+					AND lower(TRIM(px.identifier_value)) = lower(TRIM(pf.` + column + `)))`
+	}
+	return `COALESCE(CAST((SELECT to_json(list(struct_pack(
+		type := ids.type, value := ids.value, display_value := ids.display_value,
+		is_primary := ids.is_primary, provenance := ids.provenance, participant_id := ids.participant_id)
+		ORDER BY ids.is_primary DESC, ids.type, ids.value))
+	FROM (
+		SELECT pi.identifier_type AS type, pi.identifier_value AS value, pi.display_value,
+			pi.is_primary, 'participant_identifiers' AS provenance, pi.participant_id
+		FROM ` + identifiersTable + ` pi
+		WHERE list_contains(` + memberListExpr + `, pi.participant_id)
+		UNION ALL` + fallback("email", "email_address") + `
+		UNION ALL` + fallback("phone", "phone_number") + `
+	) ids) AS VARCHAR), '[]')`
 }

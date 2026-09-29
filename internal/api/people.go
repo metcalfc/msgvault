@@ -11,6 +11,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/msgvault/internal/query"
+	"go.kenn.io/msgvault/internal/store"
 )
 
 type IdentitySearchSort struct {
@@ -136,6 +137,7 @@ func (s *Server) handleSearchParticipants(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusConflict, "archive_revision_changed", "The committed analytical cache changed; restart pagination")
 		return
 	}
+	s.attachSearchRowProfiles(r.Context(), result.Rows)
 	response := ParticipantSearchHTTPResponse{Rows: result.Rows, TotalCount: result.TotalCount, CacheRevision: result.CacheRevision,
 		SearchProvenance: result.SearchProvenance, CandidateSnapshotID: prepared.snapshotID}
 	if next := prepared.offset + len(result.Rows); next < int(result.TotalCount) {
@@ -303,6 +305,57 @@ func (s *Server) attachPersonProfile(
 	}
 	person.Profile = &query.PersonProfile{
 		ID: profile.ID, DisplayName: profile.DisplayName, Revision: profile.Revision,
+	}
+}
+
+// attachSearchRowProfiles sets Profile on every search row whose identity
+// cluster has been promoted to a durable person, so a listing can mark
+// which candidates already have a directory record without one detail
+// request per row. Search rows key on their cluster's canonical participant
+// and a cluster is bound to a person all-or-none, so each row's own ID
+// resolves its person with no membership lookup. Like attachPersonProfile,
+// a missing capability or a failed lookup degrades to rows without
+// profiles rather than failing the search.
+func (s *Server) attachSearchRowProfiles(ctx context.Context, rows []query.PersonSummary) {
+	if len(rows) == 0 {
+		return
+	}
+	ids := make([]int64, len(rows))
+	for i := range rows {
+		ids[i] = rows[i].ID
+	}
+	var found map[int64]*store.Person
+	switch profiles := s.store.(type) {
+	case PersonProfileBatchStore:
+		batch, err := profiles.PersonsForParticipantsContext(ctx, ids)
+		if err != nil {
+			s.logger.Error("person profile batch lookup failed", "error", err, "participant_count", len(ids))
+			return
+		}
+		found = batch
+	case PersonProfileStore:
+		found = make(map[int64]*store.Person, len(ids))
+		for _, id := range ids {
+			profile, err := profiles.PersonForParticipantsContext(ctx, []int64{id})
+			if err != nil {
+				s.logger.Error("person profile lookup failed", "error", err, "participant_id", id)
+				continue
+			}
+			if profile != nil {
+				found[id] = profile
+			}
+		}
+	default:
+		return
+	}
+	for i := range rows {
+		profile := found[rows[i].ID]
+		if profile == nil {
+			continue
+		}
+		rows[i].Profile = &query.PersonProfile{
+			ID: profile.ID, DisplayName: profile.DisplayName, Revision: profile.Revision,
+		}
 	}
 }
 

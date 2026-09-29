@@ -50,6 +50,15 @@ type PersonProfileStore interface {
 	) (*store.PersonMergeCandidateDecisionResult, error)
 }
 
+// PersonProfileBatchStore is the optional page-sized form of
+// PersonProfileStore.PersonForParticipantsContext: one lookup resolves the
+// curated person bound to each listed participant. Listing handlers prefer
+// it and fall back to per-row PersonForParticipantsContext calls when the
+// store does not offer it.
+type PersonProfileBatchStore interface {
+	PersonsForParticipantsContext(ctx context.Context, participantIDs []int64) (map[int64]*store.Person, error)
+}
+
 type CreatePersonRequest struct {
 	ParticipantID int64 `json:"participant_id"`
 }

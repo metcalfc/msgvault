@@ -34,7 +34,7 @@
       (row): TypeaheadOption => ({
         name: String(row.id),
         label: row.display_label,
-        meta: identifiersSummary(row),
+        meta: candidateSummary(row),
       }),
     ),
   );
@@ -148,9 +148,27 @@
     if (confirming) return;
     onClose();
   }
-  function identifiersSummary(row: PersonSummary): string {
+  /** One line that tells same-named candidates apart: their identifiers
+   * (an email participant's address, or its stored identifier rows), how
+   * much history they carry and over which years, and whether the cluster
+   * already has a directory record — linking into that one keeps the
+   * profile, linking two unpromoted clusters does not. */
+  function candidateSummary(row: PersonSummary): string {
     const labels = (row.identifiers ?? []).map((identifier) => identifier.display_value?.trim() || identifier.value);
-    return labels.length > 0 ? labels.join(', ') : 'No stored identifiers';
+    const parts = [labels.length > 0 ? labels.join(', ') : 'No stored identifiers'];
+    parts.push(`${row.activity_count.toLocaleString()} items`);
+    const years = yearRange(row.first_at, row.last_at);
+    if (years) parts.push(years);
+    if (row.profile) parts.push('In directory');
+    return parts.join(' · ');
+  }
+
+  function yearRange(firstAt: string, lastAt: string): string {
+    const first = new Date(firstAt).getFullYear();
+    const last = new Date(lastAt).getFullYear();
+    if (Number.isNaN(first) && Number.isNaN(last)) return '';
+    if (Number.isNaN(first) || Number.isNaN(last) || first === last) return String(Number.isNaN(first) ? last : first);
+    return `${first}–${last}`;
   }
   function messageFor(value: unknown, status: number): string {
     if (typeof value === 'object' && value !== null && 'message' in value) {

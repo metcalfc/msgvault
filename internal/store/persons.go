@@ -813,6 +813,66 @@ func (s *Store) PersonForParticipantsContext(
 	return person, nil
 }
 
+// PersonsForParticipantsContext returns the curated person bound to each of
+// the given participants, keyed by participant ID; participants with no
+// binding are absent from the map. One query serves a whole page of search
+// rows, so callers decorating a listing never pay a transaction per row.
+// Because a cluster is bound all-or-none, a row's own participant ID
+// resolves its cluster's person without a separate membership lookup.
+func (s *Store) PersonsForParticipantsContext(
+	ctx context.Context, participantIDs []int64,
+) (map[int64]*Person, error) {
+	out := make(map[int64]*Person, len(participantIDs))
+	if len(participantIDs) == 0 {
+		return out, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(participantIDs)), ",")
+	args := make([]any, len(participantIDs))
+	for i, id := range participantIDs {
+		args[i] = id
+	}
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT p.id, p.vcard_uid, p.display_name, p.revision, p.created_at, p.updated_at,
+		       pp.participant_id
+		FROM persons p
+		JOIN person_participants pp ON pp.person_id = p.id
+		WHERE p.id IN (SELECT person_id FROM person_participants WHERE participant_id IN (%s))
+		ORDER BY p.id, pp.participant_id
+	`, placeholders), args...)
+	if err != nil {
+		return nil, fmt.Errorf("look up participant persons: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	requested := make(map[int64]struct{}, len(participantIDs))
+	for _, id := range participantIDs {
+		requested[id] = struct{}{}
+	}
+	persons := make(map[int64]*Person)
+	for rows.Next() {
+		rowPerson, participantID, err := scanPersonBinding(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan participant person: %w", err)
+		}
+		person, ok := persons[rowPerson.ID]
+		if !ok {
+			person = rowPerson
+			person.ParticipantIDs = []int64{}
+			persons[person.ID] = person
+		}
+		if !participantID.Valid {
+			continue
+		}
+		person.ParticipantIDs = append(person.ParticipantIDs, participantID.Int64)
+		if _, wanted := requested[participantID.Int64]; wanted {
+			out[participantID.Int64] = person
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate participant persons: %w", err)
+	}
+	return out, nil
+}
+
 // mergePersonBindingsTx carries the covering person's bindings through a
 // participant merge: the absorbed participant's binding is dropped and every
 // surviving member of the combined cluster is bound, so the person exactly

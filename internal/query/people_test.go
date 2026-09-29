@@ -791,3 +791,82 @@ func TestGetPersonByAliasUsesCanonicalRelationshipTemperature(t *testing.T) {
 		assert.Equal(canonical.PeakRelationshipYear, alias.PeakRelationshipYear)
 	}
 }
+
+// TestPeopleIdentifiersFallBackToParticipantAddress pins the identifier
+// contract for participants the message importers create: they carry their
+// address on the participant row only, with no participant_identifiers rows,
+// so search, the unfiltered list, and the person detail must all surface that
+// address as an identifier with provenance "participants" — never an empty
+// list. A participant that DOES have stored rows keeps exactly those, and a
+// linked cluster reports each member's own fallback, skipping any value a
+// stored row already covers.
+func TestPeopleIdentifiersFallBackToParticipantAddress(t *testing.T) {
+	assertions := assert.New(t)
+	requirements := require.New(t)
+	b := NewTestDataBuilder(t)
+	source := b.AddSourceWithType("archive@example.com", "gmail")
+	chatSource := b.AddSourceWithType("chat@example.com", "apple_messages")
+	emailOnly := b.AddParticipant("mail-only@example.com", "example.com", "Mail Only")
+	stored := b.AddParticipant("stored@example.com", "example.com", "Stored Rows")
+	b.AddParticipantIdentifier(stored, "email", "stored@example.com", "Stored <stored@example.com>", true)
+	phoneOnly := b.AddPhoneParticipant("+15550100009", "Phone Only")
+	clusterPrimary := b.AddParticipant("primary@example.com", "example.com", "Cluster Person")
+	clusterAlias := b.AddParticipant("alias@example.com", "example.com", "")
+	clusterStored := b.AddParticipant("covered@example.com", "example.com", "")
+	// The alias's address is already a stored identifier on another member, so
+	// its fallback must not duplicate it.
+	b.AddParticipantIdentifier(clusterStored, "email", "alias@example.com", "alias@example.com", true)
+	b.LinkCluster(clusterPrimary, clusterAlias, clusterStored)
+
+	start := time.Date(2026, 7, 10, 9, 0, 0, 0, time.UTC)
+	for i, participant := range []int64{emailOnly, stored, clusterPrimary, clusterAlias, clusterStored} {
+		message := b.AddMessage(MessageOpt{SourceID: source, ConversationID: int64(700 + i), Subject: "mail", SentAt: start.Add(time.Duration(i) * time.Hour)})
+		b.AddFrom(message, participant, "")
+	}
+	chat := b.AddMessage(MessageOpt{SourceID: chatSource, ConversationID: 790, SentAt: start, MessageType: "imessage", ConversationType: "direct_chat"})
+	b.AddFrom(chat, phoneOnly, "Phone Only")
+	b.AddConversationParticipant(790, phoneOnly)
+	engine := b.BuildEngine()
+	ctx := context.Background()
+
+	byID := func(rows []PersonSummary) map[int64]PersonSummary {
+		out := make(map[int64]PersonSummary, len(rows))
+		for _, row := range rows {
+			out[row.ID] = row
+		}
+		return out
+	}
+	wantEmailOnly := []PersonIdentifier{{Type: "email", Value: "mail-only@example.com", DisplayValue: "mail-only@example.com", IsPrimary: true, Provenance: "participants", ParticipantID: emailOnly}}
+	wantStored := []PersonIdentifier{{Type: "email", Value: "stored@example.com", DisplayValue: "Stored <stored@example.com>", IsPrimary: true, Provenance: "participant_identifiers", ParticipantID: stored}}
+	wantPhoneOnly := []PersonIdentifier{{Type: "phone", Value: "+15550100009", DisplayValue: "+15550100009", IsPrimary: true, Provenance: "participants", ParticipantID: phoneOnly}}
+	wantCluster := []PersonIdentifier{
+		{Type: "email", Value: "alias@example.com", DisplayValue: "alias@example.com", IsPrimary: true, Provenance: "participant_identifiers", ParticipantID: clusterStored},
+		{Type: "email", Value: "primary@example.com", DisplayValue: "primary@example.com", IsPrimary: true, Provenance: "participants", ParticipantID: clusterPrimary},
+	}
+
+	for name, request := range map[string]PersonSearchRequest{
+		"unfiltered list": {Page: PageSpec{Limit: 25}},
+		"filtered search": {Explore: ExploreRequest{Context: Context{SourceIDs: []int64{source, chatSource}}}, Page: PageSpec{Limit: 25}},
+	} {
+		result, err := engine.SearchPeople(ctx, request)
+		requirements.NoError(err, name)
+		rows := byID(result.Rows)
+		requirements.Len(rows, 4, name)
+		assertions.Equal(wantEmailOnly, rows[emailOnly].Identifiers, "%s: email-only participant falls back to its address", name)
+		assertions.Equal(wantStored, rows[stored].Identifiers, "%s: stored rows are reported once, with no fallback duplicate", name)
+		assertions.Equal(wantPhoneOnly, rows[phoneOnly].Identifiers, "%s: phone-only participant falls back to its number", name)
+		assertions.Equal(wantCluster, rows[clusterPrimary].Identifiers, "%s: cluster rows carry each member's fallback minus values a stored row covers", name)
+	}
+
+	solo, err := engine.GetPerson(ctx, emailOnly, Context{}, nil)
+	requirements.NoError(err)
+	assertions.Equal(wantEmailOnly, solo.Identifiers, "person detail matches the list for an email-only participant")
+	members := []int64{clusterPrimary, clusterAlias, clusterStored}
+	detail, err := engine.GetPerson(ctx, clusterAlias, Context{}, members)
+	requirements.NoError(err)
+	assertions.Equal(wantCluster, detail.Identifiers, "cluster detail reports each member's own fallback")
+	summary, err := engine.GetPersonSummary(ctx, clusterAlias, ExploreRequest{Context: Context{SourceIDs: []int64{source}}}, members)
+	requirements.NoError(err)
+	requirements.Len(summary.Rows, 1)
+	assertions.Equal(wantCluster, summary.Rows[0].Identifiers, "filtered cluster summary agrees with the detail")
+}

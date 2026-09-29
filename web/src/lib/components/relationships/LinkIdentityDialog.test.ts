@@ -83,6 +83,36 @@ describe('LinkIdentityDialog', () => {
     }
   });
 
+  it('describes each candidate by identifiers, activity, years, and directory status', async () => {
+    const promoted: PersonSummary = {
+      ...person(2, 'Bob'),
+      identifiers: [{ type: 'email', value: 'bob@work.example', participant_id: 2, is_primary: true, provenance: 'participants' }],
+      activity_count: 1234, first_at: '2014-07-19T10:00:00Z', last_at: '2026-09-28T10:00:00Z',
+      profile: { id: 504, revision: 2 }
+    };
+    const unpromoted: PersonSummary = {
+      ...person(3, 'Bob'),
+      identifiers: [{ type: 'email', value: 'bob@old.example', participant_id: 3, is_primary: true, provenance: 'participants' }],
+      activity_count: 35, first_at: '2013-01-05T10:00:00Z', last_at: '2013-12-19T10:00:00Z'
+    };
+    const bare: PersonSummary = { ...person(4, 'Bob'), identifiers: [], activity_count: 1 };
+    const { fetchFn } = fetchHandler({
+      '/api/v1/participants/search': async () => Response.json({
+        rows: [promoted, unpromoted, bare], total_count: 3, cache_revision: 'cache-rel', search_provenance: {}
+      })
+    });
+    render(LinkIdentityDialog, { client: createAPIClient(fetchFn), excludeID: 1, personLabel: 'Alice Example', onConfirm: vi.fn(), onClose: vi.fn() });
+    await fireEvent.input(await openTypeahead('Search people to link'), { target: { value: 'Bob' } });
+
+    const options = await screen.findAllByRole('option', { name: /Bob/ });
+    expect(options).toHaveLength(3);
+    expect(options[0]!.textContent).toContain('bob@work.example · 1,234 items · 2014–2026 · In directory');
+    expect(options[1]!.textContent).toContain('bob@old.example · 35 items · 2013');
+    expect(options[1]!.textContent).not.toContain('In directory');
+    expect(options[2]!.textContent).toContain('No stored identifiers · 1 items · 2026');
+    expect(options[2]!.textContent).not.toContain('In directory');
+  });
+
   it('excludes the currently open cluster member from search results', async () => {
     const { fetchFn } = fetchHandler({
       '/api/v1/participants/search': async () => Response.json({
