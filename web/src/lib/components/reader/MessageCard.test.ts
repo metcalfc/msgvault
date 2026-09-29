@@ -278,7 +278,8 @@ describe('MessageCard reader chrome', () => {
     expect(button.textContent).toContain('2 KB');
     await fireEvent.click(button);
     expect(onOpenAttachment).toHaveBeenCalledWith({
-      id: 91, message_id: 42, conversation_id: 7, filename: 'plan.pdf', mime_type: 'application/pdf', size_bytes: 2048
+      id: 91, message_id: 42, conversation_id: 7, filename: 'plan.pdf', mime_type: 'application/pdf', size_bytes: 2048,
+      sender: 'Alice Example <alice@example.com>', containing_title: 'Quarterly plan', occurred_at: '2026-01-01T12:00:00Z'
     });
   });
 

@@ -131,6 +131,8 @@
               }))}
               messageId={message.id}
               {conversationId}
+              sender={run.speaker}
+              sentAt={message.sent_at}
               onOpen={onOpenAttachment}
             />
           {/if}

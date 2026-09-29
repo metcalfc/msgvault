@@ -591,6 +591,8 @@
     });
   }
 
+  let savedNotice = $state('');
+
   function trySearchMode(mode: ExploreSearchMode): void {
     commitSearch(exploreState.current.query.trim(), mode);
     focusGrid();
@@ -777,6 +779,10 @@
       })}
     onSort={fixedSortNotice}
     onQueryChange={commitQueryText}
+    saveState={exploreState.current}
+    onSaved={(name) => {
+      savedNotice = `Saved view “${name}”.`;
+    }}
     sourceLabelHint={(sourceID) => loader.rows.find((row) => String(row.source_id) === sourceID)?.source_identifier}
     columns={columnsPickable ? exploreState.current.columns : undefined}
     onColumnsChange={columnsPickable
@@ -784,6 +790,7 @@
       : undefined}
   />
   <span class="kit-sr-only" role="status" aria-label="Sort status" aria-live="polite">{sortNotice}</span>
+  <span class="kit-sr-only" role="status" aria-label="Saved view status" aria-live="polite">{savedNotice}</span>
 
   {#if meetingScope}
     <MeetingPanel {client} collapsible scope={meetingScope} refreshKey={String(session.meetingOverview?.refreshKey ?? 0)}

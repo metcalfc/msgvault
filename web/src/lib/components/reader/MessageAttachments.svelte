@@ -13,11 +13,18 @@
     attachments: ArchiveAttachment[];
     messageId: number;
     conversationId?: number;
+    /** Viewer header context: the containing message's sender, subject, and time. */
+    sender?: string;
+    subject?: string;
+    sentAt?: string;
     /** Opens the file viewer; without it the list is informational. */
     onOpen?: (file: FileViewerTarget) => void;
   }
 
-  let { attachments, messageId, conversationId = undefined, onOpen = undefined }: Props = $props();
+  let {
+    attachments, messageId, conversationId = undefined, sender = undefined, subject = undefined, sentAt = undefined,
+    onOpen = undefined
+  }: Props = $props();
 
   function glyph(mimeType: string) {
     const type = mimeType.toLowerCase();
@@ -43,7 +50,10 @@
       conversation_id: conversationId,
       filename: attachment.filename,
       mime_type: attachment.mimeType,
-      size_bytes: attachment.sizeBytes
+      size_bytes: attachment.sizeBytes,
+      ...(sender ? { sender } : {}),
+      ...(subject ? { containing_title: subject } : {}),
+      ...(sentAt ? { occurred_at: sentAt } : {})
     };
   }
 </script>

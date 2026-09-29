@@ -229,6 +229,23 @@
   function namedFilename(value: string | undefined): string | undefined {
     return value?.trim() ? value : undefined;
   }
+  // Who sent it, when, and the item it came from — from the row that
+  // opened the viewer; the file metadata endpoint carries none of these.
+  const fileContext = $derived.by((): string[] => {
+    const parts: string[] = [];
+    const people = file.sender?.trim() || (file.participant_labels ?? []).filter((label) => label.trim()).slice(0, 3).join(', ');
+    if (people) parts.push(file.sender?.trim() ? `From ${people}` : `With ${people}`);
+    else if (file.source_identifier) parts.push(file.source_identifier);
+    if (file.occurred_at) {
+      const date = new Date(file.occurred_at);
+      if (!Number.isNaN(date.valueOf())) {
+        parts.push(new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date));
+      }
+    }
+    const subject = (file.containing_title ?? file.title ?? '').trim();
+    if (subject) parts.push(`in “${subject}”`);
+    return parts;
+  });
   const displayFilename = $derived(
     namedFilename(metadata?.filename) ?? namedFilename(file.filename) ?? `attachment ${file.id}`,
   );
@@ -246,6 +263,9 @@
   }}
 >
   <div class="file-viewer">
+    {#if fileContext.length > 0}
+      <p class="file-context">{fileContext.join(' · ')}</p>
+    {/if}
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (Scrollable preview regions need keyboard access.) -->
     <div class="preview" role="region" aria-label={`File preview ${displayFilename}`} tabindex="0">
       {#if loading}
@@ -311,6 +331,13 @@
   }
   p {
     margin: 0;
+  }
+  .file-context {
+    padding: var(--space-3) var(--space-5);
+    border-bottom: 1px solid var(--hairline);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
   }
   .preview {
     min-height: 0;

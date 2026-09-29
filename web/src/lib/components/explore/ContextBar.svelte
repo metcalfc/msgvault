@@ -27,6 +27,7 @@
   } from '../../search/query';
   import IdentityFilter from './IdentityFilter.svelte';
   import PersonFilterPicker from './PersonFilterPicker.svelte';
+  import SaveViewSheet from '../saved-views/SaveViewSheet.svelte';
 
   let {
     client,
@@ -45,7 +46,9 @@
     columns = undefined,
     onColumnsChange = undefined,
     onQueryChange = undefined,
-    sourceLabelHint = undefined
+    sourceLabelHint = undefined,
+    saveState = undefined,
+    onSaved = undefined
   }: {
     client: APIClient;
     query: string;
@@ -69,7 +72,17 @@
     onQueryChange?: (query: string) => void;
     /** An account name already on screen for a source ID, if any. */
     sourceLabelHint?: (sourceID: string) => string | undefined;
+    /** The full view state; when given, a Save view button saves it. */
+    saveState?: ExploreURLState;
+    onSaved?: (name: string) => void;
   } = $props();
+
+  let saveOpen = $state(false);
+
+  /** A filter as the chips above show it: one label per person or account. */
+  function filterChips(filter: ExploreFilter): string[] {
+    return perValue(filter) ? filter.values.map((value) => valueChipText(filter, value)) : [crumbText(filter)];
+  }
 
   let filtersOpen = $state(false);
   const MULTIPLE = '\u0000multiple';
@@ -322,6 +335,10 @@
     <span class="context-count" data-mono>{`${totalCount.toLocaleString()} results`}</span>
   {/if}
 
+  {#if saveState}
+    <Button size="sm" surface="outline" label="Save view" onclick={() => (saveOpen = true)} />
+  {/if}
+
   {#if columns && onColumnsChange}
     <details class="column-picker-disclosure">
       <summary>Columns</summary>
@@ -335,6 +352,16 @@
         {/each}
       </div>
     </details>
+  {/if}
+
+  {#if saveOpen && saveState}
+    <SaveViewSheet
+      {client}
+      view={saveState}
+      describeFilter={filterChips}
+      onclose={() => (saveOpen = false)}
+      onsaved={onSaved}
+    />
   {/if}
 
   {#if filtersOpen}

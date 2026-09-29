@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
 import type { ExploreFilter } from '../../explore/models';
+import { parseExploreURLState } from '../../explore/state.svelte';
 import { chooseSelectOption, openTypeahead } from '../../../test/kit-ui';
 import ContextBar from './ContextBar.svelte';
 
@@ -217,5 +218,46 @@ describe('ContextBar sort control', () => {
   ] as const)('labels %j in %s as %s', (query, searchMode, name) => {
     render(ContextBar, baseProps({ query, searchMode }));
     expect(screen.getByRole('button', { name })).toBeDefined();
+  });
+});
+
+describe('ContextBar save view', () => {
+  it('shows exactly what the view stores and saves that canonical state', async () => {
+    const requests: Request[] = [];
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      requests.push(request);
+      return Response.json({ id: 3, name: 'Board', revision: 1, schema_version: 1, canonical_state: {} });
+    });
+    const onSaved = vi.fn();
+    const saveState = {
+      ...parseExploreURLState(''),
+      query: 'budget has:attachment', searchMode: 'hybrid' as const,
+      filters: [{ dimension: 'message_type' as const, values: ['email'] }],
+      groupingChain: ['source' as const]
+    };
+    render(ContextBar, baseProps({
+      client: createAPIClient(fetchFn), query: saveState.query, searchMode: 'hybrid',
+      filters: saveState.filters, groupingChain: saveState.groupingChain, saveState, onSaved
+    }));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save view' }));
+    const stored = screen.getByLabelText('What this view stores');
+    expect(stored.textContent).toContain('“budget has:attachment” · Hybrid');
+    expect(stored.textContent).toContain('Type: Email');
+    expect(stored.textContent).toContain('Source');
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Saved view name' }), { target: { value: 'Board' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith('Board'));
+    await expect(requests[0]!.clone().json()).resolves.toMatchObject({
+      name: 'Board',
+      schema_version: 1,
+      canonical_state: {
+        query: 'budget has:attachment', search_mode: 'hybrid',
+        filters: [{ field: 'message_type', operator: 'in', values: ['email'] }],
+        grouping: ['source']
+      }
+    });
   });
 });

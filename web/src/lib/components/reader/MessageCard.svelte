@@ -182,6 +182,9 @@
         attachments={message.attachments}
         messageId={message.id}
         conversationId={message.conversationId}
+        sender={message.sender}
+        subject={message.subject}
+        sentAt={message.sentAt}
         onOpen={onOpenAttachment}
       />
     {/if}

@@ -13,9 +13,10 @@
     SavedViewStateEnvelope as GeneratedSavedViewStateEnvelope,
   } from '../../api/generated/models';
   import { DEFAULT_EXPLORE_COLUMNS, type ExploreURLState } from '../../explore/models';
+  import { SAVED_VIEW_SCHEMA_VERSION, canonicalSavedViewState } from '../../saved-views/canonical';
   type SavedView = GeneratedSavedView;
   type CanonicalState = GeneratedSavedViewStateEnvelope;
-  const CURRENT_SCHEMA_VERSION = 1;
+  const CURRENT_SCHEMA_VERSION = SAVED_VIEW_SCHEMA_VERSION;
   let {
     client,
     currentState,
@@ -52,19 +53,7 @@
     }
   }
   function canonicalState(): CanonicalState {
-    const query = currentState.query.trim();
-    return {
-      ...(query ? { query, search_mode: currentState.searchMode } : {}),
-      filters: currentState.filters.map((filter) => ({
-        field: filter.dimension,
-        operator: 'in',
-        values: [...filter.values],
-      })),
-      grouping: [...currentState.groupingChain],
-      presentation: currentState.presentation,
-      sort: currentState.sort.map((sort) => ({ field: sort.field, direction: sort.direction })),
-      columns: [...currentState.columns],
-    };
+    return canonicalSavedViewState(currentState);
   }
   async function createView(): Promise<void> {
     if (!name.trim()) return;

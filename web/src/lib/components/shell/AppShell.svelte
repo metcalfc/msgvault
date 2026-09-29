@@ -661,6 +661,9 @@
       filename: file.filename,
       mime_type: file.mime_type,
       size_bytes: file.size,
+      title: file.title,
+      occurred_at: file.occurred_at,
+      source_identifier: file.source_identifier,
     };
   }
   $effect(() => {

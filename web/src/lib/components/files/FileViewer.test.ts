@@ -321,3 +321,37 @@ describe('FileViewer', () => {
     expect(fetchFn).toHaveBeenCalledOnce();
   });
 });
+
+describe('FileViewer header context', () => {
+  it('names who, when, and the containing item from the row that opened it', async () => {
+    const fetchFn = viewerFetch({
+      id: 7, filename: 'preview.png', mime_type: 'image/png', size_bytes: 68, message_id: 11, conversation_id: 21,
+      entry_key: 'source:1:message:m-11', content_state: 'metadata_only', content_available: false
+    });
+    render(FileViewer, {
+      props: {
+        client: createAPIClient(fetchFn),
+        file: { ...file(), participant_labels: ['Avery Example'] }
+      }
+    });
+
+    const context = await screen.findByText(/in “Containing item”/);
+    expect(context.textContent).toContain('With Avery Example');
+    expect(context.textContent).toMatch(/2026/);
+  });
+
+  it('prefers the sender a reader attachment carries', async () => {
+    const fetchFn = viewerFetch({
+      id: 7, filename: 'plan.pdf', mime_type: 'application/pdf', size_bytes: 68, message_id: 11, conversation_id: 21,
+      entry_key: 'source:1:message:m-11', content_state: 'metadata_only', content_available: false
+    });
+    render(FileViewer, {
+      props: {
+        client: createAPIClient(fetchFn),
+        file: { id: 7, filename: 'plan.pdf', sender: 'Blake Example', containing_title: 'Quarterly plan', occurred_at: '2026-01-01T12:00:00Z' }
+      }
+    });
+
+    expect((await screen.findByText(/in “Quarterly plan”/)).textContent).toContain('From Blake Example');
+  });
+});

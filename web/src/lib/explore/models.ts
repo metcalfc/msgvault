@@ -61,6 +61,15 @@ export interface FileViewerTarget {
   filename?: FileSearchRow['filename'];
   mime_type?: FileSearchRow['mime_type'];
   size_bytes?: FileSearchRow['size_bytes'];
+  /** Context for the viewer header, from whichever row opened it: the
+   * containing item's subject (a file fact's title or a search row's
+   * containing_title), when it happened, and who it was with. */
+  title?: string;
+  containing_title?: string;
+  occurred_at?: string;
+  sender?: string;
+  participant_labels?: string[];
+  source_identifier?: string;
 }
 export type FileGroupsResponse = GeneratedFileGroupsHTTPResponse;
 export type FileSearchSort = {
