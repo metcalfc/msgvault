@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -85,8 +86,8 @@ func (c Config) Validate() error {
 	if err := ValidateEndpoint(c.Endpoint); err != nil {
 		return fmt.Errorf("[jev] endpoint: %w", err)
 	}
-	if c.Model == "" {
-		return errors.New("[jev] model is required")
+	if c.Model == "" || strings.TrimSpace(c.Model) != c.Model {
+		return errors.New("[jev] model is required and must not have surrounding whitespace")
 	}
 	if !environmentNamePattern.MatchString(c.APIKeyEnv) {
 		return fmt.Errorf("invalid [jev] api_key_env %q", c.APIKeyEnv)

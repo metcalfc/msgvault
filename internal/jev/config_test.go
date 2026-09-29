@@ -56,6 +56,7 @@ func TestConfigValidateRejectsUnsafeValues(t *testing.T) {
 		"endpoint credentials":  func(c *Config) { c.Endpoint = "https://user:pw@api.typesafe.ai/v1/systemone" },
 		"endpoint query":        func(c *Config) { c.Endpoint = "https://api.typesafe.ai/v1/systemone?x=1" },
 		"empty model":           func(c *Config) { c.Model = "" },
+		"padded model":          func(c *Config) { c.Model = " jev-1.13.0 " },
 		"bad key variable":      func(c *Config) { c.APIKeyEnv = "not a name" },
 		"zero timeout":          func(c *Config) { c.RequestTimeout = 0 },
 		"negative requests":     func(c *Config) { c.MaxRequestsPerDay = -1 },
