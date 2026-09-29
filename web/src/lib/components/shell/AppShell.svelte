@@ -578,6 +578,17 @@
     };
     untrack(() => directoryController.applyURLState(directoryState, historyRestoration));
   });
+  // Saving, merging, or linking someone happens away from the list (on a
+  // contact, person, or review page), so archive contacts reload each time
+  // the list is shown again: a saved contact never shows twice.
+  let wasOnPeopleList = untrack(() => exploreState.current.workspace === 'directory' && exploreState.current.directoryPersonID === null);
+  $effect(() => {
+    const onList = exploreState.current.workspace === 'directory' && exploreState.current.directoryPersonID === null;
+    untrack(() => {
+      if (onList && !wasOnPeopleList) peopleHub.refresh();
+      wasOnPeopleList = onList;
+    });
+  });
   // Archive contacts follow the People list's filters.
   $effect(() => {
     if (exploreState.current.workspace !== 'directory' || exploreState.current.directoryPersonID !== null) return;

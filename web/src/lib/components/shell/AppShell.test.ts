@@ -1668,6 +1668,58 @@ describe('AppShell', () => {
     state.destroy();
   });
 
+  it('lists a promoted contact once, as saved, when People is shown again', async () => {
+    window.history.replaceState(null, '', '/people');
+    let promoted = false;
+    const when = '2026-07-19T10:00:00Z';
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      const meetingResponse = meetingFixtureResponse(path);
+      if (meetingResponse) return meetingResponse;
+      if (path === '/api/v1/relationships') return Response.json({
+        rows: promoted ? [] : [{
+          canonical_id: 11, display_label: 'Synthetic Candidate', last_at: when, member_ids: [11], score: 1,
+          signals: { last_interaction_at: when, meeting_count: 0, meetings_together: 0, modalities: 1,
+            received_from_them: 1, sent_count: 1, sent_to_them: 1 }
+        }], total_count: promoted ? 0 : 1, cache_revision: 'c', identity_revision: 1
+      });
+      if (path === '/api/v1/people/directory') return Response.json({ people: promoted ? [{
+        id: 42, display_name: 'Synthetic Candidate', revision: 1, contact_state: 'active', categories: [], organizations: [],
+        last_contact_at: when
+      }] : [] });
+      if (path === '/api/v1/participants/11') return Response.json({
+        id: 11, display_label: 'Synthetic Candidate', partial_label: false, identifiers: [],
+        activity_count: 1, file_count: 0, source_counts: [], first_at: when, last_at: when, cache_revision: 'c',
+        ...(promoted ? { profile: { id: 42, revision: 1 } } : {})
+      });
+      if (path === '/api/v1/relationships/11/timeline') return Response.json({
+        canonical_id: 11, identity_revision: 1, cache_revision: 'c', rows: [], total_count: 0
+      });
+      if (path === '/api/v1/people' && request.method === 'POST') {
+        promoted = true;
+        return Response.json({ id: 42, revision: 1 }, { status: 201 });
+      }
+      if (path === '/api/v1/people/42') return Response.json({ id: 42, revision: 1, display_name: 'Synthetic Candidate', participant_ids: [11] });
+      return Response.json(exploreResponse());
+    });
+    const state = new ExploreState(window);
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+
+    const results = await screen.findByRole('region', { name: 'People results' });
+    await fireEvent.click(await within(results).findByRole('link', { name: /Synthetic Candidate\s*Not saved/ }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Save to Directory' }));
+    await waitFor(() => expect(state.current).toMatchObject({ workspace: 'directory', directoryPersonID: 42 }));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Back to People' }));
+    const list = await screen.findByRole('region', { name: 'People results' });
+    await waitFor(() => expect(within(list).getAllByRole('link')).toHaveLength(1));
+    expect(within(list).getByRole('link').textContent).not.toContain('Not saved');
+
+    rendered.unmount();
+    state.destroy();
+  });
+
   it('renders actionable guidance beside the relationship for a promotion conflict', async () => {
     window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
       workspace: 'relationships', relationshipTarget: 'cluster:11'
