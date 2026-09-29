@@ -777,6 +777,43 @@ CREATE TABLE IF NOT EXISTS person_enrichment_identity_judgments (
 CREATE INDEX IF NOT EXISTS person_enrichment_identity_judgments_outcome
     ON person_enrichment_identity_judgments(outcome, judged_at);
 
+-- Provider person IDs an identity_uncertain attempt returned. They are kept
+-- only so a user decision can attach the exact ID (confirm) or refuse it for
+-- this person (reject); an applied result attaches its IDs directly.
+CREATE TABLE IF NOT EXISTS person_enrichment_attempt_provider_ids (
+    attempt_id BIGINT NOT NULL REFERENCES person_enrichment_attempts(id) ON DELETE CASCADE,
+    person_id BIGINT NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+    provider_namespace TEXT NOT NULL,
+    provider_person_id TEXT NOT NULL,
+    confidence INTEGER NOT NULL CHECK(confidence >= 0 AND confidence <= 1000),
+    PRIMARY KEY(attempt_id, provider_namespace, provider_person_id)
+);
+
+-- A user's decision on an attempt whose identity check was uncertain.
+CREATE TABLE IF NOT EXISTS person_enrichment_identity_reviews (
+    attempt_id BIGINT PRIMARY KEY REFERENCES person_enrichment_attempts(id) ON DELETE CASCADE,
+    person_id BIGINT NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+    decision TEXT NOT NULL CHECK(decision IN ('confirmed', 'rejected')),
+    reason TEXT NOT NULL CHECK(reason IN ('user_confirmed', 'user_rejected')),
+    actor TEXT NOT NULL,
+    fact_generation_key TEXT,
+    decided_at TIMESTAMPTZ NOT NULL
+);
+
+-- Per-person negatives: a provider identity the user said is not this person.
+-- A later result naming it is identity-rejected for this person only. Legacy
+-- attempts that kept no provider person ID fall back to the profile URL.
+CREATE TABLE IF NOT EXISTS person_enrichment_identity_rejections (
+    person_id BIGINT NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+    provider_namespace TEXT NOT NULL,
+    key_kind TEXT NOT NULL CHECK(key_kind IN ('provider_person_id', 'profile_url')),
+    key_value TEXT NOT NULL,
+    attempt_id BIGINT REFERENCES person_enrichment_attempts(id) ON DELETE SET NULL,
+    actor TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY(person_id, provider_namespace, key_kind, key_value)
+);
+
 CREATE TABLE IF NOT EXISTS person_semantic_embedding_profiles (
     fingerprint             TEXT PRIMARY KEY,
     purpose                 TEXT NOT NULL,
