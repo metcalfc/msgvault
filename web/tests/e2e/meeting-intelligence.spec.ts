@@ -12,6 +12,17 @@ test.beforeEach(async ({ page, daemon }) => {
   await loginToMeetingArchive(page, daemon);
 });
 
+/** Meeting activity sits in a disclosure that starts collapsed; open every
+ * closed one once the page has rendered its meeting surface. A new search
+ * scope remounts the disclosure closed, so pass the summary the new scope
+ * settles on (e.g. /· 1 meetings/) to open the settled panel. */
+async function openMeetingActivity(page: Page, settled: RegExp | undefined = undefined): Promise<void> {
+  if (settled) await expect(page.locator("details.meeting-overview > summary").first()).toHaveText(settled);
+  await expect(page.locator("details.meeting-overview > summary, section.meeting-panel").first()).toBeVisible();
+  const closed = page.locator("details.meeting-overview:not([open]) > summary");
+  while ((await closed.count()) > 0) await closed.first().click();
+}
+
 async function assertMetrics(
   panel: Locator,
   count: number,
@@ -69,6 +80,7 @@ test("production imports expose archived actions, duration evidence, and exact c
   daemon,
 }, info) => {
   await page.goto(meetingURL(daemon));
+  await openMeetingActivity(page);
   const panel = page.getByRole("region", {
     name: "Meeting activity",
     exact: true,
@@ -288,6 +300,7 @@ test("participant, domain, Directory and Relationships keep scoped meeting evide
   ];
   for (const scope of scopes) {
     await page.goto(meetingURL(daemon, scope.state));
+    await openMeetingActivity(page);
     const panel = page
       .getByRole("region", { name: "Meeting activity", exact: true })
       .last();
@@ -317,6 +330,7 @@ test("participant, domain, Directory and Relationships keep scoped meeting evide
       directoryPersonID: daemon.personID,
     }),
   );
+  await openMeetingActivity(page);
   const narrow = page.getByRole("region", {
     name: "Meeting activity",
     exact: true,
@@ -340,6 +354,7 @@ test("rapid search scope changes leave only the final meeting evidence", async (
   daemon,
 }, info) => {
   await page.goto(meetingURL(daemon));
+  await openMeetingActivity(page);
   const panel = page.getByRole("region", {
     name: "Meeting activity",
     exact: true,
@@ -359,6 +374,7 @@ test("rapid search scope changes leave only the final meeting evidence", async (
   await firstRequest;
   await search.fill("Generic");
   await search.press("Enter");
+  await openMeetingActivity(page, /· 1 meetings$/);
   await assertMetrics(panel, 1, 0, 1, "0s", "Unavailable");
   await expect(
     panel.getByText("0 matching action items", { exact: true }),
@@ -456,6 +472,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 700, height: 560 
 test('closing the reader removes its scope and cancels a pending continuation', async ({ page, daemon }) => {
   await importLongActions(daemon);
   await page.goto(meetingURL(daemon, { workspace: 'directory', directoryPersonID: daemon.personID }));
+  await openMeetingActivity(page);
   const panel = page.getByRole('region', { name: 'Meeting activity', exact: true });
   const firstAction = panel.getByText('Archived action 1', { exact: true });
   await expect(firstAction).toBeVisible();
@@ -479,9 +496,13 @@ test('closing the reader removes its scope and cancels a pending continuation', 
     await expect(page).toHaveURL((url) => url.searchParams.get('workspace') === 'directory');
     await network.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
     await page.getByRole('button', { name: 'Everything', exact: true }).click();
+    // Entering Everything from Directory applies the seven-day default;
+    // the fixture's meetings are older.
+    await page.getByRole('radio', { name: 'All time', exact: true }).click();
     const search = page.getByRole('searchbox', { name: 'Search everything', exact: true });
     await search.fill('Generic');
     await search.press('Enter');
+    await openMeetingActivity(page, /· 1 meetings$/);
     const finalPanel = page.getByRole('region', { name: 'Meeting activity', exact: true });
     await expect(finalPanel.getByText('No recorded action items', { exact: true })).toBeVisible();
     await expect(finalPanel.getByText('Archived action 201', { exact: true })).toHaveCount(0);
