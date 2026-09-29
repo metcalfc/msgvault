@@ -856,3 +856,23 @@ func TestClientSettlesEveryReservationExactlyOnceUnderConcurrency(t *testing.T) 
 	assert.LessOrEqual(calls.Load(), int64(ledger.recorded), "nothing reached the provider unrecorded")
 	assert.Positive(ledger.released+ledger.seen-ledger.accepted, "the run exercised refusals")
 }
+
+// TestPerRunUnknownUsageStopSurvivesAConcurrentMeasuredResponse: once a
+// per-run budget saw a response without usage, the run's total spend is
+// unknowable for good. A sibling that was already in flight and comes back
+// measured must not lift the stop.
+func TestPerRunUnknownUsageStopSurvivesAConcurrentMeasuredResponse(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	budget := &Budget{MaxRequests: 100, StopUSD: 1, InputUSDPerM: 1, OutputUSDPerM: 1, PerRun: true}
+	unmeasured, err := budget.reserve()
+	require.NoError(err)
+	measured, err := budget.reserve()
+	require.NoError(err)
+	budget.record(unmeasured, Usage{})
+	budget.record(measured, Usage{InputTokens: new(int64(10)), OutputTokens: new(int64(1)), Complete: true})
+	_, err = budget.reserve()
+	require.ErrorIs(err, ErrUsageUnknown, "the per-run unknown-usage stop is permanent")
+	assert.Equal(stickyUntil, budget.State().UsageUnknownUntil)
+	assert.Zero(budget.State().InFlight)
+}

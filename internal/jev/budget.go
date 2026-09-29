@@ -248,7 +248,12 @@ func (b *Budget) record(admitted reservation, usage Usage) {
 	b.settle(admitted)
 	b.failures = 0
 	b.openUntil = time.Time{}
-	b.unknownUntil = time.Time{}
+	if !b.usageStoppedForRun() {
+		// A measured answer ends a day budget's cool-down pause. A per-run
+		// stop is permanent: a sibling that was already in flight cannot
+		// make the run's total spend knowable again.
+		b.unknownUntil = time.Time{}
+	}
 	if usage.InputTokens == nil || usage.OutputTokens == nil {
 		if b.priced() {
 			// The day's spend is now unknowable; pause for one cool-down
@@ -295,6 +300,12 @@ func (b *Budget) fail(admitted reservation) {
 	if b.failures >= b.threshold() {
 		b.openUntil = b.now().Add(b.cooldown())
 	}
+}
+
+// usageStoppedForRun reports whether a per-run budget has permanently
+// stopped on unknowable usage. The caller holds the lock.
+func (b *Budget) usageStoppedForRun() bool {
+	return b.PerRun && b.unknownUntil.Equal(stickyUntil)
 }
 
 // stickyUntil is a deadline no clock reaches: a per-run stop never expires.
