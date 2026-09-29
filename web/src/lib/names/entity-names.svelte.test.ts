@@ -316,6 +316,30 @@ describe('EntityNames', () => {
     expect(server.requests).toHaveLength(2);
   });
 
+  it('retries a failed refresh of an invalidated name after the failure delay, not the staleness bound', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const names = { person: { 7: 'Avery Before' } } as Names;
+    const server = labelsServer(names);
+    const resolver = new EntityNames(server.client);
+    await resolver.load('person', [7]);
+    names.person[7] = 'Avery After';
+    server.setFailing(true);
+
+    resolver.invalidate('person', [7]);
+    expect(resolver.label('person', 7)).toBe('Avery Before');
+    await vi.waitFor(() => expect(server.requests).toHaveLength(2));
+    await settle();
+    expect(resolver.label('person', 7)).toBe('Avery Before');
+    await settle();
+    expect(server.requests).toHaveLength(2);
+
+    server.setFailing(false);
+    vi.setSystemTime(Date.now() + RETRY_AFTER_MS);
+    expect(resolver.label('person', 7)).toBe('Avery Before');
+    await vi.waitFor(() => expect(resolver.label('person', 7)).toBe('Avery After'));
+    expect(server.requests).toHaveLength(3);
+  });
+
   it('shares one resolver per client', () => {
     const client = labelsServer().client;
 

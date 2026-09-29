@@ -24,9 +24,13 @@ export const RETRY_AFTER_MS = 10_000;
 /** A settled answer older than this is still shown, and a render refreshes it. */
 export const STALE_AFTER_MS = 5 * 60_000;
 
-/** One answer. `checkedAt` is when the server last answered, or failed to. */
-type NamedEntry = { state: 'named'; label: string; identity?: string; checkedAt: number };
-type Entry = NamedEntry | { state: 'unknown'; checkedAt: number } | { state: 'failed'; checkedAt: number };
+/**
+ * One answer. `dueAt` is when a render should ask the server again: a
+ * settled answer after STALE_AFTER_MS, a failed request (including a failed
+ * refresh that keeps an older answer on screen) after RETRY_AFTER_MS.
+ */
+type NamedEntry = { state: 'named'; label: string; identity?: string; dueAt: number };
+type Entry = NamedEntry | { state: 'unknown'; dueAt: number } | { state: 'failed'; dueAt: number };
 type Queue = Record<EntityKind, Set<number>>;
 
 const KINDS: readonly EntityKind[] = ['person', 'participant', 'organization'];
@@ -86,8 +90,7 @@ export class EntityNames {
   /** Whether a render should ask the server: no answer, a stale one, or a failure long enough ago. */
   #due(entry: Entry | undefined, now = Date.now()): boolean {
     if (!entry) return true;
-    const age = now - entry.checkedAt;
-    return age >= (entry.state === 'failed' ? RETRY_AFTER_MS : STALE_AFTER_MS);
+    return now >= entry.dueAt;
   }
 
   /**
@@ -155,11 +158,11 @@ export class EntityNames {
     this.#bump(key);
     const current = untrack(() => this.#entries.get(key));
     if (current?.state === 'named' && current.label === name) {
-      this.#entries.set(key, { ...current, checkedAt: Date.now() });
+      this.#entries.set(key, { ...current, dueAt: Date.now() + STALE_AFTER_MS });
       return;
     }
     // A participant's identity is its own; a new name for "who" leaves it to the server.
-    this.#entries.set(key, { state: 'named', label: name, checkedAt: Date.now() });
+    this.#entries.set(key, { state: 'named', label: name, dueAt: Date.now() + STALE_AFTER_MS });
   }
 
   /**
@@ -180,7 +183,7 @@ export class EntityNames {
         this.#bump(key);
         this.#pending.delete(key);
         const entry = this.#entries.get(key);
-        if (entry) this.#entries.set(key, { ...entry, checkedAt: Number.NEGATIVE_INFINITY });
+        if (entry) this.#entries.set(key, { ...entry, dueAt: Number.NEGATIVE_INFINITY });
       }
     });
   }
@@ -265,7 +268,7 @@ export class EntityNames {
     } catch {
       answers = undefined;
     }
-    const checkedAt = Date.now();
+    const now = Date.now();
     for (const kind of KINDS) {
       const found = new Map<number, { label: string; identity?: string }>();
       for (const answer of answers?.[kind] ?? []) {
@@ -286,14 +289,15 @@ export class EntityNames {
         }
         const current = this.#entries.get(key);
         if (!answers) {
-          // A failed refresh keeps the answer on screen until it is due again.
-          this.#entries.set(key, current && current.state !== 'failed'
-            ? { ...current, checkedAt }
-            : { state: 'failed', checkedAt });
+          // A failed refresh keeps the older answer on screen, and a later
+          // render retries it as soon as it would retry any failure.
+          const dueAt = now + RETRY_AFTER_MS;
+          this.#entries.set(key, current && current.state !== 'failed' ? { ...current, dueAt } : { state: 'failed', dueAt });
           continue;
         }
         const name = found.get(id);
-        this.#entries.set(key, name ? { state: 'named', ...name, checkedAt } : { state: 'unknown', checkedAt });
+        const dueAt = now + STALE_AFTER_MS;
+        this.#entries.set(key, name ? { state: 'named', ...name, dueAt } : { state: 'unknown', dueAt });
       }
     }
     return answers !== undefined;
