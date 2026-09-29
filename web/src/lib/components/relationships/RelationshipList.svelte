@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, EmptyState, SearchInput, SegmentedControl } from '@kenn-io/kit-ui';
+  import { Button, EmptyState, Notice, SearchInput, SegmentedControl } from '@kenn-io/kit-ui';
 
   import type { DomainSummary, ExploreCacheUnavailable, PersonSummary } from '../../explore/models';
   import type { RelationshipFacet, RelationshipRow } from '../../relationships/models';
@@ -196,18 +196,23 @@
   </div>
 
   {#if degraded?.readiness === 'building'}
-    <section class="named-state" role="status">
-      <strong>Preparing relationship ranking…</strong>
-      <span>This view will load automatically when the analytical cache is ready.</span>
-    </section>
+    <Notice
+      tone="warning"
+      toneLabel="Preparing"
+      title="Preparing relationship ranking…"
+      message="This view will load automatically when the analytical cache is ready."
+    />
   {:else if degraded}
-    <section class="named-state" role="status">
-      <strong>Relationship ranking needs the analytical cache/engine</strong>
-      <span>Rebuild the analytical cache with <code>msgvault build-cache</code>, then retry.</span>
-      <div><Button label="Open Everything" surface="outline" onclick={() => onOpenEverything?.()} /></div>
-    </section>
+    <Notice
+      tone="warning"
+      toneLabel="Unavailable"
+      title="Relationship ranking needs the analytical cache/engine"
+      message="Rebuild the analytical cache with msgvault build-cache, then retry."
+      actionLabel="Open Everything"
+      onaction={() => onOpenEverything?.()}
+    />
   {:else if error && views.length === 0}
-    <section class="named-state" role="alert">{error}</section>
+    <Notice tone="error" message={error} />
   {:else}
     {#if error}
       <!-- A failed page fetch mid-scroll must not wipe the rows already
@@ -369,17 +374,6 @@
     color: var(--text-muted);
     font-size: var(--font-size-xs);
     text-align: center;
-  }
-
-  /* A named state reads as a toned row with a 2px bar, not a box. */
-  .named-state {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    border-left: 2px solid var(--status-warning-ink);
-    padding: var(--space-3);
-    background: var(--status-warning-bg);
-    font-size: var(--font-size-sm);
   }
 
   .results-grid {

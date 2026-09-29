@@ -293,7 +293,7 @@ describe('RelationshipList', () => {
   it('still replaces the list with the error state when nothing loaded', () => {
     render(RelationshipList, { ...baseProps(), rows: [], error: 'boom' });
 
-    expect(screen.getByRole('alert').textContent).toBe('boom');
+    expect(screen.getByRole('alert').textContent).toContain('boom');
     expect(screen.queryByRole('grid')).toBeNull();
   });
 

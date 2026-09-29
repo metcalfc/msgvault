@@ -1,4 +1,5 @@
 <script lang="ts">
+  import StatusNotice from '../common/StatusNotice.svelte';
   import { Button, Spinner, Toggle } from '@kenn-io/kit-ui';
   import { onDestroy, tick, untrack } from 'svelte';
 
@@ -79,7 +80,7 @@
   </header>
 
   {#if controller.error}
-    <div class="notice" role="alert">
+    <StatusNotice>
       <span>{controller.error}</span>
       <Button
         size="sm"
@@ -88,7 +89,7 @@
         disabled={controller.loading}
         onclick={() => void controller.retryState()}
       />
-    </div>
+    </StatusNotice>
   {/if}
 
   {#if controller.unavailable}
@@ -175,9 +176,4 @@
   h3, p, dl, dd { margin: 0; }
   .state-copy { display: grid; justify-items: start; gap: var(--space-3); min-width: 0; }
   .working { display: flex; align-items: center; gap: var(--space-2); }
-  .notice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-left: 2px solid var(--status-error-ink); background: var(--status-error-bg); color: var(--status-error-ink); font-size: var(--font-size-sm); }
-
-  @media (max-width: 760px) {
-    .notice { align-items: stretch; flex-direction: column; }
-  }
 </style>

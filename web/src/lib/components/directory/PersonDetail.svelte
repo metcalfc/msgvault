@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { Button, EmptyState } from '@kenn-io/kit-ui';
+  import { Button, EmptyState, Notice } from '@kenn-io/kit-ui';
   import type { MeetingRef, PersonIdentifier } from '../../api/generated/models';
   import MeetingPanel from '../meetings/MeetingPanel.svelte';
   import type { APIClient } from '../../api/client';
@@ -212,7 +212,7 @@
   </div>
 
   {#each Object.entries(bundle.errors).filter(([section]) => section !== 'files') as [section, message]}
-    <p class="section-error" role="alert">{sectionNames[section as DirectoryReadSection]}: {message}</p>
+    <Notice tone="error" message={`${sectionNames[section as DirectoryReadSection]}: ${message}`} />
   {/each}
 
   {#if activeTab === 'media'}
@@ -347,7 +347,6 @@
   h2, h3, p, ul { margin: 0; }
   small { color: var(--text-muted); font-size: var(--font-size-sm); }
   ul { padding-left: var(--space-5); }
-  .section-error { margin: 0; padding: var(--space-2) var(--space-3); border-left: 2px solid var(--status-error-ink); background: var(--status-error-bg); color: var(--status-error-ink); font-size: var(--font-size-sm); }
   .person-header { display: grid; gap: var(--space-1); }
   .person-title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
   .person-subtitle { color: var(--text-secondary); font-size: var(--font-size-sm); }

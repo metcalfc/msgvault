@@ -1,7 +1,8 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-  import { Button, Menu, MenuContent, MenuItem, MenuTrigger, SegmentedControl } from '@kenn-io/kit-ui';
+  import { Button, Menu, MenuContent, MenuItem, MenuTrigger, Notice, SegmentedControl } from '@kenn-io/kit-ui';
+  import StatusNotice from '../common/StatusNotice.svelte';
 
   import type { APIClient } from '../../api/client';
   import type { PersonAttributeGroup, PersonContactPoint } from '../../api/generated/models';
@@ -434,18 +435,18 @@
       </div>
     </div>
     {#if staleBanner === 'identity_cache_stale'}
-      <section class="named-state" role="alert">
+      <StatusNotice>
         <span>{STALE_CACHE_MESSAGE}</span>
         <Button label="Retry" surface="soft" size="sm" disabled={retrying} onclick={() => void retryRefresh()} />
-      </section>
+      </StatusNotice>
     {/if}
     {#if promotionFailure}
-      <section class="named-state" role="alert">
-        <span>
-          {promotionFailure.message}
-          {#if promotionFailure.code === 'person_binding_conflict'} This participant already belongs to another Directory person; resolve that binding before saving it.{/if}
-        </span>
-      </section>
+      <Notice
+        tone="error"
+        message={promotionFailure.code === 'person_binding_conflict'
+          ? `${promotionFailure.message} This participant already belongs to another Directory person; resolve that binding before saving it.`
+          : promotionFailure.message}
+      />
     {/if}
     <p class="counts" data-mono>
       {detail.activity_count.toLocaleString()} items · {detail.file_count.toLocaleString()} files ·
@@ -579,19 +580,6 @@
     font-size: var(--font-size-xs);
   }
 
-  /* A failure reads as a toned row with a 2px bar, not a box. */
-  .named-state {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    border-left: 2px solid var(--status-error-ink);
-    padding: var(--space-2) var(--space-3);
-    background: var(--status-error-bg);
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-  }
 
   .reach {
     display: flex;

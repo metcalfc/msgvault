@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Button, Checkbox, Spinner, TextInput, Toggle } from '@kenn-io/kit-ui';
+  import StatusNotice from '../common/StatusNotice.svelte';
+  import { Button, Checkbox, Notice, Spinner, TextInput, Toggle } from '@kenn-io/kit-ui';
   import { onDestroy, tick, untrack } from 'svelte';
 
   import type { APIClient } from '../../api/client';
@@ -159,7 +160,7 @@
       </header>
 
       {#if controller.enrollmentError}
-        <div class="notice notice--error" role="alert">
+        <StatusNotice>
           <span>{controller.enrollmentError}</span>
           <Button
             size="sm"
@@ -168,7 +169,7 @@
             disabled={controller.enrollmentLoading || controller.pending !== null}
             onclick={() => void controller.retryEnrollment()}
           />
-        </div>
+        </StatusNotice>
       {/if}
 
       {#if controller.enrollment}
@@ -200,7 +201,7 @@
         <p class="muted">This person is not enrolled, so no brief is generated or shown.</p>
       {:else if controller.enrollment}
         {#if controller.briefError}
-          <div class="notice notice--error" role="alert">
+          <StatusNotice>
             <span>{controller.briefError}</span>
             <Button
               size="sm"
@@ -209,11 +210,11 @@
               disabled={controller.briefLoading || controller.pending !== null}
               onclick={() => void controller.retryBrief()}
             />
-          </div>
+          </StatusNotice>
         {/if}
 
         {#if controller.actionError}
-          <div class="notice notice--error" role="alert"><span>{controller.actionError}</span></div>
+          <Notice tone="error" message={controller.actionError} />
         {/if}
 
         {#if controller.pending === 'generate'}
@@ -367,7 +368,7 @@
           </div>
 
           {#if controller.versionsError}
-            <div class="notice notice--error" role="alert">
+            <StatusNotice>
               <span>{controller.versionsError}</span>
               <Button
                 size="sm"
@@ -376,7 +377,7 @@
                 disabled={controller.versionsLoading}
                 onclick={() => void controller.retryVersions()}
               />
-            </div>
+            </StatusNotice>
           {/if}
 
           {#if controller.versionsShown && controller.versions.length > 0}
@@ -404,14 +405,11 @@
 
 <style>
   .expansion { display: grid; gap: var(--space-3); min-width: 0; }
-  .enrollment-row, .notice, .actions { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+  .enrollment-row, .actions { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
   .enrollment-row, .actions { align-items: center; justify-content: flex-start; flex-wrap: wrap; }
   h3, h4, p, ul { margin: 0; }
   .muted, .version-line, .meta, .evidence span { color: var(--text-muted); font-size: var(--font-size-sm); }
   .working { display: flex; align-items: center; gap: var(--space-2); }
-  /* A failure reads as a toned row with a 2px bar, not a box. */
-  .notice { align-items: center; padding: var(--space-2) var(--space-3); font-size: var(--font-size-sm); }
-  .notice--error { border-left: 2px solid var(--status-error-ink); background: var(--status-error-bg); color: var(--status-error-ink); }
   .run-outcome { color: var(--text-secondary); font-size: var(--font-size-sm); }
   .paragraph { line-height: var(--leading-reading); overflow-wrap: anywhere; }
   .paragraph--plain { padding: var(--space-1) 0; }
@@ -427,7 +425,4 @@
   .unsupported { color: var(--status-error-ink) !important; }
   .version-list span { color: var(--text-muted); font-size: var(--font-size-sm); }
 
-  @media (max-width: 760px) {
-    .notice { align-items: stretch; flex-direction: column; }
-  }
 </style>

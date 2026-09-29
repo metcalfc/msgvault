@@ -1,4 +1,5 @@
 <script lang="ts">
+  import StatusNotice from '../common/StatusNotice.svelte';
   import { Button, Chip, EmptyState, Spinner, Toggle } from '@kenn-io/kit-ui';
   import { onDestroy, tick, untrack } from 'svelte';
 
@@ -80,7 +81,7 @@
   </header>
 
   {#if controller.trackingError}
-    <div class="notice" role="alert">
+    <StatusNotice>
       <span>{controller.trackingError}</span>
       <Button
         size="sm"
@@ -89,7 +90,7 @@
         disabled={controller.trackingLoading || controller.pending}
         onclick={() => void retryTracking()}
       />
-    </div>
+    </StatusNotice>
   {/if}
 
   {#if controller.tracking}
@@ -140,7 +141,7 @@
       </div>
 
       {#if controller.catalogError}
-        <div class="notice" role="alert">
+        <StatusNotice>
           <span>{controller.catalogError}</span>
           <Button
             size="sm"
@@ -149,7 +150,7 @@
             disabled={controller.catalogLoading}
             onclick={() => void controller.retryCatalog(catalogRetryIncludesSensitive)}
           />
-        </div>
+        </StatusNotice>
       {/if}
 
       {#if controller.targets.length > 0}
@@ -176,15 +177,9 @@
 
 <style>
   h3, h4, p { margin: 0; }
-  .tracking-row, .notice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .tracking-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
   .tracking-row { justify-content: flex-start; }
   .working, .tracked-time { display: flex; align-items: center; gap: var(--space-2); }
   .catalog-disclosure summary { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-sm); }
   .catalog-disclosure[open] summary { margin-bottom: var(--space-3); }
-  /* A failure reads as a toned row with a 2px bar, not a box. */
-  .notice { padding: var(--space-2) var(--space-3); border-left: 2px solid var(--status-error-ink); background: var(--status-error-bg); color: var(--status-error-ink); font-size: var(--font-size-sm); }
-
-  @media (max-width: 760px) {
-    .notice { align-items: stretch; flex-direction: column; }
-  }
 </style>
