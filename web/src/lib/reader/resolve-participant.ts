@@ -17,7 +17,9 @@ function normalized(value: string): string {
 export async function resolveParticipantID(client: APIClient, address: string, signal?: AbortSignal): Promise<number | undefined> {
   const wanted = normalized(address);
   if (!wanted) return undefined;
-  const { data } = await completeParticipants({ query: address.trim(), limit: 20 }, { ...client, signal });
+  const { data, response } = await completeParticipants({ query: address.trim(), limit: 20 }, { ...client, signal });
+  // A failed request is not "no such person": throw so callers can retry.
+  if (!response.ok || !data) throw new Error(`Participant lookup failed (${response.status})`);
   const match = (data?.rows ?? []).find((row) => normalized(row.value) === wanted);
   return match?.participant_id;
 }

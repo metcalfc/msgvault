@@ -19,24 +19,37 @@
 
   const parsed = $derived(parseAddress(value));
   let notice = $state('');
-  let resolved: number | undefined;
-  let resolvedFor = '';
+  // One lookup per address: a pending lookup is shared by repeat clicks, a
+  // settled answer (a person, or definitely none) is kept, and a failed
+  // request is forgotten so the next click retries.
+  let lookupFor = '';
+  let lookup: Promise<number | undefined> | undefined;
 
-  async function participantID(): Promise<number | undefined> {
-    if (!client) return undefined;
-    if (resolvedFor === parsed.address) return resolved;
-    resolvedFor = parsed.address;
-    try {
-      resolved = await resolveParticipantID(client, parsed.address);
-    } catch {
-      resolved = undefined;
-    }
-    return resolved;
+  function participantID(): Promise<number | undefined> {
+    const address = parsed.address;
+    if (!client) return Promise.resolve(undefined);
+    if (lookup && lookupFor === address) return lookup;
+    lookupFor = address;
+    const pending = resolveParticipantID(client, address);
+    lookup = pending;
+    pending.catch(() => {
+      if (lookup === pending) {
+        lookup = undefined;
+        lookupFor = '';
+      }
+    });
+    return pending;
   }
 
   async function withPerson(action: (id: number) => void): Promise<void> {
     notice = '';
-    const id = await participantID();
+    let id: number | undefined;
+    try {
+      id = await participantID();
+    } catch {
+      notice = `Could not look up ${parsed.address}. Try again.`;
+      return;
+    }
     if (id === undefined) {
       notice = `No person found for ${parsed.address}.`;
       return;
