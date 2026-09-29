@@ -70,10 +70,15 @@ func defaultPersonEnrichmentCommandDeps(contexts ...context.Context) personEnric
 			deps.newManualWorker = func(
 				workerCtx context.Context, st *store.Store, enrichmentConfig personenrichment.Config,
 			) (personEnrichmentScheduleWorker, error) {
+				judge, err := newJevIdentityJudge(currentCfg, st, false)
+				if err != nil {
+					return nil, err
+				}
 				return newPersonEnrichmentCLIWorker(
 					workerCtx, st, enrichmentConfig,
 					personEnrichmentEnvironmentLookup(currentCfg),
 					personEnrichmentProviderCredentialLookup(currentCfg),
+					judge,
 				)
 			}
 			deps.openStore = func() (*store.Store, func(), error) {
@@ -102,6 +107,7 @@ func defaultPersonEnrichmentCommandDeps(contexts ...context.Context) personEnric
 				ctx, st, enrichmentConfig,
 				personEnrichmentEnvironmentLookup(nil),
 				personEnrichmentProviderCredentialLookup(nil),
+				nil,
 			)
 		},
 		clock: time.Now,
@@ -159,6 +165,10 @@ type personEnrichmentStatusOutput struct {
 	Profiles     []personenrichment.ProviderProfile    `json:"profiles"`
 	Consents     []store.PersonEnrichmentConsentStatus `json:"consents"`
 	Suppressions []store.PersonEnrichmentSuppression   `json:"suppressions"`
+	// IdentityUncertain lists attempts the semantic identity check could not
+	// decide, newest first, so a person can review them. No claim from these
+	// attempts was applied.
+	IdentityUncertain []store.PersonEnrichmentIdentityJudgment `json:"identity_uncertain"`
 }
 
 func newPersonEnrichmentStatusCommand(deps personEnrichmentCommandDeps) *cobra.Command {
@@ -198,13 +208,26 @@ func newPersonEnrichmentStatusCommand(deps personEnrichmentCommandDeps) *cobra.C
 			if err != nil {
 				return err
 			}
+			output.IdentityUncertain, err = st.ListPersonEnrichmentIdentityJudgmentsContext(command.Context(),
+				store.PersonEnrichmentIdentityJudgmentFilter{
+					Outcome: personenrichment.IdentityJudgmentUncertain, Limit: limit,
+				})
+			if err != nil {
+				return err
+			}
 			if jsonOutput {
 				return json.MarshalEncode(jsontext.NewEncoder(command.OutOrStdout()), output, json.Deterministic(true))
 			}
-			_, err = fmt.Fprintf(command.OutOrStdout(), "Profiles: %d\nSuppressions shown: %d\n",
-				len(output.Profiles), len(output.Suppressions))
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Profiles: %d\nSuppressions shown: %d\nIdentity uncertain: %d\n",
+				len(output.Profiles), len(output.Suppressions), len(output.IdentityUncertain))
 			if err != nil {
 				return fmt.Errorf("write person enrichment status: %w", err)
+			}
+			for _, judgment := range output.IdentityUncertain {
+				_, _ = fmt.Fprintf(command.OutOrStdout(),
+					"- attempt %d person %d: exact=%s name_compatible=%.2f company_same=%.2f name_conflict=%.2f (%s)\n",
+					judgment.AttemptID, judgment.PersonID, judgment.ExactClass, judgment.NameCompatible,
+					judgment.CompanySame, judgment.NameConflict, judgment.JudgedAt.Format("2006-01-02"))
 			}
 			return nil
 		},
@@ -754,6 +777,7 @@ func newPersonEnrichmentCLIWorker(
 	ctx context.Context, st *store.Store, config personenrichment.Config,
 	suppressionLookup personenrichment.CredentialLookup,
 	providerLookup personenrichment.ProviderCredentialLookup,
+	identityJudge personenrichment.IdentityJudge,
 ) (personEnrichmentScheduleWorker, error) {
 	if suppressionLookup == nil || providerLookup == nil {
 		return nil, errors.New("person enrichment worker requires suppression and provider credential lookups")
@@ -784,7 +808,8 @@ func newPersonEnrichmentCLIWorker(
 		switch provider.Kind {
 		case personenrichment.ProviderExa:
 			factories[provider.Name] = func(config personenrichment.ProviderConfig, credential string) (personenrichment.Provider, error) {
-				return personenrichment.NewExaProvider(config, credential, http.DefaultClient)
+				return personenrichment.NewExaProvider(config, credential, http.DefaultClient,
+					exaIdentityReviewOptions(identityJudge)...)
 			}
 		case personenrichment.ProviderSixtyfour:
 			factories[provider.Name] = func(config personenrichment.ProviderConfig, credential string) (personenrichment.Provider, error) {
@@ -800,5 +825,16 @@ func newPersonEnrichmentCLIWorker(
 		Owner: "daemon-person-enrichment-manual", LeaseDuration: config.LeaseDuration,
 		RenewEvery: config.LeaseDuration / 4, Clock: time.Now,
 		Jitter: func(delay time.Duration) time.Duration { return delay }, ProviderConfigs: providerConfigs,
+		IdentityJudge: identityJudge,
 	})
+}
+
+// exaIdentityReviewOptions enables the partial-match pass-through only when
+// a judge exists to review it; without one the Exa adapter rejects a partial
+// match at decode exactly as before.
+func exaIdentityReviewOptions(judge personenrichment.IdentityJudge) []personenrichment.ExaOption {
+	if judge == nil {
+		return nil
+	}
+	return []personenrichment.ExaOption{personenrichment.WithExaIdentityReview()}
 }

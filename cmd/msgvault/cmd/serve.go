@@ -531,10 +531,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 	); err != nil {
 		return fmt.Errorf("schedule people sweep: %w", err)
 	}
+	identityJudge, err := newJevIdentityJudge(cfg, s, true)
+	if err != nil {
+		return fmt.Errorf("configure Jev identity judge: %w", err)
+	}
 	if err := registerPersonEnrichmentJob(
 		ctx, sched, s, cfg.People.Enrichment, personEnrichmentRuntimeCredentials{
-			Suppression: personEnrichmentEnvironmentLookup(cfg),
-			Provider:    personEnrichmentProviderCredentialLookup(cfg),
+			Suppression:   personEnrichmentEnvironmentLookup(cfg),
+			Provider:      personEnrichmentProviderCredentialLookup(cfg),
+			IdentityJudge: identityJudge,
 		}); err != nil {
 		return fmt.Errorf("schedule person enrichment: %w", err)
 	}
@@ -3538,6 +3543,9 @@ func canonicalPersonEnrichmentOccurrence(occurrence time.Time) string {
 type personEnrichmentRuntimeCredentials struct {
 	Suppression personenrichment.CredentialLookup
 	Provider    personenrichment.ProviderCredentialLookup
+	// IdentityJudge is the scheduled runs' semantic identity check, or nil
+	// when [jev] or [jev.identity_verification] is off.
+	IdentityJudge personenrichment.IdentityJudge
 }
 
 func registerPersonEnrichmentJob(
@@ -3598,7 +3606,8 @@ func registerPersonEnrichmentJob(
 		switch provider.Kind {
 		case personenrichment.ProviderExa:
 			factories[provider.Name] = func(config personenrichment.ProviderConfig, credential string) (personenrichment.Provider, error) {
-				return personenrichment.NewExaProvider(config, credential, http.DefaultClient)
+				return personenrichment.NewExaProvider(config, credential, http.DefaultClient,
+					exaIdentityReviewOptions(credentials.IdentityJudge)...)
 			}
 		case personenrichment.ProviderSixtyfour:
 			factories[provider.Name] = func(config personenrichment.ProviderConfig, credential string) (personenrichment.Provider, error) {
@@ -3622,7 +3631,7 @@ func registerPersonEnrichmentJob(
 		Owner: "daemon-person-enrichment", LeaseDuration: enrichmentConfig.LeaseDuration,
 		RenewEvery: enrichmentConfig.LeaseDuration / 4, Clock: time.Now,
 		Jitter:          func(delay time.Duration) time.Duration { return delay },
-		ProviderConfigs: providerConfigs,
+		ProviderConfigs: providerConfigs, IdentityJudge: credentials.IdentityJudge,
 	})
 	if err != nil {
 		return fmt.Errorf("configure person enrichment worker: %w", err)
