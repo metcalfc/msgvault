@@ -369,3 +369,51 @@ func TestPersonEnrichmentAttemptRejectsRequestHashCollisionAcrossPeople(t *testi
 	assert.False(t, created)
 	assert.Equal(t, claims[0].start.PersonID, first.Token.WorkPersonID)
 }
+
+// TestPersonEnrichmentUncertainStartChargesAtLeastTheReservation pins how an
+// uncertain start settles: a hard-cap attempt charges max(observed,
+// reserved), and a profile without a hard cap charges what was observed.
+func TestPersonEnrichmentUncertainStartChargesAtLeastTheReservation(t *testing.T) {
+	tests := []struct {
+		name     string
+		hard     bool
+		observed personenrichment.Cost
+		want     int64
+	}{
+		{name: "hard cap, nothing observed", hard: true, want: 600},
+		{name: "hard cap, smaller firm charge", hard: true, observed: personenrichment.Cost{Currency: "USD", AmountMicros: 300}, want: 600},
+		{name: "hard cap, estimated charge", hard: true, observed: personenrichment.Cost{Currency: "USD", AmountMicros: 900, Estimated: true}, want: 600},
+		{name: "hard cap, larger firm charge", hard: true, observed: personenrichment.Cost{Currency: "USD", AmountMicros: 800}, want: 800},
+		{name: "no hard cap, estimated charge", observed: personenrichment.Cost{Currency: "USD", AmountMicros: 2000, Estimated: true}, want: 2000},
+		{name: "no hard cap, nothing observed", want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requirements := require.New(t)
+			capUSDMicros := int64(0)
+			if tt.hard {
+				capUSDMicros = 10000
+			}
+			profile := enrichmentBudgetProfile(t, 10, capUSDMicros, capUSDMicros, capUSDMicros)
+			st, claims := newBudgetClaims(t, profile)
+			start := claims[0].start
+			if tt.hard {
+				start.HardCostCap = true
+				start.GuaranteedMaxCost = personenrichment.Cost{Currency: "USD", AmountMicros: 600}
+			}
+			attempt, _, err := st.BeginAttempt(t.Context(), claims[0].token, start)
+			requirements.NoError(err)
+			token := claims[0].token
+			token.AttemptID = attempt.ID
+			requirements.NoError(st.MarkUncertainStart(t.Context(), token, personenrichment.SafeFailure{
+				Class: personenrichment.FailureUncertainStart, Message: "start outcome is uncertain", Cost: tt.observed,
+			}))
+			var charged, reserved int64
+			requirements.NoError(st.DB().QueryRowContext(t.Context(), st.Rebind(`SELECT cost_charged_usd_micros,
+				cost_reserved_usd_micros FROM person_enrichment_run_counters WHERE run_id = ?`), start.RunID).
+				Scan(&charged, &reserved))
+			assert.Equal(t, tt.want, charged)
+			assert.Zero(t, reserved, "the reservation is settled")
+		})
+	}
+}

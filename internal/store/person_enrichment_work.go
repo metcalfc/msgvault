@@ -1287,6 +1287,11 @@ func (s *Store) schedulePersonEnrichmentAction(
 				return errors.New("person enrichment poll result does not match the bound provider job")
 			}
 		}
+		if failure != nil {
+			if err := chargePersonEnrichmentRetryCostTx(ctx, tx, s.dialect, token.AttemptID, failure.Cost); err != nil {
+				return err
+			}
+		}
 		var failureClass any
 		incrementAttempt := int64(0)
 		if failure != nil {
@@ -1322,10 +1327,12 @@ func (s *Store) MarkUncertainStart(
 			return err
 		}
 		// An ambiguous start is terminal for scheduling but keeps its distinct
-		// audit state. Charge the reserved maximum because the provider may have
-		// accepted the request, then detach the work without replaying it.
-		if _, err := reconcilePersonEnrichmentCostTx(ctx, tx, s.dialect, token.AttemptID,
-			personenrichment.Cost{}, true, s.personEnrichmentTime()); err != nil {
+		// audit state. Charge at least the reserved maximum because the
+		// provider may have accepted the request, plus any charge an earlier
+		// call on this attempt reported, then detach the work without
+		// replaying it.
+		if err := reconcileUncertainPersonEnrichmentCostTx(ctx, tx, s.dialect, token.AttemptID,
+			failure.Cost, s.personEnrichmentTime()); err != nil {
 			return err
 		}
 		result, err := tx.ExecContext(ctx, `UPDATE person_enrichment_attempts
@@ -2139,12 +2146,95 @@ func reconcilePersonEnrichmentCostTx(
 			return false, fmt.Errorf("reconcile person enrichment cost: %w", err)
 		}
 	}
+	// A hard-cap attempt records its one settled charge. A profile without a
+	// hard cap may already have recorded charges from calls that were
+	// retried (chargePersonEnrichmentRetryCostTx), so its charge adds to them.
+	actualSQL := `actual_cost_usd_micros = ?`
+	if !hard && actualValue != nil {
+		actualSQL = `actual_cost_usd_micros = COALESCE(actual_cost_usd_micros, 0) + ?`
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE person_enrichment_attempts
-		SET reserved_cost_usd_micros = 0, actual_cost_usd_micros = ? WHERE id = ?`,
+		SET reserved_cost_usd_micros = 0, `+actualSQL+` WHERE id = ?`,
 		actualValue, attemptID); err != nil {
 		return false, fmt.Errorf("record person enrichment actual cost: %w", err)
 	}
 	return violation, nil
+}
+
+// reconcileUncertainPersonEnrichmentCostTx settles an uncertain start. A
+// hard-cap attempt charges max(observed, reserved): the reserved maximum
+// unless a firm observed charge exceeds it, which is the accounting violation
+// reconcile reports. A profile without a hard cap reserved nothing and
+// charges what the provider reported for the attempt's calls.
+func reconcileUncertainPersonEnrichmentCostTx(
+	ctx context.Context, tx *loggedTx, dialect Dialect, attemptID int64,
+	observed personenrichment.Cost, now time.Time,
+) error {
+	var hard bool
+	var reserved int64
+	if err := tx.QueryRowContext(ctx, `SELECT hard_cost_cap_enforced, reserved_cost_usd_micros
+		FROM person_enrichment_attempts WHERE id = ?`+dialect.SelectForUpdate(), attemptID).
+		Scan(&hard, &reserved); err != nil {
+		return fmt.Errorf("lock uncertain person enrichment attempt cost: %w", err)
+	}
+	missing := observed == (personenrichment.Cost{})
+	if hard && (missing || observed.Estimated || observed.AmountMicros <= reserved) {
+		missing = true
+	}
+	_, err := reconcilePersonEnrichmentCostTx(ctx, tx, dialect, attemptID, observed, missing, now)
+	return err
+}
+
+// chargePersonEnrichmentRetryCostTx records the charge a provider reported
+// for a call that will be retried, so run and day counters include it even
+// though the attempt settles later. It applies only without a hard cap: a
+// hard-cap attempt's guaranteed maximum was reserved at BeginAttempt and is
+// settled once when the attempt ends. A zero or invalid charge adds nothing.
+func chargePersonEnrichmentRetryCostTx(
+	ctx context.Context, tx *loggedTx, dialect Dialect, attemptID int64, cost personenrichment.Cost,
+) error {
+	if cost.AmountMicros == 0 || cost.Currency != "USD" || cost.Validate() != nil {
+		return nil
+	}
+	var runID, personID int64
+	var fingerprint string
+	var hard bool
+	var created nullableTimestamp
+	if err := tx.QueryRowContext(ctx, `SELECT run_id, person_id, profile_fingerprint,
+		created_at, hard_cost_cap_enforced
+		FROM person_enrichment_attempts WHERE id = ?`+dialect.SelectForUpdate(), attemptID).Scan(
+		&runID, &personID, &fingerprint, &created, &hard); err != nil {
+		return fmt.Errorf("lock retried person enrichment attempt cost: %w", err)
+	}
+	if hard {
+		return nil
+	}
+	if !created.Valid {
+		return errors.New("person enrichment attempt has invalid creation day")
+	}
+	day := created.Time.UTC().Format("2006-01-02")
+	if _, _, _, err := lockPersonEnrichmentCountersTx(ctx, tx, dialect, runID, personID, fingerprint, day); err != nil {
+		return err
+	}
+	for _, update := range []struct {
+		query string
+		args  []any
+	}{
+		{`UPDATE person_enrichment_run_counters SET cost_charged_usd_micros = cost_charged_usd_micros + ?
+			WHERE run_id = ?`, []any{cost.AmountMicros, runID}},
+		{`UPDATE person_enrichment_person_day_counters SET cost_charged_usd_micros = cost_charged_usd_micros + ?
+			WHERE person_id = ? AND profile_fingerprint = ? AND utc_day = ?`, []any{cost.AmountMicros, personID, fingerprint, day}},
+		{`UPDATE person_enrichment_day_counters SET cost_charged_usd_micros = cost_charged_usd_micros + ?
+			WHERE profile_fingerprint = ? AND utc_day = ?`, []any{cost.AmountMicros, fingerprint, day}},
+		{`UPDATE person_enrichment_attempts
+			SET actual_cost_usd_micros = COALESCE(actual_cost_usd_micros, 0) + ? WHERE id = ?`,
+			[]any{cost.AmountMicros, attemptID}},
+	} {
+		if _, err := tx.ExecContext(ctx, update.query, update.args...); err != nil {
+			return fmt.Errorf("charge retried person enrichment cost: %w", err)
+		}
+	}
+	return nil
 }
 
 // LoadRequestInput is implemented in Task 5 so a restarted worker reconstructs

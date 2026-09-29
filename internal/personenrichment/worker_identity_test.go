@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -530,4 +531,68 @@ func TestWorkerStoresASemanticAcceptanceAtItsScoreAndOnlyVerifiedIDsSkipTheCheck
 	assert.NotEqual(second.ID, third.ID)
 	assert.Equal("identity_rejected", third.State,
 		"an ID stored below the verified confidence does not skip the name and company check")
+}
+
+// emptyThenRetryFactory returns a provider whose first lookup finds no entity
+// at an estimated charge and whose name-variant retry fails with retryErr.
+func emptyThenRetryFactory(f *workerFixture, retryErr error) map[string]personenrichment.ProviderFactory {
+	calls := 0
+	return map[string]personenrichment.ProviderFactory{
+		f.config.Name: func(personenrichment.ProviderConfig, string) (personenrichment.Provider, error) {
+			return &functionProvider{
+				start: func(context.Context, personenrichment.Request) (personenrichment.Attempt, error) {
+					calls++
+					if calls == 1 {
+						empty := personenrichment.Cost{Currency: "USD", AmountMicros: 2000, Estimated: true}
+						return personenrichment.Attempt{}, &personenrichment.NoEntityError{
+							Provider: &personenrichment.ProviderError{Class: personenrichment.FailureInvalidOutput,
+								RequestID: "empty-1", Cost: empty},
+							Cost: empty,
+						}
+					}
+					return personenrichment.Attempt{}, retryErr
+				},
+				poll: func(context.Context, personenrichment.Attempt) (personenrichment.Result, error) {
+					return personenrichment.Result{}, errors.New("unexpected poll")
+				},
+			}, nil
+		},
+	}
+}
+
+// TestWorkerCarriesTheEmptyLookupChargeThroughUncertainAndRetriedRetries: the
+// empty lookup was billed whatever its name-variant retry did. When the retry
+// times out (an uncertain start) or is rate limited (a scheduled retry), the
+// run and day counters still include that charge.
+func TestWorkerCarriesTheEmptyLookupChargeThroughUncertainAndRetriedRetries(t *testing.T) {
+	cases := map[string]struct {
+		retryErr error
+		state    string
+	}{
+		"uncertain start": {retryErr: context.DeadlineExceeded, state: "uncertain_start"},
+		"rate limited": {retryErr: &personenrichment.ProviderError{
+			Class: personenrichment.FailureRateLimited, Status: 429, RequestID: "variant-429",
+		}, state: "retry_wait"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			f := newWorkerFixture(t, "exa-carry-"+strings.ReplaceAll(name, " ", "-"), func(cfg *personenrichment.ProviderConfig) {
+				cfg.Mode = "people"
+				cfg.AllowedIdentifiers = []personenrichment.IdentifierClass{
+					personenrichment.IdentifierName, personenrichment.IdentifierCurrentCompany,
+				}
+			})
+			seedNameAndCompany(t, f, "Test Q. User", "Example Labs")
+			attempt := runPartialIdentityCase(t, f, emptyThenRetryFactory(f, tc.retryErr),
+				map[string]personenrichment.ProviderConfig{f.config.Name: f.config}, nil)
+			assert.Equal(tc.state, attempt.State)
+			assert.Equal(int64(2), runRequestsStarted(t, f))
+			assert.Equal(int64(2000), runCostCharged(t, f), "the run counter includes the empty lookup")
+			assert.Equal(int64(2000), dayCostCharged(t, f), "and so does the day counter")
+			require.NotNil(attempt.ActualCostUSDMicros)
+			assert.Equal(int64(2000), *attempt.ActualCostUSDMicros)
+		})
+	}
 }
