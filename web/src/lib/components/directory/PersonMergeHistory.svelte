@@ -3,6 +3,8 @@
   import { onDestroy, onMount, tick, untrack } from 'svelte';
 
   import type { APIClient } from '../../api/client';
+  import { listAttributeDefinitions } from '../../api/generated/api/api';
+  import { entityNames } from '../../names/entity-names.svelte';
   import {
     PersonMergeHistoryController,
     type PersonSplitCommittedContext
@@ -27,7 +29,12 @@
     untrack(() => personID),
     (context) => onSplitCommitted(context)
   );
+  const names = entityNames(untrack(() => client));
   let activePersonID = untrack(() => personID);
+  // Review candidates name an attribute definition by ID; its label comes
+  // from the definition catalog, loaded once when a detail needs it.
+  let definitionLabels = $state<Map<number, string>>();
+  let definitionsRequested = false;
   let splitTrigger = $state<HTMLButtonElement>();
 
   $effect(() => {
@@ -36,6 +43,31 @@
       controller.setPerson(personID);
     }
   });
+
+  $effect(() => {
+    if (definitionsRequested || !(controller.detail?.review_candidates?.length)) return;
+    definitionsRequested = true;
+    void untrack(() => loadDefinitionLabels());
+  });
+
+  async function loadDefinitionLabels(): Promise<void> {
+    try {
+      const { data, response } = await listAttributeDefinitions({ object_type: 'person', include_hidden: true }, client);
+      if (!response.ok || !Array.isArray(data?.definitions)) throw new Error('definitions unavailable');
+      definitionLabels = new Map(data.definitions.filter((definition) => definition.label?.trim()).map((definition) => [definition.id, definition.label.trim()]));
+    } catch {
+      // A later detail may try again; the numeric reference stays meanwhile.
+      definitionsRequested = false;
+    }
+  }
+
+  function person(id: number | undefined): string {
+    return id ? names.label('person', id) : 'None';
+  }
+
+  function participantName(id: number | undefined): string {
+    return id ? names.label('participant', id) : 'None';
+  }
 
   onMount(() => void controller.loadHistory());
   onDestroy(() => controller.destroy());
@@ -92,8 +124,8 @@
             {#each controller.history as item (item.merge.id)}
               <tr>
                 <th scope="row">{item.merge.id}</th><td><time datetime={item.merge.created_at}>{formatTimestamp(item.merge.created_at)}</time></td>
-                <td>Person {item.merge.survivor_person_id}</td><td>Person {item.merge.absorbed_person_id}</td>
-                <td>{item.merge.current_person_id ? `Person ${item.merge.current_person_id}` : 'None'}</td>
+                <td>{person(item.merge.survivor_person_id)}</td><td>{person(item.merge.absorbed_person_id)}</td>
+                <td>{person(item.merge.current_person_id)}</td>
                 <td>{item.participant_count}</td><td>{item.row_count}</td><td>{rowActionCounts(item.row_action_counts)}</td>
                 <td>{item.pending_candidate_count} pending</td><td>{item.split_count}</td>
                 <td><Button label={`Inspect merge ${item.merge.id}`} size="sm" onclick={() => void controller.selectMerge(item.merge.id)} /></td>
@@ -125,22 +157,22 @@
 
       <div class="table-scroll">
         <table aria-label="Merge participants"><thead><tr><th scope="col">Participant</th><th scope="col">Origin</th><th scope="col">Disposition</th></tr></thead>
-          <tbody>{#each controller.detail.participants ?? [] as participant}<tr><th scope="row">{participant.participant_id}</th><td>{participant.origin_side}</td><td>{disposition(participant.split_id)}</td></tr>{/each}</tbody>
+          <tbody>{#each controller.detail.participants ?? [] as participant}<tr><th scope="row">{participantName(participant.participant_id)}</th><td>{participant.origin_side}</td><td>{disposition(participant.split_id)}</td></tr>{/each}</tbody>
         </table>
       </div>
       <div class="table-scroll">
         <table aria-label="Merge row dispositions"><thead><tr><th scope="col">Table</th><th scope="col">Action</th><th scope="col">Origin</th><th scope="col">Provenance</th><th scope="col">Participant</th><th scope="col">Disposition</th></tr></thead>
-          <tbody>{#each controller.detail.rows ?? [] as row}<tr><th scope="row">{row.table_name}</th><td>{row.action}</td><td>{row.origin_side}</td><td>{row.provenance_kind}</td><td>{row.participant_id ?? 'None'}</td><td>{disposition(row.split_id)}</td></tr>{/each}</tbody>
+          <tbody>{#each controller.detail.rows ?? [] as row}<tr><th scope="row">{row.table_name}</th><td>{row.action}</td><td>{row.origin_side}</td><td>{row.provenance_kind}</td><td>{participantName(row.participant_id)}</td><td>{disposition(row.split_id)}</td></tr>{/each}</tbody>
         </table>
       </div>
       <div class="table-scroll">
         <table aria-label="Prior splits"><thead><tr><th scope="col">Split</th><th scope="col">Source</th><th scope="col">Created person</th><th scope="col">Revision change</th><th scope="col">Restoration</th><th scope="col">Actor</th><th scope="col">Created</th></tr></thead>
-          <tbody>{#each controller.detail.splits ?? [] as split}<tr><th scope="row">{split.id}</th><td>Person {split.source_person_id}</td><td>Person {split.new_person_id}</td><td>{split.source_revision_before} → {split.source_revision_after}</td><td>{split.exact_reversal ? 'Exact' : 'Partial'}</td><td>{split.actor}</td><td><time datetime={split.created_at}>{formatTimestamp(split.created_at)}</time></td></tr>{/each}</tbody>
+          <tbody>{#each controller.detail.splits ?? [] as split}<tr><th scope="row">{split.id}</th><td>{person(split.source_person_id)}</td><td>{person(split.new_person_id)}</td><td>{split.source_revision_before} → {split.source_revision_after}</td><td>{split.exact_reversal ? 'Exact' : 'Partial'}</td><td>{split.actor}</td><td><time datetime={split.created_at}>{formatTimestamp(split.created_at)}</time></td></tr>{/each}</tbody>
         </table>
       </div>
       <div class="table-scroll">
         <table aria-label="Merge review candidates"><thead><tr><th scope="col">Candidate</th><th scope="col">Person</th><th scope="col">Definition</th><th scope="col">Survivor value</th><th scope="col">Absorbed value</th><th scope="col">Resolution</th><th scope="col">State</th><th scope="col">Reviewed</th><th scope="col">Reviewer</th><th scope="col">Created</th></tr></thead>
-          <tbody>{#each controller.detail.review_candidates ?? [] as candidate}<tr><th scope="row">{candidate.id}</th><td>{candidate.person_id}</td><td>{candidate.definition_id}</td><td>{candidate.survivor_value_id}</td><td>{candidate.absorbed_value_id}</td><td>{candidate.resolution_value_id ?? 'None'}</td><td>{candidate.state}</td><td>{candidate.reviewed_at ? formatTimestamp(candidate.reviewed_at) : 'Not reviewed'}</td><td>{candidate.reviewed_by ?? 'None'}</td><td><time datetime={candidate.created_at}>{formatTimestamp(candidate.created_at)}</time></td></tr>{/each}</tbody>
+          <tbody>{#each controller.detail.review_candidates ?? [] as candidate}<tr><th scope="row">{candidate.id}</th><td>{person(candidate.person_id)}</td><td>{definitionLabels?.get(candidate.definition_id) ?? candidate.definition_id}</td><td>{candidate.survivor_value_id}</td><td>{candidate.absorbed_value_id}</td><td>{candidate.resolution_value_id ?? 'None'}</td><td>{candidate.state}</td><td>{candidate.reviewed_at ? formatTimestamp(candidate.reviewed_at) : 'Not reviewed'}</td><td>{candidate.reviewed_by ?? 'None'}</td><td><time datetime={candidate.created_at}>{formatTimestamp(candidate.created_at)}</time></td></tr>{/each}</tbody>
         </table>
       </div>
 
@@ -159,7 +191,7 @@
 </section>
 
 {#if controller.splitOpen}
-  <PersonSplitModal {controller} {onOpenPerson} onClose={() => void closeSplit()} />
+  <PersonSplitModal {controller} {names} {onOpenPerson} onClose={() => void closeSplit()} />
 {/if}
 
 <style>

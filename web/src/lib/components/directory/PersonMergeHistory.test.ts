@@ -88,6 +88,17 @@ function summary(mergeDetail: MergeDetail) {
   };
 }
 
+const syntheticNames: Record<string, Record<number, string>> = {
+  person: { 7: 'Avery Survivor', 9: 'Blair Absorbed', 12: 'Casey Current', 19: 'Drew Restored' },
+  participant: { 701: 'avery@example.com', 702: 'blair@example.org' },
+};
+
+function labelsResponse(url: URL): Response {
+  const answer = (kind: string) =>
+    url.searchParams.getAll(kind).map(Number).filter((id) => syntheticNames[kind]?.[id]).map((id) => ({ id, label: syntheticNames[kind][id] }));
+  return Response.json({ people: answer('person'), participants: answer('participant'), organizations: [] });
+}
+
 function renderHistory(currentPersonID: number | null = 12) {
   const mergeDetail = detail(currentPersonID);
   const requests: Request[] = [];
@@ -97,6 +108,10 @@ function renderHistory(currentPersonID: number | null = 12) {
     const path = new URL(request.url).pathname;
     if (path === '/api/v1/people/7/merges') {
       return Response.json({ merges: [summary(mergeDetail)], limit: 100, offset: 0 });
+    }
+    if (path === '/api/v1/entity-labels') return labelsResponse(new URL(request.url));
+    if (path === '/api/v1/attribute-definitions') {
+      return Response.json({ definitions: [{ id: 3, label: 'Nickname', universal_id: 'synthetic-nickname' }] });
     }
     if (path === '/api/v1/person-merges/41/snapshot') {
       return Response.json({
@@ -131,6 +146,34 @@ describe('PersonMergeHistory', () => {
     expect(document.body.textContent).not.toContain('opaque-row-key-must-not-appear');
     expect(document.body.textContent).not.toContain('private/snapshot/path-must-not-appear');
     expect(requests.map((request) => new URL(request.url).pathname)).not.toContain('/api/v1/person-merges/41/snapshot');
+  });
+
+  it('names people and participants instead of showing their IDs', async () => {
+    const { requests } = renderHistory();
+
+    const history = await screen.findByRole('table', { name: 'Person merge history' });
+    await waitFor(() => expect(within(history).getByText('Avery Survivor')).toBeDefined());
+    expect(within(history).getByText('Blair Absorbed')).toBeDefined();
+    expect(within(history).getByText('Casey Current')).toBeDefined();
+    await fireEvent.click(within(history).getByRole('button', { name: 'Inspect merge 41' }));
+
+    const participants = await screen.findByRole('table', { name: 'Merge participants' });
+    await waitFor(() => expect(within(participants).getByText('avery@example.com')).toBeDefined());
+    expect(within(participants).getByText('blair@example.org')).toBeDefined();
+    const rows = screen.getByRole('table', { name: 'Merge row dispositions' });
+    expect(within(rows).getByText('avery@example.com')).toBeDefined();
+    const splits = screen.getByRole('table', { name: 'Prior splits' });
+    await waitFor(() => expect(within(splits).getByText('Drew Restored')).toBeDefined());
+    expect(within(splits).getByText('Casey Current')).toBeDefined();
+    const candidates = screen.getByRole('table', { name: 'Merge review candidates' });
+    expect(within(candidates).getByText('Casey Current')).toBeDefined();
+    await waitFor(() => expect(within(candidates).getByText('Nickname')).toBeDefined());
+
+    for (const table of [history, participants, rows, splits]) {
+      expect(table.textContent).not.toMatch(/Person \d|\b(7|9|12|19|701|702)\b/);
+    }
+    const labelRequests = requests.filter((request) => new URL(request.url).pathname === '/api/v1/entity-labels');
+    expect(labelRequests.length).toBeLessThanOrEqual(2);
   });
 
   it('reveals the verified opaque snapshot only after the explicit action', async () => {

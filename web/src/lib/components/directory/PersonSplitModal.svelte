@@ -3,24 +3,27 @@
   import { onDestroy, onMount, tick } from 'svelte';
 
   import type { PersonMergeHistoryController } from '../../directory/person-merge-history-controller.svelte';
+  import type { EntityNames } from '../../names/entity-names.svelte';
 
   interface Props {
     controller: PersonMergeHistoryController;
+    names: EntityNames;
     onClose: () => void;
     onOpenPerson: (personID: number) => void;
   }
 
-  let { controller, onClose, onOpenPerson }: Props = $props();
+  let { controller, names, onClose, onOpenPerson }: Props = $props();
   let releaseShortcutScope: (() => void) | undefined;
   let splitContent = $state<HTMLDivElement>();
   let retryAction = $state<HTMLSpanElement>();
 
-  const sourceName = $derived(controller.sourcePerson?.display_name?.trim() ||
-    (controller.sourcePerson ? `Person ${controller.sourcePerson.id}` : 'current source profile'));
+  const sourceName = $derived(controller.sourcePerson
+    ? personName(controller.sourcePerson)
+    : 'current source profile');
   const selectionLabel = $derived(controller.isZeroParticipantLineage
     ? 'the zero-participant lineage'
-    : controller.selectedParticipantIDs.map((id) => `Participant ${id}`).join(', ') || 'the selected lineage');
-  const confirmationLabel = $derived(`I confirm splitting ${selectionLabel} from ${sourceName}${controller.sourcePerson ? ` (Person ${controller.sourcePerson.id})` : ''}.`);
+    : controller.selectedParticipantIDs.map((id) => names.label('participant', id)).join(', ') || 'the selected lineage');
+  const confirmationLabel = $derived(`I confirm splitting ${selectionLabel} from ${sourceName}.`);
   const committed = $derived(controller.committedResult?.result ?? null);
   const partial = $derived(!!committed && (!committed.exact_reversal ||
     (committed.ambiguous_rows?.length ?? 0) > 0 || (committed.unrestored_rows?.length ?? 0) > 0));
@@ -30,6 +33,10 @@
   });
 
   onDestroy(() => releaseShortcutScope?.());
+
+  function personName(person: { id: number; display_name?: string }): string {
+    return person.display_name?.trim() || names.label('person', person.id);
+  }
 
   function requestClose(): void {
     if (controller.splitBusy || committed) return;
@@ -74,14 +81,14 @@
         {/if}
         <div class="people" aria-label="Split result people">
           <article>
-            <h4>{committed.source_person.display_name?.trim() || `Person ${committed.source_person.id}`}</h4>
-            <p>Source person {committed.source_person.id}</p>
-            <Button label={`Open source profile ${committed.source_person.display_name?.trim() || `Person ${committed.source_person.id}`} (Person ${committed.source_person.id})`} disabled={controller.splitPending} onclick={() => onOpenPerson(committed.source_person.id)} />
+            <h4>{personName(committed.source_person)}</h4>
+            <p>Source person</p>
+            <Button label={`Open source profile ${personName(committed.source_person)}`} disabled={controller.splitPending} onclick={() => onOpenPerson(committed.source_person.id)} />
           </article>
           <article>
-            <h4>{committed.new_person.display_name?.trim() || `Person ${committed.new_person.id}`}</h4>
-            <p>Restored person {committed.new_person.id}</p>
-            <Button label={`Open restored profile ${committed.new_person.display_name?.trim() || `Person ${committed.new_person.id}`} (Person ${committed.new_person.id})`} disabled={controller.splitPending} onclick={() => onOpenPerson(committed.new_person.id)} />
+            <h4>{personName(committed.new_person)}</h4>
+            <p>Restored person</p>
+            <Button label={`Open restored profile ${personName(committed.new_person)}`} disabled={controller.splitPending} onclick={() => onOpenPerson(committed.new_person.id)} />
           </article>
         </div>
         {#if partial}
@@ -101,7 +108,7 @@
     {:else if controller.sourceError}
       <div role="alert" class="error"><p>{controller.sourceError}</p><Button label="Retry source profile" onclick={() => void controller.openSplit()} /></div>
     {:else if controller.sourcePerson}
-      <p>The merge currently belongs to <strong>{sourceName} (Person {controller.sourcePerson.id})</strong>. The server remains authoritative about participant eligibility when the request is submitted.</p>
+      <p>The merge currently belongs to <strong>{sourceName}</strong>. The server remains authoritative about participant eligibility when the request is submitted.</p>
 
       {#if controller.splitNeedsFreshState}
         <div class="stale" role="alert">
@@ -123,7 +130,7 @@
           {#each controller.eligibleParticipantIDs as participantID}
             <Checkbox
               checked={controller.selectedParticipantIDs.includes(participantID)}
-              label={`Participant ${participantID}`}
+              label={names.label('participant', participantID)}
               disabled={controller.splitBusy}
               onchange={(checked) => controller.setParticipantSelected(participantID, checked)}
             />

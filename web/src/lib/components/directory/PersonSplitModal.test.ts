@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createAPIClient } from '../../api/client';
 import type { PersonMergeDetail as GeneratedPersonMergeDetail } from '../../api/generated/models';
 import { PersonMergeHistoryController } from '../../directory/person-merge-history-controller.svelte';
+import { entityNames } from '../../names/entity-names.svelte';
 import PersonSplitModal from './PersonSplitModal.svelte';
 
 type MergeDetail = GeneratedPersonMergeDetail;
@@ -40,17 +41,24 @@ function mergeDetail(
   };
 }
 
+// The entity-labels endpoint names the absorbed participant by its own address.
+function labelsResponse(request: Request): Response | undefined {
+  if (new URL(request.url).pathname !== '/api/v1/entity-labels') return undefined;
+  return Response.json({ people: [], participants: [{ id: 701, label: 'avery@example.com' }], organizations: [] });
+}
+
 async function preparedController(fetchFn: typeof fetch, participants?: MergeDetail['participants']) {
   const value = mergeDetail(participants);
   const routedFetch = vi.fn<typeof fetch>(async (input, init) => {
     const request = input instanceof Request ? input : new Request(input, init);
     if (new URL(request.url).pathname === '/api/v1/person-merges/41') return Response.json(value);
-    return fetchFn(request);
+    return labelsResponse(request) ?? fetchFn(request);
   });
-  const controller = new PersonMergeHistoryController(createAPIClient(routedFetch), 7);
+  const client = createAPIClient(routedFetch);
+  const controller = new PersonMergeHistoryController(client, 7);
   await controller.selectMerge(41);
   await controller.openSplit();
-  return { controller };
+  return { controller, names: entityNames(client) };
 }
 
 function sourceResponse() {
@@ -117,13 +125,13 @@ describe('PersonSplitModal', () => {
       const request = input instanceof Request ? input : new Request(input);
       return request.method === 'GET' ? sourceResponse() : Response.json(result(false));
     });
-    const { controller } = await preparedController(fetchFn);
+    const { controller, names } = await preparedController(fetchFn);
     const onOpenPerson = vi.fn();
-    render(PersonSplitModal, { controller, onClose: vi.fn(), onOpenPerson });
+    render(PersonSplitModal, { controller, names, onClose: vi.fn(), onOpenPerson });
 
-    await fireEvent.click(screen.getByRole('checkbox', { name: /Participant 701/ }));
+    await fireEvent.click(await screen.findByRole('checkbox', { name: 'avery@example.com' }));
     await fireEvent.click(
-      screen.getByRole('checkbox', { name: /I confirm splitting Participant 701 from Synthetic Source \(Person 12\)/ }),
+      screen.getByRole('checkbox', { name: 'I confirm splitting avery@example.com from Synthetic Source.' }),
     );
     await fireEvent.click(screen.getByRole('button', { name: 'Create restored person' }));
 
@@ -131,8 +139,9 @@ describe('PersonSplitModal', () => {
     expect(document.body.textContent?.toLowerCase()).not.toContain('undo');
     expect(screen.getByText(/partial/i).textContent?.toLowerCase()).toContain('partial');
     expect(document.body.textContent).not.toContain('concealed-key');
-    await fireEvent.click(screen.getByRole('button', { name: 'Open source profile Synthetic Source (Person 12)' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Open restored profile Synthetic Restored (Person 19)' }));
+    expect(document.body.textContent).not.toMatch(/Person \d|Participant \d|\b(701|12|19)\b/);
+    await fireEvent.click(screen.getByRole('button', { name: 'Open source profile Synthetic Source' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Open restored profile Synthetic Restored' }));
     expect(onOpenPerson.mock.calls).toEqual([[12], [19]]);
   });
 
@@ -143,8 +152,8 @@ describe('PersonSplitModal', () => {
       requests.push(request);
       return request.method === 'GET' ? sourceResponse() : Response.json(result(true));
     });
-    const { controller } = await preparedController(fetchFn, []);
-    render(PersonSplitModal, { controller, onClose: vi.fn(), onOpenPerson: vi.fn() });
+    const { controller, names } = await preparedController(fetchFn, []);
+    render(PersonSplitModal, { controller, names, onClose: vi.fn(), onOpenPerson: vi.fn() });
 
     expect(screen.getByText(/recorded no absorbed-lineage participants/)).toBeDefined();
     await fireEvent.click(screen.getByRole('checkbox', { name: /I confirm splitting the zero-participant lineage/ }));
@@ -164,13 +173,13 @@ describe('PersonSplitModal', () => {
         resolveSplit = resolve;
       });
     });
-    const { controller } = await preparedController(fetchFn);
+    const { controller, names } = await preparedController(fetchFn);
     const onClose = vi.fn();
     const rootShortcut = vi.fn();
     const unregister = appShortcuts.register('x', rootShortcut);
     try {
-      render(PersonSplitModal, { controller, onClose, onOpenPerson: vi.fn() });
-      await fireEvent.click(screen.getByRole('checkbox', { name: /Participant 701/ }));
+      render(PersonSplitModal, { controller, names, onClose, onOpenPerson: vi.fn() });
+      await fireEvent.click(await screen.findByRole('checkbox', { name: 'avery@example.com' }));
       await fireEvent.click(screen.getByRole('checkbox', { name: /I confirm splitting/ }));
       await fireEvent.click(screen.getByRole('button', { name: 'Create restored person' }));
       await waitFor(() => expect(controller.splitPending).toBe(true));
@@ -201,6 +210,8 @@ describe('PersonSplitModal', () => {
     let postAttempts = 0;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
+      const labels = labelsResponse(request);
+      if (labels) return labels;
       requests.push(request);
       const path = new URL(request.url).pathname;
       if (path === '/api/v1/person-merges/41') {
@@ -231,14 +242,16 @@ describe('PersonSplitModal', () => {
       postAttempts += 1;
       return Response.json({ error: 'person_merge_revision_conflict', message: 'Source changed' }, { status: 409 });
     });
-    const controller = new PersonMergeHistoryController(createAPIClient(fetchFn), 7);
+    const client = createAPIClient(fetchFn);
+    const names = entityNames(client);
+    const controller = new PersonMergeHistoryController(client, 7);
     await controller.selectMerge(41);
     await controller.openSplit();
     controller.setParticipantSelected(701, true);
     controller.confirmSplit();
     await controller.submitSplit();
     const onClose = vi.fn();
-    render(PersonSplitModal, { controller, onClose, onOpenPerson: vi.fn() });
+    render(PersonSplitModal, { controller, names, onClose, onOpenPerson: vi.fn() });
 
     expect(screen.getByText(/stale and cannot be submitted/)).toBeDefined();
     expect(screen.getByText(/Synthetic Source/)).toBeDefined();
@@ -257,7 +270,7 @@ describe('PersonSplitModal', () => {
     expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
 
     await fireEvent.click(retry);
-    const participant = await screen.findByRole('checkbox', { name: 'Participant 701' });
+    const participant = await screen.findByRole('checkbox', { name: 'avery@example.com' });
     await waitFor(() => expect(document.activeElement).toBe(participant));
     expect(screen.queryByText(/stale and cannot be submitted/)).toBeNull();
     expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
