@@ -1004,6 +1004,8 @@
     <span><KbdBadge keys={['A']} /> visible</span>
     <span><KbdBadge keys={['X']} /> clear</span>
     <span><KbdBadge keys={['/']} /> search</span>
+    <span><KbdBadge keys={['P']} /> commands</span>
+    <span><KbdBadge keys={['?']} /> shortcuts</span>
     <span><KbdBadge keys={['Esc']} /> back</span>
   </footer>
 </main>

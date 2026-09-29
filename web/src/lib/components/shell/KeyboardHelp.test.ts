@@ -51,10 +51,11 @@ describe('keyboard command registry', () => {
       onclose: vi.fn()
     });
 
-    const command = screen.getByText('Open command palette').closest('div');
+    // Focus search is Mod+K or /: the chord stays one badge beside its alternative.
+    const command = screen.getByText('Focus search').closest('div');
     expect(command).not.toBeNull();
-    expect(command?.querySelector('[aria-label="Mod Shift P"]')).not.toBeNull();
-    expect(command?.textContent).not.toContain('or');
+    expect(command?.querySelector('[aria-label="Mod K"]')).not.toBeNull();
+    expect(command?.textContent).toContain('or');
   });
 });
 

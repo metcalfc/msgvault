@@ -24,7 +24,7 @@ export async function selectKitTopBarTab(page: Page, tab: string): Promise<void>
 /** Theme and density live in Settings; the command palette applies them
  * in place so a test can change them without leaving the current view. */
 export async function openCommandPalette(page: Page): Promise<void> {
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
+  await page.keyboard.press('p');
   await expect(page.getByRole('dialog', { name: 'Commands' })).toBeVisible();
 }
 

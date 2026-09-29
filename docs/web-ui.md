@@ -99,7 +99,7 @@ Primary navigation has five places: **People**, **Inbox**, **Files**,
 - The archive status dot stays in the header. Theme and density live in
   [Settings > Appearance](#appearance).
 
-The command palette (`Cmd/Ctrl+Shift+P`) runs the same moves by name:
+The command palette (`P`) runs the same moves by name:
 
 - **Go to People**, **Go to Inbox**, **Go to Files**, **Go to Meetings**,
   **Go to Activity**, **Go to Settings**, and **Go to Saved Views**.
@@ -485,7 +485,7 @@ Tab keeps its normal browser meaning. Outside inputs and content viewers:
 | `d` / `D` | Review deletion staging |
 | `f`, `g`, `s`, `r` | Filter, group, sort, reverse sort |
 | `?` | Searchable shortcut help |
-| `Cmd/Ctrl+Shift+P` | [Command palette](#find-your-way-around) |
+| `P` | [Command palette](#find-your-way-around) |
 
 Destructive keys open a review; they never execute deletion immediately.
 Shortcuts are suspended while typing and inside message/file content.

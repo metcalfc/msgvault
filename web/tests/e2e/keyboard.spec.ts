@@ -163,7 +163,7 @@ test('pointer-free archive journey preserves focus, announcements, and history',
   await expect(page.locator('[aria-live="polite"]').filter({ hasText: `${fixture.logicalRows.length} items` }).first()).toBeVisible();
 
   await tabTo(page, 'Message results');
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
+  await page.keyboard.press('p');
   await page.keyboard.type('group by source');
   await page.keyboard.press('Enter');
   const grouped = page.getByRole('grid', { name: 'Messages grouped by source' });

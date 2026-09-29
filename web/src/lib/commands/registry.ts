@@ -22,7 +22,10 @@ export const COMMAND_DEFINITIONS = [
   command('change-sort', 'Change sort', ['S'], ['s'], 'Analyze'),
   command('reverse-sort', 'Reverse sort direction', ['R'], ['r'], 'Analyze'),
   command('open-keyboard-help', 'Open searchable keyboard help', ['?'], ['shift+/'], 'Help'),
-  command('open-command-palette', 'Open command palette', ['Mod', 'Shift', 'P'], ['mod+shift+p'], 'Help')
+  // A plain key: every modified chord left free here is taken by some
+  // browser (Mod+Shift+P opens a private window in Firefox, Mod+/ toggles
+  // Safari's status bar). Like the other plain keys, it pauses in text fields.
+  command('open-command-palette', 'Open command palette', ['P'], ['p'], 'Help')
 ] as const;
 
 export type CommandID = typeof COMMAND_DEFINITIONS[number]['id'];

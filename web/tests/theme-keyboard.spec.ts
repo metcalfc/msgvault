@@ -132,7 +132,7 @@ test('one registry drives selection, searchable help, palette, and editable susp
   await grid.focus();
   await page.keyboard.press('Shift+A');
   await expect(renderedRow).toHaveAttribute('aria-selected', 'true');
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
+  await page.keyboard.press('p');
   const palette = page.getByRole('dialog', { name: 'Commands' });
   await expect(palette).toBeVisible();
   await palette.getByRole('combobox').fill('clear selection');
@@ -147,7 +147,7 @@ test('one registry drives selection, searchable help, palette, and editable susp
   await search.focus();
   await page.keyboard.press('Shift+A');
   await expect(renderedRow).toHaveAttribute('aria-selected', 'false');
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
+  await page.keyboard.press('p');
   await expect(palette).toHaveCount(0);
   await page.keyboard.press('Tab');
   await expect(search).not.toBeFocused();
@@ -170,7 +170,7 @@ test('one registry drives selection, searchable help, palette, and editable susp
 test('keyboard palette grouping focuses the replacement grid', async ({ page }) => {
   const grid = page.getByRole('grid', { name: 'Message results' });
   await grid.focus();
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
+  await page.keyboard.press('p');
   const palette = page.getByRole('dialog', { name: 'Commands' });
   await palette.getByRole('combobox').fill('group by source');
   const command = palette.getByRole('option', { name: 'Group by Source' });
@@ -207,7 +207,7 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(selectedRow).toHaveAttribute('aria-selected', 'true');
     await expect(selectedRow).toHaveCSS('box-shadow', /2px 0px 0px 0px inset/);
 
-    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
+    await page.keyboard.press('p');
     const palette = page.getByRole('dialog', { name: 'Commands' });
     const activeOption = palette.getByRole('option', { selected: true }).first();
     await expect(activeOption).toBeVisible();

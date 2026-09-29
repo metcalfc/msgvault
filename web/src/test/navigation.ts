@@ -6,8 +6,8 @@ export async function openFromGear(label: 'Settings' | 'Reviews' | 'Saved Views'
   await fireEvent.click(await screen.findByRole('menuitem', { name: new RegExp(`^${label}`) }));
 }
 
-/** Opens the command palette with its shortcut (Mod+Shift+P). */
+/** Opens the command palette with its shortcut (P). */
 export async function openCommandPalette(): Promise<HTMLElement> {
-  await fireEvent.keyDown(window, { key: 'P', ctrlKey: true, shiftKey: true });
+  await fireEvent.keyDown(window, { key: 'p' });
   return screen.findByRole('dialog', { name: 'Commands' });
 }
