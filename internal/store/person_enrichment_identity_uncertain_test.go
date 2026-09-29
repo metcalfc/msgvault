@@ -73,6 +73,35 @@ func TestCommitEnrichmentClaimsUncertainIdentityRecordsJudgmentAndAppliesNothing
 	assertNoRefreshWork(t, f)
 }
 
+func TestCommitEnrichmentClaimsKeepsTheJudgmentWhenPolicyRejectsTheResult(t *testing.T) {
+	checks := assert.New(t)
+	requirements := require.New(t)
+	f := newEnrichmentResultFixture(t)
+	f.commit.IdentityAssessment = personenrichment.IdentityAssessment{
+		Accepted: true, Score: personenrichment.SemanticIdentityScore, Reason: personenrichment.SemanticIdentityReason,
+		MatchedClasses: []personenrichment.IdentifierClass{personenrichment.IdentifierName, personenrichment.IdentifierCurrentCompany},
+		Judgment: &personenrichment.IdentityJudgment{
+			Outcome: personenrichment.IdentityJudgmentAccepted, ExactClass: personenrichment.IdentifierName,
+			NameCompatible: 0.99, CompanySame: 0.95, NameConflict: 0.01, Model: "jev-1.13.0",
+		},
+	}
+	f.reseal(t)
+	revoked, err := f.store.RevokePersonEnrichmentConsent(t.Context(), f.profile.Fingerprint, "test")
+	requirements.NoError(err)
+	requirements.True(revoked)
+	outcome, err := f.store.CommitEnrichmentClaims(t.Context(), f.commit)
+	requirements.NoError(err)
+	checks.Equal(personenrichment.ClaimPolicyRejected, outcome.Status)
+	attempt, err := f.store.GetPersonEnrichmentAttemptContext(t.Context(), f.attempt.ID)
+	requirements.NoError(err)
+	checks.Equal("terminal", attempt.State)
+	judgment, err := f.store.GetPersonEnrichmentIdentityJudgmentContext(t.Context(), f.attempt.ID)
+	requirements.NoError(err, "the paid judgment leaves a row even though policy rejected the result")
+	checks.Equal(personenrichment.IdentityJudgmentAccepted, judgment.Outcome)
+	checks.Equal("terminal", judgment.AttemptState)
+	checks.Equal(int64(1), enrichmentTableCount(t, f.store, "person_enrichment_identity_judgments"))
+}
+
 func TestCommitEnrichmentClaimsSemanticIdentityAppliesAtTheExactScore(t *testing.T) {
 	checks := assert.New(t)
 	requirements := require.New(t)

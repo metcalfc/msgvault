@@ -297,9 +297,15 @@ func (s *Store) commitPreparedPersonEnrichmentResult(
 			outcome.Generation = generation
 			return nil
 		}
+		// A judgment was paid for whichever way the commit goes; every
+		// branch that ran one keeps its row.
 		switch disposition.Status {
 		case personenrichment.ClaimPolicyRejected:
 			if err := s.rejectPersonEnrichmentResultPolicyTx(
+				ctx, tx, prepared.Commit, prepared.CompletionTime); err != nil {
+				return err
+			}
+			if err := s.insertPersonEnrichmentIdentityJudgmentTx(
 				ctx, tx, prepared.Commit, prepared.CompletionTime); err != nil {
 				return err
 			}
@@ -307,6 +313,10 @@ func (s *Store) commitPreparedPersonEnrichmentResult(
 			return nil
 		case personenrichment.ClaimSuppressed:
 			if err := s.rejectPersonEnrichmentResultSuppressedTx(
+				ctx, tx, prepared.Commit, prepared.CompletionTime); err != nil {
+				return err
+			}
+			if err := s.insertPersonEnrichmentIdentityJudgmentTx(
 				ctx, tx, prepared.Commit, prepared.CompletionTime); err != nil {
 				return err
 			}
