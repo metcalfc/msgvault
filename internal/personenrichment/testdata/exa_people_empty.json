@@ -1,0 +1,12 @@
+{
+  "requestId": "request_test_people_empty_1",
+  "results": [],
+  "resolvedSearchType": "neural",
+  "searchTime": 0.11,
+  "costDollars": {
+    "total": 0,
+    "search": {
+      "neural": 0
+    }
+  }
+}

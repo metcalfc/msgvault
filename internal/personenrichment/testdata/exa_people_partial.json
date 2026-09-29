@@ -1,0 +1,58 @@
+{
+  "requestId": "request_test_people_partial_7",
+  "results": [
+    {
+      "title": "Susie S. - Partner",
+      "url": "https://profiles.example.test/susie-s",
+      "publishedDate": "2026-08-20T10:00:00Z",
+      "entities": [
+        {
+          "id": "person_test_partial_7",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Susie S.",
+            "firstName": "Susie",
+            "lastName": "S.",
+            "location": "Example City",
+            "workHistory": [
+              {
+                "title": "Partner",
+                "location": "Example City",
+                "dates": {
+                  "from": "2021-03-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "company_test_9",
+                  "name": "Heavybit"
+                }
+              },
+              {
+                "title": "Associate",
+                "location": "Example City",
+                "dates": {
+                  "from": "2017-01-01",
+                  "to": "2021-02-28"
+                },
+                "company": {
+                  "id": "company_test_10",
+                  "name": "Example Ventures"
+                }
+              }
+            ],
+            "educationHistory": []
+          }
+        }
+      ]
+    }
+  ],
+  "resolvedSearchType": "neural",
+  "searchTime": 0.21,
+  "costDollars": {
+    "total": 0.005,
+    "search": {
+      "neural": 0.005
+    }
+  }
+}

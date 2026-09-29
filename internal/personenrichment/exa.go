@@ -36,17 +36,32 @@ const (
 	exaMaxResponseBytes = 1 << 20
 )
 
-var errExaSynchronous = errors.New("exa provider is synchronous and cannot be polled")
+var (
+	errExaSynchronous = errors.New("exa provider is synchronous and cannot be polled")
+	errExaNoEntity    = errors.New("missing Exa person identity")
+)
 
 type exaProvider struct {
-	config     ProviderConfig
-	credential string
-	client     *http.Client
+	config         ProviderConfig
+	credential     string
+	client         *http.Client
+	identityReview bool
+}
+
+// ExaOption adjusts an Exa adapter at construction.
+type ExaOption func(*exaProvider)
+
+// WithExaIdentityReview lets a people-mode result in which exactly one of
+// name and current company matched exactly pass decode with zero identity
+// confidence and a ReturnedIdentity, so the worker's identity judge can
+// review it. Without this option such a result is rejected at decode.
+func WithExaIdentityReview() ExaOption {
+	return func(provider *exaProvider) { provider.identityReview = true }
 }
 
 // NewExaProvider builds an Exa adapter from a credential that the caller has
 // already obtained through EgressGate.Authorize. Construction performs no I/O.
-func NewExaProvider(cfg ProviderConfig, credential string, client *http.Client) (Provider, error) {
+func NewExaProvider(cfg ProviderConfig, credential string, client *http.Client, options ...ExaOption) (Provider, error) {
 	if cfg.Kind != ProviderExa {
 		return nil, fmt.Errorf("exa provider requires kind %q", ProviderExa)
 	}
@@ -67,7 +82,11 @@ func NewExaProvider(cfg ProviderConfig, credential string, client *http.Client) 
 	cloned.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
-	return &exaProvider{config: cfg, credential: credential, client: &cloned}, nil
+	provider := &exaProvider{config: cfg, credential: credential, client: &cloned}
+	for _, option := range options {
+		option(provider)
+	}
+	return provider, nil
 }
 
 func ExaFactConfidence(label string, grounded bool) (int, error) {
@@ -121,61 +140,48 @@ func (p *exaProvider) Start(ctx context.Context, request Request) (Attempt, erro
 		return Attempt{}, fmt.Errorf("fingerprint Exa adapter program: %w", err)
 	}
 
-	payload := exaSearchRequest{
-		Query: query, Category: "people", Type: exaRequestType(p.config.Mode),
-		NumResults: p.config.NumResults, OutputSchema: outputSchema,
-	}
-	encoded, err := json.Marshal(payload, json.Deterministic(true))
+	wire, status, err := p.search(ctx, query, outputSchema)
 	if err != nil {
-		return Attempt{}, errors.New("encode Exa request")
-	}
-	httpRequest, err := http.NewRequestWithContext( // #nosec G107 -- exact consented HTTPS endpoint validated at construction.
-		ctx, http.MethodPost, p.config.Endpoint, bytes.NewReader(encoded))
-	if err != nil {
-		return Attempt{}, errors.New("create Exa request")
-	}
-	httpRequest.Header.Set("Authorization", "Bearer "+p.credential)
-	httpRequest.Header.Set("Content-Type", "application/json")
-	httpRequest.Header.Set("Accept", "application/json")
-
-	response, err := p.client.Do(httpRequest)
-	if err != nil {
-		return Attempt{}, exaFailure(0, FailureTransient, "", "")
-	}
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return Attempt{}, exaHTTPFailure(response)
-	}
-	if !exaJSONContentType(response.Header.Get("Content-Type")) {
-		return Attempt{}, exaFailure(response.StatusCode, FailureInvalidOutput, "", "")
-	}
-	body, oversized, err := readExaBody(response.Body)
-	if err != nil || oversized {
-		return Attempt{}, exaFailure(response.StatusCode, FailureInvalidOutput, "", "")
-	}
-	wire, err := decodeExaResponse(body)
-	if err != nil {
-		return Attempt{}, exaFailure(response.StatusCode, FailureInvalidOutput, "", "")
-	}
-	if !safeExaOpaqueID(wire.RequestID) {
-		return Attempt{}, exaFailure(response.StatusCode, FailureInvalidOutput, "", "")
+		return Attempt{}, err
 	}
 	now := time.Now().UTC()
 	var result Result
 	if generated {
 		result, err = decodeExaDeepResult(wire, request, now)
 	} else {
-		result, err = decodeExaPeopleResult(wire, request, now)
+		result, err = decodeExaPeopleResult(wire, request, now, p.identityReview)
+	}
+	if errors.Is(err, errExaNoEntity) && !generated {
+		// Deterministic retry: a public source may file the person under a
+		// shorter or reordered name. One retry, code-built variant, no model.
+		if variant, ok := firstNameVariant(request.Identity.Name); ok {
+			retryIdentity := request.Identity
+			retryIdentity.Name = variant
+			retryQuery, queryErr := exaIdentityQuery(retryIdentity)
+			if queryErr != nil {
+				return Attempt{}, queryErr
+			}
+			retryWire, retryStatus, retryErr := p.search(ctx, retryQuery, outputSchema)
+			if retryErr != nil {
+				return Attempt{}, retryErr
+			}
+			firstCost := wire.CostDollars
+			wire, status = retryWire, retryStatus
+			result, err = decodeExaPeopleResult(wire, request, now, p.identityReview)
+			if err == nil {
+				result.Cost, err = exaCombinedCost(firstCost, wire.CostDollars)
+			}
+		}
 	}
 	if err != nil {
-		return Attempt{}, exaFailure(response.StatusCode, FailureInvalidOutput, wire.RequestID, "")
+		return Attempt{}, exaFailure(status, FailureInvalidOutput, wire.RequestID, "")
 	}
 	result.AdapterVersion = ExaAdapterVersionV1
 	result.SchemaVersion = ExaSearchWireSchemaV1
 	result.GeneratedSchema = generated
 	result.GeneratedSchemaHash = schemaHash
 	if err := result.Validate(); err != nil {
-		return Attempt{}, exaFailure(response.StatusCode, FailureInvalidOutput, wire.RequestID, "")
+		return Attempt{}, exaFailure(status, FailureInvalidOutput, wire.RequestID, "")
 	}
 	return Attempt{
 		State: AttemptComplete, RequestID: wire.RequestID,
@@ -187,6 +193,80 @@ func (p *exaProvider) Start(ctx context.Context, request Request) (Attempt, erro
 
 func (p *exaProvider) Poll(context.Context, Attempt) (Result, error) {
 	return Result{}, errExaSynchronous
+}
+
+// search performs one bounded Exa request and returns the decoded envelope
+// with the HTTP status for failure reporting. Every failure is already a
+// safe ProviderError.
+func (p *exaProvider) search(ctx context.Context, query string, outputSchema jsontext.Value) (exaSearchResponse, int, error) {
+	payload := exaSearchRequest{
+		Query: query, Category: "people", Type: exaRequestType(p.config.Mode),
+		NumResults: p.config.NumResults, OutputSchema: outputSchema,
+	}
+	encoded, err := json.Marshal(payload, json.Deterministic(true))
+	if err != nil {
+		return exaSearchResponse{}, 0, errors.New("encode Exa request")
+	}
+	httpRequest, err := http.NewRequestWithContext( // #nosec G107 -- exact consented HTTPS endpoint validated at construction.
+		ctx, http.MethodPost, p.config.Endpoint, bytes.NewReader(encoded))
+	if err != nil {
+		return exaSearchResponse{}, 0, errors.New("create Exa request")
+	}
+	httpRequest.Header.Set("Authorization", "Bearer "+p.credential)
+	httpRequest.Header.Set("Content-Type", "application/json")
+	httpRequest.Header.Set("Accept", "application/json")
+
+	response, err := p.client.Do(httpRequest)
+	if err != nil {
+		return exaSearchResponse{}, 0, exaFailure(0, FailureTransient, "", "")
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return exaSearchResponse{}, response.StatusCode, exaHTTPFailure(response)
+	}
+	if !exaJSONContentType(response.Header.Get("Content-Type")) {
+		return exaSearchResponse{}, response.StatusCode, exaFailure(response.StatusCode, FailureInvalidOutput, "", "")
+	}
+	body, oversized, err := readExaBody(response.Body)
+	if err != nil || oversized {
+		return exaSearchResponse{}, response.StatusCode, exaFailure(response.StatusCode, FailureInvalidOutput, "", "")
+	}
+	wire, err := decodeExaResponse(body)
+	if err != nil {
+		return exaSearchResponse{}, response.StatusCode, exaFailure(response.StatusCode, FailureInvalidOutput, "", "")
+	}
+	if !safeExaOpaqueID(wire.RequestID) {
+		return exaSearchResponse{}, response.StatusCode, exaFailure(response.StatusCode, FailureInvalidOutput, "", "")
+	}
+	return wire, response.StatusCode, nil
+}
+
+func firstNameVariant(name string) (string, bool) {
+	variants := NameVariants(name)
+	if len(variants) == 0 {
+		return "", false
+	}
+	return variants[0], true
+}
+
+// exaCombinedCost sums the observed charges of a lookup and its retry.
+func exaCombinedCost(first, second *exaCostDollars) (Cost, error) {
+	firstCost, err := exaCost(first)
+	if err != nil {
+		return Cost{}, err
+	}
+	secondCost, err := exaCost(second)
+	if err != nil {
+		return Cost{}, err
+	}
+	if firstCost.AmountMicros == 0 {
+		return secondCost, nil
+	}
+	if secondCost.AmountMicros == 0 {
+		return firstCost, nil
+	}
+	return Cost{Currency: "USD", AmountMicros: firstCost.AmountMicros + secondCost.AmountMicros,
+		Estimated: firstCost.Estimated || secondCost.Estimated}, nil
 }
 
 type exaSearchRequest struct {
@@ -390,7 +470,7 @@ func decodeExaResponse(body []byte) (exaSearchResponse, error) {
 	return response, nil
 }
 
-func decodeExaPeopleResult(wire exaSearchResponse, request Request, now time.Time) (Result, error) {
+func decodeExaPeopleResult(wire exaSearchResponse, request Request, now time.Time, review bool) (Result, error) {
 	var selected *exaEntity
 	var selectedRow *exaSearchResult
 	for i := range wire.Results {
@@ -406,8 +486,11 @@ func decodeExaPeopleResult(wire exaSearchResponse, request Request, now time.Tim
 			selectedRow = &wire.Results[i]
 		}
 	}
-	if selected == nil || selectedRow == nil || !safeExaOpaqueID(selected.ID) || selected.Version <= 0 {
-		return Result{}, errors.New("missing Exa person identity")
+	if selected == nil || selectedRow == nil {
+		return Result{}, errExaNoEntity
+	}
+	if !safeExaOpaqueID(selected.ID) || selected.Version <= 0 {
+		return Result{}, errors.New("invalid Exa person identity")
 	}
 	if len(selected.Properties.Research) > 0 &&
 		!bytes.Equal(bytes.TrimSpace(selected.Properties.Research), []byte("null")) {
@@ -441,19 +524,25 @@ func decodeExaPeopleResult(wire exaSearchResponse, request Request, now time.Tim
 		}
 	}
 	matches, identityConfidence := exaTypedIdentityMatches(request.Identity, selected.Properties, profileURL)
-	if len(matches) == 0 || identityConfidence == 0 {
+	partial := review && identityConfidence == 0 && len(matches) == 1 &&
+		request.Identity.Name != "" && request.Identity.CurrentCompany != ""
+	if len(matches) == 0 || (identityConfidence == 0 && !partial) {
 		return Result{}, errors.New("missing Exa returned identity match")
 	}
 	cost, err := exaCost(wire.CostDollars)
 	if err != nil {
 		return Result{}, err
 	}
+	var returned *ReturnedIdentity
+	if review {
+		returned = exaReturnedIdentity(selected.Properties, profileURL)
+	}
 	return Result{
 		State: ResultComplete, RequestID: wire.RequestID, Claims: claims,
 		Citations:           []Citation{citation},
 		ProviderPersonIDs:   []ProviderPersonID{{ID: selected.ID, Confidence: identityConfidence}},
 		CanonicalPublicURLs: []string{profileURL}, IdentityMatches: matches,
-		IdentityConfidence: identityConfidence, FreshAsOf: published,
+		IdentityConfidence: identityConfidence, ReturnedIdentity: returned, FreshAsOf: published,
 		SourceAttempts: []SourceAttempt{{URL: profileURL, Outcome: "cited", ObservedAt: now}},
 		Cost:           cost, ProviderVersion: strconv.FormatInt(selected.Version, 10),
 	}, nil
@@ -689,7 +778,7 @@ func exaTypedIdentityMatches(
 	profileURL string,
 ) ([]IdentityMatch, int) {
 	matches := make([]IdentityMatch, 0, 3)
-	nameMatch := properties.Name != nil && exactExaIdentityMatch(IdentifierName, identity.Name, *properties.Name)
+	nameMatch := properties.Name != nil && nameIdentifierMatch(identity.Name, *properties.Name)
 	companyMatch := false
 	var companyValue string
 	for _, work := range properties.WorkHistory {
@@ -740,6 +829,33 @@ func exaDeepResultIdentityMatch(identity Identity, results []exaSearchResult) ([
 		}
 	}
 	return nil, 0, errors.New("missing Exa returned identity match")
+}
+
+// exaReturnedIdentity projects the entity fields the semantic identity
+// review discloses: names, location, current roles, past companies (capped),
+// and the profile host. Nothing else from the entity is copied.
+func exaReturnedIdentity(properties exaPersonProperties, profileURL string) *ReturnedIdentity {
+	returned := &ReturnedIdentity{
+		Name: valueOrEmpty(properties.Name), FirstName: valueOrEmpty(properties.FirstName),
+		LastName: valueOrEmpty(properties.LastName), Location: valueOrEmpty(properties.Location),
+	}
+	for _, work := range properties.WorkHistory {
+		company := ""
+		if work.Company != nil {
+			company = valueOrEmpty(work.Company.Name)
+		}
+		current := work.Dates == nil || work.Dates.To == nil
+		switch {
+		case current && len(returned.CurrentRoles) < maxReturnedRoles:
+			returned.CurrentRoles = append(returned.CurrentRoles, ReturnedRole{Title: valueOrEmpty(work.Title), Company: company})
+		case !current && company != "" && len(returned.PastCompanies) < maxReturnedPastCompanies:
+			returned.PastCompanies = append(returned.PastCompanies, company)
+		}
+	}
+	if parsed, err := url.Parse(profileURL); err == nil {
+		returned.ProfileURLHost = parsed.Hostname()
+	}
+	return returned
 }
 
 func exactExaIdentityMatch(class IdentifierClass, left, right string) bool {

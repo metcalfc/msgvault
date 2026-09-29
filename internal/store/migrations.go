@@ -90,6 +90,9 @@ const (
 	migrationPersonFactClaimOriginBrief     = "person_fact_claim_origin_brief_v1"
 	migrationPersonSweepAttemptBriefFailure = "person_sweep_attempt_brief_failure_v1"
 	migrationCardDAVInferenceExportState    = "carddav_inference_export_state_v1"
+	// The attempt state vocabulary gains identity_uncertain: a semantic
+	// identity check between the accept and reject thresholds.
+	migrationPersonEnrichmentIdentityUncertain = "person_enrichment_attempts_identity_uncertain_v1"
 )
 
 func (s *Store) backfillSyncRunResumeMetadata(

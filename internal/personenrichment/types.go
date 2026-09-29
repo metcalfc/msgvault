@@ -142,6 +142,10 @@ type Result struct {
 	CanonicalPublicURLs []string
 	IdentityMatches     []IdentityMatch
 	IdentityConfidence  int
+	// ReturnedIdentity is transient adapter output for the semantic identity
+	// review, like IdentityMatch.Value. The host consumes it before building a
+	// commit; the sink never receives it.
+	ReturnedIdentity    *ReturnedIdentity
 	FreshAsOf           time.Time
 	SourceAttempts      []SourceAttempt
 	Cost                Cost
@@ -287,7 +291,10 @@ const (
 	ClaimApplied          ClaimOutcomeStatus = "applied"
 	ClaimPolicyRejected   ClaimOutcomeStatus = "policy_rejected"
 	ClaimIdentityRejected ClaimOutcomeStatus = "identity_rejected"
-	ClaimSuppressed       ClaimOutcomeStatus = "suppressed"
+	// ClaimIdentityUncertain records a semantic identity check that landed
+	// between the accept and reject thresholds; no claim is applied.
+	ClaimIdentityUncertain ClaimOutcomeStatus = "identity_uncertain"
+	ClaimSuppressed        ClaimOutcomeStatus = "suppressed"
 )
 
 type ClaimOutcome struct {
@@ -331,11 +338,19 @@ type IdentityAssessment struct {
 	Score          int
 	Reason         string
 	MatchedClasses []IdentifierClass
+	// Judgment is present when a semantic identity check ran, whatever it
+	// decided, so the outcome is auditable without the names it compared.
+	Judgment *IdentityJudgment
 }
 
 func (a IdentityAssessment) Validate() error {
 	if err := validateConfidence("identity assessment", a.Score); err != nil {
 		return err
+	}
+	if a.Judgment != nil {
+		if err := a.Judgment.Validate(); err != nil {
+			return err
+		}
 	}
 	seen := make(map[IdentifierClass]struct{}, len(a.MatchedClasses))
 	for _, class := range a.MatchedClasses {

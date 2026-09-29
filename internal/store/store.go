@@ -1425,6 +1425,12 @@ func (s *Store) InitSchemaContext(ctx context.Context) error {
 	); err != nil {
 		return fmt.Errorf("migrate person sweep attempt brief failure class: %w", err)
 	}
+	if err := s.runOnceMigration(
+		ctx, migrationPersonEnrichmentIdentityUncertain, 1, false,
+		s.migratePersonEnrichmentIdentityUncertain,
+	); err != nil {
+		return fmt.Errorf("migrate person enrichment attempt states: %w", err)
+	}
 	if err := s.ensureDirectoryProjectionInfrastructure(ctx); err != nil {
 		return err
 	}

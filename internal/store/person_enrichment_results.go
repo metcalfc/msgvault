@@ -312,8 +312,10 @@ func (s *Store) commitPreparedPersonEnrichmentResult(
 			}
 			outcome.Status = disposition.Status
 			return nil
-		case personenrichment.ClaimApplied, personenrichment.ClaimIdentityRejected:
-			// Both branches apply a prepared PR1 generation below.
+		case personenrichment.ClaimApplied, personenrichment.ClaimIdentityRejected,
+			personenrichment.ClaimIdentityUncertain:
+			// Each branch applies a prepared PR1 generation below; only an
+			// applied claim projects.
 		default:
 			return fmt.Errorf("invalid person enrichment result disposition %q", disposition.Status)
 		}
@@ -347,6 +349,10 @@ func (s *Store) commitPreparedPersonEnrichmentResult(
 				ctx, tx, prepared.Commit, prepared.Digests, prepared.CompletionTime); err != nil {
 				return err
 			}
+		}
+		if err := s.insertPersonEnrichmentIdentityJudgmentTx(
+			ctx, tx, prepared.Commit, prepared.CompletionTime); err != nil {
+			return err
 		}
 		costViolation, err = s.completePersonEnrichmentClaimTx(
 			ctx, tx, prepared.Commit, disposition.Status, generationResult,
@@ -464,6 +470,10 @@ func (s *Store) recheckPersonEnrichmentCommitTx(
 			return enrichmentCommitDisposition{
 				Status: personenrichment.ClaimIdentityRejected, Replay: true, GenerationKey: generationKey,
 			}, nil
+		case personEnrichmentStateIdentityUncertain:
+			return enrichmentCommitDisposition{
+				Status: personenrichment.ClaimIdentityUncertain, Replay: true, GenerationKey: generationKey,
+			}, nil
 		default:
 			return enrichmentCommitDisposition{}, fmt.Errorf(
 				"%w: terminal generation state", errPersonEnrichmentResultEnvelopeChanged)
@@ -551,6 +561,9 @@ func (s *Store) recheckPersonEnrichmentCommitTx(
 		}, nil
 	}
 	if !commit.IdentityAssessment.Accepted {
+		if commit.IdentityAssessment.Reason == personenrichment.IdentityUncertainReason {
+			return enrichmentCommitDisposition{Status: personenrichment.ClaimIdentityUncertain}, nil
+		}
 		return enrichmentCommitDisposition{Status: personenrichment.ClaimIdentityRejected}, nil
 	}
 	return enrichmentCommitDisposition{Status: personenrichment.ClaimApplied}, nil
@@ -691,13 +704,23 @@ func (s *Store) completePersonEnrichmentClaimTx(
 			CostReconciled: true,
 		})
 	}
-	if status != personenrichment.ClaimIdentityRejected {
-		return false, fmt.Errorf("invalid enrichment completion status %q", status)
+	switch status {
+	case personenrichment.ClaimIdentityRejected:
+		return false, s.completePersonEnrichmentRejectedAttemptTx(
+			ctx, tx, commit, "identity_rejected", personenrichment.FailureIdentityRejected,
+			generation.GenerationKey, completionTime, true)
+	case personenrichment.ClaimIdentityUncertain:
+		return false, s.completePersonEnrichmentRejectedAttemptTx(
+			ctx, tx, commit, personEnrichmentStateIdentityUncertain, personenrichment.FailureIdentityUncertain,
+			generation.GenerationKey, completionTime, true)
+	case personenrichment.ClaimApplied, personenrichment.ClaimPolicyRejected, personenrichment.ClaimSuppressed:
 	}
-	return false, s.completePersonEnrichmentRejectedAttemptTx(
-		ctx, tx, commit, "identity_rejected", personenrichment.FailureIdentityRejected,
-		generation.GenerationKey, completionTime, true)
+	return false, fmt.Errorf("invalid enrichment completion status %q", status)
 }
+
+// personEnrichmentStateIdentityUncertain is the attempt state of a semantic
+// identity check that landed between the accept and reject thresholds.
+const personEnrichmentStateIdentityUncertain = "identity_uncertain"
 
 func (s *Store) rejectPersonEnrichmentResultPolicyTx(
 	ctx context.Context, tx *loggedTx, commit personenrichment.ClaimCommit, completionTime time.Time,
@@ -1010,8 +1033,19 @@ func validateEnrichmentHostIdentityAssessment(
 		return err
 	}
 	if !assessment.Accepted {
-		if assessment.Score != 0 || assessment.Reason != "identity_not_verified" ||
-			len(assessment.MatchedClasses) != 0 {
+		if assessment.Score != 0 || len(assessment.MatchedClasses) != 0 {
+			return errors.New("failed enrichment identity assessment is not host canonical")
+		}
+		switch assessment.Reason {
+		case "identity_not_verified":
+			if assessment.Judgment != nil && assessment.Judgment.Outcome != personenrichment.IdentityJudgmentRejected {
+				return errors.New("unverified enrichment identity assessment carries a non-rejected judgment")
+			}
+		case personenrichment.IdentityUncertainReason:
+			if assessment.Judgment == nil || assessment.Judgment.Outcome != personenrichment.IdentityJudgmentUncertain {
+				return errors.New("uncertain enrichment identity assessment requires an uncertain judgment")
+			}
+		default:
 			return errors.New("failed enrichment identity assessment is not host canonical")
 		}
 		return nil
@@ -1037,6 +1071,14 @@ func validateEnrichmentHostIdentityAssessment(
 				personenrichment.IdentifierName, personenrichment.IdentifierCurrentCompany,
 			}) {
 			return errors.New("name-company enrichment identity assessment is not host canonical")
+		}
+	case personenrichment.SemanticIdentityReason:
+		if assessment.Score != personenrichment.SemanticIdentityScore ||
+			assessment.Judgment == nil || assessment.Judgment.Outcome != personenrichment.IdentityJudgmentAccepted ||
+			!slices.Equal(assessment.MatchedClasses, []personenrichment.IdentifierClass{
+				personenrichment.IdentifierName, personenrichment.IdentifierCurrentCompany,
+			}) {
+			return errors.New("semantic enrichment identity assessment is not host canonical")
 		}
 	default:
 		return errors.New("accepted enrichment identity assessment reason is not host canonical")

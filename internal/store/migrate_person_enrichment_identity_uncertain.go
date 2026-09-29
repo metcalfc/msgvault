@@ -1,0 +1,214 @@
+package store
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"strings"
+)
+
+// personEnrichmentAttemptStateCheck is the attempt state vocabulary including
+// identity_uncertain: a semantic identity check that landed between the accept
+// and reject thresholds, recorded for a person to look at with no claim
+// applied. Written once so the migration and the rebuilt table cannot drift.
+const personEnrichmentAttemptStateCheck = `CHECK(state IN ('queued', 'starting', 'pending', 'retry_wait', 'succeeded', 'terminal', 'suppressed', 'identity_rejected', 'uncertain_start', 'identity_uncertain'))`
+
+// personEnrichmentAttemptStateConstraint is the constraint name both backends
+// use. PostgreSQL auto-names an inline column check exactly this way, so an
+// archive that predates the named constraint drops under the same name.
+const personEnrichmentAttemptStateConstraint = "person_enrichment_attempts_state_check"
+
+// migratePersonEnrichmentIdentityUncertain widens person_enrichment_attempts
+// .state to admit identity_uncertain. Only the check changes; every column,
+// key, index, and row is preserved, including the identifiers, citations,
+// sources, and work rows that reference the attempt.
+func (s *Store) migratePersonEnrichmentIdentityUncertain(ctx context.Context) error {
+	if s.IsPostgreSQL() {
+		return s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
+			if err := validatePersonEnrichmentAttemptStateRows(ctx, tx); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `ALTER TABLE person_enrichment_attempts
+				DROP CONSTRAINT IF EXISTS `+personEnrichmentAttemptStateConstraint); err != nil {
+				return fmt.Errorf("drop person enrichment attempt state constraint: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `ALTER TABLE person_enrichment_attempts
+				ADD CONSTRAINT `+personEnrichmentAttemptStateConstraint+` `+
+				personEnrichmentAttemptStateCheck); err != nil {
+				return fmt.Errorf("create person enrichment attempt state constraint: %w", err)
+			}
+			return nil
+		})
+	}
+	return s.migratePersonEnrichmentIdentityUncertainSQLite(ctx)
+}
+
+// migratePersonEnrichmentIdentityUncertainSQLite follows SQLite's documented
+// procedure for an arbitrary schema change: rebuild the table inside a
+// transaction on a connection whose foreign keys are disabled. Foreign keys
+// must be off because person_enrichment_attempt_identifiers, citations,
+// sources, identity judgments, and the work table reference the attempt with
+// ON DELETE CASCADE, and DROP TABLE performs an implicit delete that would
+// otherwise fire those actions and destroy the ledger. The pragma is
+// connection-scoped and cannot change inside a transaction, so this runs on a
+// dedicated pooled connection rather than through runMaintenance.
+func (s *Store) migratePersonEnrichmentIdentityUncertainSQLite(ctx context.Context) (err error) {
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire connection to widen person enrichment attempt states: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	var definition string
+	if err := conn.QueryRowContext(ctx, `SELECT sql FROM sqlite_master
+		WHERE type = 'table' AND name = 'person_enrichment_attempts'`).Scan(&definition); err != nil {
+		return fmt.Errorf("inspect person enrichment attempt states: %w", err)
+	}
+	if strings.Contains(definition, "'identity_uncertain'") {
+		return nil
+	}
+	if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf("suspend foreign keys to widen person enrichment attempt states: %w", err)
+	}
+	// Restore enforcement before the connection returns to the pool, whatever
+	// happens below. A pooled connection is reused, so a leaked pragma would
+	// silently disable foreign keys for unrelated later work; failing to
+	// restore it is reported rather than swallowed.
+	defer func() {
+		if _, restoreErr := conn.ExecContext(context.WithoutCancel(ctx),
+			`PRAGMA foreign_keys = ON`); restoreErr != nil {
+			err = errors.Join(err, fmt.Errorf(
+				"restore foreign keys after person enrichment attempt rebuild: %w", restoreErr))
+		}
+	}()
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin person enrichment attempt state rebuild: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	if err := validatePersonEnrichmentAttemptStateRows(ctx, &loggedTx{Tx: tx, rebind: s.Rebind}); err != nil {
+		return err
+	}
+	for _, statement := range personEnrichmentAttemptStateRebuildStatements() {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("rebuild person enrichment attempt states: %w", err)
+		}
+	}
+	violations, err := countForeignKeyViolations(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if violations != 0 {
+		return fmt.Errorf("person enrichment attempt rebuild left %d dangling references", violations)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit person enrichment attempt state rebuild: %w", err)
+	}
+	committed = true
+	return nil
+}
+
+// countForeignKeyViolations runs SQLite's whole-database foreign key check
+// and returns how many rows it reported.
+func countForeignKeyViolations(ctx context.Context, tx *sql.Tx) (int, error) {
+	rows, err := tx.QueryContext(ctx, `PRAGMA foreign_key_check`)
+	if err != nil {
+		return 0, fmt.Errorf("check foreign keys after person enrichment attempt rebuild: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	violations := 0
+	for rows.Next() {
+		violations++
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("read foreign key check after person enrichment attempt rebuild: %w", err)
+	}
+	return violations, nil
+}
+
+const personEnrichmentAttemptColumnList = `id, run_id, person_id, profile_fingerprint, trigger_kind,
+			trigger_generation, person_revision, payload_hash, request_hash, fact_generation_key, state,
+			provider_request_id, provider_job_id, adapter_version, schema_version, generated_schema,
+			generated_schema_hash, targets_json, program_fingerprint, provider_started_at,
+			dispatch_authorized_at, lease_owner, lease_fence, lease_until, next_action_at, attempt_count,
+			hard_cost_cap_enforced, reserved_cost_usd_micros, actual_cost_usd_micros, failure_class,
+			created_at, completed_at`
+
+func personEnrichmentAttemptStateRebuildStatements() []string {
+	return []string{
+		`DROP TABLE IF EXISTS person_enrichment_attempts_state_v2`,
+		`CREATE TABLE person_enrichment_attempts_state_v2 (
+			id INTEGER PRIMARY KEY,
+			run_id INTEGER NOT NULL REFERENCES person_enrichment_runs(id) ON DELETE RESTRICT,
+			person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+			profile_fingerprint TEXT NOT NULL REFERENCES person_enrichment_profiles(fingerprint),
+			trigger_kind TEXT NOT NULL CHECK(trigger_kind IN ('tracked', 'identity', 'claim_expiry', 'refresh', 'manual')),
+			trigger_generation TEXT NOT NULL,
+			person_revision INTEGER NOT NULL CHECK(person_revision >= 0),
+			payload_hash TEXT NOT NULL,
+			request_hash TEXT NOT NULL UNIQUE,
+			fact_generation_key TEXT,
+			state TEXT NOT NULL CONSTRAINT ` + personEnrichmentAttemptStateConstraint + ` ` + personEnrichmentAttemptStateCheck + `,
+			provider_request_id TEXT,
+			provider_job_id TEXT,
+			adapter_version TEXT,
+			schema_version TEXT,
+			generated_schema INTEGER NOT NULL DEFAULT 0 CHECK(generated_schema IN (0, 1)),
+			generated_schema_hash TEXT,
+			targets_json TEXT,
+			program_fingerprint TEXT,
+			provider_started_at DATETIME,
+			dispatch_authorized_at DATETIME,
+			lease_owner TEXT,
+			lease_fence INTEGER NOT NULL CHECK(lease_fence >= 0),
+			lease_until DATETIME,
+			next_action_at DATETIME,
+			attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count >= 0),
+			hard_cost_cap_enforced INTEGER NOT NULL CHECK(hard_cost_cap_enforced IN (0, 1)),
+			reserved_cost_usd_micros INTEGER NOT NULL CHECK(reserved_cost_usd_micros >= 0),
+			actual_cost_usd_micros INTEGER CHECK(actual_cost_usd_micros >= 0),
+			failure_class TEXT,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			completed_at DATETIME,
+			CHECK ((generated_schema = 1 AND generated_schema_hash IS NOT NULL) OR
+			       (generated_schema = 0 AND generated_schema_hash IS NULL))
+		)`,
+		`INSERT INTO person_enrichment_attempts_state_v2 (` + personEnrichmentAttemptColumnList + `)
+		 SELECT ` + personEnrichmentAttemptColumnList + ` FROM person_enrichment_attempts`,
+		`DROP TABLE person_enrichment_attempts`,
+		`ALTER TABLE person_enrichment_attempts_state_v2 RENAME TO person_enrichment_attempts`,
+		`CREATE INDEX IF NOT EXISTS person_enrichment_attempts_next_action
+			ON person_enrichment_attempts(state, next_action_at)`,
+		`CREATE INDEX IF NOT EXISTS person_enrichment_attempts_person_created
+			ON person_enrichment_attempts(person_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS person_enrichment_attempts_run_state
+			ON person_enrichment_attempts(run_id, state)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS person_enrichment_attempts_provider_job
+			ON person_enrichment_attempts(profile_fingerprint, provider_job_id)
+			WHERE provider_job_id IS NOT NULL`,
+	}
+}
+
+// validatePersonEnrichmentAttemptStateRows refuses to widen the constraint
+// over rows the widened vocabulary would still reject, so a corrupt ledger
+// fails the upgrade loudly instead of at the next insert.
+func validatePersonEnrichmentAttemptStateRows(ctx context.Context, tx *loggedTx) error {
+	var invalid int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM person_enrichment_attempts
+		WHERE state NOT IN ('queued', 'starting', 'pending', 'retry_wait', 'succeeded', 'terminal',
+		                    'suppressed', 'identity_rejected', 'uncertain_start', 'identity_uncertain')`,
+	).Scan(&invalid); err != nil {
+		return fmt.Errorf("validate person enrichment attempt states: %w", err)
+	}
+	if invalid != 0 {
+		return fmt.Errorf("person enrichment attempts contain %d invalid states", invalid)
+	}
+	return nil
+}

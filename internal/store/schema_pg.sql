@@ -625,7 +625,7 @@ CREATE TABLE IF NOT EXISTS person_enrichment_attempts (
     payload_hash TEXT NOT NULL,
     request_hash TEXT NOT NULL UNIQUE,
     fact_generation_key TEXT,
-    state TEXT NOT NULL CHECK(state IN ('queued', 'starting', 'pending', 'retry_wait', 'succeeded', 'terminal', 'suppressed', 'identity_rejected', 'uncertain_start')),
+    state TEXT NOT NULL CHECK(state IN ('queued', 'starting', 'pending', 'retry_wait', 'succeeded', 'terminal', 'suppressed', 'identity_rejected', 'uncertain_start', 'identity_uncertain')),
     provider_request_id TEXT,
     provider_job_id TEXT,
     adapter_version TEXT,
@@ -759,6 +759,23 @@ CREATE INDEX IF NOT EXISTS person_enrichment_attempts_run_state
 CREATE UNIQUE INDEX IF NOT EXISTS person_enrichment_attempts_provider_job
     ON person_enrichment_attempts(profile_fingerprint, provider_job_id)
     WHERE provider_job_id IS NOT NULL;
+
+-- One semantic identity check per attempt: the three Jev probabilities, the
+-- decision, and which identifier class matched exactly. No names are kept.
+CREATE TABLE IF NOT EXISTS person_enrichment_identity_judgments (
+    attempt_id BIGINT PRIMARY KEY REFERENCES person_enrichment_attempts(id) ON DELETE CASCADE,
+    person_id BIGINT NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+    profile_fingerprint TEXT NOT NULL REFERENCES person_enrichment_profiles(fingerprint),
+    outcome TEXT NOT NULL CHECK(outcome IN ('accepted', 'uncertain', 'rejected')),
+    exact_class TEXT NOT NULL CHECK(exact_class IN ('name', 'current_company')),
+    name_compatible DOUBLE PRECISION NOT NULL CHECK(name_compatible >= 0 AND name_compatible <= 1),
+    company_same DOUBLE PRECISION NOT NULL CHECK(company_same >= 0 AND company_same <= 1),
+    name_conflict DOUBLE PRECISION NOT NULL CHECK(name_conflict >= 0 AND name_conflict <= 1),
+    model TEXT NOT NULL,
+    judged_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS person_enrichment_identity_judgments_outcome
+    ON person_enrichment_identity_judgments(outcome, judged_at);
 
 CREATE TABLE IF NOT EXISTS person_semantic_embedding_profiles (
     fingerprint             TEXT PRIMARY KEY,

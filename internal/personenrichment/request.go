@@ -400,7 +400,9 @@ func AssessIdentity(request Request, result Result, verified []ProviderPersonID)
 				}
 			}
 		case IdentifierName:
-			nameMatch = nameMatch || exactNormalizedIdentifierMatch(match.Class, request.Identity.Name, match.Value)
+			// A deterministic variant of the requested name (middle initial or
+			// suffix dropped, "Last, First" reordered) counts as the exact name.
+			nameMatch = nameMatch || nameIdentifierMatch(request.Identity.Name, match.Value)
 		case IdentifierCurrentCompany:
 			companyMatch = companyMatch || exactNormalizedIdentifierMatch(match.Class, request.Identity.CurrentCompany, match.Value)
 		}

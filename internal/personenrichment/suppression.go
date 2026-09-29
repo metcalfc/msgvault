@@ -111,6 +111,7 @@ func NewClaimCommit(input ClaimCommitInput, result Result, hasher *SuppressionHa
 	// IdentityMatch.Value is transient adapter output. The host assesses it
 	// before constructing a commit; the sink must never receive or persist it.
 	resultCopy.IdentityMatches = nil
+	resultCopy.ReturnedIdentity = nil
 	digests, err := verifyReturnedIdentifiers(&resultCopy, input.ProviderNamespace, hasher)
 	if err != nil {
 		return ClaimCommit{}, err
@@ -127,6 +128,10 @@ func NewClaimCommit(input ClaimCommitInput, result Result, hasher *SuppressionHa
 
 	assessment := input.IdentityAssessment
 	assessment.MatchedClasses = slices.Clone(input.IdentityAssessment.MatchedClasses)
+	if input.IdentityAssessment.Judgment != nil {
+		judgment := *input.IdentityAssessment.Judgment
+		assessment.Judgment = &judgment
+	}
 	return ClaimCommit{
 		AttemptID: input.AttemptID, RunID: input.RunID, LeaseFence: input.LeaseFence,
 		PersonID: input.PersonID, ProfileFingerprint: input.ProfileFingerprint,

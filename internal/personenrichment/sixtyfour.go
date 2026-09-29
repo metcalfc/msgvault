@@ -402,6 +402,17 @@ func decodeSixtyfourCompleted(
 	slices.SortFunc(identityMatches, func(left, right IdentityMatch) int {
 		return strings.Compare(string(left.Class), string(right.Class))
 	})
+	returned := &ReturnedIdentity{}
+	for _, match := range identityMatches {
+		switch match.Class {
+		case IdentifierName:
+			returned.Name = match.Value
+		case IdentifierCurrentCompany:
+			returned.CurrentRoles = append(returned.CurrentRoles, ReturnedRole{Company: match.Value})
+		case IdentifierEmail, IdentifierPhone, IdentifierPublicProfileURL:
+			// Sixtyfour binds only name and company.
+		}
+	}
 	claims := make([]personfacts.ProposedClaim, 0, len(keys))
 	for _, key := range keys {
 		target, ok := sixtyfourTargetByKey(attempt, key)
@@ -424,8 +435,8 @@ func decodeSixtyfourCompleted(
 	return Result{
 		State: ResultComplete, JobID: attempt.JobID,
 		Claims: claims, Cost: cost, IdentityMatches: identityMatches,
-		IdentityConfidence: factConfidence,
-		AdapterVersion:     SixtyfourAdapterVersionV1, SchemaVersion: SixtyfourWireSchemaV1,
+		IdentityConfidence: factConfidence, ReturnedIdentity: returned,
+		AdapterVersion: SixtyfourAdapterVersionV1, SchemaVersion: SixtyfourWireSchemaV1,
 		GeneratedSchema: true, GeneratedSchemaHash: attempt.GeneratedSchemaHash,
 		ProviderVersion: SixtyfourProviderVersion,
 	}, nil

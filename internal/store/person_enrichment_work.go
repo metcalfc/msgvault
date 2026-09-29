@@ -1296,6 +1296,8 @@ func (s *Store) MarkTerminal(
 	switch failure.Class {
 	case personenrichment.FailureIdentityRejected:
 		state = "identity_rejected"
+	case personenrichment.FailureIdentityUncertain:
+		state = personEnrichmentStateIdentityUncertain
 	case personenrichment.FailureSuppressed:
 		state = "suppressed"
 	case personenrichment.FailurePolicy, personenrichment.FailureRateLimited,
@@ -1494,7 +1496,7 @@ func (s *Store) ListPersonEnrichmentAttemptsContext(
 func validPersonEnrichmentAttemptState(state string) bool {
 	switch state {
 	case "queued", "starting", "pending", "retry_wait", personEnrichmentStateSucceeded, "terminal",
-		"suppressed", "identity_rejected", "uncertain_start":
+		"suppressed", "identity_rejected", "uncertain_start", personEnrichmentStateIdentityUncertain:
 		return true
 	default:
 		return false
@@ -1916,6 +1918,7 @@ func validPersonEnrichmentFailureClass(class personenrichment.FailureClass) bool
 	case personenrichment.FailurePolicy, personenrichment.FailureSuppressed,
 		personenrichment.FailureRateLimited, personenrichment.FailureTransient,
 		personenrichment.FailureInvalidOutput, personenrichment.FailureIdentityRejected,
+		personenrichment.FailureIdentityUncertain,
 		personenrichment.FailureTerminal, personenrichment.FailureUncertainStart:
 		return true
 	default:

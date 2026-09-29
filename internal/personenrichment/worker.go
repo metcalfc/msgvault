@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"slices"
 	"sort"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"go.kenn.io/msgvault/internal/httpretry"
+	"go.kenn.io/msgvault/internal/jev"
 	"go.kenn.io/msgvault/internal/personfacts"
 )
 
@@ -22,6 +24,10 @@ type WorkerOptions struct {
 	Clock           func() time.Time
 	Jitter          func(time.Duration) time.Duration
 	ProviderConfigs map[string]ProviderConfig
+	// IdentityJudge, when set, is consulted after the exact identity rule
+	// declines a result in which exactly one of name and current company
+	// matched. A nil judge keeps the exact rule alone.
+	IdentityJudge IdentityJudge
 }
 
 type Worker struct {
@@ -680,7 +686,7 @@ func (w *Worker) completeAttempt(
 	for i, id := range knownIDs {
 		verified[i] = ProviderPersonID{ID: id}
 	}
-	assessment := AssessIdentity(request, result, verified)
+	assessment := w.assessIdentity(ctx, request, result, verified)
 	commit, err := NewClaimCommit(ClaimCommitInput{
 		AttemptID: lease.Token.AttemptID, RunID: lease.RunID, PersonID: lease.PersonID,
 		LeaseFence: lease.Token.Fence, ProfileFingerprint: lease.ProfileFingerprint,
@@ -693,6 +699,35 @@ func (w *Worker) completeAttempt(
 	}
 	_, err = w.sink.CommitEnrichmentClaims(ctx, commit)
 	return err
+}
+
+// assessIdentity applies the exact rule and, when it declines a partial
+// name-or-company match and a judge is configured, asks for a semantic
+// judgment. A judge that cannot or will not answer leaves the exact rule's
+// answer in place; only the category is logged, never the names.
+func (w *Worker) assessIdentity(
+	ctx context.Context, request Request, result Result, verified []ProviderPersonID,
+) IdentityAssessment {
+	assessment := AssessIdentity(request, result, verified)
+	if assessment.Accepted || w.options.IdentityJudge == nil {
+		return assessment
+	}
+	review, ok := SemanticIdentityReview(request, result)
+	if !ok {
+		return assessment
+	}
+	judgment, err := w.options.IdentityJudge.JudgeIdentity(ctx, review)
+	if err != nil {
+		slog.Debug("enrichment identity judgment skipped",
+			"feature", jev.FeatureEnrichmentIdentity, "category", jev.Skipped(err),
+			"exact_class", string(review.Exact))
+		return assessment
+	}
+	slog.Debug("enrichment identity judgment",
+		"feature", jev.FeatureEnrichmentIdentity, "outcome", string(judgment.Outcome),
+		"exact_class", string(judgment.ExactClass), "name_compatible", judgment.NameCompatible,
+		"company_same", judgment.CompanySame, "name_conflict", judgment.NameConflict)
+	return ApplyIdentityJudgment(assessment, judgment)
 }
 
 func (w *Worker) persistProviderFailure(

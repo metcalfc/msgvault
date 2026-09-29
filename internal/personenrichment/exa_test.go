@@ -723,6 +723,7 @@ func exaFixture(t *testing.T, name string) []byte {
 func TestExaFixturesAreJSONOnlySyntheticAndOffline(t *testing.T) {
 	for _, name := range []string{
 		"exa_people_success.json", "exa_deep_success.json", "exa_people_error.json",
+		"exa_people_partial.json", "exa_people_empty.json", "exa_people_empty_charged.json",
 	} {
 		data := exaFixture(t, name)
 		lower := strings.ToLower(string(data))
