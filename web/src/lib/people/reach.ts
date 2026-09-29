@@ -37,8 +37,10 @@ export interface ReachEntry {
   title?: string;
   /** True when the value was seen in the archive rather than curated in the address book. */
   observed: boolean;
-  /** The participant cluster member this value belongs to, when archive-derived. */
-  participantID?: number;
+  /** Every cluster member that contributed this value. One visible row per
+   * value, but each member keeps its own unlink control, so two members
+   * sharing an address both stay detachable. */
+  participantIDs: number[];
   /** The visible text is a service label because the value itself is an opaque key. */
   opaque?: boolean;
 }
@@ -99,7 +101,8 @@ export function reachEntriesFromContactPoints(points: readonly PersonContactPoin
       key: keyFor(kind, point.normalized_value || value, point.service_slug),
       kind, value, display: value, label: value, service,
       title: point.envelope.type_label || undefined,
-      observed: point.envelope.source === 'archive_observation'
+      observed: point.envelope.source === 'archive_observation',
+      participantIDs: []
     });
   }
   return entries;
@@ -155,7 +158,7 @@ export function reachEntriesFromIdentifiers({ identifiers, ownID, members = [], 
       note: [scope, relation].filter(Boolean).join(' · ') || undefined,
       title: opaque ? `${text.detail} · ${identifierTooltip(identifier)}` : identifierTooltip(identifier),
       observed: true,
-      participantID: identifier.participant_id,
+      participantIDs: [identifier.participant_id],
       opaque
     });
   }
@@ -175,7 +178,7 @@ export function reachEntriesFromMembers(members: readonly PersonClusterMember[],
       entries.push({
         key: keyFor(kind, value), kind, value, display: value, label: value,
         name: member.display_name || undefined, note: origin || 'linked',
-        observed: true, participantID: member.participant_id
+        observed: true, participantIDs: [member.participant_id]
       });
     }
   }
@@ -184,7 +187,8 @@ export function reachEntriesFromMembers(members: readonly PersonClusterMember[],
 
 /** Union of several sources, deduplicated by normalized value. The address
  * book wins over the archive for presentation; archive-only facts
- * (participant id, relationship note) are carried across. */
+ * (contributing participant ids, relationship note) are carried across,
+ * and every contributing member is kept so none loses its controls. */
 export function mergeReachEntries(...lists: ReachEntry[][]): ReachEntry[] {
   const byKey = new Map<string, ReachEntry>();
   for (const list of lists) {
@@ -198,7 +202,7 @@ export function mergeReachEntries(...lists: ReachEntry[][]): ReachEntry[] {
         service: keep.service ?? other.service,
         note: keep.note ?? other.note,
         title: keep.title ?? other.title,
-        participantID: keep.participantID ?? other.participantID,
+        participantIDs: [...new Set([...keep.participantIDs, ...other.participantIDs])],
         observed: keep.observed && other.observed
       });
     }

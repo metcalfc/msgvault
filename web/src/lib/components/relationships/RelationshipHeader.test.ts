@@ -484,6 +484,32 @@ describe('RelationshipHeader', () => {
     expect(await screen.findByRole('menuitem', { name: 'Unlink' })).toBeDefined();
   });
 
+  it('keeps every member unlinkable when two participants share one address', async () => {
+    const onUnlinkParticipants = vi.fn(async (): Promise<LinkOutcome> => ({ ok: true, identityRevision: 4, cacheState: 'ready' }));
+    const base = clusteredPersonWithBareMember();
+    render(RelationshipHeader, baseProps({ onUnlinkParticipants, detail: {
+      ...base,
+      identifiers: [
+        base.identifiers[0]!,
+        { type: 'email', value: 'ALICE@example.com', participant_id: 34, is_primary: true, provenance: 'participant_identifiers' },
+        base.identifiers[2]!
+      ],
+      cluster: { ...base.cluster!, members: [{ participant_id: 78, email: 'alice@example.com', display_name: 'Alias Example' }] }
+    } }));
+
+    // One visible row for the shared address (plus carol's), no bare-member fallback rows...
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.queryByLabelText(/^Linked profile/)).toBeNull();
+    // ...but each linked member still has its own Unlink in the row's menu.
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for alice@example.com' }));
+    expect(await screen.findByRole('menuitem', { name: 'Unlink profile 34' })).toBeDefined();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Unlink Alias Example (78)' }));
+    expect(screen.getByRole('group', { name: 'Confirm unlinking Alias Example (78)' })).toBeDefined();
+    await fireEvent.click(screen.getByRole('button', { name: 'Unlink' }));
+    await waitFor(() => expect(onUnlinkParticipants).toHaveBeenCalledWith(12, 78));
+    expect(onUnlinkParticipants).not.toHaveBeenCalledWith(12, 34);
+  });
+
   it('does not show unlink controls when the person has no cluster', () => {
     render(RelationshipHeader, baseProps());
     expect(screen.queryByRole('button', { name: /^Actions for / })).toBeNull();

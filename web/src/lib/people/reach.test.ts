@@ -104,7 +104,19 @@ describe('reach entries', () => {
       { participant_id: 79, display_name: 'No Address' }
     ]);
     expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({ kind: 'email', value: 'bare@example.test', name: 'Bare Example', note: 'linked', participantID: 78 });
+    expect(entries[0]).toMatchObject({ kind: 'email', value: 'bare@example.test', name: 'Bare Example', note: 'linked', participantIDs: [78] });
+  });
+
+  it('keeps every member that shares a value on the one visible row', () => {
+    const merged = mergeReachEntries(
+      reachEntriesFromIdentifiers({ identifiers: [
+        identifier({}),
+        identifier({ value: 'PERSON@example.test', participant_id: 34 })
+      ], ownID: 12, clustered: true, edges: [{ participant_a: 12, participant_b: 34 }] }),
+      reachEntriesFromMembers([{ participant_id: 78, email: 'person@example.test' }])
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.participantIDs).toEqual([12, 34, 78]);
   });
 
   it('deduplicates by normalized value, prefers the address book, and orders by kind', () => {
@@ -119,10 +131,10 @@ describe('reach entries', () => {
       ] }),
       reachEntriesFromMembers([{ participant_id: 34, phone: '15550100001' }])
     );
-    expect(merged.map((entry) => [entry.kind, entry.display, entry.observed, entry.participantID])).toEqual([
-      ['email', 'Person@Example.test', false, 12],
-      ['phone', '+1 (555) 010-0001', true, 12],
-      ['url', 'https://example.test/person', false, undefined]
+    expect(merged.map((entry) => [entry.kind, entry.display, entry.observed, entry.participantIDs])).toEqual([
+      ['email', 'Person@Example.test', false, [12]],
+      ['phone', '+1 (555) 010-0001', true, [12, 34]],
+      ['url', 'https://example.test/person', false, []]
     ]);
     expect(merged[0]?.name).toBe('Person');
     expect(merged[2]?.service).toBe('LinkedIn');

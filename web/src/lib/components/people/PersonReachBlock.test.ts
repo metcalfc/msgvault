@@ -6,9 +6,9 @@ import PersonReachBlock from './PersonReachBlock.svelte';
 
 function entries(): ReachEntry[] {
   return [
-    { key: 'email:person@example.test', kind: 'email', value: 'person@example.test', display: 'person@example.test', label: 'person@example.test', observed: false },
-    { key: 'phone:15550100001', kind: 'phone', value: '+1 555 010 0001', display: '+1 555 010 0001', label: '+1 555 010 0001', observed: true, name: 'Person' },
-    { key: 'chat:whatsapp:key', kind: 'chat', value: 'beeper:opaque-key', display: 'WhatsApp', label: 'WhatsApp identifier for profile 3', observed: true, opaque: true, title: 'beeper:opaque-key' }
+    { key: 'email:person@example.test', kind: 'email', value: 'person@example.test', display: 'person@example.test', label: 'person@example.test', observed: false, participantIDs: [] },
+    { key: 'phone:15550100001', kind: 'phone', value: '+1 555 010 0001', display: '+1 555 010 0001', label: '+1 555 010 0001', observed: true, name: 'Person', participantIDs: [3] },
+    { key: 'chat:whatsapp:key', kind: 'chat', value: 'beeper:opaque-key', display: 'WhatsApp', label: 'WhatsApp identifier for profile 3', observed: true, opaque: true, title: 'beeper:opaque-key', participantIDs: [3] }
   ];
 }
 

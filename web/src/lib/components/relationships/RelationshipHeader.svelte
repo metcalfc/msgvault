@@ -118,14 +118,6 @@
     const known = new Set((detail.identifiers ?? []).map((identifier) => identifier.participant_id));
     return (detail.cluster.member_ids ?? []).filter((id) => id !== detail.id && !known.has(id));
   });
-  /** Unrepresented members with a stored email or phone become contact
-   * rows; the rest are listed below the block so their unlink control
-   * remains reachable. */
-  const bareMembers = $derived(unrepresentedMembers.filter((id) => {
-    const member = memberFor(id);
-    return !member?.email?.trim() && !member?.phone?.trim();
-  }));
-
   /** Every way to reach the open person: the Directory profile's contact
    * points (address book) merged with the cluster's identifiers and member
    * addresses (archive), deduplicated by normalized value. */
@@ -153,8 +145,25 @@
     return siblingClusters.filter((cluster) => cluster.target !== current);
   });
 
+  /** Unrepresented members that no contact row covers (no stored address,
+   * or one that was never merged into a row) are listed below the block so
+   * their unlink control remains reachable. */
+  const bareMembers = $derived(unrepresentedMembers.filter((id) =>
+    !reachEntries.some((entry) => entry.participantIDs.includes(id))
+  ));
+
   function isOtherMember(participantID: number): boolean {
     return Boolean(detail && isPersonDetail(detail) && detail.cluster && participantID !== detail.id);
+  }
+
+  /** The linked members contributing to a row — each gets its own Unlink. */
+  function otherMembersOf(entry: ReachEntry): number[] {
+    return entry.participantIDs.filter(isOtherMember);
+  }
+
+  function memberLabel(participantID: number): string {
+    const member = memberFor(participantID);
+    return member?.display_name ? `${member.display_name} (${participantID})` : `profile ${participantID}`;
   }
 
   function memberFor(participantID: number) {
@@ -344,9 +353,10 @@
   }
 </script>
 
-{#snippet memberActions(participantID: number, label: string)}
-  {#if confirmingParticipantID === participantID}
-    <span class="chip-confirm" role="group" aria-label={`Confirm unlinking ${label}`}>
+{#snippet memberActions(participantIDs: number[], label: string)}
+  {@const confirming = participantIDs.find((id) => id === confirmingParticipantID)}
+  {#if confirming !== undefined}
+    <span class="chip-confirm" role="group" aria-label={`Confirm unlinking ${participantIDs.length > 1 ? memberLabel(confirming) : label}`}>
       <span>Not the same person?</span>
       <Button
         label="Unlink"
@@ -354,7 +364,7 @@
         surface="solid"
         size="sm"
         disabled={unlinking}
-        onclick={() => void confirmUnlink(participantID)}
+        onclick={() => void confirmUnlink(confirming)}
       />
       <Button label="Cancel" surface="soft" size="sm" disabled={unlinking} onclick={cancelUnlink} />
     </span>
@@ -364,7 +374,11 @@
         <EllipsisIcon size="14" aria-hidden="true" />
       </MenuTrigger>
       <MenuContent ariaLabel={`Actions for ${label}`}>
-        <MenuItem tone="danger" onselect={() => startUnlink(participantID)}>Unlink</MenuItem>
+        {#each participantIDs as participantID (participantID)}
+          <MenuItem tone="danger" onselect={() => startUnlink(participantID)}>
+            {participantIDs.length > 1 ? `Unlink ${memberLabel(participantID)}` : 'Unlink'}
+          </MenuItem>
+        {/each}
       </MenuContent>
     </Menu>
   {/if}
@@ -465,8 +479,9 @@
       <div class="reach">
         <PersonReachBlock entries={reachEntries} ariaLabel="Contact methods" {onAnnounce}>
           {#snippet actions(entry)}
-            {#if entry.participantID !== undefined && isOtherMember(entry.participantID)}
-              {@render memberActions(entry.participantID, entry.label)}
+            {@const members = otherMembersOf(entry)}
+            {#if members.length > 0}
+              {@render memberActions(members, entry.label)}
             {/if}
           {/snippet}
         </PersonReachBlock>
@@ -476,7 +491,7 @@
           {@const label = `profile ${member?.display_name ? `${text.title} (${memberID})` : memberID}`}
           <div class="linked-profile" aria-label={`Linked ${label}`}>
             <span class="linked-profile-text"><strong>{text.title}</strong> <small>{text.subtitle}</small></span>
-            {@render memberActions(memberID, label)}
+            {@render memberActions([memberID], label)}
           </div>
         {/each}
         {#if unlinkError}
