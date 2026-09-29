@@ -130,24 +130,29 @@ describe('PersonDetail', () => {
   });
 
   it('shows every contact method under the name, merging address-book points with observed participant identifiers', async () => {
+    const participantRequests: string[] = [];
     const client = createAPIClient(quietOverviewFetch().mockImplementation(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const path = new URL(request.url).pathname;
       const overview = overviewCardResponse(request);
       if (overview) return overview;
+      if (path.startsWith('/api/v1/participants/')) participantRequests.push(path);
+      // 9 is a member of 3's cluster: its identifiers arrive with 3's response.
       if (path === '/api/v1/participants/3') return Response.json({
         id: 3, display_label: 'Synthetic Person', identifiers: [
           { type: 'email', value: 'PERSON@example.test', participant_id: 3, is_primary: true, provenance: 'participant_identifiers' },
-          { type: 'phone', value: '+1 555 010 0009', participant_id: 3, is_primary: false, provenance: 'participant_identifiers' }
-        ], activity_count: 0, file_count: 0, source_counts: [], first_at: when, last_at: when, cache_revision: 'c'
+          { type: 'phone', value: '+1 555 010 0009', participant_id: 3, is_primary: false, provenance: 'participant_identifiers' },
+          { type: 'phone', value: '+1 (555) 010-0009', participant_id: 9, is_primary: true, provenance: 'participant_identifiers' }
+        ], activity_count: 0, file_count: 0, source_counts: [], first_at: when, last_at: when, cache_revision: 'c',
+        cluster: { canonical_id: 3, member_ids: [3, 9], edges: [] }
       });
       if (path === '/api/v1/carddav/publications/7') return Response.json({ error: 'carddav_unavailable', message: 'not rendered' }, { status: 503 });
       return Response.json({ merges: [], limit: 100, offset: 0 });
     }));
     render(PersonDetail, { client, personID: 7, bundle: {
-      person: { id: 7, revision: 2, display_name: 'Synthetic Person', participant_ids: [3], vcard_uid: '', created_at: when, updated_at: when },
+      person: { id: 7, revision: 2, display_name: 'Synthetic Person', participant_ids: [9, 3], vcard_uid: '', created_at: when, updated_at: when },
       structuredProfile: {
-        person: { id: 7, revision: 2, participant_ids: [3], vcard_uid: '', created_at: when, updated_at: when },
+        person: { id: 7, revision: 2, participant_ids: [9, 3], vcard_uid: '', created_at: when, updated_at: when },
         names: [],
         contact_points: [{ person_id: 7, address_kind: 'email', original_value: 'person@example.test', normalized_value: 'person@example.test', normalization: 'email', normalization_version: 1, service_slug: 'email', envelope: { id: 2, ordinal: 0, source: 'user', created_at: when, updated_at: when, vcard: {} } }],
         addresses: [], dates: [], categories: [], media: []
@@ -164,6 +169,8 @@ describe('PersonDetail', () => {
     expect(rows[1]?.textContent).toContain('+1 555 010 0009');
     expect(rows[1]?.textContent).toContain('observed');
     expect(screen.getByRole('button', { name: 'Copy +1 555 010 0009' })).toBeDefined();
+    // One request per cluster, and the same phone from two members is one row.
+    expect(participantRequests).toEqual(['/api/v1/participants/3']);
   });
 
   it('does not claim an organization name for an employment outside the primary projection', async () => {

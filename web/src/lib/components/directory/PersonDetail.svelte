@@ -72,7 +72,9 @@
   let mediaTab = $state<HTMLButtonElement>();
   const profile = $derived(profileController?.structuredProfile ?? bundle.structuredProfile);
   // Archive-observed identifiers for every participant bound to this person,
-  // best-effort: the address book rows render without them.
+  // best-effort: the address book rows render without them. Each response
+  // already carries its whole cluster's identifiers, so bound ids a fetched
+  // cluster lists as members are not requested again.
   let participantIdentifiers = $state<PersonIdentifier[]>([]);
   const participantKey = $derived(JSON.stringify([...(bundle.person?.participant_ids ?? [])].sort((a, b) => a - b)));
   $effect(() => {
@@ -80,17 +82,28 @@
     participantIdentifiers = [];
     if (ids.length === 0) return;
     const abort = new AbortController();
-    void untrack(() => Promise.all(ids.map(async (id) => {
-      try {
-        return (await getParticipant({ id }, { ...client, signal: abort.signal })).data?.identifiers ?? [];
-      } catch {
-        return [];
-      }
-    }))).then((groups) => {
-      if (!abort.signal.aborted) participantIdentifiers = groups.flat();
+    void untrack(() => loadClusterIdentifiers(ids, abort.signal)).then((identifiers) => {
+      if (!abort.signal.aborted) participantIdentifiers = identifiers;
     });
     return () => abort.abort();
   });
+
+  async function loadClusterIdentifiers(ids: number[], signal: AbortSignal): Promise<PersonIdentifier[]> {
+    const covered = new Set<number>();
+    const identifiers: PersonIdentifier[] = [];
+    for (const id of ids) {
+      if (covered.has(id)) continue;
+      try {
+        const summary = (await getParticipant({ id }, { ...client, signal })).data;
+        if (!summary) continue;
+        for (const member of [summary.id, id, summary.cluster?.canonical_id ?? summary.id, ...(summary.cluster?.member_ids ?? [])]) covered.add(member);
+        identifiers.push(...(summary.identifiers ?? []));
+      } catch {
+        // Best-effort: skip this binding and keep the rest.
+      }
+    }
+    return identifiers;
+  }
   const reachEntries = $derived(mergeReachEntries(
     reachEntriesFromContactPoints(profile?.contact_points),
     reachEntriesFromIdentifiers({ identifiers: participantIdentifiers })

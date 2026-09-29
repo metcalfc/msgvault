@@ -48,10 +48,7 @@ export function humanizeDate(value: string | null | undefined, now: Date = new D
   if (magnitude < hourMs) return phrase(Math.floor(magnitude / minuteMs), 'm');
   if (magnitude < dayMs) return phrase(Math.floor(magnitude / hourMs), 'h');
   if (magnitude < 7 * dayMs) return phrase(Math.floor(magnitude / dayMs), 'd');
-  if (date.getFullYear() === now.getFullYear()) {
-    return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(date);
-  }
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+  return shortDate(value, now);
 }
 
 /** Short calendar date for crumbs and bounds: "Sep 22", or "Sep 22, 2024"
