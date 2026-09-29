@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"mime"
 	"net/http"
@@ -93,11 +94,13 @@ type Answer struct {
 
 // Request is one evaluation of a state against a set of questions. Deadline,
 // when set, bounds the exchange in addition to the caller's context and the
-// client's per-request timeout.
+// client's per-request timeout. Feature names the daily counter the request
+// is charged to and is required when the client has a Ledger.
 type Request struct {
 	State     any
 	Questions []Question
 	Deadline  time.Time
+	Feature   string
 }
 
 // Usage records attempted requests and provider token accounting. Complete is
@@ -124,13 +127,18 @@ type BatchResult struct {
 	Usage     Usage
 }
 
-// Options configure a client. Zero values take the pinned defaults.
+// Options configure a client. Zero values take the pinned defaults. Ledger
+// and DayLimits add persisted per-feature daily accounting on top of the
+// in-process Budget; Now lets tests pick the day.
 type Options struct {
 	Endpoint         string
 	Model            string
 	APIKey           string
 	Transport        http.RoundTripper
 	Budget           *Budget
+	Ledger           Ledger
+	DayLimits        DayLimits
+	Now              func() time.Time
 	RequestTimeout   time.Duration
 	MaxRequestBytes  int
 	MaxResponseBytes int
@@ -143,6 +151,9 @@ type Client struct {
 	key         string
 	client      *http.Client
 	budget      *Budget
+	ledger      Ledger
+	dayLimits   DayLimits
+	now         func() time.Time
 	timeout     time.Duration
 	maxRequest  int
 	maxResponse int
@@ -183,13 +194,56 @@ func NewClient(options Options) (*Client, error) {
 	if maxResponse <= 0 {
 		maxResponse = DefaultMaxResponseBytes
 	}
+	now := options.Now
+	if now == nil {
+		now = time.Now
+	}
 	return &Client{
 		endpoint: endpoint, model: model, key: options.APIKey,
 		client: &http.Client{Transport: options.Transport, CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		}},
-		budget: options.Budget, timeout: timeout, maxRequest: maxRequest, maxResponse: maxResponse,
+		budget: options.Budget, ledger: options.Ledger, dayLimits: options.DayLimits, now: now,
+		timeout: timeout, maxRequest: maxRequest, maxResponse: maxResponse,
 	}, nil
+}
+
+// BudgetState snapshots the in-process budget and breaker for status output.
+func (c *Client) BudgetState() BudgetState { return c.budget.State() }
+
+// reserveDay counts one request against the feature's persisted day before
+// any bytes leave the process.
+func (c *Client) reserveDay(ctx context.Context, feature string) (string, error) {
+	if c.ledger == nil {
+		return "", nil
+	}
+	if !ValidFeatureName(feature) {
+		return "", fmt.Errorf("%w: a ledgered request needs a feature name", ErrRequestBounds)
+	}
+	day := UTCDay(c.now())
+	if err := c.ledger.ReserveJevDayRequest(ctx, DayReservation{Feature: feature, UTCDay: day, Limits: c.dayLimits}); err != nil {
+		return "", err
+	}
+	return day, nil
+}
+
+// recordDay persists what a completed request measured. A ledger write
+// failure is logged, not returned: the answer was paid for and the caller
+// still gets it.
+func (c *Client) recordDay(ctx context.Context, feature, day string, usage Usage) {
+	if c.ledger == nil {
+		return
+	}
+	record := DayUsage{Feature: feature, UTCDay: day, UsageKnown: usage.Complete}
+	if usage.Complete {
+		record.InputTokens = *usage.InputTokens
+		record.OutputTokens = *usage.OutputTokens
+		record.CostUSDMicros = CostUSDMicros(record.InputTokens, record.OutputTokens,
+			c.budget.InputUSDPerM, c.budget.OutputUSDPerM)
+	}
+	if err := c.ledger.RecordJevDayUsage(context.WithoutCancel(ctx), record); err != nil {
+		slog.Warn("jev day usage was not recorded", "feature", feature, "utc_day", day, "error", err.Error())
+	}
 }
 
 // Model returns the pinned model this client requires in every response.
@@ -289,15 +343,21 @@ func (c *Client) Ask(ctx context.Context, request Request) (Response, error) {
 	if err := c.budget.preflight(1); err != nil {
 		return emptyResponse(), err
 	}
+	day, err := c.reserveDay(ctx, request.Feature)
+	if err != nil {
+		return emptyResponse(), err
+	}
 	if err := c.budget.reserve(); err != nil {
 		return emptyResponse(), err
 	}
 	response, err := c.send(ctx, request.Deadline, body, questionIDs(request.Questions))
 	if err != nil {
 		c.budget.fail()
+		c.recordDay(ctx, request.Feature, day, Usage{})
 		return Response{Usage: Usage{Requests: 1}}, err
 	}
 	c.budget.record(response.Usage)
+	c.recordDay(ctx, request.Feature, day, response.Usage)
 	response.Usage.Requests = 1
 	return response, nil
 }
@@ -325,6 +385,10 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 	group.SetLimit(MaxConcurrentRequests)
 	for i, body := range bodies {
 		group.Go(func() error {
+			day, err := c.reserveDay(groupCtx, requests[i].Feature)
+			if err != nil {
+				return err
+			}
 			if err := c.budget.reserve(); err != nil {
 				return err
 			}
@@ -337,8 +401,11 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 				complete = false
 				mu.Unlock()
 				c.budget.fail()
+				c.recordDay(groupCtx, requests[i].Feature, day, Usage{})
 				return err
 			}
+			c.budget.record(response.Usage)
+			c.recordDay(groupCtx, requests[i].Feature, day, response.Usage)
 			mu.Lock()
 			defer mu.Unlock()
 			response.Usage.Requests = 1
@@ -353,7 +420,6 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 			} else {
 				totalOutput += *response.Usage.OutputTokens
 			}
-			c.budget.record(response.Usage)
 			return nil
 		})
 	}
@@ -390,6 +456,7 @@ func emptyBatch() BatchResult {
 func SafeFailure(err error) string {
 	for _, category := range []error{
 		ErrRequestLimit, ErrCostStop, ErrUsageUnknown, ErrRequestBounds, ErrInvalidResponse,
+		ErrBreakerOpen, ErrDayRequestLimit, ErrDayCostStop,
 	} {
 		if errors.Is(err, category) {
 			return category.Error()

@@ -65,7 +65,7 @@ do not invent field names.
   Add `Request{State any, Questions []Question, Deadline}` with a helper that
   splits a batched state into multiple requests under the request cap.
   Rerank package becomes a thin consumer; `msgvault eval` output unchanged.
-- [ ] **Task 0.2 Daemon-grade budget.** Replace the permanent `failed` and
+- [x] **Task 0.2 Daemon-grade budget.** Replace the permanent `failed` and
   `unknown` flags with a circuit breaker (N consecutive failures opens for a
   cool-down; half-open probe) and add persisted daily request and cost
   counters in the store (`jev_day_counters(feature, utc_day, requests,

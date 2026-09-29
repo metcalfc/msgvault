@@ -307,7 +307,7 @@ func TestClientMissingUsageStopsFurtherCalls(t *testing.T) {
 	require := require.New(t)
 	response := `{"model":"jev-1.13.0","answers":{"matches":{"type":"noul","noul":0.75}}}`
 	var requests atomic.Int32
-	client := newTestClient(t, &Budget{MaxRequests: 10, StopUSD: 1}, func(*http.Request) (*http.Response, error) {
+	client := newTestClient(t, &Budget{MaxRequests: 10, StopUSD: 1, InputUSDPerM: 1}, func(*http.Request) (*http.Response, error) {
 		requests.Add(1)
 		return jsonResponse(response), nil
 	})

@@ -4397,3 +4397,16 @@ CREATE INDEX IF NOT EXISTS idx_meeting_actions_status
     ON meeting_action_items(status, message_id, ordinal);
 CREATE INDEX IF NOT EXISTS idx_meeting_actions_assignee
     ON meeting_action_items(assignee_email, message_id, ordinal);
+
+-- Persisted per-feature daily accounting for Jev (System One) judgments, so
+-- daily request and cost caps survive daemon restarts. Requests are counted
+-- at reservation; tokens and cost are added when a response is measured.
+CREATE TABLE IF NOT EXISTS jev_day_counters (
+    feature         TEXT NOT NULL,
+    utc_day         TEXT NOT NULL,
+    requests        INTEGER NOT NULL DEFAULT 0 CHECK (requests >= 0),
+    input_tokens    INTEGER NOT NULL DEFAULT 0 CHECK (input_tokens >= 0),
+    output_tokens   INTEGER NOT NULL DEFAULT 0 CHECK (output_tokens >= 0),
+    cost_usd_micros INTEGER NOT NULL DEFAULT 0 CHECK (cost_usd_micros >= 0),
+    PRIMARY KEY (feature, utc_day)
+);
