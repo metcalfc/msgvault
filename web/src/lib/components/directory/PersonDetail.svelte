@@ -2,9 +2,9 @@
   import { untrack } from 'svelte';
   import { Button, EmptyState } from '@kenn-io/kit-ui';
   import type { MeetingRef, PersonIdentifier } from '../../api/generated/models';
-  import { getParticipant } from '../../api/generated/api/api';
   import MeetingPanel from '../meetings/MeetingPanel.svelte';
   import type { APIClient } from '../../api/client';
+  import { resolveBoundClusters } from '../../people/clusters';
   import { mergeReachEntries, reachEntriesFromContactPoints, reachEntriesFromIdentifiers } from '../../people/reach';
   import { humanizeDate } from '../../util/dates';
   import { channelLabel } from '../../util/labels';
@@ -72,9 +72,8 @@
   let mediaTab = $state<HTMLButtonElement>();
   const profile = $derived(profileController?.structuredProfile ?? bundle.structuredProfile);
   // Archive-observed identifiers for every participant bound to this person,
-  // best-effort: the address book rows render without them. Each response
-  // already carries its whole cluster's identifiers, so bound ids a fetched
-  // cluster lists as members are not requested again.
+  // best-effort: the address book rows render without them. Bindings resolve
+  // in parallel and collapse to one identifier set per cluster.
   let participantIdentifiers = $state<PersonIdentifier[]>([]);
   const participantKey = $derived(JSON.stringify([...(bundle.person?.participant_ids ?? [])].sort((a, b) => a - b)));
   $effect(() => {
@@ -82,28 +81,11 @@
     participantIdentifiers = [];
     if (ids.length === 0) return;
     const abort = new AbortController();
-    void untrack(() => loadClusterIdentifiers(ids, abort.signal)).then((identifiers) => {
-      if (!abort.signal.aborted) participantIdentifiers = identifiers;
+    void untrack(() => resolveBoundClusters(ids, client, abort.signal)).then((resolution) => {
+      if (!abort.signal.aborted) participantIdentifiers = resolution.clusters.flatMap((cluster) => cluster.identifiers);
     });
     return () => abort.abort();
   });
-
-  async function loadClusterIdentifiers(ids: number[], signal: AbortSignal): Promise<PersonIdentifier[]> {
-    const covered = new Set<number>();
-    const identifiers: PersonIdentifier[] = [];
-    for (const id of ids) {
-      if (covered.has(id)) continue;
-      try {
-        const summary = (await getParticipant({ id }, { ...client, signal })).data;
-        if (!summary) continue;
-        for (const member of [summary.id, id, summary.cluster?.canonical_id ?? summary.id, ...(summary.cluster?.member_ids ?? [])]) covered.add(member);
-        identifiers.push(...(summary.identifiers ?? []));
-      } catch {
-        // Best-effort: skip this binding and keep the rest.
-      }
-    }
-    return identifiers;
-  }
   const reachEntries = $derived(mergeReachEntries(
     reachEntriesFromContactPoints(profile?.contact_points),
     reachEntriesFromIdentifiers({ identifiers: participantIdentifiers })

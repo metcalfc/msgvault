@@ -137,8 +137,8 @@ describe('PersonDetail', () => {
       const overview = overviewCardResponse(request);
       if (overview) return overview;
       if (path.startsWith('/api/v1/participants/')) participantRequests.push(path);
-      // 9 is a member of 3's cluster: its identifiers arrive with 3's response.
-      if (path === '/api/v1/participants/3') return Response.json({
+      // 9 is a member of 3's cluster: both lookups return the same cluster.
+      if (path === '/api/v1/participants/3' || path === '/api/v1/participants/9') return Response.json({
         id: 3, display_label: 'Synthetic Person', identifiers: [
           { type: 'email', value: 'PERSON@example.test', participant_id: 3, is_primary: true, provenance: 'participant_identifiers' },
           { type: 'phone', value: '+1 555 010 0009', participant_id: 3, is_primary: false, provenance: 'participant_identifiers' },
@@ -169,8 +169,9 @@ describe('PersonDetail', () => {
     expect(rows[1]?.textContent).toContain('+1 555 010 0009');
     expect(rows[1]?.textContent).toContain('observed');
     expect(screen.getByRole('button', { name: 'Copy +1 555 010 0009' })).toBeDefined();
-    // One request per cluster, and the same phone from two members is one row.
-    expect(participantRequests).toEqual(['/api/v1/participants/3']);
+    // Both bindings are looked up in parallel and collapse to one cluster;
+    // the same phone from two members is one row.
+    expect(participantRequests.sort()).toEqual(['/api/v1/participants/3', '/api/v1/participants/9']);
   });
 
   it('does not claim an organization name for an employment outside the primary projection', async () => {

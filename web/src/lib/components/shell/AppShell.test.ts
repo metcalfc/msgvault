@@ -947,7 +947,7 @@ describe('AppShell', () => {
     window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
       workspace: 'directory', directoryPersonID: 7
     }))}`);
-    // 9 is a non-canonical member of cluster 3: resolving 3 first covers 9.
+    // 9 is a non-canonical member of cluster 3: both lookups collapse to cluster 3.
     const { fetchFn, requests } = directoryPersonFetch([9, 3], {
       3: { canonical: 3, members: [3, 9], label: 'Synthetic Person', activity: 5 },
       9: { canonical: 3, members: [3, 9], label: 'Synthetic Person', activity: 5 }
@@ -965,8 +965,9 @@ describe('AppShell', () => {
       workspace: 'relationships', relationshipFacet: 'people', relationshipTarget: 'cluster:3', relationshipFiles: false
     }));
     expect(await screen.findByRole('main', { name: 'Relationships' })).toBeDefined();
-    // The handoff resolves 3 first, whose cluster already lists 9: no second lookup.
-    expect(requests.slice(requestsBeforeHandoff).filter((path) => path === '/api/v1/participants/9')).toHaveLength(0);
+    // Both bindings are looked up (in parallel) and dedupe to the one cluster: no note.
+    const handoffLookups = requests.slice(requestsBeforeHandoff).filter((path) => /^\/api\/v1\/participants\/\d+$/.test(path));
+    expect(handoffLookups.filter((path) => path === '/api/v1/participants/9')).toHaveLength(1);
     expect(screen.queryByRole('note')).toBeNull();
 
     rendered.unmount();
