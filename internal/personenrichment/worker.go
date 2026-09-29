@@ -501,8 +501,10 @@ func (w *Worker) startAttempt(
 			return ctx.Err()
 		}
 		if errors.Is(err, ErrSuppressed) {
-			return w.work.MarkTerminal(ctx, lease.Token,
-				safeFailure(FailureSuppressed, 0, "", "enrichment suppressed before retry"))
+			// The variant never went out, but the empty lookup was billed.
+			failure := safeFailure(FailureSuppressed, 0, "", "enrichment suppressed before retry")
+			failure.Cost = noEntity.Cost
+			return w.work.MarkTerminal(ctx, lease.Token, failure)
 		}
 	}
 	if err != nil {

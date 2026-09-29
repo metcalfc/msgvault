@@ -596,3 +596,35 @@ func TestWorkerCarriesTheEmptyLookupChargeThroughUncertainAndRetriedRetries(t *t
 		})
 	}
 }
+
+// TestWorkerKeepsTheEmptyLookupChargeWhenTheVariantIsSuppressed: when the
+// name-variant identity is suppressed, the retry never goes out, but the
+// empty lookup was already billed and the suppressed outcome records it.
+func TestWorkerKeepsTheEmptyLookupChargeWhenTheVariantIsSuppressed(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	f := newWorkerFixture(t, "exa-variant-suppressed", func(cfg *personenrichment.ProviderConfig) {
+		cfg.Mode = "people"
+		cfg.AllowedIdentifiers = []personenrichment.IdentifierClass{
+			personenrichment.IdentifierName, personenrichment.IdentifierCurrentCompany,
+		}
+	})
+	seedNameAndCompany(t, f, "Test Q. User", "Example Labs")
+	normalized, err := personenrichment.NormalizeSuppressionIdentifier(
+		personenrichment.SuppressionNameCompany, []string{"test user", "example labs"})
+	require.NoError(err)
+	digest := f.hasher.Digest(f.profile.ProviderNamespace, normalized.Class, normalized.NormalizationVersion, normalized.Value)
+	require.NoError(f.store.InsertPersonEnrichmentSuppressionsContext(t.Context(), []store.PersonEnrichmentSuppressionInput{{
+		ProviderNamespace: digest.ProviderNamespace, IdentifierClass: digest.IdentifierClass,
+		NormalizationVersion: digest.NormalizationVersion, KeyID: digest.KeyID, Digest: digest.Digest,
+		Reason: store.PersonEnrichmentSuppressionOptOut, Actor: "test",
+	}}))
+	attempt := runPartialIdentityCase(t, f, emptyThenRetryFactory(f, errors.New("the variant must not be sent")),
+		map[string]personenrichment.ProviderConfig{f.config.Name: f.config}, nil)
+	assert.Equal("suppressed", attempt.State)
+	assert.Equal(int64(1), runRequestsStarted(t, f), "the suppressed variant was never sent")
+	assert.Equal(int64(2000), runCostCharged(t, f), "the empty lookup's charge reaches the run counter")
+	assert.Equal(int64(2000), dayCostCharged(t, f))
+	require.NotNil(attempt.ActualCostUSDMicros)
+	assert.Equal(int64(2000), *attempt.ActualCostUSDMicros)
+}
