@@ -444,6 +444,17 @@ type GetDocumentVectorStatusQuery struct {
 	Limit *int64 `json:"limit,omitempty"`
 }
 
+type GetEntityLabelsQuery struct {
+	// Person Durable person IDs; repeat or comma-separate values
+	Person []int64 `json:"person,omitempty"`
+
+	// Participant Participant IDs; repeat or comma-separate values
+	Participant []int64 `json:"participant,omitempty"`
+
+	// Organization Organization IDs; repeat or comma-separate values
+	Organization []int64 `json:"organization,omitempty"`
+}
+
 type ListCorrespondentKindsQuery struct {
 	// Kind Only records of this kind
 	Kind *ListCorrespondentKindsQueryKind `json:"kind,omitempty"`

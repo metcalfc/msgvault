@@ -971,6 +971,12 @@ type SetPrimaryEmploymentErrorResponseJSON428 = ErrorResponse
 
 type SetPrimaryEmploymentErrorResponseJSON503 = ErrorResponse
 
+type GetEntityLabelsResponse = EntityLabelsResponse
+
+type GetEntityLabelsErrorResponse = ErrorResponse
+
+type GetEntityLabelsErrorResponseJSON = ErrorResponse
+
 type ExploreResponse = ExploreHTTPResponse
 
 type ExploreErrorResponse = ErrorResponse
@@ -4365,6 +4371,15 @@ type SetPrimaryEmploymentResp struct {
 	JSON409      *SetPrimaryEmploymentErrorResponseJSON409
 	JSON428      *SetPrimaryEmploymentErrorResponseJSON428
 	JSON503      *SetPrimaryEmploymentErrorResponseJSON503
+}
+
+type GetEntityLabelsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *GetEntityLabelsResponse
+	JSON400      *GetEntityLabelsErrorResponse
+	JSON503      *GetEntityLabelsErrorResponseJSON
 }
 
 type ExploreResp struct {

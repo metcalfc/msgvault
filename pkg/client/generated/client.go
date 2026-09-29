@@ -443,6 +443,10 @@ type ClientInterface interface {
 	SetPrimaryEmployment(ctx context.Context, options *SetPrimaryEmploymentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrimaryEmploymentResponse, error)
 	SetPrimaryEmploymentWithResponse(ctx context.Context, options *SetPrimaryEmploymentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrimaryEmploymentResp, error)
 
+	// GetEntityLabels Resolve human labels for people, participants, and organizations
+	GetEntityLabels(ctx context.Context, options *GetEntityLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetEntityLabelsResponse, error)
+	GetEntityLabelsWithResponse(ctx context.Context, options *GetEntityLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetEntityLabelsResp, error)
+
 	// Explore Explore canonical archive entries
 	Explore(ctx context.Context, options *ExploreRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ExploreResponse, error)
 	ExploreWithResponse(ctx context.Context, options *ExploreRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ExploreResp, error)
@@ -7362,6 +7366,69 @@ func (c *Client) SetPrimaryEmployment(ctx context.Context, options *SetPrimaryEm
 	}
 
 	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/api/v1/employments/{id}/primary")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+	return responseParser(ctx, resp)
+}
+
+// GetEntityLabels Resolve human labels for people, participants, and organizations
+func (c *Client) GetEntityLabels(ctx context.Context, options *GetEntityLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetEntityLabelsResponse, error) {
+	var err error
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/api/v1/entity-labels",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	responseParser := func(ctx context.Context, resp *runtime.Response) (*GetEntityLabelsResponse, error) {
+		bodyBytes := resp.Content
+		if resp.StatusCode != 200 {
+			target := new(GetEntityLabelsErrorResponse)
+			// Handle empty error response body gracefully - skip unmarshal if no content
+			if len(bodyBytes) > 0 {
+				if err = json.Unmarshal(bodyBytes, target); err != nil {
+					return nil, &runtime.ResponseDecodeError{
+						StatusCode:    resp.StatusCode,
+						ContentType:   resp.Headers.Get("Content-Type"),
+						ContentLength: len(bodyBytes),
+						TargetType:    "GetEntityLabelsErrorResponse",
+						Body:          bodyBytes,
+						Err:           err,
+					}
+				}
+			}
+			// Return error with (possibly empty) target
+			if errTarget, ok := any(*target).(error); ok {
+				return nil, runtime.NewClientAPIError(errTarget, runtime.WithStatusCode(resp.StatusCode))
+			}
+			return nil, runtime.NewClientAPIError(fmt.Errorf("API error (status %d): %v", resp.StatusCode, *target),
+				runtime.WithStatusCode(resp.StatusCode))
+		}
+		target := new(GetEntityLabelsResponse)
+		// Handle empty response body gracefully
+		if len(bodyBytes) == 0 {
+			return target, nil
+		}
+		if err = json.Unmarshal(bodyBytes, target); err != nil {
+			return nil, &runtime.ResponseDecodeError{
+				StatusCode:    resp.StatusCode,
+				ContentType:   resp.Headers.Get("Content-Type"),
+				ContentLength: len(bodyBytes),
+				TargetType:    "GetEntityLabelsResponse",
+				Body:          bodyBytes,
+				Err:           err,
+			}
+		}
+		return target, nil
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/api/v1/entity-labels")
 	if err != nil {
 		return nil, fmt.Errorf("error executing request: %w", err)
 	}

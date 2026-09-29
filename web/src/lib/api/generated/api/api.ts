@@ -126,6 +126,7 @@ import type {
   EmploymentsResponse,
   EndEmploymentBody,
   EndEmploymentPathParameters,
+  EntityLabelsResponse,
   FastSearchParams,
   FileMetadataResponse,
   FilterMessagesParams,
@@ -154,6 +155,7 @@ import type {
   GetDocumentVectorStatusParams,
   GetDomainPathParameters,
   GetEmploymentPathParameters,
+  GetEntityLabelsParams,
   GetFileContentPathParameters,
   GetFilePathParameters,
   GetGmailIDsByFilterParams,
@@ -1629,6 +1631,19 @@ export const setPrimaryEmployment = (
       url: `/api/v1/employments/${encodeURIComponent(String(id))}/primary`,
       method: "POST",
     },
+    options,
+  );
+};
+/**
+ * Returns the label for each requested ID. An ID with no label is omitted; clients must not render the ID in its place. A person absorbed by a merge keeps the name recorded at the merge. Each kind accepts at most 500 distinct IDs.
+ * @summary Resolve human labels for people, participants, and organizations
+ */
+export const getEntityLabels = (
+  params?: GetEntityLabelsParams,
+  options?: SecondParameter<typeof orvalFetch<EntityLabelsResponse>>,
+) => {
+  return orvalFetch<EntityLabelsResponse>(
+    { url: `/api/v1/entity-labels`, method: "GET", params },
     options,
   );
 };

@@ -3953,6 +3953,50 @@ func (o *SetPrimaryEmploymentRequestOptions) GetHeader() (map[string]string, err
 	return runtime.AsMap[string](o.Header)
 }
 
+// GetEntityLabelsRequestOptions is the options needed to make a request to GetEntityLabels.
+type GetEntityLabelsRequestOptions struct {
+	Query *GetEntityLabelsQuery
+}
+
+// Validate validates all the fields in the options.
+// Use it if fields validation was not run.
+func (o *GetEntityLabelsRequestOptions) Validate() error {
+	var errors runtime.ValidationErrors
+
+	if o.Query != nil {
+		if v, ok := any(o.Query).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("Query", err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+
+	return errors
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetEntityLabelsRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetEntityLabelsRequestOptions) GetQuery() (map[string]any, error) {
+	return runtime.AsMap[any](o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetEntityLabelsRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetEntityLabelsRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // ExploreRequestOptions is the options needed to make a request to Explore.
 type ExploreRequestOptions struct {
 	Body *ExploreBody

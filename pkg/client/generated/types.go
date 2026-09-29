@@ -3707,6 +3707,50 @@ func (e EndEmploymentBody) Validate() error {
 	return runtime.ConvertValidatorError(typesValidator.Struct(e))
 }
 
+type EntityLabel struct {
+	ID    int64  `json:"id"`
+	Label string `json:"label" validate:"required"`
+}
+
+func (e EntityLabel) Validate() error {
+	return runtime.ConvertValidatorError(typesValidator.Struct(e))
+}
+
+type EntityLabelsResponse struct {
+	Organizations []EntityLabel `json:"organizations" validate:"required"`
+	Participants  []EntityLabel `json:"participants" validate:"required"`
+	People        []EntityLabel `json:"people" validate:"required"`
+}
+
+func (e EntityLabelsResponse) Validate() error {
+	var errors runtime.ValidationErrors
+	for i, item := range e.Organizations {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("Organizations[%d]", i), err)
+			}
+		}
+	}
+	for i, item := range e.Participants {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("Participants[%d]", i), err)
+			}
+		}
+	}
+	for i, item := range e.People {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("People[%d]", i), err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
 type EntryRow struct {
 	AnchorMessageID            *int64       `json:"anchor_message_id,omitempty"`
 	AttachmentCount            int64        `json:"attachment_count"`

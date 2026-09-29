@@ -4177,6 +4177,38 @@ components:
       required:
         - end_date
       type: object
+    EntityLabel:
+      additionalProperties: true
+      properties:
+        id:
+          format: int64
+          type: integer
+        label:
+          type: string
+      required:
+        - id
+        - label
+      type: object
+    EntityLabelsResponse:
+      additionalProperties: true
+      properties:
+        organizations:
+          items:
+            $ref: "#/components/schemas/EntityLabel"
+          type: array
+        participants:
+          items:
+            $ref: "#/components/schemas/EntityLabel"
+          type: array
+        people:
+          items:
+            $ref: "#/components/schemas/EntityLabel"
+          type: array
+      required:
+        - people
+        - participants
+        - organizations
+      type: object
     EntryRow:
       additionalProperties: true
       properties:
@@ -18951,6 +18983,65 @@ paths:
       security:
         - apiKey: []
       summary: Set the primary current employment
+      tags:
+        - API
+  /api/v1/entity-labels:
+    get:
+      description: Returns the label for each requested ID. An ID with no label is omitted; clients must not render the ID in its place. A person absorbed by a merge keeps the name recorded at the merge. Each kind accepts at most 500 distinct IDs.
+      operationId: getEntityLabels
+      parameters:
+        - description: Durable person IDs; repeat or comma-separate values
+          in: query
+          name: person
+          schema:
+            items:
+              format: int64
+              type: integer
+            type: array
+        - description: Participant IDs; repeat or comma-separate values
+          in: query
+          name: participant
+          schema:
+            items:
+              format: int64
+              type: integer
+            type: array
+        - description: Organization IDs; repeat or comma-separate values
+          in: query
+          name: organization
+          schema:
+            items:
+              format: int64
+              type: integer
+            type: array
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntityLabelsResponse"
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+      security:
+        - apiKey: []
+      summary: Resolve human labels for people, participants, and organizations
       tags:
         - API
   /api/v1/explore:

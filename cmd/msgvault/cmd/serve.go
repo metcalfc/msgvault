@@ -1558,6 +1558,7 @@ var _ api.PersonFactStore = (*storeAPIAdapter)(nil)
 var _ api.PersonBriefStore = (*storeAPIAdapter)(nil)
 var _ api.MeetingImporter = (*storeAPIAdapter)(nil)
 var _ api.SourceStatusStore = (*storeAPIAdapter)(nil)
+var _ api.EntityLabelStore = (*storeAPIAdapter)(nil)
 var _ api.CLIStore = (*storeAPIAdapter)(nil)
 var _ api.ContextCLIStore = (*storeAPIAdapter)(nil)
 var _ api.CLIStartupMigrationStore = (*storeAPIAdapter)(nil)
@@ -3465,6 +3466,12 @@ func (a *storeAPIAdapter) OrganizationNamesContext(
 	ctx context.Context, ids []int64,
 ) (map[int64]string, error) {
 	return a.store.OrganizationNamesContext(ctx, ids)
+}
+
+func (a *storeAPIAdapter) EntityLabelsContext(
+	ctx context.Context, request store.EntityLabelRequest,
+) (store.EntityLabels, error) {
+	return a.store.EntityLabelsContext(ctx, request)
 }
 
 func (a *storeAPIAdapter) ClusterMembers(id int64) ([]int64, error) {
