@@ -267,7 +267,7 @@ func setupDocumentConsent(ctx context.Context, cfg *config.Config, st *store.Sto
 	if !cfg.Attachments.Documents.Enabled {
 		return false
 	}
-	manifest, err := loadDocumentCapabilityManifest(setupMistralManifestPath(cfg))
+	manifest, err := loadDocumentCapabilityManifest(&cfg.Attachments.Documents, setupMistralManifestPath(cfg))
 	if err != nil {
 		return false
 	}

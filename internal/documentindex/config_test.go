@@ -11,7 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/docbank/document/csvpdf"
-	"go.kenn.io/docbank/document/mistral"
+	"go.kenn.io/msgvault/internal/documentindex/mistralprovider"
+	"go.kenn.io/msgvault/internal/documentindex/mistralprovider/mistralprovidertest"
+	"go.kenn.io/msgvault/internal/documentindex/provider"
 )
 
 func TestDocumentsConfigDefaultsAreValidAndOptIn(t *testing.T) {
@@ -96,11 +98,13 @@ func TestDocumentsConfigRejectsUnsafePolicy(t *testing.T) {
 		{name: "region", mutate: func(c *DocumentsConfig) { c.Region = "us" }, want: "unknown region"},
 		{name: "environment", mutate: func(c *DocumentsConfig) { c.APIKeyEnv = "bad-name" }, want: "environment variable"},
 		{name: "negative cap", mutate: func(c *DocumentsConfig) { c.MaxFileBytes = -1 }, want: "must be positive"},
-		{name: "unbounded cap", mutate: func(c *DocumentsConfig) { c.MaxResponseBytes = mistral.MaxResponseBytes + 1 }, want: "hard safety limit"},
+		{name: "unbounded cap", mutate: func(c *DocumentsConfig) { c.MaxResponseBytes = mistralprovider.New().Limits().MaxResponseBytes + 1 }, want: "hard safety limit"},
 		{name: "spool below file", mutate: func(c *DocumentsConfig) { c.MaxSpoolBytes = c.MaxFileBytes - 1 }, want: "at least max_file_bytes"},
 		{name: "spool hard cap", mutate: func(c *DocumentsConfig) { c.MaxSpoolBytes = hardMaxSpoolBytes + 1 }, want: "hard safety limit"},
 		{name: "free space hard cap", mutate: func(c *DocumentsConfig) { c.MinFreeSpaceBytes = hardMaxFreeSpaceBytes + 1 }, want: "hard safety limit"},
-		{name: "timeout", mutate: func(c *DocumentsConfig) { c.RequestTimeout = mistral.MaxTimeout + time.Second }, want: "hard safety limit"},
+		{name: "timeout", mutate: func(c *DocumentsConfig) {
+			c.RequestTimeout = mistralprovider.New().Limits().MaxRequestTimeout + time.Second
+		}, want: "hard safety limit"},
 		{name: "cost", mutate: func(c *DocumentsConfig) { c.MaxEstimatedCostUSDPerRun = hardMaxEstimatedCostUSD + 1 }, want: "hard safety limit"},
 		{name: "pricing pair", mutate: func(c *DocumentsConfig) { c.EstimatedCostUSDPerKUnits = 4 }, want: "pricing assumption requires both"},
 		{name: "pricing date", mutate: func(c *DocumentsConfig) { c.EstimatedCostUSDPerKUnits = 4; c.PricingAssumptionOn = "today" }, want: "YYYY-MM-DD"},
@@ -146,7 +150,7 @@ func TestDocumentsProfileFingerprintIsDeterministicAndPolicyBound(t *testing.T) 
 	config.TrainingPosture = TrainingOptedOut
 	config.Scope.MessageTypes = []string{"email", "chat"}
 	config.ApplyDefaults()
-	policy, err := config.MistralPolicy()
+	policy, err := config.ExtractionPolicy()
 	require.NoError(err)
 	manifest := testCapabilityManifest(t, policy)
 
@@ -179,14 +183,8 @@ func TestDocumentsProfileFingerprintIsDeterministicAndPolicyBound(t *testing.T) 
 	require.NoError(err)
 	assert.NotEqual(first, sixth)
 
-	changedManifest := manifest
-	changedManifest.Results = append([]mistral.CapabilityResult(nil), manifest.Results...)
-	for index := range changedManifest.Results {
-		if changedManifest.Results[index].FormatID == "pdf" {
-			changedManifest.Results[index].FixtureDigest = strings.Repeat("1", 16)
-			break
-		}
-	}
+	changedManifest, err := mistralprovidertest.Manifest(policy, mistralprovidertest.WithPDFFixtureDigest(strings.Repeat("1", 16)))
+	require.NoError(err)
 	seventh, err := config.ProfileFingerprint(changedManifest, []string{"application/pdf", "text/csv"})
 	require.NoError(err)
 	assert.NotEqual(first, seventh)
@@ -198,7 +196,7 @@ func TestDocumentsProfileFingerprintExcludesEmbeddingOptIn(t *testing.T) {
 	config := DefaultDocumentsConfig()
 	config.RetentionPosture = RetentionZDR
 	config.TrainingPosture = TrainingOptedOut
-	policy, err := config.MistralPolicy()
+	policy, err := config.ExtractionPolicy()
 	requirements.NoError(err)
 	manifest := testCapabilityManifest(t, policy)
 
@@ -226,7 +224,7 @@ func TestDocumentsProfilePolicyJSONRemainsByteStable(t *testing.T) {
 	config.TrainingPosture = TrainingOptedOut
 	config.Scope.MessageTypes = []string{"email", "chat", "email"}
 	config.ApplyDefaults()
-	policy, err := config.MistralPolicy()
+	policy, err := config.ExtractionPolicy()
 	require.NoError(err)
 	manifest := testCapabilityManifest(t, policy)
 
@@ -257,7 +255,7 @@ func TestCSVConversionIsOptInAndBindsPDFRouteAndProfile(t *testing.T) {
 	config := DefaultDocumentsConfig()
 	config.RetentionPosture = RetentionZDR
 	config.TrainingPosture = TrainingOptedOut
-	policy, err := config.MistralPolicy()
+	policy, err := config.ExtractionPolicy()
 	require.NoError(err)
 	manifest := testCapabilityManifest(t, policy)
 
@@ -275,7 +273,7 @@ func TestCSVConversionIsOptInAndBindsPDFRouteAndProfile(t *testing.T) {
 	require.NoError(err)
 	assert.Contains(resolved.AllowedMediaTypes, "application/pdf")
 	assert.Contains(resolved.AllowedMediaTypes, "text/csv")
-	assert.Equal("application/pdf", resolved.Routes["text/csv"].Authorization.Format().MediaType)
+	assert.Equal("application/pdf", resolved.Routes["text/csv"].Format.MediaType)
 	require.NotNil(resolved.Routes["text/csv"].Conversion)
 
 	enabled, err := config.ProfilePolicyJSON(manifest, resolved.AllowedMediaTypes)
@@ -290,19 +288,12 @@ func TestCSVConversionIsOptInAndBindsPDFRouteAndProfile(t *testing.T) {
 
 const pptxMediaType = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
-// Docbank's mistraltest has no PPTX-authorized manifest, so use the authenticated probe's row shape.
-func testPPTXCapabilityManifest(t *testing.T, policy mistral.Policy) mistral.CapabilityManifest {
+// testPPTXCapabilityManifest adds PPTX local-exact authority in the row shape
+// an authenticated probe records.
+func testPPTXCapabilityManifest(t *testing.T, policy provider.Policy) provider.Manifest {
 	t.Helper()
-	manifest := testCapabilityManifest(t, policy)
-	for i := range manifest.Results {
-		result := &manifest.Results[i]
-		if result.FormatID == "pptx" {
-			result.ReasonCode = ""
-			result.UnitBoundMethod = mistral.UnitBoundLocalExact
-			result.LocalUnits = result.UnitsProcessed
-		}
-	}
-	require.NoError(t, manifest.ValidateComplete())
+	manifest, err := mistralprovidertest.Manifest(policy, mistralprovidertest.WithLocalExactPPTX())
+	require.NoError(t, err)
 	return manifest
 }
 
@@ -312,7 +303,7 @@ func TestResolveInputPolicyAuthorizesPPTXFromLocalExactManifest(t *testing.T) {
 	config := DefaultDocumentsConfig()
 	config.RetentionPosture = RetentionZDR
 	config.TrainingPosture = TrainingOptedOut
-	policy, err := config.MistralPolicy()
+	policy, err := config.ExtractionPolicy()
 	require.NoError(err)
 	manifest := testPPTXCapabilityManifest(t, policy)
 	resolved, err := ResolveInputPolicy(&config, manifest)
@@ -320,15 +311,9 @@ func TestResolveInputPolicyAuthorizesPPTXFromLocalExactManifest(t *testing.T) {
 	assert.Equal([]string{"application/pdf", pptxMediaType}, resolved.AllowedMediaTypes)
 	route := resolved.Routes[pptxMediaType]
 	assert.Equal("pptx", route.Format.ID)
-	assert.Equal(pptxMediaType, route.Authorization.Format().MediaType)
+	assert.Equal(pptxMediaType, route.Format.MediaType)
 	assert.Nil(route.Conversion)
-	for _, result := range manifest.Results {
-		if result.FormatID == "pptx" {
-			assert.Equal(mistral.UnitBoundLocalExact, result.UnitBoundMethod)
-			assert.Equal(1, result.LocalUnits)
-			t.Logf("allowed=%v method=%s local_units=%d", resolved.AllowedMediaTypes, result.UnitBoundMethod, result.LocalUnits)
-		}
-	}
+	t.Logf("allowed=%v", resolved.AllowedMediaTypes)
 }
 
 func TestDocumentsProfileBindsPPTXMediaTypeAndManifestEvidence(t *testing.T) {
@@ -337,13 +322,13 @@ func TestDocumentsProfileBindsPPTXMediaTypeAndManifestEvidence(t *testing.T) {
 	config := DefaultDocumentsConfig()
 	config.RetentionPosture = RetentionZDR
 	config.TrainingPosture = TrainingOptedOut
-	policy, err := config.MistralPolicy()
+	policy, err := config.ExtractionPolicy()
 	require.NoError(err)
 	pdfOnly := testCapabilityManifest(t, policy)
 	withPPTX := testPPTXCapabilityManifest(t, policy)
 	var payloads [2]map[string]any
 	var fingerprints [2]string
-	for i, manifest := range []mistral.CapabilityManifest{pdfOnly, withPPTX} {
+	for i, manifest := range []provider.Manifest{pdfOnly, withPPTX} {
 		resolved, err := ResolveInputPolicy(&config, manifest)
 		require.NoError(err)
 		policyJSON, err := config.ProfilePolicyJSON(manifest, resolved.AllowedMediaTypes)
@@ -371,7 +356,7 @@ func TestResolveInputPolicyKeepsUnprovedFormatsBlocked(t *testing.T) {
 			config.RetentionPosture = RetentionZDR
 			config.TrainingPosture = TrainingOptedOut
 			config.Conversion.CSV.Enabled = csvEnabled
-			policy, err := config.MistralPolicy()
+			policy, err := config.ExtractionPolicy()
 			require.NoError(t, err)
 			resolved, err := ResolveInputPolicy(&config, testCapabilityManifest(t, policy))
 			require.NoError(t, err)
@@ -389,12 +374,12 @@ func TestResolveInputPolicyKeepsUnprovedFormatsBlocked(t *testing.T) {
 		config := DefaultDocumentsConfig()
 		config.RetentionPosture = RetentionZDR
 		config.TrainingPosture = TrainingOptedOut
-		policy, err := config.MistralPolicy()
+		policy, err := config.ExtractionPolicy()
 		require.NoError(err)
 		resolved, err := ResolveInputPolicy(&config, testPPTXCapabilityManifest(t, policy))
 		require.NoError(err)
 		for _, id := range []string{"docx", "xlsx", "ppt", "odt", "epub", "txt"} {
-			format, found := mistral.CandidateFormatByID(id)
+			format, found := policy.FormatByID(id)
 			require.True(found)
 			assert.NotContains(resolved.Routes, format.MediaType)
 		}
@@ -405,18 +390,11 @@ func TestResolveInputPolicyKeepsUnprovedFormatsBlocked(t *testing.T) {
 		config := DefaultDocumentsConfig()
 		config.RetentionPosture = RetentionZDR
 		config.TrainingPosture = TrainingOptedOut
-		policy, err := config.MistralPolicy()
+		policy, err := config.ExtractionPolicy()
 		require.NoError(err)
-		manifest := testCapabilityManifest(t, policy)
-		for i := range manifest.Results {
-			row := &manifest.Results[i]
-			if row.FormatID == "pptx" {
-				row.UnitBoundMethod = mistral.UnitBoundNone
-				row.ReasonCode = ""
-				row.FixtureUnits, row.BoundRequestedUnits, row.BoundUnitsProcessed, row.LocalUnits = 0, 0, 0, 0
-			}
-		}
-		validationErr := manifest.ValidateComplete()
+		manifest, err := mistralprovidertest.UnvalidatedManifest(policy, mistralprovidertest.WithLegacyUnboundedPPTX())
+		require.NoError(err)
+		validationErr := mistralprovidertest.Validate(manifest)
 		resolved, err := ResolveInputPolicy(&config, manifest)
 		t.Logf("legacy validation=%v allowed=%v err=%v", validationErr, resolved.AllowedMediaTypes, err)
 		require.Error(validationErr)

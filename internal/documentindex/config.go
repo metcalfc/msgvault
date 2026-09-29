@@ -17,23 +17,20 @@ import (
 
 	"go.kenn.io/docbank/document"
 	"go.kenn.io/docbank/document/csvpdf"
-	"go.kenn.io/docbank/document/mistral"
+	"go.kenn.io/msgvault/internal/documentindex/provider"
 )
 
+// Retention and training postures are provider-neutral vocabulary; see the
+// provider package for the meaning of each value.
 const (
-	ProviderMistral = "mistral"
-	ModelMistralOCR = mistral.DefaultModel
-	RegionMistralEU = mistral.RegionEU
+	RetentionUnknown  = provider.RetentionUnknown
+	RetentionStandard = provider.RetentionStandard
+	RetentionZDR      = provider.RetentionZDR
 
-	RetentionUnknown  = "unknown"
-	RetentionStandard = mistral.RetentionStandard
-	RetentionZDR      = mistral.RetentionZDR
+	TrainingUnknown       = provider.TrainingUnknown
+	TrainingDefaultOptOut = provider.TrainingDefaultOptOut
+	TrainingOptedOut      = provider.TrainingOptedOut
 
-	TrainingUnknown       = "unknown"
-	TrainingDefaultOptOut = mistral.TrainingDefaultOptOut
-	TrainingOptedOut      = mistral.TrainingOptedOut
-
-	defaultAPIKeyEnv                 = "MISTRAL_API_KEY" // #nosec G101 -- environment variable name, not a credential.
 	defaultMaxFileBytes        int64 = 50 << 20
 	defaultMaxPages                  = 500
 	defaultMaxResponseBytes    int64 = 64 << 20
@@ -54,8 +51,11 @@ var envNamePattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 
 // DefaultDocumentsConfig returns the complete safe policy used as the decode
 // target. Decoding over populated defaults distinguishes an omitted numeric
-// field from an explicit zero, which Validate must reject.
+// field from an explicit zero, which Validate must reject. Numeric provider
+// defaults come from the default provider because the provider name is not
+// known until after decoding.
 func DefaultDocumentsConfig() DocumentsConfig {
+	defaults := defaultProvider().Defaults()
 	config := DocumentsConfig{
 		MaxFileBytes:              defaultMaxFileBytes,
 		MaxPagesPerDocument:       defaultMaxPages,
@@ -63,8 +63,8 @@ func DefaultDocumentsConfig() DocumentsConfig {
 		MaxNormalizedChars:        defaultMaxNormalizedChars,
 		MaxSpoolBytes:             defaultMaxSpoolBytes,
 		MinFreeSpaceBytes:         defaultMinFreeSpaceBytes,
-		RequestTimeout:            mistral.DefaultTimeout,
-		MaxRetries:                mistral.DefaultMaxRetries,
+		RequestTimeout:            defaults.RequestTimeout,
+		MaxRetries:                defaults.MaxRetries,
 		MaxPagesPerRun:            defaultMaxPagesPerRun,
 		MaxEstimatedCostUSDPerRun: defaultMaxEstimatedCostUSD,
 	}
@@ -78,8 +78,9 @@ type AttachmentsConfig struct {
 	Documents DocumentsConfig `toml:"documents"`
 }
 
-// DocumentsConfig controls hosted Mistral extraction and local indexing.
-// Supplying an API key or setting Enabled never records provider consent.
+// DocumentsConfig controls hosted document extraction and local indexing.
+// Provider selects the registered extraction backend. Supplying an API key or
+// setting Enabled never records provider consent.
 type DocumentsConfig struct {
 	Enabled                   bool             `toml:"enabled"`
 	Provider                  string           `toml:"provider"`
@@ -114,10 +115,13 @@ type CSVConversionConfig struct {
 	Enabled bool `toml:"enabled"`
 }
 
+// InputRoute maps one accepted source media type to the format the provider
+// receives. Conversion is set when the source is converted locally first.
+// Upload authority is re-derived by the provider at request time from the
+// same policy and manifest that produced the route.
 type InputRoute struct {
-	Format        mistral.CandidateFormat
-	Authorization mistral.FormatAuthorization
-	Conversion    *csvpdf.Policy
+	Format     provider.Format
+	Conversion *csvpdf.Policy
 }
 
 type ResolvedInputPolicy struct {
@@ -147,20 +151,22 @@ type DocumentEmbeddingsConfig struct {
 }
 
 // ApplyDefaults restores safe v1 settings after TOML decoding. Pointer
-// booleans preserve an explicit false.
+// booleans preserve an explicit false. Region, model, and API key variable
+// defaults come from the selected provider.
 func (c *DocumentsConfig) ApplyDefaults() {
 	if !c.defaultsApplied {
 		if c.Provider == "" {
-			c.Provider = ProviderMistral
+			c.Provider = defaultProviderName
 		}
+		defaults := providerDefaults(c.Provider)
 		if c.Region == "" {
-			c.Region = RegionMistralEU
+			c.Region = defaults.Region
 		}
 		if c.APIKeyEnv == "" {
-			c.APIKeyEnv = defaultAPIKeyEnv
+			c.APIKeyEnv = defaults.APIKeyEnv
 		}
 		if c.Model == "" {
-			c.Model = ModelMistralOCR
+			c.Model = defaults.Model
 		}
 		if c.RetentionPosture == "" {
 			c.RetentionPosture = RetentionUnknown
@@ -196,10 +202,15 @@ func (c *DocumentsConfig) StoresChunkText() bool {
 	return c.Index.StoreChunkText != nil && *c.Index.StoreChunkText
 }
 
+// ResolveProvider returns the adapter selected by Provider.
+func (c *DocumentsConfig) ResolveProvider() (provider.Provider, error) {
+	return LookupProvider(c.Provider)
+}
+
 // MaxDocumentsWithinRunBudget reserves the full per-document unit allowance
 // before any hosted request. Container unit counts are not authoritative until
-// Mistral responds, so this is a conservative scheduling guard rather than a
-// billing guarantee for an individual container.
+// the provider responds, so this is a conservative scheduling guard rather
+// than a billing guarantee for an individual container.
 func (c *DocumentsConfig) MaxDocumentsWithinRunBudget(requested int) (int, error) {
 	if requested <= 0 || requested > 10_000 || c.MaxPagesPerDocument <= 0 || c.MaxPagesPerRun <= 0 {
 		return 0, errors.New("document run budget has invalid bounds")
@@ -219,14 +230,17 @@ func (c *DocumentsConfig) MaxDocumentsWithinRunBudget(requested int) (int, error
 // Disabled configurations are validated too so enabling later cannot expose
 // bytes under an already-invalid policy.
 func (c *DocumentsConfig) Validate() error {
-	if c.Provider != ProviderMistral {
-		return fmt.Errorf("attachments.documents.provider: must be %q", ProviderMistral)
+	registered, err := c.ResolveProvider()
+	if err != nil {
+		return fmt.Errorf("attachments.documents.provider: must be %s", supportedProviderList())
 	}
-	if c.Model != ModelMistralOCR {
-		return fmt.Errorf("attachments.documents.model: must be pinned to %q", ModelMistralOCR)
+	defaults := registered.Defaults()
+	limits := registered.Limits()
+	if c.Model != defaults.Model {
+		return fmt.Errorf("attachments.documents.model: must be pinned to %q", defaults.Model)
 	}
-	if c.Region != RegionMistralEU {
-		return fmt.Errorf("attachments.documents.region: unknown region %q (supported: %q)", c.Region, RegionMistralEU)
+	if c.Region != defaults.Region {
+		return fmt.Errorf("attachments.documents.region: unknown region %q (supported: %q)", c.Region, defaults.Region)
 	}
 	if !envNamePattern.MatchString(c.APIKeyEnv) {
 		return fmt.Errorf("attachments.documents.api_key_env: invalid environment variable name %q", c.APIKeyEnv)
@@ -261,14 +275,14 @@ func (c *DocumentsConfig) Validate() error {
 		value int64
 		limit int64
 	}{
-		{name: "max_file_bytes", value: c.MaxFileBytes, limit: mistral.MaxDocumentBytes},
-		{name: "max_pages_per_document", value: int64(c.MaxPagesPerDocument), limit: int64(mistral.MaxUnits)},
-		{name: "max_response_bytes", value: c.MaxResponseBytes, limit: mistral.MaxResponseBytes},
+		{name: "max_file_bytes", value: c.MaxFileBytes, limit: limits.MaxDocumentBytes},
+		{name: "max_pages_per_document", value: int64(c.MaxPagesPerDocument), limit: int64(limits.MaxUnits)},
+		{name: "max_response_bytes", value: c.MaxResponseBytes, limit: limits.MaxResponseBytes},
 		{name: "max_normalized_chars", value: int64(c.MaxNormalizedChars), limit: hardMaxNormalizedChars},
 		{name: "max_spool_bytes", value: c.MaxSpoolBytes, limit: hardMaxSpoolBytes},
 		{name: "min_free_space_bytes", value: c.MinFreeSpaceBytes, limit: hardMaxFreeSpaceBytes},
-		{name: "request_timeout", value: int64(c.RequestTimeout), limit: int64(mistral.MaxTimeout)},
-		{name: "max_retries", value: int64(c.MaxRetries), limit: int64(mistral.MaxRetries)},
+		{name: "request_timeout", value: int64(c.RequestTimeout), limit: int64(limits.MaxRequestTimeout)},
+		{name: "max_retries", value: int64(c.MaxRetries), limit: int64(limits.MaxRetries)},
 		{name: "max_pages_per_run", value: int64(c.MaxPagesPerRun), limit: hardMaxPagesPerRun},
 	}
 	for _, field := range bounded {
@@ -309,25 +323,25 @@ func (c *DocumentsConfig) Validate() error {
 	return nil
 }
 
-// MistralPolicy returns the reusable processing policy represented by this
-// application configuration. Run budgets, scheduling, and storage choices are
-// deliberately not part of the policy.
-func (c *DocumentsConfig) MistralPolicy() (mistral.Policy, error) {
+// ExtractionPolicy returns the reusable processing policy represented by this
+// application configuration, bound to the selected provider. Run budgets,
+// scheduling, and storage choices are deliberately not part of the policy.
+func (c *DocumentsConfig) ExtractionPolicy() (provider.Policy, error) {
+	registered, err := c.ResolveProvider()
+	if err != nil {
+		return nil, err
+	}
 	normalizePolicy, err := document.NewNormalizePolicy(c.MaxNormalizedChars)
 	if err != nil {
-		return mistral.Policy{}, fmt.Errorf("configure document normalization: %w", err)
+		return nil, fmt.Errorf("configure document normalization: %w", err)
 	}
-	policy, err := mistral.NewPolicy(mistral.PolicyConfig{
+	return registered.NewPolicy(provider.PolicyConfig{
 		Region: c.Region, Model: c.Model,
 		Retention: c.RetentionPosture, Training: c.TrainingPosture,
 		MaxDocumentBytes: c.MaxFileBytes, MaxResponseBytes: c.MaxResponseBytes,
 		MaxUnits: c.MaxPagesPerDocument, ExtractHeader: true, ExtractFooter: true,
 		NormalizePolicy: normalizePolicy,
 	})
-	if err != nil {
-		return mistral.Policy{}, fmt.Errorf("configure Mistral document policy: %w", err)
-	}
-	return policy, nil
 }
 
 func (c *DocumentsConfig) CSVPolicy() (csvpdf.Policy, error) {
@@ -342,40 +356,41 @@ func (c *DocumentsConfig) CSVPolicy() (csvpdf.Policy, error) {
 	return policy, nil
 }
 
-func ResolveInputPolicy(c *DocumentsConfig, manifest mistral.CapabilityManifest) (ResolvedInputPolicy, error) {
+// ResolveInputPolicy derives the accepted source media types from the
+// provider's capability evidence. A format is routed only when the policy
+// grants it enforceable upload authority under the manifest.
+func ResolveInputPolicy(c *DocumentsConfig, manifest provider.Manifest) (ResolvedInputPolicy, error) {
 	if c == nil {
 		return ResolvedInputPolicy{}, errors.New("document input policy requires configuration")
 	}
-	policy, err := c.MistralPolicy()
+	policy, err := c.ExtractionPolicy()
 	if err != nil {
 		return ResolvedInputPolicy{}, err
 	}
 	routes := make(map[string]InputRoute)
-	for _, format := range mistral.CandidateFormats() {
-		// Raw CSV has no enforceable Mistral unit bound. The enabled conversion
+	for _, format := range policy.Formats() {
+		// Raw CSV has no enforceable provider unit bound. The enabled conversion
 		// route below transfers CSV's bound to the authorized PDF upload.
 		if format.ID == "csv" {
 			continue
 		}
-		authorization, authorizeErr := policy.Authorize(manifest, format.ID)
-		if authorizeErr == nil {
-			routes[format.MediaType] = InputRoute{Format: format, Authorization: authorization}
+		if authorizeErr := policy.Authorize(manifest, format.ID); authorizeErr == nil {
+			routes[format.MediaType] = InputRoute{Format: format}
 		}
 	}
 	if c.Conversion.CSV.Enabled {
-		pdfFormat, found := mistral.CandidateFormatByID("pdf")
+		pdfFormat, found := policy.FormatByID("pdf")
 		if !found {
 			return ResolvedInputPolicy{}, errors.New("document input policy cannot find PDF format")
 		}
-		pdfAuthorization, authorizeErr := policy.Authorize(manifest, pdfFormat.ID)
-		if authorizeErr != nil {
+		if authorizeErr := policy.Authorize(manifest, pdfFormat.ID); authorizeErr != nil {
 			return ResolvedInputPolicy{}, fmt.Errorf("CSV conversion requires PDF upload authority: %w", authorizeErr)
 		}
 		csvPolicy, policyErr := c.CSVPolicy()
 		if policyErr != nil {
 			return ResolvedInputPolicy{}, fmt.Errorf("configure CSV conversion policy: %w", policyErr)
 		}
-		routes["text/csv"] = InputRoute{Format: pdfFormat, Authorization: pdfAuthorization, Conversion: &csvPolicy}
+		routes["text/csv"] = InputRoute{Format: pdfFormat, Conversion: &csvPolicy}
 	}
 	if len(routes) == 0 {
 		return ResolvedInputPolicy{}, errors.New("no format has authorized upload authority; run the authenticated capability probe and supply its manifest")
@@ -402,7 +417,7 @@ func (c *DocumentsConfig) ResolveAPIKey() (string, error) {
 // validated capability evidence and every policy field that can change
 // uploaded bytes, output, or privacy posture.
 func (c *DocumentsConfig) ProfileFingerprint(
-	manifest mistral.CapabilityManifest,
+	manifest provider.Manifest,
 	allowedMediaTypes []string,
 ) (string, error) {
 	encoded, err := c.ProfilePolicyJSON(manifest, allowedMediaTypes)
@@ -416,7 +431,7 @@ func (c *DocumentsConfig) ProfileFingerprint(
 // ProfilePolicyJSON is the canonical non-secret policy persisted with an
 // immutable extraction profile. Its digest is the consent fingerprint.
 func (c *DocumentsConfig) ProfilePolicyJSON(
-	manifest mistral.CapabilityManifest,
+	manifest provider.Manifest,
 	allowedMediaTypes []string,
 ) ([]byte, error) {
 	if err := c.Validate(); err != nil {
@@ -425,7 +440,7 @@ func (c *DocumentsConfig) ProfilePolicyJSON(
 	mediaTypes := slices.Clone(allowedMediaTypes)
 	slices.Sort(mediaTypes)
 	mediaTypes = slices.Compact(mediaTypes)
-	policy, err := c.MistralPolicy()
+	policy, err := c.ExtractionPolicy()
 	if err != nil {
 		return nil, err
 	}

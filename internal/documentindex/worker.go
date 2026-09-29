@@ -7,14 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"sync"
 	"time"
 
 	"go.kenn.io/docbank/document"
 	"go.kenn.io/docbank/document/csvpdf"
-	"go.kenn.io/docbank/document/mistral"
-	"go.kenn.io/docbank/document/ocr"
+	"go.kenn.io/msgvault/internal/documentindex/provider"
 	"go.kenn.io/msgvault/internal/store"
 )
 
@@ -39,34 +39,20 @@ type DocumentAttachmentOpener interface {
 	OpenStream(ctx context.Context, hash string) (io.ReadCloser, int64, error)
 }
 
-type MistralWorkerConfig struct {
+// WorkerConfig binds one extraction pass to an exact profile, its policy, and
+// the capability evidence that authorized the resolved input routes. Private
+// staging belongs to the provider.Processor, not the worker.
+type WorkerConfig struct {
 	ProfileID        string
 	RebuildID        string
 	LeaseOwner       string
 	LeaseDuration    time.Duration
 	RetryDelay       time.Duration
-	SpoolDirectory   string
-	MaxSpoolBytes    int64
-	MinFreeBytes     int64
 	MessageTypes     []string
 	ReplaceCurrent   bool
-	Policy           mistral.Policy
-	CapabilityPolicy mistral.CapabilityManifest
+	Policy           provider.Policy
+	CapabilityPolicy provider.Manifest
 	InputPolicy      ResolvedInputPolicy
-}
-
-type MistralProcessor interface {
-	Process(
-		ctx context.Context,
-		prepared *mistral.PreparedDocument,
-		authorization mistral.FormatAuthorization,
-	) (mistral.Result, error)
-}
-
-type authorizedFormat struct {
-	format        mistral.CandidateFormat
-	authorization mistral.FormatAuthorization
-	conversion    *csvpdf.Policy
 }
 
 type closeOnceReadCloser struct {
@@ -83,12 +69,14 @@ func (r *closeOnceReadCloser) Close() error {
 	return r.err
 }
 
-type MistralWorker struct {
+// Worker claims, converts, sends, normalizes, and publishes one candidate at
+// a time through a provider-neutral Processor.
+type Worker struct {
 	catalog      DocumentExtractionCatalog
 	opener       DocumentAttachmentOpener
-	processor    MistralProcessor
-	config       MistralWorkerConfig
-	formats      map[string]authorizedFormat
+	processor    provider.Processor
+	config       WorkerConfig
+	formats      map[string]InputRoute
 	messageTypes map[string]struct{}
 }
 
@@ -102,59 +90,59 @@ type DocumentExtractionResult struct {
 	CleanupError      error
 }
 
-// NewMistralWorker binds runtime upload authority to the exact complete probe
+// NewWorker binds runtime upload authority to the exact complete probe
 // manifest. A documented format is not eligible unless that manifest recorded
 // a passing authenticated probe for the pinned processor target.
-func NewMistralWorker(
+func NewWorker(
 	catalog DocumentExtractionCatalog,
 	opener DocumentAttachmentOpener,
-	processor MistralProcessor,
-	config MistralWorkerConfig,
-) (*MistralWorker, error) {
+	processor provider.Processor,
+	config WorkerConfig,
+) (*Worker, error) {
 	if catalog == nil || opener == nil || processor == nil {
-		return nil, errors.New("mistral document worker requires catalog, attachment opener, and processor")
+		return nil, errors.New("document worker requires catalog, attachment opener, and processor")
 	}
-	if config.ProfileID == "" || config.LeaseOwner == "" || config.SpoolDirectory == "" ||
-		config.LeaseDuration <= 0 || config.MinFreeBytes <= 0 ||
-		config.LeaseDuration > time.Hour || config.RetryDelay <= 0 || config.RetryDelay > 7*24*time.Hour {
-		return nil, errors.New("mistral document worker configuration is incomplete")
+	if config.ProfileID == "" || config.LeaseOwner == "" ||
+		config.LeaseDuration <= 0 || config.LeaseDuration > time.Hour ||
+		config.RetryDelay <= 0 || config.RetryDelay > 7*24*time.Hour {
+		return nil, errors.New("document worker configuration is incomplete")
 	}
 	if config.ReplaceCurrent != (config.RebuildID != "") {
-		return nil, errors.New("mistral document worker replacement requires an exact rebuild")
+		return nil, errors.New("document worker replacement requires an exact rebuild")
 	}
-	if _, err := config.Policy.CanonicalJSON(config.CapabilityPolicy); err != nil {
-		return nil, fmt.Errorf("validate Mistral capability policy: %w", err)
+	if config.Policy == nil || config.CapabilityPolicy == nil {
+		return nil, errors.New("document worker requires a policy and its capability manifest")
+	}
+	if _, err := config.Policy.Fingerprint(config.CapabilityPolicy); err != nil {
+		return nil, fmt.Errorf("validate document capability policy: %w", err)
 	}
 	if config.InputPolicy.Routes == nil {
-		return nil, errors.New("mistral document worker requires a resolved input policy")
+		return nil, errors.New("document worker requires a resolved input policy")
 	}
-	formats := make(map[string]authorizedFormat, len(config.InputPolicy.Routes))
-	for mediaType, route := range config.InputPolicy.Routes {
-		formats[mediaType] = authorizedFormat{
-			format: route.Format, authorization: route.Authorization, conversion: route.Conversion,
-		}
-	}
+	formats := make(map[string]InputRoute, len(config.InputPolicy.Routes))
+	maps.Copy(formats, config.InputPolicy.Routes)
 	if len(formats) == 0 {
 		return nil, errors.New("no format has authorized upload authority; run the authenticated capability probe and supply its manifest")
 	}
 	messageTypes := make(map[string]struct{}, len(config.MessageTypes))
 	for _, messageType := range config.MessageTypes {
 		if messageType == "" {
-			return nil, errors.New("mistral document worker message scope contains an empty type")
+			return nil, errors.New("document worker message scope contains an empty type")
 		}
 		messageTypes[messageType] = struct{}{}
 	}
 	config.MessageTypes = slices.Clone(config.MessageTypes)
-	return &MistralWorker{
+	return &Worker{
 		catalog: catalog, opener: opener, processor: processor, config: config,
 		formats: formats, messageTypes: messageTypes,
 	}, nil
 }
 
-// ProcessCandidate uploads one verified private spool, normalizes the returned
-// Markdown entirely in memory, and atomically publishes only canonical local
-// derivatives. The raw provider response and Markdown are never persisted.
-func (w *MistralWorker) ProcessCandidate(
+// ProcessCandidate hands one verified source to the provider, normalizes the
+// returned Markdown entirely in memory, and atomically publishes only
+// canonical local derivatives. The raw provider response and Markdown are
+// never persisted.
+func (w *Worker) ProcessCandidate(
 	ctx context.Context,
 	candidate store.DocumentExtractionCandidate,
 ) (result DocumentExtractionResult, runErr error) {
@@ -164,7 +152,7 @@ func (w *MistralWorker) ProcessCandidate(
 			_, result.FailureReasonCode = classifyDocumentExtractionFailure(runErr)
 		}
 	}()
-	authorized, allowed := w.formats[candidate.MIMEType]
+	route, allowed := w.formats[candidate.MIMEType]
 	if !allowed {
 		return result, fmt.Errorf("document media type %q lacks passing capability authority", candidate.MIMEType)
 	}
@@ -207,31 +195,31 @@ func (w *MistralWorker) ProcessCandidate(
 		}
 		return errors.Join(
 			preparationErr,
-			w.recordFailureAfterError(ctx, claim, preparationErr, mistral.RequestMetrics{}, conversion),
+			w.recordFailureAfterError(ctx, claim, preparationErr, provider.RequestMetrics{}, conversion),
 		)
 	}
 	if candidate.Size <= 0 || candidate.Size > w.config.Policy.Values().MaxDocumentBytes {
 		return result, failPreparation(errors.New("document candidate size is outside configured bounds"))
 	}
-	source, authoritativeSize, err := w.opener.OpenStream(workCtx, candidate.CanonicalBlobHash)
+	stream, authoritativeSize, err := w.opener.OpenStream(workCtx, candidate.CanonicalBlobHash)
 	if err != nil {
 		return result, failPreparation(fmt.Errorf("open document attachment: %w", err))
 	}
 	if authoritativeSize != candidate.Size {
-		closeErr := source.Close()
+		closeErr := stream.Close()
 		return result, failPreparation(errors.Join(
 			errors.New("document attachment size no longer matches reconciled metadata"), closeErr,
 		))
 	}
-	var prepared *mistral.PreparedDocument
-	if authorized.conversion != nil {
-		csvContent := &closeOnceReadCloser{ReadCloser: source}
-		csvSource, sourceErr := ocr.NewSource(csvContent, candidate.MIMEType, authoritativeSize, candidate.CanonicalBlobHash)
+	var source provider.Source
+	if route.Conversion != nil {
+		csvContent := &closeOnceReadCloser{ReadCloser: stream}
+		csvSource, sourceErr := provider.NewSource(csvContent, candidate.MIMEType, authoritativeSize, candidate.CanonicalBlobHash)
 		if sourceErr != nil {
 			return result, failPreparation(errors.Join(sourceErr, csvContent.Close()))
 		}
 		// csvpdf.Convert closes its source, while the wrapper keeps the underlying stream single-close.
-		converted, convertErr := csvpdf.Convert(workCtx, csvSource, *authorized.conversion)
+		converted, convertErr := csvpdf.Convert(workCtx, csvSource, *route.Conversion)
 		closeErr := csvContent.Close()
 		if convertErr != nil {
 			return result, failPreparation(errors.Join(convertErr, closeErr))
@@ -254,42 +242,41 @@ func (w *MistralWorker) ProcessCandidate(
 		if sourceErr != nil {
 			return result, failPreparation(sourceErr)
 		}
-		prepared, err = mistral.Prepare(workCtx, generated.Content, w.config.Policy, mistral.PrepareOptions{
-			Directory: w.config.SpoolDirectory, DeclaredMediaType: "application/pdf",
-			ExpectedSize: receipt.PDFBytes, ExpectedSHA256: receipt.PDFSHA256,
-			MaxSpoolBytes: w.config.MaxSpoolBytes, MinFreeBytes: w.config.MinFreeBytes,
-		})
-	} else {
-		prepared, err = mistral.Prepare(workCtx, source, w.config.Policy, mistral.PrepareOptions{
-			Directory: w.config.SpoolDirectory, DeclaredMediaType: candidate.MIMEType,
-			ExpectedSize: authoritativeSize, ExpectedSHA256: candidate.CanonicalBlobHash,
-			MaxSpoolBytes: w.config.MaxSpoolBytes, MinFreeBytes: w.config.MinFreeBytes,
-		})
-	}
-	if err != nil {
-		return result, failPreparation(err)
-	}
-	published := false
-	defer func() {
-		cleanupErr := prepared.Release()
-		if published {
-			result.CleanupError = cleanupErr
-			return
+		source, sourceErr = provider.NewSource(generated.Content, "application/pdf", receipt.PDFBytes, receipt.PDFSHA256)
+		if sourceErr != nil {
+			return result, failPreparation(errors.Join(sourceErr, generated.Content.Close()))
 		}
-		runErr = errors.Join(runErr, cleanupErr)
-	}()
+	} else {
+		var sourceErr error
+		source, sourceErr = provider.NewSource(stream, candidate.MIMEType, authoritativeSize, candidate.CanonicalBlobHash)
+		if sourceErr != nil {
+			return result, failPreparation(errors.Join(sourceErr, stream.Close()))
+		}
+	}
 
+	// The processor owns source.Content from here and closes it on every path.
 	providerStarted := time.Now()
-	providerResult, err := w.processor.Process(workCtx, prepared, authorized.authorization)
+	providerResult, err := w.processor.Process(workCtx, source)
 	providerMetrics := providerResult.Metrics
 	if err != nil {
-		providerMetrics = mistral.MetricsFromError(err)
+		providerMetrics = provider.MetricsFromError(err)
+		if provider.ErrorKindOf(err) == provider.ErrorInvalidInput {
+			err = fmt.Errorf("%w: %w", errDocumentPreparation, err)
+		}
 		if renewErr := readRenewalError(renewalErr); renewErr != nil {
 			err = errors.Join(err, renewErr)
 		}
 		err = errors.Join(err, w.recordFailureAfterError(ctx, claim, err, providerMetrics, conversion))
 		return result, err
 	}
+	published := false
+	defer func() {
+		if published {
+			result.CleanupError = providerResult.CleanupError
+			return
+		}
+		runErr = errors.Join(runErr, providerResult.CleanupError)
+	}()
 	if renewErr := readRenewalError(renewalErr); renewErr != nil {
 		err = errors.Join(renewErr, w.recordFailureAfterError(ctx, claim, renewErr, providerMetrics, conversion))
 		return result, err
@@ -342,7 +329,7 @@ func (w *MistralWorker) ProcessCandidate(
 	return result, nil
 }
 
-func (w *MistralWorker) keepClaimAlive(
+func (w *Worker) keepClaimAlive(
 	ctx context.Context,
 	claim store.DocumentExtractionClaim,
 ) (context.Context, context.CancelFunc, context.CancelFunc, <-chan struct{}, <-chan error) {
@@ -387,11 +374,11 @@ func readRenewalError(errCh <-chan error) error {
 	}
 }
 
-func (w *MistralWorker) recordFailureAfterError(
+func (w *Worker) recordFailureAfterError(
 	ctx context.Context,
 	claim store.DocumentExtractionClaim,
 	cause error,
-	metrics mistral.RequestMetrics,
+	metrics provider.RequestMetrics,
 	conversion *store.DocumentExtractionConversion,
 ) error {
 	failureCtx := ctx
@@ -403,11 +390,11 @@ func (w *MistralWorker) recordFailureAfterError(
 	return w.recordFailure(failureCtx, claim, cause, metrics, conversion)
 }
 
-func (w *MistralWorker) recordFailure(
+func (w *Worker) recordFailure(
 	ctx context.Context,
 	claim store.DocumentExtractionClaim,
 	cause error,
-	metrics mistral.RequestMetrics,
+	metrics provider.RequestMetrics,
 	conversion *store.DocumentExtractionConversion,
 ) error {
 	terminal, reason := classifyDocumentExtractionFailure(cause)
@@ -422,6 +409,9 @@ func (w *MistralWorker) recordFailure(
 	return w.catalog.FailDocumentExtraction(ctx, failure)
 }
 
+// classifyDocumentExtractionFailure maps a failure to its terminal flag and
+// stable reason code. Worker-owned sentinels and interruptions take
+// precedence; the provider's neutral error kind decides the rest.
 func classifyDocumentExtractionFailure(err error) (bool, string) {
 	switch {
 	case errors.Is(err, errDocumentLeaseRenewal):
@@ -430,27 +420,32 @@ func classifyDocumentExtractionFailure(err error) (bool, string) {
 		return false, "publication_failed"
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return false, "provider_interrupted"
-	case mistral.IsRetryable(err):
-		if errors.Is(err, mistral.ErrSpoolCapacity) {
-			return false, "spool_capacity_unavailable"
-		}
+	}
+	switch provider.ErrorKindOf(err) {
+	case provider.ErrorCapacity:
+		return false, "spool_capacity_unavailable"
+	case provider.ErrorTransient:
 		return false, "provider_transient"
-	case errors.Is(err, errDocumentPreparation):
+	case provider.ErrorInvalidInput:
 		return true, "invalid_local_source"
-	case errors.Is(err, mistral.ErrPermanentResponse):
+	case provider.ErrorRejected:
 		return true, "provider_rejected"
-	case errors.Is(err, mistral.ErrResponseTooLarge):
+	case provider.ErrorResponseTooLarge:
 		return true, "response_too_large"
-	case errors.Is(err, mistral.ErrCapabilityContract):
+	case provider.ErrorCapabilityChanged:
 		return true, "provider_capability_changed"
-	default:
+	case provider.ErrorMalformedOutput:
 		return true, "invalid_provider_output"
 	}
+	if errors.Is(err, errDocumentPreparation) {
+		return true, "invalid_local_source"
+	}
+	return true, "invalid_provider_output"
 }
 
 func publicationFromNormalized(
 	claim store.DocumentExtractionClaim,
-	providerResult mistral.Result,
+	providerResult provider.Result,
 	normalized document.NormalizedDocument,
 ) (store.DocumentExtractionPublication, error) {
 	if providerResult.UnitsProcessed <= 0 || len(normalized.Chunks) == 0 {

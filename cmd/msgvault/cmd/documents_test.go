@@ -18,10 +18,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/docbank/document"
-	"go.kenn.io/docbank/document/mistral"
-	"go.kenn.io/docbank/document/mistral/mistraltest"
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/documentindex"
+	"go.kenn.io/msgvault/internal/documentindex/mistralprovider"
+	"go.kenn.io/msgvault/internal/documentindex/mistralprovider/mistralprovidertest"
+	docprovider "go.kenn.io/msgvault/internal/documentindex/provider"
 	internalmime "go.kenn.io/msgvault/internal/mime"
 	"go.kenn.io/msgvault/internal/operations"
 	"go.kenn.io/msgvault/internal/personscope"
@@ -48,13 +49,11 @@ func TestProbeMistralCommandWritesCompleteSanitizedManifest(t *testing.T) {
 
 	probeCalled := false
 	deps := documentsCommandDeps{
-		newMistralClient: func(got *documentindex.DocumentsConfig) (*mistral.Client, error) {
-			assert.Same(&cfg.Attachments.Documents, got)
-			return new(mistral.Client), nil
-		},
-		runCapabilityProbe: func(_ context.Context, _ *mistral.Client, got mistral.ProbeConfig) (mistral.CapabilityManifest, error) {
+		runCapabilityProbe: func(_ context.Context, got *documentindex.DocumentsConfig, _ docprovider.Policy, probe docprovider.ProbeConfig) (docprovider.Manifest, error) {
 			probeCalled = true
-			assert.Equal("synthetic-fixtures", got.Fixtures.FixtureDirectory)
+			assert.Same(&cfg.Attachments.Documents, got)
+			assert.Equal("synthetic-fixtures", probe.Fixtures.FixtureDirectory)
+			assert.Equal(cfg.Attachments.Documents.MaxSpoolBytes, probe.Fixtures.Staging.MaxBytes)
 			return commandCapabilityManifest(t, cfg.Attachments.Documents.MaxPagesPerDocument), nil
 		},
 	}
@@ -67,10 +66,12 @@ func TestProbeMistralCommandWritesCompleteSanitizedManifest(t *testing.T) {
 
 	require.NoError(command.ExecuteContext(testCtx))
 	assert.True(probeCalled)
-	manifest, err := mistral.DecodeCapabilityManifest(bytes.NewReader(output.Bytes()))
+	documentProvider, err := cfg.Attachments.Documents.ResolveProvider()
 	require.NoError(err)
-	require.Len(manifest.Results, len(mistral.CandidateFormats()))
-	assert.Equal(mistral.ProbeStatusPassed, manifest.Results[0].Status)
+	manifest, err := documentProvider.DecodeManifest(bytes.NewReader(output.Bytes()))
+	require.NoError(err)
+	assert.Equal(cfg.Attachments.Documents.MaxPagesPerDocument, manifest.MaxUnits())
+	assert.Equal(len(mistralprovider.CandidateFormats()), strings.Count(output.String(), `"status": "passed"`))
 	assert.NotContains(output.String(), "synthetic-fixtures")
 }
 
@@ -87,11 +88,11 @@ func TestProbeMistralValidateOnlyNeedsNoProviderConfiguration(t *testing.T) {
 	providerCalled := false
 	validationCalled := false
 	deps := documentsCommandDeps{
-		newMistralClient: func(*documentindex.DocumentsConfig) (*mistral.Client, error) {
+		runCapabilityProbe: func(context.Context, *documentindex.DocumentsConfig, docprovider.Policy, docprovider.ProbeConfig) (docprovider.Manifest, error) {
 			providerCalled = true
-			return nil, errors.New("unexpected provider client construction")
+			return nil, errors.New("unexpected provider probe")
 		},
-		validateProbeFixtures: func(_ context.Context, _ mistral.Policy, got mistral.ProbeFixtureConfig) error {
+		validateProbeFixtures: func(_ context.Context, _ *documentindex.DocumentsConfig, _ docprovider.Policy, got docprovider.ProbeFixtureConfig) error {
 			validationCalled = true
 			assert.Equal("synthetic-fixtures", got.FixtureDirectory)
 			return nil
@@ -132,7 +133,7 @@ func TestDocumentsConsentBuildAndStatusUseExactAuthenticatedProfile(t *testing.T
 	cfg.Attachments.Documents.PricingAssumptionOn = "2026-08-13"
 
 	fixture := storetest.New(t)
-	content := mistraltest.MinimalPDF("synthetic document")
+	content := mistralprovidertest.MinimalPDF("synthetic document")
 	hash := sha256.Sum256(content)
 	digest := hex.EncodeToString(hash[:])
 	messageID := fixture.CreateMessage("documents-command")
@@ -146,7 +147,7 @@ func TestDocumentsConsentBuildAndStatusUseExactAuthenticatedProfile(t *testing.T
 	processor := &commandBuildProcessor{}
 	attachmentOpened := false
 	deps := documentsCommandDeps{
-		newMistralProcessor: func(*documentindex.DocumentsConfig) (documentindex.MistralProcessor, error) {
+		newDocumentProcessor: func(*documentindex.DocumentsConfig, docprovider.Manifest, docprovider.Staging) (docprovider.Processor, error) {
 			return processor, nil
 		},
 		openStore: func(context.Context) (*store.Store, func(), error) {
@@ -357,8 +358,7 @@ func TestDocumentConsentDisclosureListsResolvedUploadRoutes(t *testing.T) {
 	config.Conversion.CSV.Enabled = true
 	csvPolicy, err := config.CSVPolicy()
 	require.NoError(err)
-	pdf, found := mistral.CandidateFormatByID("pdf")
-	require.True(found)
+	pdf := docprovider.Format{ID: "pdf", Family: "pdf", MediaType: "application/pdf", UnitKind: "page"}
 	inputPolicy := documentindex.ResolvedInputPolicy{
 		AllowedMediaTypes: []string{pdf.MediaType, "text/csv"},
 		Routes: map[string]documentindex.InputRoute{
@@ -626,7 +626,7 @@ func TestDocumentsBuildRefusesAPIUseBeforeExactConsent(t *testing.T) {
 	fixture := storetest.New(t)
 	providerCalled := false
 	deps := documentsCommandDeps{
-		newMistralProcessor: func(*documentindex.DocumentsConfig) (documentindex.MistralProcessor, error) {
+		newDocumentProcessor: func(*documentindex.DocumentsConfig, docprovider.Manifest, docprovider.Staging) (docprovider.Processor, error) {
 			providerCalled = true
 			return &commandBuildProcessor{}, nil
 		},
@@ -659,8 +659,8 @@ func TestDocumentFullRebuildResumesDurableTargetSnapshot(t *testing.T) {
 	fixture := storetest.New(t)
 	contents := make(map[string][]byte)
 	for index, content := range [][]byte{
-		mistraltest.MinimalPDF("first rebuild document"),
-		mistraltest.MinimalPDF("second rebuild document"),
+		mistralprovidertest.MinimalPDF("first rebuild document"),
+		mistralprovidertest.MinimalPDF("second rebuild document"),
 	} {
 		digestBytes := sha256.Sum256(content)
 		digest := hex.EncodeToString(digestBytes[:])
@@ -676,7 +676,7 @@ func TestDocumentFullRebuildResumesDurableTargetSnapshot(t *testing.T) {
 	manifestPath := writeCommandCapabilityManifest(t, cfg.Attachments.Documents.MaxPagesPerDocument)
 	processor := &commandBuildProcessor{}
 	deps := documentsCommandDeps{
-		newMistralProcessor: func(*documentindex.DocumentsConfig) (documentindex.MistralProcessor, error) {
+		newDocumentProcessor: func(*documentindex.DocumentsConfig, docprovider.Manifest, docprovider.Staging) (docprovider.Processor, error) {
 			return processor, nil
 		},
 		openStore: func(context.Context) (*store.Store, func(), error) { return fixture.Store, func() {}, nil },
@@ -742,8 +742,8 @@ func TestDocumentBuildRecordsOversizedCandidateAndContinues(t *testing.T) {
 	require := require.New(t)
 	fixture := storetest.New(t)
 	contents := make(map[string][]byte)
-	searchable := mistraltest.MinimalPDF("searchable synthetic document")
-	oversized := append(mistraltest.MinimalPDF("oversized synthetic document"), bytes.Repeat([]byte("% padding\n"), 20)...)
+	searchable := mistralprovidertest.MinimalPDF("searchable synthetic document")
+	oversized := append(mistralprovidertest.MinimalPDF("oversized synthetic document"), bytes.Repeat([]byte("% padding\n"), 20)...)
 	for index, content := range [][]byte{
 		oversized,
 		searchable,
@@ -765,7 +765,7 @@ func TestDocumentBuildRecordsOversizedCandidateAndContinues(t *testing.T) {
 	documentsConfig.TrainingPosture = documentindex.TrainingOptedOut
 	documentsConfig.MaxFileBytes = int64(len(searchable))
 	manifestPath := writeCommandCapabilityManifest(t, documentsConfig.MaxPagesPerDocument)
-	manifest, err := loadDocumentCapabilityManifest(manifestPath)
+	manifest, err := loadDocumentCapabilityManifest(&documentsConfig, manifestPath)
 	require.NoError(err)
 	inputPolicy, profile, err := documentProfileForConfig(&documentsConfig, manifest)
 	require.NoError(err)
@@ -801,7 +801,7 @@ func TestDocumentBuildRecordsOversizedCandidateAndContinues(t *testing.T) {
 func TestDocumentBuildRequiresRecorderBeforeWork(t *testing.T) {
 	result, err := executeDocumentBuild(
 		t.Context(), nil, testOperationPassScope("document:missing-recorder"),
-		nil, nil, nil, nil, mistral.CapabilityManifest{}, nil, store.DocumentExtractionProfile{}, 1,
+		nil, nil, nil, nil, nil, nil, store.DocumentExtractionProfile{}, 1,
 		"documents-recorder-test", t.TempDir(), documentBuildIncremental, nil,
 	)
 
@@ -869,7 +869,7 @@ func TestDocumentBuildStopsOnCancellation(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	fixture := storetest.New(t)
-	content := mistraltest.MinimalPDF("synthetic canceled document")
+	content := mistralprovidertest.MinimalPDF("synthetic canceled document")
 	digestBytes := sha256.Sum256(content)
 	digest := hex.EncodeToString(digestBytes[:])
 	messageID := fixture.CreateMessage("documents-canceled")
@@ -884,7 +884,7 @@ func TestDocumentBuildStopsOnCancellation(t *testing.T) {
 	documentsConfig.RetentionPosture = documentindex.RetentionStandard
 	documentsConfig.TrainingPosture = documentindex.TrainingOptedOut
 	manifestPath := writeCommandCapabilityManifest(t, documentsConfig.MaxPagesPerDocument)
-	manifest, err := loadDocumentCapabilityManifest(manifestPath)
+	manifest, err := loadDocumentCapabilityManifest(&documentsConfig, manifestPath)
 	require.NoError(err)
 	inputPolicy, profile, err := documentProfileForConfig(&documentsConfig, manifest)
 	require.NoError(err)
@@ -921,7 +921,7 @@ func TestDocumentBuildContinuesAfterProviderTimeout(t *testing.T) {
 	contents := make(map[string][]byte)
 	var failedDigest string
 	for index, text := range []string{"timed out document", "searchable document"} {
-		content := mistraltest.MinimalPDF(text)
+		content := mistralprovidertest.MinimalPDF(text)
 		digestBytes := sha256.Sum256(content)
 		digest := hex.EncodeToString(digestBytes[:])
 		contents[digest] = content
@@ -941,7 +941,7 @@ func TestDocumentBuildContinuesAfterProviderTimeout(t *testing.T) {
 	documentsConfig.RetentionPosture = documentindex.RetentionStandard
 	documentsConfig.TrainingPosture = documentindex.TrainingOptedOut
 	manifestPath := writeCommandCapabilityManifest(t, documentsConfig.MaxPagesPerDocument)
-	manifest, err := loadDocumentCapabilityManifest(manifestPath)
+	manifest, err := loadDocumentCapabilityManifest(&documentsConfig, manifestPath)
 	require.NoError(err)
 	inputPolicy, profile, err := documentProfileForConfig(&documentsConfig, manifest)
 	require.NoError(err)
@@ -1097,9 +1097,9 @@ func TestProbeMistralCommandRequiresExplicitEnablementAndPosture(t *testing.T) {
 	_ = testCtx
 	providerCalled := false
 	deps := documentsCommandDeps{
-		newMistralClient: func(*documentindex.DocumentsConfig) (*mistral.Client, error) {
+		runCapabilityProbe: func(context.Context, *documentindex.DocumentsConfig, docprovider.Policy, docprovider.ProbeConfig) (docprovider.Manifest, error) {
 			providerCalled = true
-			return nil, errors.New("unexpected provider client construction")
+			return nil, errors.New("unexpected provider probe")
 		},
 	}
 
@@ -1154,22 +1154,22 @@ type commandCancelingProcessor struct {
 }
 
 func (p commandCancelingProcessor) Process(
-	context.Context,
-	*mistral.PreparedDocument,
-	mistral.FormatAuthorization,
-) (mistral.Result, error) {
+	_ context.Context,
+	source docprovider.Source,
+) (docprovider.Result, error) {
+	_ = source.Content.Close()
 	p.cancel()
-	return mistral.Result{}, context.Canceled
+	return docprovider.Result{}, context.Canceled
 }
 
 func (p *commandBuildProcessor) Process(
-	context.Context,
-	*mistral.PreparedDocument,
-	mistral.FormatAuthorization,
-) (mistral.Result, error) {
+	_ context.Context,
+	source docprovider.Source,
+) (docprovider.Result, error) {
+	_ = source.Content.Close()
 	p.calls++
 	if p.calls == 1 && p.firstErr != nil {
-		return mistral.Result{}, p.firstErr
+		return docprovider.Result{}, p.firstErr
 	}
 	text := "# Indexed\nSynthetic evidence"
 	if p.calls > 1 {
@@ -1202,21 +1202,21 @@ func writeCommandCapabilityManifest(t *testing.T, maxPages int) string {
 	t.Helper()
 	manifest := commandCapabilityManifest(t, maxPages)
 	var encoded bytes.Buffer
-	require.NoError(t, mistral.EncodeCapabilityManifest(&encoded, manifest))
+	require.NoError(t, mistralprovider.New().EncodeManifest(&encoded, manifest))
 	path := filepath.Join(t.TempDir(), "capabilities.json")
 	require.NoError(t, os.WriteFile(path, encoded.Bytes(), 0o600))
 	return path
 }
 
-func commandCapabilityManifest(t *testing.T, maxUnits int) mistral.CapabilityManifest {
+func commandCapabilityManifest(t *testing.T, maxUnits int) docprovider.Manifest {
 	t.Helper()
 	documentsConfig := documentindex.DefaultDocumentsConfig()
 	documentsConfig.RetentionPosture = documentindex.RetentionZDR
 	documentsConfig.TrainingPosture = documentindex.TrainingOptedOut
 	documentsConfig.MaxPagesPerDocument = maxUnits
-	policy, err := documentsConfig.MistralPolicy()
+	policy, err := documentsConfig.ExtractionPolicy()
 	require.NoError(t, err)
-	manifest, err := mistraltest.SyntheticManifest(policy, true)
+	manifest, err := mistralprovidertest.Manifest(policy)
 	require.NoError(t, err)
 	return manifest
 }
@@ -1244,13 +1244,13 @@ func operationRunsForKind(t *testing.T, st *store.Store, kind operations.Kind) [
 	return snapshot.Runs
 }
 
-func commandMistralResult(markdown string) mistral.Result {
-	return mistral.Result{
+func commandMistralResult(markdown string) docprovider.Result {
+	return docprovider.Result{
 		Document: document.SourceDocument{
 			Family: "pdf", UnitKind: "page",
 			Units: []document.SourceUnit{{Index: 0, Markdown: markdown}},
 		},
-		ReturnedModel: mistral.DefaultModel, UnitsProcessed: 1,
-		Metrics: mistral.RequestMetrics{Requests: 1, Latency: time.Millisecond},
+		ReturnedModel: mistralprovider.DefaultModel, UnitsProcessed: 1,
+		Metrics: docprovider.RequestMetrics{Requests: 1, Latency: time.Millisecond},
 	}
 }

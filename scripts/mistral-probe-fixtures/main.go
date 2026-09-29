@@ -10,7 +10,7 @@ import (
 	"io"
 	"os"
 
-	"go.kenn.io/docbank/document/mistral"
+	"go.kenn.io/msgvault/internal/documentindex/mistralprovider"
 )
 
 func main() {
@@ -33,13 +33,11 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	if flags.NArg() != 0 || outputDirectory == "" {
 		return errors.New("usage: mistral-probe-fixtures --output <private-dir> [--seed-dir <private-dir>]")
 	}
-	if err := mistral.WriteProbeFixtures(ctx, outputDirectory, mistral.FixtureOptions{
-		SeedDirectory: seedDirectory,
-	}); err != nil {
+	if err := mistralprovider.WriteProbeFixtures(ctx, outputDirectory, seedDirectory); err != nil {
 		return fmt.Errorf("write Mistral probe fixtures: %w", err)
 	}
 	_, _ = fmt.Fprintf(stdout,
 		"Wrote %d private Mistral probe fixtures; no provider requests were made.\n",
-		len(mistral.CandidateFormats()))
+		len(mistralprovider.CandidateFormats()))
 	return nil
 }

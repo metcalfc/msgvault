@@ -19,9 +19,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"go.kenn.io/docbank/document/mistral"
 	"go.kenn.io/msgvault/internal/attachmentstore"
 	"go.kenn.io/msgvault/internal/documentindex"
+	docprovider "go.kenn.io/msgvault/internal/documentindex/provider"
 	"go.kenn.io/msgvault/internal/fileutil"
 	"go.kenn.io/msgvault/internal/operations"
 	"go.kenn.io/msgvault/internal/personscope"
@@ -191,11 +191,13 @@ type documentBuildFailure struct {
 	ReasonCode        string
 }
 
+// documentsCommandDeps are the provider-neutral seams the documents commands
+// use. Production wiring resolves the configured provider and its credential;
+// tests substitute fakes without naming any vendor type.
 type documentsCommandDeps struct {
-	newMistralClient      func(*documentindex.DocumentsConfig) (*mistral.Client, error)
-	newMistralProcessor   func(*documentindex.DocumentsConfig) (documentindex.MistralProcessor, error)
-	validateProbeFixtures func(context.Context, mistral.Policy, mistral.ProbeFixtureConfig) error
-	runCapabilityProbe    func(context.Context, *mistral.Client, mistral.ProbeConfig) (mistral.CapabilityManifest, error)
+	newDocumentProcessor  func(*documentindex.DocumentsConfig, docprovider.Manifest, docprovider.Staging) (docprovider.Processor, error)
+	validateProbeFixtures func(context.Context, *documentindex.DocumentsConfig, docprovider.Policy, docprovider.ProbeFixtureConfig) error
+	runCapabilityProbe    func(context.Context, *documentindex.DocumentsConfig, docprovider.Policy, docprovider.ProbeConfig) (docprovider.Manifest, error)
 	openStore             func(context.Context) (*store.Store, func(), error)
 	openAttachments       func(context.Context, *store.Store) (documentindex.DocumentAttachmentOpener, func() error, error)
 	openReadClient        func(context.Context) (documentReadClient, func(), error)
@@ -215,10 +217,9 @@ type documentReadClient interface {
 
 func defaultDocumentsCommandDeps() documentsCommandDeps {
 	return documentsCommandDeps{
-		newMistralClient:      newConfiguredMistralClient,
-		newMistralProcessor:   newConfiguredMistralProcessor,
-		validateProbeFixtures: mistral.ValidateProbeFixtures,
-		runCapabilityProbe:    mistral.RunCapabilityProbe,
+		newDocumentProcessor:  newConfiguredDocumentProcessor,
+		validateProbeFixtures: validateConfiguredProbeFixtures,
+		runCapabilityProbe:    runConfiguredCapabilityProbe,
 		openStore: func(ctx context.Context) (*store.Store, func(), error) {
 			return openWritableStoreAndInitForInvocation(invocationFromContext(ctx))
 		},
@@ -542,7 +543,11 @@ func runProbeMistral(
 			policyConfig.TrainingPosture = documentindex.TrainingDefaultOptOut
 		}
 	}
-	policy, err := policyConfig.MistralPolicy()
+	documentProvider, err := documentsConfig.ResolveProvider()
+	if err != nil {
+		return err
+	}
+	policy, err := policyConfig.ExtractionPolicy()
 	if err != nil {
 		return err
 	}
@@ -550,33 +555,41 @@ func runProbeMistral(
 	if err := fileutil.SecureMkdirAll(spoolDirectory, 0o700); err != nil {
 		return fmt.Errorf("create private document probe spool directory: %w", err)
 	}
-	fixtureConfig := mistral.ProbeFixtureConfig{
-		FixtureDirectory: fixtureDirectory, SpoolDirectory: spoolDirectory,
-		MaxSpoolBytes: documentsConfig.MaxSpoolBytes, MinFreeBytes: documentsConfig.MinFreeSpaceBytes,
+	fixtureConfig := docprovider.ProbeFixtureConfig{
+		FixtureDirectory: fixtureDirectory,
+		Staging:          documentStaging(documentsConfig, spoolDirectory),
 	}
 	if validateOnly {
-		if err := deps.validateProbeFixtures(command.Context(), policy, fixtureConfig); err != nil {
+		if err := deps.validateProbeFixtures(command.Context(), documentsConfig, policy, fixtureConfig); err != nil {
 			return err
 		}
 		_, _ = fmt.Fprintf(command.OutOrStdout(),
 			"Validated %d private Mistral fixture(s) locally; no provider requests were made.\n",
-			len(mistral.CandidateFormats()))
+			len(policy.Formats()))
 		return nil
 	}
-	client, err := deps.newMistralClient(documentsConfig)
-	if err != nil {
-		return err
-	}
-	manifest, err := deps.runCapabilityProbe(command.Context(), client, mistral.ProbeConfig{
+	manifest, err := deps.runCapabilityProbe(command.Context(), documentsConfig, policy, docprovider.ProbeConfig{
 		Fixtures: fixtureConfig,
 	})
 	if err != nil {
 		return err
 	}
-	if err := mistral.EncodeCapabilityManifest(command.OutOrStdout(), manifest); err != nil {
+	if err := documentProvider.EncodeManifest(command.OutOrStdout(), manifest); err != nil {
 		return fmt.Errorf("write Mistral capability manifest: %w", err)
 	}
 	return nil
+}
+
+// documentStaging bounds the provider's private staging area from policy.
+func documentStaging(documentsConfig *documentindex.DocumentsConfig, directory string) docprovider.Staging {
+	return docprovider.Staging{
+		Directory: directory, MaxBytes: documentsConfig.MaxSpoolBytes,
+		MinFreeBytes: documentsConfig.MinFreeSpaceBytes,
+	}
+}
+
+func documentBuildSpoolDirectory(dataDirectory string) string {
+	return filepath.Join(dataDirectory, "tmp", "document-index")
 }
 
 func runConsentMistral(
@@ -598,7 +611,7 @@ func runConsentMistral(
 	if !confirmed {
 		return errors.New("document consent requires --yes after reviewing the configured retention and training postures")
 	}
-	if manifest.MaxUnits < documentsConfig.MaxPagesPerDocument || len(inputPolicy.AllowedMediaTypes) == 0 {
+	if manifest.MaxUnits() < documentsConfig.MaxPagesPerDocument || len(inputPolicy.AllowedMediaTypes) == 0 {
 		return errors.New("document capability manifest does not authorize the configured policy")
 	}
 	st, cleanup, err := deps.openStore(command.Context())
@@ -753,7 +766,9 @@ func runBuildDocuments(
 		return err
 	}
 	defer func() { runErr = errors.Join(runErr, closeAttachments()) }()
-	processor, err := deps.newMistralProcessor(documentsConfig)
+	processor, err := deps.newDocumentProcessor(
+		documentsConfig, manifest, documentStaging(documentsConfig, documentBuildSpoolDirectory(cfg.Data.DataDir)),
+	)
 	if err != nil {
 		return err
 	}
@@ -823,9 +838,9 @@ func executeDocumentBuild(
 	scope operations.PassScope,
 	st *store.Store,
 	attachments documentindex.DocumentAttachmentOpener,
-	processor documentindex.MistralProcessor,
+	processor docprovider.Processor,
 	documentsConfig *documentindex.DocumentsConfig,
-	manifest mistral.CapabilityManifest,
+	manifest docprovider.Manifest,
 	allowedMediaTypes []string,
 	profile store.DocumentExtractionProfile,
 	limit int,
@@ -891,16 +906,20 @@ func executeDocumentBuild(
 	if dataDirectory == "" {
 		return result, errors.New("document build requires a data directory")
 	}
-	spoolDirectory := filepath.Join(dataDirectory, "tmp", "document-index")
+	spoolDirectory := documentBuildSpoolDirectory(dataDirectory)
 	if err := fileutil.SecureMkdirAll(spoolDirectory, 0o700); err != nil {
 		return result, fmt.Errorf("create private document spool directory: %w", err)
 	}
-	if _, err := mistral.ScavengeSpoolDirectory(
+	documentProvider, err := documentsConfig.ResolveProvider()
+	if err != nil {
+		return result, err
+	}
+	if _, err := documentProvider.ScavengeStaging(
 		spoolDirectory, time.Now().UTC().Add(-2*time.Hour),
 	); err != nil {
 		return result, fmt.Errorf("scavenge Mistral document spool: %w", err)
 	}
-	policy, err := documentsConfig.MistralPolicy()
+	policy, err := documentsConfig.ExtractionPolicy()
 	if err != nil {
 		return result, err
 	}
@@ -908,10 +927,9 @@ func executeDocumentBuild(
 	if err != nil {
 		return result, err
 	}
-	workerConfig := documentindex.MistralWorkerConfig{
+	workerConfig := documentindex.WorkerConfig{
 		ProfileID: profile.ID, LeaseOwner: leaseOwner, LeaseDuration: documentsConfig.RequestTimeout + time.Minute,
-		RetryDelay: 15 * time.Minute, SpoolDirectory: spoolDirectory,
-		MaxSpoolBytes: documentsConfig.MaxSpoolBytes, MinFreeBytes: documentsConfig.MinFreeSpaceBytes,
+		RetryDelay:       15 * time.Minute,
 		MessageTypes:     documentsConfig.Scope.MessageTypes,
 		CapabilityPolicy: manifest, Policy: policy, InputPolicy: inputPolicy,
 	}
@@ -920,7 +938,7 @@ func executeDocumentBuild(
 		workerConfig.ReplaceCurrent = true
 		result.RebuildID = rebuild.ID
 	}
-	worker, err := documentindex.NewMistralWorker(st, attachments, processor, workerConfig)
+	worker, err := documentindex.NewWorker(st, attachments, processor, workerConfig)
 	if err != nil {
 		return result, err
 	}
@@ -1353,53 +1371,62 @@ func bootstrapDocumentOccurrencesIfConsented(ctx context.Context, st *store.Stor
 func configuredDocumentProfile(
 	capabilityPath string,
 	state *invocation,
-) (*documentindex.DocumentsConfig, mistral.CapabilityManifest, documentindex.ResolvedInputPolicy, store.DocumentExtractionProfile, error) {
+) (*documentindex.DocumentsConfig, docprovider.Manifest, documentindex.ResolvedInputPolicy, store.DocumentExtractionProfile, error) {
 	state = invocationState(context.Background(), state)
 	if state == nil || state.cfg == nil {
-		return nil, mistral.CapabilityManifest{}, documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{},
+		return nil, nil, documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{},
 			errors.New("document operation requires loaded configuration")
 	}
 	cfg := state.cfg
 	documentsConfig := &cfg.Attachments.Documents
 	if documentsConfig.RetentionPosture == documentindex.RetentionUnknown ||
 		documentsConfig.TrainingPosture == documentindex.TrainingUnknown {
-		return nil, mistral.CapabilityManifest{}, documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{},
+		return nil, nil, documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{},
 			errors.New("document operation requires explicit retention_posture and training_posture")
 	}
-	manifest, err := loadDocumentCapabilityManifest(capabilityPath)
+	manifest, err := loadDocumentCapabilityManifest(documentsConfig, capabilityPath)
 	if err != nil {
-		return nil, mistral.CapabilityManifest{}, documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{}, err
+		return nil, nil, documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{}, err
 	}
 	inputPolicy, profile, err := documentProfileForConfig(documentsConfig, manifest)
 	if err != nil {
-		return nil, mistral.CapabilityManifest{}, documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{}, err
+		return nil, nil, documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{}, err
 	}
 	return documentsConfig, manifest, inputPolicy, profile, nil
 }
 
-func loadDocumentCapabilityManifest(capabilityPath string) (mistral.CapabilityManifest, error) {
+// loadDocumentCapabilityManifest decodes and validates the configured
+// provider's capability evidence. The path never appears in errors.
+func loadDocumentCapabilityManifest(
+	documentsConfig *documentindex.DocumentsConfig,
+	capabilityPath string,
+) (docprovider.Manifest, error) {
+	documentProvider, err := documentsConfig.ResolveProvider()
+	if err != nil {
+		return nil, err
+	}
 	file, err := os.Open(capabilityPath)
 	if err != nil {
-		return mistral.CapabilityManifest{}, errors.New("open configured Mistral capability manifest")
+		return nil, errors.New("open configured Mistral capability manifest")
 	}
-	manifest, decodeErr := mistral.DecodeCapabilityManifest(file)
+	manifest, decodeErr := documentProvider.DecodeManifest(file)
 	closeErr := file.Close()
 	if decodeErr != nil || closeErr != nil {
-		return mistral.CapabilityManifest{}, errors.Join(decodeErr, closeErr)
+		return nil, errors.Join(decodeErr, closeErr)
 	}
 	return manifest, nil
 }
 
 func documentProfileForConfig(
 	documentsConfig *documentindex.DocumentsConfig,
-	manifest mistral.CapabilityManifest,
+	manifest docprovider.Manifest,
 ) (documentindex.ResolvedInputPolicy, store.DocumentExtractionProfile, error) {
 	inputPolicy, err := documentindex.ResolveInputPolicy(documentsConfig, manifest)
 	if err != nil {
 		return documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{}, err
 	}
 	allowedMediaTypes := inputPolicy.AllowedMediaTypes
-	policy, err := documentsConfig.MistralPolicy()
+	policy, err := documentsConfig.ExtractionPolicy()
 	if err != nil {
 		return documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{}, err
 	}
@@ -1437,31 +1464,68 @@ func openDocumentAttachments(
 	return attachments, attachments.Close, nil
 }
 
-func newConfiguredMistralClient(
+// configuredDocumentClient resolves the provider credential. It is called only
+// by an explicit provider operation, never by configuration loading.
+func configuredDocumentClient(
 	documentsConfig *documentindex.DocumentsConfig,
-) (*mistral.Client, error) {
+) (docprovider.ClientConfig, error) {
 	apiKey, err := documentsConfig.ResolveAPIKey()
 	if err != nil {
-		return nil, err
+		return docprovider.ClientConfig{}, err
 	}
-	policy, err := documentsConfig.MistralPolicy()
-	if err != nil {
-		return nil, err
-	}
-	client, err := mistral.NewClient(policy, mistral.ClientConfig{
-		APIKey: apiKey, Timeout: documentsConfig.RequestTimeout,
-		MaxRetries: documentsConfig.MaxRetries,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("configure mistral document probe: %w", err)
-	}
-	return client, nil
+	return docprovider.ClientConfig{
+		APIKey: apiKey, Timeout: documentsConfig.RequestTimeout, MaxRetries: documentsConfig.MaxRetries,
+	}, nil
 }
 
-func newConfiguredMistralProcessor(
+func newConfiguredDocumentProcessor(
 	documentsConfig *documentindex.DocumentsConfig,
-) (documentindex.MistralProcessor, error) {
-	return newConfiguredMistralClient(documentsConfig)
+	manifest docprovider.Manifest,
+	staging docprovider.Staging,
+) (docprovider.Processor, error) {
+	documentProvider, err := documentsConfig.ResolveProvider()
+	if err != nil {
+		return nil, err
+	}
+	client, err := configuredDocumentClient(documentsConfig)
+	if err != nil {
+		return nil, err
+	}
+	policy, err := documentsConfig.ExtractionPolicy()
+	if err != nil {
+		return nil, err
+	}
+	return documentProvider.NewProcessor(policy, manifest, client, staging)
+}
+
+func validateConfiguredProbeFixtures(
+	ctx context.Context,
+	documentsConfig *documentindex.DocumentsConfig,
+	policy docprovider.Policy,
+	fixtures docprovider.ProbeFixtureConfig,
+) error {
+	documentProvider, err := documentsConfig.ResolveProvider()
+	if err != nil {
+		return err
+	}
+	return documentProvider.ValidateProbeFixtures(ctx, policy, fixtures)
+}
+
+func runConfiguredCapabilityProbe(
+	ctx context.Context,
+	documentsConfig *documentindex.DocumentsConfig,
+	policy docprovider.Policy,
+	probe docprovider.ProbeConfig,
+) (docprovider.Manifest, error) {
+	documentProvider, err := documentsConfig.ResolveProvider()
+	if err != nil {
+		return nil, err
+	}
+	client, err := configuredDocumentClient(documentsConfig)
+	if err != nil {
+		return nil, err
+	}
+	return documentProvider.RunCapabilityProbe(ctx, policy, client, probe)
 }
 
 func init() {
