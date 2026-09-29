@@ -1,7 +1,7 @@
 <script lang="ts">
   import XIcon from '@lucide/svelte/icons/x';
   import {
-    Button, Checkbox, DateRangePicker, IconButton, SegmentedControl, SelectDropdown, resolveRange, type RangeSelection
+    Button, Checkbox, DateRangePicker, IconButton, SegmentedControl, SelectDropdown, type RangeSelection
   } from '@kenn-io/kit-ui';
 
   import type { APIClient } from '../../api/client';
@@ -11,7 +11,7 @@
   import { EXPLORE_COLUMN_LABELS } from '../../explore/models';
   import {
     DATE_RANGE_PRESETS, activeDateRangePreset, dateBound, dateInputValue, isDateDimension,
-    withDateRange, withPickedDays, withoutDateRange, type DateRangePreset
+    withDateRange, withRangeSelection, type DateRangePreset
   } from '../../explore/date-range';
   import {
     groupingDimensionLabel,
@@ -87,8 +87,9 @@
   const messageTypeOptions = $derived([
     { value: '', label: 'Any type' },
     ...(messageTypeValues.length > 1 ? [{ value: MULTIPLE_MESSAGE_TYPES, label: 'Multiple', disabled: true }] : []),
-    // A single value outside the offered types (from a URL or a drilled
-    // group) is named by its own label rather than read back as "Any type".
+    // A single non-empty value outside the offered types (from a URL or a
+    // drilled group) is named by its own label rather than read back as
+    // "Any type"; an empty value is "Any type" itself.
     ...(messageTypeValues.length === 1 && !OFFERED_MESSAGE_TYPES.includes(messageType)
       ? [{ value: messageType, label: messageTypeLabel(messageType) || messageType }]
       : []),
@@ -123,14 +124,10 @@
     onFiltersChange(filters.filter((_, position) => position !== index));
   }
 
-  /** Only the bound the user changed is rewritten; the other keeps its
-   * exact instant instead of being re-derived from its local day. */
+  /** A custom range rewrites only the bound the user changed; a preset
+   * means whole days for both bounds. */
   function selectDateBounds(selection: RangeSelection): void {
-    if (selection.mode === 'relative' && selection.days <= 0) {
-      onFiltersChange(withoutDateRange(filters));
-      return;
-    }
-    onFiltersChange(withPickedDays(filters, resolveRange(selection)));
+    onFiltersChange(withRangeSelection(filters, selection));
   }
 
   function selectMessageType(value: string): void {

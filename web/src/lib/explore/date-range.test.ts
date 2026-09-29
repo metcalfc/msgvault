@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import { resolveRange } from '@kenn-io/kit-ui';
+
 import {
   activeDateRangePreset, dateInputBound, dateInputValue, dateRangeFilters, defaultEverythingFilters,
-  endOfLocalDay, presetStart, startOfLocalDay, withDateBound, withDateRange, withPickedDays
+  endOfLocalDay, presetStart, startOfLocalDay, withDateBound, withDateRange, withPickedDays, withRangeSelection
 } from './date-range';
 
 // Local noon: an hour either way stays on the same local day in every zone.
@@ -32,6 +34,35 @@ describe('withPickedDays', () => {
   it('removes a bound the picker cleared', () => {
     const picked = withPickedDays(filters, { from: '', to: dateInputValue(before) });
     expect(picked.map((filter) => filter.dimension)).toEqual(['source', 'before']);
+  });
+});
+
+describe('withRangeSelection', () => {
+  it('turns a relative preset into whole days even when a bound sits inside its first day', () => {
+    // An "after 10:30" bound on the day "Last 7 days" starts: the preset
+    // means the whole day, so the partial-day instant must not survive and
+    // the chip reads the preset rather than Custom.
+    const range = resolveRange({ mode: 'relative', days: 7 });
+    const [year, month, day] = range.from.split('-').map(Number) as [number, number, number];
+    const partial = new Date(year, month - 1, day, 10, 30).toISOString();
+    const filters = [
+      { dimension: 'source' as const, values: ['2'] },
+      { dimension: 'after' as const, values: [partial] }
+    ];
+    expect(activeDateRangePreset(filters)).toBe('custom');
+    const bounded = withRangeSelection(filters, { mode: 'relative', days: 7 });
+    expect(bounded.find((filter) => filter.dimension === 'after')?.values).toEqual([dateInputBound(range.from, 'after')]);
+    expect(bounded.find((filter) => filter.dimension === 'before')?.values).toEqual([dateInputBound(range.to, 'before')]);
+    expect(bounded.find((filter) => filter.dimension === 'after')?.values).not.toEqual([partial]);
+    expect(activeDateRangePreset(bounded)).toBe('week');
+  });
+
+  it('keeps unchanged instants only for a custom selection, and clears bounds for no days', () => {
+    const after = new Date(2026, 8, 20, 10, 30).toISOString();
+    const filters = [{ dimension: 'after' as const, values: [after] }];
+    const custom = withRangeSelection(filters, { mode: 'custom', from: dateInputValue(after), to: '2026-09-29' });
+    expect(custom.find((filter) => filter.dimension === 'after')?.values).toEqual([after]);
+    expect(withRangeSelection(filters, { mode: 'relative', days: 0 })).toEqual([]);
   });
 });
 
