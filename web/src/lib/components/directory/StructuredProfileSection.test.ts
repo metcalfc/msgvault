@@ -48,6 +48,19 @@ describe('StructuredProfileSection', () => {
     expect(screen.queryByText(/2026-08-01T00:00:00Z/)).toBeNull();
   });
 
+  it('renders labeled records as detail rows whose actions reveal on hover or focus', () => {
+    renderSection(vi.fn());
+
+    const edit = screen.getByRole('button', { name: 'Edit name Test User' });
+    const row = edit.closest('[data-detail-row]');
+    expect(row).not.toBeNull();
+    // A labeled row keeps the three-column layout (the attribute is present
+    // and empty), and its actions sit in the hover-revealed cluster.
+    expect(row?.getAttribute('data-detail-row')).toBe('');
+    expect(row?.querySelector('[data-detail-label]')?.textContent).toBe('Formatted');
+    expect(edit.closest('[data-detail-actions="hover"]')).not.toBeNull();
+  });
+
   it('requires explicit confirmation before closing a current fact', async () => {
     const requests: Request[] = [];
     renderSection(vi.fn<typeof fetch>(async (input) => {

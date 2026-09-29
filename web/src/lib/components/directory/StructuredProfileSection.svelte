@@ -361,7 +361,10 @@
             <li class="service-heading"><h5 data-meta="caps">{contactService(record)}</h5></li>
           {/if}
           {@const label = rowLabel(descriptor.section, record)}
-          <li data-detail-row={label ? undefined : 'plain'}>
+          <!-- The attribute must render on every row (an empty value for
+               the labeled three-column layout); the plain value drops the
+               label column. -->
+          <li data-detail-row={label ? '' : 'plain'}>
             {#if label}<span data-detail-label>{label}</span>{/if}
             <div class="record-copy" data-detail-value>
               <strong>{value(descriptor.section, record)}</strong>
