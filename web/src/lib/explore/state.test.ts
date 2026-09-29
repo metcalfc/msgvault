@@ -1520,6 +1520,15 @@ describe('Everything date default after a reload', () => {
     expect(bare.current.filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
     bare.destroy();
   });
+
+  it('applies the default after a Directory deep link, which is not an Everything view', () => {
+    window.history.replaceState(null, '', `/?workspace=directory&mode=full_text&explore=${
+      encodeURIComponent(JSON.stringify({ workspace: 'directory', directoryPersonID: 42 }))}`);
+    const fromDirectory = new ExploreState(window);
+    fromDirectory.commitWorkspace('everything');
+    expect(fromDirectory.current.filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
+    fromDirectory.destroy();
+  });
 });
 
 describe('Directory order default', () => {

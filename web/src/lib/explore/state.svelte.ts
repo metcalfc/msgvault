@@ -636,7 +636,7 @@ export class ExploreState {
     // A shared or restored URL is the user's view, bounds and all; the
     // dateBoundsChosen marker says so even for an "All time" bookmark whose
     // empty filters list the serializer omits.
-    this.everythingDefaultApplied = this.current.dateBoundsChosen || this.hasExplicitState();
+    this.everythingDefaultApplied = this.hasExplicitState();
     if (this.current.workspace === 'everything') {
       this.current = { ...this.current, ...this.everythingBoundsPatch(this.current.filters) };
     }
@@ -644,19 +644,30 @@ export class ExploreState {
     browser.addEventListener('popstate', this.handlePopState);
   }
 
-  /** The user's own view, to which no default bounds are added: a restored
-   * history entry, or a URL carrying an explore payload (a deep link, a
-   * drilled group, chosen bounds, or the dateBoundsChosen marker an "All
-   * time" view serializes to). The app's always-emitted ?workspace= and
-   * ?mode= shorthand on its own is not explicit, so the seven-day default
-   * still applies on the first bare entry into Everything after a reload
-   * or a shared workspace link. */
+  /** The user's own Everything view, to which no default bounds are added:
+   * a restored history entry, date bounds in the filters, the
+   * dateBoundsChosen marker an "All time" view serializes to, or an
+   * explore payload that names Everything as its workspace (a drilled or
+   * shared Everything link). A Directory or Operations deep link is not
+   * an Everything view, and the app's always-emitted ?workspace= and
+   * ?mode= shorthand on its own is not explicit either, so the seven-day
+   * default still applies on the first entry into Everything from those. */
   private hasExplicitState(): boolean {
     const history = this.browser.history.state;
     if (isRecord(history) && isRecord(history.exploreState)) return true;
+    if (this.current.dateBoundsChosen || this.current.filters.some((filter) => isDateDimension(filter.dimension))) {
+      return true;
+    }
     const search = this.browser.location.search;
     const parameters = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-    return parameters.has(STATE_PARAMETER);
+    const payload = parameters.get(STATE_PARAMETER);
+    if (!payload) return false;
+    try {
+      const parsed: unknown = JSON.parse(payload);
+      return isRecord(parsed) && parsed.workspace === 'everything';
+    } catch {
+      return false;
+    }
   }
 
   /** The seven-day default, applied once per session to an Everything view
