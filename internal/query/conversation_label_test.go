@@ -191,3 +191,25 @@ func TestConversationSenderFallbackReadsOnlyRecentMessages(t *testing.T) {
 	require.NoError(NewSQLiteEngine(db).fillConversationParticipantLabels(t.Context(), rows))
 	assert.Equal(t, "Casey Example", rows[0].ParticipantLabel)
 }
+
+// TestConversationLabelWindowIgnoresUndatedMessages pins that undated
+// messages never occupy the recent window: a conversation with more undated
+// messages than the window still reads its dated senders.
+func TestConversationLabelWindowIgnoresUndatedMessages(t *testing.T) {
+	require := require.New(t)
+	db := conversationLabelFixture(t)
+	_, err := db.Exec(`
+		INSERT INTO conversations (id, source_id, source_conversation_id, conversation_type, title)
+			VALUES (708, 7, 'c-708', 'direct_chat', NULL);
+		INSERT INTO messages (id, conversation_id, source_id, source_message_id, message_type, sent_at, snippet, sender_id)
+			VALUES (1000, 708, 7, 'm-1000', 'whatsapp', '2026-09-01 00:00:00', 'dated', 14)`)
+	require.NoError(err)
+	for i := range conversationLabelRecentMessages + 10 {
+		_, err = db.Exec(`INSERT INTO messages (id, conversation_id, source_id, source_message_id, message_type, sent_at, snippet, sender_id)
+			VALUES (?, 708, 7, ?, 'whatsapp', NULL, 'undated', 16)`, 1001+i, "m-undated-"+strconv.Itoa(i))
+		require.NoError(err)
+	}
+	rows := []ConversationRow{{ConversationID: 708}}
+	require.NoError(NewSQLiteEngine(db).fillConversationParticipantLabels(t.Context(), rows))
+	assert.Equal(t, "Casey Example", rows[0].ParticipantLabel)
+}

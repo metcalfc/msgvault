@@ -48,7 +48,10 @@ const conversationLabelRecentMessages = 50
 //     oldest, when it has fewer) with idx_messages_conversation
 //     (conversation_id, sent_at DESC) probes, and recent reads only messages
 //     at or after it as an index range scan. Messages without sent_at are
-//     outside the window.
+//     outside the window; the cutoff lookup skips them explicitly so the
+//     window does not depend on where a database sorts NULLs (PostgreSQL
+//     puts them first in DESC order). This path runs only on SQLite today:
+//     pgEngine does not expose the SQLite text engine.
 //   - The sets are MATERIALIZED so the planner evaluates each once instead
 //     of re-probing messages per member.
 //   - members reads conversation_participants by its primary key; only a
@@ -69,7 +72,7 @@ func sqlConversationLabelQuery(n int) string {
 			SELECT page.id,
 			       COALESCE(
 			           (SELECT lm.sent_at FROM messages lm
-			            WHERE lm.conversation_id = page.id
+			            WHERE lm.conversation_id = page.id AND lm.sent_at IS NOT NULL
 			            ORDER BY lm.sent_at DESC LIMIT 1 OFFSET %d),
 			           (SELECT MIN(lm.sent_at) FROM messages lm
 			            WHERE lm.conversation_id = page.id)) AS cutoff
