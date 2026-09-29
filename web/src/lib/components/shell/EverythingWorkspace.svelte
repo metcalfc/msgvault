@@ -951,6 +951,7 @@
                 searchMode={exploreState.predicate().search_mode ?? exploreState.current.searchMode}
                 onTrySearchMode={trySearchMode}
                 readerOpen={readingPaneFollows}
+                collapseDayEvents
                 onKeyboardMove={(row) => {
                   if (readingPaneFollows) followRow(row);
                 }}

@@ -148,9 +148,47 @@ export function threadRows(
   reveal: ReadonlySet<string> = new Set(),
   collapsed: ReadonlySet<string> = new Set(),
 ): ThreadedRows {
+  return collapseRows(rows, threadKeyOf, expanded, reveal, collapsed);
+}
+
+/** The local calendar day of an instant, as `YYYY-MM-DD`. */
+function localDay(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return value.slice(0, 10);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/** Calendar events group by their local day; everything else stands alone. */
+export function eventDayKeyOf(row: EntryRow): string | undefined {
+  return row.message_type === 'calendar_event' ? `events:${localDay(row.occurred_at)}` : undefined;
+}
+
+/**
+ * The Inbox's day view of calendar events: a day's events collapse into
+ * one line (their newest event stands in, labeled "N events") that expands
+ * inline, while mail and texts interleave around it in time order. The
+ * same reveal and collapse rules as threads keep the focused or inspected
+ * row visible.
+ */
+export function dayEventRows(
+  rows: readonly EntryRow[],
+  expanded: ReadonlySet<string>,
+  reveal: ReadonlySet<string> = new Set(),
+  collapsed: ReadonlySet<string> = new Set(),
+): ThreadedRows {
+  return collapseRows(rows, eventDayKeyOf, expanded, reveal, collapsed);
+}
+
+function collapseRows(
+  rows: readonly EntryRow[],
+  keyOf: (row: EntryRow) => string | undefined,
+  expanded: ReadonlySet<string>,
+  reveal: ReadonlySet<string>,
+  collapsed: ReadonlySet<string>,
+): ThreadedRows {
   const groups = new Map<string, EntryRow[]>();
   for (const row of rows) {
-    const key = threadKeyOf(row);
+    const key = keyOf(row);
     if (key) groups.set(key, [...(groups.get(key) ?? []), row]);
   }
   const roles = new Map<string, ThreadRole>();

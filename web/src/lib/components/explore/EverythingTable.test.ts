@@ -32,6 +32,30 @@ function row(index: number, overrides: Partial<EntryRow> = {}): EntryRow {
 }
 
 describe('EverythingTable', () => {
+  it('collapses a day\'s calendar events into one line that expands inline, between mail and texts', async () => {
+    const onOpen = vi.fn();
+    const day = (hour: number) => new Date(2026, 6, 18, hour, 0).toISOString();
+    const rows = [
+      row(1, { occurred_at: day(18), title: 'Evening mail' }),
+      row(2, { occurred_at: day(16), message_type: 'calendar_event', title: 'Design review' }),
+      row(3, { occurred_at: day(14), message_type: 'imessage', conversation_type: 'direct_chat', title: 'Chat note' }),
+      row(4, { occurred_at: day(10), message_type: 'calendar_event', title: 'Standup' }),
+      row(5, { occurred_at: new Date(2026, 6, 17, 9, 0).toISOString(), message_type: 'calendar_event', title: 'Solo event' }),
+    ];
+    render(EverythingTable, { rows, selection: new ExploreSelectionState(), collapseDayEvents: true, onOpen });
+    const grid = screen.getByRole('grid', { name: 'Message results' });
+    const titles = () => [...grid.querySelectorAll('[data-row-title]')].map((element) => element.textContent);
+
+    // The day's two events share one line; a lone event stays itself.
+    expect(titles()).toEqual(['Evening mail', '2 events', 'Chat note', 'Solo event']);
+    expect(grid.textContent).toContain('Design review · Standup');
+    await fireEvent.click(within(grid).getByRole('button', { name: 'Show 2 events on this day' }));
+    expect(titles()).toEqual(['Evening mail', 'Design review', 'Standup', 'Chat note', 'Solo event']);
+    await fireEvent.click(within(grid).getByRole('button', { name: 'Hide 2 events on this day' }));
+    expect(titles()).toEqual(['Evening mail', '2 events', 'Chat note', 'Solo event']);
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
   it('owns headers, virtual rows, and named states in one focusable grid', () => {
     const { rerender } = render(EverythingTable, {
       rows: [row(1)], selection: new ExploreSelectionState()

@@ -16,7 +16,7 @@
   import PaperclipIcon from '@lucide/svelte/icons/paperclip';
   import IdentityBadge from './IdentityBadge.svelte';
   import {
-    duplicateEventAccounts, highlightSegments, highlightTerms, listTime, rowPeople, threadRows, type ThreadRole
+    duplicateEventAccounts, highlightSegments, highlightTerms, listTime, rowPeople, threadRows, dayEventRows, type ThreadRole
   } from '../../explore/row-display';
   import { SvelteSet } from 'svelte/reactivity';
   import { decodeHTMLEntities } from '../../util/html-text';
@@ -57,6 +57,8 @@
     /** With the reading pane open, ←/→ step within its thread instead of
      * expanding and collapsing grouped threads here. */
     readerOpen?: boolean;
+    /** Collapse each day's calendar events into one line (the Inbox). */
+    collapseDayEvents?: boolean;
   }
 
   let {
@@ -87,7 +89,8 @@
     searchMode = 'full_text',
     onTrySearchMode = undefined,
     onKeyboardMove = undefined,
-    readerOpen = false
+    readerOpen = false,
+    collapseDayEvents = false
   }: Props = $props();
 
   // Email hits from one thread collapse into their newest match; the
@@ -97,14 +100,30 @@
   // Threads the user collapsed: they stay closed even while a member is
   // still focused or inspected, until the user expands them again.
   const collapsedThreads = new SvelteSet<string>();
+  // Without a query (the Inbox), a day's calendar events collapse into one
+  // "N events" line instead, and the same expand and collapse controls apply.
   const threaded = $derived(
-    query.trim()
-      ? threadRows(
-        sourceRows, expandedThreads,
-        new Set([focusedKey, inspectedKey].filter((key): key is string => Boolean(key))), collapsedThreads
-      )
-      : { rows: sourceRows, roles: new Map<string, ThreadRole>(), hidden: 0 }
+    (query.trim() ? threadRows : collapseDayEvents ? dayEventRows : noGrouping)(
+      sourceRows, expandedThreads,
+      new Set([focusedKey, inspectedKey].filter((key): key is string => Boolean(key))), collapsedThreads
+    )
   );
+  function noGrouping(source: readonly EntryRow[]): { rows: EntryRow[]; roles: Map<string, ThreadRole>; hidden: number } {
+    return { rows: [...source], roles: new Map<string, ThreadRole>(), hidden: 0 };
+  }
+  function isEventDay(role: ThreadRole | undefined): boolean {
+    return Boolean(role?.threadKey.startsWith('events:'));
+  }
+  // A collapsed day line previews its events' titles.
+  const eventDayTitles = $derived.by(() => {
+    const titles = new Map<string, string[]>();
+    for (const row of sourceRows) {
+      const role = threaded.roles.get(row.key);
+      if (!role || !isEventDay(role)) continue;
+      titles.set(role.threadKey, [...(titles.get(role.threadKey) ?? []), row.title || '(untitled)']);
+    }
+    return titles;
+  });
   const rows = $derived(threaded.rows);
 
   function setThreadOpen(threadKey: string, open: boolean): void {
@@ -631,23 +650,32 @@
                       {/if}
                     {:else if column === 'title'}
                       {@const thread = threaded.roles.get(row.key)}
+                      {@const open = thread?.lead ? rows.some((other) => other.key !== row.key && threaded.roles.get(other.key)?.threadKey === thread.threadKey) : false}
                       {#if thread && !thread.lead}<span class="thread-branch" aria-hidden="true">↳</span>{/if}
-                      <strong data-row-title>{row.title || '(untitled)'}</strong>
+                      {#if thread?.lead && isEventDay(thread) && !open}
+                        <strong data-row-title>{thread.count} events</strong>
+                      {:else}
+                        <strong data-row-title>{row.title || '(untitled)'}</strong>
+                      {/if}
                       {#if thread?.lead}
-                        {@const open = rows.some((other) => other.key !== row.key && threaded.roles.get(other.key)?.threadKey === thread.threadKey)}
                         <button
                           type="button"
                           class="thread-toggle kit-control-states"
                           tabindex="-1"
                           aria-expanded={open}
-                          aria-label={`${open ? 'Hide' : 'Show'} ${thread.count} matches in this thread`}
+                          aria-label={isEventDay(thread)
+                            ? `${open ? 'Hide' : 'Show'} ${thread.count} events on this day`
+                            : `${open ? 'Hide' : 'Show'} ${thread.count} matches in this thread`}
                           onpointerdown={(event) => event.stopPropagation()}
                           onclick={(event) => {
                             event.stopPropagation();
                             setThreadOpen(thread.threadKey, !open);
                           }}
-                        >· {thread.count} matches</button>
+                        >{isEventDay(thread) ? (open ? '· Hide' : '· Show') : `· ${thread.count} matches`}</button>
                       {/if}
+                    {:else if column === 'excerpt' && threaded.roles.get(row.key)?.lead && isEventDay(threaded.roles.get(row.key)) &&
+                      !rows.some((other) => other.key !== row.key && threaded.roles.get(other.key)?.threadKey === threaded.roles.get(row.key)?.threadKey)}
+                      {eventDayTitles.get(threaded.roles.get(row.key)!.threadKey)?.join(' · ')}
                     {:else if column === 'excerpt'}
                       {#each highlightSegments(decodeHTMLEntities(row.match.strongest_excerpt || row.preview), terms) as segment, segmentIndex (segmentIndex)}
                         {#if segment.match}<mark>{segment.text}</mark>{:else}{segment.text}{/if}
