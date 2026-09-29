@@ -148,7 +148,7 @@
         {/each}
       </ul>
     {/if}
-    {#if hub.hasMore && !hub.loading}
+    {#if hub.hasMore && (merged.rows.length > 0 || !hub.loading)}
       <div class="more">
         <Button surface="soft" label={hub.loadingMore ? 'Loading more…' : 'Load more people'} disabled={hub.loadingMore}
           onclick={() => void hub.loadMore()} />
