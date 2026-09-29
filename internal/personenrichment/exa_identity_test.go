@@ -139,3 +139,23 @@ func TestExaReportsAnEmptyLookupWithItsChargeInsteadOfRetrying(t *testing.T) {
 	require.ErrorAs(err, &noEntity)
 	assert.Zero(noEntity.Cost.AmountMicros, "an uncharged empty lookup reports a zero cost")
 }
+
+// TestExaCarriesTheChargeOfABilledResponseItCannotUse: an HTTP 200 with a
+// reported cost that fails result validation (here, no identity match) was
+// still billed. The failure the worker persists carries that charge.
+func TestExaCarriesTheChargeOfABilledResponseItCannotUse(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	server, _ := exaPartialServer(t, "exa_people_success.json")
+	provider, err := personenrichment.NewExaProvider(exaNameCompanyConfig(server.URL+"/search"), "test-key", server.Client())
+	require.NoError(err)
+	_, err = provider.Start(t.Context(), personenrichment.Request{
+		Identity: personenrichment.Identity{Name: "different person", CurrentCompany: "other corp"},
+		Targets:  exaTypedTargets(t),
+	})
+	var providerErr *personenrichment.ProviderError
+	require.ErrorAs(err, &providerErr)
+	assert.Equal(personenrichment.FailureInvalidOutput, providerErr.Class)
+	assert.Equal(personenrichment.Cost{Currency: "USD", AmountMicros: 7000, Estimated: true}, providerErr.Cost,
+		"the billed response's charge travels with the validation failure")
+}

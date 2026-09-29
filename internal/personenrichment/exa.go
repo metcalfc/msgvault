@@ -156,25 +156,18 @@ func (p *exaProvider) Start(ctx context.Context, request Request) (Attempt, erro
 		// after it has reserved a second provider call against the run and
 		// day budgets and recorded the variant identity. Report the outcome
 		// with the charge this call already incurred.
-		cost, costErr := exaCost(wire.CostDollars)
-		if costErr != nil {
-			cost = Cost{}
-		}
-		provider := exaFailure(status, FailureInvalidOutput, wire.RequestID, "")
-		if providerErr, ok := errors.AsType[*ProviderError](provider); ok {
-			providerErr.Cost = cost
-		}
-		return Attempt{}, &NoEntityError{Provider: provider, Cost: cost}
+		provider := exaBilledInvalidOutput(status, wire)
+		return Attempt{}, &NoEntityError{Provider: provider, Cost: provider.Cost}
 	}
 	if err != nil {
-		return Attempt{}, exaFailure(status, FailureInvalidOutput, wire.RequestID, "")
+		return Attempt{}, exaBilledInvalidOutput(status, wire)
 	}
 	result.AdapterVersion = ExaAdapterVersionV1
 	result.SchemaVersion = ExaSearchWireSchemaV1
 	result.GeneratedSchema = generated
 	result.GeneratedSchemaHash = schemaHash
 	if err := result.Validate(); err != nil {
-		return Attempt{}, exaFailure(status, FailureInvalidOutput, wire.RequestID, "")
+		return Attempt{}, exaBilledInvalidOutput(status, wire)
 	}
 	return Attempt{
 		State: AttemptComplete, RequestID: wire.RequestID,
@@ -182,6 +175,21 @@ func (p *exaProvider) Start(ctx context.Context, request Request) (Attempt, erro
 		GeneratedSchema: generated, GeneratedSchemaHash: schemaHash,
 		ProgramFingerprint: programFingerprint, Result: &result,
 	}, nil
+}
+
+// exaBilledInvalidOutput is the failure for a decoded response the adapter
+// cannot use: ambiguous or unmatched identities, missing targets, or an
+// invalid result. The response was billed all the same, so the failure
+// carries the charge it reported for terminal accounting.
+func exaBilledInvalidOutput(status int, wire exaSearchResponse) *ProviderError {
+	failure := &ProviderError{
+		Provider: ProviderExa, RequestID: safeExaErrorRequestID(wire.RequestID),
+		Status: status, Class: FailureInvalidOutput,
+	}
+	if cost, err := exaCost(wire.CostDollars); err == nil {
+		failure.Cost = cost
+	}
+	return failure
 }
 
 func (p *exaProvider) Poll(context.Context, Attempt) (Result, error) {
