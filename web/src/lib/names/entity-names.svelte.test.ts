@@ -294,6 +294,28 @@ describe('EntityNames', () => {
     expect([refresh.getAll('person'), refresh.getAll('participant'), refresh.getAll('organization')]).toEqual([['7'], ['70'], []]);
   });
 
+  it('drops a first answer still in flight when every people name is invalidated, and asks again', async () => {
+    const names = { person: { 7: 'Avery Before' }, participant: { 70: 'Avery Before' } } as Names;
+    const server = labelsServer(names);
+    const resolver = entityNames(server.client);
+    const release = server.hold();
+
+    expect(resolver.label('person', 7)).toBe(LOADING_LABEL);
+    expect(resolver.label('participant', 70)).toBe(LOADING_LABEL);
+    await vi.waitFor(() => expect(server.requests).toHaveLength(1));
+    names.person[7] = 'Avery After';
+    names.participant[70] = 'Avery After';
+    invalidatePeopleNames(server.client);
+    release();
+
+    await vi.waitFor(() => expect(resolver.known('person', 7)).toBe('Avery After'));
+    expect(resolver.known('participant', 70)).toBe('Avery After');
+    expect(server.requests).toHaveLength(2);
+    await settle();
+    expect(resolver.label('person', 7)).toBe('Avery After');
+    expect(server.requests).toHaveLength(2);
+  });
+
   it('shares one resolver per client', () => {
     const client = labelsServer().client;
 

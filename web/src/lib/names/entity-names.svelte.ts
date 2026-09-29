@@ -171,8 +171,10 @@ export class EntityNames {
   invalidate(kind: EntityKind, ids?: Iterable<number>): void {
     untrack(() => {
       const prefix = `${this.#scope}:${kind}:`;
+      // The kind-wide form also covers IDs whose first request is still in
+      // flight: they have no entry yet, only a pending answer to drop.
       const keys = ids === undefined
-        ? [...this.#entries.keys()].filter((key) => key.startsWith(prefix))
+        ? [...new Set([...this.#entries.keys(), ...this.#pending.keys()])].filter((key) => key.startsWith(prefix))
         : [...ids].filter(validID).map((id) => this.#key(kind, id));
       for (const key of keys) {
         this.#bump(key);
@@ -274,7 +276,14 @@ export class EntityNames {
       for (const id of chunk[kind]) {
         const key = this.#key(kind, id);
         if (this.#pending.get(key) === batch) this.#pending.delete(key);
-        if ((this.#versions.get(key) ?? 0) !== started.get(key)) continue;
+        if ((this.#versions.get(key) ?? 0) !== started.get(key)) {
+          // This answer predates a change. Without a newer request under way,
+          // ask again so an ID still showing a placeholder gets a current name.
+          if (!this.#pending.has(key) && this.#entries.get(key)?.state !== 'named') {
+            this.#load(kind, [id]).catch(() => undefined);
+          }
+          continue;
+        }
         const current = this.#entries.get(key);
         if (!answers) {
           // A failed refresh keeps the answer on screen until it is due again.
