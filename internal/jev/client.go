@@ -693,8 +693,14 @@ func validTokenPointer(value *int64) *int64 {
 }
 
 // ValidateEndpoint accepts only an absolute HTTPS URL without credentials,
-// query, or fragment. Tests may use plain HTTP against loopback hosts.
+// query, fragment, or surrounding whitespace. Tests may use plain HTTP against
+// loopback hosts. Whitespace is rejected rather than trimmed because the
+// client sends the endpoint exactly as configured: a padded value would pass
+// here and then fail every request, opening the breaker.
 func ValidateEndpoint(endpoint string) error {
+	if strings.TrimSpace(endpoint) != endpoint {
+		return errors.New("jev endpoint must not have surrounding whitespace")
+	}
 	origin, err := EndpointOrigin(endpoint)
 	if err != nil {
 		return err

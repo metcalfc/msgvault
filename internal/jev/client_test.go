@@ -210,6 +210,11 @@ func TestClientRejectsInvalidOptions(t *testing.T) {
 	require.ErrorContains(err, "https")
 	_, err = NewClient(Options{APIKey: "k", Budget: &Budget{}, Endpoint: "https://user:pw@api.example.test/v1"})
 	require.ErrorContains(err, "credentials")
+	_, err = NewClient(Options{APIKey: "k", Budget: &Budget{}, Endpoint: "https://api.example.test/v1 "})
+	require.ErrorContains(err, "whitespace", "a padded endpoint would fail every send, so it never builds a client")
+	padded := DefaultConfig()
+	padded.Endpoint = "\thttps://api.example.test/v1"
+	require.ErrorContains(padded.Validate(), "whitespace", "config validation refuses it up front")
 	client, err := NewClient(Options{APIKey: "k", Budget: &Budget{}, Endpoint: "http://127.0.0.1:8080/v1/systemone"})
 	require.NoError(err, "loopback HTTP is allowed for fake servers")
 	assert.Equal(DefaultModel, client.model)
