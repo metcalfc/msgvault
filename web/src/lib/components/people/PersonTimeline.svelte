@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { EntryRow, ExploreCacheUnavailable } from '../../explore/models';
+  import type { EntryRow, ExploreCacheUnavailable, ExploreColumn } from '../../explore/models';
   import { untrack } from 'svelte';
   import { ExploreSelectionState } from '../../explore/state.svelte';
   import type { ExploreScrollAnchor } from '../../explore/models';
@@ -27,13 +27,16 @@
     onActiveKey?: (key: string) => void;
     onScrollAnchor?: (key: string, offset: number) => void;
     onVisibleRows?: (keys: string[]) => void;
+    /** The visible columns, shared with the table presentation. */
+    columns?: ExploreColumn[];
   }
 
   let { rows, totalCount = undefined, loading = false, loadingMore = false, hasMore = false,
     generation = 0, error = '', pageError = '', unavailable = undefined, onOpen = undefined, onRetry = undefined,
     onLoadMore = undefined, onLoadThroughEnd = undefined, selection: providedSelection = undefined,
     focusedKey = null, inspectedKey = null, scrollAnchor = null, restoring = false,
-    onActiveKey = undefined, onScrollAnchor = undefined, onVisibleRows = undefined }: Props = $props();
+    onActiveKey = undefined, onScrollAnchor = undefined, onVisibleRows = undefined,
+    columns = undefined }: Props = $props();
   const selection = untrack(() => providedSelection ?? new ExploreSelectionState());
 </script>
 
@@ -44,7 +47,8 @@
   </header>
   <EverythingTable {rows} {selection} {loading} {loadingMore} {hasMore} {generation} {error}
     {pageError} {unavailable} {totalCount} {onOpen} {onRetry} {onLoadMore} {onLoadThroughEnd}
-    {focusedKey} {inspectedKey} {scrollAnchor} {restoring} {onActiveKey} {onScrollAnchor} {onVisibleRows} />
+    {focusedKey} {inspectedKey} {scrollAnchor} {restoring} {onActiveKey} {onScrollAnchor} {onVisibleRows}
+    {...(columns ? { columns } : {})} />
 </section>
 
 <style>

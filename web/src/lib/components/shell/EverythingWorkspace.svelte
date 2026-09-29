@@ -118,10 +118,10 @@
   let resultsWidth = $state(0);
   const canPreviewRight = $derived(resultsWidth >= 960);
   const previewRight = $derived(canPreviewRight && previewPosition === 'right');
-  // Only the ungrouped table has columns to pick; the ContextBar shows the
-  // picker for that presentation alone.
-  const tablePresentation = $derived(
-    exploreState.current.presentation === 'table' && exploreState.current.groupingChain.length === 0
+  // The ungrouped table and the timeline (which renders the same table)
+  // share the column set; the ContextBar shows the picker for those two.
+  const columnsPickable = $derived(
+    exploreState.current.presentation !== 'files' && exploreState.current.groupingChain.length === 0
   );
 
   function setPreviewPosition(value: string): void {
@@ -688,8 +688,8 @@
         scrollAnchor: null,
       })}
     onSort={fixedSortNotice}
-    columns={tablePresentation ? exploreState.current.columns : undefined}
-    onColumnsChange={tablePresentation
+    columns={columnsPickable ? exploreState.current.columns : undefined}
+    onColumnsChange={columnsPickable
       ? (columns: ExploreColumn[]) => exploreState.replaceTransient({ columns })
       : undefined}
   />
@@ -776,6 +776,7 @@
               <PersonTimeline
                 rows={loader.rows}
                 {selection}
+                columns={exploreState.current.columns}
                 loading={loader.loading}
                 loadingMore={loader.loadingMore}
                 hasMore={Boolean(loader.nextCursor)}

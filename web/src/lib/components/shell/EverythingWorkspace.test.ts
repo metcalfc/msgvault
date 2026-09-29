@@ -900,6 +900,12 @@ describe('EverythingWorkspace', () => {
     expect(await screen.findByRole('region', { name: 'Canonical activity timeline' })).toBeDefined();
     expect(await screen.findByText('Synthetic subject 1')).toBeDefined();
     expect(new URL(requests.at(-1)!.url).pathname).toBe('/api/v1/explore');
+    // The timeline renders the same table, so it keeps the Columns picker.
+    expect(screen.queryByRole('columnheader', { name: 'Size' })).toBeNull();
+    await fireEvent.click(screen.getByText('Columns'));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Size' }));
+    expect(state.current.columns).toContain('size');
+    expect(await screen.findByRole('columnheader', { name: 'Size' })).toBeDefined();
 
     state.commitNavigation({ presentation: 'files' });
     expect(await screen.findByRole('grid', { name: 'Files in current context' })).toBeDefined();
