@@ -1,3 +1,4 @@
+import { flushSync } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../api/client';
@@ -172,6 +173,21 @@ describe('EntityNames', () => {
       for (const id of ids) expect(label).not.toContain(String(id));
     }
     expect(settled).toEqual(['Avery Example', 'Unknown person', 'Unknown person', 'Unknown contact', 'Unknown organization', 'Unknown person', 'Unknown person']);
+  });
+
+  it('updates the reaction that first asked, even when that reaction created the resolver', async () => {
+    const server = labelsServer({ person: { 7: 'Avery Example' } });
+    const seen: string[] = [];
+    const stop = $effect.root(() => {
+      $effect(() => {
+        seen.push(entityNames(server.client).label('person', 7));
+      });
+    });
+    flushSync();
+
+    await vi.waitFor(() => expect(seen.at(-1)).toBe('Avery Example'));
+    expect(seen[0]).toBe(LOADING_LABEL);
+    stop();
   });
 
   it('shares one resolver per client', () => {

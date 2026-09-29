@@ -1,3 +1,4 @@
+import { untrack } from 'svelte';
 import { SvelteMap } from 'svelte/reactivity';
 
 import type { APIClient } from '../api/client';
@@ -32,9 +33,11 @@ const PARAM: Record<EntityKind, keyof GetEntityLabelsParams> = {
 };
 const RESPONSE_FIELD = { person: 'people', participant: 'participants', organization: 'organizations' } as const;
 
-function keyOf(kind: EntityKind, id: number): string {
-  return `${kind}:${id}`;
-}
+// Svelte does not let a reaction depend on state created while it runs, and
+// a resolver is often first asked for inside a template. Keeping every
+// resolver's answers in one map created at module load keeps them reactive.
+const settledAnswers = new SvelteMap<string, Entry>();
+let resolverCount = 0;
 
 function validID(id: unknown): id is number {
   return typeof id === 'number' && Number.isSafeInteger(id) && id > 0;
@@ -54,13 +57,18 @@ function emptyQueue(): Queue {
  */
 export class EntityNames {
   readonly #client: APIClient;
-  readonly #entries = new SvelteMap<string, Entry>();
+  readonly #entries = settledAnswers;
+  readonly #scope = `${++resolverCount}`;
   readonly #pending = new Map<string, Promise<void>>();
   #queue: Queue = emptyQueue();
   #batch: Promise<void> | undefined;
 
   constructor(client: APIClient) {
     this.#client = client;
+  }
+
+  #key(kind: EntityKind, id: number): string {
+    return `${this.#scope}:${kind}:${id}`;
   }
 
   /**
@@ -71,7 +79,7 @@ export class EntityNames {
    */
   label(kind: EntityKind, id: number | null | undefined): string {
     if (!validID(id)) return UNKNOWN_LABELS[kind];
-    const entry = this.#entries.get(keyOf(kind, id));
+    const entry = this.#entries.get(this.#key(kind, id));
     if (entry?.state === 'named') return entry.label;
     if (entry?.state === 'unknown') return UNKNOWN_LABELS[kind];
     if (entry?.state === 'failed') {
@@ -85,7 +93,7 @@ export class EntityNames {
   /** The settled name, without requesting one. Reactive. */
   known(kind: EntityKind, id: number | null | undefined): string | undefined {
     if (!validID(id)) return undefined;
-    const entry = this.#entries.get(keyOf(kind, id));
+    const entry = this.#entries.get(this.#key(kind, id));
     return entry?.state === 'named' ? entry.label : undefined;
   }
 
@@ -111,7 +119,7 @@ export class EntityNames {
   seed(kind: EntityKind, id: number | null | undefined, label: string | null | undefined): void {
     const name = label?.trim();
     if (!validID(id) || !name) return;
-    const key = keyOf(kind, id);
+    const key = this.#key(kind, id);
     const current = this.#entries.get(key);
     if (current?.state === 'named' && current.label === name) return;
     this.#entries.set(key, { state: 'named', label: name });
@@ -122,10 +130,16 @@ export class EntityNames {
    * when a request failed, leaving those IDs to be asked for again.
    */
   load(kind: EntityKind, ids: Iterable<number | null | undefined>): Promise<void> {
+    // Loading never subscribes the caller: an effect that loads must not rerun,
+    // and so retry at once, because an answer or failure arrived.
+    return untrack(() => this.#load(kind, ids));
+  }
+
+  #load(kind: EntityKind, ids: Iterable<number | null | undefined>): Promise<void> {
     const waits: Promise<void>[] = [];
     for (const id of ids) {
       if (!validID(id)) continue;
-      const key = keyOf(kind, id);
+      const key = this.#key(kind, id);
       const entry = this.#entries.get(key);
       if (entry?.state === 'named' || entry?.state === 'unknown') continue;
       let pending = this.#pending.get(key);
@@ -188,7 +202,7 @@ export class EntityNames {
         if (validID(answer?.id) && label) names.set(answer.id, label);
       }
       for (const id of chunk[kind]) {
-        const key = keyOf(kind, id);
+        const key = this.#key(kind, id);
         this.#pending.delete(key);
         // A seeded name that arrived meanwhile is fresher than a failure.
         if (!answers) {
