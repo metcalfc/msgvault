@@ -71,6 +71,8 @@ describe('MessageCard', () => {
         message: detail({
           messageType: 'calendar_event',
           subject: 'Planning review',
+          // The event's start instant; the When line gives only its length.
+          sentAt: new Date(2026, 6, 18, 10, 0).toISOString(),
           from: 'Alice Example <alice@example.com>',
           recipients: ['Bob Example <bob@example.com>', 'casey@example.com'],
           body: 'Planning review\nWhen: 2026-07-18 10:00 - 2026-07-18 10:30\nLocation: Room 4 https://meet.example.com/abc\nBring the deck\nAttendees: Bob Example'

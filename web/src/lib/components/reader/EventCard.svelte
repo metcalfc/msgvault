@@ -15,7 +15,7 @@
 
   let { message, client = undefined, onOpenPerson = undefined, onFilterPerson = undefined }: Props = $props();
 
-  const parsed = $derived(parseEventBody(message.body, message.subject));
+  const parsed = $derived(parseEventBody(message.body, message.subject, message.sentAt));
   const organizer = $derived(message.from?.trim() || '');
 </script>
 
