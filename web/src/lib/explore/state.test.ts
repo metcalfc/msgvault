@@ -1539,6 +1539,16 @@ describe('Everything date default after a reload', () => {
     state.destroy();
   });
 
+  it('keeps the chosen-bounds marker when the same patch also resets the operation run', () => {
+    window.history.replaceState(null, '', '/');
+    const state = new ExploreState(window);
+    state.commitWorkspace('everything');
+    state.commitNavigation({ operationRunID: 'run-1' });
+    state.commitNavigation({ filters: [], operationLane: 'messages' });
+    expect(state.current).toMatchObject({ filters: [], dateBoundsChosen: true, operationRunID: null, operationLane: 'messages' });
+    state.destroy();
+  });
+
   it('applies the default after a Directory deep link, which is not an Everything view', () => {
     window.history.replaceState(null, '', `/?workspace=directory&mode=full_text&explore=${
       encodeURIComponent(JSON.stringify({ workspace: 'directory', directoryPersonID: 42 }))}`);

@@ -848,12 +848,14 @@ export class ExploreState {
     // other workspaces, and non-date filters, leave the default in place.
     if (patch.filters && (patch.workspace ?? this.current.workspace) === 'everything' &&
       dateBoundsKey(normalize({ ...this.current, filters: patch.filters }).filters) !== dateBoundsKey(this.current.filters)) {
-      effectivePatch = { ...patch, dateBoundsChosen: true };
+      effectivePatch = { ...effectivePatch, dateBoundsChosen: true };
       this.everythingDefaultApplied = true;
     }
+    // Overrides compose: a patch that both chooses bounds and changes an
+    // operation filter keeps the marker and resets the run.
     if (mode === 'push' && OPERATION_FILTER_FIELDS.some((key) =>
       key in patch && normalize({ ...this.current, ...patch })[key] !== this.current[key])) {
-      effectivePatch = { ...patch, operationRunID: null };
+      effectivePatch = { ...effectivePatch, operationRunID: null };
     }
     if (
       mode === 'push' ||
