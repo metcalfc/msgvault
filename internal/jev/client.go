@@ -371,37 +371,55 @@ func (c *Client) Ask(ctx context.Context, request Request) (Response, error) {
 	if err := c.budget.preflight(1); err != nil {
 		return emptyResponse(), err
 	}
-	if err := ctx.Err(); err != nil {
-		return emptyResponse(), err
+	response, sent, err := c.dispatch(ctx, request, body)
+	if err != nil {
+		if !sent {
+			return emptyResponse(), err
+		}
+		return Response{Usage: Usage{Requests: 1}}, err
 	}
-	// The in-process budget is reserved first: a breaker or cost stop must
-	// never touch the persisted day counters. A refused day reservation
-	// releases the in-process slot so neither count drifts.
+	return response, nil
+}
+
+// dispatch sends one encoded request and does all of its bookkeeping, for
+// Ask, the AskAll probe, and every AskAll sibling alike. sent reports whether
+// the request left the process.
+//
+// It is the only caller of reserve. A done context reserves nothing. The
+// in-process budget is reserved before the day, so a breaker or cost stop
+// never touches the persisted counters. Every reservation is then settled
+// exactly once: a request that never left the process releases both the
+// in-process and the day reservation; one that did is recorded on the day
+// and settles the budget with record on an answer or outcome on a failure.
+func (c *Client) dispatch(ctx context.Context, request Request, body []byte) (Response, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return Response{}, false, err
+	}
 	admitted, err := c.budget.reserve()
 	if err != nil {
-		return emptyResponse(), err
+		return Response{}, false, err
 	}
 	day, err := c.reserveDay(ctx, request.Feature)
 	if err != nil {
 		c.budget.release(admitted)
-		return emptyResponse(), err
+		return Response{}, false, err
 	}
 	started := c.now()
 	response, err := c.send(ctx, request.Deadline, body, request.Questions)
 	if errors.Is(err, errNotSent) {
 		c.budget.release(admitted)
 		c.releaseDay(ctx, request.Feature, day)
-		return emptyResponse(), ctx.Err()
+		return Response{}, false, ctx.Err()
 	}
 	if err != nil {
 		c.budget.outcome(ctx, admitted, err, c.callerBound(request.Deadline, started))
 		c.recordDay(ctx, request.Feature, day, Usage{})
-		return Response{Usage: Usage{Requests: 1}}, err
+		return Response{}, true, err
 	}
 	c.budget.record(admitted, response.Usage)
 	c.recordDay(ctx, request.Feature, day, response.Usage)
 	response.Usage.Requests = 1
-	return response, nil
+	return response, true, nil
 }
 
 // AskAll sends several independent requests concurrently and aggregates
@@ -428,8 +446,10 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 		// A half-open breaker admits exactly one probe. Run it alone so the
 		// siblings neither get refused with ErrBreakerOpen nor cancel it
 		// through the group; the rest of the batch runs once it closes.
-		probe, err := c.Ask(ctx, requests[0])
-		result.Usage.Requests = probe.Usage.Requests
+		probe, sent, err := c.dispatch(ctx, requests[0], bodies[0])
+		if sent {
+			result.Usage.Requests = 1
+		}
 		if err != nil {
 			result.Usage.InputTokens, result.Usage.OutputTokens = &totalInput, &totalOutput
 			return result, fmt.Errorf("jev requests failed: %w", err)
@@ -441,45 +461,21 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.SetLimit(c.maxConcurrent)
 	for i := first; i < len(bodies); i++ {
-		body := bodies[i]
 		group.Go(func() error {
-			// A sibling's failure cancels the group; a request that has not
-			// reserved anything yet must not start charging the day.
-			if err := groupCtx.Err(); err != nil {
-				return err
-			}
-			admitted, err := c.budget.reserve()
-			if err != nil {
-				return err
-			}
-			day, err := c.reserveDay(groupCtx, requests[i].Feature)
-			if err != nil {
-				c.budget.release(admitted)
-				return err
-			}
-			started := c.now()
-			response, err := c.send(groupCtx, requests[i].Deadline, body, requests[i].Questions)
-			if errors.Is(err, errNotSent) {
-				c.budget.release(admitted)
-				c.releaseDay(groupCtx, requests[i].Feature, day)
-				return groupCtx.Err()
-			}
-			mu.Lock()
-			result.Usage.Requests++
-			mu.Unlock()
-			if err != nil {
-				mu.Lock()
-				complete = false
-				mu.Unlock()
-				c.budget.outcome(groupCtx, admitted, err, c.callerBound(requests[i].Deadline, started))
-				c.recordDay(groupCtx, requests[i].Feature, day, Usage{})
-				return err
-			}
-			c.budget.record(admitted, response.Usage)
-			c.recordDay(groupCtx, requests[i].Feature, day, response.Usage)
+			// A sibling's failure cancels the group; dispatch then reserves
+			// nothing for a request that has not started.
+			response, sent, err := c.dispatch(groupCtx, requests[i], bodies[i])
 			mu.Lock()
 			defer mu.Unlock()
-			response.Usage.Requests = 1
+			if sent {
+				result.Usage.Requests++
+			}
+			if err != nil {
+				if sent {
+					complete = false
+				}
+				return err
+			}
 			result.Responses[i] = &response
 			addUsage(&totalInput, &totalOutput, &complete, response.Usage)
 			return nil

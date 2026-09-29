@@ -760,3 +760,99 @@ func TestCostUSDMicrosAndUTCDay(t *testing.T) {
 	assert.False(ValidFeatureName("Enrichment"))
 	assert.False(ValidFeatureName(""))
 }
+
+// countingLedger refuses every seventh day reservation and counts the rest
+// with what settled them.
+type countingLedger struct {
+	mu       sync.Mutex
+	seen     int
+	accepted int
+	released int
+	recorded int
+}
+
+func (l *countingLedger) ReserveJevDayRequest(context.Context, DayReservation) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.seen++
+	if l.seen%7 == 0 {
+		return ErrDayRequestLimit
+	}
+	l.accepted++
+	return nil
+}
+
+func (l *countingLedger) ReleaseJevDayRequest(context.Context, DayReservation) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.released++
+	return nil
+}
+
+func (l *countingLedger) RecordJevDayUsage(context.Context, DayUsage) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.recorded++
+	return nil
+}
+
+func (l *countingLedger) JevDayCounters(context.Context, string, string) (DayCounters, error) {
+	return DayCounters{}, nil
+}
+
+// TestClientSettlesEveryReservationExactlyOnceUnderConcurrency pins
+// invariants 2 and 3 under load, and must pass under -race: batches and
+// single asks run concurrently while the provider fails some requests, the
+// day ledger refuses some reservations, sibling failures cancel groups, and
+// some callers are already cancelled. Afterwards no reservation is left in
+// flight, every accepted day reservation was either released or recorded,
+// and exactly the in-process attempts that were kept were recorded.
+func TestClientSettlesEveryReservationExactlyOnceUnderConcurrency(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ledger := &countingLedger{}
+	budget := &Budget{MaxRequests: 1 << 20, FailureThreshold: 1 << 20}
+	var calls atomic.Int64
+	client, err := NewClient(Options{
+		APIKey: "k", Budget: budget, Ledger: ledger, MaxConcurrent: 4,
+		Transport: testTransport(func(request *http.Request) (*http.Response, error) {
+			if calls.Add(1)%5 == 0 {
+				return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: http.Header{"Content-Type": []string{"text/plain"}}, Body: http.NoBody}, nil
+			}
+			return jsonResponse(measuredResponse), nil
+		}),
+	})
+	require.NoError(err)
+	request := noulRequest("matches")
+	request.Feature = "enrichment_identity"
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	var group sync.WaitGroup
+	for worker := range 12 {
+		group.Go(func() {
+			for round := range 10 {
+				switch (worker + round) % 3 {
+				case 0:
+					_, _ = client.AskAll(context.Background(), []Request{request, request, request, request, request})
+				case 1:
+					_, _ = client.Ask(context.Background(), request)
+				default:
+					_, askErr := client.Ask(cancelled, request)
+					assert.ErrorIs(askErr, context.Canceled)
+				}
+			}
+		})
+	}
+	group.Wait()
+
+	state := budget.State()
+	assert.Zero(state.InFlight, "every reservation was settled")
+	ledger.mu.Lock()
+	defer ledger.mu.Unlock()
+	assert.Equal(ledger.accepted, ledger.released+ledger.recorded,
+		"every accepted day reservation was released or recorded, never both")
+	assert.Equal(state.Attempts, ledger.recorded,
+		"an in-process attempt is kept exactly when its day reservation is recorded")
+	assert.LessOrEqual(calls.Load(), int64(ledger.recorded), "nothing reached the provider unrecorded")
+	assert.Positive(ledger.released+ledger.seen-ledger.accepted, "the run exercised refusals")
+}
