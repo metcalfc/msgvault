@@ -1,6 +1,7 @@
 package jev
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -201,6 +202,21 @@ func (b *Budget) record(usage Usage) {
 	b.rollDay()
 	b.cost += float64(*usage.InputTokens)*b.InputUSDPerM/1e6 +
 		float64(*usage.OutputTokens)*b.OutputUSDPerM/1e6
+}
+
+// outcome records a failed send. A request the caller cancelled, or that a
+// sibling's failure cancelled through the shared group context, says nothing
+// about the provider and does not count toward the breaker; it only ends a
+// half-open probe. A per-request timeout with a live caller context does
+// count: the provider did not answer in time.
+func (b *Budget) outcome(ctx context.Context, err error) {
+	if ctx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+		b.mu.Lock()
+		b.probing = false
+		b.mu.Unlock()
+		return
+	}
+	b.fail()
 }
 
 func (b *Budget) fail() {

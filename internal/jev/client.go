@@ -352,7 +352,7 @@ func (c *Client) Ask(ctx context.Context, request Request) (Response, error) {
 	}
 	response, err := c.send(ctx, request.Deadline, body, request.Questions)
 	if err != nil {
-		c.budget.fail()
+		c.budget.outcome(ctx, err)
 		c.recordDay(ctx, request.Feature, day, Usage{})
 		return Response{Usage: Usage{Requests: 1}}, err
 	}
@@ -400,7 +400,7 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 				mu.Lock()
 				complete = false
 				mu.Unlock()
-				c.budget.fail()
+				c.budget.outcome(groupCtx, err)
 				c.recordDay(groupCtx, requests[i].Feature, day, Usage{})
 				return err
 			}

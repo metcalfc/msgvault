@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -69,6 +70,49 @@ func TestBudgetBreakerOpensAfterConsecutiveFailuresAndProbesAfterCooldown(t *tes
 	_, err = client.Ask(context.Background(), noulRequest("matches"))
 	require.NoError(err)
 	assert.Equal(int32(5), calls.Load())
+}
+
+func TestAskAllSiblingCancellationDoesNotCountTowardTheBreaker(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		budget := &Budget{MaxRequests: 100, FailureThreshold: 3, Cooldown: time.Minute}
+		var calls atomic.Int32
+		client := newTestClient(t, budget, func(request *http.Request) (*http.Response, error) {
+			if calls.Add(1) == 1 {
+				return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: http.Header{"Content-Type": []string{"text/plain"}}, Body: http.NoBody}, nil
+			}
+			// Every other request waits until the group cancels it.
+			<-request.Context().Done()
+			return nil, request.Context().Err()
+		})
+		requests := make([]Request, 8)
+		for i := range requests {
+			requests[i] = noulRequest("matches")
+		}
+		_, err := client.AskAll(context.Background(), requests)
+		require.ErrorContains(err, "HTTP 503")
+		assert.Equal(int32(8), calls.Load())
+		state := budget.State()
+		assert.Equal(1, state.ConsecutiveFailures, "one real failure; seven cancelled siblings do not count")
+		assert.True(state.OpenUntil.IsZero(), "the breaker stays closed")
+	})
+}
+
+func TestAskCallerCancellationDoesNotCountTowardTheBreaker(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	budget := &Budget{MaxRequests: 100, FailureThreshold: 1, Cooldown: time.Minute}
+	client := newTestClient(t, budget, func(request *http.Request) (*http.Response, error) {
+		<-request.Context().Done()
+		return nil, request.Context().Err()
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := client.Ask(ctx, noulRequest("matches"))
+	require.ErrorIs(err, context.Canceled)
+	assert.Zero(budget.State().ConsecutiveFailures)
+	assert.True(budget.State().OpenUntil.IsZero())
 }
 
 func TestBudgetHalfOpenAllowsOneProbeAtATime(t *testing.T) {

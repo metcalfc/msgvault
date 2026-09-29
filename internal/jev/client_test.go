@@ -291,6 +291,8 @@ func TestClientBodyReadTimeoutKeepsTimeoutCategory(t *testing.T) {
 		require.ErrorIs(err, context.DeadlineExceeded)
 		assert.Equal("provider timeout or cancellation", SafeFailure(err))
 		assert.Equal(DefaultRequestTimeout, time.Since(start))
+		assert.Equal(1, client.BudgetState().ConsecutiveFailures,
+			"a per-request timeout with a live caller context is a provider failure")
 	})
 }
 
