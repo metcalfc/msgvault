@@ -17,6 +17,7 @@ import (
 	"go.kenn.io/msgvault/internal/api"
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/documentindex"
+	"go.kenn.io/msgvault/internal/documentindex/mistralprovider"
 	"go.kenn.io/msgvault/internal/query"
 	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/testutil"
@@ -155,7 +156,7 @@ func TestStoreAPIAdapterRecreatesConsentedDocumentSearchConsumer(t *testing.T) {
 	profile := store.DocumentExtractionProfile{
 		ID: "profile-" + fingerprint, Fingerprint: fingerprint,
 		Provider: "mistral", Endpoint: "https://api.mistral.ai/v1/ocr",
-		Region: "eu", Model: documentindex.ModelMistralOCR,
+		Region: "eu", Model: mistralprovider.DefaultModel,
 		RetentionPosture:  string(documentindex.RetentionStandard),
 		TrainingPosture:   string(documentindex.TrainingOptedOut),
 		AllowedMediaTypes: []string{"application/pdf"},

@@ -130,11 +130,13 @@ func TestAdapterRejectsForeignPolicyManifestAndAuthority(t *testing.T) {
 	_, err = policy.Fingerprint(foreignManifest{})
 	require.ErrorContains(err, "does not belong to the mistral provider")
 	require.ErrorContains(New().EncodeManifest(io.Discard, foreignManifest{}), "does not belong to the mistral provider")
-	_, err = New().NewProcessor(foreignPolicy{}, authorizations, client, staging)
+	_, err = New().NewProcessor(foreignPolicy{}, manifest, authorizations, client, staging)
 	require.ErrorContains(err, "does not belong to the mistral provider")
-	_, err = New().NewProcessor(policy, []provider.Authorization{foreignAuthorization{}}, client, staging)
+	_, err = New().NewProcessor(policy, foreignManifest{}, authorizations, client, staging)
 	require.ErrorContains(err, "does not belong to the mistral provider")
-	_, err = New().NewProcessor(policy, nil, client, staging)
+	_, err = New().NewProcessor(policy, manifest, []provider.Authorization{foreignAuthorization{}}, client, staging)
+	require.ErrorContains(err, "does not belong to the mistral provider")
+	_, err = New().NewProcessor(policy, manifest, nil, client, staging)
 	require.ErrorContains(err, "at least one authorized format")
 	otherManifest, err := mistraltest.SyntheticManifest(mustVendorPolicy(t, policy), true)
 	require.NoError(err)
@@ -144,12 +146,38 @@ func TestAdapterRejectsForeignPolicyManifestAndAuthority(t *testing.T) {
 		}
 	}
 	mixed := slices.Concat(authorizations, testAuthorizations(t, policy, NewManifest(otherManifest), "pdf"))
-	_, err = New().NewProcessor(policy, mixed, client, staging)
-	require.ErrorContains(err, "different policies or manifests")
-	_, err = New().NewProcessor(policy, authorizations, client, provider.Staging{Directory: "", MaxBytes: 2 << 20, MinFreeBytes: 1})
+	_, err = New().NewProcessor(policy, manifest, mixed, client, staging)
+	require.ErrorContains(err, "was not issued under this policy and capability manifest")
+	_, err = New().NewProcessor(policy, manifest, authorizations, client, provider.Staging{Directory: "", MaxBytes: 2 << 20, MinFreeBytes: 1})
 	require.ErrorContains(err, "staging bounds are invalid")
-	_, err = New().NewProcessor(policy, authorizations, provider.ClientConfig{APIKey: " padded "}, staging)
+	_, err = New().NewProcessor(policy, manifest, authorizations, provider.ClientConfig{APIKey: " padded "}, staging)
 	require.ErrorContains(err, "configure mistral document client")
+}
+
+// TestNewProcessorRefusesAuthorityIssuedUnderAnotherPolicy proves the
+// fingerprint is derived from the policy the client is built with, never
+// copied from the authorizations: routes resolved under P2 cannot be sent
+// through a processor built for P1, so a mismatch fails at construction
+// instead of surfacing per document as a retried transient error.
+func TestNewProcessorRefusesAuthorityIssuedUnderAnotherPolicy(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	first := testPolicyWithMaxUnits(t, 100)
+	second := testPolicyWithMaxUnits(t, 50)
+	firstManifest := testManifest(t, first)
+	secondManifest := testManifest(t, second)
+	underSecond := testAuthorizations(t, second, secondManifest, "pdf")
+	staging := provider.Staging{Directory: t.TempDir(), MaxBytes: 2 << 20, MinFreeBytes: 1}
+	client := provider.ClientConfig{APIKey: "synthetic-key"}
+
+	_, err := New().NewProcessor(first, firstManifest, underSecond, client, staging)
+	require.ErrorContains(err, `authorization for "pdf" was not issued under this policy and capability manifest`)
+
+	processor, err := New().NewProcessor(first, firstManifest, testAuthorizations(t, first, firstManifest, "pdf"), client, staging)
+	require.NoError(err)
+	want, err := first.Fingerprint(firstManifest)
+	require.NoError(err)
+	assert.Equal(want, processor.PolicyFingerprint())
 	require.ErrorContains(New().ValidateProbeFixtures(t.Context(), foreignPolicy{}, provider.ProbeFixtureConfig{}), "does not belong")
 	_, err = New().RunCapabilityProbe(t.Context(), foreignPolicy{}, client, provider.ProbeConfig{})
 	require.ErrorContains(err, "does not belong")
@@ -345,12 +373,17 @@ func TestScavengeStagingRemovesStaleSpoolFiles(t *testing.T) {
 
 func testPolicy(t *testing.T) provider.Policy {
 	t.Helper()
+	return testPolicyWithMaxUnits(t, 100)
+}
+
+func testPolicyWithMaxUnits(t *testing.T, maxUnits int) provider.Policy {
+	t.Helper()
 	normalizePolicy, err := document.NewNormalizePolicy(1_000_000)
 	require.NoError(t, err)
 	policy, err := New().NewPolicy(provider.PolicyConfig{
 		Region: RegionEU, Model: DefaultModel,
 		Retention: provider.RetentionZDR, Training: provider.TrainingOptedOut,
-		MaxDocumentBytes: 1 << 20, MaxResponseBytes: 1 << 20, MaxUnits: 100,
+		MaxDocumentBytes: 1 << 20, MaxResponseBytes: 1 << 20, MaxUnits: maxUnits,
 		ExtractHeader: true, ExtractFooter: true, NormalizePolicy: normalizePolicy,
 	})
 	require.NoError(t, err)
@@ -371,7 +404,8 @@ func testProcessor(t *testing.T, transport http.RoundTripper) (provider.Processo
 	spoolDirectory := filepath.Join(t.TempDir(), "spool")
 	require.NoError(t, fileutil.SecureMkdirAll(spoolDirectory, 0o700))
 	policy := testPolicy(t)
-	processor, err := New().NewProcessor(policy, testAuthorizations(t, policy, testManifest(t, policy), "pdf"), provider.ClientConfig{
+	manifest := testManifest(t, policy)
+	processor, err := New().NewProcessor(policy, manifest, testAuthorizations(t, policy, manifest, "pdf"), provider.ClientConfig{
 		APIKey: "synthetic-key", MaxRetries: 1, HTTPClient: &http.Client{Transport: transport},
 	}, provider.Staging{Directory: spoolDirectory, MaxBytes: 2 << 20, MinFreeBytes: 1})
 	require.NoError(t, err)

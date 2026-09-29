@@ -76,7 +76,6 @@ type Worker struct {
 	opener       DocumentAttachmentOpener
 	processor    provider.Processor
 	config       WorkerConfig
-	formats      map[string]InputRoute
 	messageTypes map[string]struct{}
 }
 
@@ -126,11 +125,12 @@ func NewWorker(
 	if config.InputPolicy.Routes == nil {
 		return nil, errors.New("document worker requires a resolved input policy")
 	}
-	formats := make(map[string]InputRoute, len(config.InputPolicy.Routes))
-	maps.Copy(formats, config.InputPolicy.Routes)
-	if len(formats) == 0 {
+	if len(config.InputPolicy.Routes) == 0 {
 		return nil, errors.New("no format has authorized upload authority; run the authenticated capability probe and supply its manifest")
 	}
+	// The worker owns its copy of the routes so a caller mutating the
+	// resolved policy afterwards cannot widen what this pass accepts.
+	config.InputPolicy.Routes = maps.Clone(config.InputPolicy.Routes)
 	messageTypes := make(map[string]struct{}, len(config.MessageTypes))
 	for _, messageType := range config.MessageTypes {
 		if messageType == "" {
@@ -141,7 +141,7 @@ func NewWorker(
 	config.MessageTypes = slices.Clone(config.MessageTypes)
 	return &Worker{
 		catalog: catalog, opener: opener, processor: processor, config: config,
-		formats: formats, messageTypes: messageTypes,
+		messageTypes: messageTypes,
 	}, nil
 }
 
@@ -159,7 +159,7 @@ func (w *Worker) ProcessCandidate(
 			_, result.FailureReasonCode = classifyDocumentExtractionFailure(runErr)
 		}
 	}()
-	route, allowed := w.formats[candidate.MIMEType]
+	route, allowed := w.config.InputPolicy.Routes[candidate.MIMEType]
 	if !allowed {
 		return result, fmt.Errorf("document media type %q lacks passing capability authority", candidate.MIMEType)
 	}

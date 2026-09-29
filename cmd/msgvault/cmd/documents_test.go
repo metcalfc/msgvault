@@ -151,7 +151,7 @@ func TestDocumentsConsentBuildAndStatusUseExactAuthenticatedProfile(t *testing.T
 	processor := &commandBuildProcessor{}
 	attachmentOpened := false
 	deps := documentsCommandDeps{
-		newDocumentProcessor: func(_ docprovider.Policy, authorizations []docprovider.Authorization, client docprovider.ClientConfig, _ docprovider.Staging) (docprovider.Processor, error) {
+		newDocumentProcessor: func(_ docprovider.Policy, _ docprovider.Manifest, authorizations []docprovider.Authorization, client docprovider.ClientConfig, _ docprovider.Staging) (docprovider.Processor, error) {
 			require.NotEmpty(authorizations)
 			assert.Equal("synthetic-key", client.APIKey)
 			processor.fingerprint = authorizations[0].PolicyFingerprint()
@@ -289,7 +289,7 @@ func TestDocumentsConsentBuildAndStatusUseExactAuthenticatedProfile(t *testing.T
 	assert.Equal(int64(2*len(content)), structuredStatus.Status.VerifiedUploadBytes)
 	assert.Equal(int64(2), structuredStatus.Status.ProcessedProviderUnits)
 	assert.Equal(int64(2), structuredStatus.Status.MissingProviderByteReports)
-	assert.Equal(documentindex.ModelMistralOCR, structuredStatus.Model)
+	assert.Equal(mistralprovider.DefaultModel, structuredStatus.Model)
 	assert.Equal(documentindex.RetentionStandard, structuredStatus.RetentionPosture)
 	assert.True(structuredStatus.StoresPlaintext)
 	assert.True(structuredStatus.BackupsMayContainText)
@@ -638,7 +638,7 @@ func TestDocumentsBuildRefusesAPIUseBeforeExactConsent(t *testing.T) {
 	fixture := storetest.New(t)
 	providerCalled := false
 	deps := documentsCommandDeps{
-		newDocumentProcessor: func(docprovider.Policy, []docprovider.Authorization, docprovider.ClientConfig, docprovider.Staging) (docprovider.Processor, error) {
+		newDocumentProcessor: func(docprovider.Policy, docprovider.Manifest, []docprovider.Authorization, docprovider.ClientConfig, docprovider.Staging) (docprovider.Processor, error) {
 			providerCalled = true
 			return &commandBuildProcessor{}, nil
 		},
@@ -689,7 +689,7 @@ func TestDocumentFullRebuildResumesDurableTargetSnapshot(t *testing.T) {
 	manifestPath := writeCommandCapabilityManifest(t, cfg.Attachments.Documents.MaxPagesPerDocument)
 	processor := &commandBuildProcessor{}
 	deps := documentsCommandDeps{
-		newDocumentProcessor: func(_ docprovider.Policy, authorizations []docprovider.Authorization, client docprovider.ClientConfig, _ docprovider.Staging) (docprovider.Processor, error) {
+		newDocumentProcessor: func(_ docprovider.Policy, _ docprovider.Manifest, authorizations []docprovider.Authorization, client docprovider.ClientConfig, _ docprovider.Staging) (docprovider.Processor, error) {
 			require.NotEmpty(authorizations)
 			assert.Equal("synthetic-key", client.APIKey)
 			processor.fingerprint = authorizations[0].PolicyFingerprint()
@@ -796,7 +796,7 @@ func TestDocumentBuildRecordsOversizedCandidateAndContinues(t *testing.T) {
 		t.Context(), fixture.Store, testOperationPassScope("document:oversized"),
 		fixture.Store, commandAttachmentMapOpener{contents: contents},
 		&commandBuildProcessor{fingerprint: commandPolicyFingerprint(t, &documentsConfig, manifest)},
-		&documentsConfig, commandBuildPolicy(t, &documentsConfig), manifest, inputPolicy, profile, 2,
+		&documentsConfig, commandBuildProvider(t, &documentsConfig), commandBuildPolicy(t, &documentsConfig), manifest, inputPolicy, profile, 2,
 		"documents-isolation-test", testDocumentStaging(t), documentBuildIncremental, nil,
 	)
 	require.ErrorContains(err, "1 extraction failure")
@@ -818,7 +818,7 @@ func TestDocumentBuildRecordsOversizedCandidateAndContinues(t *testing.T) {
 func TestDocumentBuildRequiresRecorderBeforeWork(t *testing.T) {
 	result, err := executeDocumentBuild(
 		t.Context(), nil, testOperationPassScope("document:missing-recorder"),
-		nil, nil, nil, nil, nil, nil, documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{}, 1,
+		nil, nil, nil, nil, nil, nil, nil, documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{}, 1,
 		"documents-recorder-test", testDocumentStaging(t), documentBuildIncremental, nil,
 	)
 
@@ -917,7 +917,7 @@ func TestDocumentBuildStopsOnCancellation(t *testing.T) {
 		ctx, fixture.Store, testOperationPassScope("document:cancelled"),
 		fixture.Store, commandAttachmentMapOpener{contents: map[string][]byte{digest: content}},
 		commandCancelingProcessor{cancel: cancel, fingerprint: commandPolicyFingerprint(t, &documentsConfig, manifest)},
-		&documentsConfig, commandBuildPolicy(t, &documentsConfig), manifest, inputPolicy, profile, 1,
+		&documentsConfig, commandBuildProvider(t, &documentsConfig), commandBuildPolicy(t, &documentsConfig), manifest, inputPolicy, profile, 1,
 		"documents-cancellation-test", testDocumentStaging(t), documentBuildIncremental, nil,
 	)
 	require.ErrorIs(err, context.Canceled)
@@ -974,7 +974,7 @@ func TestDocumentBuildContinuesAfterProviderTimeout(t *testing.T) {
 		t.Context(), fixture.Store, testOperationPassScope("document:timeout"),
 		fixture.Store, commandAttachmentMapOpener{contents: contents},
 		&commandBuildProcessor{firstErr: context.DeadlineExceeded, fingerprint: commandPolicyFingerprint(t, &documentsConfig, manifest)},
-		&documentsConfig, commandBuildPolicy(t, &documentsConfig), manifest, inputPolicy, profile, 2,
+		&documentsConfig, commandBuildProvider(t, &documentsConfig), commandBuildPolicy(t, &documentsConfig), manifest, inputPolicy, profile, 2,
 		"documents-timeout-test", testDocumentStaging(t), documentBuildIncremental, nil,
 	)
 	require.ErrorContains(err, "1 extraction failure")
@@ -1083,7 +1083,7 @@ func TestScheduledDocumentReconcilePreservesExistingConsentWhenExtractionDisable
 	profile := store.DocumentExtractionProfile{
 		ID: "profile-" + fingerprint, Fingerprint: fingerprint,
 		Provider: "mistral", Endpoint: "https://api.mistral.ai/v1/ocr",
-		Region: "eu", Model: documentindex.ModelMistralOCR,
+		Region: "eu", Model: mistralprovider.DefaultModel,
 		RetentionPosture:  string(documentindex.RetentionStandard),
 		TrainingPosture:   string(documentindex.TrainingOptedOut),
 		AllowedMediaTypes: []string{"application/pdf"},
@@ -1177,6 +1177,13 @@ type commandCancelingProcessor struct {
 
 func (p commandCancelingProcessor) PolicyFingerprint() string { return p.fingerprint }
 
+func commandBuildProvider(t *testing.T, documentsConfig *documentindex.DocumentsConfig) docprovider.Provider {
+	t.Helper()
+	documentProvider, err := documentsConfig.ResolveProvider()
+	require.NoError(t, err)
+	return documentProvider
+}
+
 func commandBuildPolicy(t *testing.T, documentsConfig *documentindex.DocumentsConfig) docprovider.Policy {
 	t.Helper()
 	policy, err := documentsConfig.ExtractionPolicy()
@@ -1214,7 +1221,7 @@ func TestDocumentBuildAndProbeRefuseEmptyDataDirectory(t *testing.T) {
 	processorCalled := false
 	validationCalled := false
 	deps := documentsCommandDeps{
-		newDocumentProcessor: func(docprovider.Policy, []docprovider.Authorization, docprovider.ClientConfig, docprovider.Staging) (docprovider.Processor, error) {
+		newDocumentProcessor: func(docprovider.Policy, docprovider.Manifest, []docprovider.Authorization, docprovider.ClientConfig, docprovider.Staging) (docprovider.Processor, error) {
 			processorCalled = true
 			return &commandBuildProcessor{}, nil
 		},

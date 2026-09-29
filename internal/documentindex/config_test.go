@@ -22,9 +22,9 @@ func TestDocumentsConfigDefaultsAreValidAndOptIn(t *testing.T) {
 
 	require.NoError(t, config.Validate())
 	assert.False(config.Enabled)
-	assert.Equal(ProviderMistral, config.Provider)
-	assert.Equal(RegionMistralEU, config.Region)
-	assert.Equal(ModelMistralOCR, config.Model)
+	assert.Equal(mistralprovider.Name, config.Provider)
+	assert.Equal(mistralprovider.RegionEU, config.Region)
+	assert.Equal(mistralprovider.DefaultModel, config.Model)
 	assert.Equal(RetentionUnknown, config.RetentionPosture)
 	assert.Equal(TrainingUnknown, config.TrainingPosture)
 	assert.True(config.LexicalEnabled())
@@ -152,7 +152,7 @@ func TestApplyDefaultsResolvesNumericDefaultsForTheDecodedProvider(t *testing.T)
 
 	unresolved := DocumentsConfigDecodeTarget()
 	require.Error(unresolved.Validate(), "a decode target never validates before ApplyDefaults")
-	unresolved.Provider, unresolved.Model, unresolved.Region, unresolved.APIKeyEnv = "tight", ModelMistralOCR, RegionMistralEU, "TIGHT_API_KEY"
+	unresolved.Provider, unresolved.Model, unresolved.Region, unresolved.APIKeyEnv = "tight", mistralprovider.DefaultModel, mistralprovider.RegionEU, "TIGHT_API_KEY"
 	unresolved.RetentionPosture, unresolved.TrainingPosture = RetentionUnknown, TrainingUnknown
 	require.ErrorContains(unresolved.Validate(), "request_timeout: must be positive", "numeric sentinels never validate")
 }
@@ -357,6 +357,44 @@ func TestCSVConversionIsOptInAndBindsPDFRouteAndProfile(t *testing.T) {
 }
 
 const pptxMediaType = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+
+func TestResolvedInputPolicyAuthorizationsFollowFormatOrderAndRejectConflicts(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	config := DefaultDocumentsConfig()
+	config.RetentionPosture = RetentionZDR
+	config.TrainingPosture = TrainingOptedOut
+	config.Conversion.CSV.Enabled = true
+	policy, err := config.ExtractionPolicy()
+	require.NoError(err)
+	manifest := testPPTXCapabilityManifest(t, policy)
+	resolved, err := ResolveInputPolicy(&config, manifest)
+	require.NoError(err)
+	require.Len(resolved.Routes, 3, "direct PDF, PPTX, and CSV-to-PDF")
+
+	for range 20 {
+		authorizations, err := resolved.Authorizations(policy)
+		require.NoError(err)
+		ids := make([]string, len(authorizations))
+		for index, authorization := range authorizations {
+			ids[index] = authorization.Format().ID
+		}
+		assert.Equal([]string{"pdf", "pptx"}, ids, "the shared PDF authority appears once, in format order")
+	}
+
+	other, err := mistralprovidertest.Manifest(policy, mistralprovidertest.WithPDFFixtureDigest("1111111111111111"))
+	require.NoError(err)
+	conflicting, err := policy.Authorize(other, "pdf")
+	require.NoError(err)
+	csvRoute := resolved.Routes["text/csv"]
+	csvRoute.Authorization = conflicting
+	resolved.Routes["text/csv"] = csvRoute
+	_, err = resolved.Authorizations(policy)
+	require.ErrorContains(err, `conflicting upload authority for format "pdf"`)
+
+	_, err = resolved.Authorizations(nil)
+	require.ErrorContains(err, "requires a policy")
+}
 
 // testPPTXCapabilityManifest adds PPTX local-exact authority in the row shape
 // an authenticated probe records.

@@ -241,11 +241,13 @@ type Provider interface {
 	NewPolicy(config PolicyConfig) (Policy, error)
 	DecodeManifest(reader io.Reader) (Manifest, error)
 	EncodeManifest(writer io.Writer, manifest Manifest) error
-	// NewProcessor binds a policy, the upload authority a build resolved
-	// under it, credentials, and staging bounds into a Processor. Every
-	// authorization must come from the same policy and manifest. It makes no
-	// network request.
-	NewProcessor(policy Policy, authorizations []Authorization, client ClientConfig, staging Staging) (Processor, error)
+	// NewProcessor binds a policy, its capability evidence, the upload
+	// authority a build resolved under them, credentials, and staging bounds
+	// into a Processor. It derives Policy.Fingerprint(manifest) itself and
+	// refuses any authorization issued under a different pair, so the
+	// worker's fingerprint check and the processor's authority agree. It
+	// makes no network request.
+	NewProcessor(policy Policy, manifest Manifest, authorizations []Authorization, client ClientConfig, staging Staging) (Processor, error)
 	// ValidateProbeFixtures stages the fixture matrix locally without
 	// credentials or network access.
 	ValidateProbeFixtures(ctx context.Context, policy Policy, fixtures ProbeFixtureConfig) error

@@ -197,7 +197,7 @@ type documentBuildFailure struct {
 // the provider the configuration resolves. Tests substitute fakes without
 // naming any vendor type.
 type documentsCommandDeps struct {
-	newDocumentProcessor  func(docprovider.Policy, []docprovider.Authorization, docprovider.ClientConfig, docprovider.Staging) (docprovider.Processor, error)
+	newDocumentProcessor  func(docprovider.Policy, docprovider.Manifest, []docprovider.Authorization, docprovider.ClientConfig, docprovider.Staging) (docprovider.Processor, error)
 	validateProbeFixtures func(context.Context, docprovider.Policy, docprovider.ProbeFixtureConfig) error
 	runCapabilityProbe    func(context.Context, docprovider.Policy, docprovider.ClientConfig, docprovider.ProbeConfig) (docprovider.Manifest, error)
 	openStore             func(context.Context) (*store.Store, func(), error)
@@ -238,7 +238,7 @@ func defaultDocumentsCommandDeps() documentsCommandDeps {
 
 func (deps documentsCommandDeps) processorFactory(
 	documentProvider docprovider.Provider,
-) func(docprovider.Policy, []docprovider.Authorization, docprovider.ClientConfig, docprovider.Staging) (docprovider.Processor, error) {
+) func(docprovider.Policy, docprovider.Manifest, []docprovider.Authorization, docprovider.ClientConfig, docprovider.Staging) (docprovider.Processor, error) {
 	if deps.newDocumentProcessor != nil {
 		return deps.newDocumentProcessor
 	}
@@ -637,10 +637,11 @@ func runConsentMistral(
 	confirmed bool,
 	deps documentsCommandDeps,
 ) error {
-	documentsConfig, manifest, inputPolicy, profile, err := configuredDocumentProfile(capabilityPath, invocationFromCommand(command))
+	resolved, err := configuredDocumentProfile(capabilityPath, invocationFromCommand(command))
 	if err != nil {
 		return err
 	}
+	documentsConfig, manifest, inputPolicy, profile := resolved.config, resolved.manifest, resolved.inputPolicy, resolved.profile
 	if !documentsConfig.Enabled {
 		return errors.New("document consent requires attachments.documents.enabled=true")
 	}
@@ -745,10 +746,11 @@ func runBuildDocuments(
 	if limit <= 0 || limit > 10_000 {
 		return errors.New("document build limit must be between 1 and 10000")
 	}
-	documentsConfig, manifest, inputPolicy, profile, err := configuredDocumentProfile(capabilityPath, invocationFromCommand(command))
+	resolved, err := configuredDocumentProfile(capabilityPath, invocationFromCommand(command))
 	if err != nil {
 		return err
 	}
+	documentsConfig, manifest, inputPolicy, profile := resolved.config, resolved.manifest, resolved.inputPolicy, resolved.profile
 	if !documentsConfig.Enabled {
 		return errors.New("document build requires attachments.documents.enabled=true")
 	}
@@ -805,16 +807,8 @@ func runBuildDocuments(
 		return err
 	}
 	defer func() { runErr = errors.Join(runErr, closeAttachments()) }()
-	// The provider, policy, routes, and staging resolved here are the ones
-	// the processor and the build both use; nothing is derived twice.
-	documentProvider, err := documentsConfig.ResolveProvider()
-	if err != nil {
-		return err
-	}
-	policy, err := documentsConfig.ExtractionPolicy()
-	if err != nil {
-		return err
-	}
+	// The provider, policy, routes, and staging resolved once above are the
+	// ones the processor and the build both use; nothing is derived twice.
 	client, err := configuredDocumentClient(documentsConfig)
 	if err != nil {
 		return err
@@ -824,14 +818,18 @@ func runBuildDocuments(
 		return err
 	}
 	staging := documentStaging(documentsConfig, spoolDirectory)
-	processor, err := deps.processorFactory(documentProvider)(policy, inputPolicy.Authorizations(), client, staging)
+	authorizations, err := inputPolicy.Authorizations(resolved.policy)
+	if err != nil {
+		return err
+	}
+	processor, err := deps.processorFactory(resolved.provider)(resolved.policy, manifest, authorizations, client, staging)
 	if err != nil {
 		return err
 	}
 	result, err := executeDocumentBuild(
 		command.Context(), st,
 		newOperationPassScope("cli:document-extraction", operations.TriggerManual),
-		st, attachments, processor, documentsConfig, policy, manifest, inputPolicy,
+		st, attachments, processor, documentsConfig, resolved.provider, resolved.policy, manifest, inputPolicy,
 		profile, limit, "documents-cli", staging, mode, &reconcileResult,
 	)
 	_, _ = fmt.Fprintf(command.OutOrStdout(),
@@ -896,6 +894,7 @@ func executeDocumentBuild(
 	attachments documentindex.DocumentAttachmentOpener,
 	processor docprovider.Processor,
 	documentsConfig *documentindex.DocumentsConfig,
+	documentProvider docprovider.Provider,
 	policy docprovider.Policy,
 	manifest docprovider.Manifest,
 	inputPolicy documentindex.ResolvedInputPolicy,
@@ -964,20 +963,16 @@ func executeDocumentBuild(
 	if staging.Directory == "" {
 		return result, errors.New("document build requires a staging directory")
 	}
+	if documentProvider == nil || policy == nil || len(inputPolicy.Routes) == 0 {
+		return result, errors.New("document build requires a resolved provider, policy, and input routes")
+	}
 	if err := fileutil.SecureMkdirAll(staging.Directory, 0o700); err != nil {
 		return result, fmt.Errorf("create private document spool directory: %w", err)
-	}
-	documentProvider, err := documentsConfig.ResolveProvider()
-	if err != nil {
-		return result, err
 	}
 	if _, err := documentProvider.ScavengeStaging(
 		staging.Directory, time.Now().UTC().Add(-2*time.Hour),
 	); err != nil {
 		return result, fmt.Errorf("scavenge %s document spool: %w", documentProvider.DisplayName(), err)
-	}
-	if policy == nil || len(inputPolicy.Routes) == 0 {
-		return result, errors.New("document build requires a resolved policy and input routes")
 	}
 	workerConfig := documentindex.WorkerConfig{
 		ProfileID: profile.ID, LeaseOwner: leaseOwner, LeaseDuration: documentsConfig.RequestTimeout + time.Minute,
@@ -1096,12 +1091,11 @@ func runDocumentStatus(
 	jsonOutput bool,
 	deps documentsCommandDeps,
 ) error {
-	documentsConfig, _, inputPolicy, profile, err := configuredDocumentProfile(
-		capabilityPath, invocationFromCommand(command),
-	)
+	resolved, err := configuredDocumentProfile(capabilityPath, invocationFromCommand(command))
 	if err != nil {
 		return err
 	}
+	documentsConfig, inputPolicy, profile := resolved.config, resolved.inputPolicy, resolved.profile
 	response, cleanup, err := readDocumentStatus(command.Context(), store.DocumentIndexStatusRequest{
 		ProfileID: profile.ID, ExtractionInputKey: "original",
 		AllowedMediaTypes: inputPolicy.AllowedMediaTypes, AllowedMessageTypes: documentsConfig.Scope.MessageTypes,
@@ -1192,11 +1186,8 @@ func runRetryDocument(
 }
 
 func configuredDocumentProfileOnly(capabilityPath string, state *invocation) (store.DocumentExtractionProfile, error) {
-	documentsConfig, manifest, inputPolicy, profile, err := configuredDocumentProfile(capabilityPath, state)
-	_ = documentsConfig
-	_ = manifest
-	_ = inputPolicy
-	return profile, err
+	resolved, err := configuredDocumentProfile(capabilityPath, state)
+	return resolved.profile, err
 }
 
 func runRetireDocumentProfile(
@@ -1420,31 +1411,33 @@ func bootstrapDocumentOccurrencesIfConsented(ctx context.Context, st *store.Stor
 	return err
 }
 
-func configuredDocumentProfile(
-	capabilityPath string,
-	state *invocation,
-) (*documentindex.DocumentsConfig, docprovider.Manifest, documentindex.ResolvedInputPolicy, store.DocumentExtractionProfile, error) {
+// resolvedDocumentProfile is everything one document operation derives from
+// configuration and a capability manifest, resolved once and reused.
+type resolvedDocumentProfile struct {
+	config      *documentindex.DocumentsConfig
+	provider    docprovider.Provider
+	policy      docprovider.Policy
+	manifest    docprovider.Manifest
+	inputPolicy documentindex.ResolvedInputPolicy
+	profile     store.DocumentExtractionProfile
+}
+
+func configuredDocumentProfile(capabilityPath string, state *invocation) (resolvedDocumentProfile, error) {
 	state = invocationState(context.Background(), state)
 	if state == nil || state.cfg == nil {
-		return nil, nil, documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{},
-			errors.New("document operation requires loaded configuration")
+		return resolvedDocumentProfile{}, errors.New("document operation requires loaded configuration")
 	}
 	cfg := state.cfg
 	documentsConfig := &cfg.Attachments.Documents
 	if documentsConfig.RetentionPosture == documentindex.RetentionUnknown ||
 		documentsConfig.TrainingPosture == documentindex.TrainingUnknown {
-		return nil, nil, documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{},
-			errors.New("document operation requires explicit retention_posture and training_posture")
+		return resolvedDocumentProfile{}, errors.New("document operation requires explicit retention_posture and training_posture")
 	}
 	manifest, err := loadDocumentCapabilityManifest(documentsConfig, capabilityPath)
 	if err != nil {
-		return nil, nil, documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{}, err
+		return resolvedDocumentProfile{}, err
 	}
-	inputPolicy, profile, err := documentProfileForConfig(documentsConfig, manifest)
-	if err != nil {
-		return nil, nil, documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{}, err
-	}
-	return documentsConfig, manifest, inputPolicy, profile, nil
+	return resolveDocumentProfile(documentsConfig, manifest)
 }
 
 // loadDocumentCapabilityManifest decodes and validates the configured
@@ -1473,22 +1466,30 @@ func documentProfileForConfig(
 	documentsConfig *documentindex.DocumentsConfig,
 	manifest docprovider.Manifest,
 ) (documentindex.ResolvedInputPolicy, store.DocumentExtractionProfile, error) {
-	inputPolicy, err := documentindex.ResolveInputPolicy(documentsConfig, manifest)
+	resolved, err := resolveDocumentProfile(documentsConfig, manifest)
+	return resolved.inputPolicy, resolved.profile, err
+}
+
+func resolveDocumentProfile(
+	documentsConfig *documentindex.DocumentsConfig,
+	manifest docprovider.Manifest,
+) (resolvedDocumentProfile, error) {
+	documentProvider, err := documentsConfig.ResolveProvider()
 	if err != nil {
-		return documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{}, err
+		return resolvedDocumentProfile{}, err
 	}
-	allowedMediaTypes := inputPolicy.AllowedMediaTypes
 	policy, err := documentsConfig.ExtractionPolicy()
 	if err != nil {
-		return documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{}, err
+		return resolvedDocumentProfile{}, err
 	}
-	fingerprint, err := documentsConfig.ProfileFingerprint(manifest, allowedMediaTypes)
+	inputPolicy, err := documentindex.ResolveInputPolicy(documentsConfig, manifest)
 	if err != nil {
-		return documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{}, err
+		return resolvedDocumentProfile{}, err
 	}
-	policyJSON, err := documentsConfig.ProfilePolicyJSON(manifest, allowedMediaTypes)
+	allowedMediaTypes := inputPolicy.AllowedMediaTypes
+	fingerprint, policyJSON, err := documentsConfig.ProfileIdentity(manifest, allowedMediaTypes)
 	if err != nil {
-		return documentindex.ResolvedInputPolicy{}, store.DocumentExtractionProfile{}, err
+		return resolvedDocumentProfile{}, err
 	}
 	values := policy.Values()
 	profile := store.DocumentExtractionProfile{
@@ -1498,7 +1499,10 @@ func documentProfileForConfig(
 		TrainingPosture:   values.Training,
 		AllowedMediaTypes: allowedMediaTypes, PolicyJSON: policyJSON,
 	}
-	return inputPolicy, profile, nil
+	return resolvedDocumentProfile{
+		config: documentsConfig, provider: documentProvider, policy: policy,
+		manifest: manifest, inputPolicy: inputPolicy, profile: profile,
+	}, nil
 }
 
 func openDocumentAttachments(

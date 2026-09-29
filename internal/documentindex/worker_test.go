@@ -345,7 +345,7 @@ func TestWorkerClosesCSVSourceWhenMetadataIsInvalid(t *testing.T) {
 	content := []byte("name,value\nalice,closed\n")
 	hash := sha256.Sum256(content)
 	worker := newCSVTestWorker(t, catalog, &workerOpener{content: content, closed: closed}, &workerProcessor{})
-	worker.formats["text/csv; charset=utf-8"] = worker.formats["text/csv"]
+	worker.config.InputPolicy.Routes["text/csv; charset=utf-8"] = worker.config.InputPolicy.Routes["text/csv"]
 
 	_, err := worker.ProcessCandidate(t.Context(), store.DocumentExtractionCandidate{
 		AttachmentID: 7, CanonicalBlobHash: hex.EncodeToString(hash[:]), MIMEType: "text/csv; charset=utf-8",
@@ -642,7 +642,9 @@ func TestNewWorkerRejectsProcessorBuiltFromDifferentManifest(t *testing.T) {
 	require.NoError(err)
 	spoolDirectory := filepath.Join(t.TempDir(), "spool")
 	require.NoError(fileutil.SecureMkdirAll(spoolDirectory, 0o700))
-	processor, err := mistralprovider.New().NewProcessor(policy, testPDFInputPolicy(t, policy, other).Authorizations(), provider.ClientConfig{
+	otherAuthorizations, err := testPDFInputPolicy(t, policy, other).Authorizations(policy)
+	require.NoError(err)
+	processor, err := mistralprovider.New().NewProcessor(policy, other, otherAuthorizations, provider.ClientConfig{
 		APIKey: "synthetic-key", MaxRetries: 1,
 	}, provider.Staging{Directory: spoolDirectory, MaxBytes: 2 << 20, MinFreeBytes: 1})
 	require.NoError(err)
@@ -864,7 +866,9 @@ func newPPTXTestWorker(t *testing.T, catalog DocumentExtractionCatalog, content 
 		input.Routes[format.MediaType] = InputRoute{Format: format, Authorization: authorization}
 		input.AllowedMediaTypes = append(input.AllowedMediaTypes, format.MediaType)
 	}
-	processor, err := mistralprovider.New().NewProcessor(policy, input.Authorizations(), provider.ClientConfig{
+	authorizations, err := input.Authorizations(policy)
+	require.NoError(err)
+	processor, err := mistralprovider.New().NewProcessor(policy, manifest, authorizations, provider.ClientConfig{
 		APIKey: "synthetic-key", MaxRetries: 1, HTTPClient: &http.Client{Transport: transport},
 	}, provider.Staging{Directory: spoolDirectory, MaxBytes: 2 << 20, MinFreeBytes: 1})
 	require.NoError(err)

@@ -815,6 +815,18 @@ func planPeopleInference(
 
 // gateDisclosure states plainly what each hosted provider receives once the
 // operator answers yes.
+// documentProviderHeadline names the document provider, its region, and its
+// pinned model from the registered adapter rather than from literals.
+func documentProviderHeadline(providerName string) string {
+	documentProvider, err := documentindex.LookupProvider(providerName)
+	if err != nil {
+		return providerName + " receives:"
+	}
+	defaults := documentProvider.Defaults()
+	return fmt.Sprintf("%s (%s region, %s) receives:",
+		documentProvider.DisplayName(), strings.ToUpper(defaults.Region), defaults.Model)
+}
+
 func gateDisclosure(gate string, plan *setupProvidersPlan) string {
 	var lines []string
 	switch gate {
@@ -835,7 +847,7 @@ func gateDisclosure(gate string, plan *setupProvidersPlan) string {
 		}
 	case gateMistral:
 		lines = append(lines,
-			"Mistral (EU region, "+documentindex.ModelMistralOCR+") receives:",
+			documentProviderHeadline(gateMistral),
 			"  - complete original bytes of standalone document attachments, only after the probe manifest and `msgvault documents consent-mistral --yes`",
 			"  - postures recorded now: retention="+planValue(plan, laneDocuments, "retention_posture")+", training="+planValue(plan, laneDocuments, "training_posture"))
 	case gateOpenAI:

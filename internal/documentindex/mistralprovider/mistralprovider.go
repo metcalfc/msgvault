@@ -104,9 +104,13 @@ func (Provider) EncodeManifest(writer io.Writer, manifest provider.Manifest) err
 }
 
 // NewProcessor implements provider.Provider. The authorizations are the
-// authority a build already resolved; nothing is re-derived here.
+// authority a build already resolved; the fingerprint they must carry is
+// derived here from the policy and manifest, never copied from them, so a
+// route authorized under another policy is refused at construction instead
+// of failing per document.
 func (Provider) NewProcessor(
 	policy provider.Policy,
+	manifest provider.Manifest,
 	authorizations []provider.Authorization,
 	client provider.ClientConfig,
 	staging provider.Staging,
@@ -115,26 +119,33 @@ func (Provider) NewProcessor(
 	if err != nil {
 		return nil, err
 	}
+	vendorManifest, err := vendorManifestRef(manifest)
+	if err != nil {
+		return nil, err
+	}
 	if staging.Directory == "" || staging.MaxBytes < vendorPolicy.Values().MaxDocumentBytes || staging.MinFreeBytes <= 0 {
 		return nil, errors.New("mistral document staging bounds are invalid")
+	}
+	fingerprint, err := vendorPolicy.Fingerprint(vendorManifest)
+	if err != nil {
+		return nil, fmt.Errorf("validate Mistral capability policy: %w", err)
 	}
 	if len(authorizations) == 0 {
 		return nil, errors.New("mistral document processor requires at least one authorized format")
 	}
 	byFormat := make(map[string]mistral.FormatAuthorization, len(authorizations))
-	fingerprint := ""
 	for _, candidate := range authorizations {
 		wrapped, ok := candidate.(Authorization)
 		if !ok {
 			return nil, fmt.Errorf("document authorization %T does not belong to the %s provider", candidate, Name)
 		}
-		if fingerprint == "" {
-			fingerprint = wrapped.PolicyFingerprint()
+		formatID := wrapped.authorization.Format().ID
+		if wrapped.PolicyFingerprint() != fingerprint {
+			return nil, fmt.Errorf(
+				"mistral document authorization for %q was not issued under this policy and capability manifest", formatID,
+			)
 		}
-		if wrapped.PolicyFingerprint() == "" || wrapped.PolicyFingerprint() != fingerprint {
-			return nil, errors.New("mistral document authorizations belong to different policies or manifests")
-		}
-		byFormat[wrapped.authorization.Format().ID] = wrapped.authorization
+		byFormat[formatID] = wrapped.authorization
 	}
 	vendorClient, err := newClient(vendorPolicy, client)
 	if err != nil {

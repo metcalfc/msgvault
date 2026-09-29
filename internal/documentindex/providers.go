@@ -8,15 +8,6 @@ import (
 	"go.kenn.io/msgvault/internal/documentindex/provider"
 )
 
-const (
-	// ProviderMistral is the default and currently only document provider.
-	ProviderMistral = mistralprovider.Name
-	// ModelMistralOCR is the pinned model the Mistral provider serves.
-	ModelMistralOCR = mistralprovider.DefaultModel
-	// RegionMistralEU is the only region the Mistral provider serves.
-	RegionMistralEU = mistralprovider.RegionEU
-)
-
 // defaultAdapter is the provider an omitted configuration selects. It is held
 // directly so defaults never depend on a runtime lookup.
 var defaultAdapter provider.Provider = mistralprovider.New()

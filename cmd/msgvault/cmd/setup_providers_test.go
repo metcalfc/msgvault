@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/docbank/document/voyage/voyagetest"
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/documentindex"
+	"go.kenn.io/msgvault/internal/documentindex/mistralprovider"
 	"go.kenn.io/msgvault/internal/peoplesweep"
 	"go.kenn.io/msgvault/internal/providercredentials"
 	"go.kenn.io/msgvault/internal/store"
@@ -534,7 +535,7 @@ training_posture = %q
 					cfg = loaded
 					t.Cleanup(func() { cfg = previous })
 					testCtx := testInvocationContext(t.Context(), loaded, invocationOptions{})
-					_, _, _, _, err := configuredDocumentProfile(writeCommandCapabilityManifest(t, loaded.Attachments.Documents.MaxPagesPerDocument), invocationFromContext(testCtx))
+					_, err := configuredDocumentProfile(writeCommandCapabilityManifest(t, loaded.Attachments.Documents.MaxPagesPerDocument), invocationFromContext(testCtx))
 					require.NoError(err)
 				}
 			})
@@ -1010,6 +1011,11 @@ func TestSetupProvidersEnablesVisualLaneWhenManifestExists(t *testing.T) {
 	assert.Contains(output, "msgvault multimodal build --yes")
 }
 
+func TestDocumentProviderHeadlineComesFromTheAdapter(t *testing.T) {
+	assert.Equal(t, "Mistral (EU region, mistral-ocr-4-0) receives:", documentProviderHeadline(gateMistral))
+	assert.Equal(t, "unknown receives:", documentProviderHeadline("unknown"))
+}
+
 func TestSetupProvidersMistralEnablesDocumentsAndVectors(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1026,7 +1032,7 @@ func TestSetupProvidersMistralEnablesDocumentsAndVectors(t *testing.T) {
 	assert.True(documents.Enabled)
 	assert.Equal(documentindex.RetentionZDR, documents.RetentionPosture)
 	assert.Equal(documentindex.TrainingOptedOut, documents.TrainingPosture)
-	assert.Equal(documentindex.ModelMistralOCR, documents.Model)
+	assert.Equal(mistralprovider.DefaultModel, documents.Model)
 	assert.True(documents.Index.Embeddings.Enabled)
 	manifest := setupMistralManifestPath(loaded)
 	assert.Contains(output, "documents probe-mistral --fixtures <private-fixture-dir> > "+manifest)

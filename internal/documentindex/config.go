@@ -143,25 +143,35 @@ type ResolvedInputPolicy struct {
 	Routes            map[string]InputRoute
 }
 
-// Authorizations returns the distinct upload authority behind every route,
-// ordered by format ID, for handing to the provider's processor factory.
-func (p ResolvedInputPolicy) Authorizations() []provider.Authorization {
-	byFormat := make(map[string]provider.Authorization, len(p.Routes))
-	for _, route := range p.Routes {
-		if route.Authorization != nil {
-			byFormat[route.Format.ID] = route.Authorization
+// Authorizations returns the distinct upload authority behind every route in
+// the policy's stable format order, for handing to the provider's processor
+// factory. Two routes that share a format (a direct upload and a local
+// conversion to the same format) must carry the same authority.
+func (p ResolvedInputPolicy) Authorizations(policy provider.Policy) ([]provider.Authorization, error) {
+	if policy == nil {
+		return nil, errors.New("document input authority requires a policy")
+	}
+	var authorizations []provider.Authorization
+	for _, format := range policy.Formats() {
+		var chosen provider.Authorization
+		for _, route := range p.Routes {
+			if route.Authorization == nil || route.Format.ID != format.ID {
+				continue
+			}
+			if chosen == nil {
+				chosen = route.Authorization
+				continue
+			}
+			if chosen.Format() != route.Authorization.Format() ||
+				chosen.PolicyFingerprint() != route.Authorization.PolicyFingerprint() {
+				return nil, fmt.Errorf("document input routes carry conflicting upload authority for format %q", format.ID)
+			}
+		}
+		if chosen != nil {
+			authorizations = append(authorizations, chosen)
 		}
 	}
-	ids := make([]string, 0, len(byFormat))
-	for id := range byFormat {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
-	authorizations := make([]provider.Authorization, 0, len(ids))
-	for _, id := range ids {
-		authorizations = append(authorizations, byFormat[id])
-	}
-	return authorizations
+	return authorizations, nil
 }
 
 // ScopeConfig limits extraction to selected message families. Empty includes
@@ -462,12 +472,22 @@ func (c *DocumentsConfig) ProfileFingerprint(
 	manifest provider.Manifest,
 	allowedMediaTypes []string,
 ) (string, error) {
+	fingerprint, _, err := c.ProfileIdentity(manifest, allowedMediaTypes)
+	return fingerprint, err
+}
+
+// ProfileIdentity returns the canonical policy JSON and its fingerprint from
+// one encoding pass, for callers that persist both.
+func (c *DocumentsConfig) ProfileIdentity(
+	manifest provider.Manifest,
+	allowedMediaTypes []string,
+) (string, []byte, error) {
 	encoded, err := c.ProfilePolicyJSON(manifest, allowedMediaTypes)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	hash := sha256.Sum256(encoded)
-	return hex.EncodeToString(hash[:]), nil
+	return hex.EncodeToString(hash[:]), encoded, nil
 }
 
 // ProfilePolicyJSON is the canonical non-secret policy persisted with an
