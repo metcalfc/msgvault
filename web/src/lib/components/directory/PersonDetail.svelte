@@ -42,6 +42,8 @@
     onOpenMeeting?: (meeting: MeetingRef) => void;
     /** Opens the last-contact message. */
     onOpenMessage?: (messageID: number) => void;
+    /** Opens a last-contact meeting's page (`meeting:<id>` refs). */
+    onOpenMeetingPage?: (meetingID: number) => void;
     /** The open tab when the address names one (`/people/:id/<tab>`);
      * omitted, the page keeps its own tab. */
     tab?: PersonTab;
@@ -68,6 +70,7 @@
     onAnnounce = () => undefined,
     onOpenMeeting = undefined,
     onOpenMessage = undefined,
+    onOpenMeetingPage = undefined,
     tab = undefined,
     onTabChange = undefined,
     onReload = undefined
@@ -135,11 +138,11 @@
 
   const displayName = $derived(bundle.person?.display_name ?? profile?.person?.display_name ?? `Person ${personID}`);
 
-  /** `message:<id>` refs open the message; other kinds have no in-app
-   * destination here and render as plain text. */
-  function contactRefMessageID(ref: string | undefined): number | undefined {
-    const match = /^message:([1-9]\d*)$/.exec(ref ?? '');
-    return match ? Number(match[1]) : undefined;
+  /** `message:<id>` refs open the message and `meeting:<id>` refs the
+   * meeting's page; other kinds render as plain text. */
+  function contactRefTarget(ref: string | undefined): { kind: 'message' | 'meeting'; id: number } | undefined {
+    const match = /^(message|meeting):([1-9]\d*)$/.exec(ref ?? '');
+    return match ? { kind: match[1] as 'message' | 'meeting', id: Number(match[2]) } : undefined;
   }
 
   const lastContact = $derived.by(() => {
@@ -154,7 +157,7 @@
     if (cadence) parts.push(`cadence ${cadence}`);
     return {
       lead: state.last_contact_at ? `Last contact ${humanizeDate(state.last_contact_at)}${channel ? ` via ${channel}` : ''}` : 'No recorded contact',
-      messageID: state.last_contact_at ? contactRefMessageID(state.last_contact_ref) : undefined,
+      target: state.last_contact_at ? contactRefTarget(state.last_contact_ref) : undefined,
       rest: parts
     };
   });
@@ -303,9 +306,15 @@
       <PersonReachBlock entries={reachEntries} {onAnnounce} />
       {#if lastContact}
         <p class="last-contact">
-          {#if lastContact.messageID !== undefined && onOpenMessage}
-            {@const messageID = lastContact.messageID}
+          {#if lastContact.target?.kind === 'message' && onOpenMessage}
+            {@const messageID = lastContact.target.id}
             <button type="button" class="link-button" onclick={() => onOpenMessage(messageID)}>{lastContact.lead}</button>
+          {:else if lastContact.target?.kind === 'meeting' && onOpenMeetingPage}
+            <a class="link-button" href={`/meetings/${lastContact.target.id}`} onclick={(event) => {
+              if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              event.preventDefault();
+              onOpenMeetingPage(lastContact.target!.id);
+            }}>{lastContact.lead}</a>
           {:else}<span>{lastContact.lead}</span>{/if}
           {#each lastContact.rest as part}<span class="separator" aria-hidden="true">·</span><span>{part}</span>{/each}
         </p>

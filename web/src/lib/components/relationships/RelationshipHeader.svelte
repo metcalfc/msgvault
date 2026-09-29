@@ -50,6 +50,9 @@
     onAnnounce?: (message: string) => void;
     /** The Messages/Files switch; person pages use their own tabs instead. */
     showViewToggle?: boolean;
+    /** Inside a page that already names the person, the name is a label,
+     * not a second heading. */
+    nameAsHeading?: boolean;
   }
 
   let {
@@ -69,7 +72,8 @@
     loadAttributes = undefined,
     loadContactPoints = undefined,
     onAnnounce = undefined,
-    showViewToggle = true
+    showViewToggle = true,
+    nameAsHeading = true
   }: Props = $props();
 
   type LinkMutation = { kind: 'link' | 'unlink'; a: number; b: number };
@@ -401,7 +405,11 @@
         shape={isPersonDetail(detail) ? 'person' : 'domain'}
         size={36}
       />
-      <h2 data-page-title>{displayLabel(detail)}</h2>
+      {#if nameAsHeading}
+        <h2 data-page-title>{displayLabel(detail)}</h2>
+      {:else}
+        <p class="title-text">{displayLabel(detail)}</p>
+      {/if}
       <div class="actions">
         {#if showViewToggle}
           <SegmentedControl
@@ -553,8 +561,17 @@
     gap: var(--space-4);
   }
 
-  .title-row h2 {
+  .title-row h2,
+  .title-row .title-text {
     flex: 1;
+  }
+
+  .title-text {
+    margin: 0;
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   h2 {

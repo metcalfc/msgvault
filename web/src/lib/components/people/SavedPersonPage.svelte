@@ -21,12 +21,13 @@
     onAnnounce?: (message: string) => void;
     onOpenMeeting?: (meeting: MeetingRef) => void;
     onOpenMessage?: (messageID: number) => void;
+    onOpenMeetingPage?: (meetingID: number) => void;
   }
 
   let {
     client, controller, personID, tab, onTabChange, onBack, onOpenPerson,
     onOpenCardDAVConflict = undefined, onOpenCardDAVSettings = undefined, onAnnounce = undefined,
-    onOpenMeeting = undefined, onOpenMessage = undefined,
+    onOpenMeeting = undefined, onOpenMessage = undefined, onOpenMeetingPage = undefined,
   }: Props = $props();
 </script>
 
@@ -56,6 +57,7 @@
       {onAnnounce}
       {onOpenMeeting}
       {onOpenMessage}
+      {onOpenMeetingPage}
     />
   {:else if controller.error}
     <Notice tone="error" message={controller.error} />

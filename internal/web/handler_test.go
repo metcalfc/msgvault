@@ -131,7 +131,7 @@ func TestWebHandlerServesShellForSafeNavigation(t *testing.T) {
 		"/people/contact-7", "/people/domains", "/files", "/reviews",
 		"/saved-views", "/activity/sources", "/activity/operations",
 		"/activity/deletions", "/settings", "/settings/search",
-		"/messages/42001",
+		"/messages/42001", "/meetings", "/meetings/77",
 	}
 	for _, path := range append([]string{"/", "/index.html", "/not/a/real/route"}, appRoutes...) {
 		t.Run(path, func(t *testing.T) {

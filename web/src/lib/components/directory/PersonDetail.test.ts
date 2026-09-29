@@ -545,6 +545,16 @@ describe('PersonDetail', () => {
     await fireEvent.click(screen.getByRole('tab', { name: 'Overview' }));
     expect(screen.queryByRole('button', { name: /^Last contact / })).toBeNull();
     expect(screen.getByText('Last contact 2d ago via email').tagName).toBe('SPAN');
+
+    // With a Meetings page to open, a meeting ref links to it.
+    const onOpenMeetingPage = vi.fn();
+    await rerender({ client, personID: 7, entityController, onOpenMessage, onOpenMeetingPage, bundle: {
+      person, contactState: { ...contactState, last_contact_ref: 'meeting:9' }, etags: {}, errors: {}
+    } });
+    const meetingLink = screen.getByRole('link', { name: 'Last contact 2d ago via email' });
+    expect(meetingLink.getAttribute('href')).toBe('/meetings/9');
+    await fireEvent.click(meetingLink);
+    expect(onOpenMeetingPage).toHaveBeenCalledWith(9);
   });
 
   it('shows the timeline of the busiest bound identity on the Timeline tab', async () => {

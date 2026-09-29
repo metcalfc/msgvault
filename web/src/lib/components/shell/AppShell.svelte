@@ -77,6 +77,8 @@
   import FileViewer from '../files/FileViewer.svelte';
   import RelationshipsWorkspace from '../relationships/RelationshipsWorkspace.svelte';
   import PeopleWorkspace from '../people/PeopleWorkspace.svelte';
+  import MeetingsWorkspace from '../meetings/MeetingsWorkspace.svelte';
+  import MeetingPage from '../meetings/MeetingPage.svelte';
   import SavedPersonPage from '../people/SavedPersonPage.svelte';
   import { PeopleHub, type PeopleFilters, type PeopleRow } from '../../people/hub.svelte';
   import type { PersonTab } from '../../routing/routes';
@@ -396,11 +398,12 @@
   type ExplorePreflight = GeneratedExplorePreflightResponse;
   // Primary navigation: the places people go. Settings, Reviews, and
   // Saved Views live in the gear menu; Search is the header field.
-  type NavigationID = 'people' | 'inbox' | 'files' | 'activity';
+  type NavigationID = 'people' | 'inbox' | 'files' | 'meetings' | 'activity';
   const tabs: { id: NavigationID; label: string }[] = [
     { id: 'people', label: 'People' },
     { id: 'inbox', label: 'Inbox' },
     { id: 'files', label: 'Files' },
+    { id: 'meetings', label: 'Meetings' },
     { id: 'activity', label: 'Activity' },
   ];
   const activitySections = [
@@ -417,6 +420,8 @@
         return 'inbox';
       case 'files':
         return 'files';
+      case 'meetings':
+        return 'meetings';
       case 'sources':
       case 'operations':
       case 'deletions':
@@ -430,7 +435,21 @@
     if (id === 'people') openWorkspaceTab('directory');
     else if (id === 'inbox') openInbox();
     else if (id === 'files') openWorkspaceTab('files');
+    else if (id === 'meetings') openMeetings();
     else openWorkspaceTab('sources');
+  }
+  /** The Meetings list, keeping its filters. */
+  function openMeetings(): void {
+    beforeCommit();
+    exploreState.commitWorkspace('meetings', { meetingID: null });
+  }
+  /** One meeting's page: its event card or transcript and action items. */
+  function openMeetingPage(meetingID: number): void {
+    commitNavigation({ workspace: 'meetings', meetingID });
+  }
+  function leaveMeetingPage(): void {
+    if (exploreState.canGoBack()) window.history.back();
+    else commitNavigation({ workspace: 'meetings', meetingID: null });
   }
   /** The Inbox is the browse surface: the Everything view with no query. */
   function openInbox(): void {
@@ -1144,6 +1163,7 @@
     navigationCommand('go:person', 'Go to person…', 'find person contact', () => void openPersonFinder()),
     navigationCommand('go:inbox', 'Go to Inbox', 'everything browse messages', openInbox),
     navigationCommand('go:files', 'Go to Files', 'attachments documents', () => openWorkspaceTab('files')),
+    navigationCommand('go:meetings', 'Go to Meetings', 'calendar events transcripts', openMeetings),
     navigationCommand('go:activity', 'Go to Activity', 'sources operations deletions', () => openWorkspaceTab('sources')),
     navigationCommand('go:settings', 'Go to Settings', 'preferences appearance theme density', () => openWorkspaceTab('settings')),
     navigationCommand('go:saved-views', 'Go to Saved Views', 'bookmarks', () => openWorkspaceTab('saved_views')),
@@ -1278,10 +1298,13 @@
   let pageSubject = $state('');
   $effect(() => {
     void exploreState.current.messageID;
+    void exploreState.current.meetingID;
     pageSubject = '';
   });
   $effect(() => {
-    const surface = exploreState.current.workspace === 'message' && pageSubject
+    const titled = exploreState.current.workspace === 'message' ||
+      (exploreState.current.workspace === 'meetings' && exploreState.current.meetingID !== null);
+    const surface = titled && pageSubject
       ? pageSubject
       : routeTitle(exploreState.current);
     document.title = `${surface} · msgvault`;
@@ -1462,6 +1485,26 @@
       change: (settingsSection) => replaceCommittedNavigation({ settingsSection }),
       browserControls,
     })}{/if}
+  {:else if exploreState.current.workspace === 'meetings'}
+    {#if exploreState.current.meetingID !== null}
+      <MeetingPage
+        {client}
+        meetingID={exploreState.current.meetingID}
+        onBack={leaveMeetingPage}
+        onOpenPerson={openRelationship}
+        onOpenMeeting={(meeting) => openMeetingPage(meeting.message_id)}
+        onTitle={(title) => (pageSubject = title)}
+      />
+    {:else}
+      <MeetingsWorkspace
+        {client}
+        person={exploreState.current.meetingPerson}
+        source={exploreState.current.meetingSource}
+        since={exploreState.current.meetingSince}
+        onFiltersChange={(patch) => commitNavigation(patch)}
+        onOpenMeeting={openMeetingPage}
+      />
+    {/if}
   {:else if exploreState.current.workspace === 'message' && exploreState.current.messageID !== null}
     <MessagePage
       {client}
@@ -1568,6 +1611,7 @@
         onAnnounce={announceOperation}
         onOpenMeeting={(meeting) => void openArchivedMeeting(meeting)}
         onOpenMessage={(messageID) => void openMessageByID(messageID)}
+        onOpenMeetingPage={openMeetingPage}
       />
     {:else}
       <PeopleWorkspace

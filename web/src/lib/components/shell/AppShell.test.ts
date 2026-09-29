@@ -393,7 +393,7 @@ describe('AppShell', () => {
 
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(within(nav).getAllByRole('button').map((button) => button.textContent?.trim())).toEqual([
-      'People', 'Inbox', 'Files', 'Activity'
+      'People', 'Inbox', 'Files', 'Meetings', 'Activity'
     ]);
     expect(screen.queryByRole('button', { name: 'Relationships' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Domains' })).toBeNull();

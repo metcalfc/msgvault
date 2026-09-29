@@ -264,7 +264,7 @@ test('keyboard publication ambiguity locks mutation, retries GET only, and repea
 
   await page.goBack();
   await expect(page.getByRole('heading', { name: 'Archive Person' })).toBeVisible();
-  // Back remounts the person page, so its Maintenance disclosure starts closed again.
+  // Back returns to the person's Maintenance tab.
   await page.getByRole('tab', { name: 'Maintenance' }).click();
   const repeatedHandoff = page.getByRole('button', { name: 'Review CardDAV conflict 42' });
   await repeatedHandoff.focus();

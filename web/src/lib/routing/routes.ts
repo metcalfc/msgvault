@@ -24,6 +24,10 @@ export const PERSON_TABS: readonly PersonTab[] = ['overview', 'timeline', 'files
 
 export type ActivitySection = 'sources' | 'operations' | 'deletions';
 
+/** How far back the Meetings list reaches. */
+export type MeetingWindow = '30d' | '90d' | 'all';
+export const MEETING_WINDOWS: readonly MeetingWindow[] = ['30d', '90d', 'all'];
+
 /** State fields the path and readable parameters carry for a workspace.
  * The explore JSON leaves them out so a link names each fact once. */
 const ROUTED_BY_WORKSPACE: Partial<Record<ExploreWorkspace, ReadonlyArray<keyof ExploreURLState>>> = {
@@ -32,6 +36,7 @@ const ROUTED_BY_WORKSPACE: Partial<Record<ExploreWorkspace, ReadonlyArray<keyof 
   relationships: ['relationshipFacet', 'relationshipTarget', 'personTab'],
   settings: ['settingsSection'],
   message: ['messageID'],
+  meetings: ['meetingID', 'meetingPerson', 'meetingSource', 'meetingSince'],
 };
 
 export function isRoutedField(workspace: ExploreWorkspace, field: keyof ExploreURLState): boolean {
@@ -42,7 +47,9 @@ export function isRoutedField(workspace: ExploreWorkspace, field: keyof ExploreU
 
 /** Query parameters the router owns. Anything else on the address (feature
  * flags, OAuth callbacks) is left alone. */
-export const ROUTE_PARAMETERS: readonly string[] = ['workspace', 'explore', 'mode', 'q', 'since', 'after', 'before', 'domain'];
+export const ROUTE_PARAMETERS: readonly string[] = [
+  'workspace', 'explore', 'mode', 'q', 'since', 'after', 'before', 'domain', 'person', 'account'
+];
 
 /** The workspace a bare `/` opens when no legacy parameter names one. */
 export const DEFAULT_WORKSPACE: ExploreWorkspace = 'directory';
@@ -129,6 +136,14 @@ export function routeForState(state: ExploreURLState, now: Date = new Date()): R
     }
     case 'message':
       return plain(typeof state.messageID === 'number' ? `/messages/${state.messageID}` : '/inbox');
+    case 'meetings': {
+      if (typeof state.meetingID === 'number') return plain(`/meetings/${state.meetingID}`);
+      const parameters: Array<[string, string]> = [];
+      if (state.meetingPerson) parameters.push(['person', state.meetingPerson]);
+      if (state.meetingSource) parameters.push(['account', state.meetingSource]);
+      if (state.meetingSince !== '30d') parameters.push(['since', state.meetingSince]);
+      return { pathname: '/meetings', parameters, routesDateBounds: false };
+    }
     default:
       return plain('/');
   }
@@ -188,6 +203,16 @@ export function stateFromRoute(pathname: string, parameters: URLSearchParams, no
       return { workspace: second === 'operations' || second === 'deletions' ? second : 'sources' };
     case 'settings':
       return { workspace: 'settings', settingsSection: second ?? '' };
+    case 'meetings': {
+      const since = parameters.get('since');
+      return {
+        workspace: 'meetings',
+        meetingID: positiveInteger(second) ?? null,
+        meetingPerson: parameters.get('person') ?? '',
+        meetingSource: parameters.get('account') ?? '',
+        meetingSince: MEETING_WINDOWS.includes(since as MeetingWindow) ? since : '30d',
+      };
+    }
     case 'messages': {
       const messageID = positiveInteger(second);
       return messageID === undefined ? { workspace: 'everything' } : { workspace: 'message', messageID };
@@ -241,6 +266,8 @@ export function routeTitle(state: ExploreURLState): string {
       return 'Settings';
     case 'message':
       return 'Message';
+    case 'meetings':
+      return typeof state.meetingID === 'number' ? 'Meeting' : 'Meetings';
     default:
       return 'msgvault';
   }

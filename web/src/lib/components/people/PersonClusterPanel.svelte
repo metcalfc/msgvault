@@ -77,6 +77,7 @@
         filesOpen={false}
         onFilesToggle={() => undefined}
         showViewToggle={false}
+        nameAsHeading={false}
         {client}
         {onAnnounce}
         capturePersonMergeContext={() => controller.personMergeContextSnapshot()}

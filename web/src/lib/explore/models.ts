@@ -37,7 +37,7 @@ import type {
   SourceIdentityResponse as GeneratedSourceIdentityResponse,
 } from '../api/generated/models';
 import type { SettingsNavigationAuthority } from '../carddav/navigation';
-import type { PersonTab } from '../routing/routes';
+import type { MeetingWindow, PersonTab } from '../routing/routes';
 
 export type EntryRow = GeneratedEntryRow;
 export type ExploreCacheUnavailable = GeneratedExploreCacheUnavailableResponse;
@@ -118,7 +118,8 @@ export type ExploreWorkspace =
   | 'sources'
   | 'deletions'
   | 'settings'
-  | 'message';
+  | 'message'
+  | 'meetings';
 export type OperationKind = GeneratedOperationKind;
 export type OperationLane = GeneratedOperationLane;
 export type OperationState = GeneratedOperationState;
@@ -204,6 +205,12 @@ export interface ExploreURLState {
   settingsSection: string;
   /** The message a `/messages/:id` page shows. */
   messageID: number | null;
+  /** The meeting (its message id) a `/meetings/:id` page shows. */
+  meetingID: number | null;
+  /** Meetings list filters: a participant id, a source id, and the window. */
+  meetingPerson: string;
+  meetingSource: string;
+  meetingSince: MeetingWindow;
   columns: ExploreColumn[];
   columnWidths: Partial<Record<ExploreColumn, number>>;
   activeRow: string | null;

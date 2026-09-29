@@ -29,7 +29,8 @@ const currentState: ExploreURLState = {
   operationLane: '', operationKind: '', operationState: '',
   operationStartedFrom: '', operationStartedBefore: '', operationRunID: null, operationStatus: '',
   settingsAuthority: '', settingsSection: '', personTab: 'overview', messageID: null,
-  directoryHasName: false, peopleSaved: ''
+  directoryHasName: false, peopleSaved: '',
+  meetingID: null, meetingPerson: '', meetingSource: '', meetingSince: '30d'
 };
 
 function savedView(overrides: Record<string, unknown> = {}) {

@@ -112,7 +112,11 @@ const RESTORATION_INVALIDATING_FIELDS = new Set<keyof ExploreURLState>([
   'operationStatus',
   'settingsAuthority',
   'settingsSection',
-  'messageID'
+  'messageID',
+  'meetingID',
+  'meetingPerson',
+  'meetingSource',
+  'meetingSince'
 ]);
 const FILE_MIME_FAMILIES = new Set<FileMIMEFamily>([
   'image', 'pdf', 'audio', 'video', 'text', 'document', 'archive', 'other'
@@ -204,6 +208,10 @@ export const defaultExploreURLState: ExploreURLState = {
   settingsAuthority: '',
   settingsSection: '',
   messageID: null,
+  meetingID: null,
+  meetingPerson: '',
+  meetingSource: '',
+  meetingSince: '30d',
   columns: [...DEFAULT_EXPLORE_COLUMNS],
   columnWidths: {},
   activeRow: null,
@@ -435,7 +443,7 @@ function normalize(value: unknown): ExploreURLState {
   const workspace = legacyFacet ? 'relationships' : value.workspace === 'everything' || value.workspace === 'directory' || value.workspace === 'directory_review' || value.workspace === 'settings' ||
     value.workspace === 'files' || value.workspace === 'relationships' ||
     value.workspace === 'saved_views' || value.workspace === 'sources' ||
-    value.workspace === 'deletions' || value.workspace === 'operations' ||
+    value.workspace === 'deletions' || value.workspace === 'operations' || value.workspace === 'meetings' ||
     (value.workspace === 'message' && directoryPersonID(value.messageID) !== null)
     ? value.workspace
     : DEFAULT_WORKSPACE;
@@ -552,6 +560,10 @@ function normalize(value: unknown): ExploreURLState {
     settingsAuthority: normalizeSettingsNavigationAuthority(value.settingsAuthority),
     settingsSection: settingsSection(value.settingsSection),
     messageID: directoryPersonID(value.messageID),
+    meetingID: directoryPersonID(value.meetingID),
+    meetingPerson: typeof value.meetingPerson === 'string' && /^[1-9]\d*$/.test(value.meetingPerson) ? value.meetingPerson : '',
+    meetingSource: typeof value.meetingSource === 'string' && /^[1-9]\d*$/.test(value.meetingSource) ? value.meetingSource : '',
+    meetingSince: value.meetingSince === '90d' || value.meetingSince === 'all' ? value.meetingSince : '30d',
     columns: columns(value.columns),
     columnWidths: widths(value.columnWidths),
     activeRow:
@@ -609,10 +621,14 @@ const WORKSPACE_FIELDS: Partial<Record<keyof ExploreURLState, ReadonlyArray<Expl
   settingsSection: ['settings'],
   personTab: ['directory', 'relationships'],
   messageID: ['message'],
+  meetingID: ['meetings'],
+  meetingPerson: ['meetings'],
+  meetingSource: ['meetings'],
+  meetingSince: ['meetings'],
   dateBoundsChosen: ['everything']
 };
 const ARCHIVE_PREDICATE_FIELDS = new Set<keyof ExploreURLState>(['filters', 'groupingChain', 'presentation', 'sort']);
-const FILTERLESS_WORKSPACES = new Set<ExploreWorkspace>(['directory', 'directory_review', 'settings', 'message', 'saved_views']);
+const FILTERLESS_WORKSPACES = new Set<ExploreWorkspace>(['directory', 'directory_review', 'settings', 'message', 'saved_views', 'meetings']);
 // Keyboard focus and scroll position live only in browser history.
 const SESSION_ONLY_FIELDS = new Set<keyof ExploreURLState>(['activeRow', 'scrollAnchor']);
 

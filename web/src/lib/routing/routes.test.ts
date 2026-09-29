@@ -31,6 +31,8 @@ describe('readable routes', () => {
     ['/settings', { workspace: 'settings' }],
     ['/settings/search', { workspace: 'settings', settingsSection: 'search' }],
     ['/messages/42001', { workspace: 'message', messageID: 42001 }],
+    ['/meetings', { workspace: 'meetings', meetingID: null, meetingSince: '30d' }],
+    ['/meetings/77', { workspace: 'meetings', meetingID: 77 }],
   ])('names %s by its path and reads it back', (pathname, state) => {
     const url = address(state);
     expect(url.pathname).toBe(pathname);
@@ -42,6 +44,14 @@ describe('readable routes', () => {
     expect(parseExploreURLState('', '/people/contacts')).toMatchObject({ workspace: 'directory', peopleSaved: 'unsaved' });
     expect(parseExploreURLState('?workspace=relationships', '/')).toMatchObject({ workspace: 'directory', peopleSaved: 'unsaved' });
     expect(address({ workspace: 'directory', peopleSaved: 'unsaved' }).pathname).toBe('/people');
+  });
+
+  it('names Meetings filters with readable parameters', () => {
+    const url = address({ workspace: 'meetings', meetingPerson: '21', meetingSource: '3', meetingSince: '90d' });
+    expect(`${url.pathname}${url.search}`).toBe('/meetings?person=21&account=3&since=90d');
+    expect(parseExploreURLState(url.search, url.pathname)).toMatchObject({
+      workspace: 'meetings', meetingPerson: '21', meetingSource: '3', meetingSince: '90d', meetingID: null,
+    });
   });
 
   it('names a domain with a parameter so the daemon serves the app for it', () => {
