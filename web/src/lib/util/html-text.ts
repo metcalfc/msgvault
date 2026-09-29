@@ -12,8 +12,11 @@ export function decodeHTMLEntities(text: string): string {
 }
 
 /** True when a plain body carries markup worth rendering rather than
- * showing as literal angle brackets — an opening or closing tag, or a
- * character reference. */
+ * showing as literal angle brackets: a matched open/close tag pair, a
+ * block-level or void tag, or a hyperlink. A bare "<alice@example.test>"
+ * or an "R&amp;D" in prose is plain text and stays in a <pre>. */
 export function looksLikeHTML(text: string): boolean {
-  return /<\/?[a-z][^>]*>/i.test(text) || /&(?:[a-z]+|#\d+|#x[0-9a-f]+);/i.test(text);
+  return /<([a-z][a-z0-9]*)\b[^>]*>[\s\S]*?<\/\1\s*>/i.test(text)
+    || /<(?:p|br|div|hr|img|li|ul|ol|table|tr|td|th|blockquote|h[1-6])\b[^>]*\/?>/i.test(text)
+    || /<a\s[^>]*href\s*=/i.test(text);
 }

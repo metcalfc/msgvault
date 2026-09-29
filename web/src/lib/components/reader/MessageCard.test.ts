@@ -50,6 +50,15 @@ describe('MessageCard', () => {
     expect(plain.container.querySelector('pre')?.textContent).toBe('Bring the deck');
     plain.unmount();
 
+    // Angle-bracketed addresses and entities in prose are not markup: the
+    // newlines and the bracketed text must survive.
+    const prose = render(MessageCard, {
+      props: { message: detail({ messageType: 'calendar_event', body: 'Ask <alice@example.test>\nabout R&amp;D' }), expanded: true }
+    });
+    expect(prose.container.querySelector('iframe')).toBeNull();
+    expect(prose.container.querySelector('pre')?.textContent).toBe('Ask <alice@example.test>\nabout R&amp;D');
+    prose.unmount();
+
     const text = render(MessageCard, {
       props: { message: detail({ messageType: 'calendar_event', body: '<p>Agenda</p>' }), expanded: true, viewMode: 'text' }
     });

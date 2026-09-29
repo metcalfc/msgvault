@@ -15,11 +15,15 @@ describe('decodeHTMLEntities', () => {
 });
 
 describe('looksLikeHTML', () => {
-  it('detects tags and character references but not prose with angle brackets', () => {
+  it('detects tag pairs, block tags, and links but not prose with angle brackets or entities', () => {
     expect(looksLikeHTML('<p>Agenda</p>')).toBe(true);
+    expect(looksLikeHTML('line one<br>line two')).toBe(true);
+    expect(looksLikeHTML('<div class="x">block')).toBe(true);
     expect(looksLikeHTML('Join at <a href="https://example.test">the link</a>')).toBe(true);
-    expect(looksLikeHTML('Tom &amp; Jerry')).toBe(true);
+    expect(looksLikeHTML('Contact <alice@example.test> for R&amp;D questions')).toBe(false);
+    expect(looksLikeHTML('Tom &amp; Jerry')).toBe(false);
     expect(looksLikeHTML('if a < b then b > a')).toBe(false);
+    expect(looksLikeHTML('<word> in brackets')).toBe(false);
     expect(looksLikeHTML('plain description')).toBe(false);
   });
 });
