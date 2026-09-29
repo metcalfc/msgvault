@@ -33,6 +33,14 @@ export type ListDirectoryPeopleParams = {
    */
   primary_channel?: string;
   /**
+   * true keeps only people with a non-blank display name; false keeps only unnamed people
+   */
+  has_name?: boolean;
+  /**
+   * true keeps only people with archive activity (a last contact from messages of their bound participants, the same fact as contact_state=active); false keeps only people without it, such as imported contact-only records
+   */
+  has_activity?: boolean;
+  /**
    * Return people contacted at or after this RFC3339 timestamp
    */
   last_contact_after?: string;

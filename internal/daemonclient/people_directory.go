@@ -27,6 +27,8 @@ func (b *PeopleBrowser) ListDirectoryPeople(
 			Category:          optionalString(query.Category),
 			Organization:      optionalString(query.Organization),
 			PrimaryChannel:    optionalString(query.PrimaryChannel),
+			HasName:           query.HasName,
+			HasActivity:       query.HasActivity,
 			LastContactAfter:  query.LastContactAfter,
 			LastContactBefore: query.LastContactBefore,
 		},
@@ -61,6 +63,11 @@ func (b *PeopleBrowser) ListDirectoryPeople(
 			LastContactAt:  copyTime(person.LastContactAt),
 			Categories:     append([]string{}, person.Categories...),
 			Organizations:  append([]string{}, person.Organizations...),
+		}
+		if person.PrimaryIdentifier != nil {
+			page.People[i].PrimaryIdentifier = &store.PrimaryIdentifier{
+				Kind: string(person.PrimaryIdentifier.Kind), Value: person.PrimaryIdentifier.Value,
+			}
 		}
 	}
 	return page, nil

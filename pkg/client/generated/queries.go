@@ -760,6 +760,12 @@ type ListDirectoryPeopleQuery struct {
 	// PrimaryChannel Primary communication channel
 	PrimaryChannel *string `json:"primary_channel,omitempty"`
 
+	// HasName true keeps only people with a non-blank display name; false keeps only unnamed people
+	HasName *bool `json:"has_name,omitempty"`
+
+	// HasActivity true keeps only people with archive activity (a last contact from messages of their bound participants, the same fact as contact_state=active); false keeps only people without it, such as imported contact-only records
+	HasActivity *bool `json:"has_activity,omitempty"`
+
 	// LastContactAfter Return people contacted at or after this RFC3339 timestamp
 	LastContactAfter *time.Time `json:"last_contact_after,omitempty"`
 

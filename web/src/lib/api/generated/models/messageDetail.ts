@@ -11,6 +11,8 @@ export interface MessageDetail {
   body_omitted?: boolean;
   cc?: string[];
   conversation_id?: number;
+  /** The message's conversation type as stored (for example email_thread, direct_chat, group_chat, or channel). Returned by GET /api/v1/messages/{id}; omitted when the message has no conversation. */
+  conversation_type?: string;
   deleted_at?: string;
   from: string;
   from_email?: string;

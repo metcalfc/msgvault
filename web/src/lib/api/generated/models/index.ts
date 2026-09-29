@@ -662,6 +662,8 @@ export * from "./personTracking";
 export * from "./pingInfo";
 export * from "./pinState";
 export * from "./previewCardDAVPublicationPathParameters";
+export * from "./primaryIdentifier";
+export * from "./primaryIdentifierKind";
 export * from "./progress";
 export * from "./projectionRef";
 export * from "./provenance";

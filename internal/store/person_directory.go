@@ -44,6 +44,14 @@ type DirectoryPeopleQuery struct {
 	LastContactAfter  *time.Time `json:"last_contact_after,omitempty"`
 	LastContactBefore *time.Time `json:"last_contact_before,omitempty"`
 	Sort              string     `json:"sort,omitempty"`
+	// HasName keeps only people with (true) or without (false) a non-blank
+	// display name. Nil applies no name filter.
+	HasName *bool `json:"has_name,omitempty"`
+	// HasActivity keeps only people with (true) or without (false) archive
+	// activity: a last-contact time derived from messages of their bound
+	// participants, the same fact ContactState "active" reports. Nil applies
+	// no activity filter.
+	HasActivity *bool `json:"has_activity,omitempty"`
 }
 
 // DirectoryPersonSummary is the non-sensitive, directory-sized projection of
@@ -58,6 +66,9 @@ type DirectoryPersonSummary struct {
 	LastContactAt  *time.Time `json:"last_contact_at,omitempty"`
 	Categories     []string   `json:"categories" nullable:"false"`
 	Organizations  []string   `json:"organizations" nullable:"false"`
+	// PrimaryIdentifier is absent when the person has no email address,
+	// phone number, or handle. See hydrateDirectoryPrimaryIdentifiersTx.
+	PrimaryIdentifier *PrimaryIdentifier `json:"primary_identifier,omitempty" doc:"The one identifier a list row shows: the best email address, else phone number, else handle. Within a kind, the person's current curated contact points win in vCard preference order (pref, then ordinal), then addresses observed on bound participants (lowest participant ID first; the participant's own email address or phone number before its stored identifier rows, primary rows first). Absent when the person has none."`
 }
 
 // DirectoryPeoplePage is one stable keyset page of directory people.
@@ -78,6 +89,8 @@ type normalizedDirectoryPeopleQuery struct {
 	lastContactAfter  string
 	lastContactBefore string
 	sort              string
+	hasName           string
+	hasActivity       string
 	fingerprint       string
 }
 
@@ -150,6 +163,8 @@ func normalizeDirectoryPeopleQuery(query DirectoryPeopleQuery) (normalizedDirect
 	if normalized.contactState != "" && normalized.contactState != "active" && normalized.contactState != "inactive" {
 		return normalized, fmt.Errorf("%w: unknown contact state", ErrInvalidDirectoryQuery)
 	}
+	normalized.hasName = directoryBoolFilter(query.HasName)
+	normalized.hasActivity = directoryBoolFilter(query.HasActivity)
 	normalized.terms = directoryTokens(query.Query)
 	normalized.query = strings.Join(normalized.terms, " ")
 	normalized.limit = query.Limit
@@ -168,12 +183,17 @@ func normalizeDirectoryPeopleQuery(query DirectoryPeopleQuery) (normalizedDirect
 		LastContactAfter  string `json:"last_contact_after"`
 		LastContactBefore string `json:"last_contact_before"`
 		Sort              string `json:"sort"`
+		// Omitted when unset so cursors issued without these filters keep
+		// their fingerprint.
+		HasName     string `json:"has_name,omitempty"`
+		HasActivity string `json:"has_activity,omitempty"`
 	}{
 		Query: normalized.query, ContactState: normalized.contactState,
 		Category: normalized.category, Organization: normalized.organization,
 		PrimaryChannel:   normalized.primaryChannel,
 		LastContactAfter: normalized.lastContactAfter, LastContactBefore: normalized.lastContactBefore,
-		Sort: normalized.sort,
+		Sort:    normalized.sort,
+		HasName: normalized.hasName, HasActivity: normalized.hasActivity,
 	}, json.Deterministic(true))
 	if err != nil {
 		return normalized, fmt.Errorf("encode directory filters: %w", err)
@@ -181,6 +201,13 @@ func normalizeDirectoryPeopleQuery(query DirectoryPeopleQuery) (normalizedDirect
 	digest := sha256.Sum256(encoded)
 	normalized.fingerprint = hex.EncodeToString(digest[:])
 	return normalized, nil
+}
+
+func directoryBoolFilter(value *bool) string {
+	if value == nil {
+		return ""
+	}
+	return strconv.FormatBool(*value)
 }
 
 func (s *Store) directoryPeoplePageContext(
@@ -289,6 +316,20 @@ func directoryCandidateProjectionSQL(query normalizedDirectoryPeopleQuery) (stri
 	}
 	if query.primaryChannel != "" {
 		where, filterArgs = append(where, "dp.primary_channel = ?"), append(filterArgs, query.primaryChannel)
+	}
+	// An unnamed person's projected order key encodes the empty normalized
+	// name, so the name filter reads the indexed projection.
+	switch query.hasName {
+	case "true":
+		where, filterArgs = append(where, "dp.order_key <> ?"), append(filterArgs, directoryKey(""))
+	case "false":
+		where, filterArgs = append(where, "dp.order_key = ?"), append(filterArgs, directoryKey(""))
+	}
+	switch query.hasActivity {
+	case "true":
+		where, filterArgs = append(where, "dp.contact_state = ?"), append(filterArgs, "active")
+	case "false":
+		where, filterArgs = append(where, "dp.contact_state = ?"), append(filterArgs, "inactive")
 	}
 	if query.lastContactAfter != "" {
 		where, filterArgs = append(where, "dp.last_contact_key >= ?"), append(filterArgs, query.lastContactAfter)
@@ -605,11 +646,14 @@ func (s *Store) hydrateDirectoryPeopleTx(ctx context.Context, tx *loggedTx, cand
 		AND person_id IN (`+placeholders+`)`, ids, byID, candidates, true); err != nil {
 		return err
 	}
-	return hydrateDirectoryValuesTx(ctx, tx, `SELECT employment.person_id, organization.name
+	if err := hydrateDirectoryValuesTx(ctx, tx, `SELECT employment.person_id, organization.name
 		FROM employments employment JOIN organizations organization ON organization.id = employment.organization_id
 		WHERE `+s.dialect.BoolTrueExpr("employment.is_current")+`
 		  AND organization.merged_into_id IS NULL AND organization.retired_at IS NULL
-		  AND employment.person_id IN (`+placeholders+`)`, ids, byID, candidates, false)
+		  AND employment.person_id IN (`+placeholders+`)`, ids, byID, candidates, false); err != nil {
+		return err
+	}
+	return s.hydrateDirectoryPrimaryIdentifiersTx(ctx, tx, placeholders, ids, byID, candidates)
 }
 
 func hydrateDirectoryValuesTx(ctx context.Context, tx *loggedTx, query string, args []any, byID map[int64]int, candidates []directoryPersonCandidate, categories bool) error {

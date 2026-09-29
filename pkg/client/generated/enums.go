@@ -1914,6 +1914,25 @@ func (p PersonSplitResultCacheState) Validate() error {
 	}
 }
 
+// PrimaryIdentifierKind Identifier class: email, phone, or handle (any other username or service identifier)
+type PrimaryIdentifierKind string
+
+const (
+	Handle                     PrimaryIdentifierKind = "handle"
+	PrimaryIdentifierKindEmail PrimaryIdentifierKind = "email"
+	PrimaryIdentifierKindPhone PrimaryIdentifierKind = "phone"
+)
+
+// Validate checks if the PrimaryIdentifierKind value is valid
+func (p PrimaryIdentifierKind) Validate() error {
+	switch p {
+	case Handle, PrimaryIdentifierKindEmail, PrimaryIdentifierKindPhone:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid PrimaryIdentifierKind value, got: %v", p))
+	}
+}
+
 type ProvenanceDirections string
 
 const (

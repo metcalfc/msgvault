@@ -168,6 +168,7 @@ func generatedDetailToAPIMessage(m *generated.MessageDetail) *store.APIMessage {
 		Body:            m.Body,
 		Attachments:     apiAttachmentsFromGenerated(m.Attachments),
 	}
+	msg.ConversationType = stringValue(m.ConversationType)
 	return msg
 }
 

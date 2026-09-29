@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/msgvault/internal/store"
 )
 
 // TestRelationshipsRanksByReciprocityAndGatesNewsletters builds an owner
@@ -792,4 +793,60 @@ func TestRelationshipsParticipantFilterExpandsClusters(t *testing.T) {
 	requirements.Len(byAlias.Rows, 1)
 	assertions.Equal(byCanonical.Rows[0].Signals.SentCount, byAlias.Rows[0].Signals.SentCount,
 		"filtering by the alias ID must agree with the canonical ID")
+}
+
+// TestRelationshipsPrimaryIdentifierPrefersEmailThenPhoneThenHandle pins the
+// row identifier: any member's email beats a phone on a lower-ID member, a
+// phone beats a handle, a handle is the last resort, and among emails the
+// lowest participant ID wins. Both the unfiltered rollup and the filtered
+// reduction serve the same identifier.
+func TestRelationshipsPrimaryIdentifierPrefersEmailThenPhoneThenHandle(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	b := NewTestDataBuilder(t)
+	srcID := b.AddSource("owner@example.com")
+	ownerID := b.AddParticipant("owner@example.com", "example.com", "Owner")
+	b.AddOwnerParticipant(srcID, ownerID)
+
+	mixedPhone := b.AddPhoneParticipant("+15550100030", "Mixed Person")
+	mixedEmail := b.AddParticipant("mixed@example.com", "example.com", "")
+	b.LinkCluster(mixedPhone, mixedEmail)
+
+	twoEmailsFirst := b.AddParticipant("first@example.com", "example.com", "Two Emails")
+	twoEmailsSecond := b.AddParticipant("second@example.com", "example.com", "")
+	b.LinkCluster(twoEmailsFirst, twoEmailsSecond)
+
+	phoneOnly := b.AddPhoneParticipant("+15550100031", "Phone Person")
+	b.AddParticipantIdentifier(phoneOnly, "whatsapp", "phone-person-chat-id", "", true)
+
+	handleOnly := b.AddParticipant("", "", "Handle Person")
+	b.AddParticipantIdentifier(handleOnly, "slack", "synthetic.handle", "Handle Person <synthetic.handle>", true)
+
+	now := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+	for _, counterpartID := range []int64{mixedPhone, twoEmailsSecond, phoneOnly, handleOnly} {
+		msgID := b.AddMessage(MessageOpt{SourceID: srcID, IsFromMe: true, SentAt: now.AddDate(0, 0, -1)})
+		b.AddFrom(msgID, ownerID, "Owner")
+		b.AddTo(msgID, counterpartID, "")
+	}
+
+	engine := b.BuildEngine()
+	want := map[int64]*store.PrimaryIdentifier{
+		mixedPhone:     {Kind: store.PrimaryIdentifierEmail, Value: "mixed@example.com"},
+		twoEmailsFirst: {Kind: store.PrimaryIdentifierEmail, Value: "first@example.com"},
+		phoneOnly:      {Kind: store.PrimaryIdentifierPhone, Value: "+15550100031"},
+		handleOnly:     {Kind: store.PrimaryIdentifierHandle, Value: "synthetic.handle"},
+	}
+	for name, request := range map[string]RelationshipsRequest{
+		"unfiltered": {Now: now, Limit: 10},
+		"filtered":   {Now: now, Limit: 10, Context: Context{SourceIDs: []int64{srcID}}},
+	} {
+		result, err := engine.Relationships(context.Background(), request)
+		require.NoError(err, name)
+		got := make(map[int64]*store.PrimaryIdentifier, len(result.Rows))
+		for _, row := range result.Rows {
+			got[row.CanonicalID] = row.PrimaryIdentifier
+		}
+		assert.Equal(want, got, name)
+	}
 }

@@ -19,6 +19,13 @@ import (
 
 func seedConversation(t *testing.T, messageType string, count int) (*Server, int64, []int64) {
 	t.Helper()
+	st, conversationID, ids := seedConversationStore(t, messageType, count)
+	srv := NewServer(&config.Config{Server: config.ServerConfig{APIPort: 8080}}, st, nil, testLogger())
+	return srv, conversationID, ids
+}
+
+func seedConversationStore(t *testing.T, messageType string, count int) (*store.Store, int64, []int64) {
+	t.Helper()
 	st := testutil.NewTestStore(t)
 	source, err := st.GetOrCreateSource("test", "archive@example.com")
 	require.NoError(t, err)
@@ -49,9 +56,7 @@ func seedConversation(t *testing.T, messageType string, count int) (*Server, int
 			sql.NullString{String: fmt.Sprintf("<p>Body %02d</p>", i), Valid: true},
 		))
 	}
-
-	srv := NewServer(&config.Config{Server: config.ServerConfig{APIPort: 8080}}, st, nil, testLogger())
-	return srv, conversationID, ids
+	return st, conversationID, ids
 }
 
 func TestConversationWindowIsAnchoredBoundedAndChronological(t *testing.T) {

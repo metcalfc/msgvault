@@ -121,7 +121,7 @@
   // the classification mirrors the daemon's identityindex.IsChat.
   const chatThread = $derived(selection?.kind === 'entry'
     ? isChatEntry(selection.row.message_type, selection.row.conversation_type)
-    : archiveMessage ? isChatEntry(archiveMessage.message_type, undefined) : false);
+    : archiveMessage ? isChatEntry(archiveMessage.message_type, archiveMessage.conversation_type) : false);
   const conversationID = $derived(archiveMessage?.conversation_id ?? conversationRow?.conversation_id);
   // The thread opens immediately at the entry's own anchor; an explicit
   // anchor (in-thread navigation restored from the URL) overrides it.

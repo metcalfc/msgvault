@@ -372,6 +372,24 @@ func directoryPeopleQuery(values url.Values) (store.DirectoryPeopleQuery, error)
 		}
 		*field.target = &parsed
 	}
+	for _, field := range []struct {
+		name   string
+		target **bool
+	}{
+		{name: "has_name", target: &query.HasName},
+		{name: "has_activity", target: &query.HasActivity},
+	} {
+		value := strings.TrimSpace(values.Get(field.name))
+		if value == "" {
+			continue
+		}
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			return store.DirectoryPeopleQuery{}, newParamError(field.name,
+				fmt.Sprintf("query parameter %q must be a boolean, got %q", field.name, value))
+		}
+		*field.target = &parsed
+	}
 	limit := strings.TrimSpace(values.Get("limit"))
 	if limit == "" {
 		return query, nil
@@ -515,6 +533,9 @@ func addDirectoryPeopleParameters(operation *huma.Operation) {
 		queryStringParam("category", "Current person category", false),
 		queryStringParam("organization", "Current organization", false),
 		queryStringParam("primary_channel", "Primary communication channel", false),
+		queryBooleanParam("has_name", "true keeps only people with a non-blank display name; false keeps only unnamed people"),
+		queryBooleanParam("has_activity", "true keeps only people with archive activity (a last contact from messages of their bound participants, "+
+			"the same fact as contact_state=active); false keeps only people without it, such as imported contact-only records"),
 		lastContactAfter,
 		lastContactBefore,
 		sortParam,

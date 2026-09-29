@@ -1189,12 +1189,12 @@ describe('AppShell', () => {
     state.destroy();
   });
 
-  it('opens a chat message with a fallback message type by the conversation row the explore query names', async () => {
+  it('opens a chat message with a fallback message type by its conversation, from the detail conversation_type', async () => {
     window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
       workspace: 'directory', directoryPersonID: 7
     }))}`);
     const message = {
-      id: 42, source_id: 3, source_message_id: '', conversation_id: 71, subject: '', message_type: '',
+      id: 42, source_id: 3, source_message_id: '', conversation_id: 71, conversation_type: 'group_chat', subject: '', message_type: '',
       from: 'sender@example.test', to: ['reader@example.test'], sent_at: '2026-08-01T12:00:00Z',
       snippet: 'ping', labels: [], has_attachments: false, size_bytes: 4, body: 'ping', attachments: []
     };
@@ -1221,7 +1221,7 @@ describe('AppShell', () => {
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
 
     await fireEvent.click(await screen.findByRole('button', { name: /^Last contact / }));
-    // A local guess would have keyed this as source:3:message:42 and never found a row.
+    // Without conversation_type the '' message type would key as source:3:message:42 and never find a row.
     await waitFor(() => expect(state.current.selectedRow).toBe('source:3:conversation:71'));
     expect(state.current.conversationAnchor).toBe('42');
     expect(await screen.findByRole('complementary', { name: 'Reading pane: Group chat' })).toBeDefined();

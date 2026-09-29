@@ -324,6 +324,8 @@ type MessageDetail struct {
 	// GET /api/v1/messages/{id}.
 	BodyOmitted bool             `json:"body_omitted,omitzero"`
 	Attachments []AttachmentInfo `json:"attachments"`
+	// ConversationType is set by the single-message detail route.
+	ConversationType string `json:"conversation_type,omitempty" doc:"The message's conversation type as stored (for example email_thread, direct_chat, group_chat, or channel). Returned by GET /api/v1/messages/{id}; omitted when the message has no conversation."`
 }
 
 // AttachmentInfo represents attachment metadata in API responses.
@@ -559,6 +561,8 @@ func messageDetailFromQuery(qMsg *query.MessageDetail) MessageDetail {
 		Body:            body,
 		BodyHTML:        qMsg.BodyHTML,
 		Attachments:     attachments,
+
+		ConversationType: qMsg.ConversationType,
 	}
 }
 
@@ -762,10 +766,11 @@ func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	detail := MessageDetail{
-		MessageSummary: toMessageSummary(*msg),
-		Body:           msg.Body,
-		BodyHTML:       msg.BodyHTML,
-		IsFromMe:       msg.IsFromMe,
+		MessageSummary:   toMessageSummary(*msg),
+		Body:             msg.Body,
+		BodyHTML:         msg.BodyHTML,
+		IsFromMe:         msg.IsFromMe,
+		ConversationType: msg.ConversationType,
 	}
 
 	attachments := make([]AttachmentInfo, 0, len(msg.Attachments))

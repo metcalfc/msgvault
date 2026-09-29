@@ -2743,18 +2743,39 @@ func (d DirectoryPeopleResponse) Validate() error {
 }
 
 type DirectoryPersonSummary struct {
-	Categories     []string   `json:"categories" validate:"required"`
-	ContactState   string     `json:"contact_state" validate:"required"`
-	DisplayName    *string    `json:"display_name,omitzero"`
-	ID             int64      `json:"id"`
-	LastContactAt  *time.Time `json:"last_contact_at,omitempty"`
-	Organizations  []string   `json:"organizations" validate:"required"`
-	PrimaryChannel *string    `json:"primary_channel,omitzero"`
-	Revision       int64      `json:"revision"`
+	Categories        []string           `json:"categories" validate:"required"`
+	ContactState      string             `json:"contact_state" validate:"required"`
+	DisplayName       *string            `json:"display_name,omitzero"`
+	ID                int64              `json:"id"`
+	LastContactAt     *time.Time         `json:"last_contact_at,omitempty"`
+	Organizations     []string           `json:"organizations" validate:"required"`
+	PrimaryChannel    *string            `json:"primary_channel,omitzero"`
+	PrimaryIdentifier *PrimaryIdentifier `json:"primary_identifier,omitempty"`
+	Revision          int64              `json:"revision"`
 }
 
 func (d DirectoryPersonSummary) Validate() error {
-	return runtime.ConvertValidatorError(typesValidator.Struct(d))
+	var errors runtime.ValidationErrors
+	if err := typesValidator.Var(d.Categories, "required"); err != nil {
+		errors = errors.Append("Categories", err)
+	}
+	if err := typesValidator.Var(d.ContactState, "required"); err != nil {
+		errors = errors.Append("ContactState", err)
+	}
+	if err := typesValidator.Var(d.Organizations, "required"); err != nil {
+		errors = errors.Append("Organizations", err)
+	}
+	if d.PrimaryIdentifier != nil {
+		if v, ok := any(d.PrimaryIdentifier).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("PrimaryIdentifier", err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
 }
 
 type DiscoverError struct {
@@ -5577,30 +5598,33 @@ type MergePersonRequest struct {
 }
 
 type MessageDetail struct {
-	Attachments     []AttachmentInfo `json:"attachments" validate:"required"`
-	Bcc             []string         `json:"bcc,omitempty"`
-	Body            string           `json:"body" validate:"required"`
-	BodyHTML        *string          `json:"body_html,omitzero"`
-	BodyOmitted     *bool            `json:"body_omitted,omitempty"`
-	Cc              []string         `json:"cc,omitempty"`
-	ConversationID  *int64           `json:"conversation_id,omitempty"`
-	DeletedAt       *string          `json:"deleted_at,omitzero"`
-	From            string           `json:"from" validate:"required"`
-	FromEmail       *string          `json:"from_email,omitzero"`
-	FromName        *string          `json:"from_name,omitzero"`
-	FromPhone       *string          `json:"from_phone,omitzero"`
-	HasAttachments  bool             `json:"has_attachments"`
-	ID              int64            `json:"id"`
-	IsFromMe        *bool            `json:"is_from_me,omitempty"`
-	Labels          []string         `json:"labels" validate:"required"`
-	MessageType     *string          `json:"message_type,omitzero"`
-	SentAt          string           `json:"sent_at" validate:"required"`
-	SizeBytes       int64            `json:"size_bytes"`
-	Snippet         string           `json:"snippet" validate:"required"`
-	SourceID        *int64           `json:"source_id,omitempty"`
-	SourceMessageID *string          `json:"source_message_id,omitzero"`
-	Subject         string           `json:"subject" validate:"required"`
-	To              []string         `json:"to" validate:"required"`
+	Attachments    []AttachmentInfo `json:"attachments" validate:"required"`
+	Bcc            []string         `json:"bcc,omitempty"`
+	Body           string           `json:"body" validate:"required"`
+	BodyHTML       *string          `json:"body_html,omitzero"`
+	BodyOmitted    *bool            `json:"body_omitted,omitempty"`
+	Cc             []string         `json:"cc,omitempty"`
+	ConversationID *int64           `json:"conversation_id,omitempty"`
+
+	// ConversationType The message's conversation type as stored (for example email_thread, direct_chat, group_chat, or channel). Returned by GET /api/v1/messages/{id}; omitted when the message has no conversation.
+	ConversationType *string  `json:"conversation_type,omitzero"`
+	DeletedAt        *string  `json:"deleted_at,omitzero"`
+	From             string   `json:"from" validate:"required"`
+	FromEmail        *string  `json:"from_email,omitzero"`
+	FromName         *string  `json:"from_name,omitzero"`
+	FromPhone        *string  `json:"from_phone,omitzero"`
+	HasAttachments   bool     `json:"has_attachments"`
+	ID               int64    `json:"id"`
+	IsFromMe         *bool    `json:"is_from_me,omitempty"`
+	Labels           []string `json:"labels" validate:"required"`
+	MessageType      *string  `json:"message_type,omitzero"`
+	SentAt           string   `json:"sent_at" validate:"required"`
+	SizeBytes        int64    `json:"size_bytes"`
+	Snippet          string   `json:"snippet" validate:"required"`
+	SourceID         *int64   `json:"source_id,omitempty"`
+	SourceMessageID  *string  `json:"source_message_id,omitzero"`
+	Subject          string   `json:"subject" validate:"required"`
+	To               []string `json:"to" validate:"required"`
 }
 
 func (m MessageDetail) Validate() error {
@@ -10057,6 +10081,30 @@ type PingInfo struct {
 	Version *string `json:"version,omitzero"`
 }
 
+type PrimaryIdentifier struct {
+	// Kind Identifier class: email, phone, or handle (any other username or service identifier)
+	Kind PrimaryIdentifierKind `json:"kind" validate:"required"`
+
+	// Value The identifier as stored, suitable for display
+	Value string `json:"value" validate:"required"`
+}
+
+func (p PrimaryIdentifier) Validate() error {
+	var errors runtime.ValidationErrors
+	if v, ok := any(p.Kind).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("Kind", err)
+		}
+	}
+	if err := typesValidator.Var(p.Value, "required"); err != nil {
+		errors = errors.Append("Value", err)
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
 type Progress struct {
 	Done  int64 `json:"done"`
 	Total int64 `json:"total"`
@@ -10371,12 +10419,13 @@ func (r RelationshipReviewsResponse) Validate() error {
 }
 
 type RelationshipRow struct {
-	CanonicalID  int64               `json:"canonical_id"`
-	DisplayLabel string              `json:"display_label" validate:"required"`
-	LastAt       time.Time           `json:"last_at" validate:"required"`
-	MemberIds    []int64             `json:"member_ids" validate:"required"`
-	Score        float64             `json:"score"`
-	Signals      RelationshipSignals `json:"signals"`
+	CanonicalID       int64               `json:"canonical_id"`
+	DisplayLabel      string              `json:"display_label" validate:"required"`
+	LastAt            time.Time           `json:"last_at" validate:"required"`
+	MemberIds         []int64             `json:"member_ids" validate:"required"`
+	PrimaryIdentifier *PrimaryIdentifier  `json:"primary_identifier,omitempty"`
+	Score             float64             `json:"score"`
+	Signals           RelationshipSignals `json:"signals"`
 }
 
 func (r RelationshipRow) Validate() error {
@@ -10389,6 +10438,13 @@ func (r RelationshipRow) Validate() error {
 	}
 	if err := typesValidator.Var(r.MemberIds, "required"); err != nil {
 		errors = errors.Append("MemberIds", err)
+	}
+	if r.PrimaryIdentifier != nil {
+		if v, ok := any(r.PrimaryIdentifier).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("PrimaryIdentifier", err)
+			}
+		}
 	}
 	if v, ok := any(r.Signals).(runtime.Validator); ok {
 		if err := v.Validate(); err != nil {

@@ -139,6 +139,7 @@ func TestDirectoryPeopleHTTPMapsEveryQueryParameter(t *testing.T) {
 		{name: "category", path: peoplePath + "/directory?category=friend"},
 		{name: "organization", path: peoplePath + "/directory?organization=Acme"},
 		{name: "primary channel", path: peoplePath + "/directory?primary_channel=email"},
+		{name: "has activity", path: peoplePath + "/directory?has_activity=true&has_name=true"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			response := personRequest(t, srv, http.MethodGet, tc.path, nil, "")
@@ -153,10 +154,16 @@ func TestDirectoryPeopleHTTPMapsEveryQueryParameter(t *testing.T) {
 	var page DirectoryPeopleResponse
 	require.NoError(json.Unmarshal(first.Body.Bytes(), &page))
 	require.NotEmpty(page.NextCursor)
+	require.Len(page.People, 1)
+	assert.Equal(t, &store.PrimaryIdentifier{Kind: "email", Value: "alice@example.test"}, page.People[0].PrimaryIdentifier)
 	second := personRequest(t, srv, http.MethodGet,
 		peoplePath+"/directory?limit=1&cursor="+page.NextCursor, nil, "")
 	require.Equal(http.StatusOK, second.Code)
 	assertDirectoryPeopleResponseIDs(t, second, bob.ID)
+
+	inactive := personRequest(t, srv, http.MethodGet, peoplePath+"/directory?has_activity=false", nil, "")
+	require.Equal(http.StatusOK, inactive.Code)
+	assertDirectoryPeopleResponseIDs(t, inactive, bob.ID)
 }
 
 func TestDirectoryPeopleHTTPFiltersSortsAndReturnsLastContact(t *testing.T) {
@@ -234,6 +241,8 @@ func TestDirectoryPeopleHTTPRejectsInvalidParametersAndStaleProjection(t *testin
 		{name: "cursor", path: peoplePath + "/directory?cursor=not-a-cursor", code: "invalid_cursor"},
 		{name: "query", path: peoplePath + "/directory?contact_state=unknown", code: "invalid_query"},
 		{name: "limit", path: peoplePath + "/directory?limit=many", code: "invalid_limit"},
+		{name: "has name", path: peoplePath + "/directory?has_name=maybe", code: "invalid_has_name"},
+		{name: "has activity", path: peoplePath + "/directory?has_activity=sometimes", code: "invalid_has_activity"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			response := personRequest(t, srv, http.MethodGet, tc.path, nil, "")

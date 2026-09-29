@@ -87,12 +87,11 @@
   import { ArchiveMeetingNavigation, archiveMeetingSelection, parseArchiveMeetingSelection } from '../../meetings/archive-navigation.svelte';
   import { getMessage } from '../../api/generated/api/api';
   import type { MessageDetail } from '../../api/generated/models';
-  import { createExploreAPI } from '../../explore/api';
   import type { RelationshipSiblingCluster } from '../../relationships/models';
   import {
     resolutionCovers, resolveBoundClusters, validParticipantIDs, type BoundCluster, type BoundClusterResolution
   } from '../../people/clusters';
-  import { messageRowFilters, resolveMessageRowKey } from '../../explore/entry-key';
+  import { messageEntryKey, messageRowFilters } from '../../explore/entry-key';
   import { ARCHIVE_MEETING_HISTORY_KEY, parseArchiveMeetingHistory } from '../../meetings/archive-selection';
   import EverythingWorkspace from './EverythingWorkspace.svelte';
   import { stepThread } from '../../reader/thread-stepper';
@@ -872,12 +871,9 @@
         : 'Couldn\'t open that message: the archive did not respond.');
       return;
     }
-    // The explore query names the row (chat rows are keyed by conversation).
-    const key = await resolveMessageRowKey(data, async (predicate) => {
-      const loaded = await createExploreAPI(client).explore(predicate);
-      return { rows: loaded.status === 'ready' ? loaded.result.rows : [] };
-    });
-    if (origin !== canonicalFingerprint(exploreState.current)) return;
+    // The detail carries message_type and conversation_type, so the row key
+    // is derived exactly (chat rows are keyed by conversation).
+    const key = messageEntryKey(data);
     if (!key) {
       announceOperation('Couldn\'t open that message: the archive has no row for it.');
       return;

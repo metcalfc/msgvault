@@ -75,6 +75,10 @@ type APIMessage struct {
 	IsFromMe             bool
 	Headers              map[string]string
 	Attachments          []APIAttachment
+
+	// ConversationType is the stored conversations.conversation_type. Only
+	// the single-message detail read (GetMessageContext) populates it.
+	ConversationType string
 }
 
 // MessageRecipient is one archived message-recipient relationship.
@@ -217,7 +221,8 @@ func (s *Store) GetMessageContext(ctx context.Context, id int64) (*APIMessage, e
 			m.has_attachments,
 			m.size_estimate,
 			m.is_from_me,
-			m.deleted_from_source_at
+			m.deleted_from_source_at,
+			COALESCE(c.conversation_type, '') as conversation_type
 		FROM messages m
 		LEFT JOIN message_recipients mr ON mr.id = (
 			SELECT mr2.id FROM message_recipients mr2
@@ -254,6 +259,7 @@ func (s *Store) GetMessageContext(ctx context.Context, id int64) (*APIMessage, e
 		&m.SizeEstimate,
 		&isFromMe,
 		&deletedAt,
+		&m.ConversationType,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("message %d: %w", id, ErrMessageNotFound)

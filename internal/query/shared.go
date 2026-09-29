@@ -497,7 +497,8 @@ func getMessageByQueryShared(ctx context.Context, db *sql.DB, rebind rebindFunc,
 			COALESCE(m.size_estimate, 0),
 			m.has_attachments,
 			COALESCE(m.is_from_me, FALSE),
-			m.deleted_from_source_at
+			m.deleted_from_source_at,
+			COALESCE(conv.conversation_type, '')
 		FROM %smessages m
 		LEFT JOIN %sconversations conv ON conv.id = m.conversation_id
 		WHERE %s
@@ -521,6 +522,7 @@ func getMessageByQueryShared(ctx context.Context, db *sql.DB, rebind rebindFunc,
 		&msg.HasAttachments,
 		&msg.IsFromMe,
 		&deletedAt,
+		&msg.ConversationType,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil //nolint:nilnil // Engine.GetMessage/GetMessageBySourceID use (nil, nil) for not-found; callers chain fallback lookups on the nil result

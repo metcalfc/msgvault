@@ -2999,6 +2999,9 @@ components:
           type: array
         primary_channel:
           type: string
+        primary_identifier:
+          $ref: "#/components/schemas/PrimaryIdentifier"
+          description: "The one identifier a list row shows: the best email address, else phone number, else handle. Within a kind, the person's current curated contact points win in vCard preference order (pref, then ordinal), then addresses observed on bound participants (lowest participant ID first; the participant's own email address or phone number before its stored identifier rows, primary rows first). Absent when the person has none."
         revision:
           format: int64
           type: integer
@@ -5994,6 +5997,9 @@ components:
         conversation_id:
           format: int64
           type: integer
+        conversation_type:
+          description: The message's conversation type as stored (for example email_thread, direct_chat, group_chat, or channel). Returned by GET /api/v1/messages/{id}; omitted when the message has no conversation.
+          type: string
         deleted_at:
           type: string
         from:
@@ -10476,6 +10482,22 @@ components:
       required:
         - ok
       type: object
+    PrimaryIdentifier:
+      properties:
+        kind:
+          description: "Identifier class: email, phone, or handle (any other username or service identifier)"
+          enum:
+            - email
+            - phone
+            - handle
+          type: string
+        value:
+          description: The identifier as stored, suitable for display
+          type: string
+      required:
+        - kind
+        - value
+      type: object
     Progress:
       properties:
         done:
@@ -10830,6 +10852,9 @@ components:
             format: int64
             type: integer
           type: array
+        primary_identifier:
+          $ref: "#/components/schemas/PrimaryIdentifier"
+          description: "The one identifier a list row shows: the best email address, else phone number, else handle, across the cluster's members in the committed cache. Within a kind, the lowest member participant ID wins (the canonical participant first); a participant's own email address or phone number comes before its stored identifier rows. Absent when the cluster has none."
         score:
           format: double
           type: number
@@ -21494,6 +21519,16 @@ paths:
           name: primary_channel
           schema:
             type: string
+        - description: true keeps only people with a non-blank display name; false keeps only unnamed people
+          in: query
+          name: has_name
+          schema:
+            type: boolean
+        - description: true keeps only people with archive activity (a last contact from messages of their bound participants, the same fact as contact_state=active); false keeps only people without it, such as imported contact-only records
+          in: query
+          name: has_activity
+          schema:
+            type: boolean
         - description: Return people contacted at or after this RFC3339 timestamp
           in: query
           name: last_contact_after

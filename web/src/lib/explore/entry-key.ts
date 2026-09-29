@@ -2,13 +2,14 @@
  *
  * Mirrors internal/query/entry_key.go and identityindex.IsChat: chat-classified
  * messages are keyed by their conversation, everything else by the source
- * message id (falling back to the internal id). Keeping the two in step lets
- * a Directory contact-state ref select its row in Everything without a
- * dedicated message route. `GET /api/v1/messages/{id}` does not return
- * `conversation_type`, so the fallback chat types ("", "chat", "text") can
- * only be classified when the caller supplies it. */
+ * message id (falling back to the internal id). `GET /api/v1/messages/{id}`
+ * returns the stored `conversation_type`, so a message detail carries every
+ * fact the classification needs, including for the fallback message types
+ * ("", "chat", "text") that are chat only inside a chat conversation. Keeping
+ * the two in step lets a Directory contact-state ref select its row in
+ * Everything without a dedicated message route. */
 
-import type { EntryRow, ExploreFilter, ExplorePredicate } from './models';
+import type { ExploreFilter } from './models';
 import { dayWindowFilters } from './date-range';
 
 const TEXT_MESSAGE_TYPES = new Set([
@@ -17,11 +18,6 @@ const TEXT_MESSAGE_TYPES = new Set([
 ]);
 const CHAT_FALLBACK_MESSAGE_TYPES = new Set(['', 'chat', 'text']);
 const CHAT_CONVERSATION_TYPES = new Set(['direct_chat', 'group_chat', 'channel', 'chat']);
-
-/** The explore API's largest page. The day window around a message can
- * hold more than the default 100 rows in a busy source, and the row we are
- * looking for is not necessarily on the first page. */
-export const MESSAGE_ROW_LOOKUP_LIMIT = 500;
 
 export function isChatEntry(messageType: string | undefined, conversationType: string | undefined): boolean {
   const type = (messageType ?? '').toLowerCase();
@@ -62,32 +58,4 @@ export function messageRowFilters(message: MessageRowFacts): ExploreFilter[] {
       ? [{ dimension: 'source' as const, values: [String(message.source_id)] }]
       : [])
   ];
-}
-
-/** Finds the explore row that shows this message by asking the explore
- * query itself, so chat messages the server groups under their
- * conversation (including the fallback types whose conversation_type the
- * message endpoint does not return) are addressed correctly. The query
- * asks for the largest page the API serves, since the row may sit past the
- * default first page of a busy day. The row anchored on the message wins;
- * otherwise the conversation row containing it; otherwise the key is
- * derived locally as a best guess. */
-export async function resolveMessageRowKey(
-  message: MessageRowFacts,
-  explore: (predicate: ExplorePredicate) => Promise<{ rows: EntryRow[] }>
-): Promise<string | undefined> {
-  try {
-    const { rows } = await explore({
-      filters: messageRowFilters(message), presentation: 'table', limit: MESSAGE_ROW_LOOKUP_LIMIT
-    });
-    const anchored = rows.find((row) => row.anchor_message_id === message.id);
-    if (anchored) return anchored.key;
-    const conversation = Number.isSafeInteger(message.conversation_id) && message.conversation_id! > 0
-      ? rows.find((row) => row.conversation_id === message.conversation_id && row.key.includes(':conversation:'))
-      : undefined;
-    if (conversation) return conversation.key;
-  } catch {
-    // The local derivation below is the fallback.
-  }
-  return messageEntryKey(message);
 }

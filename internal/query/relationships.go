@@ -8,9 +8,11 @@ import (
 	"math/bits"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.kenn.io/msgvault/internal/identityindex"
+	"go.kenn.io/msgvault/internal/store"
 )
 
 const (
@@ -71,6 +73,9 @@ type RelationshipRow struct {
 	Score        float64             `json:"score"`
 	Signals      RelationshipSignals `json:"signals"`
 	LastAt       time.Time           `json:"last_at"`
+	// PrimaryIdentifier is absent when no cluster member has an email
+	// address, phone number, or handle.
+	PrimaryIdentifier *store.PrimaryIdentifier `json:"primary_identifier,omitempty" doc:"The one identifier a list row shows: the best email address, else phone number, else handle, across the cluster's members in the committed cache. Within a kind, the lowest member participant ID wins (the canonical participant first); a participant's own email address or phone number comes before its stored identifier rows. Absent when the cluster has none."`
 }
 
 // RelationshipsRequest scopes and pages a relationship ranking query. Now is
@@ -166,6 +171,9 @@ func (e *DuckDBEngine) Relationships(ctx context.Context, request RelationshipsR
 	if err != nil {
 		return nil, err
 	}
+	if err := e.attachRelationshipPrimaryIdentifiers(ctx, page); err != nil {
+		return nil, err
+	}
 
 	response := &RelationshipsResponse{
 		Rows:             page,
@@ -242,6 +250,80 @@ func (e *DuckDBEngine) queryRelationshipCandidates(
 	end := min(offset+limit, len(candidates))
 	page := append([]RelationshipRow(nil), candidates[offset:end]...)
 	return page, totalCount, nil
+}
+
+// relationshipPrimitive is one search_primitives entry of a
+// relationship_people row: an observed participant value ("observed") or a
+// stored identifier row (source is its identifier type).
+type relationshipPrimitive struct {
+	Kind          string `json:"kind"`
+	MatchValue    string `json:"match_value"`
+	DisplayValue  string `json:"display_value"`
+	Source        string `json:"source"`
+	ParticipantID int64  `json:"participant_id"`
+}
+
+// attachRelationshipPrimaryIdentifiers fills one ranked page's primary
+// identifiers with a single batched read of the page's relationship_people
+// rows, the same committed dataset that supplied their labels.
+func (e *DuckDBEngine) attachRelationshipPrimaryIdentifiers(ctx context.Context, page []RelationshipRow) error {
+	if len(page) == 0 {
+		return nil
+	}
+	byID := make(map[int64]int, len(page))
+	args := make([]any, 0, len(page))
+	for index, row := range page {
+		byID[row.CanonicalID] = index
+		args = append(args, row.CanonicalID)
+	}
+	people := quoteIdentitySQLPath(e.parquetPath(identityindex.DatasetPeople))
+	rows, err := e.db.QueryContext(ctx, `
+SELECT canonical_id, CAST(to_json(search_primitives) AS VARCHAR)
+FROM read_parquet('`+people+`')
+WHERE canonical_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")+`)`, args...)
+	if err != nil {
+		return fmt.Errorf("query relationship primary identifiers: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var canonicalID int64
+		var primitivesJSON string
+		if err := rows.Scan(&canonicalID, &primitivesJSON); err != nil {
+			return fmt.Errorf("scan relationship primary identifiers: %w", err)
+		}
+		var primitives []relationshipPrimitive
+		if err := json.Unmarshal([]byte(primitivesJSON), &primitives); err != nil {
+			return fmt.Errorf("decode relationship primary identifiers: %w", err)
+		}
+		index, ok := byID[canonicalID]
+		if !ok {
+			continue
+		}
+		page[index].PrimaryIdentifier = relationshipPrimaryIdentifier(primitives)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate relationship primary identifiers: %w", err)
+	}
+	return nil
+}
+
+// relationshipPrimaryIdentifier applies the shared email, phone, handle rule
+// to a cluster's primitives: lowest participant ID first, then the
+// participant's own value before identifier-derived ones. Observed values
+// keep their stored spelling; identifier rows use the normalized value, since
+// their display value may carry a name ("Name <address>").
+func relationshipPrimaryIdentifier(primitives []relationshipPrimitive) *store.PrimaryIdentifier {
+	candidates := make([]store.PrimaryIdentifierCandidate, 0, len(primitives))
+	for _, primitive := range primitives {
+		value, sourceRank := primitive.MatchValue, int64(1)
+		if primitive.Source == "observed" {
+			value, sourceRank = primitive.DisplayValue, 0
+		}
+		candidates = append(candidates, store.PrimaryIdentifierCandidate{
+			RawKind: primitive.Kind, Value: value, Rank: []int64{primitive.ParticipantID, sourceRank},
+		})
+	}
+	return store.SelectPrimaryIdentifier(candidates)
 }
 
 func relationshipRowBefore(left, right RelationshipRow) bool {
