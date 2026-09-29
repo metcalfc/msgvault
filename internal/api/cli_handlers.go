@@ -1901,6 +1901,22 @@ func cliRunJevAllowed(args []string) bool {
 		}
 		return true
 	}
+	// Boolean flags accept any spelling cobra accepts (--all, --all=true,
+	// --all=false, --all=0, ...); anything else is refused. An absent flag is
+	// false.
+	flag := func(name string) (value, valid bool) {
+		raw, present := values[name]
+		if !present {
+			return false, true
+		}
+		parsed, err := strconv.ParseBool(raw)
+		return parsed, err == nil
+	}
+	for _, name := range []string{"all", "json", "yes"} {
+		if _, valid := flag(name); !valid {
+			return false
+		}
+	}
 	switch operation {
 	case cliRunStatusOperation:
 		return len(positionals) == 0 && allowed("json")
@@ -1910,10 +1926,11 @@ func cliRunJevAllowed(args []string) bool {
 		if !allowed("all", "json") {
 			return false
 		}
+		all, _ := flag("all")
 		if len(positionals) == 1 {
-			return jev.ValidFeatureName(positionals[0]) && values["all"] == ""
+			return jev.ValidFeatureName(positionals[0]) && !all
 		}
-		return len(positionals) == 0 && values["all"] == "true"
+		return len(positionals) == 0 && all
 	default:
 		return false
 	}

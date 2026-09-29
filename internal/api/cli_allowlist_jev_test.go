@@ -22,6 +22,10 @@ func TestCLIRunCommandAllowedJev(t *testing.T) {
 		{"jev", "revoke", "enrichment_identity"},
 		{"jev", "revoke", "--all"},
 		{"jev", "revoke", "--all", "--json"},
+		{"jev", "revoke", "--all=true"},
+		{"jev", "revoke", "--all=1"},
+		{"jev", "revoke", "enrichment_identity", "--all=false"},
+		{"jev", "revoke", "enrichment_identity", "--all=0", "--json=false"},
 		{"jev", "status", "--log-level=debug"},
 	} {
 		assert.True(cliRunCommandAllowed(args), args)
@@ -36,6 +40,10 @@ func TestCLIRunCommandAllowedJev(t *testing.T) {
 		{"jev", "revoke"},
 		{"jev", "revoke", "enrichment_identity", "--all"},
 		{"jev", "revoke", "--all=false"},
+		{"jev", "revoke", "enrichment_identity", "--all=true"},
+		{"jev", "revoke", "enrichment_identity", "--all=maybe"},
+		{"jev", "status", "--json=yes please"},
+		{"jev", "consent", "enrichment_identity", "--yes=sure"},
 		{"jev", "revoke", "a", "b"},
 		{"jev", "__internal"},
 	} {
