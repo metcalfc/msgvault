@@ -209,6 +209,46 @@ func TestServiceJudgeSendsExactPolicyOnlyWhenEveryGatePasses(t *testing.T) {
 	assert.Len(*recorded, 2, "gate failures never reach the provider")
 }
 
+func TestServiceCachesTheCredentialAndPolicyUntilTheRevisionChanges(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	server, recorded := newFakeJev(t, `{"model":"jev-1.13.0","answers":{"same":{"type":"noul","noul":0.5}},"usage":{"input_tokens":5,"output_tokens":5}}`)
+	cfg := serviceConfig(server.URL)
+	spec := testSpec()
+	policy, err := spec.Policy(cfg)
+	require.NoError(err)
+	revision := "rev-1"
+	var reads atomic.Int32
+	service, err := NewService(ServiceOptions{
+		Config:   func() (Config, error) { return cfg, nil },
+		Consents: &fakeConsents{active: map[string]string{FeatureEnrichmentIdentity: policy.Fingerprint}},
+		Credential: func(string, string) (string, bool, error) {
+			reads.Add(1)
+			return "key-" + revision, true, nil
+		},
+		CredentialRevision: func() (string, error) { return revision, nil },
+	})
+	require.NoError(err)
+	state := map[string]any{"left": "a", "right": "b"}
+	for range 3 {
+		_, err = service.Judge(context.Background(), spec, false, state, time.Time{})
+		require.NoError(err)
+	}
+	assert.Equal(int32(1), reads.Load(), "an unchanged revision reuses the resolved key")
+	assert.Equal("Bearer key-rev-1", (*recorded)[2].Authorization)
+
+	revision = "rev-2"
+	_, err = service.Judge(context.Background(), spec, false, state, time.Time{})
+	require.NoError(err)
+	assert.Equal(int32(2), reads.Load(), "a changed revision rereads the store")
+	assert.Equal("Bearer key-rev-2", (*recorded)[3].Authorization, "the new key is what gets sent")
+
+	service.mu.Lock()
+	cachedPolicies := len(service.policies)
+	service.mu.Unlock()
+	assert.Equal(1, cachedPolicies, "the policy is hashed once per feature and binding")
+}
+
 func TestServiceJudgeReportsProviderFailuresAsCategories(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/jev"
+	"go.kenn.io/msgvault/internal/providercredentials"
 	"go.kenn.io/msgvault/internal/testutil"
 )
 
@@ -23,6 +24,32 @@ func TestJevFeatureRegistryIncludesEnrichmentIdentity(t *testing.T) {
 	require.NoError(err)
 	assert.Len(policy.Fingerprint, 64)
 	assert.Equal(jev.DefaultEndpoint, policy.Endpoint)
+}
+
+func TestJevCredentialRevisionTracksTheStoreFile(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	cfg := config.NewDefaultConfig()
+	cfg.HomeDir = t.TempDir()
+	cfg.Data.DataDir = cfg.HomeDir
+	probe := jevCredentialRevision(cfg)
+	absent, err := probe()
+	require.NoError(err)
+	assert.Equal("absent", absent)
+	snapshot, err := providercredentials.Read(cfg.TokensDir())
+	require.NoError(err)
+	_, err = providercredentials.Put(cfg.TokensDir(), snapshot.ETag, providercredentials.JevID, cfg.Jev.Endpoint, "first-key")
+	require.NoError(err)
+	first, err := probe()
+	require.NoError(err)
+	assert.NotEqual(absent, first)
+	snapshot, err = providercredentials.Read(cfg.TokensDir())
+	require.NoError(err)
+	_, err = providercredentials.Put(cfg.TokensDir(), snapshot.ETag, providercredentials.JevID, cfg.Jev.Endpoint, "second-key-longer")
+	require.NoError(err)
+	second, err := probe()
+	require.NoError(err)
+	assert.NotEqual(first, second, "a rewritten store changes the revision")
 }
 
 func TestNewJevIdentityJudgeIsNilUntilJevAndTheFeatureAreOn(t *testing.T) {

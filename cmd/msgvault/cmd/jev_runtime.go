@@ -3,6 +3,8 @@ package cmd
 import (
 	"errors"
 	"os"
+	"path/filepath"
+	"strconv"
 
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/jev"
@@ -45,11 +47,29 @@ func newJevService(cfg *config.Config, st jevRuntimeStore) (*jev.Service, error)
 		return nil, nil //nolint:nilnil // nil means "no service"; callers treat it as disabled.
 	}
 	return jev.NewService(jev.ServiceOptions{
-		Config:     func() (jev.Config, error) { return cfg.Jev, nil },
-		Consents:   st,
-		Ledger:     st,
-		Credential: jevCredentialSource(cfg),
+		Config:             func() (jev.Config, error) { return cfg.Jev, nil },
+		Consents:           st,
+		Ledger:             st,
+		Credential:         jevCredentialSource(cfg),
+		CredentialRevision: jevCredentialRevision(cfg),
 	})
+}
+
+// jevCredentialRevision is the cheap probe the service uses to decide whether
+// the stored key must be reread: the credential store file's size and
+// modification time. A missing store is a stable revision of its own; the
+// environment variable cannot change within the process.
+func jevCredentialRevision(cfg *config.Config) jev.CredentialRevision {
+	return func() (string, error) {
+		info, err := os.Stat(filepath.Join(cfg.TokensDir(), providercredentials.Filename))
+		if errors.Is(err, os.ErrNotExist) {
+			return "absent", nil
+		}
+		if err != nil {
+			return "", err
+		}
+		return strconv.FormatInt(info.Size(), 10) + ":" + strconv.FormatInt(info.ModTime().UnixNano(), 10), nil
+	}
 }
 
 // newJevIdentityJudge wires the enrichment identity check, or returns nil

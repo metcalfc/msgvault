@@ -51,6 +51,13 @@ type ConfigSource func() (Config, error)
 // when nothing is configured and never logs the value.
 type CredentialSource func(endpoint, apiKeyEnv string) (key string, ok bool, err error)
 
+// CredentialRevision is a cheap probe for "has the credential store changed":
+// any string that differs whenever the stored key may differ (for example the
+// store file's size and modification time). When a service has one, the
+// resolved key is cached until the revision changes; without one the store
+// is read on every judgment.
+type CredentialRevision func() (string, error)
+
 // Skipped classifies why a judgment did not happen, for the caller's
 // `jev: skipped:<category>` report. It never includes state.
 func Skipped(err error) string {
@@ -85,26 +92,50 @@ func Skipped(err error) string {
 }
 
 // ServiceOptions wire a Service to configuration, consent, accounting, and
-// credentials. Budget and Transport are optional.
+// credentials. Budget, Transport, and CredentialRevision are optional.
 type ServiceOptions struct {
-	Config     ConfigSource
-	Consents   ConsentChecker
-	Ledger     Ledger
-	Credential CredentialSource
-	Transport  http.RoundTripper
-	Budget     *Budget
-	Now        func() time.Time
-	Logger     *slog.Logger
+	Config             ConfigSource
+	Consents           ConsentChecker
+	Ledger             Ledger
+	Credential         CredentialSource
+	CredentialRevision CredentialRevision
+	Transport          http.RoundTripper
+	Budget             *Budget
+	Now                func() time.Time
+	Logger             *slog.Logger
 }
 
 // Service is the one door every feature goes through. It rechecks
 // configuration, consent, and credentials immediately before each request,
-// charges the feature's daily counters, and logs only safe metadata.
+// charges the feature's daily counters, and logs only safe metadata. The
+// policy fingerprint and the resolved key are cached per binding: a policy
+// is rehashed only when the endpoint or model changes, and the credential
+// store is reread only when its revision changes.
 type Service struct {
-	options ServiceOptions
-	mu      sync.Mutex
-	client  *Client
-	bound   clientBinding
+	options    ServiceOptions
+	mu         sync.Mutex
+	client     *Client
+	bound      clientBinding
+	policies   map[policyKey]Policy
+	credential cachedCredential
+}
+
+// policyKey is what a feature's fingerprint depends on besides the spec.
+type policyKey struct {
+	feature  string
+	endpoint string
+	model    string
+}
+
+// cachedCredential is one resolved key with the store revision and endpoint
+// binding it was resolved under.
+type cachedCredential struct {
+	valid     bool
+	revision  string
+	endpoint  string
+	apiKeyEnv string
+	key       string
+	ok        bool
 }
 
 type clientBinding struct {
@@ -131,7 +162,60 @@ func NewService(options ServiceOptions) (*Service, error) {
 	if options.Logger == nil {
 		options.Logger = slog.Default()
 	}
-	return &Service{options: options}, nil
+	return &Service{options: options, policies: make(map[policyKey]Policy)}, nil
+}
+
+// policyFor returns the feature's policy under cfg, hashing it once per
+// (feature, endpoint, model).
+func (s *Service) policyFor(spec FeatureSpec, cfg Config) (Policy, error) {
+	key := policyKey{feature: spec.Name, endpoint: cfg.Endpoint, model: cfg.Model}
+	s.mu.Lock()
+	policy, ok := s.policies[key]
+	s.mu.Unlock()
+	if ok {
+		return policy, nil
+	}
+	policy, err := spec.Policy(cfg)
+	if err != nil {
+		return Policy{}, err
+	}
+	s.mu.Lock()
+	s.policies[key] = policy
+	s.mu.Unlock()
+	return policy, nil
+}
+
+// credentialFor resolves the key for cfg's endpoint, reusing the last
+// resolution while the credential store's revision and the binding are
+// unchanged. Without a revision probe every call reads the store.
+func (s *Service) credentialFor(cfg Config) (string, bool, error) {
+	revision := ""
+	if s.options.CredentialRevision != nil {
+		probed, err := s.options.CredentialRevision()
+		if err != nil {
+			return "", false, err
+		}
+		revision = probed
+		s.mu.Lock()
+		cached := s.credential
+		s.mu.Unlock()
+		if cached.valid && cached.revision == revision &&
+			cached.endpoint == cfg.Endpoint && cached.apiKeyEnv == cfg.APIKeyEnv {
+			return cached.key, cached.ok, nil
+		}
+	}
+	key, ok, err := s.options.Credential(cfg.Endpoint, cfg.APIKeyEnv)
+	if err != nil {
+		return "", false, err
+	}
+	if s.options.CredentialRevision != nil {
+		s.mu.Lock()
+		s.credential = cachedCredential{
+			valid: true, revision: revision, endpoint: cfg.Endpoint, apiKeyEnv: cfg.APIKeyEnv, key: key, ok: ok,
+		}
+		s.mu.Unlock()
+	}
+	return key, ok, nil
 }
 
 // clearance is everything one passed gate resolved: the configuration and
@@ -154,7 +238,7 @@ func (s *Service) check(ctx context.Context, spec FeatureSpec, automatic bool) (
 	if err != nil {
 		return clearance{}, fmt.Errorf("%w: %w", ErrPolicyUnavailable, err)
 	}
-	policy, err := spec.Policy(cfg)
+	policy, err := s.policyFor(spec, cfg)
 	if err != nil {
 		return clearance{}, fmt.Errorf("%w: %w", ErrPolicyUnavailable, err)
 	}
@@ -172,7 +256,7 @@ func (s *Service) check(ctx context.Context, spec FeatureSpec, automatic bool) (
 	if automatic && !feature.Automatic {
 		return cleared, fmt.Errorf("%w: %s", ErrAutomaticDisabled, spec.Name)
 	}
-	key, ok, err := s.options.Credential(cfg.Endpoint, cfg.APIKeyEnv)
+	key, ok, err := s.credentialFor(cfg)
 	if err != nil {
 		return cleared, fmt.Errorf("%w: resolve credential: %w", ErrPolicyUnavailable, err)
 	}
