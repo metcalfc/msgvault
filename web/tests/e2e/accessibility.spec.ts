@@ -225,7 +225,7 @@ test('Directory review, merge, split, and honest Fact gate have no axe violation
   const merge = page.getByRole('dialog', { name: 'Resolve person merge' });
   await expect(merge).toBeVisible();
   await assertNoViolations(page, 'Directory person merge');
-  await merge.getByRole('radio', { name: 'Synthetic One (Person 7)' }).check();
+  await merge.getByRole('radio', { name: 'Synthetic One' }).check();
   await merge.getByRole('checkbox', { name: /I understand this consolidates both profiles/ }).check();
   await merge.getByRole('button', { name: 'Merge into selected survivor' }).click();
   await expect(page.getByRole('heading', { name: 'Synthetic One' })).toBeVisible();

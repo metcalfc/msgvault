@@ -118,6 +118,7 @@ export async function installMixedArchive(page: Page): Promise<InstalledMixedArc
   let trackingMutationFailure = false;
   let trackingReadFailure = false;
   await page.route('**/api/session', sessionRoute);
+  await page.route(/\/api\/v1\/entity-labels(?:\?.*)?$/, (route) => route.fulfill({ json: entityLabels(route.request().url()) }));
   await page.route('**/api/v1/settings', (route) =>
     route.fulfill({
       json: {
@@ -649,11 +650,33 @@ export const FACT_LEDGER_FORBIDDEN_MARKERS = [
 
 const FACT_TARGET_REVISION = `sha256:${'d'.repeat(64)}`;
 
+// Synthetic names the entity-labels endpoint answers with, so no surface
+// falls back to an ID.
+const ENTITY_LABELS: Record<'person' | 'participant' | 'organization', Record<number, string>> = {
+  person: {
+    7: 'Synthetic One', 9: 'Synthetic Two', 19: 'Synthetic Restored', 42: 'Archive Person',
+    170: 'Avery Candidate', 180: 'Blair Candidate', 190: 'Casey Candidate',
+  },
+  participant: {
+    171: 'avery@example.com', 181: 'blair@example.com', 191: 'casey@example.com',
+    701: 'one@example.com', 702: 'one-alt@example.com', 901: 'lineage@example.com',
+  },
+  organization: {},
+};
+
+function entityLabels(requestURL: string) {
+  const url = new URL(requestURL);
+  const answer = (kind: keyof typeof ENTITY_LABELS) =>
+    url.searchParams.getAll(kind).flatMap((value) => value.split(',')).map(Number)
+      .filter((id) => ENTITY_LABELS[kind][id]).map((id) => ({ id, label: ENTITY_LABELS[kind][id] }));
+  return { people: answer('person'), participants: answer('participant'), organizations: answer('organization') };
+}
+
 function reviewCandidate(id: number, overrides: Partial<IdentityMatchCandidate> = {}): IdentityMatchCandidate {
   return {
     id,
     left_id: id * 10,
-    left_kind: 'beeper_user',
+    left_kind: 'person',
     right_id: id * 10 + 1,
     right_kind: 'participant',
     basis: 'stable_provider_id',

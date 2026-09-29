@@ -33,8 +33,9 @@ async function openMergeModal(page: Page) {
   await expect(merge).toBeVisible();
   await expect(decision).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(1);
-  await expect(merge).toContainText('Person 7, revision 4');
-  await expect(merge).toContainText('Person 9, revision 2');
+  await expect(merge).toContainText('revision 4');
+  await expect(merge).toContainText('revision 2');
+  await expect(merge).not.toContainText(/Person \d/);
   return merge;
 }
 
@@ -44,8 +45,9 @@ test('review cards expose the complete server-supplied synthetic evidence', asyn
 
   const card = page.getByRole('article', { name: 'Identity match 17' });
   await expect(card).toBeVisible();
-  await expect(card).toContainText('beeper_user / 170');
-  await expect(card).toContainText('participant / 171');
+  await expect(card).toContainText('Avery Candidate');
+  await expect(card).toContainText('avery@example.com');
+  await expect(card.getByRole('region', { name: 'Candidate endpoints for identity match 17' })).not.toContainText(/170|171/);
   await expect(card).toContainText('stable_provider_id');
   await expect(card).toContainText('synthetic-chat');
   await expect(card).toContainText('workspace / example-space');
@@ -288,8 +290,8 @@ for (const profile of [
 }
 
 for (const completionTarget of [
-  { id: 7, label: 'Open source profile Synthetic One (Person 7)', heading: 'Synthetic One' },
-  { id: 19, label: 'Open restored profile Synthetic Restored (Person 19)', heading: 'Synthetic Restored' }
+  { id: 7, label: 'Open source profile Synthetic One', heading: 'Synthetic One' },
+  { id: 19, label: 'Open restored profile Synthetic Restored', heading: 'Synthetic Restored' }
 ]) test(`explicit merge and partial split open ${completionTarget.heading} with fresh server state`, async ({ page }) => {
   const fixture = await installDirectoryReviewArchive(page);
   await page.setViewportSize({ width: 1280, height: 1000 });
@@ -298,7 +300,7 @@ for (const completionTarget of [
 
   const mergeSubmit = merge.getByRole('button', { name: 'Merge into selected survivor' });
   await expect(mergeSubmit).toBeDisabled();
-  await merge.getByRole('radio', { name: 'Synthetic One (Person 7)' }).focus();
+  await merge.getByRole('radio', { name: 'Synthetic One' }).focus();
   await page.keyboard.press('Space');
   await expect(mergeSubmit).toBeDisabled();
   await merge.getByRole('checkbox', { name: /I understand this consolidates both profiles/ }).focus();
@@ -339,20 +341,20 @@ for (const completionTarget of [
   await page.getByRole('button', { name: 'Split merged profile' }).focus();
   await page.keyboard.press('Enter');
   const split = page.getByRole('dialog', { name: 'Split merged profile' });
-  await expect(split).toContainText('The merge currently belongs to Synthetic One (Person 7).');
+  await expect(split).toContainText('The merge currently belongs to Synthetic One.');
   const create = split.getByRole('button', { name: 'Create restored person' });
   await expect(create).toBeDisabled();
-  await split.getByRole('checkbox', { name: 'Participant 901' }).focus();
+  await split.getByRole('checkbox', { name: 'lineage@example.com' }).focus();
   await page.keyboard.press('Space');
-  await split.getByRole('checkbox', { name: /I confirm splitting Participant 901 from Synthetic One/ }).focus();
+  await split.getByRole('checkbox', { name: /I confirm splitting lineage@example.com from Synthetic One/ }).focus();
   await page.keyboard.press('Space');
   await create.focus();
   await page.keyboard.press('Enter');
 
   await expect(split.getByRole('heading', { name: 'Split completed' })).toBeVisible();
   await expect(split).toContainText('Partial restoration.');
-  await expect(split.getByRole('button', { name: 'Open source profile Synthetic One (Person 7)' })).toBeVisible();
-  await expect(split.getByRole('button', { name: 'Open restored profile Synthetic Restored (Person 19)' })).toBeVisible();
+  await expect(split.getByRole('button', { name: 'Open source profile Synthetic One' })).toBeVisible();
+  await expect(split.getByRole('button', { name: 'Open restored profile Synthetic Restored' })).toBeVisible();
   await expect(split).toContainText('Ambiguous rows');
   const splitRequests = fixture.requests.filter((request) => request.path === '/api/v1/people/7/split');
   expect(splitRequests).toHaveLength(1);
@@ -406,7 +408,7 @@ test('Fact review is a keyboard-readable private ledger with honest unavailable 
   expect(fixture.requests.filter((request) => request.path.includes('fact-'))).toHaveLength(0);
 
   await page.goto(reviewURL('fact', 'candidate', 42));
-  await expect(fact).toContainText('Person ID 42');
+  await expect(fact).toContainText('Archive Person');
   await expect(fact).toContainText('Fact candidate decisions are unavailable until a generated candidate contract is installed.');
   await expect(fact).toContainText('A dated last-time-we-talked brief is unavailable until the server exposes a generated brief contract.');
   for (const action of ['Accept', 'Reject', 'Unsure', 'Run']) {
@@ -480,7 +482,7 @@ test('Fact review is a keyboard-readable private ledger with honest unavailable 
   await expect(page.getByRole('heading', { name: 'Archive Person' })).toBeVisible();
   const factReadsBeforeBack = fixture.requests.filter((request) => request.path.includes('fact')).length;
   await page.goBack();
-  await expect(fact).toContainText('Person ID 42');
+  await expect(fact).toContainText('Archive Person');
   await expect.poll(() => fixture.requests.filter((request) => request.path.includes('fact')).length)
     .toBe(factReadsBeforeBack + 5);
 });
