@@ -132,6 +132,8 @@ describe('legacy address redirects', () => {
     expect(new URLSearchParams(window.location.search).has('workspace')).toBe(false);
     expect(state.current).toMatchObject({ workspace: 'operations', operationLane: 'contacts' });
     expect(window.history.length).toBe(length);
+    // The rewritten entry keeps the whole view for Back and Forward.
+    expect(window.history.state).toMatchObject({ exploreState: { workspace: 'operations', operationLane: 'contacts' } });
     expect(state.arrivedAtDefault).toBe(false);
     state.destroy();
   });

@@ -286,7 +286,7 @@ test("participant, domain, Directory and Relationships keep scoped meeting evide
     },
     {
       name: "directory",
-      state: { workspace: "directory", directoryPersonID: daemon.personID },
+      state: { workspace: "directory", directoryPersonID: daemon.personID, personTab: "meetings" },
     },
     {
       name: "relationships",
@@ -295,6 +295,7 @@ test("participant, domain, Directory and Relationships keep scoped meeting evide
         relationshipFacet: "people",
         relationshipTarget: `cluster:${daemon.participant_id}`,
         relationshipShowAll: true,
+        personTab: "meetings",
       },
     },
   ];
@@ -328,6 +329,7 @@ test("participant, domain, Directory and Relationships keep scoped meeting evide
     meetingURL(daemon, {
       workspace: "directory",
       directoryPersonID: daemon.personID,
+      personTab: "meetings",
     }),
   );
   await openMeetingActivity(page);
@@ -471,7 +473,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 700, height: 560 
 
 test('closing the reader removes its scope and cancels a pending continuation', async ({ page, daemon }) => {
   await importLongActions(daemon);
-  await page.goto(meetingURL(daemon, { workspace: 'directory', directoryPersonID: daemon.personID }));
+  await page.goto(meetingURL(daemon, { workspace: 'directory', directoryPersonID: daemon.personID, personTab: 'meetings' }));
   await openMeetingActivity(page);
   const panel = page.getByRole('region', { name: 'Meeting activity', exact: true });
   const firstAction = panel.getByText('Archived action 1', { exact: true });
@@ -493,12 +495,11 @@ test('closing the reader removes its scope and cancels a pending continuation', 
     await cancelled;
     await expect(reader).toHaveCount(0);
     await expect(panel.getByText('Archived action 1', { exact: true })).toBeVisible();
-    await expect(page).toHaveURL((url) => url.searchParams.get('workspace') === 'directory');
+    await expect(page).toHaveURL((url) => url.pathname === `/people/${daemon.personID}/meetings`);
     await network.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
-    await page.getByRole('button', { name: 'Inbox', exact: true }).click();
-    // Entering Everything from Directory applies the seven-day default;
-    // the fixture's meetings are older.
-    await page.getByRole('radio', { name: 'All time', exact: true }).click();
+    // A person page carries no archive filters, so open the meeting-filtered
+    // Inbox (All time: the fixture's meetings are older than seven days).
+    await page.goto(meetingURL(daemon));
     const search = page.getByRole('searchbox', { name: 'Search messages', exact: true });
     await search.fill('Generic');
     await search.press('Enter');
