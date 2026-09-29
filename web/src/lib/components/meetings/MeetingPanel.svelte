@@ -91,7 +91,9 @@
 {:else if collapsible}
   <details class="meeting-overview">
     <summary>{summaryLabel}</summary>
-    <section class="meeting-panel meeting-panel--nested" aria-label="Meeting activity">
+    <!-- The open body scrolls within a bounded height so a long action
+         list never squeezes the timeline or results beneath it. -->
+    <section class="meeting-panel meeting-panel--nested" aria-label="Meeting activity" data-scroll>
       {@render body()}
     </section>
   </details>
@@ -104,7 +106,7 @@
 
 <style>
   .meeting-panel { display: grid; gap: var(--space-3); padding: var(--space-4); min-width: 0; }
-  .meeting-panel--nested { padding-inline: 0; }
+  .meeting-panel--nested { max-height: 42vh; padding-inline: 0; overflow: auto; }
   h2, p { margin: 0; font-size: var(--font-size-sm); color: var(--text-secondary); }
   h2 { color: var(--text-primary); }
   .action-filters { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }

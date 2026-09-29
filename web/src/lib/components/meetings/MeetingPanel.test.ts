@@ -41,6 +41,8 @@ describe('MeetingPanel', () => {
     expect(await screen.findByText('Meeting activity and follow-ups · 4 meetings')).toBeDefined();
     const details = document.querySelector<HTMLDetailsElement>('details.meeting-overview');
     expect(details?.open).toBe(false);
+    // The body, not the disclosure, is the bounded scroller.
+    expect(details?.querySelector('section.meeting-panel')?.hasAttribute('data-scroll')).toBe(true);
     expect(screen.getByRole('textbox', { name: 'Assignee email' })).toBeDefined();
   });
 
