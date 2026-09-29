@@ -75,6 +75,7 @@
   import ArchivedMeetingReader from '../meetings/ArchivedMeetingReader.svelte';
   import { ArchiveMeetingNavigation, archiveMeetingSelection, parseArchiveMeetingSelection } from '../../meetings/archive-navigation.svelte';
   import { getMessage } from '../../api/generated/api/api';
+  import type { MessageDetail } from '../../api/generated/models';
   import { dayWindowFilters } from '../../explore/date-range';
   import type { RelationshipSiblingCluster } from '../../relationships/models';
   import { resolveBoundClusters, validParticipantIDs, type BoundCluster } from '../../people/clusters';
@@ -755,10 +756,25 @@
    * row is found without a dedicated message route. */
   async function openMessageByID(messageID: number): Promise<void> {
     const origin = canonicalFingerprint(exploreState.current);
-    const { data } = await getMessage({ id: messageID }, { ...client });
-    if (!data || origin !== canonicalFingerprint(exploreState.current)) return;
+    let data: MessageDetail | undefined;
+    let status: number | undefined;
+    try {
+      ({ data, response: { status } } = await getMessage({ id: messageID }, { ...client }));
+    } catch {
+      data = undefined;
+    }
+    if (origin !== canonicalFingerprint(exploreState.current)) return;
+    if (!data) {
+      announceOperation(status === 404
+        ? 'Couldn\'t open that message: it is no longer in the archive.'
+        : 'Couldn\'t open that message: the archive did not respond.');
+      return;
+    }
     const key = messageEntryKey(data);
-    if (!key) return;
+    if (!key) {
+      announceOperation('Couldn\'t open that message: the archive has no row for it.');
+      return;
+    }
     commitRestorableNavigation({
       workspace: 'everything',
       presentation: 'table',

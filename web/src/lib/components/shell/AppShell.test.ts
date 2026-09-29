@@ -1088,6 +1088,35 @@ describe('AppShell', () => {
     state.destroy();
   });
 
+  it.each([
+    [404, 'no longer in the archive'],
+    [500, 'did not respond']
+  ])('says why when the last-contact message cannot be opened (%s)', async (statusCode, reason) => {
+    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
+      workspace: 'directory', directoryPersonID: 7
+    }))}`);
+    const base = directoryPersonFetch([], {}).fetchFn;
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      if (path === '/api/v1/people/7/contact-state') return Response.json({
+        person_id: 7, cadence_status: 'unknown', interaction_count: 1, computed_at: '2026-08-28T10:00:00Z', stale: false,
+        last_contact_at: '2026-08-01T12:00:00Z', last_contact_channel: 'email', last_contact_ref: 'message:42'
+      });
+      if (path === '/api/v1/messages/42') return Response.json({ error: 'error', message: 'nope' }, { status: statusCode });
+      return base(input);
+    });
+    const state = new ExploreState(window);
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+
+    await fireEvent.click(await screen.findByRole('button', { name: /^Last contact / }));
+    await waitFor(() => expect(screen.getByRole('status', { name: 'Operation status' }).textContent).toMatch(new RegExp(`Couldn't open that message: .*${reason}`)));
+    expect(state.current.workspace).toBe('directory');
+
+    rendered.unmount();
+    state.destroy();
+  });
+
   it('owns an ephemeral CardDAV conflict handoff and Browser Back restores the prior Directory person', async () => {
     window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
       workspace: 'directory', directoryPersonID: 7
