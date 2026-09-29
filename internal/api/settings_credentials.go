@@ -185,6 +185,9 @@ func providerCredentialBindingForID(cfg *config.Config, id string) (providerCred
 	case providercredentials.VectorMultimodalID:
 		return providerCredentialBinding{id: id, endpoint: cfg.Vector.Multimodal.Endpoint,
 			environment: cfg.Vector.Multimodal.APIKeyEnv}, true
+	case providercredentials.JevID:
+		return providerCredentialBinding{id: id, endpoint: cfg.Jev.Endpoint,
+			environment: cfg.Jev.APIKeyEnv}, true
 	}
 	if !strings.HasPrefix(id, "people.enrichment/") {
 		return providerCredentialBinding{}, false

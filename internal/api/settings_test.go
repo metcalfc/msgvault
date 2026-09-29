@@ -2078,3 +2078,29 @@ func TestSecretHint(t *testing.T) {
 		})
 	}
 }
+
+func TestSettingsStoresAndClearsTheJevCredential(t *testing.T) {
+	t.Parallel()
+	requirements := require.New(t)
+	assertions := assert.New(t)
+	srv, _ := newSettingsTestServer(t, "[jev]\nenabled = true\n")
+
+	first := performSettingsRequest(t, srv, http.MethodGet, settingsPath, nil, "", "")
+	requirements.Equal(http.StatusOK, first.Code, first.Body.String())
+	credentialETag := first.Header().Get("Credential-Etag")
+	requirements.NotEmpty(credentialETag)
+
+	set := performSettingsRequest(t, srv, http.MethodPut,
+		"/api/v1/settings/provider-credentials/jev%2Fapi_key",
+		[]byte(`{"value":"jev-secret-must-not-leak"}`), credentialETag, "")
+	requirements.Equal(http.StatusOK, set.Code, set.Body.String())
+	assertions.NotContains(set.Body.String(), "jev-secret-must-not-leak")
+
+	credentialBytes, err := os.ReadFile(filepath.Join(srv.cfg.TokensDir(), "provider-credentials.json"))
+	requirements.NoError(err)
+	assertions.Contains(string(credentialBytes), "jev/api_key")
+
+	clear := performSettingsRequest(t, srv, http.MethodDelete,
+		"/api/v1/settings/provider-credentials/jev%2Fapi_key", nil, set.Header().Get("ETag"), "")
+	assertions.Equal(http.StatusOK, clear.Code, clear.Body.String())
+}
