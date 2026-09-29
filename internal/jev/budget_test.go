@@ -186,15 +186,250 @@ func TestBudgetHalfOpenAllowsOneProbeAtATime(t *testing.T) {
 	require := require.New(t)
 	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
 	budget := &Budget{MaxRequests: 100, FailureThreshold: 1, Cooldown: time.Second, Now: func() time.Time { return now }}
-	require.NoError(budget.reserve())
-	budget.fail()
+	first, err := budget.reserve()
+	require.NoError(err)
+	assert.False(first.probe, "a closed breaker admits ordinary requests")
+	budget.fail(first)
 	now = now.Add(2 * time.Second)
-	require.NoError(budget.reserve(), "first probe")
-	require.ErrorIs(budget.reserve(), ErrBreakerOpen, "second concurrent probe waits")
+	probe, err := budget.reserve()
+	require.NoError(err, "first probe")
+	assert.True(probe.probe)
+	_, err = budget.reserve()
+	require.ErrorIs(err, ErrBreakerOpen, "second concurrent probe waits")
 	require.ErrorIs(budget.preflight(1), ErrBreakerOpen)
-	budget.record(Usage{InputTokens: new(int64(1)), OutputTokens: new(int64(1)), Complete: true})
-	require.NoError(budget.reserve())
+	budget.record(probe, Usage{InputTokens: new(int64(1)), OutputTokens: new(int64(1)), Complete: true})
+	after, err := budget.reserve()
+	require.NoError(err)
+	assert.False(after.probe)
+	budget.record(after, Usage{InputTokens: new(int64(1)), OutputTokens: new(int64(1)), Complete: true})
 	assert.Equal(3, budget.State().Attempts)
+	assert.Zero(budget.State().InFlight)
+}
+
+// TestBudgetOnlyTheProbeEndsItsOwnExclusivity pins invariant 1 against every
+// way a sibling reservation admitted before the breaker opened can settle
+// while the probe is still in flight: a refused day reservation (release), a
+// caller cancellation (outcome), a provider failure, and an answer.
+func TestBudgetOnlyTheProbeEndsItsOwnExclusivity(t *testing.T) {
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	settlements := map[string]func(*Budget, reservation){
+		"release": func(b *Budget, r reservation) { b.release(r) },
+		"caller cancellation": func(b *Budget, r reservation) {
+			b.outcome(cancelled, r, context.Canceled, false)
+		},
+		"provider failure": func(b *Budget, r reservation) { b.fail(r) },
+	}
+	for name, settle := range settlements {
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+			budget := &Budget{MaxRequests: 100, FailureThreshold: 1, Cooldown: time.Second, Now: func() time.Time { return now }}
+			sibling, err := budget.reserve()
+			require.NoError(err)
+			require.False(sibling.probe)
+			opener, err := budget.reserve()
+			require.NoError(err)
+			budget.fail(opener)
+			now = now.Add(2 * time.Second)
+			probe, err := budget.reserve()
+			require.NoError(err)
+			require.True(probe.probe)
+
+			settle(budget, sibling)
+			_, err = budget.reserve()
+			require.ErrorIs(err, ErrBreakerOpen, "a sibling settling must not free the probe slot")
+			assert.False(budget.halfOpen(), "AskAll must not see a free probe slot either")
+
+			budget.record(probe, Usage{InputTokens: new(int64(1)), OutputTokens: new(int64(1)), Complete: true})
+			after, err := budget.reserve()
+			require.NoError(err, "the probe's own answer closes the breaker")
+			budget.release(after)
+			assert.Zero(budget.State().InFlight)
+		})
+	}
+}
+
+// TestBudgetConcurrentHalfOpenReservesAdmitOneProbe races many reservations
+// at a half-open breaker; exactly one becomes the probe. Run under -race.
+func TestBudgetConcurrentHalfOpenReservesAdmitOneProbe(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var clock sync.Mutex
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	budget := &Budget{MaxRequests: 1000, FailureThreshold: 1, Cooldown: time.Second, Now: func() time.Time {
+		clock.Lock()
+		defer clock.Unlock()
+		return now
+	}}
+	opener, err := budget.reserve()
+	require.NoError(err)
+	budget.fail(opener)
+	clock.Lock()
+	now = now.Add(2 * time.Second)
+	clock.Unlock()
+
+	var admitted, refused atomic.Int32
+	var probes sync.Map
+	var group sync.WaitGroup
+	start := make(chan struct{})
+	for i := range 64 {
+		group.Go(func() {
+			<-start
+			r, reserveErr := budget.reserve()
+			if reserveErr != nil {
+				assert.ErrorIs(reserveErr, ErrBreakerOpen)
+				refused.Add(1)
+				return
+			}
+			admitted.Add(1)
+			probes.Store(i, r)
+		})
+	}
+	close(start)
+	group.Wait()
+	assert.Equal(int32(1), admitted.Load(), "exactly one probe is admitted")
+	assert.Equal(int32(63), refused.Load())
+	assert.Equal(1, budget.State().InFlight)
+	probes.Range(func(_, value any) bool {
+		r, ok := value.(reservation)
+		require.True(ok)
+		assert.True(r.probe)
+		budget.fail(r)
+		return true
+	})
+	assert.Zero(budget.State().InFlight)
+}
+
+// blockingLedger holds reservations for one feature until released, then
+// refuses them, so a test can settle a pre-open sibling while a probe is in
+// flight.
+type blockingLedger struct {
+	fakeLedger
+	blockedFeature string
+	entered        chan struct{}
+	proceed        chan struct{}
+}
+
+func (l *blockingLedger) ReserveJevDayRequest(ctx context.Context, reservation DayReservation) error {
+	if reservation.Feature == l.blockedFeature {
+		close(l.entered)
+		<-l.proceed
+		return ErrDayRequestLimit
+	}
+	return l.fakeLedger.ReserveJevDayRequest(ctx, reservation)
+}
+
+// TestClientDayRefusalOfASiblingKeepsTheProbeExclusive is the client-level
+// interleaving behind invariant 1: a request admitted while the breaker was
+// closed is refused by the day ledger only after the breaker opened and a
+// probe went out. Its release must not let a second probe through.
+func TestClientDayRefusalOfASiblingKeepsTheProbeExclusive(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var clock sync.Mutex
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	clockNow := func() time.Time {
+		clock.Lock()
+		defer clock.Unlock()
+		return now
+	}
+	budget := &Budget{MaxRequests: 100, FailureThreshold: 1, Cooldown: time.Minute, Now: clockNow}
+	ledger := &blockingLedger{blockedFeature: "blocked_feature", entered: make(chan struct{}), proceed: make(chan struct{})}
+	var calls atomic.Int32
+	probeEntered := make(chan struct{})
+	probeProceed := make(chan struct{})
+	client, err := NewClient(Options{
+		APIKey: "k", Budget: budget, Ledger: ledger, Now: clockNow,
+		Transport: testTransport(func(*http.Request) (*http.Response, error) {
+			switch calls.Add(1) {
+			case 1:
+				return nil, errors.New("connection refused")
+			case 2:
+				close(probeEntered)
+				<-probeProceed
+			}
+			return jsonResponse(measuredResponse), nil
+		}),
+	})
+	require.NoError(err)
+	request := noulRequest("matches")
+	request.Feature = "enrichment_identity"
+	blocked := noulRequest("matches")
+	blocked.Feature = "blocked_feature"
+
+	siblingDone := make(chan error, 1)
+	go func() {
+		_, askErr := client.Ask(context.Background(), blocked)
+		siblingDone <- askErr
+	}()
+	<-ledger.entered
+
+	_, err = client.Ask(context.Background(), request)
+	require.Error(err, "one failure opens the breaker")
+	clock.Lock()
+	now = now.Add(2 * time.Minute)
+	clock.Unlock()
+
+	probeDone := make(chan error, 1)
+	go func() {
+		_, askErr := client.Ask(context.Background(), request)
+		probeDone <- askErr
+	}()
+	<-probeEntered
+
+	close(ledger.proceed)
+	require.ErrorIs(<-siblingDone, ErrDayRequestLimit)
+	_, err = client.Ask(context.Background(), request)
+	require.ErrorIs(err, ErrBreakerOpen, "the sibling's release left the probe slot taken")
+	assert.Equal(int32(2), calls.Load(), "no second probe was sent")
+
+	close(probeProceed)
+	require.NoError(<-probeDone)
+	_, err = client.Ask(context.Background(), request)
+	require.NoError(err, "the probe's answer closed the breaker")
+	assert.Zero(budget.State().InFlight)
+}
+
+// TestClientMidFlightCallerCancellationEndsTheProbeWithoutCounting pins
+// invariant 4 for a request that already left the process: cancelling the
+// probe neither counts as a failure nor extends the cool-down, and the next
+// request may probe again.
+func TestClientMidFlightCallerCancellationEndsTheProbeWithoutCounting(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	budget := &Budget{MaxRequests: 100, FailureThreshold: 1, Cooldown: time.Minute, Now: func() time.Time { return now }}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var calls atomic.Int32
+	client := newTestClient(t, budget, func(request *http.Request) (*http.Response, error) {
+		switch calls.Add(1) {
+		case 1:
+			return nil, errors.New("connection refused")
+		case 2:
+			cancel()
+			<-request.Context().Done()
+			return nil, request.Context().Err()
+		}
+		return jsonResponse(measuredResponse), nil
+	})
+	_, err := client.Ask(context.Background(), noulRequest("matches"))
+	require.Error(err)
+	openUntil := budget.State().OpenUntil
+	now = now.Add(2 * time.Minute)
+
+	_, err = client.Ask(ctx, noulRequest("matches"))
+	require.ErrorIs(err, context.Canceled)
+	state := budget.State()
+	assert.Equal(1, state.ConsecutiveFailures, "the cancelled probe is not a failure")
+	assert.Equal(openUntil, state.OpenUntil, "and does not extend the cool-down")
+	assert.Zero(state.InFlight)
+
+	_, err = client.Ask(context.Background(), noulRequest("matches"))
+	require.NoError(err, "the probe slot is free for the next request")
+	assert.Equal(int32(3), calls.Load())
 }
 
 func TestBudgetWithoutPricesCountsRequestsOnly(t *testing.T) {

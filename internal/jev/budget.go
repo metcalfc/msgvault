@@ -55,6 +55,25 @@ type Budget struct {
 	failures     int
 	openUntil    time.Time
 	probing      bool
+	inFlight     int
+}
+
+// Budget invariants. Every method below preserves them; tests pin each one.
+//
+//  1. At most one half-open probe is in flight: reserve sets probing only for
+//     the reservation it marks as the probe, and only that reservation clears
+//     it when it settles.
+//  2. Every successful reserve is settled exactly once, by release, record,
+//     or outcome; inFlight counts the unsettled ones.
+//  3. release is for a request that never left the process; it also returns
+//     the in-process attempt. The client pairs it with releasing the day.
+//  4. Caller cancellation never counts toward the breaker.
+//  5. Prices are read under the lock.
+
+// reservation is one admitted request. probe marks the reservation that
+// holds the half-open breaker's single probe slot.
+type reservation struct {
+	probe bool
 }
 
 // BudgetState is a snapshot for status output and logs. It carries no
@@ -64,6 +83,7 @@ type BudgetState struct {
 	CostUSD             float64   `json:"cost_usd"`
 	CostDay             string    `json:"cost_day,omitzero"`
 	ConsecutiveFailures int       `json:"consecutive_failures"`
+	InFlight            int       `json:"in_flight"`
 	OpenUntil           time.Time `json:"open_until,omitzero"`
 	UsageUnknownUntil   time.Time `json:"usage_unknown_until,omitzero"`
 	CostStopped         bool      `json:"cost_stopped"`
@@ -76,6 +96,7 @@ func (b *Budget) State() BudgetState {
 	b.rollDay()
 	return BudgetState{
 		Attempts: b.attempts, CostUSD: b.cost, CostDay: b.costDay, ConsecutiveFailures: b.failures,
+		InFlight: b.inFlight,
 		OpenUntil: b.openUntil, UsageUnknownUntil: b.unknownUntil, CostStopped: b.costStopped(),
 	}
 }
@@ -166,21 +187,36 @@ func (b *Budget) halfOpen() bool {
 	return !b.openUntil.IsZero() && !b.now().Before(b.openUntil) && !b.probing
 }
 
-func (b *Budget) reserve() error {
+// reserve admits one request. The caller must settle the returned
+// reservation exactly once with release, record, or outcome.
+func (b *Budget) reserve() (reservation, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if err := b.blocked(); err != nil {
-		return err
+		return reservation{}, err
 	}
 	if b.attempts >= b.MaxRequests {
-		return ErrRequestLimit
+		return reservation{}, ErrRequestLimit
 	}
+	var admitted reservation
 	if !b.openUntil.IsZero() {
 		// Half-open: exactly one probe may run until it reports back.
 		b.probing = true
+		admitted.probe = true
 	}
 	b.attempts++
-	return nil
+	b.inFlight++
+	return admitted, nil
+}
+
+// settle retires one reservation. Only the probe's own reservation ends the
+// probe, so a sibling settling first cannot let a second probe start. The
+// caller holds the lock.
+func (b *Budget) settle(admitted reservation) {
+	b.inFlight--
+	if admitted.probe {
+		b.probing = false
+	}
 }
 
 func (b *Budget) preflight(requests int) error {
@@ -193,22 +229,25 @@ func (b *Budget) preflight(requests int) error {
 }
 
 // release returns a reservation that never left the process, so a refused
-// day reservation does not consume an in-process attempt or a probe.
-func (b *Budget) release() {
+// day reservation does not consume an in-process attempt. A released probe
+// frees the probe slot; any other release leaves an in-flight probe alone.
+func (b *Budget) release(admitted reservation) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.attempts > 0 {
 		b.attempts--
 	}
-	b.probing = false
+	b.settle(admitted)
 }
 
-func (b *Budget) record(usage Usage) {
+// record settles a request that got an answer. Any answer closes the
+// breaker; a probe still in flight clears its own slot when it settles.
+func (b *Budget) record(admitted reservation, usage Usage) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.settle(admitted)
 	b.failures = 0
 	b.openUntil = time.Time{}
-	b.probing = false
 	b.unknownUntil = time.Time{}
 	if usage.InputTokens == nil || usage.OutputTokens == nil {
 		if b.priced() {
@@ -230,24 +269,24 @@ func (b *Budget) record(usage Usage) {
 // outcome records a failed send. A request the caller cancelled, that a
 // sibling's failure cancelled through the shared group context, or that ran
 // out of a caller deadline shorter than the client's own timeout says nothing
-// about the provider and does not count toward the breaker; it only ends a
-// half-open probe. The client's per-request timeout does count: the provider
-// did not answer in the time the operator allowed it.
-func (b *Budget) outcome(ctx context.Context, err error, callerBound bool) {
+// about the provider and does not count toward the breaker; it only settles
+// the reservation, which ends the half-open probe if it was one. The client's per-request timeout does count: the
+// provider did not answer in the time the operator allowed it.
+func (b *Budget) outcome(ctx context.Context, admitted reservation, err error, callerBound bool) {
 	cancelled := errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 	if cancelled && (ctx.Err() != nil || callerBound) {
 		b.mu.Lock()
-		b.probing = false
+		b.settle(admitted)
 		b.mu.Unlock()
 		return
 	}
-	b.fail()
+	b.fail(admitted)
 }
 
-func (b *Budget) fail() {
+func (b *Budget) fail(admitted reservation) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.probing = false
+	b.settle(admitted)
 	b.failures++
 	if b.PerRun {
 		b.halted = true

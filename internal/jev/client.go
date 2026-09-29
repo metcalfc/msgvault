@@ -377,27 +377,28 @@ func (c *Client) Ask(ctx context.Context, request Request) (Response, error) {
 	// The in-process budget is reserved first: a breaker or cost stop must
 	// never touch the persisted day counters. A refused day reservation
 	// releases the in-process slot so neither count drifts.
-	if err := c.budget.reserve(); err != nil {
+	admitted, err := c.budget.reserve()
+	if err != nil {
 		return emptyResponse(), err
 	}
 	day, err := c.reserveDay(ctx, request.Feature)
 	if err != nil {
-		c.budget.release()
+		c.budget.release(admitted)
 		return emptyResponse(), err
 	}
 	started := c.now()
 	response, err := c.send(ctx, request.Deadline, body, request.Questions)
 	if errors.Is(err, errNotSent) {
-		c.budget.release()
+		c.budget.release(admitted)
 		c.releaseDay(ctx, request.Feature, day)
 		return emptyResponse(), ctx.Err()
 	}
 	if err != nil {
-		c.budget.outcome(ctx, err, c.callerBound(request.Deadline, started))
+		c.budget.outcome(ctx, admitted, err, c.callerBound(request.Deadline, started))
 		c.recordDay(ctx, request.Feature, day, Usage{})
 		return Response{Usage: Usage{Requests: 1}}, err
 	}
-	c.budget.record(response.Usage)
+	c.budget.record(admitted, response.Usage)
 	c.recordDay(ctx, request.Feature, day, response.Usage)
 	response.Usage.Requests = 1
 	return response, nil
@@ -447,18 +448,19 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 			if err := groupCtx.Err(); err != nil {
 				return err
 			}
-			if err := c.budget.reserve(); err != nil {
+			admitted, err := c.budget.reserve()
+			if err != nil {
 				return err
 			}
 			day, err := c.reserveDay(groupCtx, requests[i].Feature)
 			if err != nil {
-				c.budget.release()
+				c.budget.release(admitted)
 				return err
 			}
 			started := c.now()
 			response, err := c.send(groupCtx, requests[i].Deadline, body, requests[i].Questions)
 			if errors.Is(err, errNotSent) {
-				c.budget.release()
+				c.budget.release(admitted)
 				c.releaseDay(groupCtx, requests[i].Feature, day)
 				return groupCtx.Err()
 			}
@@ -469,11 +471,11 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 				mu.Lock()
 				complete = false
 				mu.Unlock()
-				c.budget.outcome(groupCtx, err, c.callerBound(requests[i].Deadline, started))
+				c.budget.outcome(groupCtx, admitted, err, c.callerBound(requests[i].Deadline, started))
 				c.recordDay(groupCtx, requests[i].Feature, day, Usage{})
 				return err
 			}
-			c.budget.record(response.Usage)
+			c.budget.record(admitted, response.Usage)
 			c.recordDay(groupCtx, requests[i].Feature, day, response.Usage)
 			mu.Lock()
 			defer mu.Unlock()
