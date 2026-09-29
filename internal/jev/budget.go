@@ -96,7 +96,7 @@ func (b *Budget) State() BudgetState {
 	b.rollDay()
 	return BudgetState{
 		Attempts: b.attempts, CostUSD: b.cost, CostDay: b.costDay, ConsecutiveFailures: b.failures,
-		InFlight: b.inFlight,
+		InFlight:  b.inFlight,
 		OpenUntil: b.openUntil, UsageUnknownUntil: b.unknownUntil, CostStopped: b.costStopped(),
 	}
 }
