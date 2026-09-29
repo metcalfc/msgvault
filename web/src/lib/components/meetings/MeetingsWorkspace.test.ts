@@ -61,6 +61,39 @@ describe('Meetings workspace', () => {
     expect(bodies[1]!.filters.some((filter) => filter.dimension === 'after')).toBe(false);
   });
 
+  it('asks for later pages with the first page\'s exact bounds, so the cursor stays valid', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-29T12:00:00Z'));
+    try {
+      const bodies: Array<{ cursor?: string; filters: Array<{ dimension: string; values: string[] }> }> = [];
+      const fetchFn = vi.fn<typeof fetch>(async (input) => {
+        const request = input instanceof Request ? input : new Request(input);
+        const path = new URL(request.url).pathname;
+        if (path === '/api/v1/explore') {
+          const body = await request.clone().json();
+          bodies.push(body);
+          return Response.json(body.cursor
+            ? { rows: [meetingRow(75, 'calendar_event', 'Older sync')], total_count: 2, cache_revision: 'c', search_provenance: {} }
+            : { rows: [meetingRow(76, 'calendar_event', 'Weekly sync')], total_count: 2, cache_revision: 'c', search_provenance: {}, next_cursor: 'page-2' });
+        }
+        if (path === '/api/v1/sources/status') return Response.json({ sources: [] });
+        return Response.json({}, { status: 404 });
+      });
+      render(MeetingsWorkspace, {
+        client: createAPIClient(fetchFn), person: '', source: '', since: '30d', onFiltersChange: vi.fn(), onOpenMeeting: vi.fn(),
+      });
+      const more = await screen.findByRole('button', { name: 'Load more meetings' });
+      // Time passes between pages; the bounds must not move with it.
+      vi.setSystemTime(new Date('2026-09-29T12:05:00Z'));
+      await fireEvent.click(more);
+      await waitFor(() => expect(bodies).toHaveLength(2));
+      expect(bodies[1]!.cursor).toBe('page-2');
+      expect(bodies[1]!.filters).toEqual(bodies[0]!.filters);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('shows a transcript with its action items', async () => {
     const actionRequests: unknown[] = [];
     const transcript = {

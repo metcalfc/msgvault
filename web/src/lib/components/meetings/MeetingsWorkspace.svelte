@@ -33,6 +33,11 @@
   let controller: AbortController | undefined;
   onDestroy(() => controller?.abort());
 
+  /** The filters behind the loaded first page. A cursor is bound to its
+   * first page's exact request, so later pages reuse these bounds rather
+   * than recomputing "now". */
+  let pageFilters: ExploreFilter[] = [];
+
   /** Calendar events and meeting transcripts, newest first, within the
    * window, and narrowed to one person or account when chosen. */
   function filters(): ExploreFilter[] {
@@ -55,11 +60,12 @@
       loading = true;
       error = '';
       unavailable = false;
+      pageFilters = filters();
     } else loadingMore = true;
     const signal = controller!.signal;
     try {
       const loaded = await api.explore({
-        filters: filters(), presentation: 'table', grouping: [],
+        filters: pageFilters, presentation: 'table', grouping: [],
         sort: [{ field: 'occurred_at', direction: 'desc' }], limit: PAGE_LIMIT,
         ...(next ? { cursor: next } : {}),
       }, signal);
