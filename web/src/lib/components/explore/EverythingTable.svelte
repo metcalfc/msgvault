@@ -488,6 +488,8 @@
                 class:data-row--selected={selection.isSelected(row.key)}
                 class:data-row--inspected={inspectedKey === row.key}
                 id={rowId(row)}
+                data-list-row
+                data-active={index === activeIndex}
                 data-row-key={row.key}
                 role="row"
                 tabindex="-1"
@@ -518,7 +520,7 @@
                         />
                       {/if}
                     {:else if column === 'title'}
-                      <strong>{row.title || '(untitled)'}</strong>
+                      <strong data-row-title>{row.title || '(untitled)'}</strong>
                     {:else if column === 'excerpt'}
                       {decodeHTMLEntities(row.match.strongest_excerpt || row.preview)}
                       {#if row.match.lexical_match_count !== undefined}
@@ -579,10 +581,15 @@
     overflow: hidden;
   }
 
+  /* Rows and the header share one grid template; the row carries the 8px
+   * inset and the column gap so cells stay flush with the row's edges. */
   .table-header,
-  .data-row {
+  .data-row,
+  .skeleton-row {
     display: grid;
     align-items: center;
+    column-gap: var(--space-4);
+    padding: 0 var(--space-4);
   }
 
   .table-grid {
@@ -625,7 +632,6 @@
   .table-header span,
   .cell {
     min-width: 0;
-    padding: 0 var(--space-4);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -648,26 +654,23 @@
     inset: 0 0 auto;
   }
 
+  /* The shared list-row contract (anatomy.css) owns inset, hairline, hover,
+   * cursor, and the inspected row (aria-current). Bulk selection
+   * (aria-selected) keeps its own teal tint so a checked row and the row
+   * open in the reading pane stay distinguishable. */
   .data-row,
   .skeleton-row {
     height: var(--row-height);
-    border-bottom: 1px solid var(--border-muted);
+  }
+
+  .skeleton-row {
+    border-bottom: 1px solid var(--hairline);
   }
 
   .data-row {
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
     font-variant-numeric: tabular-nums;
-    cursor: default;
-    transition: background-color 80ms ease-out;
-  }
-
-  .data-row:hover {
-    background: var(--bg-surface-hover);
-  }
-
-  .data-row--active {
-    box-shadow: inset 2px 0 0 var(--accent-blue);
   }
 
   .table-grid:focus-visible .data-row--active:not(.data-row--selected):not(.data-row--inspected) {
@@ -683,18 +686,6 @@
   .cell--time,
   .cell--size {
     text-align: right;
-  }
-
-  /* The row open in the reading pane shares the app-wide selection
-   * language: 2px accent inset bar over the selected surface. */
-  .data-row--inspected {
-    background: var(--selected-bg);
-    box-shadow: inset 2px 0 0 var(--accent-blue);
-  }
-
-  .cell--title strong {
-    color: var(--text-primary);
-    font-weight: 600;
   }
 
   .cell--time,
@@ -735,14 +726,8 @@
     min-height: 200px;
   }
 
-  .skeleton-row {
-    display: grid;
-    align-items: center;
-  }
-
   .skeleton-cell {
     min-width: 0;
-    padding: 0 var(--space-4);
   }
 
   .skeleton-cell i {

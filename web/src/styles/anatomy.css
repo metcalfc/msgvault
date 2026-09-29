@@ -135,3 +135,41 @@
     grid-column: 1 / -1;
   }
 }
+
+/* List rows: one contract for the Relationships list, the timeline,
+ * Everything, and the Directory. A row is one density row tall, inset 8px,
+ * ruled below by a hairline. Hover is a wash, the keyboard cursor
+ * (data-active) is a 2px accent bar, and the selection (aria-selected, or
+ * aria-current for the row open in a reading pane) is that bar over a 12%
+ * accent tint — never an outline ring or a per-row border. A two-line row
+ * is a data-row-title line over a data-meta line; only a trailing date
+ * speaks mono. Components own the row's inner layout. */
+:where([data-list-row]) {
+  min-height: var(--row-height);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--hairline);
+  cursor: default;
+  transition: background-color 80ms ease-out;
+}
+
+:where([data-list-row]:hover) {
+  background: var(--bg-surface-hover);
+}
+
+:where([data-list-row][data-active='true']) {
+  box-shadow: inset 2px 0 0 var(--accent-blue);
+}
+
+:where([data-list-row][aria-selected='true']),
+:where([data-list-row][aria-current='true']) {
+  background: var(--selected-bg);
+  box-shadow: inset 2px 0 0 var(--accent-blue);
+}
+
+:where([data-list-row] [data-row-title]),
+:where([data-list-row] [data-meta]) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

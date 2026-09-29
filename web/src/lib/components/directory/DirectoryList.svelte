@@ -110,6 +110,8 @@
         {#each visibleRows as person (person.id)}
           <div
             role="row"
+            data-list-row
+            data-active={person.id === activeID}
             data-person-id={person.id}
             class:active={person.id === activeID}
             class:selected={person.id === selectedPersonID}
@@ -118,11 +120,16 @@
             onkeydown={handleKeydown}
             onclick={() => { activeID = person.id; onSelect(person.id); }}
           >
-            <span role="gridcell" class="name">{person.display_name ?? `Person ${person.id}`}</span>
-            <span role="gridcell" class="meta">{person.primary_channel ?? 'No primary channel'} · {person.contact_state}</span>
-            <span role="gridcell" class="meta">{#if person.last_contact_at}Last contact <time datetime={person.last_contact_at}>{humanizeDate(person.last_contact_at)}</time>{:else}Never contacted{/if}</span>
-            {#if person.organizations?.length}<span role="gridcell" class="meta">{person.organizations.join(' · ')}</span>{/if}
-            {#if person.categories?.length}<span role="gridcell" class="meta">{person.categories.join(' · ')}</span>{/if}
+            <span role="gridcell" class="row-main">
+              <span class="name" data-row-title>{person.display_name ?? `Person ${person.id}`}</span>
+              <span class="last-contact" data-mono>{#if person.last_contact_at}Last contact <time datetime={person.last_contact_at}>{humanizeDate(person.last_contact_at)}</time>{:else}Never contacted{/if}</span>
+            </span>
+            <span role="gridcell" class="meta" data-meta>{[
+              person.primary_channel ?? 'No primary channel',
+              person.contact_state,
+              ...(person.organizations ?? []),
+              ...(person.categories ?? [])
+            ].join(' · ')}</span>
           </div>
         {/each}
       </div>
@@ -135,13 +142,15 @@
 
 <style>
   .directory-list { min-width: 0; display: flex; flex-direction: column; gap: var(--space-3); }
-  [role="grid"] { display: grid; gap: 2px; outline: none; }
-  [role="row"] { display: grid; gap: 2px; text-align: left; border: 1px solid transparent; border-radius: var(--radius-sm); padding: var(--space-3); background: var(--bg-surface); color: var(--text-primary); cursor: pointer; }
-  [role="row"]:hover, [role="row"].active { background: var(--bg-surface-hover); }
-  [role="row"].selected { border-color: var(--edge); }
-  [role="row"]:focus-visible, [role="grid"]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-  .name { font-weight: var(--font-weight-semibold, 600); }
-  .meta, .empty { color: var(--text-muted); font-size: var(--font-size-sm); }
+  /* The list is the Directory's panel; its rows follow the shared list-row
+   * contract (anatomy.css): two lines, hairline below, bar and tint for
+   * the cursor and the selection. */
+  [role="grid"] { display: grid; align-content: start; outline: none; background: var(--surface-panel); }
+  [role="row"] { display: grid; height: var(--row-height); align-content: center; gap: 1px; text-align: left; color: var(--text-primary); cursor: pointer; }
+  [role="row"]:focus-visible, [role="grid"]:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+  .row-main { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); }
+  .last-contact { flex: none; color: var(--text-muted); font-size: var(--font-size-xs); }
+  .empty { color: var(--text-muted); font-size: var(--font-size-sm); }
   .notice { padding: var(--space-3); color: var(--text-secondary); background: var(--bg-inset); border-radius: var(--radius-sm); }
   .page-error { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
   .more { display: flex; justify-content: center; }

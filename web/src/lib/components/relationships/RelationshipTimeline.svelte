@@ -218,6 +218,8 @@
                   class:selected={item.key === selectedKey}
                   role="row"
                   tabindex="-1"
+                  data-list-row
+                  data-active={item.key === activeKey}
                   data-row-key={item.key}
                   aria-selected={item.key === selectedKey}
                   style:height={`${rowHeight}px`}
@@ -226,10 +228,10 @@
                 >
                   <div role="gridcell">
                     <span class="row-top">
-                      <strong>{timelineRowTitle(item.row)}</strong>
+                      <strong data-row-title>{timelineRowTitle(item.row)}</strong>
                       <time datetime={item.row.occurred_at} data-mono>{formatTime(item.row.occurred_at)}</time>
                     </span>
-                    <span class="preview">{item.row.preview}</span>
+                    <span class="preview" data-meta>{item.row.preview}</span>
                   </div>
                 </div>
               {/if}
@@ -311,7 +313,7 @@
   .month-header {
     display: flex;
     align-items: center;
-    padding: 0 var(--space-3);
+    padding: 0 var(--space-4);
   }
 
   .month-header [role='gridcell'] {
@@ -329,21 +331,20 @@
     background: var(--border-muted);
   }
 
+  /* The shared list-row contract (anatomy.css) owns inset, hairline, hover,
+   * cursor, and selection; the row's fixed height comes from the virtual
+   * geometry. */
   .timeline-row {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 2px;
-    border-bottom: 1px solid var(--border-muted);
-    cursor: default;
   }
 
   .timeline-row [role='gridcell'] {
     display: flex;
     min-width: 0;
     flex-direction: column;
-    gap: 2px;
-    padding: 0 var(--space-3);
+    gap: 1px;
   }
 
   .row-top {
@@ -362,23 +363,6 @@
     flex: none;
   }
 
-  .timeline-row {
-    transition: background-color 80ms ease-out;
-  }
-
-  .timeline-row:hover {
-    background: var(--bg-surface-hover);
-  }
-
-  .timeline-row.active {
-    box-shadow: inset 2px 0 0 var(--accent-blue);
-  }
-
-  .timeline-row.selected {
-    background: var(--selected-bg);
-    box-shadow: inset 2px 0 0 var(--accent-blue);
-  }
-
   .timeline-empty {
     margin: 0;
     padding: var(--space-7) var(--space-3);
@@ -387,29 +371,12 @@
     text-align: center;
   }
 
-  .timeline-row strong {
-    overflow: hidden;
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .timeline-row .preview {
-    overflow: hidden;
-    color: var(--text-secondary);
-    font-size: var(--font-size-xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   /* Day/time markers hold a fixed right-edge column with tabular digits so
    * the gutter reads ruled down the whole pane instead of ragged. */
   .timeline-row time {
     min-width: 9ch;
     color: var(--text-muted);
-    font-size: var(--font-size-2xs);
+    font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
     text-align: right;
   }

@@ -255,6 +255,8 @@
             class:selected={view.target === activeTarget}
             role="row"
             tabindex="-1"
+            data-list-row
+            data-active={index === activeIndex}
             data-row-key={view.key}
             aria-selected={view.target === activeTarget}
             style:--reveal-index={index}
@@ -270,11 +272,13 @@
               />
               <div class="row-body">
                 <div class="row-main">
-                  <span class="label">{view.label}</span>
+                  <span class="label" data-row-title>{view.label}</span>
                   <span class="last-at" data-mono>{compactDate(view.lastAt)}</span>
                 </div>
-                {#if view.identifier}<span class="row-identifier" data-mono>{view.identifier}</span>{/if}
-                <span class="row-summary" data-mono>{view.summary}</span>
+                <span class="row-meta" data-meta>
+                  {#if view.identifier}<span class="row-identifier">{view.identifier}</span>{/if}
+                  <span class="row-summary">{view.summary}</span>
+                </span>
               </div>
             </div>
           </div>
@@ -395,18 +399,17 @@
     outline-offset: -2px;
   }
 
+  /* The shared list-row contract (anatomy.css) owns height, inset,
+   * hairline, hover, cursor, and selection; this is the two-line layout. */
   .result-row {
-    border-radius: var(--radius-sm);
-    cursor: default;
-    transition: background-color 80ms ease-out;
+    height: var(--row-height);
   }
 
   .result-row [role='gridcell'] {
     display: flex;
-    min-height: 52px;
+    height: 100%;
     align-items: center;
     gap: var(--space-4);
-    padding: var(--space-3) var(--space-4);
   }
 
   .row-body {
@@ -414,20 +417,7 @@
     min-width: 0;
     flex: 1;
     flex-direction: column;
-    gap: 2px;
-  }
-
-  .result-row:hover {
-    background: var(--bg-surface-hover);
-  }
-
-  .result-row.active {
-    box-shadow: inset 2px 0 0 var(--accent-blue);
-  }
-
-  .result-row.selected {
-    background: var(--selected-bg);
-    box-shadow: inset 2px 0 0 var(--accent-blue);
+    gap: 1px;
   }
 
   .row-main {
@@ -437,37 +427,35 @@
     gap: var(--space-4);
   }
 
-  .label {
-    overflow: hidden;
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .last-at {
     flex: none;
     color: var(--text-muted);
-    font-size: var(--font-size-2xs);
+    font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
   }
 
-  .row-identifier {
+  .row-meta {
+    display: flex;
+    min-height: 1em;
+    gap: var(--space-2);
+  }
+
+  .row-identifier,
+  .row-summary {
     overflow: hidden;
-    color: var(--text-secondary);
-    font-size: var(--font-size-2xs);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .row-summary {
-    min-height: 1em;
-    overflow: hidden;
-    color: var(--text-muted);
-    font-size: var(--font-size-2xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .row-identifier {
+    flex: none;
+    max-width: 60%;
+    color: var(--text-secondary);
+  }
+
+  .row-identifier + .row-summary:not(:empty)::before {
+    content: '·';
+    margin-right: var(--space-2);
   }
 
   @media (prefers-reduced-motion: no-preference) {

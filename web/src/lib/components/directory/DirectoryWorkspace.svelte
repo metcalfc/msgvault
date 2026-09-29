@@ -180,6 +180,6 @@
   .directory-content { display: grid; grid-row: 4; min-height: 0; overflow: hidden; }
   .directory-content > :global(*) { min-height: 0; overflow: auto; }
   .directory-content.has-detail { grid-template-columns: minmax(260px, 0.8fr) minmax(360px, 1.2fr); gap: var(--space-4); }
-  .detail-pane { border-left: 1px solid var(--hairline); min-width: 0; min-height: 0; overflow: auto; }
+  .detail-pane { border-left: 1px solid var(--hairline); min-width: 0; min-height: 0; overflow: auto; background: var(--surface-panel); }
   @media (max-width: 760px) { .directory-workspace { padding: var(--space-3); } }
 </style>
