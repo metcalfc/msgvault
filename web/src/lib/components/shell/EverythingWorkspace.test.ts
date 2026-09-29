@@ -141,6 +141,42 @@ describe('EverythingWorkspace', () => {
     state.destroy();
   });
 
+  it('leaves arrow keys to a focused pane separator instead of stepping the thread', async () => {
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
+    const threadMessage = (id: number) => ({
+      id, conversation_id: 7, subject: `Thread ${id}`, message_type: 'email', from: 'alice@example.com',
+      to: ['bob@example.com'], sent_at: `2026-07-1${id}T12:00:00Z`, snippet: `Preview ${id}`, labels: [],
+      has_attachments: false, size_bytes: 1, body: `Body ${id}`, attachments: []
+    });
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
+      if (path.endsWith('/conversations/7')) {
+        return Response.json({ id: 7, anchor_id: 1, messages: [threadMessage(1), threadMessage(2)], has_before: false, has_after: false, total: 2 });
+      }
+      return Response.json(exploreResponse({
+        rows: [{ ...entry(1), conversation_id: 7, anchor_message_id: 1 }], total_count: 1
+      }));
+    });
+    const state = new ExploreState(window);
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    await screen.findByText('Synthetic subject 1');
+    state.commitNavigation({ selectedRow: 'message:1' });
+    expect((await screen.findByRole('article', { name: 'Message 1' })).getAttribute('aria-current')).toBe('true');
+
+    const separator = screen.getByRole('separator', { name: 'Resize reading pane' });
+    separator.focus();
+    await fireEvent.keyDown(separator, { key: 'ArrowRight' });
+    await fireEvent.keyDown(separator, { key: 'l' });
+    expect(screen.getByRole('article', { name: 'Message 1' }).getAttribute('aria-current')).toBe('true');
+    expect(state.current.conversationAnchor).toBeNull();
+
+    (document.activeElement as HTMLElement | null)?.blur();
+    await fireEvent.keyDown(document.body, { key: 'ArrowRight' });
+    await waitFor(() => expect(screen.getByRole('article', { name: 'Message 2' }).getAttribute('aria-current')).toBe('true'));
+    rendered.unmount();
+    state.destroy();
+  });
+
   it('moves dimensioned operators into removable chips on submit and keeps the rest as text', async () => {
     window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async () => Response.json(exploreResponse({ rows: [entry(1)], total_count: 1 })));

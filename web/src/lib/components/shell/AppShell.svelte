@@ -700,11 +700,19 @@
       element?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), iframe'),
     );
   }
+  const DIRECTIONAL_CONTROLS = [
+    'button', 'select', 'input', 'textarea', '[role="radio"]', '[role="option"]', '[role="separator"]',
+    '[role="slider"]', '[role="spinbutton"]', '[role="tab"]', '[role="menuitem"]', '[role="treeitem"]',
+    '[role="button"]', '[role="combobox"]'
+  ].join(', ');
   function preserveNativeControlKey(event: KeyboardEvent): void {
     if (!(event.target instanceof Element)) return;
     const target = event.target;
     const activationControl = target.closest('button, a[href], summary, [role="button"], [role="option"]');
-    const directionalControl = target.closest('[role="radio"], [role="option"], select');
+    // Arrow keys belong to the focused control: a split-pane separator or a
+    // slider resizes, a button or tab moves within its own widget. Only the
+    // grid and plain reading surfaces hand arrows to app shortcuts.
+    const directionalControl = target.closest(DIRECTIONAL_CONTROLS);
     if (
       (activationControl && (event.key === 'Enter' || event.key === ' ')) ||
       (directionalControl && event.key.startsWith('Arrow'))
@@ -950,7 +958,9 @@
     // pushing one history step per keypress.
     replaceCommittedNavigation({ selectedRow: row.key, conversationAnchor: null });
   }
-  function navigateReader(delta: number): void {
+  function navigateReader(delta: number, event: KeyboardEvent | undefined = undefined): void {
+    // Same guard as relayGridKey: a focused control keeps its own keys.
+    if (event?.target instanceof Element && event.target.closest(`${DIRECTIONAL_CONTROLS}, a, summary`)) return;
     // h/l and ←/→ step within the open thread first.
     if (stepThread(delta)) return;
     if (!exploreState.current.selectedRow || loader.rows.length === 0) return;
@@ -976,8 +986,8 @@
   const commandHandlers: CommandHandlers = {
     'move-next': (event) => relay(event, 'j'),
     'move-previous': (event) => relay(event, 'k'),
-    'reader-previous': () => navigateReader(-1),
-    'reader-next': () => navigateReader(1),
+    'reader-previous': (event) => navigateReader(-1, event),
+    'reader-next': (event) => navigateReader(1, event),
     'page-up': (event) => relay(event, 'PageUp'),
     'page-down': (event) => relay(event, 'PageDown'),
     'first-row': (event) => relay(event, 'Home'),
