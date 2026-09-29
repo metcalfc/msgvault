@@ -5,6 +5,7 @@ import {
   listPersonMerges as generatedListPersonMerges,
   splitPersonMerge as generatedSplitPersonMerge,
 } from '../api/generated/api/api';
+import { invalidatePeopleNames } from '../names/entity-names.svelte';
 import type { APIClient } from '../api/client';
 import type {
   Person as GeneratedPerson,
@@ -387,6 +388,8 @@ export class PersonMergeHistoryController {
       );
       if (!this.ownsSplit(request, generation, context, snapshot.mergeID)) return;
       if (response.data) {
+        // The split moved identities to a new person.
+        invalidatePeopleNames(this.client);
         this.retryKey = null;
         this.retrySnapshot = null;
         this.confirmedSnapshot = null;

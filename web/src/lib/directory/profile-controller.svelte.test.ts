@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../api/client';
+import { entityNames } from '../names/entity-names.svelte';
 import type { DirectoryReadBundle } from './models';
 import { DirectoryProfileController } from './profile-controller.svelte';
 
@@ -202,6 +203,32 @@ describe('DirectoryProfileController', () => {
     expect(controller.personETag).toBe('"person-7-r4"');
     expect(controller.person?.display_name).toBe('Alice Example');
     expect(invalidated).toEqual([7]);
+  });
+
+  it('names the renamed person at once and refreshes the names of its identities', async () => {
+    let participantLabel = 'Test User';
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      if (pathOf(request) === '/api/v1/entity-labels') {
+        return Response.json({ people: [], participants: [{ id: 70, label: participantLabel }], organizations: [] });
+      }
+      if (pathOf(request) === '/api/v1/people/7' && request.method === 'PATCH') {
+        return new Response(JSON.stringify(person(7, 4, 'Renamed User')), { headers: { ETag: '"person-7-r4"' } });
+      }
+      return Response.json({});
+    });
+    const client = createAPIClient(fetchFn);
+    const names = entityNames(client);
+    names.seed('person', 7, 'Test User');
+    await names.load('participant', [70]);
+    const controller = new DirectoryProfileController(client, 7, bundle());
+
+    participantLabel = 'Renamed User';
+    await controller.rename('Renamed User');
+
+    expect(names.label('person', 7)).toBe('Renamed User');
+    expect(names.label('participant', 70)).toBe('Test User');
+    await vi.waitFor(() => expect(names.label('participant', 70)).toBe('Renamed User'));
   });
 
   it('uses the revision returned by a rename for the next structured-profile patch', async () => {

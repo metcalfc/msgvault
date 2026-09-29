@@ -5,7 +5,7 @@ import {
 } from '../api/generated/api/api';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type { APIClient } from '../api/client';
-import { entityNames } from '../names/entity-names.svelte';
+import { entityNames, invalidatePeopleNames } from '../names/entity-names.svelte';
 import type {
   ContactMatchStatus as GeneratedContactMatchStatus,
   IdentityMatchCandidate as GeneratedIdentityMatchCandidate,
@@ -381,6 +381,8 @@ export class DirectoryReviewController {
         return { ok: false, kind: 'error', status: 0, message: 'Decision was superseded.' };
       }
       if (response.data) {
+        // An accepted match can bind an identity to a person.
+        if (decision === 'accept') invalidatePeopleNames(this.client);
         const decidedCandidate = response.data.candidate;
         this.decisionDrafts.delete(candidateID);
         if (!this.ownsDecisionContext(context)) {

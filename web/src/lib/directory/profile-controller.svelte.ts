@@ -10,6 +10,7 @@ import {
   patchPersonStructuredProfile as generatedPatchPersonStructuredProfile,
   setPersonAttribute as generatedSetPersonAttribute,
 } from '../api/generated/api/api';
+import { entityNames, invalidatePeopleNames } from '../names/entity-names.svelte';
 import type { APIClient } from '../api/client';
 import type {
   AttributeDefinition,
@@ -272,6 +273,7 @@ export class DirectoryProfileController {
         this.personETag = etag;
         this.completeMutation(draftGeneration, true);
         this.publish();
+        this.refreshNames(response.data.person);
         await this.invalidateRow(
           body.categories
             ? {
@@ -429,6 +431,14 @@ export class DirectoryProfileController {
     this.createdDefinition = null;
     return true;
   }
+  /**
+   * A saved person may be renamed, and participants bound to it are labelled
+   * by its name, so their cached names are refreshed; the saved name is known.
+   */
+  private refreshNames(person: { id: number; display_name?: string }): void {
+    invalidatePeopleNames(this.client);
+    entityNames(this.client).seed('person', person.id, person.display_name);
+  }
   private async writePerson(body: PatchPersonRequest, draftGeneration: number): Promise<void> {
     this.beginMutation(draftGeneration);
     try {
@@ -444,6 +454,7 @@ export class DirectoryProfileController {
         if (this.structuredProfile) this.structuredProfile = { ...this.structuredProfile, person: response.data };
         this.completeMutation(draftGeneration, true);
         this.publish();
+        this.refreshNames(response.data);
         await this.invalidateRow(undefined, true);
         return;
       }

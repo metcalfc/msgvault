@@ -14,7 +14,7 @@
   } from '@kenn-io/kit-ui';
   import { onDestroy, onMount, untrack } from 'svelte';
   import type { APIClient } from '../../api/client';
-  import { entityNames } from '../../names/entity-names.svelte';
+  import { entityNames, invalidatePeopleNames } from '../../names/entity-names.svelte';
   import {
     isMatchingPersonETag,
     isPersonMergeRevisionConflict,
@@ -169,6 +169,8 @@
       if (disposed || generation !== requestGeneration) return;
       if (response.data) {
         completed = true;
+        // The absorbed person's identities now belong to the survivor.
+        invalidatePeopleNames(client);
         const responseETag = response.response.headers.get('ETag');
         try {
           await onSuccess({

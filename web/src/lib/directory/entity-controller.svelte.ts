@@ -383,6 +383,7 @@ export class DirectoryEntityController {
         const current = this.organizationRecords.get(id);
         if (current) this.organizationRecords.set(id, { ...current, organization: entity });
         this.captureETag(this.organizationETags, id, response);
+        entityNames(this.client).seed('organization', id, entity.name);
       },
     );
     return this.afterDirectoryMutation(result);
@@ -403,6 +404,7 @@ export class DirectoryEntityController {
         this.organizationRecords.set(id, profile);
         this.organizations = replaceByID(this.organizations, profile.organization);
         this.captureETag(this.organizationETags, id, response);
+        entityNames(this.client).seed('organization', id, profile.organization.name);
       },
     );
     return this.afterDirectoryMutation(result);
@@ -423,6 +425,7 @@ export class DirectoryEntityController {
         this.organizations = this.organizations.filter((item) => item.id !== id);
         this.organizationRecords.delete(id);
         this.organizationETags.delete(id);
+        entityNames(this.client).invalidate('organization', [id]);
       },
     );
     return this.afterDirectoryMutation(result);
