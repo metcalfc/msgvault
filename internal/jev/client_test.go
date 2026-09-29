@@ -111,7 +111,9 @@ func TestClientDecodesChoiceScoreAndNoulAnswers(t *testing.T) {
 			"department":{"type":"choice","choice":"billing","probabilities":{"billing":0.88,"technical":0.12},"confidence":0.81},
 			"frustration":{"type":"score","score":1.05,"legend":{"0":"Calm","1":"Frustrated"},"probabilities":{"0":0.0,"1":0.95,"2":0.05},"confidence":0.92}
 		},
-		"usage":{"input_tokens":296,"output_tokens":20}}`), []string{"is_urgent", "department", "frustration"})
+		"usage":{"input_tokens":296,"output_tokens":20}}`), []Question{
+		{ID: "is_urgent", Type: QuestionNoul}, {ID: "department", Type: QuestionChoice}, {ID: "frustration", Type: QuestionScore},
+	})
 	require.NoError(err)
 	assert.Equal(Answer{Type: QuestionNoul, Noul: 0.95}, response.Answers["is_urgent"])
 	assert.Equal(Answer{
@@ -128,24 +130,34 @@ func TestClientDecodesChoiceScoreAndNoulAnswers(t *testing.T) {
 
 func TestClientDecodeRejectsInvalidAnswers(t *testing.T) {
 	client := newTestClient(t, &Budget{MaxRequests: 1, StopUSD: 1}, nil)
+	noul := []Question{{ID: "q", Type: QuestionNoul}}
+	choice := []Question{{ID: "q", Type: QuestionChoice}}
+	score := []Question{{ID: "q", Type: QuestionScore}}
 	cases := map[string]struct {
-		body string
-		ids  []string
+		body      string
+		questions []Question
 	}{
-		"malformed":            {`{`, []string{"q"}},
-		"other model":          {`{"model":"jev-2.0.0","answers":{"q":{"type":"noul","noul":0.5}}}`, []string{"q"}},
-		"missing answer":       {`{"model":"jev-1.13.0","answers":{"other":{"type":"noul","noul":0.5}}}`, []string{"q"}},
-		"extra answer":         {`{"model":"jev-1.13.0","answers":{"q":{"type":"noul","noul":0.5},"x":{"type":"noul","noul":0.5}}}`, []string{"q"}},
-		"noul above one":       {`{"model":"jev-1.13.0","answers":{"q":{"type":"noul","noul":1.5}}}`, []string{"q"}},
-		"choice not option":    {`{"model":"jev-1.13.0","answers":{"q":{"type":"choice","choice":"z","probabilities":{"a":1},"confidence":1}}}`, []string{"q"}},
-		"choice no confidence": {`{"model":"jev-1.13.0","answers":{"q":{"type":"choice","choice":"a","probabilities":{"a":1}}}}`, []string{"q"}},
-		"score negative":       {`{"model":"jev-1.13.0","answers":{"q":{"type":"score","score":-1,"probabilities":{"0":1},"confidence":1}}}`, []string{"q"}},
-		"negative usage":       {`{"model":"jev-1.13.0","answers":{"q":{"type":"noul","noul":0.5}},"usage":{"input_tokens":-1,"output_tokens":1}}`, []string{"q"}},
-		"unknown type":         {`{"model":"jev-1.13.0","answers":{"q":{"type":"guess"}}}`, []string{"q"}},
+		"malformed":            {`{`, noul},
+		"other model":          {`{"model":"jev-2.0.0","answers":{"q":{"type":"noul","noul":0.5}}}`, noul},
+		"missing answer":       {`{"model":"jev-1.13.0","answers":{"other":{"type":"noul","noul":0.5}}}`, noul},
+		"extra answer":         {`{"model":"jev-1.13.0","answers":{"q":{"type":"noul","noul":0.5},"x":{"type":"noul","noul":0.5}}}`, noul},
+		"noul above one":       {`{"model":"jev-1.13.0","answers":{"q":{"type":"noul","noul":1.5}}}`, noul},
+		"choice not option":    {`{"model":"jev-1.13.0","answers":{"q":{"type":"choice","choice":"z","probabilities":{"a":1},"confidence":1}}}`, choice},
+		"choice no confidence": {`{"model":"jev-1.13.0","answers":{"q":{"type":"choice","choice":"a","probabilities":{"a":1}}}}`, choice},
+		"score negative":       {`{"model":"jev-1.13.0","answers":{"q":{"type":"score","score":-1,"probabilities":{"0":1},"confidence":1}}}`, score},
+		"negative usage":       {`{"model":"jev-1.13.0","answers":{"q":{"type":"noul","noul":0.5}},"usage":{"input_tokens":-1,"output_tokens":1}}`, noul},
+		"unknown type":         {`{"model":"jev-1.13.0","answers":{"q":{"type":"guess"}}}`, noul},
+		"score answer to a noul question": {
+			`{"model":"jev-1.13.0","answers":{"q":{"type":"score","score":1,"probabilities":{"0":0,"1":1},"confidence":1}}}`, noul,
+		},
+		"choice answer to a noul question": {
+			`{"model":"jev-1.13.0","answers":{"q":{"type":"choice","choice":"a","probabilities":{"a":1},"confidence":1}}}`, noul,
+		},
+		"noul answer to a choice question": {`{"model":"jev-1.13.0","answers":{"q":{"type":"noul","noul":0.5}}}`, choice},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			_, err := client.Decode([]byte(tc.body), tc.ids)
+			_, err := client.Decode([]byte(tc.body), tc.questions)
 			assert.ErrorIs(t, err, ErrInvalidResponse)
 		})
 	}

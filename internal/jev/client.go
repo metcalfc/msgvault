@@ -350,7 +350,7 @@ func (c *Client) Ask(ctx context.Context, request Request) (Response, error) {
 	if err := c.budget.reserve(); err != nil {
 		return emptyResponse(), err
 	}
-	response, err := c.send(ctx, request.Deadline, body, questionIDs(request.Questions))
+	response, err := c.send(ctx, request.Deadline, body, request.Questions)
 	if err != nil {
 		c.budget.fail()
 		c.recordDay(ctx, request.Feature, day, Usage{})
@@ -395,7 +395,7 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 			mu.Lock()
 			result.Usage.Requests++
 			mu.Unlock()
-			response, err := c.send(groupCtx, requests[i].Deadline, body, questionIDs(requests[i].Questions))
+			response, err := c.send(groupCtx, requests[i].Deadline, body, requests[i].Questions)
 			if err != nil {
 				mu.Lock()
 				complete = false
@@ -433,14 +433,6 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 	return result, nil
 }
 
-func questionIDs(questions []Question) []string {
-	ids := make([]string, len(questions))
-	for i, question := range questions {
-		ids[i] = question.ID
-	}
-	return ids
-}
-
 func emptyResponse() Response {
 	input, output := int64(0), int64(0)
 	return Response{Usage: Usage{InputTokens: &input, OutputTokens: &output, Complete: true}}
@@ -471,7 +463,7 @@ func SafeFailure(err error) string {
 	return "provider request failed"
 }
 
-func (c *Client) send(ctx context.Context, deadline time.Time, body []byte, ids []string) (Response, error) {
+func (c *Client) send(ctx context.Context, deadline time.Time, body []byte, questions []Question) (Response, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	if !deadline.IsZero() {
@@ -512,30 +504,34 @@ func (c *Client) send(ctx context.Context, deadline time.Time, body []byte, ids 
 	if len(body) > c.maxResponse {
 		return Response{}, fmt.Errorf("%w: response exceeds %d bytes", ErrInvalidResponse, c.maxResponse)
 	}
-	return c.Decode(body, ids)
+	return c.Decode(body, questions)
 }
 
-// Decode validates a response body against the question IDs that were sent.
-// Every answer must be present, typed, and carry finite probabilities.
-func (c *Client) Decode(data []byte, ids []string) (Response, error) {
+// Decode validates a response body against the questions that were sent.
+// Every answer must be present, of the asked type, and carry finite
+// probabilities.
+func (c *Client) Decode(data []byte, questions []Question) (Response, error) {
 	var wire wireResponse
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return Response{}, fmt.Errorf("%w: malformed JSON", ErrInvalidResponse)
 	}
-	if wire.Model != c.model || len(wire.Answers) != len(ids) {
+	if wire.Model != c.model || len(wire.Answers) != len(questions) {
 		return Response{}, fmt.Errorf("%w: model or answer count did not match request", ErrInvalidResponse)
 	}
-	answers := make(map[string]Answer, len(ids))
-	for _, id := range ids {
-		raw, ok := wire.Answers[id]
+	answers := make(map[string]Answer, len(questions))
+	for _, question := range questions {
+		raw, ok := wire.Answers[question.ID]
 		if !ok {
 			return Response{}, fmt.Errorf("%w: missing answer", ErrInvalidResponse)
+		}
+		if raw.Type != question.Type {
+			return Response{}, fmt.Errorf("%w: answer type does not match the asked question", ErrInvalidResponse)
 		}
 		answer, err := decodeAnswer(raw)
 		if err != nil {
 			return Response{}, err
 		}
-		answers[id] = answer
+		answers[question.ID] = answer
 	}
 	var usage Usage
 	if wire.Usage != nil {
