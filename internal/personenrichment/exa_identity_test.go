@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 
@@ -109,49 +108,34 @@ func TestExaPartialMatchPassesDecodeWithReturnedIdentityWhenReviewIsEnabled(t *t
 	require.Error(err)
 }
 
-func TestExaRetriesOnceWithACodeBuiltNameVariantWhenNothingIsReturned(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	server, queries := exaPartialServer(t, "exa_people_empty.json", "exa_people_success.json")
-	provider, err := personenrichment.NewExaProvider(exaNameCompanyConfig(server.URL+"/search"), "test-key", server.Client())
-	require.NoError(err)
-	attempt, err := provider.Start(t.Context(), personenrichment.Request{
-		Identity: personenrichment.Identity{Name: "test q. user", CurrentCompany: "example labs"},
-		Targets:  exaTypedTargets(t),
-	})
-	require.NoError(err)
-	require.Equal([]string{
-		"name: test q. user; company: example labs",
-		"name: test user; company: example labs",
-	}, *queries, "the middle initial is dropped for exactly one retry")
-	assert.Equal(900, attempt.Result.IdentityConfidence, "the variant name counts as the requested name")
-	assert.Equal(personenrichment.Cost{Currency: "USD", AmountMicros: 7000, Estimated: true}, attempt.Result.Cost,
-		"the empty first response cost nothing, so the retry's charge stands alone")
-	assert.Equal("request_test_people_42", attempt.RequestID)
-
-	noVariant, err := personenrichment.NewExaProvider(exaNameCompanyConfig(server.URL+"/search"), "test-key", server.Client())
-	require.NoError(err)
-	*queries = (*queries)[:0]
-	_, err = noVariant.Start(t.Context(), personenrichment.Request{
-		Identity: personenrichment.Identity{Name: "plain name", CurrentCompany: "example labs"},
-		Targets:  exaTypedTargets(t),
-	})
-	require.Error(err, "a name with no variant is not retried")
-	assert.Equal([]string{"name: plain name; company: example labs"}, *queries)
-}
-
-func TestExaRetryAddsBothChargesWhenBothResponsesCost(t *testing.T) {
+func TestExaReportsAnEmptyLookupWithItsChargeInsteadOfRetrying(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	server, queries := exaPartialServer(t, "exa_people_empty_charged.json", "exa_people_success.json")
 	provider, err := personenrichment.NewExaProvider(exaNameCompanyConfig(server.URL+"/search"), "test-key", server.Client())
 	require.NoError(err)
-	attempt, err := provider.Start(t.Context(), personenrichment.Request{
-		Identity: personenrichment.Identity{Name: "user, test q.", CurrentCompany: "example labs"},
+	_, err = provider.Start(t.Context(), personenrichment.Request{
+		Identity: personenrichment.Identity{Name: "test q. user", CurrentCompany: "example labs"},
 		Targets:  exaTypedTargets(t),
 	})
+	var noEntity *personenrichment.NoEntityError
+	require.ErrorAs(err, &noEntity, "an empty lookup is reported to the worker, which owns the retry budget")
+	assert.Equal(personenrichment.Cost{Currency: "USD", AmountMicros: 2000, Estimated: true}, noEntity.Cost,
+		"the charge the empty call incurred travels with the report")
+	var providerErr *personenrichment.ProviderError
+	require.ErrorAs(err, &providerErr, "it still unwraps to the failure a caller without a retry would see")
+	assert.Equal(personenrichment.FailureInvalidOutput, providerErr.Class)
+	assert.Equal("request_test_people_empty_2", providerErr.RequestID)
+	assert.Equal([]string{"name: test q. user; company: example labs"}, *queries,
+		"the adapter never issues a second paid call on its own")
+
+	freeServer, _ := exaPartialServer(t, "exa_people_empty.json")
+	free, err := personenrichment.NewExaProvider(exaNameCompanyConfig(freeServer.URL+"/search"), "test-key", freeServer.Client())
 	require.NoError(err)
-	require.Len(*queries, 2)
-	assert.True(strings.HasPrefix((*queries)[1], "name: test q. user;"), "Last, First is collapsed first")
-	assert.Equal(personenrichment.Cost{Currency: "USD", AmountMicros: 9000, Estimated: true}, attempt.Result.Cost)
+	_, err = free.Start(t.Context(), personenrichment.Request{
+		Identity: personenrichment.Identity{Name: "test q. user", CurrentCompany: "example labs"},
+		Targets:  exaTypedTargets(t),
+	})
+	require.ErrorAs(err, &noEntity)
+	assert.Zero(noEntity.Cost.AmountMicros, "an uncharged empty lookup reports a zero cost")
 }

@@ -50,6 +50,16 @@ type WorkStore interface {
 	ScheduleRetry(ctx context.Context, token LeaseToken, retry RetryUpdate) error
 	MarkUncertainStart(ctx context.Context, token LeaseToken, failure SafeFailure) error
 	MarkTerminal(ctx context.Context, token LeaseToken, failure SafeFailure) error
+	// ReserveProviderRetry counts one more provider call against the run and
+	// day request budgets of the attempt the token holds, rechecks and records
+	// the identifiers the retry discloses, and fails with
+	// ErrRequestBudgetExceeded or ErrSuppressed without counting anything.
+	ReserveProviderRetry(ctx context.Context, token LeaseToken, retry ProviderRetry) error
+}
+
+// ProviderRetry describes one additional provider call inside an attempt.
+type ProviderRetry struct {
+	CheckedIdentifiers []SuppressionDigest
 }
 
 type ClaimOptions struct {

@@ -495,6 +495,16 @@ func (w *Worker) startAttempt(
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	if noEntity, ok := errors.AsType[*NoEntityError](err); ok {
+		started, err = w.retryWithNameVariant(ctx, lease, request, profile, config, provider, knownIDs, noEntity)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if errors.Is(err, ErrSuppressed) {
+			return w.work.MarkTerminal(ctx, lease.Token,
+				safeFailure(FailureSuppressed, 0, "", "enrichment suppressed before retry"))
+		}
+	}
 	if err != nil {
 		return w.persistProviderFailure(ctx, lease, config, err, true)
 	}
@@ -515,6 +525,68 @@ func (w *Worker) startAttempt(
 		})
 	}
 	return w.completeAttempt(ctx, lease, request, profile, knownIDs, *started.Result)
+}
+
+// retryWithNameVariant follows an empty lookup with one more provider call
+// using a code-built variant of the requested name. The call is counted
+// against the run and day request budgets and its identity is recorded
+// through the same suppression-hash path as the first call before anything
+// leaves; when the budget or suppression refuses, or the name has no
+// variant, the original outcome stands. The retry's result carries both
+// calls' charges.
+func (w *Worker) retryWithNameVariant(
+	ctx context.Context,
+	lease WorkLease,
+	request Request,
+	profile ProviderProfile,
+	config ProviderConfig,
+	provider Provider,
+	knownIDs []string,
+	noEntity *NoEntityError,
+) (Attempt, error) {
+	variants := NameVariants(request.Identity.Name)
+	if len(variants) == 0 {
+		return Attempt{}, noEntity
+	}
+	retryRequest := request
+	retryRequest.Identity.Name = variants[0]
+	_, checked, err := w.gate.suppressionDigests(EgressInput{
+		Request: retryRequest, Profile: profile, KnownProviderPersonIDs: knownIDs,
+	})
+	if err != nil {
+		return Attempt{}, noEntity
+	}
+	if err := w.work.ReserveProviderRetry(ctx, lease.Token, ProviderRetry{CheckedIdentifiers: checked}); err != nil {
+		if errors.Is(err, ErrSuppressed) {
+			return Attempt{}, err
+		}
+		// Budget exhaustion, a lost lease, or an infrastructure error all
+		// mean the retry does not happen; the empty lookup is the outcome.
+		return Attempt{}, noEntity
+	}
+	callCtx, cancel := context.WithTimeout(ctx, config.RequestTimeout)
+	started, err := provider.Start(callCtx, retryRequest)
+	cancel()
+	if err != nil {
+		return Attempt{}, err
+	}
+	if started.Result != nil {
+		started.Result.Cost = combinedCost(noEntity.Cost, started.Result.Cost)
+	}
+	return started, nil
+}
+
+// combinedCost sums two observed charges; a zero charge contributes nothing.
+func combinedCost(first, second Cost) Cost {
+	switch {
+	case first.AmountMicros == 0:
+		return second
+	case second.AmountMicros == 0:
+		return first
+	default:
+		return Cost{Currency: "USD", AmountMicros: first.AmountMicros + second.AmountMicros,
+			Estimated: first.Estimated || second.Estimated}
+	}
 }
 
 func validateStartedAttempt(started Attempt, request Request) error {

@@ -92,11 +92,14 @@ for "Example Labs", which the exact rule rejects.
 
 Two things change, in order:
 
-1. **Deterministic retry, no Jev.** When Exa returns no entity, the adapter
+1. **Deterministic retry, no Jev.** When Exa returns no entity, the worker
    retries once with a code-built name variant: a middle name or initial
    dropped, a suffix such as Jr. or PhD dropped, or "Last, First" reordered.
-   A returned name that equals such a variant of the requested name counts as
-   the exact name.
+   The retry is a second provider call: it is counted against the provider's
+   `max_requests_per_run` and `max_requests_per_day` before it is sent, is
+   skipped when either cap would be exceeded, and its identity is recorded and
+   checked against suppressions like the first call. A returned name that
+   equals such a variant of the requested name counts as the exact name.
 2. **Semantic check, only with consent.** When exactly one of name and current
    company matched exactly and the other did not, the worker asks three
    independent Nouls about the requested and returned identity. The

@@ -152,25 +152,16 @@ func (p *exaProvider) Start(ctx context.Context, request Request) (Attempt, erro
 		result, err = decodeExaPeopleResult(wire, request, now, p.identityReview)
 	}
 	if errors.Is(err, errExaNoEntity) && !generated {
-		// Deterministic retry: a public source may file the person under a
-		// shorter or reordered name. One retry, code-built variant, no model.
-		if variant, ok := firstNameVariant(request.Identity.Name); ok {
-			retryIdentity := request.Identity
-			retryIdentity.Name = variant
-			retryQuery, queryErr := exaIdentityQuery(retryIdentity)
-			if queryErr != nil {
-				return Attempt{}, queryErr
-			}
-			retryWire, retryStatus, retryErr := p.search(ctx, retryQuery, outputSchema)
-			if retryErr != nil {
-				return Attempt{}, retryErr
-			}
-			firstCost := wire.CostDollars
-			wire, status = retryWire, retryStatus
-			result, err = decodeExaPeopleResult(wire, request, now, p.identityReview)
-			if err == nil {
-				result.Cost, err = exaCombinedCost(firstCost, wire.CostDollars)
-			}
+		// The worker may retry once with a code-built name variant, but only
+		// after it has reserved a second provider call against the run and
+		// day budgets and recorded the variant identity. Report the outcome
+		// with the charge this call already incurred.
+		cost, costErr := exaCost(wire.CostDollars)
+		if costErr != nil {
+			cost = Cost{}
+		}
+		return Attempt{}, &NoEntityError{
+			Provider: exaFailure(status, FailureInvalidOutput, wire.RequestID, ""), Cost: cost,
 		}
 	}
 	if err != nil {
@@ -239,34 +230,6 @@ func (p *exaProvider) search(ctx context.Context, query string, outputSchema jso
 		return exaSearchResponse{}, response.StatusCode, exaFailure(response.StatusCode, FailureInvalidOutput, "", "")
 	}
 	return wire, response.StatusCode, nil
-}
-
-func firstNameVariant(name string) (string, bool) {
-	variants := NameVariants(name)
-	if len(variants) == 0 {
-		return "", false
-	}
-	return variants[0], true
-}
-
-// exaCombinedCost sums the observed charges of a lookup and its retry.
-func exaCombinedCost(first, second *exaCostDollars) (Cost, error) {
-	firstCost, err := exaCost(first)
-	if err != nil {
-		return Cost{}, err
-	}
-	secondCost, err := exaCost(second)
-	if err != nil {
-		return Cost{}, err
-	}
-	if firstCost.AmountMicros == 0 {
-		return secondCost, nil
-	}
-	if secondCost.AmountMicros == 0 {
-		return firstCost, nil
-	}
-	return Cost{Currency: "USD", AmountMicros: firstCost.AmountMicros + secondCost.AmountMicros,
-		Estimated: firstCost.Estimated || secondCost.Estimated}, nil
 }
 
 type exaSearchRequest struct {

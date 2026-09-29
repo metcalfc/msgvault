@@ -31,6 +31,29 @@ var (
 	ErrAccountingDisabled         = errors.New("person enrichment starts disabled by accounting violation")
 )
 
+// NoEntityError reports that a synchronous lookup returned no person at all.
+// It unwraps to the ProviderError a caller without a retry policy would have
+// seen, so every existing failure path classifies it exactly as before, and
+// carries the charge the empty lookup already incurred.
+type NoEntityError struct {
+	Provider error
+	Cost     Cost
+}
+
+func (e *NoEntityError) Error() string {
+	if e == nil || e.Provider == nil {
+		return "person enrichment provider returned no entity"
+	}
+	return e.Provider.Error() + " (no entity)"
+}
+
+func (e *NoEntityError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Provider
+}
+
 type ProviderError struct {
 	Provider   string
 	RequestID  string

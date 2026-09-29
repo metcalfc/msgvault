@@ -1082,6 +1082,63 @@ func (s *Store) AuthorizeAttemptPoll(
 	})
 }
 
+// ReserveProviderRetry counts one more provider call against the run and day
+// request budgets of a starting attempt, rechecks the retry's identifiers
+// against suppression, and records them with the attempt. Nothing is counted
+// when the budget or suppression refuses.
+func (s *Store) ReserveProviderRetry(
+	ctx context.Context, token personenrichment.LeaseToken, retry personenrichment.ProviderRetry,
+) error {
+	if token.AttemptID <= 0 {
+		return errors.New("person enrichment retry reservation requires an active attempt")
+	}
+	for i, digest := range retry.CheckedIdentifiers {
+		if err := validatePersonEnrichmentSuppressionLookup(digest); err != nil {
+			return fmt.Errorf("validate retry person enrichment identifier %d: %w", i, err)
+		}
+	}
+	return s.withTxContext(ctx, func(tx *loggedTx) error {
+		if err := s.lockPersonEnrichmentAuthorityMutationTx(ctx, tx); err != nil {
+			return err
+		}
+		if _, err := lockPersonEnrichmentPersonTx(ctx, tx, s.dialect, token.WorkPersonID); err != nil {
+			return err
+		}
+		if err := verifyEnrichmentLeaseTx(ctx, tx, s.dialect, token); err != nil {
+			return err
+		}
+		var state string
+		if err := tx.QueryRowContext(ctx, `SELECT state FROM person_enrichment_attempts
+			WHERE id = ? AND run_id = ? AND person_id = ? AND profile_fingerprint = ?
+			  AND lease_owner = ? AND lease_fence = ?`,
+			token.AttemptID, token.RunID, token.WorkPersonID, token.ProfileFingerprint,
+			token.Owner, token.Fence).Scan(&state); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrStaleLease
+			}
+			return fmt.Errorf("load person enrichment retry attempt: %w", err)
+		}
+		if state != "starting" {
+			return fmt.Errorf("person enrichment retry requires a starting attempt, got %q", state)
+		}
+		if err := s.recheckPersonEnrichmentSuppressionsTx(ctx, tx, retry.CheckedIdentifiers); err != nil {
+			return err
+		}
+		policy, err := loadPersonEnrichmentBudgetPolicyTx(ctx, tx, token.ProfileFingerprint)
+		if err != nil {
+			return err
+		}
+		// A retry reserves a request slot only; any hard cost cap was bound
+		// by the attempt's guaranteed charge at BeginAttempt.
+		if err := s.reservePersonEnrichmentBudgetTx(ctx, tx, policy, personenrichment.AttemptStart{
+			RunID: token.RunID, PersonID: token.WorkPersonID, ProfileFingerprint: token.ProfileFingerprint,
+		}); err != nil {
+			return err
+		}
+		return bindPersonEnrichmentAttemptIdentifiersTx(ctx, tx, token.AttemptID, retry.CheckedIdentifiers)
+	})
+}
+
 func (s *Store) AuthorizeAttemptDispatch(
 	ctx context.Context, token personenrichment.LeaseToken,
 ) error {

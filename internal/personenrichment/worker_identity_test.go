@@ -277,3 +277,94 @@ func TestWorkerRecordsUncertainJudgmentsWithoutApplyingClaims(t *testing.T) {
 		assert.Zero(item.Input.IdentityScore, "uncertain evidence cannot reach the resolver's identity floor")
 	}
 }
+
+// retryFixture prepares a worker whose Exa-shaped provider returns no entity
+// for the requested name and a full match for its first code-built variant.
+func retryFixture(t *testing.T, name string, maxRequestsPerRun int64) (*workerFixture, map[string]personenrichment.ProviderFactory, map[string]personenrichment.ProviderConfig, *[]string) {
+	t.Helper()
+	f := newWorkerFixture(t, name, func(cfg *personenrichment.ProviderConfig) {
+		cfg.Mode = "people"
+		cfg.AllowedIdentifiers = []personenrichment.IdentifierClass{
+			personenrichment.IdentifierName, personenrichment.IdentifierCurrentCompany,
+		}
+		cfg.MaxRequestsPerRun = maxRequestsPerRun
+	})
+	seedNameAndCompany(t, f, "Test Q. User", "Example Labs")
+	names := make([]string, 0, 2)
+	factories := map[string]personenrichment.ProviderFactory{
+		f.config.Name: func(personenrichment.ProviderConfig, string) (personenrichment.Provider, error) {
+			return &functionProvider{
+				start: func(_ context.Context, request personenrichment.Request) (personenrichment.Attempt, error) {
+					names = append(names, request.Identity.Name)
+					if request.Identity.Name != "test user" {
+						return personenrichment.Attempt{}, &personenrichment.NoEntityError{
+							Provider: &personenrichment.ProviderError{Class: personenrichment.FailureInvalidOutput, RequestID: "empty-1"},
+							Cost:     personenrichment.Cost{Currency: "USD", AmountMicros: 2000},
+						}
+					}
+					result := partialWorkerResult(f.target,
+						personenrichment.IdentityMatch{Class: personenrichment.IdentifierName, Value: "Test User", Confidence: 900},
+						&personenrichment.ReturnedIdentity{Name: "Test User"})
+					result.IdentityMatches = append(result.IdentityMatches, personenrichment.IdentityMatch{
+						Class: personenrichment.IdentifierCurrentCompany, Value: "Example Labs", Confidence: 900,
+					})
+					result.IdentityConfidence = 900
+					result.Cost = personenrichment.Cost{Currency: "USD", AmountMicros: 7000}
+					return personenrichment.Attempt{
+						State: personenrichment.AttemptComplete, RequestID: result.RequestID,
+						AdapterVersion: result.AdapterVersion, SchemaVersion: result.SchemaVersion,
+						ProgramFingerprint: workerProgramFingerprint(t, false, ""), Result: &result,
+					}, nil
+				},
+				poll: func(context.Context, personenrichment.Attempt) (personenrichment.Result, error) {
+					return personenrichment.Result{}, errors.New("unexpected poll")
+				},
+			}, nil
+		},
+	}
+	return f, factories, map[string]personenrichment.ProviderConfig{f.config.Name: f.config}, &names
+}
+
+func nameCompanyIdentifierCount(t *testing.T, f *workerFixture, attemptID int64) int64 {
+	t.Helper()
+	var count int64
+	require.NoError(t, f.store.DB().QueryRowContext(t.Context(), f.store.Rebind(`
+		SELECT COUNT(*) FROM person_enrichment_attempt_identifiers
+		WHERE attempt_id = ? AND identifier_class = 'name_company'`), attemptID).Scan(&count))
+	return count
+}
+
+func runRequestsStarted(t *testing.T, f *workerFixture) int64 {
+	t.Helper()
+	var started int64
+	require.NoError(t, f.store.DB().QueryRowContext(t.Context(), f.store.Rebind(`
+		SELECT requests_started FROM person_enrichment_run_counters WHERE run_id = ?`), f.run.ID).Scan(&started))
+	return started
+}
+
+func TestWorkerRetriesAnEmptyLookupOnceWithANameVariantUnderBudget(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	f, factories, configs, names := retryFixture(t, "exa-retry", 2)
+	attempt := runPartialIdentityCase(t, f, factories, configs, nil)
+	assert.Equal([]string{"test q. user", "test user"}, *names, "the middle initial is dropped for exactly one retry")
+	assert.Equal("succeeded", attempt.State, "the variant result matches the requested name and company")
+	require.NotNil(attempt.ActualCostUSDMicros)
+	assert.Equal(int64(9000), *attempt.ActualCostUSDMicros, "both calls' charges are recorded")
+	assert.Equal(int64(2), runRequestsStarted(t, f), "each provider call counts against the run budget")
+	assert.Equal(int64(2), nameCompanyIdentifierCount(t, f, attempt.ID),
+		"the variant identity is recorded through the same identifier-hash path as the first call")
+}
+
+func TestWorkerSkipsTheNameVariantRetryWhenTheRequestCapWouldBeExceeded(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	f, factories, configs, names := retryFixture(t, "exa-capped", 1)
+	attempt := runPartialIdentityCase(t, f, factories, configs, nil)
+	assert.Equal([]string{"test q. user"}, *names, "a cap of one forbids the second paid call")
+	assert.Equal("terminal", attempt.State, "the empty lookup's own outcome stands")
+	require.NotNil(attempt.FailureClass)
+	assert.Equal(string(personenrichment.FailureInvalidOutput), *attempt.FailureClass)
+	assert.Equal(int64(1), runRequestsStarted(t, f), "a refused retry counts nothing")
+	assert.Equal(int64(1), nameCompanyIdentifierCount(t, f, attempt.ID), "only the consented identity was recorded")
+}
