@@ -534,6 +534,7 @@
             {/if}
           </ul>
           <AttributeSummary
+            {client}
             groups={profileController?.attributes?.attributes ?? bundle.attributes?.attributes ?? []}
             onEdit={profileController ? () => void editAttributes() : undefined}
           />

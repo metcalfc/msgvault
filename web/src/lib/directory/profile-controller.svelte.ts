@@ -73,6 +73,10 @@ export class DirectoryProfileController {
   definitionsError = $state<string | null>(null);
   private bundle: DirectoryReadBundle;
   private readonly client: APIClient;
+
+  get apiClient(): APIClient {
+    return this.client;
+  }
   private readonly personID: number;
   private readonly options: DirectoryProfileControllerOptions;
   private reloadAbort: AbortController | undefined;

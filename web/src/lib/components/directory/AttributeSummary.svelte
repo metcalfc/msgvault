@@ -1,15 +1,19 @@
 <script lang="ts">
   import { Button } from '@kenn-io/kit-ui';
 
+  import type { APIClient } from '../../api/client';
   import type { PersonAttributeGroup } from '../../api/generated/models';
+  import { entityNames } from '../../names/entity-names.svelte';
   import { displayAttributeValue } from './attribute-value';
 
   interface Props {
+    client: APIClient;
     groups: PersonAttributeGroup[];
     onEdit?: () => void;
   }
 
-  let { groups, onEdit = undefined }: Props = $props();
+  let { client, groups, onEdit = undefined }: Props = $props();
+  const names = $derived(entityNames(client));
   const filled = $derived(groups.filter((group) => (group.current ?? []).length > 0));
 </script>
 
@@ -21,7 +25,7 @@
           <dt>{group.definition.label}</dt>
           <dd>
             {#if group.definition.is_sensitive}<span class="sensitive">concealed</span>
-            {:else}{(group.current ?? []).map((value) => displayAttributeValue(group.definition, value.value)).join(', ')}{/if}
+            {:else}{(group.current ?? []).map((value) => displayAttributeValue(group.definition, value.value, names)).join(', ')}{/if}
           </dd>
         </div>
       {/each}

@@ -9,6 +9,7 @@ import {
 } from '../api/generated/api/api';
 import { searchPersonFiles as generatedSearchPersonFiles } from '../api/generated/exploration/exploration';
 import type { APIClient } from '../api/client';
+import { entityNames } from '../names/entity-names.svelte';
 import type {
   DirectoryPerson,
   DirectoryPersonSummaryUpdate,
@@ -77,6 +78,13 @@ export class DirectoryController {
     this.client = client;
     this.commit = commit;
   }
+
+  /** Listed names answer later lookups of the same people without a request. */
+  private seedNames(people: readonly DirectoryPerson[]): void {
+    const names = entityNames(this.client);
+    for (const person of people) names.seed('person', person.id, person.display_name);
+  }
+
   /**
    * Applies Directory URL state. History restoration always starts a new page
    * one request because no cursor or accumulated rows belong to a URL entry.
@@ -146,6 +154,7 @@ export class DirectoryController {
       if (controller.signal.aborted || generation !== this.pageGeneration) return;
       if (response.data) {
         this.rows = response.data.people ?? [];
+        this.seedNames(this.rows);
         this.cursor = response.data.next_cursor ?? null;
         return;
       }
@@ -188,6 +197,7 @@ export class DirectoryController {
       if (response.data) {
         this.seenCursors.add(cursor);
         this.rows = mergeRows(this.rows, response.data.people ?? []);
+        this.seedNames(response.data.people ?? []);
         this.cursor = response.data.next_cursor ?? null;
         return;
       }

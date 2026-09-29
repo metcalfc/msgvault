@@ -4,6 +4,7 @@ import type { PrimaryIdentifier } from '../api/generated/models';
 import type { DirectoryController } from '../directory/controller.svelte';
 import type { DirectoryPerson } from '../directory/models';
 import type { CorrespondentKindRecord } from '../api/generated/models';
+import { UNKNOWN_LABELS } from '../names/entity-names.svelte';
 import { clearKind, isNotAPerson, listNotPeople } from './correspondent-kind';
 
 /** Which people the list shows: everyone, only saved, only not saved, or
@@ -57,7 +58,7 @@ export function savedRow(person: DirectoryPerson): PeopleRow {
     kind: 'saved',
     key: `person:${person.id}`,
     id: person.id,
-    name: person.display_name?.trim() || primary?.value || `Person ${person.id}`,
+    name: person.display_name?.trim() || primary?.value || UNKNOWN_LABELS.person,
     identifier: primary,
     lastContactAt: person.last_contact_at ?? undefined,
     meta: [...(person.organizations ?? []), ...(person.categories ?? [])],

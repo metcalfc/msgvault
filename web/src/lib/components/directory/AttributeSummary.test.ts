@@ -1,7 +1,9 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createAPIClient } from '../../api/client';
 import type { AttributeValue, PersonAttributeGroup } from '../../api/generated/models';
+import { withEntityLabels } from '../../../test/entity-labels';
 import AttributeSummary from './AttributeSummary.svelte';
 
 afterEach(() => cleanup());
@@ -22,6 +24,7 @@ describe('AttributeSummary', () => {
     const subscribed = group('Subscribed', { type: 'boolean', boolean: true });
     subscribed.definition.options = { choices: [{ value: 'true', label: 'Opted in' }] };
     render(AttributeSummary, {
+      client: createAPIClient(vi.fn<typeof fetch>()),
       groups: [
         group('Birthday', { type: 'date', date: '1990-01-01' }),
         subscribed,
@@ -46,8 +49,27 @@ describe('AttributeSummary', () => {
     expect(onEdit).toHaveBeenCalledOnce();
   });
 
+  it('names person and organization record references instead of showing their IDs', async () => {
+    const fetchFn = vi.fn<typeof fetch>();
+    render(AttributeSummary, {
+      client: createAPIClient(withEntityLabels(fetchFn, { person: { 314: 'Avery Example' }, organization: { 271: 'Example Works' } })),
+      groups: [
+        group('Mentor', { type: 'record_reference', record_type: 'person', record_id: 314 }),
+        group('Employer', { type: 'record_reference', record_type: 'organization', record_id: 271 }),
+        group('Former mentor', { type: 'record_reference', record_type: 'person', record_id: 999 })
+      ]
+    });
+
+    const region = screen.getByRole('region', { name: 'Attributes summary' });
+    await waitFor(() => expect(region.textContent).toContain('Avery Example'));
+    expect(region.textContent).toContain('Example Works');
+    expect(region.textContent).toContain('Unknown person');
+    expect(region.textContent).not.toMatch(/314|271|999|Person \d/);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
   it('renders nothing when no attribute has a current value', () => {
-    const { container } = render(AttributeSummary, { groups: [group('Employer', undefined)] });
+    const { container } = render(AttributeSummary, { client: createAPIClient(vi.fn<typeof fetch>()), groups: [group('Employer', undefined)] });
     expect(container.querySelector('section')).toBeNull();
   });
 });

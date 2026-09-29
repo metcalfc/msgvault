@@ -11,6 +11,7 @@
   import { stampText } from '../../util/dates';
   import AttributeDefinitionDialog from './AttributeDefinitionDialog.svelte';
   import AttributeEditor from './AttributeEditor.svelte';
+  import { entityNames } from '../../names/entity-names.svelte';
   import { displayAttributeValue } from './attribute-value';
 
   type AttributeDefinition = GeneratedAttributeDefinition;
@@ -28,6 +29,7 @@
   }
 
   let { controller }: Props = $props();
+  const names = $derived(entityNames(controller.apiClient));
   let editing = $state<{ universalID: string; current?: PersonAttributeValue }>();
   let confirming = $state<{ universalID: string; current: PersonAttributeValue; position: number }>();
   let revealed = $state<Record<string, boolean>>({});
@@ -276,7 +278,7 @@
           <li>
             <div class="value-copy">
               {#if isRevealed(field.definition)}
-                <strong>{displayAttributeValue(field.definition, value.value)}</strong>
+                <strong>{displayAttributeValue(field.definition, value.value, names)}</strong>
               {:else}
                 <strong>Sensitive value concealed.</strong>
               {/if}
@@ -381,7 +383,7 @@
             {#each field.history as value (value.id)}
               <li>
                 {#if isRevealed(field.definition)}
-                  <strong>{displayAttributeValue(field.definition, value.value)}</strong>
+                  <strong>{displayAttributeValue(field.definition, value.value, names)}</strong>
                 {:else}
                   <strong>Sensitive value concealed.</strong>
                 {/if}

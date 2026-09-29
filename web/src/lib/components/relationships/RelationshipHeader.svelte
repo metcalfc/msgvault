@@ -628,6 +628,7 @@
     {/if}
     {#if isPersonDetail(detail) && detail.profile?.id}
       <AttributeSummary
+        {client}
         groups={attributeGroups}
         onEdit={onOpenDirectoryPerson ? () => onOpenDirectoryPerson(detail.profile!.id) : undefined}
       />
