@@ -640,11 +640,15 @@ export class ExploreState {
     browser.addEventListener('popstate', this.handlePopState);
   }
 
+  /** A URL that names any recognized state (the detail payload, or the
+   * shorthand workspace/mode parameters parseExploreURLState honours) or a
+   * history entry is the user's view: no default bounds are added to it. */
   private hasExplicitState(): boolean {
     const search = this.browser.location.search;
     const parameters = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
     const history = this.browser.history.state;
-    return parameters.has(STATE_PARAMETER) || (isRecord(history) && isRecord(history.exploreState));
+    return parameters.has(STATE_PARAMETER) || parameters.has('workspace') || parameters.has('mode') ||
+      (isRecord(history) && isRecord(history.exploreState));
   }
 
   private filtersWithEverythingDefault(filters: ExploreFilter[]): ExploreFilter[] {

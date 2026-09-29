@@ -1443,9 +1443,16 @@ describe('Everything date default', () => {
     expect(explicit.current.filters).toEqual([]);
     explicit.destroy();
 
+    // The shorthand parameters are explicit state too: a shared
+    // /?workspace=everything&mode=hybrid link opens exactly as shared.
+    window.history.replaceState(null, '', '/?workspace=everything&mode=hybrid');
+    const shared = new ExploreState(window);
+    expect(shared.current).toMatchObject({ workspace: 'everything', searchMode: 'hybrid', filters: [] });
+    shared.destroy();
+
     window.history.replaceState(null, '', '/?workspace=everything');
     const landing = new ExploreState(window);
-    expect(landing.current.filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
+    expect(landing.current.filters).toEqual([]);
     landing.destroy();
   });
 });
