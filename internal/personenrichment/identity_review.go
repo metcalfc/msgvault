@@ -32,7 +32,6 @@ const (
 
 	maxReturnedRoles         = 5
 	maxReturnedPastCompanies = 10
-	identityJudgeDeadline    = 8 * time.Second
 )
 
 // ReturnedRole is one current position on the returned profile.
@@ -306,7 +305,9 @@ func (j *JevIdentityJudge) JudgeIdentity(ctx context.Context, review IdentityRev
 	if review.Exact != IdentifierName && review.Exact != IdentifierCurrentCompany {
 		return IdentityJudgment{}, errors.New("identity review must name the exact class")
 	}
-	response, err := j.service.Judge(ctx, JevIdentityFeature(), j.automatic, review, time.Now().Add(identityJudgeDeadline))
+	// No caller deadline: the client's configured request timeout bounds the
+	// exchange, so a slow provider is judged by the operator's timeout alone.
+	response, err := j.service.Judge(ctx, JevIdentityFeature(), j.automatic, review, time.Time{})
 	if err != nil {
 		return IdentityJudgment{}, err
 	}

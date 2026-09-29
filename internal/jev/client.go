@@ -239,6 +239,14 @@ func (c *Client) reserveDay(ctx context.Context, feature string) (string, error)
 	return day, nil
 }
 
+// callerBound reports whether a request's own deadline would expire before
+// the client's per-request timeout. Such a deadline belongs to the caller's
+// latency budget, not to the provider's health, so running out of it is not
+// a breaker failure.
+func (c *Client) callerBound(deadline, started time.Time) bool {
+	return !deadline.IsZero() && deadline.Before(started.Add(c.timeout))
+}
+
 // releaseDay returns a day reservation for a request that never left the
 // process.
 func (c *Client) releaseDay(ctx context.Context, feature, day string) {
@@ -382,6 +390,7 @@ func (c *Client) Ask(ctx context.Context, request Request) (Response, error) {
 		c.budget.release()
 		return emptyResponse(), err
 	}
+	started := c.now()
 	response, err := c.send(ctx, request.Deadline, body, request.Questions)
 	if errors.Is(err, errNotSent) {
 		c.budget.release()
@@ -389,7 +398,7 @@ func (c *Client) Ask(ctx context.Context, request Request) (Response, error) {
 		return emptyResponse(), ctx.Err()
 	}
 	if err != nil {
-		c.budget.outcome(ctx, err)
+		c.budget.outcome(ctx, err, c.callerBound(request.Deadline, started))
 		c.recordDay(ctx, request.Feature, day, Usage{})
 		return Response{Usage: Usage{Requests: 1}}, err
 	}
@@ -451,6 +460,7 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 				c.budget.release()
 				return err
 			}
+			started := c.now()
 			response, err := c.send(groupCtx, requests[i].Deadline, body, requests[i].Questions)
 			if errors.Is(err, errNotSent) {
 				c.budget.release()
@@ -464,7 +474,7 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 				mu.Lock()
 				complete = false
 				mu.Unlock()
-				c.budget.outcome(groupCtx, err)
+				c.budget.outcome(groupCtx, err, c.callerBound(requests[i].Deadline, started))
 				c.recordDay(groupCtx, requests[i].Feature, day, Usage{})
 				return err
 			}

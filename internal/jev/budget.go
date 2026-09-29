@@ -234,13 +234,15 @@ func (b *Budget) record(usage Usage) {
 		float64(*usage.OutputTokens)*b.OutputUSDPerM/1e6
 }
 
-// outcome records a failed send. A request the caller cancelled, or that a
-// sibling's failure cancelled through the shared group context, says nothing
+// outcome records a failed send. A request the caller cancelled, that a
+// sibling's failure cancelled through the shared group context, or that ran
+// out of a caller deadline shorter than the client's own timeout says nothing
 // about the provider and does not count toward the breaker; it only ends a
-// half-open probe. A per-request timeout with a live caller context does
-// count: the provider did not answer in time.
-func (b *Budget) outcome(ctx context.Context, err error) {
-	if ctx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+// half-open probe. The client's per-request timeout does count: the provider
+// did not answer in the time the operator allowed it.
+func (b *Budget) outcome(ctx context.Context, err error, callerBound bool) {
+	cancelled := errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+	if cancelled && (ctx.Err() != nil || callerBound) {
 		b.mu.Lock()
 		b.probing = false
 		b.mu.Unlock()

@@ -300,7 +300,8 @@ func TestClientRequestDeadlineShortensTheTimeout(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
-		client := newTestClient(t, &Budget{MaxRequests: 1, StopUSD: 1}, func(request *http.Request) (*http.Response, error) {
+		budget := &Budget{MaxRequests: 10, StopUSD: 1, FailureThreshold: 1}
+		client := newTestClient(t, budget, func(request *http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
@@ -313,6 +314,16 @@ func TestClientRequestDeadlineShortensTheTimeout(t *testing.T) {
 		_, err := client.Ask(context.Background(), request)
 		require.ErrorIs(err, context.DeadlineExceeded)
 		assert.Equal(800*time.Millisecond, time.Since(start))
+		assert.Zero(budget.State().ConsecutiveFailures,
+			"a caller deadline shorter than the client timeout is the caller's latency budget, not a provider failure")
+		assert.True(budget.State().OpenUntil.IsZero())
+
+		late := noulRequest("matches")
+		late.Deadline = time.Now().Add(time.Minute)
+		_, err = client.Ask(context.Background(), late)
+		require.ErrorIs(err, context.DeadlineExceeded)
+		assert.Equal(1, budget.State().ConsecutiveFailures,
+			"a caller deadline beyond the client timeout leaves the client timeout in charge, which does count")
 	})
 }
 
