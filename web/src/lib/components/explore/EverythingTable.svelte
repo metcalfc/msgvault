@@ -678,6 +678,13 @@
     box-shadow: inset 2px 0 0 var(--accent-blue);
   }
 
+  /* The row open in the reading pane keeps its own tint even while it is
+   * also bulk-checked, so checked and inspected stay distinguishable. */
+  .data-row[aria-current='true'] {
+    background: var(--selected-bg);
+    box-shadow: inset 2px 0 0 var(--accent-blue);
+  }
+
   /* Tabular data columns sit on the right edge, mono-aligned. */
   .cell--time,
   .cell--size {

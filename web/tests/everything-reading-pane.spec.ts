@@ -92,6 +92,33 @@ test('the bottom reading pane opens on a single click, resizes, and persists its
   await expect(restored).toHaveCount(0);
 });
 
+test('a checked row that is also open in the reading pane keeps its own tint', async ({ page }) => {
+  await page.route('**/api/v1/explore', (route) => route.fulfill({
+    json: { rows: [entry(1), entry(2)], total_count: 2, cache_revision: 'cache-reading-pane', search_provenance: {} }
+  }));
+  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+  const grid = page.getByRole('grid', { name: 'Everything results' });
+  await expect(grid.getByText('Synthetic subject 2')).toBeVisible();
+  const first = page.locator('[data-row-key="message:1"]');
+  const second = page.locator('[data-row-key="message:2"]');
+
+  await grid.focus();
+  await page.keyboard.press('Shift+A');
+  await expect(first).toHaveAttribute('aria-selected', 'true');
+  await expect(second).toHaveAttribute('aria-selected', 'true');
+  const checked = await second.evaluate((element) => getComputedStyle(element).backgroundColor);
+
+  // Open the first row: it is now checked and inspected, and must not read
+  // like the merely checked row beside it.
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('complementary', { name: 'Reading pane: Synthetic subject 1' })).toBeVisible();
+  await expect(first).toHaveAttribute('aria-current', 'true');
+  await expect(first).toHaveAttribute('aria-selected', 'true');
+  const inspected = await first.evaluate((element) => getComputedStyle(element).backgroundColor);
+  expect(inspected).not.toBe(checked);
+  expect(await second.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(checked);
+});
+
 test('a direct multi-target reading-pane URL restores through refresh, Back, and Forward', async ({ page }) => {
   const requests: Array<{ cursor?: string; limit?: number }> = [];
   await page.route('**/api/session', (route) =>
