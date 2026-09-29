@@ -924,14 +924,17 @@
         ? 'button[aria-label="Filters"]'
         : kind === 'grouping'
           ? '[data-group-picker] button'
-          : 'button[aria-label="Sort: newest first"]';
+          : 'button[aria-label^="Sort: "]';
     const control = document.querySelector<HTMLButtonElement>(selector);
     control?.focus();
     control?.click();
   }
   function fixedSortNotice(): void {
-    sortNotice = 'Everything remains newest first; reverse order is not supported by the canonical entry API.';
-    document.querySelector<HTMLButtonElement>('button[aria-label="Sort: newest first"]')?.focus();
+    const mode = exploreState.predicate().search_mode;
+    sortNotice = mode === 'semantic' || mode === 'hybrid'
+      ? 'Semantic and hybrid results are ranked by relevance; date order does not apply.'
+      : 'Everything remains newest first; reverse order is not supported by the canonical entry API.';
+    document.querySelector<HTMLButtonElement>('button[aria-label^="Sort: "]')?.focus();
   }
   function navigateReader(delta: number): void {
     if (!exploreState.current.selectedRow || loader.rows.length === 0) return;

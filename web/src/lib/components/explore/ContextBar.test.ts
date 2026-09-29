@@ -205,3 +205,17 @@ describe('ContextBar operator and filter chips', () => {
     expect(onQueryChange).toHaveBeenLastCalledWith('notes has:attachment');
   });
 });
+
+describe('ContextBar sort control', () => {
+  it.each([
+    ['budget', 'hybrid', 'Sort: relevance'],
+    ['budget', 'semantic', 'Sort: relevance'],
+    ['budget', 'full_text', 'Sort: newest first'],
+    ['', 'hybrid', 'Sort: newest first'],
+    // A filter-only query runs as full text, so it is still date ordered.
+    ['from:alice@example.com', 'hybrid', 'Sort: newest first'],
+  ] as const)('labels %j in %s as %s', (query, searchMode, name) => {
+    render(ContextBar, baseProps({ query, searchMode }));
+    expect(screen.getByRole('button', { name })).toBeDefined();
+  });
+});

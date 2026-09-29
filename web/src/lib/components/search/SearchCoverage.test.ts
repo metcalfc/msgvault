@@ -47,23 +47,10 @@ describe('SearchCoverage', () => {
     expect(onaction).toHaveBeenCalledWith('retry');
   });
 
-  it('requires explicit confirmation before requesting a full rebuild', async () => {
-    const onaction = vi.fn();
-    render(SearchCoverage, {
-      props: { coverage: { ...base, status: 'stale', actions: ['build_index'] }, onaction }
-    });
+  it('points a full rebuild to Settings instead of offering it beside search', () => {
+    render(SearchCoverage, { props: { coverage: { ...base, status: 'stale', actions: ['build_index'] } } });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Build index' }));
-    expect(onaction).not.toHaveBeenCalled();
-    expect(screen.getByText('Start a full rebuild of the semantic index?')).toBeDefined();
-
-    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(onaction).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: 'Confirm full rebuild' })).toBeNull();
-
-    await fireEvent.click(screen.getByRole('button', { name: 'Build index' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Confirm full rebuild' }));
-    expect(onaction).toHaveBeenCalledOnce();
-    expect(onaction).toHaveBeenCalledWith('build_index');
+    expect(screen.queryByRole('button', { name: 'Build index' })).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('Rebuild the index from Settings → Search.');
   });
 });

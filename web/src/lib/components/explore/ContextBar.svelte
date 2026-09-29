@@ -23,7 +23,7 @@
   import { messageTypeLabel } from '../../util/labels';
   import { FilterLabels } from '../../explore/filter-labels.svelte';
   import {
-    queryHasAttachmentOperator, queryOperatorChips, withAttachmentOperator, withoutQueryToken
+    effectiveSearchMode, queryHasAttachmentOperator, queryOperatorChips, withAttachmentOperator, withoutQueryToken
   } from '../../search/query';
   import IdentityFilter from './IdentityFilter.svelte';
   import PersonFilterPicker from './PersonFilterPicker.svelte';
@@ -31,7 +31,7 @@
   let {
     client,
     query,
-    searchMode: _searchMode,
+    searchMode,
     filters,
     groupingChain,
     totalCount = undefined,
@@ -79,6 +79,7 @@
     if (filtersOpen) labels.loadSources();
   });
   const operatorChips = $derived(queryOperatorChips(query));
+  const relevanceOrdered = $derived(query.trim() !== '' && effectiveSearchMode(query, searchMode) !== 'full_text');
   const hasAttachment = $derived(queryHasAttachmentOperator(query));
   const sourceValues = $derived(filters.find((filter) => filter.dimension === 'source')?.values ?? []);
   const sourceValue = $derived(sourceValues.length === 1 ? sourceValues[0]! : sourceValues.length > 1 ? MULTIPLE : '');
@@ -253,11 +254,13 @@
         onchange={selectGrouping}
       />
     </div>
+    <!-- Semantic and hybrid results are ranked by relevance; the control
+         says so instead of claiming a date order it cannot apply. -->
     <Button
       size="sm"
       surface="soft"
-      label="Newest first"
-      ariaLabel="Sort: newest first"
+      label={relevanceOrdered ? 'Relevance' : 'Newest first'}
+      ariaLabel={relevanceOrdered ? 'Sort: relevance' : 'Sort: newest first'}
       onclick={() => onSort?.()}
     />
   </div>
@@ -315,7 +318,9 @@
     {/if}
   </div>
 
-  <span class="context-count" data-mono>{totalCount === undefined ? 'Count pending' : `${totalCount.toLocaleString()} results`}</span>
+  {#if totalCount !== undefined}
+    <span class="context-count" data-mono>{`${totalCount.toLocaleString()} results`}</span>
+  {/if}
 
   {#if columns && onColumnsChange}
     <details class="column-picker-disclosure">

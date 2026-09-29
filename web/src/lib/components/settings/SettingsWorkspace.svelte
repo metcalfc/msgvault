@@ -53,6 +53,7 @@
   import PersonEnrichmentProviderCreator from './PersonEnrichmentProviderCreator.svelte';
   import ProviderCredentialControl from './ProviderCredentialControl.svelte';
   import SecretField from './SecretField.svelte';
+  import SemanticIndexControl from './SemanticIndexControl.svelte';
   import { maskSecret } from '../../settings/secrets';
   import {
     groupSettings,
@@ -672,6 +673,10 @@
                   {@render row(setting, group)}
                 {/each}
               </div>
+            {/if}
+
+            {#if group.id === 'search'}
+              <SemanticIndexControl {client} />
             {/if}
 
             {#if group.id === 'enrichment'}

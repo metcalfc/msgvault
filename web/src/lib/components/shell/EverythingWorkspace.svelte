@@ -35,7 +35,7 @@
   import SelectionBar from '../explore/SelectionBar.svelte';
   import SplitPane from '../layout/SplitPane.svelte';
   import PersonTimeline from '../people/PersonTimeline.svelte';
-  import SearchCoverage from '../search/SearchCoverage.svelte';
+  import SearchStatus from '../search/SearchStatus.svelte';
   import SearchModeControl from '../search/SearchModeControl.svelte';
   import ReadingPane, { type ReadingPaneSelection, type ReadingPaneStatus } from '../reader/ReadingPane.svelte';
   import type { SearchCoverageAction } from '../../search/modes';
@@ -545,25 +545,9 @@
     );
   }
 
-  async function handleCoverageAction(action: SearchCoverageAction): Promise<void> {
-    if (action === 'retry') {
-      coverageRetryRevision += 1;
-      return;
-    }
-    try {
-      await api.runCoverageAction(action, session.coverage?.status ?? 'unavailable');
-      coverageRetryRevision += 1;
-    } catch (cause) {
-      session.coverage = {
-        eligible_count: session.coverage?.eligible_count ?? 0,
-        embedded_count: session.coverage?.embedded_count ?? 0,
-        percentage: session.coverage?.percentage ?? 0,
-        cache_revision: session.coverage?.cache_revision ?? '',
-        status: 'unavailable',
-        detail: cause instanceof Error ? cause.message : 'The semantic index action failed.',
-        actions: ['retry'],
-      };
-    }
+  // Only Retry is offered beside search; the full rebuild lives in Settings.
+  function handleCoverageAction(action: SearchCoverageAction): void {
+    if (action === 'retry') coverageRetryRevision += 1;
   }
 
   function submitSearch(event: SubmitEvent): void {
@@ -682,15 +666,6 @@
           />
         </div>
       {/if}
-      <p class="result-count" aria-live="polite" data-mono>
-        {#if loader.result?.candidatePoolSaturated}
-          {loader.rows.length.toLocaleString()} {loader.rows.length === 1 ? 'result' : 'results'} shown
-        {:else if loader.result?.totalCount !== undefined}
-          {loader.result.totalCount.toLocaleString()} items
-        {:else}
-          Modality-neutral archive
-        {/if}
-      </p>
     </div>
   </header>
 
@@ -729,23 +704,19 @@
     </p>
   {/if}
 
-  {#if loader.result?.candidatePoolSaturated}
-    <div class="search-limit" role="status">
-      <p>
-        <span class="search-limit__title">More results may match.</span>
-        Narrow with from:alice@example.com, after:2025-01-01, or label:important.
-      </p>
-      <Button label="Refine search" size="sm" surface="soft" onclick={() => searchInput?.focus()} />
-    </div>
-  {/if}
-
-  {#if session.coverage}
-    <SearchCoverage
-      requestedMode={exploreState.current.searchMode}
-      coverage={session.coverage}
-      onaction={handleCoverageAction}
-    />
-  {/if}
+  <!-- One muted line for the count, the capped pool, semantic coverage, and
+       the active-only scope; the full sentences sit behind Details. -->
+  <SearchStatus
+    loadedCount={loader.rows.length}
+    totalCount={loader.result?.totalCount}
+    hasResult={Boolean(loader.result)}
+    saturated={loader.result?.candidatePoolSaturated ?? false}
+    activeOnly={loader.result?.searchDeletionScope === 'active'}
+    requestedMode={exploreState.current.searchMode}
+    coverage={session.coverage}
+    onRefine={() => searchInput?.focus()}
+    onCoverageAction={handleCoverageAction}
+  />
 
   <ContextBar
     {client}
@@ -753,7 +724,6 @@
     searchMode={exploreState.current.searchMode}
     filters={exploreState.current.filters}
     groupingChain={exploreState.current.groupingChain}
-    totalCount={loader.result?.totalCount}
     presentation={exploreState.current.presentation}
     onPresentationChange={(presentation) =>
       commitNavigation({
@@ -786,10 +756,6 @@
       : undefined}
   />
   <span class="kit-sr-only" role="status" aria-label="Sort status" aria-live="polite">{sortNotice}</span>
-
-  {#if loader.result?.searchDeletionScope === 'active'}
-    <p class="scope-note" role="status">Semantic search covers active messages only.</p>
-  {/if}
 
   {#if meetingScope}
     <MeetingPanel {client} collapsible scope={meetingScope} refreshKey={String(session.meetingOverview?.refreshKey ?? 0)}
@@ -993,13 +959,6 @@
     font-size: var(--font-size-xs);
   }
 
-  .result-count {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    font-variant-numeric: tabular-nums;
-  }
-
   .search-bar {
     display: flex;
     align-items: center;
@@ -1030,38 +989,6 @@
   .search-note__action:focus-visible {
     outline: var(--focus-ring);
     outline-offset: 2px;
-  }
-
-  .scope-note {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-  }
-
-  .search-limit {
-    display: flex;
-    min-width: 0;
-    min-height: 32px;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-4);
-    padding: var(--space-2) var(--space-3);
-    background: var(--surface-well);
-    border-radius: var(--radius-md);
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-  }
-
-  .search-limit p {
-    min-width: 0;
-    margin: 0;
-    line-height: 1.4;
-  }
-
-  .search-limit__title {
-    margin-right: var(--space-1);
-    color: var(--text-primary);
-    font-weight: var(--font-weight-semibold);
   }
 
   .results-split {

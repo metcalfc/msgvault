@@ -77,7 +77,8 @@ describe('EverythingWorkspace', () => {
     state.replaceTransient({ query: 'vacation plans', searchMode: 'semantic' });
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
 
-    expect(await screen.findByText('2 results shown')).toBeDefined();
+    const status = await screen.findByRole('status', { name: 'Result status' });
+    await waitFor(() => expect(status.textContent).toBe('2 results shown · more may match'));
     expect(screen.getByText(/More results may match\./)).toBeDefined();
     expect(screen.queryByText('Warning')).toBeNull();
     expect(screen.getByText(/from:alice@example\.com/)).toBeDefined();
@@ -372,86 +373,29 @@ describe('EverythingWorkspace', () => {
     vi.useRealTimers();
   });
 
-
-  it('runs a full rebuild for stale coverage and refreshes the named status after completion', async () => {
-    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
-    const requests: Request[] = [];
-    let coverageCalls = 0;
-    const fetchFn = vi.fn<typeof fetch>(async (input) => {
-      const request = input instanceof Request ? input : new Request(input);
-      requests.push(request);
-      const path = new URL(request.url).pathname;
-      if (path.endsWith('/coverage')) {
-        coverageCalls += 1;
-        return Response.json({
-          status: coverageCalls === 1 ? 'stale' : 'ready',
-          eligible_count: 2, embedded_count: 2, percentage: 100,
-          vector_generation: coverageCalls === 1 ? 7 : 8,
-          cache_revision: 'cache-1', actions: coverageCalls === 1 ? ['build_index'] : []
-        });
-      }
-      if (path.endsWith('/cli/run')) {
-        return new Response(`${JSON.stringify({ type: 'complete' })}\n`, {
-          headers: { 'Content-Type': 'application/x-ndjson' }
-        });
-      }
-      return Response.json(exploreResponse());
-    });
-    const state = new ExploreState(window);
-    state.replaceSearchDraft('', 'semantic');
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
-
-    await screen.findByText('Semantic index is stale.');
-    await fireEvent.click(screen.getByRole('button', { name: 'Build index' }));
-    expect(requests.some((request) => new URL(request.url).pathname.endsWith('/cli/run'))).toBe(false);
-    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(requests.some((request) => new URL(request.url).pathname.endsWith('/cli/run'))).toBe(false);
-
-    await fireEvent.click(screen.getByRole('button', { name: 'Build index' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Confirm full rebuild' }));
-    await screen.findByText('Semantic index: 100% of 2 items.');
-
-    expect(coverageCalls).toBe(2);
-    const cliRequest = requests.find((request) => new URL(request.url).pathname.endsWith('/cli/run'));
-    await expect(cliRequest?.clone().json()).resolves.toEqual({
-      args: ['embeddings', 'build', '--full-rebuild', '--yes']
-    });
-    expect(screen.getByRole('radio', { name: 'Semantic' }).getAttribute('aria-checked')).toBe('true');
-    rendered.unmount();
-    state.destroy();
-  });
-
-
-  it('surfaces a streamed build failure without switching the requested mode', async () => {
+  it('keeps the full index rebuild out of the search bar and points to Settings', async () => {
     window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
-      const request = input instanceof Request ? input : new Request(input);
-      const path = new URL(request.url).pathname;
+      const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
       if (path.endsWith('/coverage')) return Response.json({
         status: 'stale', eligible_count: 2, embedded_count: 1, percentage: 50,
         vector_generation: 7, cache_revision: 'cache-1', actions: ['build_index']
       });
-      if (path.endsWith('/cli/run')) return new Response([
-        JSON.stringify({ type: 'stdout', data: 'starting\n' }),
-        JSON.stringify({ type: 'error', error: 'embedding endpoint failed' })
-      ].join('\n') + '\n', { headers: { 'Content-Type': 'application/x-ndjson' } });
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
     state.replaceSearchDraft('', 'hybrid');
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
 
-    await screen.findByText('Semantic index is stale.');
-    await fireEvent.click(screen.getByRole('button', { name: 'Build index' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Confirm full rebuild' }));
-
-    expect(await screen.findByText('embedding endpoint failed')).toBeDefined();
-    expect(screen.getByRole('radio', { name: 'Hybrid' }).getAttribute('aria-checked')).toBe('true');
-    expect(state.current.searchMode).toBe('hybrid');
+    const status = await screen.findByRole('status', { name: 'Result status' });
+    await waitFor(() => expect(status.textContent).toContain('semantic index stale'));
+    expect(screen.getByText('Rebuild the index from Settings → Search.')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Build index' })).toBeNull();
+    expect(fetchFn.mock.calls.some(([input]) =>
+      new URL(input instanceof Request ? input.url : String(input)).pathname.endsWith('/cli/run'))).toBe(false);
     rendered.unmount();
     state.destroy();
   });
-
 
   it('uses selection preflight as the sole authority for shell actions', async () => {
     window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
