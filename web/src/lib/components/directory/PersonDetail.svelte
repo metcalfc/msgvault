@@ -226,7 +226,7 @@
         <section><h3>Contact state</h3><p>{bundle.contactState.cadence_status} · {bundle.contactState.interaction_count} interactions{#if bundle.contactState.last_contact_at} · last contact {bundle.contactState.last_contact_at}{/if}</p></section>
       {/if}
       {#if bundle.person?.id === personID}
-        <MeetingPanel {client} scope={{ kind: 'direct', scope: { person_id: personID } }}
+        <MeetingPanel {client} collapsible scope={{ kind: 'direct', scope: { person_id: personID } }}
           refreshKey={JSON.stringify([bundle.person.revision, [...bundle.person.participant_ids].sort((a, b) => a - b)])}
           {onOpenMeeting} />
       {/if}

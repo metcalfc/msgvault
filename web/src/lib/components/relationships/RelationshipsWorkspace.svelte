@@ -415,10 +415,7 @@
                 />
               {/if}
               {#if meetingContext?.scope}
-                <details class="meeting-overview" open>
-                  <summary>Meeting activity and follow-ups</summary>
-                  <MeetingPanel {client} scope={meetingContext.scope} refreshKey={String(controller.identityRevision ?? '')} {onOpenMeeting} />
-                </details>
+                <MeetingPanel {client} collapsible scope={meetingContext.scope} refreshKey={String(controller.identityRevision ?? '')} {onOpenMeeting} />
               {:else if meetingContext?.error}
                 <p role="status">{meetingContext.error}</p>
               {/if}
@@ -600,9 +597,6 @@
     flex: 1;
     flex-direction: column;
   }
-
-  .meeting-overview { max-height: 42vh; overflow: auto; flex: none; }
-  .meeting-overview summary { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-sm); }
 
   .pane-reading {
     height: 100%;

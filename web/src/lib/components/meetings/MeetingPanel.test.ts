@@ -5,7 +5,8 @@ import { meetingAction, meetingActions, meetingMetrics } from '../../meetings/fi
 import MeetingPanel from './MeetingPanel.svelte';
 
 function response(request: Request): Response {
-  return Response.json(new URL(request.url).pathname.endsWith('/metrics') ? meetingMetrics() : meetingActions());
+  return Response.json(new URL(request.url).pathname.endsWith('/metrics') ? meetingMetrics()
+    : meetingActions({ rows: [meetingAction()], total_count: 1 }));
 }
 
 describe('MeetingPanel', () => {
@@ -22,6 +23,38 @@ describe('MeetingPanel', () => {
     await waitFor(() => expect(requests.filter((request) => request.url.endsWith('/actions'))).toHaveLength(2));
     const last = requests.filter((request) => request.url.endsWith('/actions')).at(-1)!;
     await expect(last.clone().json()).resolves.toEqual({ scope: { person_id: 7 }, assignee_email: 'person@example.test', limit: 50 });
+  });
+
+  it('hides the action filters until the scope has action items', async () => {
+    render(MeetingPanel, { client: createAPIClient(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      return Response.json(request.url.endsWith('/metrics') ? meetingMetrics() : meetingActions());
+    }), scope: { kind: 'direct', scope: { person_id: 7 } } });
+    expect(await screen.findByText('0 matching action items')).toBeDefined();
+    expect(screen.queryByRole('textbox', { name: 'Assignee email' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Apply action filters' })).toBeNull();
+  });
+
+  it('renders a closed disclosure with the meeting count when collapsible', async () => {
+    render(MeetingPanel, { client: createAPIClient(async (input) => response(input instanceof Request ? input : new Request(input))),
+      scope: { kind: 'direct', scope: { person_id: 7 } }, collapsible: true });
+    expect(await screen.findByText('Meeting activity and follow-ups · 4 meetings')).toBeDefined();
+    const details = document.querySelector<HTMLDetailsElement>('details.meeting-overview');
+    expect(details?.open).toBe(false);
+    expect(screen.getByRole('textbox', { name: 'Assignee email' })).toBeDefined();
+  });
+
+  it('collapses to a single "No meetings" line when the scope has no meetings', async () => {
+    render(MeetingPanel, { client: createAPIClient(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      return Response.json(request.url.endsWith('/metrics')
+        ? meetingMetrics({ totals: { ...meetingMetrics().totals, meeting_count: 0 }, months: [], duration_by_basis: [] })
+        : meetingActions({ coverage: { meeting_count: 0, available: 0, partial: 0, unsupported: 0, unavailable: 0 } }));
+    }), scope: { kind: 'direct', scope: { person_id: 7 } }, collapsible: true });
+    expect(await screen.findByText('No meetings')).toBeDefined();
+    expect(document.querySelector('details.meeting-overview')).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Assignee email' })).toBeNull();
+    expect(screen.queryByText('0 meetings')).toBeNull();
   });
 
   it('asks the owner for fresh Explore authority on explicit reload without repeating failed authority', async () => {

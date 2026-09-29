@@ -9,11 +9,15 @@
   import MeetingActions from './MeetingActions.svelte';
   import MeetingMetrics from './MeetingMetrics.svelte';
 
-  let { client, scope, refreshKey = '', onReloadScope = undefined, onOpenMeeting = undefined }: {
+  let { client, scope, refreshKey = '', collapsible = false, onReloadScope = undefined, onOpenMeeting = undefined }: {
     client: APIClient;
     scope: MeetingPanelScope;
     /** UI invalidation only; the server still resolves the durable identity. */
     refreshKey?: string;
+    /** Render as a closed-by-default disclosure so the surrounding surface
+     * (timeline, results, person overview) stays above the fold. A scope
+     * with no meetings collapses to a single "No meetings" line. */
+    collapsible?: boolean;
     /** Explore owners must reload the corresponding result before publishing new authority. */
     onReloadScope?: () => void;
     onOpenMeeting?: (meeting: MeetingRef) => void;
@@ -30,6 +34,18 @@
     return failures.filter((error, index) => failures.findIndex((candidate) => candidate.message === error.message) === index);
   });
   const canReload = $derived(errors.some((error) => error.recovery === 'reload' || error.recovery === 'retry'));
+  const actionCount = $derived(controller.actions?.total_count ?? 0);
+  const filtersActive = $derived(Boolean(controller.filters.status || controller.filters.assigneeEmail));
+  // The action filters only matter once there is something to filter; they
+  // stay visible while a filter is active so a zero-result filter can be reset.
+  const showActionFilters = $derived(actionCount > 0 || filtersActive);
+  const noMeetings = $derived(
+    controller.metrics !== undefined && controller.metrics.totals.meeting_count === 0 && actionCount === 0 && !filtersActive
+  );
+  const summaryLabel = $derived.by(() => {
+    const count = controller.metrics?.totals.meeting_count;
+    return count === undefined ? 'Meeting activity and follow-ups' : `Meeting activity and follow-ups · ${count.toLocaleString()} meetings`;
+  });
 
   $effect.pre(() => {
     void scopeFingerprint;
@@ -48,17 +64,18 @@
   }
 </script>
 
-<section class="meeting-panel" aria-label="Meeting activity">
-  <header><h2>Meeting activity and follow-ups</h2></header>
+{#snippet body()}
   {#if controller.metricsLoading}<p role="status">Loading meeting metrics…</p>{/if}
   {#each errors as error (error.message)}<p role="alert">{error.message}</p>{/each}
   {#if canReload}<Button label="Reload meeting activity" size="sm" surface="outline" onclick={reload} />{/if}
   {#if controller.metrics}<MeetingMetrics metrics={controller.metrics} />{/if}
-  <form class="action-filters" onsubmit={applyFilters}>
-    <SelectDropdown title="Source status" value={sourceStatus} options={statusOptions} onchange={(value) => (sourceStatus = value)} />
-    <TextInput value={assigneeEmail} ariaLabel="Assignee email" placeholder="Assignee email" oninput={(value) => (assigneeEmail = value)} />
-    <Button type="submit" label="Apply action filters" size="sm" surface="outline" />
-  </form>
+  {#if showActionFilters}
+    <form class="action-filters" onsubmit={applyFilters}>
+      <SelectDropdown title="Source status" value={sourceStatus} options={statusOptions} onchange={(value) => (sourceStatus = value)} />
+      <TextInput value={assigneeEmail} ariaLabel="Assignee email" placeholder="Assignee email" oninput={(value) => (assigneeEmail = value)} />
+      <Button type="submit" label="Apply action filters" size="sm" surface="outline" />
+    </form>
+  {/if}
   {#if controller.actions}
     <p>{controller.actions.total_count.toLocaleString()} matching action items</p>
     <MeetingActions {client} evidence={controller.actions} {onOpenMeeting} />
@@ -67,11 +84,31 @@
     {/if}
   {/if}
   {#if controller.actionsLoading}<p role="status">Loading action evidence…</p>{/if}
-</section>
+{/snippet}
+
+{#if collapsible && noMeetings}
+  <p class="meeting-none" aria-label="Meeting activity">No meetings</p>
+{:else if collapsible}
+  <details class="meeting-overview">
+    <summary>{summaryLabel}</summary>
+    <section class="meeting-panel meeting-panel--nested" aria-label="Meeting activity">
+      {@render body()}
+    </section>
+  </details>
+{:else}
+  <section class="meeting-panel" aria-label="Meeting activity">
+    <header><h2>Meeting activity and follow-ups</h2></header>
+    {@render body()}
+  </section>
+{/if}
 
 <style>
   .meeting-panel { display: grid; gap: var(--space-3); padding: var(--space-4); min-width: 0; }
+  .meeting-panel--nested { padding-inline: 0; }
   h2, p { margin: 0; font-size: var(--font-size-sm); color: var(--text-secondary); }
   h2 { color: var(--text-primary); }
   .action-filters { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+  .meeting-overview { flex: none; min-width: 0; }
+  .meeting-overview summary { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-sm); }
+  .meeting-none { flex: none; color: var(--text-muted); font-size: var(--font-size-sm); }
 </style>

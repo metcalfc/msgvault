@@ -691,10 +691,8 @@
   {/if}
 
   {#if meetingScope}
-    <div class="meeting-overview" data-scroll>
-      <MeetingPanel {client} scope={meetingScope} refreshKey={String(session.meetingOverview?.refreshKey ?? 0)}
-        onReloadScope={reloadOverviewMeetings} {onOpenMeeting} />
-    </div>
+    <MeetingPanel {client} collapsible scope={meetingScope} refreshKey={String(session.meetingOverview?.refreshKey ?? 0)}
+      onReloadScope={reloadOverviewMeetings} {onOpenMeeting} />
   {/if}
 
   <div class="results-split" class:results-split--right={previewRight} bind:clientWidth={resultsWidth}>
@@ -871,8 +869,6 @@
     margin-inline: auto;
     padding: var(--space-6) var(--space-7) var(--space-4);
   }
-
-  .meeting-overview { max-height: 42vh; overflow: auto; flex: none; border: 1px solid var(--border-muted); }
 
   .workspace-header {
     display: flex;
