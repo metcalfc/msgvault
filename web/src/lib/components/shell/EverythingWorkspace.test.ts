@@ -166,13 +166,20 @@ describe('EverythingWorkspace', () => {
     const separator = screen.getByRole('separator', { name: 'Resize reading pane' });
     separator.focus();
     await fireEvent.keyDown(separator, { key: 'ArrowRight' });
-    await fireEvent.keyDown(separator, { key: 'l' });
     expect(screen.getByRole('article', { name: 'Message 1' }).getAttribute('aria-current')).toBe('true');
     expect(state.current.conversationAnchor).toBeNull();
 
     (document.activeElement as HTMLElement | null)?.blur();
     await fireEvent.keyDown(document.body, { key: 'ArrowRight' });
     await waitFor(() => expect(screen.getByRole('article', { name: 'Message 2' }).getAttribute('aria-current')).toBe('true'));
+
+    // h/l still step from a focused button; only arrows stay with controls.
+    const closeButton = screen.getByRole('button', { name: 'Close reading pane' });
+    closeButton.focus();
+    await fireEvent.keyDown(closeButton, { key: 'h' });
+    await waitFor(() => expect(screen.getByRole('article', { name: 'Message 1' }).getAttribute('aria-current')).toBe('true'));
+    await fireEvent.keyDown(closeButton, { key: 'ArrowRight' });
+    expect(screen.getByRole('article', { name: 'Message 1' }).getAttribute('aria-current')).toBe('true');
     rendered.unmount();
     state.destroy();
   });

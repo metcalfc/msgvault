@@ -963,8 +963,14 @@
     replaceCommittedNavigation({ selectedRow: row.key, conversationAnchor: null });
   }
   function navigateReader(delta: number, event: KeyboardEvent | undefined = undefined): void {
-    // Same guard as relayGridKey: a focused control keeps its own keys.
-    if (event?.target instanceof Element && event.target.closest(`${DIRECTIONAL_CONTROLS}, a, summary`)) return;
+    // A focused control keeps its own arrow keys (a separator resizes, a
+    // button or tab moves within its widget); h/l are free unless the
+    // focus is in a text field.
+    if (event?.key.startsWith('Arrow')) {
+      if (event.target instanceof Element && event.target.closest(`${DIRECTIONAL_CONTROLS}, a, summary`)) return;
+    } else if (event && editableTarget(event.target)) {
+      return;
+    }
     // h/l and ←/→ step within the open thread first.
     if (stepThread(delta)) return;
     if (!exploreState.current.selectedRow || loader.rows.length === 0) return;
