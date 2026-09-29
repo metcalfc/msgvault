@@ -45,6 +45,15 @@ describe('ContextBar message type', () => {
     await fireEvent.click(screen.getByRole('option', { name: 'Voice note' }));
     expect(onFiltersChange).not.toHaveBeenCalled();
   });
+
+  it('reads an empty single value as Any type without adding a blank option', async () => {
+    render(ContextBar, baseProps({ filters: [{ dimension: 'message_type', values: [''] }] }));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    await fireEvent.click(screen.getByRole('combobox', { name: 'Message type: Any type' }));
+    expect(screen.getAllByRole('option').map((option) => option.textContent?.trim()))
+      .toEqual(['Any type', 'Email', 'Chat', 'Text (iMessage)', 'Text (SMS)', 'Event', 'Meeting']);
+  });
 });
 
 describe('ContextBar column picker', () => {

@@ -90,7 +90,7 @@
     // A single non-empty value outside the offered types (from a URL or a
     // drilled group) is named by its own label rather than read back as
     // "Any type"; an empty value is "Any type" itself.
-    ...(messageTypeValues.length === 1 && !OFFERED_MESSAGE_TYPES.includes(messageType)
+    ...(messageTypeValues.length === 1 && messageType !== '' && !OFFERED_MESSAGE_TYPES.includes(messageType)
       ? [{ value: messageType, label: messageTypeLabel(messageType) || messageType }]
       : []),
     ...OFFERED_MESSAGE_TYPES.map((value) => ({ value, label: messageTypeLabel(value) }))
