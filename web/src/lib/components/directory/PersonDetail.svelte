@@ -41,6 +41,8 @@
     /** Opens the Relationships hub for this person's archive participants —
      * the inverse of the hub's "Contact record" action. */
     onOpenTimeline?: (participantIDs: number[]) => void;
+    /** Opens the last-contact message in the Everything reading pane. */
+    onOpenMessage?: (messageID: number) => void;
   }
 
   type DetailTab = 'overview' | 'organizations' | 'relationships' | 'network' | 'media';
@@ -57,7 +59,8 @@
     onOpenCardDAVSettings = () => undefined,
     onAnnounce = () => undefined,
     onOpenMeeting = undefined,
-    onOpenTimeline = undefined
+    onOpenTimeline = undefined,
+    onOpenMessage = undefined
   }: Props = $props();
   let activeTab = $state<DetailTab>('overview');
   let organizationRequest = $state<{ id: number; key: number }>();
@@ -134,10 +137,11 @@
 
   const displayName = $derived(bundle.person?.display_name ?? profile?.person?.display_name ?? `Person ${personID}`);
 
-  /** `message:<id>` refs open the archived message; other kinds have no page. */
-  function contactRefHref(ref: string | undefined): string | undefined {
+  /** `message:<id>` refs open in the Everything reading pane; other kinds
+   * (meetings) have no in-app destination and render as plain text. */
+  function contactRefMessageID(ref: string | undefined): number | undefined {
     const match = /^message:([1-9]\d*)$/.exec(ref ?? '');
-    return match ? `/messages/${match[1]}` : undefined;
+    return match ? Number(match[1]) : undefined;
   }
 
   const lastContact = $derived.by(() => {
@@ -152,7 +156,7 @@
     if (cadence) parts.push(`cadence ${cadence}`);
     return {
       lead: state.last_contact_at ? `Last contact ${humanizeDate(state.last_contact_at)}${channel ? ` via ${channel}` : ''}` : 'No recorded contact',
-      href: state.last_contact_at ? contactRefHref(state.last_contact_ref) : undefined,
+      messageID: state.last_contact_at ? contactRefMessageID(state.last_contact_ref) : undefined,
       rest: parts
     };
   });
@@ -262,7 +266,10 @@
       <PersonReachBlock entries={reachEntries} {onAnnounce} />
       {#if lastContact}
         <p class="last-contact">
-          {#if lastContact.href}<a href={lastContact.href}>{lastContact.lead}</a>{:else}<span>{lastContact.lead}</span>{/if}
+          {#if lastContact.messageID !== undefined && onOpenMessage}
+            {@const messageID = lastContact.messageID}
+            <button type="button" class="link-button" onclick={() => onOpenMessage(messageID)}>{lastContact.lead}</button>
+          {:else}<span>{lastContact.lead}</span>{/if}
           {#each lastContact.rest as part}<span class="separator" aria-hidden="true">·</span><span>{part}</span>{/each}
         </p>
       {/if}
@@ -340,7 +347,8 @@
   .person-title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
   .person-subtitle { color: var(--text-secondary); font-size: var(--font-size-sm); }
   .last-contact { display: flex; flex-wrap: wrap; gap: var(--space-2); color: var(--text-secondary); font-size: var(--font-size-sm); }
-  .last-contact a { color: inherit; }
+  .link-button { border: 0; padding: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+  .link-button:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
   .separator { color: var(--text-muted); }
   .employment-flag { margin-left: var(--space-2); }
   .maintenance summary { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-sm); }

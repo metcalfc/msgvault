@@ -945,6 +945,74 @@ describe('AppShell', () => {
     state.destroy();
   });
 
+  it('opens a Directory person\'s last-contact message in the Everything reading pane without leaving the app', async () => {
+    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
+      workspace: 'directory', directoryPersonID: 7
+    }))}`);
+    const message = {
+      id: 42, source_id: 3, source_message_id: 'source-42', conversation_id: 71, subject: 'Last note',
+      message_type: 'email', from: 'sender@example.test', to: ['reader@example.test'], sent_at: '2026-08-01T12:00:00Z',
+      snippet: 'Old note', labels: [], has_attachments: false, size_bytes: 20, body: 'The last note', attachments: []
+    };
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      const meetingResponse = meetingFixtureResponse(path);
+      if (meetingResponse) return meetingResponse;
+      if (path === '/api/v1/people/directory') return Response.json({ people: [{
+        id: 7, revision: 1, display_name: 'Synthetic Person', contact_state: 'active', categories: [], organizations: []
+      }] });
+      if (path === '/api/v1/people/7') return Response.json({
+        id: 7, revision: 1, display_name: 'Synthetic Person', participant_ids: [], vcard_uid: '',
+        created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-01T00:00:00Z'
+      });
+      if (path === '/api/v1/people/7/profile') return Response.json({
+        person: { id: 7, revision: 1, display_name: 'Synthetic Person' },
+        names: [], contact_points: [], addresses: [], dates: [], categories: [], media: []
+      });
+      if (path === '/api/v1/people/7/attributes') return Response.json({ person_id: 7, attributes: [] });
+      if (path === '/api/v1/people/7/contact-state') return Response.json({
+        person_id: 7, cadence_status: 'unknown', interaction_count: 1, computed_at: '2026-08-28T10:00:00Z', stale: false,
+        last_contact_at: '2026-08-01T12:00:00Z', last_contact_channel: 'email', last_contact_ref: 'message:42'
+      });
+      if (path === '/api/v1/people/7/days') return Response.json({ person_id: 7, total_count: 0, days: [] });
+      if (path === '/api/v1/people/7/tracking') return Response.json({ person_id: 7, tracked: false, tracked_at: null });
+      if (path === '/api/v1/people/7/brief-enrollment') return Response.json({ person_id: 7, enrolled: false, enabled_at: null, actor: '' });
+      if (path === '/api/v1/people/7/merges') return Response.json({ merges: [], limit: 100, offset: 0 });
+      if (path === '/api/v1/carddav/publications/7') return Response.json({ error: 'carddav_unavailable', message: 'unavailable' }, { status: 503 });
+      if (path === '/api/v1/messages/42') return Response.json(message);
+      if (path === '/api/v1/conversations/71') return Response.json({ id: 71, anchor_id: 42, messages: [message], has_before: false, has_after: false, total: 1 });
+      if (path === '/api/v1/explore') {
+        const body = await request.clone().json().catch(() => ({})) as { filters?: Array<{ dimension: string }> };
+        exploreFilters.push((body.filters ?? []).map((filter) => filter.dimension));
+        return Response.json(exploreResponse({ rows: [{
+          key: 'source:3:message:source-42', kind: 'message', message_type: 'email', conversation_type: 'email',
+          title: 'Last note', preview: 'Old note', occurred_at: '2026-08-01T12:00:00Z', source_id: 3,
+          source_identifier: 'archive@example.test', source_type: 'gmail', participant_labels: ['Sender'], participant_ids: [1],
+          attachment_count: 0, attachment_size: 0, has_attachments: false, deleted_from_source: false, message_count: 1,
+          matched_sender_identities: [], matched_recipient_identities: [], match: {}, anchor_message_id: 42, conversation_id: 71
+        }], total_count: 1 }));
+      }
+      return Response.json(exploreResponse());
+    });
+    const exploreFilters: string[][] = [];
+    const state = new ExploreState(window);
+    // The explore loader must run: it is what resolves the selected key into a row.
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+
+    await fireEvent.click(await screen.findByRole('button', { name: /^Last contact / }));
+    await waitFor(() => expect(state.current.selectedRow).toBe('source:3:message:source-42'));
+    expect(state.current).toMatchObject({ workspace: 'everything', presentation: 'table', conversationAnchor: '42', query: '', groupingChain: [] });
+    // Bounded to the day the message was sent so the row is on page one.
+    expect(state.current.filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
+    expect(window.location.pathname).toBe('/');
+    expect(await screen.findByRole('complementary', { name: 'Reading pane: Last note' })).toBeDefined();
+    expect(exploreFilters.at(-1)).toEqual(['after', 'before']);
+
+    rendered.unmount();
+    state.destroy();
+  });
+
   it('owns an ephemeral CardDAV conflict handoff and Browser Back restores the prior Directory person', async () => {
     window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
       workspace: 'directory', directoryPersonID: 7

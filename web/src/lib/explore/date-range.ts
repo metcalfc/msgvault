@@ -81,6 +81,17 @@ export function activeDateRangePreset(filters: readonly ExploreFilter[], now: Da
   return 'custom';
 }
 
+/** A window of one day either side of an instant: enough to find one
+ * message by its key on the first page without scanning the archive. */
+export function dayWindowFilters(iso: string): ExploreFilter[] {
+  const at = new Date(iso);
+  if (Number.isNaN(at.valueOf())) return [];
+  return [
+    { dimension: 'after', values: [new Date(at.getTime() - DAY_MS).toISOString()] },
+    { dimension: 'before', values: [new Date(at.getTime() + DAY_MS).toISOString()] }
+  ];
+}
+
 /** The Everything view opens on the last seven days. */
 export function defaultEverythingFilters(now: Date = new Date()): ExploreFilter[] {
   return dateRangeFilters('week', now);

@@ -74,6 +74,9 @@
   import KeyboardHelp from './KeyboardHelp.svelte';
   import ArchivedMeetingReader from '../meetings/ArchivedMeetingReader.svelte';
   import { ArchiveMeetingNavigation, archiveMeetingSelection, parseArchiveMeetingSelection } from '../../meetings/archive-navigation.svelte';
+  import { getMessage } from '../../api/generated/api/api';
+  import { dayWindowFilters } from '../../explore/date-range';
+  import { messageEntryKey } from '../../explore/entry-key';
   import { ARCHIVE_MEETING_HISTORY_KEY, parseArchiveMeetingHistory } from '../../meetings/archive-selection';
   import EverythingWorkspace from './EverythingWorkspace.svelte';
   import { EverythingSessionState } from './EverythingSessionState.svelte';
@@ -714,6 +717,31 @@
       [ARCHIVE_MEETING_HISTORY_KEY]: { id: message.id, returnSelectedRow }
     }, '', window.location.href);
   }
+  /** Opens a message known only by id (a Directory contact-state ref) in
+   * the Everything reading pane: a fresh table view bounded to the day it
+   * was sent, with the message's row selected and the thread anchored on
+   * it. The explore loader restores a selected key across pages, so the
+   * row is found without a dedicated message route. */
+  async function openMessageByID(messageID: number): Promise<void> {
+    const origin = canonicalFingerprint(exploreState.current);
+    const { data } = await getMessage({ id: messageID }, { ...client });
+    if (!data || origin !== canonicalFingerprint(exploreState.current)) return;
+    const key = messageEntryKey(data);
+    if (!key) return;
+    commitRestorableNavigation({
+      workspace: 'everything',
+      presentation: 'table',
+      query: '',
+      groupingChain: [],
+      filters: dayWindowFilters(data.sent_at),
+      selectedRow: key,
+      conversationAnchor: String(data.id),
+      analysisTarget: null,
+      selectedIdentifier: null,
+      activeRow: null,
+      scrollAnchor: null,
+    });
+  }
 
   async function restoreArchiveFocus(): Promise<void> {
     await tick();
@@ -1280,6 +1308,7 @@
       onOpenCardDAVSettings={openCardDAVSettings}
       onAnnounce={announceOperation}
       onOpenTimeline={openDirectoryPersonTimeline}
+      onOpenMessage={(messageID) => void openMessageByID(messageID)}
     />
   {:else if exploreState.current.workspace === 'directory_review'}
     <DirectoryReviewWorkspace

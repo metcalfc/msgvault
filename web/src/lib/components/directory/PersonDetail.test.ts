@@ -485,6 +485,7 @@ describe('PersonDetail', () => {
   });
 
   it('leads with the person, contact methods, and last contact, and keeps maintenance behind a closed disclosure', async () => {
+    const onOpenMessage = vi.fn();
     const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000).toISOString();
     const fiveDaysAgo = new Date(Date.now() - 5 * 86_400_000).toISOString();
     const client = createAPIClient(quietOverviewFetch().mockImplementation(async (input) => {
@@ -502,19 +503,22 @@ describe('PersonDetail', () => {
     }));
     const entityController = new DirectoryEntityController(client, 7);
     void entityController.load();
-    render(PersonDetail, { client, personID: 7, entityController, bundle: {
-      person: { id: 7, revision: 2, display_name: 'Synthetic Person', participant_ids: [], vcard_uid: '', created_at: when, updated_at: when },
-      contactState: {
-        person_id: 7, cadence_status: 'unknown', computed_at: when, interaction_count: 4, stale: false,
-        last_contact_at: twoDaysAgo, last_contact_channel: 'email', last_contact_ref: 'message:42',
-        last_outbound_at: twoDaysAgo, last_inbound_at: fiveDaysAgo
-      },
-      etags: {}, errors: { files: 'Person has no resolved identities' }
+    const contactState = {
+      person_id: 7, cadence_status: 'unknown', computed_at: when, interaction_count: 4, stale: false,
+      last_contact_at: twoDaysAgo, last_contact_channel: 'email', last_contact_ref: 'message:42',
+      last_outbound_at: twoDaysAgo, last_inbound_at: fiveDaysAgo
+    };
+    const person = { id: 7, revision: 2, display_name: 'Synthetic Person', participant_ids: [], vcard_uid: '', created_at: when, updated_at: when };
+    const { rerender } = render(PersonDetail, { client, personID: 7, entityController, onOpenMessage, bundle: {
+      person, contactState, etags: {}, errors: { files: 'Person has no resolved identities' }
     } });
 
     expect(await screen.findByText('Engineer · Example Org · Lisbon')).toBeDefined();
-    const lead = screen.getByRole('link', { name: 'Last contact 2d ago via email' });
-    expect(lead.getAttribute('href')).toBe('/messages/42');
+    // The message ref opens in-app through the reading pane, never an href.
+    const lead = screen.getByRole('button', { name: 'Last contact 2d ago via email' });
+    expect(document.querySelector('a[href^="/messages/"]')).toBeNull();
+    await fireEvent.click(lead);
+    expect(onOpenMessage).toHaveBeenCalledWith(42);
     const line = lead.closest('p')!;
     expect(line.textContent).toContain('you wrote 2d ago');
     expect(line.textContent).toContain('they wrote 5d ago');
@@ -534,6 +538,14 @@ describe('PersonDetail', () => {
 
     await fireEvent.click(screen.getByRole('tab', { name: 'Media & Files' }));
     expect(screen.getByText('Person has no resolved identities')).toBeDefined();
+
+    // A meeting ref has no in-app destination: plain text, no control.
+    await rerender({ client, personID: 7, entityController, onOpenMessage, bundle: {
+      person, contactState: { ...contactState, last_contact_ref: 'meeting:9' }, etags: {}, errors: {}
+    } });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Overview' }));
+    expect(screen.queryByRole('button', { name: /^Last contact / })).toBeNull();
+    expect(screen.getByText('Last contact 2d ago via email').tagName).toBe('SPAN');
   });
 
   it('offers Open timeline for a person with bound participants and passes their ids', async () => {
