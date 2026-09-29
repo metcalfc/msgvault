@@ -385,9 +385,25 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 	var mu sync.Mutex
 	var totalInput, totalOutput int64
 	complete := true
+	first := 0
+	if c.budget.halfOpen() && len(requests) > 1 {
+		// A half-open breaker admits exactly one probe. Run it alone so the
+		// siblings neither get refused with ErrBreakerOpen nor cancel it
+		// through the group; the rest of the batch runs once it closes.
+		probe, err := c.Ask(ctx, requests[0])
+		result.Usage.Requests = probe.Usage.Requests
+		if err != nil {
+			result.Usage.InputTokens, result.Usage.OutputTokens = &totalInput, &totalOutput
+			return result, fmt.Errorf("jev requests failed: %w", err)
+		}
+		result.Responses[0] = &probe
+		addUsage(&totalInput, &totalOutput, &complete, probe.Usage)
+		first = 1
+	}
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.SetLimit(MaxConcurrentRequests)
-	for i, body := range bodies {
+	for i := first; i < len(bodies); i++ {
+		body := bodies[i]
 		group.Go(func() error {
 			if err := c.budget.reserve(); err != nil {
 				return err
@@ -415,16 +431,7 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 			defer mu.Unlock()
 			response.Usage.Requests = 1
 			result.Responses[i] = &response
-			if response.Usage.InputTokens == nil {
-				complete = false
-			} else {
-				totalInput += *response.Usage.InputTokens
-			}
-			if response.Usage.OutputTokens == nil {
-				complete = false
-			} else {
-				totalOutput += *response.Usage.OutputTokens
-			}
+			addUsage(&totalInput, &totalOutput, &complete, response.Usage)
 			return nil
 		})
 	}
@@ -436,6 +443,21 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 		return result, fmt.Errorf("jev requests failed: %w", groupErr)
 	}
 	return result, nil
+}
+
+// addUsage folds one response's token counts into a batch total; a missing
+// count marks the total incomplete.
+func addUsage(totalInput, totalOutput *int64, complete *bool, usage Usage) {
+	if usage.InputTokens == nil {
+		*complete = false
+	} else {
+		*totalInput += *usage.InputTokens
+	}
+	if usage.OutputTokens == nil {
+		*complete = false
+	} else {
+		*totalOutput += *usage.OutputTokens
+	}
 }
 
 func emptyResponse() Response {

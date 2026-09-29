@@ -99,6 +99,69 @@ func TestAskAllSiblingCancellationDoesNotCountTowardTheBreaker(t *testing.T) {
 	})
 }
 
+func TestAskAllHalfOpenProbeClosesTheBreakerForTheWholeBatch(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	budget := &Budget{MaxRequests: 100, FailureThreshold: 3, Cooldown: time.Minute, Now: func() time.Time { return now }}
+	var healthy atomic.Bool
+	var calls atomic.Int32
+	client := newTestClient(t, budget, func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		if !healthy.Load() {
+			return nil, errors.New("connection refused")
+		}
+		return jsonResponse(measuredResponse), nil
+	})
+	for range 3 {
+		_, err := client.Ask(context.Background(), noulRequest("matches"))
+		require.Error(err)
+	}
+	require.False(budget.State().OpenUntil.IsZero(), "three failures open the breaker")
+
+	now = now.Add(2 * time.Minute)
+	healthy.Store(true)
+	requests := make([]Request, 8)
+	for i := range requests {
+		requests[i] = noulRequest("matches")
+	}
+	batch, err := client.AskAll(context.Background(), requests)
+	require.NoError(err, "the probe runs alone, succeeds, and the rest of the batch follows")
+	assert.Equal(8, batch.Usage.Requests)
+	for i, response := range batch.Responses {
+		require.NotNil(response, "response %d", i)
+	}
+	assert.Equal(int32(11), calls.Load())
+	state := budget.State()
+	assert.True(state.OpenUntil.IsZero(), "the breaker is closed")
+	assert.Zero(state.ConsecutiveFailures)
+
+	batch, err = client.AskAll(context.Background(), requests[:2])
+	require.NoError(err, "later batches run normally")
+	assert.Equal(2, batch.Usage.Requests)
+}
+
+func TestAskAllHalfOpenProbeFailureReopensWithoutSendingSiblings(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	budget := &Budget{MaxRequests: 100, FailureThreshold: 1, Cooldown: time.Minute, Now: func() time.Time { return now }}
+	var calls atomic.Int32
+	client := newTestClient(t, budget, func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return nil, errors.New("connection refused")
+	})
+	_, err := client.Ask(context.Background(), noulRequest("matches"))
+	require.Error(err)
+	now = now.Add(2 * time.Minute)
+	requests := []Request{noulRequest("matches"), noulRequest("matches"), noulRequest("matches")}
+	batch, err := client.AskAll(context.Background(), requests)
+	require.Error(err)
+	assert.Equal(1, batch.Usage.Requests, "only the probe was attempted")
+	assert.Equal(int32(2), calls.Load())
+	assert.Equal(now.Add(time.Minute), budget.State().OpenUntil, "a failed probe reopens for another cool-down")
+}
+
 func TestAskCallerCancellationDoesNotCountTowardTheBreaker(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

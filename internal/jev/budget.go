@@ -147,6 +147,15 @@ func (b *Budget) blocked() error {
 	return nil
 }
 
+// halfOpen reports whether the breaker's cool-down has passed and the next
+// request will be its single probe. AskAll serializes that probe so sibling
+// requests cannot be refused with ErrBreakerOpen and cancel it.
+func (b *Budget) halfOpen() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return !b.openUntil.IsZero() && !b.now().Before(b.openUntil) && !b.probing
+}
+
 func (b *Budget) reserve() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
