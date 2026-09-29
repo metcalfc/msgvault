@@ -25,6 +25,16 @@ export interface BoundClusterResolution {
   failedIDs: number[];
 }
 
+/** Whether a resolution was computed for (at least) these bound ids: each
+ * id is one a cluster was resolved from or lists as a member. A resolution
+ * carried over from another person, or one with a failed lookup, does not
+ * cover them and must be resolved again. */
+export function resolutionCovers(resolution: BoundClusterResolution, participantIDs: readonly number[]): boolean {
+  const ids = validParticipantIDs(participantIDs);
+  return resolution.failedIDs.length === 0 && ids.every((id) =>
+    resolution.clusters.some((cluster) => cluster.boundIDs.includes(id) || cluster.memberIDs.includes(id)));
+}
+
 export function validParticipantIDs(participantIDs: readonly number[]): number[] {
   return [...new Set(participantIDs.filter((id) => Number.isSafeInteger(id) && id > 0))].sort((a, b) => a - b);
 }

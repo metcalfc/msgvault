@@ -79,7 +79,7 @@
   import { createExploreAPI } from '../../explore/api';
   import type { RelationshipSiblingCluster } from '../../relationships/models';
   import {
-    resolveBoundClusters, validParticipantIDs, type BoundCluster, type BoundClusterResolution
+    resolutionCovers, resolveBoundClusters, validParticipantIDs, type BoundCluster, type BoundClusterResolution
   } from '../../people/clusters';
   import { messageRowFilters, resolveMessageRowKey } from '../../explore/entry-key';
   import { ARCHIVE_MEETING_HISTORY_KEY, parseArchiveMeetingHistory } from '../../meetings/archive-selection';
@@ -224,9 +224,10 @@
    * one cluster or several, and a non-canonical id would not match the
    * hub's cluster:<canonical_id> targets. Every bound id is looked up and
    * grouped by its canonical cluster — reusing the resolution the person
-   * page already made for its reach block when it settled with every
-   * lookup answered; one that failed at page load may have been transient,
-   * so it is resolved again here — and the hub opens on the cluster with
+   * page already made for its reach block when it covers these ids with
+   * every lookup answered; a resolution for another person, or one with a
+   * failed lookup (possibly transient), is resolved again here — and the
+   * hub opens on the cluster with
    * the most activity; when there are others, it names them so the rest of
    * the person's history is one click away. */
   async function openDirectoryPersonTimeline(
@@ -238,7 +239,7 @@
     const origin = canonicalFingerprint(exploreState.current);
     let clusters: BoundCluster[] = [];
     let failedIDs: number[] = ids;
-    if (resolved && resolved.failedIDs.length === 0) {
+    if (resolved && resolutionCovers(resolved, ids)) {
       ({ clusters, failedIDs } = resolved);
     } else {
       try {

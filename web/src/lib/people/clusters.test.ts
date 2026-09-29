@@ -1,7 +1,26 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../api/client';
-import { resolveBoundClusters, validParticipantIDs } from './clusters';
+import { resolutionCovers, resolveBoundClusters, validParticipantIDs, type BoundClusterResolution } from './clusters';
+
+describe('resolutionCovers', () => {
+  const cluster = (canonicalID: number, memberIDs: number[], boundIDs: number[]) => ({
+    canonicalID, memberIDs, boundIDs, label: `Person ${canonicalID}`, activityCount: 1, identifiers: []
+  });
+
+  it('accepts a resolution whose clusters were resolved from or list every requested id', () => {
+    const resolution: BoundClusterResolution = { clusters: [cluster(3, [3, 9], [9, 3])], failedIDs: [] };
+    expect(resolutionCovers(resolution, [9, 3])).toBe(true);
+    // A member the cluster lists counts even if it was not a bound id.
+    expect(resolutionCovers({ clusters: [cluster(3, [3, 9], [3])], failedIDs: [] }, [3, 9])).toBe(true);
+  });
+
+  it('rejects a resolution for another person or one with a failed lookup', () => {
+    const stale: BoundClusterResolution = { clusters: [cluster(3, [3, 9], [9, 3])], failedIDs: [] };
+    expect(resolutionCovers(stale, [3, 12])).toBe(false);
+    expect(resolutionCovers({ clusters: [cluster(3, [3], [3])], failedIDs: [9] }, [3, 9])).toBe(false);
+  });
+});
 
 function summary(id: number, canonical: number, members: number[], activity: number) {
   return {
