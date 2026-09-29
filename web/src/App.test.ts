@@ -2,6 +2,7 @@ import { getHealth as generatedGetHealth } from './lib/api/generated/api/api';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App.svelte';
+import { openFromGear } from './test/navigation';
 import { createAPIClient } from './lib/api/client';
 import { createSessionController } from './lib/api/session.svelte';
 import { SEARCH_MODE_PREFERENCE_KEY } from './lib/search/modes';
@@ -105,7 +106,7 @@ describe('application foundation', () => {
     const session = createSessionController(fetchFn);
     render(App, { session });
     await session.bootstrap();
-    await fireEvent.click(await screen.findByRole('button', { name: 'Settings' }));
+    await openFromGear('Settings');
     await chooseSelectOption(await screen.findByLabelText('Theme'), 'Dark');
     await fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
     await waitFor(() => expect(requests.some((request) => request.method === 'PATCH')).toBe(true));
@@ -131,7 +132,7 @@ describe('application foundation', () => {
     const session = createSessionController(fetchFn);
     render(App, { session });
     await session.bootstrap();
-    await fireEvent.click(await screen.findByRole('button', { name: 'Settings' }));
+    await openFromGear('Settings');
     await chooseSelectOption(await screen.findByLabelText('Theme'), 'Dark');
     await fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
     expect(await screen.findByRole('form', { name: 'Log in' })).toBeDefined();

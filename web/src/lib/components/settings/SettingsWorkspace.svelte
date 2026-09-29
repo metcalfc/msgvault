@@ -37,7 +37,7 @@
   import LockIcon from '@lucide/svelte/icons/lock';
   import RotateCwIcon from '@lucide/svelte/icons/rotate-cw';
   import ZapIcon from '@lucide/svelte/icons/zap';
-  import { onMount, tick, untrack } from 'svelte';
+  import { onMount, tick, untrack, type Snippet } from 'svelte';
   import type { APIClient } from '../../api/client';
   import type {
     PersonEnrichmentProviderSetting as GeneratedPersonEnrichmentProviderSetting,
@@ -87,6 +87,7 @@
     onCardDAVRequestConsumed = () => undefined,
     section = '',
     onSectionChange = () => undefined,
+    browserControls = undefined,
   }: {
     client: APIClient;
     plainHTTPWarning?: boolean;
@@ -97,6 +98,8 @@
     section?: string;
     /** Reports a category change so the address follows it. */
     onSectionChange?: (section: string) => void;
+    /** This browser's own appearance overrides, shown atop Appearance. */
+    browserControls?: Snippet;
   } = $props();
   let settings = $state<SettingState[]>([]);
   let groups = $state<SettingGroupState[]>([]);
@@ -666,6 +669,7 @@
         {:else if activeId === 'people'}
           <PeopleInferenceSettings {client} />
         {:else}
+          {#if activeId === DEFAULT_CATEGORY && browserControls}{@render browserControls()}{/if}
           {#each settingsGroups.filter((candidate) => candidate.id === activeId) as group (group.id)}
             {@const posture = restartPosture(group.settings)}
             <header class="category">

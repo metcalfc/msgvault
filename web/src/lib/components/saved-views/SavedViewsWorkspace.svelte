@@ -12,11 +12,15 @@
     SavedView as GeneratedSavedView,
     SavedViewStateEnvelope as GeneratedSavedViewStateEnvelope,
   } from '../../api/generated/models';
-  import { DEFAULT_EXPLORE_COLUMNS, type ExploreURLState } from '../../explore/models';
-  import { SAVED_VIEW_SCHEMA_VERSION, canonicalSavedViewState } from '../../saved-views/canonical';
+  import type { ExploreURLState } from '../../explore/models';
+  import {
+    SAVED_VIEW_SCHEMA_VERSION,
+    canonicalSavedViewState,
+    exploreStateFromSavedView,
+    savedViewIncompatibility,
+  } from '../../saved-views/canonical';
   type SavedView = GeneratedSavedView;
   type CanonicalState = GeneratedSavedViewStateEnvelope;
-  const CURRENT_SCHEMA_VERSION = SAVED_VIEW_SCHEMA_VERSION;
   let {
     client,
     currentState,
@@ -65,7 +69,7 @@
           name: name.trim(),
           ...(description.trim() ? { description: description.trim() } : {}),
           canonical_state: canonicalState(),
-          schema_version: CURRENT_SCHEMA_VERSION,
+          schema_version: SAVED_VIEW_SCHEMA_VERSION,
         },
         client,
       );
@@ -141,39 +145,11 @@
     }
   }
   function open(view: SavedView): void {
-    const incompatibility = incompatibilityFor(view);
-    if (incompatibility) return;
-    const saved = view.canonical_state as CanonicalState;
-    const filters = (saved.filters ?? []).map((filter) => {
-      const aliases: Record<string, ExploreURLState['filters'][number]['dimension']> = {
-        source_id: 'source',
-        participant_id: 'participant',
-      };
-      return {
-        dimension: aliases[filter.field] ?? (filter.field as ExploreURLState['filters'][number]['dimension']),
-        values: [...filter.values],
-      };
-    });
-    onOpen({
-      workspace: 'everything',
-      query: saved.query ?? '',
-      searchMode: saved.search_mode === 'semantic' || saved.search_mode === 'hybrid' ? saved.search_mode : 'full_text',
-      filters,
-      groupingChain: [...(saved.grouping ?? [])] as ExploreURLState['groupingChain'],
-      presentation: saved.presentation ?? 'table',
-      sort: (saved.sort ?? [{ field: 'occurred_at', direction: 'desc' }]) as ExploreURLState['sort'],
-      columns: (saved.columns ?? DEFAULT_EXPLORE_COLUMNS) as ExploreURLState['columns'],
-      activeRow: null,
-      selectedRow: null,
-      conversationAnchor: null,
-      scrollAnchor: null,
-    });
+    if (incompatibilityFor(view)) return;
+    onOpen(exploreStateFromSavedView(view));
   }
   function incompatibilityFor(view: SavedView): string {
-    if (view.schema_version !== CURRENT_SCHEMA_VERSION) {
-      return `This view uses schema version ${view.schema_version}. Automatic migration is not supported; remove it and save the current view again.`;
-    }
-    return view.incompatibility_reason ?? '';
+    return savedViewIncompatibility(view);
   }
   function messageFor(value: unknown, fallback: string): string {
     return typeof value === 'object' && value !== null && 'message' in value && typeof value.message === 'string'

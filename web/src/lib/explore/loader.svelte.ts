@@ -263,7 +263,7 @@ export class ExploreLoader {
         this.rows = [];
         this.groupRows = [];
         this.result = undefined;
-        this.error = cause instanceof Error ? cause.message : 'Could not load Everything.';
+        this.error = cause instanceof Error ? cause.message : 'Could not load messages.';
       })
       .finally(() => {
         if (generation === this.requestGeneration) {
@@ -370,7 +370,7 @@ export class ExploreLoader {
     } catch (cause: unknown) {
       if (generation !== this.requestGeneration) return { status: 'stale' };
       if (cause instanceof DOMException && cause.name === 'AbortError') return { status: 'aborted' };
-      this.failPage(cause instanceof Error ? cause.message : 'Could not load more Everything results.');
+      this.failPage(cause instanceof Error ? cause.message : 'Could not load more results.');
       return { status: 'failed' };
     } finally {
       if (generation === this.requestGeneration) this.loadingMore = false;

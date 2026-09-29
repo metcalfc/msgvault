@@ -8,6 +8,7 @@ import { meetingActions, meetingMetrics } from '../../meetings/fixtures.test-sup
 import { RelationshipsController } from '../../relationships/controller.svelte';
 import PersonDetail from '../directory/PersonDetail.svelte';
 import RelationshipsWorkspace from '../relationships/RelationshipsWorkspace.svelte';
+import { openFromGear } from '../../../test/navigation';
 import AppShell from '../shell/AppShell.svelte';
 
 const person = { id: 7, revision: 1, display_name: 'Example Person', participant_ids: [3, 7], vcard_uid: 'person-7', created_at: '', updated_at: '' };
@@ -99,7 +100,7 @@ describe('meeting panel surfaces', () => {
     await screen.findByText('4 meetings');
     expect(metrics[0]).toMatchObject({ explore: { cache_revision: 'detail-cache', search_provenance: { lexical_index_revision: 'detail-lex', vector_generation: 2 }, candidate_snapshot_id: 'detail-candidate',
       predicate: { query: 'planning', search_mode: 'hybrid', filters: [...filters, { dimension: 'domain', values: ['exact.example'] }] } } });
-    await fireEvent.click(within(screen.getByRole('navigation', { name: 'Primary' })).getByRole('button', { name: 'Settings' }));
+    await openFromGear('Settings');
     window.history.back();
     await new Promise((resolve) => window.addEventListener('popstate', resolve, { once: true }));
     await screen.findByText('4 meetings');

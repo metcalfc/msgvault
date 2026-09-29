@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { captureScreenshot, type ScreenshotOptions } from './docs-fixture-screenshot';
-import { selectKitOption, setKitTheme } from './kit-ui';
+import { selectKitOption, setKitTheme, setDensity } from './kit-ui';
 
 const outputDir = process.env.MSGVAULT_DOCS_SCREENSHOT_OUTPUT ?? '';
 const platform = process.env.MSGVAULT_DOCS_SCREENSHOT_PLATFORM ?? 'darwin';
@@ -11,7 +11,7 @@ const exploreURL = (workspace: 'everything' | 'relationships') =>
   `/?workspace=${workspace}`;
 
 async function waitForOverview(page: import('@playwright/test').Page) {
-  const grid = page.getByRole('grid', { name: 'Everything results' });
+  const grid = page.getByRole('grid', { name: 'Message results' });
   await expect(grid).toBeVisible();
   await expect.poll(async () => await grid.locator('[data-row-key]').count()).toBeGreaterThan(1);
   await expect(grid.locator('[data-row-key]').first()).toBeVisible();
@@ -58,7 +58,7 @@ test.describe('documentation fixture capture', () => {
       for (const density of ['comfortable', 'compact'] as const) {
         await page.goto(exploreURL('everything'));
         await setKitTheme(page, theme);
-        await selectKitOption(page, 'Temporary density', `Density: ${density === 'compact' ? 'Compact' : 'Comfortable'}`);
+        await setDensity(page, density);
         await expect(page.locator('html')).toHaveAttribute('data-density', density);
         const grid = await waitForOverview(page);
         const firstRow = grid.locator('[data-row-key]').first();
@@ -74,7 +74,7 @@ test.describe('documentation fixture capture', () => {
       ] as const) {
         await page.goto(exploreURL('relationships'));
         await setKitTheme(page, theme);
-        await selectKitOption(page, 'Temporary density', `Density: ${density === 'compact' ? 'Compact' : 'Comfortable'}`);
+        await setDensity(page, density);
         const hub = page.getByRole('main', { name: 'Relationships' });
         await expect(hub).toBeVisible();
         await page.getByRole('button', { name: 'All senders' }).click();

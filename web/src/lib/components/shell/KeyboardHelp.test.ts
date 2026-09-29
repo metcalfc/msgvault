@@ -53,7 +53,7 @@ describe('keyboard command registry', () => {
 
     const command = screen.getByText('Open command palette').closest('div');
     expect(command).not.toBeNull();
-    expect(command?.querySelector('[aria-label="Mod K"]')).not.toBeNull();
+    expect(command?.querySelector('[aria-label="Mod Shift P"]')).not.toBeNull();
     expect(command?.textContent).not.toContain('or');
   });
 });

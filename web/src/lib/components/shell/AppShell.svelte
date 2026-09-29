@@ -5,7 +5,12 @@
     Button,
     CommandPalette,
     getThemeMode,
+    Menu,
+    MenuContent,
+    MenuItem,
+    MenuTrigger,
     SelectDropdown,
+    setThemeMode,
     StatusDot,
     ThemeToggle,
     TopBar,
@@ -74,6 +79,9 @@
   import DirectoryReviewWorkspace from '../directory/DirectoryReviewWorkspace.svelte';
   import KeyboardHelp from './KeyboardHelp.svelte';
   import MessagePage from '../reader/MessagePage.svelte';
+  import HeaderSearch from './HeaderSearch.svelte';
+  import SettingsIcon from '@lucide/svelte/icons/settings';
+  import { pendingReviewCount, reviewCountLabel } from '../../directory/review-count';
   import { routeTitle } from '../../routing/routes';
   import ArchivedMeetingReader from '../meetings/ArchivedMeetingReader.svelte';
   import { ArchiveMeetingNavigation, archiveMeetingSelection, parseArchiveMeetingSelection } from '../../meetings/archive-navigation.svelte';
@@ -94,6 +102,8 @@
   interface SettingsSectionBinding {
     value: string;
     change: (section: string) => void;
+    /** This browser's theme and density, shown in the Appearance category. */
+    browserControls: Snippet;
   }
   interface Props {
     client: APIClient;
@@ -147,7 +157,7 @@
       archiveWasOpen = id !== undefined;
     });
   });
-  const DEFAULT_SORT_NOTICE = 'Newest first is the canonical Everything order.';
+  const DEFAULT_SORT_NOTICE = 'Newest first is the canonical Inbox order.';
   const SEARCH_TYPING_DEBOUNCE_MS = 250;
   const debouncedSearchPatch = bufferedCallback((patch: Partial<ExploreURLState>) => {
     // Typing a search query is itself a user-initiated interaction, even
@@ -399,17 +409,72 @@
   let operationAnnouncement = $state({ key: 0, message: '' });
   type APIExploreSelection = GeneratedExploreSelection;
   type ExplorePreflight = GeneratedExplorePreflightResponse;
-  const tabs = [
-    { id: 'relationships', label: 'Relationships' },
-    { id: 'directory', label: 'Directory' },
-    { id: 'directory_review', label: 'Reviews' },
-    { id: 'everything', label: 'Everything' },
+  // Primary navigation: the places people go. Settings, Reviews, and
+  // Saved Views live in the gear menu; Search is the header field.
+  type NavigationID = 'people' | 'inbox' | 'files' | 'activity';
+  const tabs: { id: NavigationID; label: string }[] = [
+    { id: 'people', label: 'People' },
+    { id: 'inbox', label: 'Inbox' },
     { id: 'files', label: 'Files' },
-    { id: 'saved_views', label: 'Saved Views' },
+    { id: 'activity', label: 'Activity' },
+  ];
+  const activitySections = [
     { id: 'sources', label: 'Sources' },
     { id: 'operations', label: 'Operations' },
     { id: 'deletions', label: 'Deletions' },
-    { id: 'settings', label: 'Settings' },
+  ] as const;
+  function navigationFor(workspace: ExploreWorkspace): NavigationID | '' {
+    switch (workspace) {
+      case 'directory':
+      case 'relationships':
+        return 'people';
+      case 'everything':
+        return 'inbox';
+      case 'files':
+        return 'files';
+      case 'sources':
+      case 'operations':
+      case 'deletions':
+        return 'activity';
+      default:
+        return '';
+    }
+  }
+  const activeNavigation = $derived(navigationFor(exploreState.current.workspace));
+  function openNavigation(id: NavigationID): void {
+    if (id === 'people') openWorkspaceTab('directory');
+    else if (id === 'inbox') openInbox();
+    else if (id === 'files') openWorkspaceTab('files');
+    else openWorkspaceTab('sources');
+  }
+  /** The Inbox is the browse surface: the Everything view with no query. */
+  function openInbox(): void {
+    beforeCommit();
+    exploreState.commitWorkspace('everything', { query: '' });
+  }
+  /** Search from anywhere: the header field and the palette land here. */
+  function searchArchive(query: string): void {
+    beforeCommit();
+    exploreState.commitWorkspace('everything', { query });
+    void focusGridAfterUpdate();
+  }
+  // Reviews wait for a decision; the gear menu says how many.
+  let reviewCount = $state<number>();
+  let reviewCountController: AbortController | undefined;
+  function refreshReviewCount(): void {
+    reviewCountController?.abort();
+    const controller = new AbortController();
+    reviewCountController = controller;
+    void pendingReviewCount(client, controller.signal).then((count) => {
+      if (!controller.signal.aborted) reviewCount = count;
+    }).catch(() => undefined);
+  }
+  // The count loads when the gear menu opens, so opening the app costs no
+  // review reads; the last count stays on the gear until it changes.
+  const themeOptions: { value: ThemePreference; label: string }[] = [
+    { value: 'light', label: 'Light' },
+    { value: 'dark', label: 'Dark' },
+    { value: 'system', label: 'System' },
   ];
   const densityOptions = [
     { value: 'daemon', label: 'Density: Auto' },
@@ -459,6 +524,7 @@
   let selectionPreflightController: AbortController | undefined;
   let pendingDeletionReview = $state<'explicit' | 'all_matching'>();
   let searchInput = $state<HTMLInputElement>();
+  let headerSearchInput = $state<HTMLInputElement>();
   // The loader also drives the Files-shell grouped view (AppShell gates its
   // internal load effect on `workspace === 'files' && groupingChain.length >
   // 0` in addition to `workspace === 'everything'`), so it is owned here
@@ -757,7 +823,7 @@
   }
   function currentGrid(): HTMLElement | null {
     return document.querySelector<HTMLElement>(
-      '[role="grid"][aria-label="Everything results"], [role="grid"][aria-label^="Everything grouped by"], [role="grid"][aria-label="Files in current context"]',
+      '[role="grid"][aria-label="Message results"], [role="grid"][aria-label^="Messages grouped by"], [role="grid"][aria-label="Files in current context"]',
     );
   }
   function relayGridKey(event: KeyboardEvent, key: string): void {
@@ -960,7 +1026,7 @@
     const mode = exploreState.predicate().search_mode;
     sortNotice = mode === 'semantic' || mode === 'hybrid'
       ? 'Semantic and hybrid results are ranked by relevance; date order does not apply.'
-      : 'Everything remains newest first; reverse order is not supported by the canonical entry API.';
+      : 'The Inbox remains newest first; reverse order is not supported by the canonical entry API.';
     document.querySelector<HTMLButtonElement>('button[aria-label^="Sort: "]')?.focus();
   }
   function followRow(row: EntryRow): void {
@@ -1012,7 +1078,9 @@
     'open-row': (event) => relay(event, 'Enter'),
     'close-layer': (event) => handleEscape(event ?? new KeyboardEvent('keydown', { key: 'Escape' })),
     'focus-search': (event) => {
-      if (!editableTarget(event?.target ?? null)) searchInput?.focus();
+      if (event?.key === '/' && editableTarget(event.target)) return;
+      event?.preventDefault();
+      (headerSearchInput?.isConnected ? headerSearchInput : searchInput)?.focus();
     },
     'toggle-selection': (event) => relay(event, ' '),
     'select-visible': (event) => relay(event, 'A'),
@@ -1081,9 +1149,37 @@
     review: false,
     run: () => commitWorkspace('directory_review'),
   };
+  function navigationCommand(id: string, label: string, keywords: string, run: () => void): AppCommand {
+    return { id, label, section: 'Go to', keywords: `Go to ${label} ${keywords}`, keys: [], combos: [], destructive: false, review: false, run };
+  }
+  const goToCommands: AppCommand[] = [
+    navigationCommand('go:people', 'Go to People', 'contacts directory relationships', () => openWorkspaceTab('directory')),
+    navigationCommand('go:person', 'Go to person…', 'find person contact', () => void openPersonFinder()),
+    navigationCommand('go:inbox', 'Go to Inbox', 'everything browse messages', openInbox),
+    navigationCommand('go:files', 'Go to Files', 'attachments documents', () => openWorkspaceTab('files')),
+    navigationCommand('go:activity', 'Go to Activity', 'sources operations deletions', () => openWorkspaceTab('sources')),
+    navigationCommand('go:settings', 'Go to Settings', 'preferences appearance theme density', () => openWorkspaceTab('settings')),
+    navigationCommand('go:saved-views', 'Go to Saved Views', 'bookmarks', () => openWorkspaceTab('saved_views')),
+  ];
+  function appearanceCommand(id: string, label: string, run: () => void): AppCommand {
+    return { id, label, section: 'Appearance', keywords: `Appearance ${label}`, keys: [], combos: [], destructive: false, review: false, run };
+  }
+  const appearanceCommands: AppCommand[] = [
+    ...themeOptions.map((option) => appearanceCommand(`theme:${option.value}`, `Theme: ${option.label}`, () => setThemeMode(option.value))),
+    appearanceCommand('theme:daemon', 'Theme: Daemon default', () => appearance.clearTemporary('theme')),
+    ...densityOptions.map((option) => appearanceCommand(`density:${option.value}`, option.label, () => applyTemporaryDensity(option.value))),
+  ];
+  /** People opens with its search focused, so a name is one keystroke away. */
+  async function openPersonFinder(): Promise<void> {
+    openWorkspaceTab('directory');
+    await tick();
+    document.querySelector<HTMLInputElement>('input[aria-label="Search directory"]')?.focus();
+  }
   const commandRegistry = $derived([
     ...createCommandRegistry(commandHandlers),
+    ...goToCommands,
     reviewWorkspaceCommand,
+    ...appearanceCommands,
     ...groupingCommands,
   ]);
   const paletteCommands = $derived(
@@ -1292,61 +1388,110 @@
   });
 </script>
 
+{#snippet browserControls()}
+  <section class="browser-appearance" aria-label="This browser">
+    <h3>This browser</h3>
+    <p>Overrides for this browser only; the daemon defaults below apply everywhere else.</p>
+    <div class="browser-appearance__controls">
+      <ThemeToggle variant="segmented" />
+      {#if appearance.temporary.theme !== undefined}
+        <Button size="sm" surface="soft" label="Use daemon theme" onclick={() => appearance.clearTemporary('theme')} />
+      {/if}
+      <SelectDropdown
+        title="Temporary density"
+        value={appearance.temporary.density ?? 'daemon'}
+        options={densityOptions}
+        onchange={applyTemporaryDensity}
+      />
+    </div>
+  </section>
+{/snippet}
+
 <div class="app-shell">
   <span class="kit-sr-only" role="status" aria-label="Operation status" aria-live="polite">
     {#key operationAnnouncement.key}<span>{operationAnnouncement.message}</span>{/key}
   </span>
   <TopBar
     {tabs}
-    active={exploreState.current.workspace}
+    active={activeNavigation}
+    ariaLabel="Primary"
     centerTabs
-    onchange={(workspace) => openWorkspaceTab(workspace as ExploreWorkspace)}
+    onchange={(id) => openNavigation(id as NavigationID)}
   >
     {#snippet left()}
       <div class="brand" aria-label="msgvault home"><span aria-hidden="true">◇</span> msgvault</div>
     {/snippet}
-    {#snippet right()}
-      <div class="appearance-controls" aria-label="Appearance controls">
-        <ThemeToggle />
-        {#if appearance.temporary.theme !== undefined}
-          <Button
-            size="sm"
-            surface="soft"
-            label="Use daemon theme"
-            onclick={() => appearance.clearTemporary('theme')}
-          />
-        {/if}
-        <SelectDropdown
-          title="Temporary density"
-          value={appearance.temporary.density ?? 'daemon'}
-          options={densityOptions}
-          align="end"
-          onchange={applyTemporaryDensity}
+    {#snippet search()}
+      <!-- Inbox and Search have their own full search bar with modes and
+           chips; everywhere else this field takes a query to Search. -->
+      {#if exploreState.current.workspace !== 'everything'}
+        <HeaderSearch
+          {client}
+          bind:inputEl={headerSearchInput}
+          onSearch={searchArchive}
+          onOpenSavedView={(state) => void openSavedView(state)}
+          onManageSavedViews={() => openWorkspaceTab('saved_views')}
         />
-      </div>
-      <span class="archive-state" class:archive-state--error={Boolean(loader.error || loader.unavailable)}>
+      {/if}
+    {/snippet}
+    {#snippet right()}
+      <Menu align="end" onopenchange={(open) => { if (open) refreshReviewCount(); }}>
+        <MenuTrigger class="gear-trigger" ariaLabel={reviewCount ? `Settings and reviews (${reviewCountLabel(reviewCount)} to review)` : 'Settings and reviews'} title="Settings and reviews">
+          <SettingsIcon size={16} aria-hidden="true" />
+          {#if reviewCount}<span class="gear-badge" aria-hidden="true">{reviewCountLabel(reviewCount)}</span>{/if}
+        </MenuTrigger>
+        <MenuContent ariaLabel="Settings and reviews">
+          <MenuItem onselect={() => openWorkspaceTab('settings')}>Settings</MenuItem>
+          <MenuItem textValue="Reviews" onselect={() => openWorkspaceTab('directory_review')}>
+            <span class="menu-row">Reviews{#if reviewCount}<span class="menu-count">{reviewCountLabel(reviewCount)}</span>{/if}</span>
+          </MenuItem>
+          <MenuItem onselect={() => openWorkspaceTab('saved_views')}>Saved Views</MenuItem>
+        </MenuContent>
+      </Menu>
+      {@const archiveLabel = loader.loading
+        ? 'Searching'
+        : loader.error || loader.unavailable
+          ? 'Archive needs attention'
+          : 'Local archive ready'}
+      <span class="archive-state" class:archive-state--error={Boolean(loader.error || loader.unavailable)} title={archiveLabel}>
         <span aria-hidden="true">
-          <StatusDot
-            status={loader.loading ? 'working' : loader.error || loader.unavailable ? 'unclean' : 'idle'}
-            label={loader.loading
-              ? 'Searching'
-              : loader.error || loader.unavailable
-                ? 'Archive needs attention'
-                : 'Local archive ready'}
-          />
+          <StatusDot status={loader.loading ? 'working' : loader.error || loader.unavailable ? 'unclean' : 'idle'} label={archiveLabel} />
         </span>
-        <span class="archive-state__label">
-          <span class="archive-state__reserve" aria-hidden="true">Local archive</span>
-          <span>{loader.loading ? 'Searching' : loader.error || loader.unavailable ? 'Attention' : 'Local archive'}</span>
-        </span>
+        <span class="kit-sr-only">{archiveLabel}</span>
       </span>
     {/snippet}
   </TopBar>
+
+  {#if activeNavigation === 'activity'}
+    <nav class="sub-tabs" aria-label="Activity">
+    <div class="sub-tabs__list" role="tablist" aria-label="Activity sections">
+      {#each activitySections as section (section.id)}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={exploreState.current.workspace === section.id}
+          tabindex={exploreState.current.workspace === section.id ? 0 : -1}
+          onclick={() => openWorkspaceTab(section.id)}
+          onkeydown={(event) => {
+            const index = activitySections.findIndex((candidate) => candidate.id === section.id);
+            const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+            if (!step) return;
+            event.preventDefault();
+            const next = activitySections[(index + step + activitySections.length) % activitySections.length]!;
+            openWorkspaceTab(next.id);
+            void tick().then(() => document.querySelector<HTMLButtonElement>('[aria-label="Activity sections"] [aria-selected="true"]')?.focus());
+          }}
+        >{section.label}</button>
+      {/each}
+    </div>
+    </nav>
+  {/if}
 
   {#if exploreState.current.workspace === 'settings'}
     {#if settings}{@render settings(cardDAVSettingsRequest, consumeCardDAVSettingsRequest, settingsNavigationTarget, {
       value: exploreState.current.settingsSection,
       change: (settingsSection) => replaceCommittedNavigation({ settingsSection }),
+      browserControls,
     })}{/if}
   {:else if exploreState.current.workspace === 'message' && exploreState.current.messageID !== null}
     <MessagePage
@@ -1618,7 +1763,7 @@
   <p class="archive-navigation-status" role="alert">{archivedMeeting.error}</p>
 {/if}
 
-<CommandPalette bind:open={paletteOpen} commands={paletteCommands} ariaLabel="Everything commands" onrun={runPalette} />
+<CommandPalette bind:open={paletteOpen} commands={paletteCommands} ariaLabel="Commands" onrun={runPalette} />
 
 {#if keyboardHelpOpen}
   <KeyboardHelp
@@ -1708,22 +1853,97 @@
     white-space: nowrap;
   }
 
-  .appearance-controls {
+  .app-shell :global(.gear-trigger) {
+    position: relative;
     display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .app-shell :global(.gear-trigger:hover) {
+    background: var(--surface-well);
+    color: var(--text-primary);
+  }
+
+  .gear-badge {
+    position: absolute;
+    top: -2px;
+    right: -4px;
+    min-width: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--accent-blue);
+    color: var(--text-on-accent, #fff);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
+    text-align: center;
+  }
+
+  .menu-row {
+    display: inline-flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+
+  .menu-count {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sub-tabs__list {
+    display: flex;
     gap: var(--space-2);
   }
 
-  /* Keep the longest status label's width while searches are in flight. */
-  .archive-state__label {
-    display: inline-grid;
+  .sub-tabs {
+    display: flex;
+    padding: 0 var(--space-7);
+    border-bottom: 1px solid var(--hairline);
+    background: var(--surface-canvas);
   }
 
-  .archive-state__label > span {
-    grid-area: 1 / 1;
+  .sub-tabs [role='tab'] {
+    margin-bottom: -1px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    padding: var(--space-2) var(--space-3);
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    cursor: pointer;
   }
 
-  .archive-state__reserve {
-    visibility: hidden;
+  .sub-tabs [role='tab']:hover { color: var(--text-primary); }
+  .sub-tabs [role='tab'][aria-selected='true'] { border-bottom-color: var(--accent-blue); color: var(--text-primary); }
+  .sub-tabs [role='tab']:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+
+  .browser-appearance {
+    display: grid;
+    gap: var(--space-2);
+    margin-bottom: var(--space-5);
+  }
+
+  .browser-appearance h3,
+  .browser-appearance p { margin: 0; }
+  .browser-appearance p { color: var(--text-secondary); font-size: var(--font-size-sm); }
+
+  .browser-appearance__controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
   }
 
   .files-shell {

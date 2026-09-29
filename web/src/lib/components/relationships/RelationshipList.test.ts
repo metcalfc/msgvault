@@ -310,7 +310,7 @@ describe('RelationshipList', () => {
 
     expect(screen.getByText('Relationship ranking needs the analytical cache/engine')).toBeDefined();
     expect(screen.queryByRole('grid')).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: 'Open Everything' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Open Inbox' }));
     expect(onOpenEverything).toHaveBeenCalledOnce();
   });
 
@@ -325,6 +325,6 @@ describe('RelationshipList', () => {
 
     expect(screen.getByText('Preparing relationship ranking…')).toBeDefined();
     expect(screen.queryByText(/msgvault build-cache/)).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Open Everything' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open Inbox' })).toBeNull();
   });
 });

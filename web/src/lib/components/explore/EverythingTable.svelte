@@ -487,13 +487,13 @@
   }
 </script>
 
-<section class="everything-table" aria-label="Everything table">
+<section class="everything-table" aria-label="Message table">
   <div
     class="table-grid"
     bind:this={gridElement}
     role="grid"
     data-scroll
-    aria-label="Everything results"
+    aria-label="Message results"
     aria-rowcount={accessibilityRowCount}
     aria-colcount={visibleColumns.length}
     aria-busy={loading || loadingMore}

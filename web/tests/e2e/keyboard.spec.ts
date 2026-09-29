@@ -146,11 +146,11 @@ test('pointer-free archive journey preserves focus, announcements, and history',
   await expect.poll(async () => (await exploreHistoryState(page)).relationshipTarget).toBeNull();
   await expect(page.getByRole('heading', { name: 'Beta Person' })).toBeHidden();
 
-  await tabTo(page, 'Everything');
+  await tabTo(page, 'Inbox');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('main', { name: 'Everything' })).toBeVisible();
+  await expect(page.getByRole('main', { name: /^(Inbox|Search)$/ })).toBeVisible();
   await page.keyboard.press('/');
-  const search = page.getByRole('searchbox', { name: 'Search everything' });
+  const search = page.getByRole('searchbox', { name: 'Search messages' });
   await expect(search).toBeFocused();
   await page.keyboard.type('synthetic');
   await tabTo(page, 'Full text');
@@ -161,18 +161,18 @@ test('pointer-free archive journey preserves focus, announcements, and history',
   await page.keyboard.press('Enter');
   await expect(page.locator('[aria-live="polite"]').filter({ hasText: `${fixture.logicalRows.length} items` }).first()).toBeVisible();
 
-  await tabTo(page, 'Everything results');
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+K' : 'Control+K');
+  await tabTo(page, 'Message results');
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
   await page.keyboard.type('group by source');
   await page.keyboard.press('Enter');
-  const grouped = page.getByRole('grid', { name: 'Everything grouped by source' });
+  const grouped = page.getByRole('grid', { name: 'Messages grouped by source' });
   await expect(grouped).toBeFocused();
   await tabTo(page, 'Drill into Synthetic chat');
   await page.keyboard.press('Enter');
   await expect(page.getByRole('complementary', { name: /Reading pane/ })).toBeVisible();
   await page.keyboard.press('Escape');
 
-  const grid = page.getByRole('grid', { name: 'Everything results' });
+  const grid = page.getByRole('grid', { name: 'Message results' });
   await expect(grid).toBeFocused();
   const renderedActiveRow = grid.locator(`[data-row-key="${firstServedRow.key}"]`);
   await expect(grid).toHaveAttribute('aria-busy', 'false');
@@ -200,9 +200,9 @@ test('pointer-free archive journey preserves focus, announcements, and history',
   const files = page.getByRole('grid', { name: 'Files results' });
   await tabTo(page, 'Files results');
   await expect(files).toBeFocused();
-  await tabTo(page, 'Everything', 120, 'Shift+Tab');
+  await tabTo(page, 'Inbox', 120, 'Shift+Tab');
   await page.keyboard.press('Enter');
-  await tabTo(page, 'Everything results');
+  await tabTo(page, 'Message results');
   await expect(grid).toBeFocused();
   await page.keyboard.press('Space');
   await expect(grid.locator('[aria-selected="true"]')).toHaveCount(1);
@@ -221,11 +221,11 @@ test('pointer-free archive journey preserves focus, announcements, and history',
   const deletionsURL = page.url();
   await page.goBack();
   await expect(page).toHaveURL(everythingURL);
-  await expect(page.getByRole('main', { name: 'Everything' })).toBeVisible();
+  await expect(page.getByRole('main', { name: /^(Inbox|Search)$/ })).toBeVisible();
   await expect(grid).toBeFocused();
   await expect(grid).toHaveAttribute('aria-activedescendant', everythingActiveRow!);
   await page.goForward();
   await expect(page).toHaveURL(deletionsURL);
   await expect(page.getByRole('main', { name: 'Deletions' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Deletions', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Activity', exact: true })).toBeFocused();
 });

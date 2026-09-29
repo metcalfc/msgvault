@@ -208,7 +208,7 @@
       toneLabel="Unavailable"
       title="Relationship ranking needs the analytical cache/engine"
       message="Rebuild the analytical cache with msgvault build-cache, then retry."
-      actionLabel="Open Everything"
+      actionLabel="Open Inbox"
       onaction={() => onOpenEverything?.()}
     />
   {:else if error && views.length === 0}

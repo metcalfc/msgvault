@@ -124,7 +124,7 @@ test("production imports expose archived actions, duration evidence, and exact c
     .getByRole("row")
     .filter({ hasText: "Generic unknown duration" });
   await expect(row).toBeVisible();
-  await page.getByRole("grid", { name: "Everything results" }).focus();
+  await page.getByRole("grid", { name: "Message results" }).focus();
   await page.keyboard.press("Home");
   await page.keyboard.press("Space");
   const explicit = await downloadContext(page, info, "explicit-context");
@@ -361,7 +361,7 @@ test("rapid search scope changes leave only the final meeting evidence", async (
   });
   await assertMetrics(panel, 4, 3, 1, "1h 40m", "33m 20s");
   const search = page.getByRole("searchbox", {
-    name: "Search everything",
+    name: "Search messages",
     exact: true,
   });
   const firstRequest = page.waitForRequest(
@@ -495,11 +495,11 @@ test('closing the reader removes its scope and cancels a pending continuation', 
     await expect(panel.getByText('Archived action 1', { exact: true })).toBeVisible();
     await expect(page).toHaveURL((url) => url.searchParams.get('workspace') === 'directory');
     await network.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
-    await page.getByRole('button', { name: 'Everything', exact: true }).click();
+    await page.getByRole('button', { name: 'Inbox', exact: true }).click();
     // Entering Everything from Directory applies the seven-day default;
     // the fixture's meetings are older.
     await page.getByRole('radio', { name: 'All time', exact: true }).click();
-    const search = page.getByRole('searchbox', { name: 'Search everything', exact: true });
+    const search = page.getByRole('searchbox', { name: 'Search messages', exact: true });
     await search.fill('Generic');
     await search.press('Enter');
     await openMeetingActivity(page, /· 1 meetings$/);

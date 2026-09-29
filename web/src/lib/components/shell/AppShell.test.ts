@@ -10,6 +10,7 @@ import { ExploreState, parseExploreURLState, serializeExploreURLState } from '..
 import { chooseSelectOption } from '../../../test/kit-ui';
 import AppShell from './AppShell.svelte';
 import { exploreLink } from '../../../test/explore-url';
+import { openCommandPalette, openFromGear } from '../../../test/navigation';
 
 function exploreResponse(overrides: Record<string, unknown> = {}) {
   return {
@@ -95,7 +96,7 @@ describe('AppShell', () => {
     render(AppShell, { client: createAPIClient(vi.fn()), state, enabled: false });
 
     await fireEvent.keyDown(window, { key: '/' });
-    const search = screen.getByRole('searchbox', { name: 'Search everything' });
+    const search = screen.getByRole('searchbox', { name: 'Search messages' });
     expect(document.activeElement).toBe(search);
     await fireEvent.keyDown(search, { key: 'Escape' });
     expect(document.activeElement).toBe(search);
@@ -108,7 +109,7 @@ describe('AppShell', () => {
     const state = new ExploreState(window);
     const rendered = render(AppShell, { client: createAPIClient(vi.fn()), state, enabled: false });
     const handleKeydown = vi.spyOn(appShortcuts, 'handleKeydown');
-    const search = screen.getByRole('searchbox', { name: 'Search everything' });
+    const search = screen.getByRole('searchbox', { name: 'Search messages' });
     const textarea = document.createElement('textarea');
     const select = document.createElement('select');
     const editable = document.createElement('div');
@@ -182,7 +183,7 @@ describe('AppShell', () => {
     window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
     render(AppShell, { client: createAPIClient(vi.fn()), state, enabled: false });
-    const search = screen.getByRole('searchbox', { name: 'Search everything' });
+    const search = screen.getByRole('searchbox', { name: 'Search messages' });
     const host = document.createElement('div');
     document.body.append(host);
 
@@ -215,7 +216,7 @@ describe('AppShell', () => {
     window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
     render(AppShell, { client: createAPIClient(vi.fn()), state, enabled: false });
-    const search = screen.getByRole('searchbox', { name: 'Search everything' });
+    const search = screen.getByRole('searchbox', { name: 'Search messages' });
     search.focus();
 
     await fireEvent.keyDown(search, { key: 'j' });
@@ -225,13 +226,59 @@ describe('AppShell', () => {
   });
 
 
+  it('searches from the header on any surface and focuses the field with Mod+K', async () => {
+    window.history.replaceState(null, '', '/files');
+    const state = new ExploreState(window);
+    const rendered = render(AppShell, { client: createAPIClient(vi.fn<typeof fetch>(async () => Response.json(exploreResponse()))), state, enabled: false });
+
+    const field = screen.getByRole('searchbox', { name: 'Search the archive' });
+    await fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    expect(document.activeElement).toBe(field);
+    await fireEvent.input(field, { target: { value: 'quarterly plan' } });
+    await fireEvent.submit(screen.getByRole('search', { name: 'Search the archive' }));
+
+    expect(state.current).toMatchObject({ workspace: 'everything', query: 'quarterly plan' });
+    expect(window.location.pathname).toBe('/search');
+    expect(new URLSearchParams(window.location.search).get('q')).toBe('quarterly plan');
+    expect(await screen.findByRole('main', { name: 'Search' })).toBeDefined();
+    rendered.unmount();
+    state.destroy();
+  });
+
+  it('counts waiting reviews in the gear menu and opens sections from the palette', async () => {
+    window.history.replaceState(null, '', '/files');
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (url.pathname === '/api/v1/identity/match-candidates') {
+        return Response.json({ candidates: [{ id: 1 }, { id: 2 }], limit: 100, offset: 0 });
+      }
+      if (url.pathname === '/api/v1/person-relationship-reviews') return Response.json({ reviews: [{ id: 5 }] });
+      return Response.json(exploreResponse());
+    });
+    const state = new ExploreState(window);
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+
+    await fireEvent.click(screen.getByRole('button', { name: /^Settings and reviews/ }));
+    expect(await screen.findByRole('menuitem', { name: /^Reviews\s*3$/ })).toBeDefined();
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Settings and reviews/ }).getAttribute('aria-label'))
+      .toBe('Settings and reviews (3 to review)'));
+    await fireEvent.keyDown(window, { key: 'Escape' });
+
+    const palette = await openCommandPalette();
+    await fireEvent.click(within(palette).getByRole('option', { name: 'Go to Activity' }));
+    expect(state.current.workspace).toBe('sources');
+    expect(window.location.pathname).toBe('/activity/sources');
+    rendered.unmount();
+    state.destroy();
+  });
+
   it('commits workspace navigation to URL history', async () => {
     window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
     const push = vi.spyOn(window.history, 'pushState');
     render(AppShell, { client: createAPIClient(vi.fn()), state, enabled: false });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    await openFromGear('Settings');
 
     expect(state.current.workspace).toBe('settings');
     expect(push).toHaveBeenCalledOnce();
@@ -249,17 +296,17 @@ describe('AppShell', () => {
     const rendered = render(AppShell, { client: createAPIClient(vi.fn()), state, enabled: false });
 
     await waitFor(() => expect(state.peekRestorationEpoch()).toBeUndefined());
-    const theme = screen.getByRole('button', { name: 'Change theme (current: System)' });
-    theme.focus();
+    const gear = screen.getByRole('button', { name: /^Settings and reviews/ });
+    gear.focus();
     await Promise.resolve();
-    expect(document.activeElement).toBe(theme);
+    expect(document.activeElement).toBe(gear);
 
     rendered.unmount();
     state.destroy();
   });
 
 
-  it('keeps the Kit theme toggle in sync with the session appearance override', async () => {
+  it('applies a palette theme choice as the session appearance override', async () => {
     window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
     const rendered = render(AppShell, {
@@ -267,9 +314,10 @@ describe('AppShell', () => {
       appearanceDefaults: { theme: 'system', density: 'compact' }
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Change theme (current: System)' }));
+    const palette = await openCommandPalette();
+    await fireEvent.click(within(palette).getByRole('option', { name: 'Theme: Light' }));
 
-    expect(screen.getByRole('button', { name: 'Change theme (current: Light)' })).toBeDefined();
+    await waitFor(() => expect(document.documentElement.classList.contains('dark')).toBe(false));
     expect(JSON.parse(sessionStorage.getItem('msgvault.appearance.override') ?? '{}')).toEqual({
       theme: 'light'
     });
@@ -287,11 +335,11 @@ describe('AppShell', () => {
       appearanceDefaults: { theme: 'dark', density: 'compact' }
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Change theme (current: Dark)' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Use daemon theme' }));
+    await fireEvent.click(within(await openCommandPalette()).getByRole('option', { name: 'Theme: Light' }));
+    await waitFor(() => expect(sessionStorage.getItem('msgvault.appearance.override')).not.toBeNull());
+    await fireEvent.click(within(await openCommandPalette()).getByRole('option', { name: 'Theme: Daemon default' }));
 
-    expect(screen.getByRole('button', { name: 'Change theme (current: Dark)' })).toBeDefined();
-    expect(screen.queryByRole('button', { name: 'Use daemon theme' })).toBeNull();
+    await waitFor(() => expect(document.documentElement.classList.contains('dark')).toBe(true));
     expect(sessionStorage.getItem('msgvault.appearance.override')).toBeNull();
 
     rendered.unmount();
@@ -313,14 +361,20 @@ describe('AppShell', () => {
     const state = new ExploreState(window);
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
 
-    for (const [tab, label, workspace] of [
-      ['Saved Views', 'Saved Views', 'saved_views'],
-      ['Sources', 'Sources', 'sources'],
-      ['Operations', 'Operations', 'operations'],
-      ['Deletions', 'Deletions', 'deletions']
+    await openFromGear('Saved Views');
+    expect(await screen.findByRole('main', { name: 'Saved Views' })).toBeDefined();
+    expect(state.current.workspace).toBe('saved_views');
+
+    const nav = screen.getByRole('navigation', { name: 'Primary' });
+    await fireEvent.click(within(nav).getByRole('button', { name: 'Activity' }));
+    expect(await screen.findByRole('main', { name: 'Sources' })).toBeDefined();
+    for (const [tab, workspace] of [
+      ['Operations', 'operations'],
+      ['Deletions', 'deletions'],
+      ['Sources', 'sources']
     ] as const) {
-      await fireEvent.click(screen.getByRole('button', { name: tab }));
-      expect(await screen.findByRole('main', { name: label })).toBeDefined();
+      await fireEvent.click(within(screen.getByRole('tablist', { name: 'Activity sections' })).getByRole('tab', { name: tab }));
+      expect(await screen.findByRole('main', { name: tab })).toBeDefined();
       expect(state.current.workspace).toBe(workspace);
     }
 
@@ -329,7 +383,7 @@ describe('AppShell', () => {
   });
 
 
-  it('presents the primary navigation tabs with Relationships first and People/Domains retired', async () => {
+  it('presents five-place primary navigation with Search, Settings, Reviews, and Saved Views in the header', async () => {
     window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
     const rendered = render(AppShell, {
@@ -339,10 +393,12 @@ describe('AppShell', () => {
 
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(within(nav).getAllByRole('button').map((button) => button.textContent?.trim())).toEqual([
-      'Relationships', 'Directory', 'Reviews', 'Everything', 'Files', 'Saved Views', 'Sources', 'Operations', 'Deletions', 'Settings'
+      'People', 'Inbox', 'Files', 'Activity'
     ]);
-    expect(screen.queryByRole('button', { name: 'People' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Relationships' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Domains' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: /^Settings and reviews/ }));
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual(['Settings', 'Reviews', 'Saved Views']);
 
     rendered.unmount();
     state.destroy();
@@ -586,8 +642,8 @@ describe('AppShell', () => {
     expect(await screen.findByText('7 of 9 chunks ready')).toBeDefined();
 
     const restoredNav = screen.getByRole('navigation', { name: 'Primary' });
-    await fireEvent.click(within(restoredNav).getByRole('button', { name: 'Everything' }));
-    await fireEvent.click(within(restoredNav).getByRole('button', { name: 'Settings' }));
+    await fireEvent.click(within(restoredNav).getByRole('button', { name: 'Inbox' }));
+    await openFromGear('Settings');
     expect(state.current.operationStatus).toBe('');
     rendered.unmount();
     state.destroy();
@@ -628,7 +684,7 @@ describe('AppShell', () => {
     expect(await screen.findByText('4 of 5 owners ready')).toBeDefined();
     expect(state.current.operationStatus).toBe('getDocumentIndexStatus');
     const nav = screen.getByRole('navigation', { name: 'Primary' });
-    await fireEvent.click(within(nav).getByRole('button', { name: 'Everything' }));
+    await fireEvent.click(within(nav).getByRole('button', { name: 'Inbox' }));
     const row = (await screen.findByText('Synthetic subject 1')).closest('[role="row"]');
     expect(row).not.toBeNull();
     await fireEvent.click(row!);
@@ -673,8 +729,7 @@ describe('AppShell', () => {
     })).toBe(true));
 
     state.commitWorkspace('everything');
-    await fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
-    const palette = screen.getByRole('dialog', { name: 'Everything commands' });
+    const palette = await openCommandPalette();
     const input = within(palette).getByRole('combobox');
     await fireEvent.input(input, { target: { value: 'reviews' } });
     await fireEvent.click(within(palette).getByRole('option', { name: 'Open Reviews' }));
@@ -1275,7 +1330,7 @@ describe('AppShell', () => {
     expect(screen.getAllByRole('status', { name: 'Operation status' })).toHaveLength(1);
     await waitFor(() => expect(restoredPublicationSignal).toBeDefined());
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    await openFromGear('Settings');
     expect(restoredPublicationSignal?.aborted).toBe(true);
     resolveRestoredPublication(Response.json({
       person_id: 7, state: 'published', desired: true,
@@ -1380,8 +1435,8 @@ describe('AppShell', () => {
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
 
     await waitFor(() => expect(resolveDirectory).toBeDefined());
-    await fireEvent.click(screen.getByRole('button', { name: 'Everything' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Directory' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Inbox' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'People' }));
     resolveDirectory?.(Response.json({ people: [{
       id: 7, revision: 1, display_name: 'Synthetic Person', contact_state: 'active', categories: [], organizations: []
     }] }));
@@ -1541,7 +1596,7 @@ describe('AppShell', () => {
     expect(await screen.findByText('Relationship ranking needs the analytical cache/engine')).toBeDefined();
     expect(screen.getByRole('main', { name: 'Relationships' })).toBeDefined();
     expect(state.current.workspace).toBe('relationships');
-    expect(screen.queryByRole('main', { name: 'Everything' })).toBeNull();
+    expect(screen.queryByRole('main', { name: /^(Inbox|Search)$/ })).toBeNull();
 
     rendered.unmount();
     state.destroy();
@@ -1558,7 +1613,7 @@ describe('AppShell', () => {
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
 
     await waitFor(() => expect(state.current.workspace).toBe('everything'));
-    expect(await screen.findByRole('main', { name: 'Everything' })).toBeDefined();
+    expect(await screen.findByRole('main', { name: /^(Inbox|Search)$/ })).toBeDefined();
     expect(screen.queryByRole('main', { name: 'Relationships' })).toBeNull();
 
     rendered.unmount();
@@ -1576,7 +1631,7 @@ describe('AppShell', () => {
 
     expect(await screen.findByText('Preparing relationship ranking…')).toBeDefined();
     expect(state.current.workspace).toBe('relationships');
-    expect(screen.queryByRole('main', { name: 'Everything' })).toBeNull();
+    expect(screen.queryByRole('main', { name: /^(Inbox|Search)$/ })).toBeNull();
 
     rendered.unmount();
     state.destroy();
@@ -1593,7 +1648,7 @@ describe('AppShell', () => {
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
 
     await waitFor(() => expect(state.current.workspace).toBe('everything'));
-    expect(await screen.findByRole('main', { name: 'Everything' })).toBeDefined();
+    expect(await screen.findByRole('main', { name: /^(Inbox|Search)$/ })).toBeDefined();
 
     // Any later push navigation (state.svelte.ts's `navigate()`, 'push'
     // branch) rewrites the CURRENT history entry from `committed` before
@@ -1649,20 +1704,20 @@ describe('AppShell', () => {
     // user-initiated navigation spends the one-shot landing-fallback
     // allowance, even though it never fired.
     const nav = screen.getByRole('navigation', { name: 'Primary' });
-    await fireEvent.click(within(nav).getByRole('button', { name: 'Everything' }));
-    expect(await screen.findByRole('main', { name: 'Everything' })).toBeDefined();
+    await fireEvent.click(within(nav).getByRole('button', { name: 'Inbox' }));
+    expect(await screen.findByRole('main', { name: /^(Inbox|Search)$/ })).toBeDefined();
 
     // Now the relationships list starts reporting the cache as unavailable,
     // and the user explicitly returns to Relationships via the tab.
     relationshipsDegraded = true;
-    await fireEvent.click(within(nav).getByRole('button', { name: 'Relationships' }));
+    state.commitWorkspace('relationships');
 
     // It degrades, but this is no longer the initial landing, so it must
     // show its own degraded state rather than bounce back to Everything.
     expect(await screen.findByText('Relationship ranking needs the analytical cache/engine')).toBeDefined();
     expect(screen.getByRole('main', { name: 'Relationships' })).toBeDefined();
     expect(state.current.workspace).toBe('relationships');
-    expect(screen.queryByRole('main', { name: 'Everything' })).toBeNull();
+    expect(screen.queryByRole('main', { name: /^(Inbox|Search)$/ })).toBeNull();
 
     rendered.unmount();
     state.destroy();
@@ -2110,7 +2165,7 @@ describe('AppShell', () => {
     });
     const state = new ExploreState(window);
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
-    await screen.findByRole('grid', { name: 'Everything results' });
+    await screen.findByRole('grid', { name: 'Message results' });
 
     await fireEvent.keyDown(window, { key: 'r' });
     expect(screen.getByRole('status', { name: 'Sort status' }).textContent)
@@ -2118,7 +2173,7 @@ describe('AppShell', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Files' }));
     expect(screen.getByRole('status', { name: 'Sort status' }).textContent)
-      .toBe('Newest first is the canonical Everything order.');
+      .toBe('Newest first is the canonical Inbox order.');
     rendered.unmount();
     state.destroy();
   });
@@ -2195,7 +2250,7 @@ describe('AppShell', () => {
     await chooseSelectOption(screen.getByRole('combobox', { name: /^Show as:/ }), 'Table');
     await waitFor(() => expect(state.current.workspace).toBe('everything'));
     expect(screen.getByRole('status', { name: 'Sort status' }).textContent)
-      .toBe('Newest first is the canonical Everything order.');
+      .toBe('Newest first is the canonical Inbox order.');
     rendered.unmount();
     state.destroy();
   });
@@ -2221,8 +2276,7 @@ describe('AppShell', () => {
     expect(screen.getByLabelText('Active analytical context').textContent).toContain('Group People');
     expect(screen.getByLabelText('Active analytical context').textContent).toContain('Year');
 
-    await fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
-    const palette = screen.getByRole('dialog', { name: 'Everything commands' });
+    const palette = await openCommandPalette();
     expect(palette).toBeDefined();
     expect(within(palette).getByRole('option', { name: /Labels — unavailable/ }).getAttribute('aria-disabled'))
       .toBe('true');
@@ -2231,11 +2285,11 @@ describe('AppShell', () => {
     await waitFor(() => expect(appShortcuts.activeScope()).toBe('everything-editable'));
     await fireEvent.input(paletteInput, { target: { value: 'group' } });
     await fireEvent.keyDown(paletteInput, { key: 'Escape' });
-    expect(screen.getByRole('dialog', { name: 'Everything commands' })).toBeDefined();
+    expect(screen.getByRole('dialog', { name: 'Commands' })).toBeDefined();
     expect((paletteInput as HTMLInputElement).value).toBe('');
     expect(appShortcuts.activeScope()).toBe('everything-editable');
     await fireEvent.keyDown(paletteInput, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Everything commands' })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Commands' })).toBeNull());
     await waitFor(() => expect(appShortcuts.activeScope()).toBe('root'));
 
     await fireEvent.keyDown(window, { key: 'f' });

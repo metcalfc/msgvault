@@ -27,7 +27,7 @@
     inspectedKey = null,
     scrollAnchor = null,
     restoring = false,
-    workspaceLabel = 'Everything',
+    workspaceLabel = 'Messages',
     onDrill,
     onInspect = undefined,
     onLoadMore = undefined,

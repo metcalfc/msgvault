@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { exploreLink } from '../src/test/explore-url';
-import { selectKitOption } from './kit-ui';
+import { selectKitOption, openFromGear } from './kit-ui';
 
 test('Strict session cookie returns on same-origin bootstrap after a cross-site navigation', async ({
   context,
@@ -68,7 +68,7 @@ test('Strict session cookie returns on same-origin bootstrap after a cross-site 
   const documentCookie = documentHeaders.cookie ?? '';
   const bootstrapCookie = bootstrapHeaders.cookie ?? '';
 
-  await expect(page.getByRole('main', { name: 'Everything' })).toBeVisible();
+  await expect(page.getByRole('main', { name: /^(Inbox|Search)$/ })).toBeVisible();
   await expect(page.getByRole('form', { name: 'Log in' })).toHaveCount(0);
   expect(documentCookie).toContain(`${navigationCookieName}=${navigationCookieValue}`);
   expect(documentCookie).not.toContain(`${cookieName}=${cookieValue}`);
@@ -109,7 +109,7 @@ test('Settings navigation sends a CSRF-protected session mutation', async ({ pag
   });
 
   await page.goto('/');
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await openFromGear(page, 'Settings');
   await selectKitOption(page, 'Theme', 'Dark');
   await page.getByRole('button', { name: 'Save settings' }).click();
 

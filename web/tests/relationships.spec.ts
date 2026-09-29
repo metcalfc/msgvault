@@ -213,7 +213,7 @@ test('person attachment gallery preserves directions and Media state across sour
   const viewer = page.getByRole('dialog', { name: 'View photo.png' });
   await expect(viewer).toBeVisible();
   await viewer.getByRole('button', { name: 'Open containing item' }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Everything' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /^(Inbox|Search)$/ })).toBeVisible();
   await expect(page.getByRole('complementary', { name: /Reading pane: Subject line/ })).toBeVisible();
 
   await page.goBack();

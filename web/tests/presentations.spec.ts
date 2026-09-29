@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { exploreLink } from '../src/test/explore-url';
-import { selectKitOption } from './kit-ui';
+import { selectKitOption, openFromGear } from './kit-ui';
 import { exploreHistoryState } from './explore-state';
 
 const rows = [1, 2].map((id) => ({
@@ -59,8 +59,8 @@ test('Show as preserves analytical meaning, keyboard focus, history, and Saved V
   });
 
   await page.goto(exploreLink({ workspace: 'everything' }));
-  await expect(page.getByRole('grid', { name: 'Everything results' })).toBeVisible();
-  await page.getByRole('searchbox', { name: 'Search everything' }).fill('pasta');
+  await expect(page.getByRole('grid', { name: 'Message results' })).toBeVisible();
+  await page.getByRole('searchbox', { name: 'Search messages' }).fill('pasta');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
 
   await selectKitOption(page, 'Show as', 'Timeline');
@@ -110,12 +110,12 @@ test('Show as preserves analytical meaning, keyboard focus, history, and Saved V
   await expect(files).toBeFocused();
   await page.goBack();
   await expect(timeline).toBeVisible();
-  await expect(page.getByRole('grid', { name: 'Everything results' })).toBeFocused();
+  await expect(page.getByRole('grid', { name: 'Message results' })).toBeFocused();
   await page.goForward();
   await expect(files).toBeVisible();
   await expect(files).toBeFocused();
 
-  await page.getByRole('button', { name: 'Saved Views', exact: true }).click();
+  await openFromGear(page, 'Saved Views');
   await page.getByLabel('Name').fill('Pasta files');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   expect((savedViews[0]!.canonical_state as Record<string, unknown>).presentation).toBe('files');

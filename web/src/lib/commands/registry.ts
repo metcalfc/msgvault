@@ -11,7 +11,7 @@ export const COMMAND_DEFINITIONS = [
   command('last-row', 'Move to last row', ['End'], ['end'], 'Navigate'),
   command('open-row', 'Open or drill into focused row', ['Enter'], ['enter'], 'Navigate'),
   command('close-layer', 'Close current layer or restore context', ['Esc'], ['escape'], 'Navigate'),
-  command('focus-search', 'Focus search', ['/'], ['/'], 'Navigate'),
+  command('focus-search', 'Focus search', ['Mod+K', '/'], ['mod+k', '/'], 'Navigate'),
   command('toggle-selection', 'Toggle focused row selection', ['Space'], ['space'], 'Selection'),
   command('select-visible', 'Select all visible rows', ['A'], ['shift+a'], 'Selection'),
   command('clear-selection', 'Clear selection', ['x'], ['x'], 'Selection'),
@@ -22,7 +22,7 @@ export const COMMAND_DEFINITIONS = [
   command('change-sort', 'Change sort', ['S'], ['s'], 'Analyze'),
   command('reverse-sort', 'Reverse sort direction', ['R'], ['r'], 'Analyze'),
   command('open-keyboard-help', 'Open searchable keyboard help', ['?'], ['shift+/'], 'Help'),
-  command('open-command-palette', 'Open command palette', ['Mod', 'K'], ['mod+k'], 'Help')
+  command('open-command-palette', 'Open command palette', ['Mod', 'Shift', 'P'], ['mod+shift+p'], 'Help')
 ] as const;
 
 export type CommandID = typeof COMMAND_DEFINITIONS[number]['id'];

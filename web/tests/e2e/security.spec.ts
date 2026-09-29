@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { openFromGear } from '../kit-ui';
 import { exploreLink } from '../../src/test/explore-url';
 import { installOperations, OPERATION_PRIVACY_SENTINELS } from './fixtures/operations';
 
@@ -55,7 +56,7 @@ test('sanitized archived HTML requires remote-image consent and rejects forged f
   });
 
   await page.goto(exploreLink({ workspace: 'everything' }));
-  const grid = page.getByRole('grid', { name: 'Everything results' });
+  const grid = page.getByRole('grid', { name: 'Message results' });
   await grid.focus();
   await page.keyboard.press('Enter');
 
@@ -143,8 +144,8 @@ test('daemon API key stays host-managed and never crosses the browser settings w
   });
 
 	await page.goto(exploreLink({ workspace: 'everything' }));
-	await expect(page.getByRole('main', { name: 'Everything' })).toBeVisible();
-	await page.getByRole('button', { name: 'Settings', exact: true }).click();
+	await expect(page.getByRole('main', { name: /^(Inbox|Search)$/ })).toBeVisible();
+	await openFromGear(page, 'Settings');
 	await expect(page.getByText('dae…key')).toBeVisible();
 	await expect(page.getByText('Host-managed values are set in config.toml on the daemon host.')).toBeVisible();
 	await expect(page.getByLabel('New API key')).toHaveCount(0);
@@ -152,6 +153,6 @@ test('daemon API key stays host-managed and never crosses the browser settings w
 	await expect(page.getByRole('button', { name: 'Save settings' })).toBeDisabled();
 	expect(settingsPatch).toBeUndefined();
 
-	await page.getByRole('button', { name: 'Everything', exact: true }).click();
-	await expect(page.getByRole('main', { name: 'Everything' })).toBeVisible();
+	await page.getByRole('button', { name: 'Inbox', exact: true }).click();
+	await expect(page.getByRole('main', { name: /^(Inbox|Search)$/ })).toBeVisible();
 });

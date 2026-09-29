@@ -562,6 +562,9 @@
     if (action === 'retry') coverageRetryRevision += 1;
   }
 
+  // The browse surface is the Inbox; with a query it shows Search results.
+  const surfaceName = $derived(exploreState.current.query.trim() ? 'Search' : 'Inbox');
+
   function submitSearch(event: SubmitEvent): void {
     event.preventDefault();
     // Operators with a filter dimension become their own removable chips;
@@ -703,10 +706,10 @@
   });
 </script>
 
-<main class="everything-workspace" aria-label="Everything">
+<main class="everything-workspace" aria-label={surfaceName}>
   <header class="workspace-header">
     <div>
-      <h1 data-page-title>Everything</h1>
+      <h1 data-page-title>{surfaceName}</h1>
     </div>
     <div class="workspace-view-controls">
       {#if canPreviewRight}
@@ -723,13 +726,13 @@
     </div>
   </header>
 
-  <form class="search-bar" role="search" aria-label="Search Everything" onsubmit={submitSearch}>
+  <form class="search-bar" role="search" aria-label="Search messages" onsubmit={submitSearch}>
     <div class="query-control">
       <SearchInput
         id="everything-search"
         bind:inputEl={searchInput}
         value={exploreState.current.query}
-        ariaLabel="Search everything"
+        ariaLabel="Search messages"
         placeholder="Search people, conversations, events, and files…"
         block
         oninput={(value) => exploreState.replaceSearchDraft(value, exploreState.current.searchMode)}

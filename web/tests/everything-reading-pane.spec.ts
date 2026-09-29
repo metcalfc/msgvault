@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { openFromGear } from './kit-ui';
 import { exploreLink } from '../src/test/explore-url';
 
 function entry(index: number) {
@@ -54,7 +55,7 @@ test('the reading pane opens on the right by default', async ({ page }) => {
   }));
 
   await page.goto(exploreLink({ workspace: 'everything' }));
-  const grid = page.getByRole('grid', { name: 'Everything results' });
+  const grid = page.getByRole('grid', { name: 'Message results' });
   await grid.getByText('Synthetic subject 1').click();
   await expect(page.getByRole('complementary', { name: 'Reading pane: Synthetic subject 1' })).toBeVisible();
   const paneBox = await page.locator('[data-pane="secondary"]').boundingBox();
@@ -81,7 +82,7 @@ test('the bottom reading pane opens on a single click, resizes, and persists its
   }));
 
   await page.goto(exploreLink({ workspace: 'everything' }));
-  const grid = page.getByRole('grid', { name: 'Everything results' });
+  const grid = page.getByRole('grid', { name: 'Message results' });
   await expect(grid.getByText('Synthetic subject 1')).toBeVisible();
 
   // A single click opens the reading pane as a bottom split, never a drawer.
@@ -120,7 +121,7 @@ test('a checked row that is also open in the reading pane keeps its own tint', a
     json: { rows: [entry(1), entry(2)], total_count: 2, cache_revision: 'cache-reading-pane', search_provenance: {} }
   }));
   await page.goto(exploreLink({ workspace: 'everything' }));
-  const grid = page.getByRole('grid', { name: 'Everything results' });
+  const grid = page.getByRole('grid', { name: 'Message results' });
   await expect(grid.getByText('Synthetic subject 2')).toBeVisible();
   const first = page.locator('[data-row-key="message:1"]');
   const second = page.locator('[data-row-key="message:2"]');
@@ -166,7 +167,7 @@ test('a direct multi-target reading-pane URL restores through refresh, Back, and
   });
 
   await page.goto(`/?explore=${encodeURIComponent(JSON.stringify(state))}`);
-  const grid = page.getByRole('grid', { name: 'Everything results' });
+  const grid = page.getByRole('grid', { name: 'Message results' });
   await expect(page.getByRole('complementary', { name: 'Reading pane: Synthetic subject 1200' })).toBeVisible();
   await expect(grid).toHaveAttribute('aria-activedescendant', /message-3a-1/);
   expect(requests).toHaveLength(3);
@@ -177,13 +178,14 @@ test('a direct multi-target reading-pane URL restores through refresh, Back, and
   await expect(grid).toHaveAttribute('aria-activedescendant', /message-3a-1/);
   expect(requests).toHaveLength(6);
 
-  await page.getByRole('button', { name: 'Settings' }).evaluate((button: HTMLButtonElement) => button.click());
+  await openFromGear(page, 'Settings');
+  await expect(page).toHaveURL(/\/settings(\?|$)/);
   await page.goBack();
   await expect(page.getByRole('complementary', { name: 'Reading pane: Synthetic subject 1200' })).toBeVisible();
   await expect(grid).toHaveAttribute('aria-activedescendant', /message-3a-1/);
   await expect.poll(() => requests.length).toBe(9);
   await page.goForward();
-  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page).toHaveURL(/\/settings(\?|$)/);
   await expect(page.getByRole('complementary', { name: 'Reading pane: Synthetic subject 1200' })).toHaveCount(0);
 });
 
@@ -210,7 +212,7 @@ test('a drilled aggregate restores after grouped rows clear and through Back and
   } }));
   const state = exploreURLState({ groupingChain: ['source'] });
   await page.goto(`/?explore=${encodeURIComponent(JSON.stringify(state))}`);
-  const grouped = page.getByRole('grid', { name: 'Everything grouped by source' });
+  const grouped = page.getByRole('grid', { name: 'Messages grouped by source' });
   await expect(grouped.getByText('Example source group')).toBeVisible();
 
   await page.getByRole('button', { name: 'Drill into Example source group' }).click();
@@ -218,7 +220,7 @@ test('a drilled aggregate restores after grouped rows clear and through Back and
   await expect(grouped).toHaveCount(0);
 
   await page.goBack();
-  await expect(page.getByRole('grid', { name: 'Everything grouped by source' })).toBeVisible();
+  await expect(page.getByRole('grid', { name: 'Messages grouped by source' })).toBeVisible();
   await page.goForward();
   await expect(page.getByRole('complementary', { name: 'Reading pane: Restored source detail' })).toBeVisible();
 });
@@ -242,14 +244,14 @@ test('global command and Escape shortcuts stay suspended in editable controls', 
   });
 
   for (const locator of [
-    page.getByRole('searchbox', { name: 'Search everything' }),
+    page.getByRole('searchbox', { name: 'Search messages' }),
     page.locator('#shortcut-textarea'),
     page.locator('#shortcut-editable')
   ]) {
     await locator.focus();
     await page.keyboard.press('Control+K');
     await page.keyboard.press('Meta+K');
-    await expect(page.getByRole('dialog', { name: 'Everything commands' })).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Commands' })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(locator).toBeFocused();
   }
@@ -265,7 +267,7 @@ test('right preview resizes, restores its width, and falls back below on narrow 
     cache_revision: 'cache-layout', search_provenance: {}
   } }));
   await page.goto(exploreLink({ workspace: 'everything' }));
-  const grid = page.getByRole('grid', { name: 'Everything results' });
+  const grid = page.getByRole('grid', { name: 'Message results' });
   await grid.getByText('Synthetic subject 1').click();
   const reading = page.getByRole('complementary', { name: 'Reading pane: Synthetic subject 1' });
   const resize = page.getByRole('separator', { name: 'Resize reading pane' });

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { openActivity, openFromGear } from './kit-ui';
 import { exploreLink } from '../src/test/explore-url';
 
 const row = {
@@ -65,7 +66,7 @@ test('archive management workspaces preserve reviewed authority and daemon job b
   }] } }));
 
   await page.goto(exploreLink({ workspace: 'everything' }));
-  const grid = page.getByRole('grid', { name: 'Everything results' });
+  const grid = page.getByRole('grid', { name: 'Message results' });
   await expect(grid.getByText('Reviewed message')).toBeVisible();
   await grid.focus();
   await page.keyboard.press('Space');
@@ -81,21 +82,21 @@ test('archive management workspaces preserve reviewed authority and daemon job b
   await expect(page.getByText(/creates a staged manifest; it does not execute deletion/i)).toBeVisible();
   await page.getByRole('button', { name: 'Cancel' }).click();
 
-  await page.getByRole('button', { name: 'Everything' }).click();
+  await page.getByRole('button', { name: 'Inbox' }).click();
   await page.getByRole('button', { name: 'Select all 1 matching items' }).click();
   await page.keyboard.press('Shift+d');
   await expect(page.getByRole('dialog', { name: 'Confirm matching deletion' })).toBeVisible();
   await page.getByRole('button', { name: 'Cancel' }).click();
 
-  await page.getByRole('button', { name: 'Sources' }).click();
+  await openActivity(page, 'Sources');
   await page.getByRole('button', { name: 'Sync now Archive' }).click();
   await expect(page.getByText('5 processed')).toBeVisible();
   await expect.poll(() => sourceRequests.some((request) => request.method === 'POST')).toBe(true);
   expect(sourceRequests.every((request) => request.accept !== 'text/event-stream')).toBe(true);
 
-  await page.getByRole('button', { name: 'Saved Views' }).click();
+  await openFromGear(page, 'Saved Views');
   await page.getByRole('button', { name: 'Open Invoices' }).click();
-  await expect(page.getByRole('searchbox', { name: 'Search everything' })).toHaveValue('invoice');
-  await expect(page.getByRole('grid', { name: 'Everything results' })).toBeFocused();
+  await expect(page.getByRole('searchbox', { name: 'Search messages' })).toHaveValue('invoice');
+  await expect(page.getByRole('grid', { name: 'Message results' })).toBeFocused();
   await expect.poll(() => new URL(page.url()).searchParams.get('q')).toBe('invoice');
 });

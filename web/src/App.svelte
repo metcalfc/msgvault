@@ -99,6 +99,7 @@
         {navigationTarget}
         section={section.value}
         onSectionChange={section.change}
+        browserControls={section.browserControls}
       />
     {/snippet}
   </AppShell>

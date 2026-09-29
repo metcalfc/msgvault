@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { exploreLink } from '../src/test/explore-url';
-import { selectKitOption, selectKitTopBarTab, setKitTheme } from './kit-ui';
+import { selectKitOption, selectKitTopBarTab, setKitTheme, openFromGear, setDensity } from './kit-ui';
 
 const row = {
   key: 'message:1',
@@ -75,7 +75,7 @@ test('compact workspace links preserve browser navigation and reopen the selecte
   await expect(page).toHaveURL(/\/files$/);
   const filesURL = page.url();
 
-  await selectKitTopBarTab(page, 'Everything');
+  await selectKitTopBarTab(page, 'Inbox');
   await expect(page.getByText('Synthetic archive subject', { exact: true })).toBeVisible();
   // An Inbox link without date bounds says since=all, so it reopens as
   // shared instead of on the seven-day default.
@@ -109,7 +109,7 @@ test('query failures explain recovery in Everything and Files', async ({ page })
 });
 
 test('one registry drives selection, searchable help, palette, and editable suspension', async ({ page }) => {
-  const grid = page.getByRole('grid', { name: 'Everything results' });
+  const grid = page.getByRole('grid', { name: 'Message results' });
   const renderedRow = page.locator('[data-row-key="message:1"]');
   await grid.focus();
   await expect(grid).toBeFocused();
@@ -132,8 +132,8 @@ test('one registry drives selection, searchable help, palette, and editable susp
   await grid.focus();
   await page.keyboard.press('Shift+A');
   await expect(renderedRow).toHaveAttribute('aria-selected', 'true');
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+K' : 'Control+K');
-  const palette = page.getByRole('dialog', { name: 'Everything commands' });
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
+  const palette = page.getByRole('dialog', { name: 'Commands' });
   await expect(palette).toBeVisible();
   await palette.getByRole('combobox').fill('clear selection');
   const clearSelection = palette.getByRole('option', { name: /Clear selection/ });
@@ -143,11 +143,11 @@ test('one registry drives selection, searchable help, palette, and editable susp
   await expect(renderedRow).toHaveAttribute('aria-selected', 'false');
   await expect(grid).toBeFocused();
 
-  const search = page.getByRole('searchbox', { name: 'Search everything' });
+  const search = page.getByRole('searchbox', { name: 'Search messages' });
   await search.focus();
   await page.keyboard.press('Shift+A');
   await expect(renderedRow).toHaveAttribute('aria-selected', 'false');
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+K' : 'Control+K');
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
   await expect(palette).toHaveCount(0);
   await page.keyboard.press('Tab');
   await expect(search).not.toBeFocused();
@@ -168,17 +168,17 @@ test('one registry drives selection, searchable help, palette, and editable susp
 });
 
 test('keyboard palette grouping focuses the replacement grid', async ({ page }) => {
-  const grid = page.getByRole('grid', { name: 'Everything results' });
+  const grid = page.getByRole('grid', { name: 'Message results' });
   await grid.focus();
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+K' : 'Control+K');
-  const palette = page.getByRole('dialog', { name: 'Everything commands' });
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
+  const palette = page.getByRole('dialog', { name: 'Commands' });
   await palette.getByRole('combobox').fill('group by source');
   const command = palette.getByRole('option', { name: 'Group by Source' });
   await expect(command).toHaveAttribute('aria-selected', 'true');
 
   await page.keyboard.press('Enter');
 
-  const grouped = page.getByRole('grid', { name: 'Everything grouped by source' });
+  const grouped = page.getByRole('grid', { name: 'Messages grouped by source' });
   await expect(palette).toHaveCount(0);
   await expect(grouped).toBeVisible();
   await expect(grouped).toBeFocused();
@@ -200,22 +200,22 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(infoButton).toHaveClass(/kit-button--info/);
     await expectRenderedContrast(infoButton, 4.5);
 
-    const grid = page.getByRole('grid', { name: 'Everything results' });
+    const grid = page.getByRole('grid', { name: 'Message results' });
     await grid.focus();
     await page.keyboard.press('Shift+A');
     const selectedRow = page.locator('[data-row-key="message:1"]');
     await expect(selectedRow).toHaveAttribute('aria-selected', 'true');
     await expect(selectedRow).toHaveCSS('box-shadow', /2px 0px 0px 0px inset/);
 
-    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+K' : 'Control+K');
-    const palette = page.getByRole('dialog', { name: 'Everything commands' });
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
+    const palette = page.getByRole('dialog', { name: 'Commands' });
     const activeOption = palette.getByRole('option', { selected: true }).first();
     await expect(activeOption).toBeVisible();
     await expectRenderedContrast(activeOption, 4.5);
     await expect(activeOption).toHaveClass(/highlighted/);
     await page.keyboard.press('Escape');
 
-    await selectKitTopBarTab(page, 'Saved Views');
+    await openFromGear(page, 'Saved Views');
     const workflowButton = page.getByRole('button', { name: 'Save', exact: true });
     await expect(workflowButton).toHaveClass(/kit-button--solid/);
     await expect(workflowButton).toHaveClass(/kit-button--workflow/);
@@ -227,7 +227,7 @@ for (const theme of ['light', 'dark'] as const) {
     await page.keyboard.press('ArrowDown');
     await expect(filesGrid).toHaveCSS('box-shadow', /0px 0px 0px 2px inset/);
 
-    await selectKitTopBarTab(page, 'Settings');
+    await openFromGear(page, 'Settings');
     const settings = page.getByRole('main', { name: 'Settings' });
     await expect(settings).toBeVisible();
     await expectRenderedContrast(settings.locator('.row__hint').first(), 4.5);
@@ -243,7 +243,7 @@ for (const theme of ['light', 'dark'] as const) {
   for (const density of ['compact', 'comfortable'] as const) {
     test(`${theme} ${density} analytical shell geometry`, async ({ page }) => {
       await setKitTheme(page, theme);
-      await selectKitOption(page, 'Temporary density', `Density: ${density === 'compact' ? 'Compact' : 'Comfortable'}`);
+      await setDensity(page, density);
       await expect(page.locator('html')).toHaveAttribute('data-density', density);
       await expect(page.locator('[data-row-key="message:1"]')).toHaveCSS(
         'height', density === 'compact' ? '36px' : '46px'

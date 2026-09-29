@@ -852,7 +852,9 @@ export class ExploreState {
     }, 'push');
   }
 
-  commitWorkspace(workspace: ExploreWorkspace): void {
+  /** Opens a workspace. `patch` applies in the same history entry, after
+   * the workspace resets (Search opens the Inbox view with its query). */
+  commitWorkspace(workspace: ExploreWorkspace, patch: Partial<ExploreURLState> = {}): void {
     this.navigate({
       workspace,
       ...(workspace === 'everything' ? this.everythingBoundsPatch(this.current.filters) : {}),
@@ -870,7 +872,8 @@ export class ExploreState {
       conversationAnchor: null,
       scrollAnchor: null,
       operationStatus: '',
-      settingsAuthority: ''
+      settingsAuthority: '',
+      ...patch
     }, 'push');
   }
 

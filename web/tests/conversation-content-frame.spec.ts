@@ -117,7 +117,7 @@ test('archived content has an opaque capability boundary and durable conversatio
   });
 
   await page.goto(`${exploreLink({ workspace: 'everything' })}&feature=reader-security`);
-  const grid = page.getByRole('grid', { name: 'Everything results' });
+  const grid = page.getByRole('grid', { name: 'Message results' });
   await expect(grid.getByText(row.title)).toBeVisible();
   await grid.focus();
   const priorURL = page.url();
@@ -362,7 +362,7 @@ test('opening a message fires no sender-host request until images are enabled', 
   });
 
   await page.goto(`${exploreLink({ workspace: 'everything' })}&feature=reader-security`);
-  const grid = page.getByRole('grid', { name: 'Everything results' });
+  const grid = page.getByRole('grid', { name: 'Message results' });
   await expect(grid.getByText(row.title)).toBeVisible();
   await grid.focus();
   await page.keyboard.press('Enter');
@@ -409,7 +409,7 @@ test('email colors follow the app theme with an original-colors override', async
   } }));
   await page.goto(exploreLink({ workspace: 'everything' }));
   await expect(page.locator('html')).toHaveClass(/dark/);
-  await page.getByRole('grid', { name: 'Everything results' }).getByText(row.title).click();
+  await page.getByRole('grid', { name: 'Message results' }).getByText(row.title).click();
   const content = page.locator('iframe[title="Message body"]').contentFrame();
   await expect(content.getByText('Designed email text')).toHaveCSS('color', 'rgb(242, 243, 245)');
   await expect(content.locator('table')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
@@ -458,7 +458,7 @@ test('switching to light ignores the original-colors override for simple mail', 
     }]
   } }));
   await page.goto(exploreLink({ workspace: 'everything' }));
-  await page.getByRole('grid', { name: 'Everything results' }).getByText(row.title).click();
+  await page.getByRole('grid', { name: 'Message results' }).getByText(row.title).click();
   const frame = page.locator('iframe[title="Message body"]');
   await expect(frame.contentFrame().getByText('Simple reply')).toHaveCSS('color', 'rgb(242, 243, 245)');
   await page.getByRole('button', { name: 'Use original colors' }).click();

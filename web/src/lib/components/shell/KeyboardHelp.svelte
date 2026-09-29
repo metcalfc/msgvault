@@ -43,7 +43,8 @@
                 {:else}
                   {#each command.keys as key, index (key)}
                     {#if index > 0}<span aria-hidden="true">or</span>{/if}
-                    <KbdBadge keys={[key]} />
+                    <!-- A key written "Mod+K" is one chord among alternatives. -->
+                    <KbdBadge keys={key.length > 1 && key.includes('+') ? key.split('+') : [key]} />
                   {/each}
                 {/if}
                 {#if command.destructive}<span class="review-note">opens review</span>{/if}

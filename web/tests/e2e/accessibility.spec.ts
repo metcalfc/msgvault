@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { exploreLink } from '../../src/test/explore-url';
 import { expect, test, type Page } from '@playwright/test';
-import { expectKitTheme, selectKitOption, selectKitTopBarTab, setKitTheme } from '../kit-ui';
+import { expectKitTheme, openActivity, openFromGear, selectKitOption, selectKitTopBarTab, setKitTheme, setDensity } from '../kit-ui';
 import { assertCardDAVForbiddenMarkersAbsent, installCardDAV } from './fixtures/carddav';
 import { installDirectoryReviewArchive, installMixedArchive } from './fixtures/mixed-archive';
 import { installOperations, OPERATION_REFERENCES } from './fixtures/operations';
@@ -72,7 +72,7 @@ for (const theme of ['light', 'dark'] as const) {
       });
       await page.goto('/');
       await setKitTheme(page, theme);
-      await selectKitOption(page, 'Temporary density', `Density: ${density === 'compact' ? 'Compact' : 'Comfortable'}`);
+      await setDensity(page, density);
 
       // The Relationships hub is the default landing workspace; walk its
       // three panes (list, timeline, reading pane) open one at a time so
@@ -101,8 +101,8 @@ for (const theme of ['light', 'dark'] as const) {
       await assertNoViolations(page, `Relationships reading pane ${theme}/${density}`);
       await page.keyboard.press('Escape');
 
-      await selectKitTopBarTab(page, 'Everything');
-      const grid = page.getByRole('grid', { name: 'Everything results' });
+      await selectKitTopBarTab(page, 'Inbox');
+      const grid = page.getByRole('grid', { name: 'Message results' });
       await expect(grid.locator('[data-row-key]').first()).toBeVisible();
       await assertNoViolations(page, `Everything ${theme}/${density}`);
       await grid.focus();
@@ -117,8 +117,16 @@ for (const theme of ['light', 'dark'] as const) {
       await assertNoViolations(page, `modal ${theme}/${density}`);
       await keyboardHelp.getByRole('button', { name: 'Close' }).click();
 
-      for (const workspace of ['Directory', 'Files', 'Saved Views', 'Sources', 'Deletions', 'Settings']) {
-        await selectKitTopBarTab(page, workspace);
+      const destinations: Array<[string, () => Promise<void>]> = [
+        ['Directory', () => selectKitTopBarTab(page, 'People')],
+        ['Files', () => selectKitTopBarTab(page, 'Files')],
+        ['Saved Views', () => openFromGear(page, 'Saved Views')],
+        ['Sources', () => openActivity(page, 'Sources')],
+        ['Deletions', () => openActivity(page, 'Deletions')],
+        ['Settings', () => openFromGear(page, 'Settings')],
+      ];
+      for (const [workspace, open] of destinations) {
+        await open();
         await expect(page.getByRole('main', { name: workspace, exact: true })).toBeVisible();
         await assertNoViolations(page, `${workspace} ${theme}/${density}`);
         if (workspace === 'Files') {
@@ -392,7 +400,7 @@ for (const theme of ['light', 'dark'] as const) {
 
       sessionRequired = false;
       await page.reload();
-      const grid = page.getByRole('grid', { name: 'Everything results' });
+      const grid = page.getByRole('grid', { name: 'Message results' });
       await expect(grid).toHaveAttribute('aria-busy', 'true');
       await expect(page.getByTestId('everything-skeleton').first()).toBeVisible();
       await assertNoViolations(page, `loading ${theme}/${density}`);
