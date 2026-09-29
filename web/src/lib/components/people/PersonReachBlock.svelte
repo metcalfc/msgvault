@@ -54,7 +54,7 @@
           {#if entry.name}<span class="reach-meta">{entry.name}</span>{/if}
           {#if entry.note}<span class="reach-meta">{entry.note}</span>{/if}
           {#if entry.observed}
-            <Chip tone="muted" size="xs" title="Seen in the archive, not in the address book">observed</Chip>
+            <Chip tone="neutral" size="xs" title="Seen in the archive, not in the address book">observed</Chip>
           {/if}
         </span>
         <span class="reach-actions">

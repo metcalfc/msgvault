@@ -5,6 +5,14 @@ import { assertCardDAVForbiddenMarkersAbsent, installCardDAV } from './fixtures/
 import { installDirectoryReviewArchive, installMixedArchive } from './fixtures/mixed-archive';
 import { installOperations, OPERATION_REFERENCES } from './fixtures/operations';
 
+/** The person Overview keeps its maintenance cards (tracking, CardDAV
+ * publication, brief, merge history) behind a closed disclosure. */
+async function openMaintenance(page: Page) {
+  const summary = page.getByText('Maintenance', { exact: true });
+  await expect(summary).toBeVisible();
+  await summary.click();
+}
+
 async function assertNoViolations(page: Page, label: string) {
   const result = await new AxeBuilder({ page }).analyze();
   expect(result.violations, `${label}: ${result.violations.map((v) => `${v.id}: ${v.help}`).join('; ')}`)
@@ -145,10 +153,13 @@ test('Directory profile maintenance is accessible at desktop and narrow widths',
     await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({
       workspace: 'directory', directoryPersonID: 42
     }))}`);
+    await openMaintenance(page);
     const maintenance = page.getByRole('region', { name: 'Profile maintenance' });
     await expect(maintenance.getByRole('switch', {
       name: 'Track this person for profile maintenance'
     })).toBeEnabled();
+    // The eligible-fields catalogue sits behind its own disclosure.
+    await maintenance.getByText('What can be maintained?').click();
     const reveal = maintenance.getByRole('button', { name: 'Show sensitive eligible fields' });
     await reveal.focus();
     await page.keyboard.press('Enter');
@@ -202,6 +213,7 @@ test('Directory review, merge, split, and honest Fact gate have no axe violation
   await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({
     workspace: 'directory', directoryPersonID: 7
   }))}`);
+  await openMaintenance(page);
   const history = page.getByRole('table', { name: 'Person merge history' });
   await expect(history).toBeVisible();
   await history.getByRole('button', { name: 'Inspect merge 41' }).click();
@@ -324,6 +336,7 @@ test('CardDAV account, operations, conflicts, modal, and publication are accessi
     await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({
       workspace: 'directory', directoryPersonID: 42
     }))}`);
+    await openMaintenance(page);
     const publication = page.getByRole('region', { name: 'CardDAV publication' });
     await expect(publication).toContainText('Not published');
     await expect(publication).toContainText('Desired publication: Unpublished');
