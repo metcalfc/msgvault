@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -158,4 +159,30 @@ func TestExaCarriesTheChargeOfABilledResponseItCannotUse(t *testing.T) {
 	assert.Equal(personenrichment.FailureInvalidOutput, providerErr.Class)
 	assert.Equal(personenrichment.Cost{Currency: "USD", AmountMicros: 7000, Estimated: true}, providerErr.Cost,
 		"the billed response's charge travels with the validation failure")
+}
+
+// TestExaCarriesTheChargeWhenTheRequestIDIsInvalid: a decoded HTTP 200 whose
+// requestId fails validation was still billed; the failure keeps the charge.
+func TestExaCarriesTheChargeWhenTheRequestIDIsInvalid(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	body := strings.Replace(string(exaFixture(t, "exa_people_success.json")),
+		`"requestId": "`, `"requestId": " `, 1)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(server.Close)
+	provider, err := personenrichment.NewExaProvider(exaNameCompanyConfig(server.URL+"/search"), "test-key", server.Client())
+	require.NoError(err)
+	_, err = provider.Start(t.Context(), personenrichment.Request{
+		Identity: personenrichment.Identity{Name: "test user", CurrentCompany: "example labs"},
+		Targets:  exaTypedTargets(t),
+	})
+	var providerErr *personenrichment.ProviderError
+	require.ErrorAs(err, &providerErr)
+	assert.Equal(personenrichment.FailureInvalidOutput, providerErr.Class)
+	assert.Empty(providerErr.RequestID, "an invalid request id is never reported")
+	assert.Equal(personenrichment.Cost{Currency: "USD", AmountMicros: 7000, Estimated: true}, providerErr.Cost,
+		"the billed response's charge travels with the failure")
 }

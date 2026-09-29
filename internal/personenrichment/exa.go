@@ -237,7 +237,8 @@ func (p *exaProvider) search(ctx context.Context, query string, outputSchema jso
 		return exaSearchResponse{}, response.StatusCode, exaFailure(response.StatusCode, FailureInvalidOutput, "", "")
 	}
 	if !safeExaOpaqueID(wire.RequestID) {
-		return exaSearchResponse{}, response.StatusCode, exaFailure(response.StatusCode, FailureInvalidOutput, "", "")
+		// The response decoded and was billed; keep its charge.
+		return exaSearchResponse{}, response.StatusCode, exaBilledInvalidOutput(response.StatusCode, wire)
 	}
 	return wire, response.StatusCode, nil
 }
