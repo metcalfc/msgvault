@@ -6,6 +6,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -1555,13 +1556,7 @@ func (s *Store) ListPersonEnrichmentAttemptsContext(
 }
 
 func validPersonEnrichmentAttemptState(state string) bool {
-	switch state {
-	case "queued", "starting", "pending", "retry_wait", personEnrichmentStateSucceeded, "terminal",
-		"suppressed", "identity_rejected", "uncertain_start", personEnrichmentStateIdentityUncertain:
-		return true
-	default:
-		return false
-	}
+	return slices.Contains(personEnrichmentAttemptStates, state)
 }
 
 func (s *Store) ListPersonEnrichmentWorkContext(

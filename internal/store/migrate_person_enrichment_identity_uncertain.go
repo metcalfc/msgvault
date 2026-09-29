@@ -4,13 +4,26 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
-// personEnrichmentAttemptStateCheck is the attempt state vocabulary including
-// identity_uncertain: a semantic identity check that landed between the accept
-// and reject thresholds, recorded for a person to look at with no claim
-// applied. Written once so the migration and the rebuilt table cannot drift.
-const personEnrichmentAttemptStateCheck = `CHECK(state IN ('queued', 'starting', 'pending', 'retry_wait', 'succeeded', 'terminal', 'suppressed', 'identity_rejected', 'uncertain_start', 'identity_uncertain'))`
+// personEnrichmentAttemptStates is the attempt state vocabulary, defined
+// once. The rebuilt table's CHECK, the migration's validation, and
+// validPersonEnrichmentAttemptState all derive from it, so they cannot drift.
+// identity_uncertain is a semantic identity check that landed between the
+// accept and reject thresholds, recorded for a person to look at with no
+// claim applied.
+var personEnrichmentAttemptStates = []string{
+	"queued", "starting", "pending", "retry_wait", personEnrichmentStateSucceeded, "terminal",
+	"suppressed", "identity_rejected", "uncertain_start", personEnrichmentStateIdentityUncertain,
+}
+
+// personEnrichmentAttemptStateSQLList renders the vocabulary as a SQL value
+// list: 'queued', 'starting', ...
+var personEnrichmentAttemptStateSQLList = "'" + strings.Join(personEnrichmentAttemptStates, "', '") + "'"
+
+// personEnrichmentAttemptStateCheck is the column check both backends use.
+var personEnrichmentAttemptStateCheck = `CHECK(state IN (` + personEnrichmentAttemptStateSQLList + `))`
 
 // personEnrichmentAttemptStateConstraint is the constraint name both backends
 // use. PostgreSQL auto-names an inline column check exactly this way, so an
@@ -134,8 +147,7 @@ func personEnrichmentAttemptStateRebuildStatements() []string {
 func validatePersonEnrichmentAttemptStateRows(ctx context.Context, tx *loggedTx) error {
 	var invalid int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM person_enrichment_attempts
-		WHERE state NOT IN ('queued', 'starting', 'pending', 'retry_wait', 'succeeded', 'terminal',
-		                    'suppressed', 'identity_rejected', 'uncertain_start', 'identity_uncertain')`,
+		WHERE state NOT IN (`+personEnrichmentAttemptStateSQLList+`)`,
 	).Scan(&invalid); err != nil {
 		return fmt.Errorf("validate person enrichment attempt states: %w", err)
 	}

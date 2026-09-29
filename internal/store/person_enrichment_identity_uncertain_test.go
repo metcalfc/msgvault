@@ -399,3 +399,20 @@ func TestPersonMergeAndSplitTreatIdentityJudgmentsLikeTheirAttempts(t *testing.T
 		})
 	}
 }
+
+// TestPersonEnrichmentAttemptStateVocabularyMatchesTheSchema checks that the
+// one state list the migration and validation derive from is exactly what a
+// fresh archive's table admits, on the backend under test.
+func TestPersonEnrichmentAttemptStateVocabularyMatchesTheSchema(t *testing.T) {
+	f := newEnrichmentResultFixture(t)
+	for _, state := range personEnrichmentAttemptStates {
+		assert.True(t, validPersonEnrichmentAttemptState(state), state)
+		_, err := f.store.DB().ExecContext(t.Context(), f.store.Rebind(
+			`UPDATE person_enrichment_attempts SET state = ? WHERE id = ?`), state, f.attempt.ID)
+		assert.NoError(t, err, "the fresh schema admits %s", state)
+	}
+	assert.False(t, validPersonEnrichmentAttemptState("abandoned"))
+	_, err := f.store.DB().ExecContext(t.Context(), f.store.Rebind(
+		`UPDATE person_enrichment_attempts SET state = 'abandoned' WHERE id = ?`), f.attempt.ID)
+	assert.Error(t, err, "the fresh schema rejects a state outside the vocabulary")
+}
