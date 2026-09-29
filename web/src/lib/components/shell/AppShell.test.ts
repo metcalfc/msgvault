@@ -1078,11 +1078,52 @@ describe('AppShell', () => {
     await fireEvent.click(await screen.findByRole('button', { name: /^Last contact / }));
     await waitFor(() => expect(state.current.selectedRow).toBe('source:3:message:source-42'));
     expect(state.current).toMatchObject({ workspace: 'everything', presentation: 'table', conversationAnchor: '42', query: '', groupingChain: [] });
-    // Bounded to the day the message was sent so the row is on page one.
-    expect(state.current.filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
+    // Bounded to the day the message was sent and its source so the row is on page one.
+    expect(state.current.filters.map((filter) => filter.dimension)).toEqual(['after', 'before', 'source']);
     expect(window.location.pathname).toBe('/');
     expect(await screen.findByRole('complementary', { name: 'Reading pane: Last note' })).toBeDefined();
-    expect(exploreFilters.at(-1)).toEqual(['after', 'before']);
+    expect(exploreFilters.at(-1)).toEqual(['after', 'before', 'source']);
+
+    rendered.unmount();
+    state.destroy();
+  });
+
+  it('opens a chat message with a fallback message type by the conversation row the explore query names', async () => {
+    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
+      workspace: 'directory', directoryPersonID: 7
+    }))}`);
+    const message = {
+      id: 42, source_id: 3, source_message_id: '', conversation_id: 71, subject: '', message_type: '',
+      from: 'sender@example.test', to: ['reader@example.test'], sent_at: '2026-08-01T12:00:00Z',
+      snippet: 'ping', labels: [], has_attachments: false, size_bytes: 4, body: 'ping', attachments: []
+    };
+    const base = directoryPersonFetch([], {}).fetchFn;
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      if (path === '/api/v1/people/7/contact-state') return Response.json({
+        person_id: 7, cadence_status: 'unknown', interaction_count: 1, computed_at: '2026-08-28T10:00:00Z', stale: false,
+        last_contact_at: '2026-08-01T12:00:00Z', last_contact_channel: 'chat', last_contact_ref: 'message:42'
+      });
+      if (path === '/api/v1/messages/42') return Response.json(message);
+      if (path === '/api/v1/conversations/71') return Response.json({ id: 71, anchor_id: 42, messages: [message], has_before: false, has_after: false, total: 1 });
+      if (path === '/api/v1/explore') return Response.json(exploreResponse({ rows: [{
+        key: 'source:3:conversation:71', kind: 'conversation', message_type: '', conversation_type: 'group_chat',
+        title: 'Group chat', preview: 'ping', occurred_at: '2026-08-01T12:00:00Z', source_id: 3,
+        source_identifier: 'chat@example.test', source_type: 'beeper', participant_labels: ['Sender'], participant_ids: [1],
+        attachment_count: 0, attachment_size: 0, has_attachments: false, deleted_from_source: false, message_count: 3,
+        matched_sender_identities: [], matched_recipient_identities: [], match: {}, anchor_message_id: 40, conversation_id: 71
+      }], total_count: 1 }));
+      return base(input);
+    });
+    const state = new ExploreState(window);
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+
+    await fireEvent.click(await screen.findByRole('button', { name: /^Last contact / }));
+    // A local guess would have keyed this as source:3:message:42 and never found a row.
+    await waitFor(() => expect(state.current.selectedRow).toBe('source:3:conversation:71'));
+    expect(state.current.conversationAnchor).toBe('42');
+    expect(await screen.findByRole('complementary', { name: 'Reading pane: Group chat' })).toBeDefined();
 
     rendered.unmount();
     state.destroy();
