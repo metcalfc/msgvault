@@ -13,19 +13,18 @@ function entries(): ReachEntry[] {
 }
 
 describe('PersonReachBlock', () => {
-  it('renders one row per method with a kind icon, the value, and an observed badge for archive values', () => {
+  it('renders one labeled row per method with the value and an observed note for archive values', () => {
     render(PersonReachBlock, { entries: entries() });
 
     const rows = screen.getAllByRole('listitem');
     expect(rows).toHaveLength(3);
-    expect(screen.getByRole('img', { name: 'Email' })).toBeDefined();
-    expect(screen.getByRole('img', { name: 'Phone' })).toBeDefined();
-    expect(screen.getByRole('img', { name: 'Chat' })).toBeDefined();
+    expect(rows.map((row) => row.querySelector('[data-fact-label]')?.textContent)).toEqual(['Email', 'Phone', 'Chat']);
+    expect(rows[0]?.querySelector('[data-fact-value]')?.textContent).toBe('person@example.test');
     expect(rows[0]?.textContent).not.toContain('observed');
     expect(rows[1]?.textContent).toContain('observed');
     expect(rows[1]?.textContent).toContain('Person');
     // Opaque keys stay out of the text and live in the tooltip.
-    expect(rows[2]?.textContent).toContain('WhatsApp');
+    expect(rows[2]?.getAttribute('title')).toBe('beeper:opaque-key');
     expect(rows[2]?.textContent).not.toContain('opaque-key');
     expect(rows[2]?.getAttribute('title')).toBe('beeper:opaque-key');
   });
@@ -44,6 +43,21 @@ describe('PersonReachBlock', () => {
     } finally {
       Object.defineProperty(navigator, 'clipboard', { configurable: true, value: original });
     }
+  });
+
+  it('labels a mobile number and trails the address book type and enrichment source', () => {
+    render(PersonReachBlock, { entries: [
+      { key: 'phone:1', kind: 'phone', value: '+1 555 010 0142', display: '+1 555 010 0142', label: '+1 555 010 0142',
+        observed: false, typeLabel: 'cell', participantIDs: [] },
+      { key: 'email:work', kind: 'email', value: 'ada@example.test', display: 'ada@example.test', label: 'ada@example.test',
+        observed: false, typeLabel: 'work', participantIDs: [] },
+      { key: 'url:linkedin', kind: 'url', value: 'linkedin.com/in/ada-example', display: 'linkedin.com/in/ada-example',
+        label: 'linkedin.com/in/ada-example', service: 'LinkedIn', observed: false, source: 'enrichment', participantIDs: [] },
+    ] });
+    const rows = screen.getAllByRole('listitem');
+    expect(rows.map((row) => row.querySelector('[data-fact-label]')?.textContent)).toEqual(['Mobile', 'Email', 'LinkedIn']);
+    expect(rows[1]?.querySelector('[data-fact-meta]')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('work · copy');
+    expect(rows[2]?.querySelector('[data-fact-meta]')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('from enrichment · copy');
   });
 
   it('renders nothing when there are no entries', () => {

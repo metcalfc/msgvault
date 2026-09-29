@@ -247,8 +247,8 @@ describe('RelationshipHeader', () => {
     expect(block.querySelectorAll('li')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Copy alice@example.com' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Copy +15550100001' })).toBeDefined();
-    expect(screen.getByRole('img', { name: 'Email' })).toBeDefined();
-    expect(screen.getByRole('img', { name: 'Phone' })).toBeDefined();
+    expect(screen.getAllByText('Email', { selector: '[data-fact-label]' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Phone', { selector: '[data-fact-label]' }).length).toBeGreaterThan(0);
     // Archive-derived values carry the observed badge; no unlink control
     // appears outside a linked cluster.
     expect(screen.getAllByText('observed')).toHaveLength(2);
@@ -267,13 +267,13 @@ describe('RelationshipHeader', () => {
 
     await waitFor(() => expect(loadContactPoints).toHaveBeenCalledWith(5));
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(3));
-    expect(screen.getAllByRole('listitem').map((row) => row.querySelector('.reach-value')?.textContent)).toEqual([
+    expect(screen.getAllByRole('listitem').map((row) => row.querySelector('[data-fact-value]')?.textContent)).toEqual([
       'alice@example.com', '+1 555 010 0001', 'https://example.com/in/alice'
     ]);
     expect(rowFor('alice@example.com').textContent).not.toContain('observed');
     expect(rowFor('+1 555 010 0001').textContent).toContain('observed');
     expect(rowFor('https://example.com/in/alice').textContent).toContain('LinkedIn');
-    expect(screen.getByRole('img', { name: 'Profile' })).toBeDefined();
+    expect(rowFor('https://example.com/in/alice').querySelector('[data-fact-label]')?.textContent).toBe('LinkedIn');
   });
 
   it('keeps a pending unlink confirm visible on its row', async () => {
@@ -589,7 +589,7 @@ describe('RelationshipHeader', () => {
       expect(row?.getAttribute('title')).toContain('account: local-whatsapp_ba_example');
       expect(row?.textContent).not.toContain(key);
       expect(row?.getAttribute('title')).toContain(key);
-      expect(screen.getByRole('img', { name: 'Chat' })).toBeDefined();
+      expect(row?.querySelector('[data-fact-label]')?.textContent).toBe('WhatsApp');
       await fireEvent.click(copy);
       await waitFor(() => expect(copied).toBe(key));
     } finally {

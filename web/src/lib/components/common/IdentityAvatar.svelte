@@ -10,9 +10,11 @@
      * domains read differently at a glance. */
     shape?: 'person' | 'domain';
     size?: number;
+    /** A record's page header uses the app accent instead of the identity hue. */
+    tone?: 'identity' | 'accent';
   }
 
-  let { label, seed = undefined, shape = 'person', size = 28 }: Props = $props();
+  let { label, seed = undefined, shape = 'person', size = 28, tone = 'identity' }: Props = $props();
 
   const hue = $derived(identityHue(seed ?? label));
   const glyph = $derived(
@@ -23,6 +25,7 @@
 <span
   class="identity-avatar"
   class:identity-avatar--domain={shape === 'domain'}
+  class:identity-avatar--accent={tone === 'accent'}
   style:--avatar-hue={hue}
   style:width={`${size}px`}
   style:height={`${size}px`}
@@ -57,5 +60,13 @@
   :global(.dark) .identity-avatar {
     background: hsl(var(--avatar-hue, 210) 55% 65% / 0.14);
     color: hsl(var(--avatar-hue, 210) 45% 74%);
+  }
+
+  /* After the dark identity rule, so the accent tone wins in both themes. */
+  .identity-avatar--accent,
+  :global(.dark) .identity-avatar--accent {
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--accent-blue) 14%, var(--surface-panel));
+    color: color-mix(in srgb, var(--accent-blue) 80%, var(--text-primary));
   }
 </style>

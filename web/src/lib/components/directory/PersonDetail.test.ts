@@ -110,19 +110,19 @@ describe('PersonDetail', () => {
     expect(screen.getByText('person@example.test')).toBeDefined();
     expect(document.querySelector('.attribute-summary .sensitive')?.textContent).toBe('concealed');
     expect(document.body.innerHTML).not.toContain('Synthetic value');
-    // The current employment reads as the subtitle under the name and in
-    // the employment list, with a space before the Current flag.
-    const mentions = await screen.findAllByText('Engineer · Example Org');
-    expect(mentions.map((element) => element.classList.contains('person-subtitle'))).toEqual([true, false]);
-    expect(screen.getByText('Current').closest('li')?.textContent).toBe('Engineer · Example OrgCurrent');
-    expect(screen.getByText('Current').tagName).toBe('SMALL');
-    expect(screen.getByText('Synthetic Child · child')).toBeDefined();
-    expect(screen.getByText('urn:uuid:parent · parent')).toBeDefined();
-    expect(screen.queryByText(/outgoing: parent/)).toBeNull();
+    // The current employment reads as the subtitle under the name and as
+    // the Context section's Employment row, with its history one click away.
+    const subtitle = await screen.findByText('Engineer · Example Org');
+    expect(subtitle.classList.contains('person-subtitle')).toBe(true);
+    const context = screen.getByRole('region', { name: 'Context' });
+    const employment = within(context).getByText('Employment').closest('li')!;
+    expect(employment.textContent).toContain('Example Org, Engineer');
+    expect(within(employment).getByRole('button', { name: 'History (1)' })).toBeDefined();
+    // Relationships and activity counts live on Profile, not Overview.
+    expect(screen.queryByText('Synthetic Child · child')).toBeNull();
     expect(requestPaths.filter((path) => path === '/api/v1/people/7/employments')).toHaveLength(1);
     expect(requestPaths.filter((path) => path === '/api/v1/people/7/relationships')).toHaveLength(1);
     expect(requestPaths).not.toContain('/api/v1/people/7/network');
-    expect(screen.getByText('Activity')).toBeDefined();
     expect(screen.queryByText('Provenance and history')).toBeNull();
     await fireEvent.click(screen.getByRole('tab', { name: 'Profile' }));
     expect(screen.getByText('Names')).toBeDefined();
@@ -423,7 +423,7 @@ describe('PersonDetail', () => {
       }
     });
 
-    expect(screen.getByText(/^Last contact /)).toBeDefined();
+    expect(screen.getByText('Last contact')).toBeDefined();
     await fireEvent.click(screen.getByRole('tab', { name: 'Maintenance' }));
     await screen.findByRole('heading', { name: 'Last time we talked' });
     expect(await screen.findByRole('button', {
@@ -513,12 +513,21 @@ describe('PersonDetail', () => {
     } });
 
     expect(await screen.findByText('Engineer · Example Org · Lisbon')).toBeDefined();
+    // The header offers Messages, Edit, and the overflow of maintenance tools.
+    expect(screen.getByRole('button', { name: 'Messages with Synthetic Person' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Edit Synthetic Person' })).toBeDefined();
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions for Synthetic Person' }));
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual([
+      'Rename', 'Same person…', 'Merge or split…', 'Publish to CardDAV…', 'Track for profile maintenance…', 'Delete…'
+    ]);
+    await fireEvent.keyDown(window, { key: 'Escape' });
     // The message ref opens in-app through the reading pane, never an href.
     const lead = screen.getByRole('button', { name: 'Last contact 2d ago via email' });
     expect(document.querySelector('a[href^="/messages/"]')).toBeNull();
     await fireEvent.click(lead);
     expect(onOpenMessage).toHaveBeenCalledWith(42);
-    const line = lead.closest('p')!;
+    const line = lead.closest('li')!;
+    expect(line.querySelector('[data-fact-label]')?.textContent).toBe('Last contact');
     expect(line.textContent).toContain('you wrote 2d ago');
     expect(line.textContent).toContain('they wrote 5d ago');
     expect(line.textContent).toContain('4 interactions');
@@ -544,7 +553,7 @@ describe('PersonDetail', () => {
     } });
     await fireEvent.click(screen.getByRole('tab', { name: 'Overview' }));
     expect(screen.queryByRole('button', { name: /^Last contact / })).toBeNull();
-    expect(screen.getByText('Last contact 2d ago via email').tagName).toBe('SPAN');
+    expect(screen.getByLabelText('Last contact 2d ago via email').tagName).toBe('SPAN');
 
     // With a Meetings page to open, a meeting ref links to it.
     const onOpenMeetingPage = vi.fn();

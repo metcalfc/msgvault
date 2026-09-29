@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
   import { Button, Menu, MenuContent, MenuItem, MenuTrigger, Notice, SegmentedControl } from '@kenn-io/kit-ui';
   import StatusNotice from '../common/StatusNotice.svelte';
@@ -53,6 +53,13 @@
     /** Inside a page that already names the person, the name is a label,
      * not a second heading. */
     nameAsHeading?: boolean;
+    /** The contact's own page: the person-page header (avatar, name,
+     * subtitle, Messages, Save, ⋯), the page's tabs under it, and the
+     * contact rows only on Overview. */
+    personPage?: boolean;
+    onOpenMessages?: () => void;
+    tabs?: Snippet;
+    showBody?: boolean;
   }
 
   let {
@@ -73,7 +80,11 @@
     loadContactPoints = undefined,
     onAnnounce = undefined,
     showViewToggle = true,
-    nameAsHeading = true
+    nameAsHeading = true,
+    personPage = false,
+    onOpenMessages = undefined,
+    tabs = undefined,
+    showBody = true
   }: Props = $props();
 
   type LinkMutation = { kind: 'link' | 'unlink'; a: number; b: number };
@@ -111,6 +122,11 @@
     return isPersonDetail(value) ? value.display_label : value.domain;
   }
 
+  function yearOf(value: string): string {
+    const date = new Date(value);
+    return Number.isNaN(date.valueOf()) ? '' : String(date.getFullYear());
+  }
+
   function formatDate(value: string): string {
     const date = new Date(value);
     return Number.isNaN(date.valueOf()) ? value : date.toLocaleDateString();
@@ -136,7 +152,7 @@
     return mergeReachEntries(
       reachEntriesFromContactPoints(contactPoints),
       reachEntriesFromIdentifiers({
-        identifiers: detail.identifiers, ownID: detail.id, members, edges, clustered: Boolean(detail.cluster)
+        identifiers: detail.identifiers, ownID: detail.id, members, edges, clustered: (detail.cluster?.member_ids?.length ?? 0) > 1
       }),
       reachEntriesFromMembers(
         unrepresentedMembers.map((id) => memberFor(id) ?? { participant_id: id }), edges
@@ -392,12 +408,49 @@
   {/if}
 {/snippet}
 
-<header class="relationship-header" class:has-detail={Boolean(detail)} aria-label="Relationship detail">
+{#snippet lastContactRow()}
+  {#if detail && isPersonDetail(detail)}
+    <li data-fact-row class="last-contact">
+      <span data-fact-label>Last contact</span>
+      <span data-fact-value data-mono>{formatDate(detail.last_at)}</span>
+      <span data-fact-meta>{detail.activity_count.toLocaleString()} items{yearOf(detail.first_at) ? ` since ${yearOf(detail.first_at)}` : ''}</span>
+    </li>
+  {/if}
+{/snippet}
+
+<header class="relationship-header" class:has-detail={Boolean(detail)} class:person-page={personPage} aria-label="Relationship detail">
   {#if !detail}
     <p class="header-empty" role="status">
       {loading ? 'Loading relationship…' : 'Select a person or domain to see your shared history.'}
     </p>
   {:else}
+    {#if personPage && isPersonDetail(detail)}
+      <div class="person-title">
+        <IdentityAvatar label={displayLabel(detail)} seed={`cluster:${detail.id}`} size={44} tone="accent" />
+        <div class="person-heading">
+          <h2 data-page-title class="person-name">{displayLabel(detail)}</h2>
+          <p class="person-subtitle">{detail.activity_count.toLocaleString()} items · {detail.file_count.toLocaleString()} files ·
+            {formatDate(detail.first_at)} – {formatDate(detail.last_at)}</p>
+        </div>
+        <div class="person-actions">
+          {#if onOpenMessages}
+            <Button size="sm" tone="info" surface="solid" label="Messages" ariaLabel={`Messages with ${displayLabel(detail)}`} onclick={onOpenMessages} />
+          {/if}
+          {#if !detail.profile?.id && onPromotePerson}
+            <span class="not-saved">Not saved to your directory ·</span>
+            <Button size="sm" surface="outline" label="Save to Directory" disabled={promoting} onclick={() => void promote()} />
+          {/if}
+          <Menu align="end">
+            <MenuTrigger class="person-more" ariaLabel={`More actions for ${displayLabel(detail)}`} title="More actions">
+              <EllipsisIcon size="14" aria-hidden="true" />
+            </MenuTrigger>
+            <MenuContent ariaLabel={`More actions for ${displayLabel(detail)}`}>
+              <MenuItem onselect={openLinkDialog}>Same person…</MenuItem>
+            </MenuContent>
+          </Menu>
+        </div>
+      </div>
+    {:else}
     <div class="title-row">
       <IdentityAvatar
         label={displayLabel(detail)}
@@ -447,6 +500,8 @@
         {/if}
       </div>
     </div>
+    {/if}
+    {@render tabs?.()}
     {#if staleBanner === 'identity_cache_stale'}
       <StatusNotice>
         <span>{STALE_CACHE_MESSAGE}</span>
@@ -461,6 +516,8 @@
           : promotionFailure.message}
       />
     {/if}
+    {#if showBody}
+    {#if !personPage}
     <p class="counts" data-mono>
       {detail.activity_count.toLocaleString()} items · {detail.file_count.toLocaleString()} files ·
       {formatDate(detail.first_at)} – {formatDate(detail.last_at)}
@@ -468,6 +525,7 @@
         · {detail.person_count.toLocaleString()} people
       {/if}
     </p>
+    {/if}
     {#if otherIdentities.length > 0}
       <p class="sibling-note" role="note">
         <span>This person's history continues under other identities:</span>
@@ -488,10 +546,10 @@
         onEdit={onOpenDirectoryPerson ? () => onOpenDirectoryPerson(detail.profile!.id) : undefined}
       />
     {/if}
-    {#if isPersonDetail(detail) && (reachEntries.length > 0 || bareMembers.length > 0)}
+    {#if isPersonDetail(detail) && (personPage || reachEntries.length > 0 || bareMembers.length > 0)}
       {#key detail.id}
       <div class="reach">
-        <PersonReachBlock entries={reachEntries} ariaLabel="Contact methods" {onAnnounce}>
+        <PersonReachBlock entries={reachEntries} ariaLabel="Contact methods" {onAnnounce} after={personPage ? lastContactRow : undefined}>
           {#snippet actions(entry)}
             {@const members = otherMembersOf(entry)}
             {#if members.length > 0}
@@ -513,6 +571,7 @@
         {/if}
       </div>
       {/key}
+    {/if}
     {/if}
     {#if activeDialog?.kind === 'link' && isPersonDetail(detail)}
       <LinkIdentityDialog
@@ -553,6 +612,20 @@
     margin: 0;
     color: var(--text-muted);
     font-size: var(--font-size-sm);
+  }
+
+  .relationship-header.person-page { gap: 0; padding-bottom: 0; border-bottom: 0; }
+  .relationship-header.person-page > :global(*) + :global(*) { margin-top: var(--space-3); }
+  .person-title { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-5); }
+  .person-heading { display: grid; min-width: 0; gap: 2px; }
+  .person-name { font-size: 20px; line-height: 1.2; white-space: normal; }
+  .person-subtitle { margin: 0; color: var(--text-secondary); font-size: 13px; }
+  .person-actions { display: flex; flex-wrap: wrap; align-self: center; align-items: center; gap: var(--space-2); margin-left: auto; }
+  .not-saved { color: var(--text-muted); font-size: 12px; }
+  .person-actions :global(.person-more) {
+    display: inline-flex; align-items: center; justify-content: center; height: 26px; padding: 0 8px;
+    border: 1px solid var(--edge); border-radius: var(--radius-md); background: var(--surface-panel);
+    color: var(--text-secondary); cursor: pointer;
   }
 
   .title-row {

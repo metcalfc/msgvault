@@ -312,13 +312,18 @@ overrides, and typed profile attributes are separate curated operations; see
 
 ### A saved person's page
 
+The header shows the person's name with their title, organization, and
+location. **Messages** opens their Timeline and **Edit** opens Profile. The
+**⋯** menu holds Rename, Same person…, Merge or split…, Publish to CardDAV…,
+Track for profile maintenance…, and Delete….
+
 | Tab | What it shows |
 |---|---|
-| Overview | Name, contact methods, last contact, and an attribute summary |
+| Overview | Contact methods with a copy action, last contact, the five most recent items across mail, texts, and meetings, and filled context such as location and current employment |
 | Timeline | Mail, texts, and meetings interleaved for their busiest archive identity, with a switch between identities |
 | Files | Files exchanged with them |
 | Meetings | Their meetings, with [meeting activity and follow-ups](#meeting-context-and-follow-ups) |
-| Profile | Structured profile, attributes, organizations, relationships, and network |
+| Profile | Structured profile, attributes, organizations, relationships, and network; empty profile groups collapse into one **Add…** menu |
 | Maintenance | Profile maintenance tracking, briefs, CardDAV publication, merge history, and identities |
 
 Edit structured profile information, attributes, employment, and typed
@@ -346,8 +351,10 @@ identity there, or use **Same person…** to connect another one.
 
 ### An archive contact's page
 
-An archive contact's page has **Overview** (an activity calendar),
-**Timeline**, **Files**, and **Meetings** tabs. Choose **Save to Directory**
+An archive contact's page uses the same header, with **Messages** and
+**Save to Directory**; **Same person…** is in the **⋯** menu. Its tabs are
+**Overview** (contact methods, last contact, recent items, and an activity
+calendar), **Timeline**, **Files**, and **Meetings**. Choose **Save to Directory**
 to keep the contact as a saved person. If saving fails, the reason appears
 on the page.
 

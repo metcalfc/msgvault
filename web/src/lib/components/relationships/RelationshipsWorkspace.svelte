@@ -29,6 +29,7 @@
   import SplitPane from '../layout/SplitPane.svelte';
   import ReadingPane, { type ReadingPaneSelection } from '../reader/ReadingPane.svelte';
   import RelationshipHeader from './RelationshipHeader.svelte';
+  import RecentActivity from '../people/RecentActivity.svelte';
   import RelationshipCalendar from './RelationshipCalendar.svelte';
   import RelationshipList from './RelationshipList.svelte';
   import RelationshipTimeline from './RelationshipTimeline.svelte';
@@ -390,6 +391,17 @@
   }
 </script>
 
+{#snippet contactTabs()}
+  <div class="contact-tabs" role="tablist" aria-label="Contact sections">
+    {#each CONTACT_TABS as tab, index (tab.id)}
+      <button type="button" role="tab" data-contact-tab={tab.id}
+        aria-selected={contactTab === tab.id} tabindex={contactTab === tab.id ? 0 : -1}
+        onkeydown={(event) => contactTabKeydown(event, index)}
+        onclick={() => onTabChange?.(tab.id)}>{tab.label}</button>
+    {/each}
+  </div>
+{/snippet}
+
 {#snippet listPane()}
   <RelationshipList
     rows={controller.listRows}
@@ -453,16 +465,14 @@
                 onReconcilePersonMerge={(context) => controller.reconcilePersonMerge(context)}
                 onLinkParticipants={(a, b) => controller.linkParticipants(a, b)}
                 onUnlinkParticipants={(a, b) => controller.unlinkParticipants(a, b)}
+                personPage={layout === 'contact'}
+                onOpenMessages={layout === 'contact' ? () => onTabChange?.('timeline') : undefined}
+                tabs={layout === 'contact' ? contactTabs : undefined}
+                showBody={layout === 'hub' || contactTab === 'overview'}
               />
-              {#if layout === 'contact'}
-                <div class="contact-tabs" role="tablist" aria-label="Contact sections">
-                  {#each CONTACT_TABS as tab, index (tab.id)}
-                    <button type="button" role="tab" data-contact-tab={tab.id}
-                      aria-selected={contactTab === tab.id} tabindex={contactTab === tab.id ? 0 : -1}
-                      onkeydown={(event) => contactTabKeydown(event, index)}
-                      onclick={() => onTabChange?.(tab.id)}>{tab.label}</button>
-                  {/each}
-                </div>
+              {#if layout === 'contact' && contactTab === 'overview' && controller.detail}
+                <RecentActivity rows={controller.timelineRows} loading={controller.timelineLoading}
+                  error={controller.timelineError} onOpen={openTimelineRow} onSeeAll={() => onTabChange?.('timeline')} />
               {/if}
               {#if target !== null && domainOf(target) === undefined && (layout === 'hub' || contactTab === 'overview')}
                 <RelationshipCalendar
@@ -681,12 +691,12 @@
     padding: var(--space-3) var(--space-7) 0;
   }
 
-  .contact-tabs { display: flex; gap: var(--space-2); border-bottom: 1px solid var(--hairline); }
+  .contact-tabs { display: flex; gap: var(--space-6); border-bottom: 1px solid var(--hairline); }
   .contact-tabs [role='tab'] {
     margin-bottom: -1px;
     border: 0;
     border-bottom: 2px solid transparent;
-    padding: var(--space-2) var(--space-3);
+    padding: 6px 0;
     background: transparent;
     color: var(--text-secondary);
     font: inherit;

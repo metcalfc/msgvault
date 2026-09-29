@@ -1,0 +1,92 @@
+<script lang="ts">
+  import type { TimelineRow } from '../../api/generated/models';
+  import { shortDate } from '../../util/dates';
+  import RowKind from '../explore/RowKind.svelte';
+
+  interface Props {
+    rows: TimelineRow[];
+    loading?: boolean;
+    error?: string | null;
+    /** Opens one item: a message, a text burst, or a meeting. */
+    onOpen: (row: TimelineRow) => void;
+    onSeeAll: () => void;
+  }
+
+  let { rows, loading = false, error = null, onOpen, onSeeAll }: Props = $props();
+  const RECENT_LIMIT = 5;
+  const recent = $derived(rows.slice(0, RECENT_LIMIT));
+
+  /** Timeline kinds name the modality; message types refine texts. */
+  function kindOf(row: TimelineRow): { kind: string; type: string } {
+    const messageType = typeof row.message_type === 'string' ? row.message_type : '';
+    if (row.kind === 'chat_burst') return { kind: 'conversation', type: messageType || 'chat' };
+    return { kind: row.kind, type: messageType || row.kind };
+  }
+
+  function secondary(row: TimelineRow): string {
+    const count = row.kind === 'chat_burst' && row.message_count > 1 ? `${row.message_count} messages` : '';
+    const who = typeof row.sender === 'string' ? row.sender : typeof row.from === 'string' ? row.from : '';
+    const preview = row.preview?.trim() ? `"${row.preview.trim()}"` : '';
+    return [who, count, preview].filter(Boolean).join(' · ');
+  }
+</script>
+
+<section class="recent" aria-label="Recent">
+  <div data-section-line>
+    <h3 data-section-title>Recent</h3>
+    <span>email, texts, and meetings together · <button type="button" onclick={onSeeAll}>See all in Timeline</button></span>
+  </div>
+  {#if error}
+    <p class="state" role="status">{error}</p>
+  {:else if recent.length === 0}
+    <p class="state" role="status">{loading ? 'Loading recent activity…' : 'No recent activity.'}</p>
+  {:else}
+    <ul class="recent-list">
+      {#each recent as row (row.key)}
+        {@const kind = kindOf(row)}
+        <li>
+          <button type="button" class="recent-item" onclick={() => onOpen(row)}>
+            <span class="glyph"><RowKind kind={kind.kind} messageType={kind.type} compact /></span>
+            <span class="text">
+              <span class="title" data-row-title>{row.title || '(untitled)'}</span>
+              {#if secondary(row)}<small>{secondary(row)}</small>{/if}
+            </span>
+            <time class="date" datetime={row.occurred_at} data-mono>{shortDate(row.occurred_at)}</time>
+          </button>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+</section>
+
+<style>
+  .recent { display: grid; min-width: 0; }
+  .recent-list { margin: 0; padding: 0; list-style: none; }
+
+  .recent-item {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: var(--space-5);
+    padding: 8px 0;
+    border: 0;
+    border-bottom: 1px solid var(--hairline);
+    background: none;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .recent-item:hover .title { text-decoration: underline; }
+  .recent-item:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+  .glyph { align-self: center; }
+  .text { display: grid; min-width: 0; }
+  .title, small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .title { font-size: 13px; }
+  small { color: var(--text-muted); font-size: 12px; }
+  .date { color: var(--text-muted); font-size: 11px; }
+  .state { margin: 0; padding: 8px 0; color: var(--text-muted); font-size: var(--font-size-sm); }
+</style>

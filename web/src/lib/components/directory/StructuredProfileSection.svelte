@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getPersonProfileHistory as generatedGetPersonProfileHistory } from '../../api/generated/api/api';
-  import { Button, TextInput } from '@kenn-io/kit-ui';
+  import { Button, Menu, MenuContent, MenuItem, MenuTrigger, TextInput } from '@kenn-io/kit-ui';
+  import { untrack } from 'svelte';
   import type { APIClient } from '../../api/client';
   import type {
     ParticipantContactObservation as GeneratedParticipantContactObservation,
@@ -27,8 +28,11 @@
     client: APIClient;
     controller: DirectoryProfileController;
     personID: number;
+    /** Bumped by the page header's Rename and Delete to open those here. */
+    renameRequest?: number;
+    deleteRequest?: number;
   }
-  let { client, controller, personID }: Props = $props();
+  let { client, controller, personID, renameRequest = 0, deleteRequest = 0 }: Props = $props();
   let editing = $state<{
     section: StructuredProfileSectionName;
     current?: StructuredProfileRecord;
@@ -236,6 +240,30 @@
       confirmingDelete = false;
     }
   }
+  let seenRename = untrack(() => renameRequest);
+  let seenDelete = untrack(() => deleteRequest);
+  $effect(() => {
+    const request = renameRequest;
+    untrack(() => {
+      if (request === seenRename) return;
+      seenRename = request;
+      beginRename();
+    });
+  });
+  $effect(() => {
+    const request = deleteRequest;
+    untrack(() => {
+      if (request === seenDelete) return;
+      seenDelete = request;
+      confirmingDelete = true;
+      renaming = false;
+    });
+  });
+  // Groups with nothing in them fold into one "Add…" menu instead of each
+  // showing an empty heading; a group opens when it has values or an editor.
+  const shownSections = $derived(sections.filter((descriptor) =>
+    rows(descriptor.section).length > 0 || editing?.section === descriptor.section));
+  const emptySections = $derived(sections.filter((descriptor) => !shownSections.includes(descriptor)));
   function beginRename(): void {
     renameValue = controller.person?.display_name ?? '';
     renaming = true;
@@ -338,7 +366,24 @@
     </div>
   {/if}
 
-  {#each sections as descriptor (descriptor.section)}
+  {#if emptySections.length > 0}
+    <div class="add-menu">
+      <Menu>
+        <MenuTrigger class="add-menu__trigger" ariaLabel="Add to profile" disabled={!controller.canWriteProfile}>
+          Add…
+        </MenuTrigger>
+        <MenuContent ariaLabel="Add to profile">
+          {#each emptySections as descriptor (descriptor.section)}
+            <MenuItem onselect={() => { editing = { section: descriptor.section }; confirming = undefined; }}>
+              Add {descriptor.singular}
+            </MenuItem>
+          {/each}
+        </MenuContent>
+      </Menu>
+    </div>
+  {/if}
+
+  {#each shownSections as descriptor (descriptor.section)}
     <section class="profile-group" data-section>
       <header class="group-header">
         <h4 data-row-title>{descriptor.title}</h4>
@@ -481,6 +526,16 @@
 {/if}
 
 <style>
+  .add-menu :global(.add-menu__trigger) {
+    border: 1px solid var(--edge);
+    border-radius: var(--radius-md);
+    padding: 3px 10px;
+    background: var(--surface-panel);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+  }
   .profile-group {
     gap: var(--space-1);
   }

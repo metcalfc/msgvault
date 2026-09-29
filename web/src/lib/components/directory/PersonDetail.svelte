@@ -1,12 +1,16 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
-  import { Button, EmptyState, Notice } from '@kenn-io/kit-ui';
-  import type { MeetingRef, PersonIdentifier } from '../../api/generated/models';
+  import { Button, EmptyState, Menu, MenuContent, MenuItem, MenuTrigger, Notice } from '@kenn-io/kit-ui';
+  import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
+  import { getRelationshipTimeline } from '../../api/generated/exploration/exploration';
+  import type { Employment, MeetingRef, PersonIdentifier, TimelineRow } from '../../api/generated/models';
+  import IdentityAvatar from '../common/IdentityAvatar.svelte';
+  import RecentActivity from '../people/RecentActivity.svelte';
   import MeetingPanel from '../meetings/MeetingPanel.svelte';
   import type { APIClient } from '../../api/client';
   import { resolveBoundClusters, type BoundClusterResolution } from '../../people/clusters';
   import { mergeReachEntries, reachEntriesFromContactPoints, reachEntriesFromIdentifiers } from '../../people/reach';
-  import { humanizeDate } from '../../util/dates';
+  import { humanizeDate, shortDate } from '../../util/dates';
   import { channelLabel } from '../../util/labels';
   import PersonReachBlock from '../people/PersonReachBlock.svelte';
   import type { DirectoryReadBundle, DirectoryReadSection } from '../../directory/models';
@@ -158,15 +162,88 @@
     const parts: string[] = [];
     if (state.last_outbound_at) parts.push(`you wrote ${humanizeDate(state.last_outbound_at)}`);
     if (state.last_inbound_at) parts.push(`they wrote ${humanizeDate(state.last_inbound_at)}`);
-    if (typeof state.interaction_count === 'number') parts.push(`${state.interaction_count.toLocaleString()} interactions`);
+    if (typeof state.interaction_count === 'number') {
+      const since = state.first_contact_at ? ` since ${new Date(state.first_contact_at).getFullYear()}` : '';
+      parts.push(`${state.interaction_count.toLocaleString()} interactions${since}`);
+    }
     const cadence = state.cadence_status && state.cadence_status !== 'unknown' ? state.cadence_status.replaceAll('_', ' ') : '';
     if (cadence) parts.push(`cadence ${cadence}`);
     return {
       lead: state.last_contact_at ? `Last contact ${humanizeDate(state.last_contact_at)}${channel ? ` via ${channel}` : ''}` : 'No recorded contact',
+      value: state.last_contact_at ? `${shortDate(state.last_contact_at)}${channel ? ` · ${channel}` : ''}` : 'No recorded contact',
       target: state.last_contact_at ? contactRefTarget(state.last_contact_ref) : undefined,
       rest: parts
     };
   });
+
+  // Recent: the five newest items from the person's busiest archive
+  // identity, the same interleaved stream the Timeline tab pages through.
+  let recentRows = $state<TimelineRow[]>([]);
+  let recentLoading = $state(false);
+  let recentError = $state<string | null>(null);
+  const recentClusterID = $derived(participantResolution?.clusters[0]?.canonicalID);
+  $effect(() => {
+    const id = recentClusterID;
+    recentRows = [];
+    recentError = null;
+    if (id === undefined) return;
+    const abort = new AbortController();
+    recentLoading = true;
+    void untrack(() => getRelationshipTimeline({ id }, {
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, limit: 5,
+    }, { ...client, signal: abort.signal })).then(({ data }) => {
+      if (abort.signal.aborted) return;
+      if (data) recentRows = Array.isArray(data.rows) ? data.rows : [];
+      else recentError = 'Recent activity is unavailable.';
+    }).catch(() => {
+      if (!abort.signal.aborted) recentError = 'Recent activity is unavailable.';
+    }).finally(() => {
+      if (!abort.signal.aborted) recentLoading = false;
+    });
+    return () => abort.abort();
+  });
+  const MEETING_KINDS = new Set(['calendar_event', 'meeting_transcript', 'meeting', 'event']);
+  function openRecent(row: TimelineRow): void {
+    const id = row.anchor_message_id;
+    if (id === undefined) return;
+    if (MEETING_KINDS.has(row.kind) && onOpenMeetingPage) onOpenMeetingPage(id);
+    else onOpenMessage?.(id);
+  }
+
+  // Context: filled facts only.
+  const currentEmployment = $derived.by((): Employment | undefined => {
+    const employments = entityController?.employments ?? [];
+    return employments.find((employment) => employment.is_current && employment.is_primary)
+      ?? employments.find((employment) => employment.is_current);
+  });
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const employmentText = $derived.by((): string => {
+    const current = currentEmployment;
+    if (!current) return '';
+    const start = current.start_date?.year
+      ? `since ${current.start_date.month ? `${MONTHS[current.start_date.month - 1]} ` : ''}${current.start_date.year}`
+      : '';
+    const organization = employmentOrganization(current.id) ?? `Organization ${current.organization_id}`;
+    return [organization, current.title ?? current.role, start].map((part) => part?.trim()).filter(Boolean).join(', ');
+  });
+  const locationFact = $derived.by((): { value: string; source: string } | undefined => {
+    const address = profile?.addresses?.find((candidate) => candidate.original_value?.trim());
+    if (address) {
+      const value = [address.locality, address.region, address.country_name].filter(Boolean).join(', ') || address.original_value;
+      return { value, source: address.envelope.source === 'user' ? '' : address.envelope.source.replaceAll('_', ' ') };
+    }
+    const location = currentEmployment?.location?.trim();
+    return location ? { value: location, source: 'employment' } : undefined;
+  });
+
+  // The header's overflow actions open the tab that holds each tool.
+  let renameRequest = $state(0);
+  let deleteRequest = $state(0);
+  async function openTool(tab: DetailTab, request: 'rename' | 'delete' | '' = ''): Promise<void> {
+    await selectTab(tab);
+    if (request === 'rename') renameRequest += 1;
+    if (request === 'delete') deleteRequest += 1;
+  }
 
   async function selectTab(next: DetailTab, focus = false): Promise<void> {
     ownTab = next;
@@ -213,8 +290,30 @@
 <section class="person-detail" aria-label="Person detail">
   {#if bundle.person || profile}
     <header class="person-header">
-      <h2 data-page-title>{displayName}</h2>
-      {#if subtitle}<p class="person-subtitle">{subtitle}</p>{/if}
+      <IdentityAvatar label={displayName} seed={`person:${personID}`} size={44} tone="accent" />
+      <div class="person-heading">
+        <h2 data-page-title class="person-name">{displayName}</h2>
+        {#if subtitle}<p class="person-subtitle">{subtitle}</p>{/if}
+      </div>
+      <div class="person-actions">
+        <Button size="sm" tone="info" surface="solid" label="Messages" ariaLabel={`Messages with ${displayName}`}
+          onclick={() => void selectTab('timeline')} />
+        <Button size="sm" surface="outline" label="Edit" ariaLabel={`Edit ${displayName}`}
+          onclick={() => void selectTab('profile')} />
+        <Menu align="end">
+          <MenuTrigger class="person-more" ariaLabel={`More actions for ${displayName}`} title="More actions">
+            <EllipsisIcon size={14} aria-hidden="true" />
+          </MenuTrigger>
+          <MenuContent ariaLabel={`More actions for ${displayName}`}>
+            <MenuItem onselect={() => void openTool('profile', 'rename')}>Rename</MenuItem>
+            <MenuItem onselect={() => void openTool('maintenance')}>Same person…</MenuItem>
+            <MenuItem onselect={() => void openTool('maintenance')}>Merge or split…</MenuItem>
+            <MenuItem onselect={() => void openTool('maintenance')}>Publish to CardDAV…</MenuItem>
+            <MenuItem onselect={() => void openTool('maintenance')}>Track for profile maintenance…</MenuItem>
+            <MenuItem tone="danger" onselect={() => void openTool('profile', 'delete')}>Delete…</MenuItem>
+          </MenuContent>
+        </Menu>
+      </div>
     </header>
   {/if}
   <div class="detail-tabs" role="tablist" aria-label="Person detail sections">
@@ -230,7 +329,7 @@
     <Notice tone="error" message={`${sectionNames[section as DirectoryReadSection]}: ${message}`} />
   {/each}
 
-  <div id={panelID(activeTab)} role="tabpanel" aria-labelledby={tabID(activeTab)} tabindex="0">
+  <div id={panelID(activeTab)} role="tabpanel" aria-labelledby={tabID(activeTab)} tabindex="0" class:overview={activeTab === 'overview'}>
     {#if activeTab === 'files'}
       {#if bundle.errors.files}
         <EmptyState title="No files to show" description={bundle.errors.files} />
@@ -262,7 +361,7 @@
       {/if}
     {:else if activeTab === 'profile'}
       {#if profileController}
-        <StructuredProfileSection {client} controller={profileController} {personID} />
+        <StructuredProfileSection {client} controller={profileController} {personID} {renameRequest} {deleteRequest} />
       {:else if profile?.names?.length}
         <section><h3 data-section-title>Names</h3><ul>{#each profile.names as name}<li>{nameText(name)} <small>{name.name_kind}</small></li>{/each}</ul></section>
       {/if}
@@ -320,34 +419,51 @@
         </section>
       </div>
     {:else}
-      <PersonReachBlock entries={reachEntries} {onAnnounce} />
-      {#if lastContact}
-        <p class="last-contact">
-          {#if lastContact.target?.kind === 'message' && onOpenMessage}
-            {@const messageID = lastContact.target.id}
-            <button type="button" class="link-button" onclick={() => onOpenMessage(messageID)}>{lastContact.lead}</button>
-          {:else if lastContact.target?.kind === 'meeting' && onOpenMeetingPage}
-            <a class="link-button" href={`/meetings/${lastContact.target.id}`} onclick={(event) => {
-              if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-              event.preventDefault();
-              onOpenMeetingPage(lastContact.target!.id);
-            }}>{lastContact.lead}</a>
-          {:else}<span>{lastContact.lead}</span>{/if}
-          {#each lastContact.rest as part}<span class="separator" aria-hidden="true">·</span><span>{part}</span>{/each}
-        </p>
+      <PersonReachBlock entries={reachEntries} {onAnnounce}>
+        {#snippet after()}
+          {#if lastContact}
+            <li class="last-contact" data-fact-row>
+              <span data-fact-label>Last contact</span>
+              <span data-fact-value data-mono>
+                {#if lastContact.target?.kind === 'message' && onOpenMessage}
+                  {@const messageID = lastContact.target.id}
+                  <button type="button" class="link-button" aria-label={lastContact.lead} onclick={() => onOpenMessage(messageID)}>{lastContact.value}</button>
+                {:else if lastContact.target?.kind === 'meeting' && onOpenMeetingPage}
+                  <a class="link-button" aria-label={lastContact.lead} href={`/meetings/${lastContact.target.id}`} onclick={(event) => {
+                    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                    event.preventDefault();
+                    onOpenMeetingPage(lastContact.target!.id);
+                  }}>{lastContact.value}</a>
+                {:else}<span aria-label={lastContact.lead}>{lastContact.value}</span>{/if}
+              </span>
+              <span data-fact-meta>{lastContact.rest.join(' · ')}</span>
+            </li>
+          {/if}
+        {/snippet}
+      </PersonReachBlock>
+      {#if bundle.person?.participant_ids?.length}
+        <RecentActivity rows={recentRows} loading={recentLoading || (!participantResolution && !identitiesUnavailable)}
+          error={identitiesUnavailable ? 'Recent activity is unavailable while identities fail to load.' : recentError}
+          onOpen={openRecent} onSeeAll={() => void selectTab('timeline')} />
       {/if}
-      <AttributeSummary
-        groups={profileController?.attributes?.attributes ?? bundle.attributes?.attributes ?? []}
-        onEdit={profileController ? () => void editAttributes() : undefined}
-      />
-      {#if entityController?.employments.length}
-        <section><h3 data-section-title>Organizations and employment</h3><ul>{#each entityController.employments as employment}<li><span>{employment.title ?? employment.role ?? 'Employment'} · {employmentOrganization(employment.id) ?? `Organization ${employment.organization_id}`}</span>{#if employment.is_current}<small class="employment-flag">Current</small>{/if}</li>{/each}</ul></section>
-      {/if}
-      {#if entityController?.relationships.length}
-        <section><h3 data-section-title>Relationships</h3><ul>{#each entityController.relationships as view}<li>{view.counterpart_display_name?.trim() || view.counterpart_vcard_uid || `Person ${view.counterpart_person_id}`} · {view.counterpart_label}</li>{/each}</ul></section>
-      {/if}
-      {#if bundle.activity}
-        <section><h3 data-section-title>Activity</h3><p>{bundle.activity.total_count} recorded days</p></section>
+      {#if locationFact || employmentText || (profileController?.attributes?.attributes ?? bundle.attributes?.attributes ?? []).some((group) => (group.current ?? []).length > 0)}
+        <section class="context" aria-label="Context">
+          <div data-section-line><h3 data-section-title>Context</h3><span>filled attributes only</span></div>
+          <ul data-fact-list>
+            {#if locationFact}
+              <li data-fact-row><span data-fact-label>Location</span><span data-fact-value>{locationFact.value}</span>
+                <span data-fact-meta>{locationFact.source}</span></li>
+            {/if}
+            {#if employmentText}
+              <li data-fact-row><span data-fact-label>Employment</span><span data-fact-value>{employmentText}</span>
+                <span data-fact-meta><button type="button" onclick={() => void selectTab('profile')}>History ({entityController?.employments.length ?? 0})</button></span></li>
+            {/if}
+          </ul>
+          <AttributeSummary
+            groups={profileController?.attributes?.attributes ?? bundle.attributes?.attributes ?? []}
+            onEdit={profileController ? () => void editAttributes() : undefined}
+          />
+        </section>
       {/if}
     {/if}
   </div>
@@ -356,24 +472,34 @@
 <style>
   .person-detail { padding: var(--space-4); display: grid; gap: var(--space-5); }
   [role="tabpanel"] { display: grid; gap: var(--space-5); outline: none; }
+  [role="tabpanel"].overview { gap: 0; }
   /* Text tabs: the selected one carries a 2px accent underline on the
    * strip's hairline; nothing is boxed. */
-  .detail-tabs { display: flex; gap: var(--space-2); border-bottom: 1px solid var(--hairline); }
-  [role="tab"] { margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; padding: var(--space-2) var(--space-3); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--font-size-sm); font-weight: 500; line-height: var(--leading-body); cursor: pointer; }
+  .detail-tabs { display: flex; gap: var(--space-6); border-bottom: 1px solid var(--hairline); }
+  [role="tab"] { margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; padding: 6px 0; background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--font-size-sm); font-weight: 500; line-height: var(--leading-body); cursor: pointer; }
   [role="tab"]:hover { color: var(--text-primary); }
   [role="tab"][aria-selected="true"] { border-bottom-color: var(--accent-blue); color: var(--text-primary); }
   [role="tab"]:focus-visible { outline: var(--focus-ring); outline-offset: -2px; border-radius: var(--radius-sm); }
   section { display: grid; gap: var(--space-2); }
   h2, h3, p, ul { margin: 0; }
   small { color: var(--text-muted); font-size: var(--font-size-sm); }
-  ul { padding-left: var(--space-5); }
-  .person-header { display: grid; gap: var(--space-1); }
-  .person-subtitle { color: var(--text-secondary); font-size: var(--font-size-sm); }
-  .last-contact { display: flex; flex-wrap: wrap; gap: var(--space-2); color: var(--text-secondary); font-size: var(--font-size-sm); }
+  ul:not([data-fact-list]) { padding-left: var(--space-5); }
+  .person-header { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-5); }
+  .person-heading { display: grid; min-width: 0; gap: 2px; }
+  .person-name { font-size: 20px; line-height: 1.2; }
+  .person-subtitle { color: var(--text-secondary); font-size: 13px; }
+  .person-actions { display: flex; align-self: center; align-items: center; gap: var(--space-2); margin-left: auto; }
+  .person-actions :global(.person-more) {
+    display: inline-flex; align-items: center; justify-content: center; height: 26px; padding: 0 8px;
+    border: 1px solid var(--edge); border-radius: var(--radius-md); background: var(--surface-panel);
+    color: var(--text-secondary); cursor: pointer;
+  }
+  .person-actions :global(.person-more:hover) { color: var(--text-primary); }
+  .context { display: grid; gap: 0; }
+  .last-contact .link-button { text-decoration: none; }
+  .last-contact .link-button:hover { text-decoration: underline; }
   .link-button { border: 0; padding: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
   .link-button:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
-  .separator { color: var(--text-muted); }
-  .employment-flag { margin-left: var(--space-2); }
   .maintenance-body { display: grid; gap: var(--space-6); }
   .profile-group { display: grid; gap: var(--space-3); padding-top: var(--space-4); border-top: 1px solid var(--hairline); }
   .state { color: var(--text-muted); font-size: var(--font-size-sm); }

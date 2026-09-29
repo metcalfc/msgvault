@@ -43,6 +43,30 @@ export interface ReachEntry {
   participantIDs: number[];
   /** The visible text is a service label because the value itself is an opaque key. */
   opaque?: boolean;
+  /** The address book's type for the value ("work", "cell"), when it has one. */
+  typeLabel?: string;
+  /** Where an address-book value came from ("user", "enrichment", …). */
+  source?: string;
+}
+
+/** The small-caps label a contact row leads with: the kind, a phone's
+ * mobile type, or the service a chat or profile lives on. */
+export function reachRowLabel(entry: ReachEntry): string {
+  if (entry.kind === 'phone') return /cell|mobile|iphone/i.test(entry.typeLabel ?? '') ? 'Mobile' : 'Phone';
+  if (entry.kind === 'email') return 'Email';
+  return entry.service ?? reachKindLabels[entry.kind];
+}
+
+/** The quiet facts a contact row trails with, before its copy action. */
+export function reachRowMeta(entry: ReachEntry): string[] {
+  const type = entry.typeLabel?.trim().toLowerCase();
+  return [
+    type && !(entry.kind === 'phone' && /cell|mobile|iphone/.test(type)) ? type : '',
+    entry.kind === 'phone' || entry.kind === 'email' ? entry.service ?? '' : '',
+    entry.name ?? '',
+    entry.note ?? '',
+    entry.observed ? 'observed' : entry.source === 'enrichment' ? 'from enrichment' : '',
+  ].filter(Boolean);
 }
 
 const serviceLabels: Record<string, string> = {
@@ -110,6 +134,8 @@ export function reachEntriesFromContactPoints(points: readonly PersonContactPoin
       kind, value, display: value, label: value, service,
       title: point.envelope.type_label || undefined,
       observed: point.envelope.source === 'archive_observation',
+      typeLabel: point.envelope.type_label || undefined,
+      source: point.envelope.source,
       participantIDs: []
     });
   }
@@ -158,11 +184,12 @@ export function reachEntriesFromIdentifiers({ identifiers, ownID, members = [], 
       key: keyFor(kind, identifier.value, serviceKey(identifier.service_slug, identifier.type)),
       kind,
       value: identifier.value,
-      display: opaque ? text.title : identifier.value,
+      // A phone's display value is the same number formatted for reading.
+      display: opaque ? text.title : kind === 'phone' && displayValue ? displayValue : identifier.value,
       label,
       service: opaque ? text.title : serviceLabelForSlug(identifier.service_slug),
       name: memberName && (opaque || memberName !== identifier.value) ? memberName
-        : !opaque && displayValue && displayValue !== identifier.value ? displayValue : undefined,
+        : !opaque && kind !== 'phone' && displayValue && displayValue !== identifier.value ? displayValue : undefined,
       note: [scope, relation].filter(Boolean).join(' · ') || undefined,
       title: opaque ? `${text.detail} · ${identifierTooltip(identifier)}` : identifierTooltip(identifier),
       observed: true,

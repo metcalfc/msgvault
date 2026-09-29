@@ -173,3 +173,120 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Fact rows: the person page's contact and context lines. A small-caps
+ * label column, a value (mono for addresses and numbers), and quiet
+ * trailing meta that can hold a copy action.
+ *
+ *   data-fact-list     the list
+ *   data-fact-row      label / value / meta, hairline below
+ *   data-fact-label    11px small-caps label
+ *   data-fact-value    13px value; add data-mono for addresses
+ *   data-fact-meta     11px muted trailing meta
+ *   data-section-line  a section title with a muted note beside it */
+:where([data-fact-list]) {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+:where([data-fact-row]) {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 7px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+:where([data-fact-label]) {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  line-height: var(--leading-body);
+  text-transform: uppercase;
+}
+
+:where([data-fact-value]) {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: var(--leading-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-fact-value][data-mono]) {
+  font-size: 12.5px;
+}
+
+:where([data-fact-meta]) {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: var(--leading-body);
+  text-align: right;
+}
+
+:where([data-fact-meta] button) {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+:where([data-fact-meta] button:hover) {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+:where([data-fact-meta] button:focus-visible) {
+  border-radius: var(--radius-sm);
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+
+:where([data-section-line]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-5);
+  margin-top: 18px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+:where([data-section-line] > span) {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+:where([data-section-line] button) {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--link-ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+:where([data-section-line] button:focus-visible) {
+  border-radius: var(--radius-sm);
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+
+@media (max-width: 640px) {
+  :where([data-fact-row]) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  :where([data-fact-row] > [data-fact-label]) {
+    grid-column: 1 / -1;
+  }
+}
