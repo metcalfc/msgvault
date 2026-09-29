@@ -703,7 +703,8 @@
   const DIRECTIONAL_CONTROLS = [
     'button', 'select', 'input', 'textarea', '[role="radio"]', '[role="option"]', '[role="separator"]',
     '[role="slider"]', '[role="spinbutton"]', '[role="tab"]', '[role="menuitem"]', '[role="treeitem"]',
-    '[role="button"]', '[role="combobox"]'
+    // Kit comboboxes are inputs or buttons, both covered above.
+    '[role="button"]'
   ].join(', ');
   function preserveNativeControlKey(event: KeyboardEvent): void {
     if (!(event.target instanceof Element)) return;
