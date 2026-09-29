@@ -12,6 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.kenn.io/msgvault/internal/daemonclient"
+	"go.kenn.io/msgvault/internal/store"
+	"go.kenn.io/msgvault/internal/textutil"
 	apiclient "go.kenn.io/msgvault/pkg/client"
 	"go.kenn.io/msgvault/pkg/client/generated"
 )
@@ -67,6 +69,17 @@ var personAttributesListCmd = &cobra.Command{
 		if personAttributesJSONOutput {
 			return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), resp.JSON200, json.Deterministic(true))
 		}
+		var values []generated.AttributeValue
+		for _, group := range resp.JSON200.Attributes {
+			rows := group.Current
+			if personAttributesHistory {
+				rows = group.History
+			}
+			for _, value := range rows {
+				values = append(values, value.Value)
+			}
+		}
+		labels := resolveCLIEntityLabels(cmd.Context(), client, attributeRecordLabelRequest(values...))
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 		_, _ = fmt.Fprintln(w, "SLUG\tORDINAL\tVALUE\tSOURCE\tACTIVE FROM\tACTIVE UNTIL\tMODE")
 		for _, group := range resp.JSON200.Attributes {
@@ -82,7 +95,7 @@ var personAttributesListCmd = &cobra.Command{
 			for _, value := range rows {
 				_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%s\n",
 					value.DefinitionSlug, value.Ordinal,
-					formatCLIAttributeValue(value.Value), value.Source,
+					formatCLIAttributeValue(value.Value, labels), value.Source,
 					value.ActiveFrom.Format(time.RFC3339),
 					formatCLIOptionalTime(value.ActiveUntil), mode)
 			}
@@ -187,7 +200,7 @@ var personAttributesSetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return writeCLIPersonAttributeWrite(cmd, resp.JSON200)
+		return writeCLIPersonAttributeWrite(cmd, client, resp.JSON200)
 	},
 }
 
@@ -239,7 +252,7 @@ var personAttributesClearCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return writeCLIPersonAttributeWrite(cmd, resp.JSON200)
+		return writeCLIPersonAttributeWrite(cmd, client, resp.JSON200)
 	},
 }
 
@@ -329,7 +342,21 @@ func applyCLIScalarAttributeValue(
 	return nil
 }
 
-func formatCLIAttributeValue(value generated.AttributeValue) string {
+// attributeRecordLabelRequest collects the people that record-reference
+// attribute values point at, so one lookup can name them all.
+func attributeRecordLabelRequest(values ...generated.AttributeValue) store.EntityLabelRequest {
+	var request store.EntityLabelRequest
+	for _, value := range values {
+		if value.RecordType != nil && *value.RecordType == personValue && value.RecordID != nil {
+			request.PersonIDs = append(request.PersonIDs, *value.RecordID)
+		}
+	}
+	return request
+}
+
+// formatCLIAttributeValue renders one attribute value. A reference to a
+// person record renders as that person's label with its ID.
+func formatCLIAttributeValue(value generated.AttributeValue, labels cliEntityLabels) string {
 	switch {
 	case value.Text != nil:
 		return *value.Text
@@ -344,7 +371,10 @@ func formatCLIAttributeValue(value generated.AttributeValue) string {
 	case value.Timestamp != nil:
 		return value.Timestamp.Format(time.RFC3339)
 	case value.RecordType != nil && value.RecordID != nil:
-		return fmt.Sprintf("%s:%d", *value.RecordType, *value.RecordID)
+		if *value.RecordType == personValue {
+			return labels.person(*value.RecordID)
+		}
+		return fmt.Sprintf("%s:%d", textutil.SanitizeTerminal(*value.RecordType), *value.RecordID)
 	case len(value.JSON) > 0:
 		return string(value.JSON)
 	default:
@@ -360,7 +390,7 @@ func formatCLIOptionalTime(value *time.Time) string {
 }
 
 func writeCLIPersonAttributeWrite(
-	cmd *cobra.Command, write *generated.PersonAttributeWrite,
+	cmd *cobra.Command, labeler cliEntityLabeler, write *generated.PersonAttributeWrite,
 ) error {
 	if write == nil {
 		return errors.New("person attribute response was empty")
@@ -368,6 +398,14 @@ func writeCLIPersonAttributeWrite(
 	if personAttributesJSONOutput {
 		return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), write, json.Deterministic(true))
 	}
+	var values []generated.AttributeValue
+	if write.Superseded != nil {
+		values = append(values, write.Superseded.Value)
+	}
+	if write.Value != nil {
+		values = append(values, write.Value.Value)
+	}
+	labels := resolveCLIEntityLabels(cmd.Context(), labeler, attributeRecordLabelRequest(values...))
 	prefix := ""
 	if write.DryRun {
 		prefix = "Dry run: "
@@ -376,14 +414,14 @@ func writeCLIPersonAttributeWrite(
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 			"%sSuperseded %s ordinal %d: %s (active until %s)\n",
 			prefix, write.Superseded.DefinitionSlug, write.Superseded.Ordinal,
-			formatCLIAttributeValue(write.Superseded.Value),
+			formatCLIAttributeValue(write.Superseded.Value, labels),
 			formatCLIOptionalTime(write.Superseded.ActiveUntil))
 	}
 	if write.Value != nil {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 			"%sSet %s ordinal %d: %s (source %s, active from %s)\n",
 			prefix, write.Value.DefinitionSlug, write.Value.Ordinal,
-			formatCLIAttributeValue(write.Value.Value), write.Value.Source,
+			formatCLIAttributeValue(write.Value.Value, labels), write.Value.Source,
 			write.Value.ActiveFrom.Format(time.RFC3339))
 	}
 	return nil

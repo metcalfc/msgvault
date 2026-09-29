@@ -6,12 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 	"go.kenn.io/msgvault/internal/daemonclient"
+	"go.kenn.io/msgvault/internal/store"
+	"go.kenn.io/msgvault/internal/textutil"
 	apiclient "go.kenn.io/msgvault/pkg/client"
 	"go.kenn.io/msgvault/pkg/client/generated"
 )
@@ -44,7 +45,7 @@ var employmentAddCmd = &cobra.Command{Use: "add", Short: "Add an employment reco
 	if err != nil {
 		return err
 	}
-	return writeCLIEmployment(cmd, resp.JSON201)
+	return writeCLIEmployment(cmd, client, resp.JSON201)
 }}
 
 var employmentShowCmd = &cobra.Command{Use: "show <id>", Short: "Show an employment record", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
@@ -61,7 +62,7 @@ var employmentShowCmd = &cobra.Command{Use: "show <id>", Short: "Show an employm
 	if err != nil {
 		return err
 	}
-	return writeCLIEmployment(cmd, resp.JSON200)
+	return writeCLIEmployment(cmd, client, resp.JSON200)
 }}
 
 var employmentSetCmd = &cobra.Command{Use: "set <id>", Short: "Update an employment record's mutable fields", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
@@ -94,7 +95,7 @@ var employmentSetCmd = &cobra.Command{Use: "set <id>", Short: "Update an employm
 	if err != nil {
 		return err
 	}
-	return writeCLIEmployment(cmd, resp.JSON200)
+	return writeCLIEmployment(cmd, client, resp.JSON200)
 }}
 
 var employmentEndCmd = &cobra.Command{Use: "end <id>", Short: "End an employment without deleting its history", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
@@ -124,7 +125,7 @@ var employmentEndCmd = &cobra.Command{Use: "end <id>", Short: "End an employment
 	if err != nil {
 		return err
 	}
-	return writeCLIEmployment(cmd, resp.JSON200)
+	return writeCLIEmployment(cmd, client, resp.JSON200)
 }}
 
 var employmentSetPrimaryCmd = &cobra.Command{Use: "set-primary <id>", Short: "Set the primary current employment", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
@@ -150,7 +151,7 @@ var employmentSetPrimaryCmd = &cobra.Command{Use: "set-primary <id>", Short: "Se
 	if err != nil {
 		return err
 	}
-	return writeCLIEmployment(cmd, resp.JSON200)
+	return writeCLIEmployment(cmd, client, resp.JSON200)
 }}
 
 var employmentDeleteCmd = &cobra.Command{Use: "delete <id>", Short: "Permanently delete an employment record", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
@@ -224,7 +225,7 @@ var employmentListCmd = &cobra.Command{Use: cmdUseList, Short: "List employment 
 		if resp.JSON200 == nil {
 			return errors.New("employment list response was empty")
 		}
-		return writeCLIEmploymentList(cmd, resp.JSON200, true, employmentJSON)
+		return writeCLIEmploymentList(cmd, client, resp.JSON200, true, employmentJSON)
 	}
 	resp, getErr := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.ListOrganizationEmploymentsResp, error) {
 		return api.ListOrganizationEmploymentsWithResponse(cmd.Context(), &generated.ListOrganizationEmploymentsRequestOptions{PathParams: &generated.ListOrganizationEmploymentsPath{ID: id}, Query: &generated.ListOrganizationEmploymentsQuery{CurrentOnly: &currentOnly, Limit: limit, Offset: offset}})
@@ -235,7 +236,7 @@ var employmentListCmd = &cobra.Command{Use: cmdUseList, Short: "List employment 
 	if resp.JSON200 == nil {
 		return errors.New("employment list response was empty")
 	}
-	return writeCLIEmploymentList(cmd, resp.JSON200, false, employmentJSON)
+	return writeCLIEmploymentList(cmd, client, resp.JSON200, false, employmentJSON)
 }}
 
 func getCLIEmployment(cmd *cobra.Command, client *daemonclient.Client, id int64) (*generated.GetEmploymentResp, error) {
@@ -427,18 +428,21 @@ func cliPartialDateString(value *generated.PartialDate) (string, bool) {
 	return formatCLIPartialDate(value), true
 }
 
-func writeCLIEmployment(cmd *cobra.Command, employment *generated.Employment) error {
+func writeCLIEmployment(cmd *cobra.Command, labeler cliEntityLabeler, employment *generated.Employment) error {
 	if employment == nil {
 		return errors.New("employment response was empty")
 	}
 	if employmentJSON {
 		return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), employment, json.Deterministic(true))
 	}
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Employment: %d\nPerson: %d\nOrganization: %d\nTitle: %s\nRole: %s\nDepartment: %s\nStart date: %s\nEnd date: %s\nCurrent: %t\nPrimary: %t\nSource: %s\nRevision: %d\n", employment.ID, employment.PersonID, employment.OrganizationID, cliString(employment.Title), cliString(employment.Role), cliString(employment.Department), formatCLIPartialDate(employment.StartDate), formatCLIPartialDate(employment.EndDate), employment.IsCurrent, employment.IsPrimary, employment.Source, employment.Revision)
+	labels := resolveCLIEntityLabels(cmd.Context(), labeler, store.EntityLabelRequest{
+		PersonIDs: []int64{employment.PersonID}, OrganizationIDs: []int64{employment.OrganizationID},
+	})
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Employment: %d\nPerson: %s\nOrganization: %s\nTitle: %s\nRole: %s\nDepartment: %s\nStart date: %s\nEnd date: %s\nCurrent: %t\nPrimary: %t\nSource: %s\nRevision: %d\n", employment.ID, labels.person(employment.PersonID), labels.organization(employment.OrganizationID), cliString(employment.Title), cliString(employment.Role), cliString(employment.Department), formatCLIPartialDate(employment.StartDate), formatCLIPartialDate(employment.EndDate), employment.IsCurrent, employment.IsPrimary, employment.Source, employment.Revision)
 	return nil
 }
 func writeCLIEmploymentList(
-	cmd *cobra.Command, response *generated.EmploymentsResponse,
+	cmd *cobra.Command, labeler cliEntityLabeler, response *generated.EmploymentsResponse,
 	personScoped, jsonOutput bool,
 ) error {
 	if response == nil {
@@ -449,22 +453,34 @@ func writeCLIEmploymentList(
 	}
 
 	// A person-scoped listing distinguishes rows by employer; an
-	// organization-scoped listing distinguishes them by employee.
-	// Organizations are named alongside their IDs when the daemon sends them.
+	// organization-scoped listing distinguishes them by employee. The daemon
+	// names organizations in the response; anything it did not name is
+	// resolved in one entity-label lookup.
 	organizationNames := make(map[int64]string, len(response.Organizations))
 	for _, organization := range response.Organizations {
-		organizationNames[organization.ID] = organization.Name
+		if name := strings.TrimSpace(textutil.SanitizeTerminal(organization.Name)); name != "" {
+			organizationNames[organization.ID] = name
+		}
 	}
+	var request store.EntityLabelRequest
+	for _, employment := range response.Employments {
+		if !personScoped {
+			request.PersonIDs = append(request.PersonIDs, employment.PersonID)
+		} else if organizationNames[employment.OrganizationID] == "" {
+			request.OrganizationIDs = append(request.OrganizationIDs, employment.OrganizationID)
+		}
+	}
+	labels := resolveCLIEntityLabels(cmd.Context(), labeler, request)
 	counterpartHeader := "ORGANIZATION"
 	counterpart := func(employment generated.Employment) string {
 		if name := organizationNames[employment.OrganizationID]; name != "" {
-			return fmt.Sprintf("%s (%d)", name, employment.OrganizationID)
+			return cliNamedID(name, "", employment.OrganizationID)
 		}
-		return strconv.FormatInt(employment.OrganizationID, 10)
+		return labels.organization(employment.OrganizationID)
 	}
 	if !personScoped {
 		counterpartHeader = "PERSON"
-		counterpart = func(employment generated.Employment) string { return strconv.FormatInt(employment.PersonID, 10) }
+		counterpart = func(employment generated.Employment) string { return labels.person(employment.PersonID) }
 	}
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "ID\t"+counterpartHeader+"\tTITLE\tSTART\tEND\tCURRENT\tPRIMARY")

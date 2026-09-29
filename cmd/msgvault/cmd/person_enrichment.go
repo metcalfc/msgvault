@@ -224,10 +224,15 @@ func newPersonEnrichmentStatusCommand(deps personEnrichmentCommandDeps) *cobra.C
 			if err != nil {
 				return fmt.Errorf("write person enrichment status: %w", err)
 			}
+			var request store.EntityLabelRequest
+			for _, judgment := range output.IdentityUncertain {
+				request.PersonIDs = append(request.PersonIDs, judgment.PersonID)
+			}
+			labels := resolveCLIEntityLabels(command.Context(), contextEntityLabeler{st: st}, request)
 			for _, judgment := range output.IdentityUncertain {
 				_, _ = fmt.Fprintf(command.OutOrStdout(),
-					"- attempt %d person %d: exact=%s name_compatible=%.2f company_same=%.2f name_conflict=%.2f (%s)\n",
-					judgment.AttemptID, judgment.PersonID, judgment.ExactClass, judgment.NameCompatible,
+					"- attempt %d person %s: exact=%s name_compatible=%.2f company_same=%.2f name_conflict=%.2f (%s)\n",
+					judgment.AttemptID, labels.person(judgment.PersonID), judgment.ExactClass, judgment.NameCompatible,
 					judgment.CompanySame, judgment.NameConflict, judgment.JudgedAt.Format("2006-01-02"))
 			}
 			return nil

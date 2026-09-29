@@ -6,6 +6,8 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -16,6 +18,7 @@ import (
 	personresolver "go.kenn.io/msgvault/internal/personscope/resolver"
 	"go.kenn.io/msgvault/internal/query"
 	"go.kenn.io/msgvault/internal/store"
+	"go.kenn.io/msgvault/internal/textutil"
 	"go.kenn.io/msgvault/internal/vector/visual"
 	"go.kenn.io/msgvault/pkg/client/generated"
 )
@@ -31,6 +34,8 @@ type personFilesClient interface {
 	SearchPersonFiles(ctx context.Context, options daemonclient.PersonFileSearchOptions) (generated.PersonFileSearchHTTPResponse, error)
 	SearchDocuments(ctx context.Context, request store.DocumentSearchRequest) (store.DocumentSearchResponse, error)
 	SearchVisualAttachmentsFiltered(ctx context.Context, options daemonclient.VisualSearchOptions) (*visual.SearchResponse, error)
+	EntityLabels(ctx context.Context, request store.EntityLabelRequest) (store.EntityLabels, error)
+	GetCLIAccounts(ctx context.Context) ([]daemonclient.CLIAccount, error)
 }
 
 type personFilesCommandDeps struct {
@@ -202,7 +207,7 @@ func newPersonFilesCommand(deps personFilesCommandDeps) *cobra.Command {
 			if jsonOutput {
 				return json.MarshalEncode(jsontext.NewEncoder(command.OutOrStdout()), output, json.Deterministic(true))
 			}
-			return writePersonFilesOutput(command, output)
+			return writePersonFilesOutput(command, output, resolvePersonFilesNames(command.Context(), client, output))
 		},
 	}
 	command.Flags().StringSliceVar(&rawDirections, "direction", nil, "Person relation: from_person, to_person, or group")
@@ -256,7 +261,71 @@ func personFilesVisualMIMEPrefix(families []query.FileMIMEFamily) (string, error
 	}
 }
 
-func writePersonFilesOutput(command *cobra.Command, output personFilesOutput) error {
+// personFilesNames holds what the human table prints in place of bare
+// participant and source IDs.
+type personFilesNames struct {
+	labels  cliEntityLabels
+	sources map[int64]string
+}
+
+// resolvePersonFilesNames names the participants and sources the results
+// carry. Metadata rows already name their source; the semantic lanes carry
+// only a source ID, so their sources are named from the account list. Every
+// lookup degrades to printing IDs.
+func resolvePersonFilesNames(
+	ctx context.Context, client personFilesClient, output personFilesOutput,
+) personFilesNames {
+	names := personFilesNames{sources: map[int64]string{}}
+	var request store.EntityLabelRequest
+	needAccounts := false
+	if output.Metadata != nil {
+		for _, result := range output.Metadata.Files {
+			request.ParticipantIDs = append(request.ParticipantIDs, result.PersonProvenance.ParticipantIds...)
+			if identifier := strings.TrimSpace(textutil.SanitizeTerminal(result.SourceIdentifier)); identifier != "" {
+				names.sources[result.SourceID] = identifier
+			}
+		}
+	}
+	if output.Documents != nil {
+		for _, result := range output.Documents.Results {
+			if result.PersonProvenance != nil {
+				request.ParticipantIDs = append(request.ParticipantIDs, result.PersonProvenance.ParticipantIDs...)
+			}
+			needAccounts = needAccounts || names.sources[result.SourceID] == ""
+		}
+	}
+	if output.Visual != nil {
+		for _, result := range output.Visual.Results {
+			if result.PersonProvenance != nil {
+				request.ParticipantIDs = append(request.ParticipantIDs, result.PersonProvenance.ParticipantIDs...)
+			}
+			needAccounts = needAccounts || names.sources[result.SourceID] == ""
+		}
+	}
+	names.labels = resolveCLIEntityLabels(ctx, client, request)
+	if needAccounts {
+		accounts, err := client.GetCLIAccounts(ctx)
+		if err != nil {
+			slog.Debug("account list unavailable; printing source IDs", "error", err)
+		}
+		for _, account := range accounts {
+			if identifier := strings.TrimSpace(textutil.SanitizeTerminal(account.Email)); identifier != "" &&
+				names.sources[account.ID] == "" {
+				names.sources[account.ID] = identifier
+			}
+		}
+	}
+	return names
+}
+
+func (n personFilesNames) source(id int64) string {
+	if identifier := n.sources[id]; identifier != "" {
+		return identifier
+	}
+	return strconv.FormatInt(id, 10)
+}
+
+func writePersonFilesOutput(command *cobra.Command, output personFilesOutput, names personFilesNames) error {
 	w := tabwriter.NewWriter(command.OutOrStdout(), 0, 0, 2, ' ', 0)
 	for _, lane := range []string{personFilesLaneMetadata, personFilesLaneDocuments, personFilesLaneVisual} {
 		status, selected := output.Availability[lane]
@@ -274,29 +343,29 @@ func writePersonFilesOutput(command *cobra.Command, output personFilesOutput) er
 	_, _ = fmt.Fprintln(w, "LANE\tRANK\tATTACHMENT\tMESSAGE\tCONVERSATION\tSOURCE\tENTRY\tSOURCE-MESSAGE\tDATE\tFILE\tPARTICIPANTS\tROLES\tDIRECTIONS\tMATCH")
 	if output.Metadata != nil {
 		for i, result := range output.Metadata.Files {
-			_, _ = fmt.Fprintf(w, "metadata\t%d\t%d\t%d\t%d\t%d\t%s\t-\t%s\t%s\t%v\t%v\t%v\t-\n",
-				i+1, result.ID, result.MessageID, result.ConversationID, result.SourceID, result.EntryKey,
+			_, _ = fmt.Fprintf(w, "metadata\t%d\t%d\t%d\t%d\t%s\t%s\t-\t%s\t%s\t%s\t%v\t%v\t-\n",
+				i+1, result.ID, result.MessageID, result.ConversationID, names.source(result.SourceID), result.EntryKey,
 				personFilesTimestamp(&result.OccurredAt), pointerString(result.Filename),
-				result.PersonProvenance.ParticipantIds, result.PersonProvenance.Roles,
+				names.labels.participantList(result.PersonProvenance.ParticipantIds), result.PersonProvenance.Roles,
 				result.PersonProvenance.Directions)
 		}
 	}
 	if output.Documents != nil {
 		for _, result := range output.Documents.Results {
 			participants, roles, directions := personProvenanceColumns(result.PersonProvenance)
-			_, _ = fmt.Fprintf(w, "documents\t%d\t%d\t%d\t%d\t%d\t-\t%s\t%s\t%s\t%v\t%v\t%v\t%s\n",
-				result.Rank, result.AttachmentID, result.MessageID, result.ConversationID, result.SourceID,
+			_, _ = fmt.Fprintf(w, "documents\t%d\t%d\t%d\t%d\t%s\t-\t%s\t%s\t%s\t%s\t%v\t%v\t%s\n",
+				result.Rank, result.AttachmentID, result.MessageID, result.ConversationID, names.source(result.SourceID),
 				result.SourceMessageID, personFilesTimestamp(result.OccurredAt), result.Filename,
-				participants, roles, directions, strings.Join(strings.Fields(result.Excerpt), " "))
+				names.labels.participantList(participants), roles, directions, strings.Join(strings.Fields(result.Excerpt), " "))
 		}
 	}
 	if output.Visual != nil {
 		for _, result := range output.Visual.Results {
 			participants, roles, directions := personProvenanceColumns(result.PersonProvenance)
-			_, _ = fmt.Fprintf(w, "visual\t%d\t%d\t%d\t%d\t%d\t-\t%s\t%s\t%s\t%v\t%v\t%v\t%.4f\n",
-				result.Rank, result.AttachmentID, result.MessageID, result.ConversationID, result.SourceID,
+			_, _ = fmt.Fprintf(w, "visual\t%d\t%d\t%d\t%d\t%s\t-\t%s\t%s\t%s\t%s\t%v\t%v\t%.4f\n",
+				result.Rank, result.AttachmentID, result.MessageID, result.ConversationID, names.source(result.SourceID),
 				result.SourceMessageID, personFilesTimestamp(&result.SentAt), result.Filename,
-				participants, roles, directions, result.Score)
+				names.labels.participantList(participants), roles, directions, result.Score)
 		}
 	}
 	if err := w.Flush(); err != nil {

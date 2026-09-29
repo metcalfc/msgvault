@@ -21,7 +21,7 @@ func TestEmploymentAddSendsPartialDatesAndOmitsUndecidedPrimary(t *testing.T) {
 	require := require.New(t)
 	var body map[string]any
 	var decodeErr error
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(withoutEntityLabels(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(http.MethodPost, r.Method)
 		assert.Equal("/api/v1/employments", r.URL.Path)
 		decoder := json.NewDecoder(r.Body)
@@ -45,6 +45,8 @@ func TestEmploymentAddSendsPartialDatesAndOmitsUndecidedPrimary(t *testing.T) {
 	assert.Contains(output, "Employment: 9")
 	assert.Contains(output, "Title: Staff Engineer")
 	assert.Contains(output, "Primary: true")
+	assert.Contains(output, "Person: Unknown person (3)",
+		"a daemon without entity labels degrades to unnamed output")
 }
 
 func TestEmploymentAddRejectsConflictingPrimaryFlags(t *testing.T) {
@@ -282,7 +284,7 @@ func TestEmploymentListByOrganizationShowsPersonColumn(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	var rawQuery string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(withoutEntityLabels(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal("/api/v1/organizations/4/employments", r.URL.Path)
 		rawQuery = r.URL.RawQuery
 		w.Header().Set("Content-Type", "application/json")
@@ -301,8 +303,10 @@ func TestEmploymentListByOrganizationShowsPersonColumn(t *testing.T) {
 	assert.NotContains(output, "ORGANIZATION")
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 	require.Len(lines, 3)
-	assert.Regexp(`^9\s+3\s+Staff Engineer`, lines[1])
-	assert.Regexp(`^8\s+7\s+Advisor`, lines[2])
+	// A daemon without the entity-labels endpoint leaves employees unnamed;
+	// the listing still succeeds and keeps each person's ID.
+	assert.Regexp(`^9\s+Unknown person \(3\)\s+Staff Engineer`, lines[1])
+	assert.Regexp(`^8\s+Unknown person \(7\)\s+Advisor`, lines[2])
 }
 
 func TestEmploymentListRequiresPersonOrOrganization(t *testing.T) {

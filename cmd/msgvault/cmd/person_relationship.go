@@ -6,12 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 	"go.kenn.io/msgvault/internal/daemonclient"
+	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/textutil"
 	apiclient "go.kenn.io/msgvault/pkg/client"
 	"go.kenn.io/msgvault/pkg/client/generated"
@@ -279,7 +279,7 @@ var personRelationshipListCmd = &cobra.Command{
 		for _, view := range resp.JSON200.Relationships {
 			_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				view.Relationship.ID, formatCLIRelationshipCounterpart(view.CounterpartPersonID,
-					view.CounterpartDisplayName, view.CounterpartVcardUID), view.CounterpartLabel,
+					view.CounterpartDisplayName), view.CounterpartLabel,
 				view.Direction, formatCLIPartialDate(view.Relationship.StartDate),
 				formatCLIPartialDate(view.Relationship.EndDate), view.Relationship.Status)
 		}
@@ -328,7 +328,7 @@ var personRelationshipAddCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return writeCLIPersonRelationship(cmd, resp.JSON201)
+		return writeCLIPersonRelationship(cmd, client, resp.JSON201)
 	},
 }
 
@@ -370,7 +370,7 @@ var personRelationshipEndCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return writeCLIPersonRelationship(cmd, resp.JSON200)
+		return writeCLIPersonRelationship(cmd, client, resp.JSON200)
 	},
 }
 
@@ -446,14 +446,22 @@ var personRelationshipReviewsCmd = &cobra.Command{
 		if personJSON {
 			return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), resp.JSON200.Reviews, json.Deterministic(true))
 		}
+		var request store.EntityLabelRequest
+		for _, review := range resp.JSON200.Reviews {
+			request.PersonIDs = append(request.PersonIDs, review.PersonID)
+			if review.MatchedPersonID != nil {
+				request.PersonIDs = append(request.PersonIDs, *review.MatchedPersonID)
+			}
+		}
+		labels := resolveCLIEntityLabels(cmd.Context(), client, request)
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 		_, _ = fmt.Fprintln(w, "ID\tPERSON\tRELATED VALUE\tTYPE\tKIND\tMATCHED\tSTATUS")
 		for _, review := range resp.JSON200.Reviews {
 			matched := "-"
 			if review.MatchedPersonID != nil {
-				matched = strconv.FormatInt(*review.MatchedPersonID, 10)
+				matched = labels.person(*review.MatchedPersonID)
 			}
-			_, _ = fmt.Fprintf(w, "%d\t%d\t%s\t%s\t%s\t%s\t%s\n", review.ID, review.PersonID,
+			_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n", review.ID, labels.person(review.PersonID),
 				review.RawRelatedValue, dashIfEmpty(review.RawRelatedType), review.ValueKind, matched, review.Status)
 		}
 		return w.Flush()
@@ -494,16 +502,22 @@ func writeCLIRelationshipType(cmd *cobra.Command, relationshipType *generated.Re
 	return nil
 }
 
-func writeCLIPersonRelationship(cmd *cobra.Command, edge *generated.PersonRelationship) error {
+func writeCLIPersonRelationship(
+	cmd *cobra.Command, labeler cliEntityLabeler, edge *generated.PersonRelationship,
+) error {
 	if edge == nil {
 		return errors.New("relationship response was empty")
 	}
 	if personJSON {
 		return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), edge, json.Deterministic(true))
 	}
+	labels := resolveCLIEntityLabels(cmd.Context(), labeler, store.EntityLabelRequest{
+		PersonIDs: []int64{edge.SourcePersonID, edge.TargetPersonID},
+	})
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-		"Relationship: %d\nPerson %d is the %s of person %d\nFrom: %s\nUntil: %s\nStatus: %s\nRevision: %d\n",
-		edge.ID, edge.SourcePersonID, edge.ForwardLabel, edge.TargetPersonID,
+		"Relationship: %d\n%s is the %s of %s\nFrom: %s\nUntil: %s\nStatus: %s\nRevision: %d\n",
+		edge.ID, labels.person(edge.SourcePersonID), textutil.SanitizeTerminal(edge.ForwardLabel),
+		labels.person(edge.TargetPersonID),
 		formatCLIPartialDate(edge.StartDate), formatCLIPartialDate(edge.EndDate), edge.Status, edge.Revision)
 	return nil
 }
@@ -536,18 +550,11 @@ func formatCLIPartialDate(value *generated.PartialDate) string {
 	return fmt.Sprintf("%04d-%02d-%02d", *value.Year, *value.Month, *value.Day)
 }
 
-func formatCLIRelationshipCounterpart(id int64, displayName *string, vcardUID string) string {
-	if displayName != nil && strings.TrimSpace(*displayName) != "" {
-		if safe := textutil.SanitizeTerminal(*displayName); strings.TrimSpace(safe) != "" {
-			return fmt.Sprintf("%d (%s)", id, safe)
-		}
-	}
-	if strings.TrimSpace(vcardUID) != "" {
-		if safe := textutil.SanitizeTerminal(vcardUID); strings.TrimSpace(safe) != "" {
-			return fmt.Sprintf("%d (%s)", id, safe)
-		}
-	}
-	return strconv.FormatInt(id, 10)
+// formatCLIRelationshipCounterpart renders a counterpart as "Name (ID)". The
+// daemon fills the display name with the counterpart's durable person label;
+// a vCard UID is an opaque key and never stands in for a name.
+func formatCLIRelationshipCounterpart(id int64, displayName *string) string {
+	return cliNamedID(cliOptionalName(displayName), "Unknown person", id)
 }
 
 func dashIfEmpty(value string) string {

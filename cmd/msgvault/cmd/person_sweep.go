@@ -30,6 +30,23 @@ type personSweepCommandStore interface {
 	ListPersonSweepAttempts(ctx context.Context, filter peoplesweep.AttemptFilter) ([]peoplesweep.AttemptSummary, error)
 	PersonSweepOperationalStatus(ctx context.Context) (peoplesweep.OperationalStatus, error)
 	BuildPersonFactCatalogContext(ctx context.Context, includeSensitive bool) (personfacts.Catalog, error)
+	EntityLabelsContext(ctx context.Context, request store.EntityLabelRequest) (store.EntityLabels, error)
+}
+
+// personSweepAttemptLabels names the people in a history listing for the
+// human table; JSON output keeps bare IDs and needs no lookup.
+func personSweepAttemptLabels(
+	ctx context.Context, st entityLabelsContextStore,
+	attempts []peoplesweep.AttemptSummary, jsonOutput bool,
+) cliEntityLabels {
+	if jsonOutput {
+		return cliEntityLabels{}
+	}
+	var request store.EntityLabelRequest
+	for _, attempt := range attempts {
+		request.PersonIDs = append(request.PersonIDs, attempt.PersonID)
+	}
+	return resolveCLIEntityLabels(ctx, contextEntityLabeler{st: st}, request)
 }
 
 type personSweepCommandDeps struct {
@@ -303,7 +320,8 @@ func newPersonSweepHistoryCommand(deps personSweepCommandDeps) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return writePersonSweepHistory(command.OutOrStdout(), safePersonSweepHistory(runs, attempts), jsonOutput)
+			labels := personSweepAttemptLabels(command.Context(), commandStore, attempts, jsonOutput)
+			return writePersonSweepHistory(command.OutOrStdout(), safePersonSweepHistory(runs, attempts), labels, jsonOutput)
 		},
 	}
 	command.Flags().Int64Var(&personID, "person", 0, "Filter by durable person ID")
@@ -395,7 +413,9 @@ func personSweepUsage(usage peoplesweep.Usage) personSweepUsageOutput {
 	}
 }
 
-func writePersonSweepHistory(w io.Writer, output personSweepHistoryOutput, jsonOutput bool) error {
+func writePersonSweepHistory(
+	w io.Writer, output personSweepHistoryOutput, labels cliEntityLabels, jsonOutput bool,
+) error {
 	if jsonOutput {
 		return json.MarshalEncode(jsontext.NewEncoder(w), output, json.Deterministic(true))
 	}
@@ -406,8 +426,8 @@ func writePersonSweepHistory(w io.Writer, output personSweepHistoryOutput, jsonO
 			run.Status, run.Mode, run.Attempts, run.ProjectedWrites)
 	}
 	for _, attempt := range output.Attempts {
-		_, _ = fmt.Fprintf(table, "attempt\t%s\t-\t%d\t%s\t-\t%d\n",
-			attempt.Status, attempt.PersonID, attempt.FailureClass, attempt.ProjectedWrites)
+		_, _ = fmt.Fprintf(table, "attempt\t%s\t-\t%s\t%s\t-\t%d\n",
+			attempt.Status, labels.person(attempt.PersonID), attempt.FailureClass, attempt.ProjectedWrites)
 	}
 	if err := table.Flush(); err != nil {
 		return fmt.Errorf("write person sweep history: %w", err)

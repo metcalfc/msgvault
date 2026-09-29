@@ -233,6 +233,10 @@ func TestPersonSweepHistoryNeverPrintsEvidence(t *testing.T) {
 		checks.NotContains(output, "literal-secret-evidence")
 		checks.NotContains(output, "literal-secret-response-text")
 	}
+	output, err := executePersonSweepCommand(t, deps, "history", "--person", strconv.FormatInt(personID, 10))
+	must.NoError(err)
+	checks.Contains(output, "Sweep Person ("+strconv.FormatInt(personID, 10)+")",
+		"the human table names the attempt's person")
 }
 
 func TestPersonSweepCommandsUseDaemonWriter(t *testing.T) {

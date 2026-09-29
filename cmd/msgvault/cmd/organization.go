@@ -317,10 +317,15 @@ var organizationAttributeListCmd = &cobra.Command{Use: "list <id>", Short: "List
 	if organizationJSON {
 		return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), resp.JSON200, json.Deterministic(true))
 	}
+	values := make([]generated.AttributeValue, 0, len(resp.JSON200.Values))
+	for _, value := range resp.JSON200.Values {
+		values = append(values, value.Value)
+	}
+	labels := resolveCLIEntityLabels(cmd.Context(), client, attributeRecordLabelRequest(values...))
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "SLUG\tORDINAL\tVALUE\tSOURCE\tACTIVE FROM\tACTIVE UNTIL")
 	for _, value := range resp.JSON200.Values {
-		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\n", value.DefinitionSlug, value.Ordinal, formatCLIAttributeValue(value.Value), value.Source, value.ActiveFrom.Format("2006-01-02T15:04:05Z07:00"), formatCLIOptionalTime(value.ActiveUntil))
+		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\n", value.DefinitionSlug, value.Ordinal, formatCLIAttributeValue(value.Value, labels), value.Source, value.ActiveFrom.Format("2006-01-02T15:04:05Z07:00"), formatCLIOptionalTime(value.ActiveUntil))
 	}
 	return w.Flush()
 }}
@@ -375,7 +380,7 @@ var organizationAttributeSetCmd = &cobra.Command{Use: "set <id>", Short: "Set a 
 	if organizationJSON {
 		return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), write, json.Deterministic(true))
 	}
-	return writeCLIOrganizationAttribute(cmd, write)
+	return writeCLIOrganizationAttribute(cmd, client, write)
 }}
 
 var organizationAttributeClearCmd = &cobra.Command{Use: "clear <id> <slug>", Short: "Supersede an organization attribute value", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
@@ -417,7 +422,7 @@ var organizationAttributeClearCmd = &cobra.Command{Use: "clear <id> <slug>", Sho
 	if err != nil {
 		return err
 	}
-	return writeCLIOrganizationAttribute(cmd, resp.JSON200)
+	return writeCLIOrganizationAttribute(cmd, client, resp.JSON200)
 }}
 
 func getCLIOrganization(cmd *cobra.Command, client *daemonclient.Client, id int64) (*generated.GetOrganizationResp, error) {
@@ -498,10 +503,20 @@ func writeCLIOrganizationHistory(cmd *cobra.Command, profile *generated.Organiza
 	}
 	return nil
 }
-func writeCLIOrganizationAttribute(cmd *cobra.Command, write *generated.OrganizationAttributeWrite) error {
+func writeCLIOrganizationAttribute(
+	cmd *cobra.Command, labeler cliEntityLabeler, write *generated.OrganizationAttributeWrite,
+) error {
 	if write == nil {
 		return errors.New("organization attribute response was empty")
 	}
+	var values []generated.AttributeValue
+	if write.Superseded != nil {
+		values = append(values, write.Superseded.Value)
+	}
+	if write.Value != nil {
+		values = append(values, write.Value.Value)
+	}
+	labels := resolveCLIEntityLabels(cmd.Context(), labeler, attributeRecordLabelRequest(values...))
 	prefix := ""
 	if write.DryRun {
 		prefix = "Dry run: "
@@ -509,11 +524,11 @@ func writeCLIOrganizationAttribute(cmd *cobra.Command, write *generated.Organiza
 	if write.Superseded != nil {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%sSuperseded %s ordinal %d: %s (active until %s)\n",
 			prefix, write.Superseded.DefinitionSlug, write.Superseded.Ordinal,
-			formatCLIAttributeValue(write.Superseded.Value), formatCLIOptionalTime(write.Superseded.ActiveUntil))
+			formatCLIAttributeValue(write.Superseded.Value, labels), formatCLIOptionalTime(write.Superseded.ActiveUntil))
 	}
 	if write.Value != nil {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%sSet %s: %s\n",
-			prefix, write.Value.DefinitionSlug, formatCLIAttributeValue(write.Value.Value))
+			prefix, write.Value.DefinitionSlug, formatCLIAttributeValue(write.Value.Value, labels))
 	}
 	return nil
 }

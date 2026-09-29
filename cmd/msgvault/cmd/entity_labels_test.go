@@ -1,0 +1,252 @@
+package cmd
+
+import (
+	"bytes"
+	"context"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.kenn.io/msgvault/internal/api"
+	"go.kenn.io/msgvault/internal/config"
+	"go.kenn.io/msgvault/internal/store"
+	"go.kenn.io/msgvault/internal/testutil"
+)
+
+// entityLabelTestDaemon serves the production API router over a real store,
+// through the same storeAPIAdapter the daemon uses, so CLI commands resolve
+// labels from GET /api/v1/entity-labels exactly as they do in production.
+type entityLabelTestDaemon struct {
+	store *store.Store
+	ctx   context.Context
+}
+
+func newEntityLabelTestDaemon(t *testing.T) entityLabelTestDaemon {
+	t.Helper()
+	st := testutil.NewTestStore(t)
+	dataDir := t.TempDir()
+	configured := config.NewDefaultConfig()
+	configured.HomeDir = dataDir
+	configured.Data.DataDir = dataDir
+	configured.Server.APIKey = "synthetic-entity-label-key"
+	server := api.NewServerWithOptions(api.ServerOptions{
+		Config: configured, Store: &storeAPIAdapter{store: st},
+		Logger: slog.New(slog.DiscardHandler),
+	})
+	httpServer := httptest.NewServer(server.Router())
+	t.Cleanup(httpServer.Close)
+	configured.Remote = config.RemoteConfig{
+		URL: httpServer.URL, APIKey: configured.Server.APIKey, AllowInsecure: true,
+	}
+	return entityLabelTestDaemon{store: st, ctx: withStoreResolverConfig(t, configured)}
+}
+
+// person creates a durable person named by its participant's display name.
+func (d entityLabelTestDaemon) person(t *testing.T, email, name string) (*store.Person, int64) {
+	t.Helper()
+	participantID, err := d.store.EnsureParticipantByIdentifier("email", email, name)
+	require.NoError(t, err)
+	person, _, err := d.store.CreatePersonFromParticipantContext(t.Context(), participantID)
+	require.NoError(t, err)
+	return person, participantID
+}
+
+// run executes a copy of a command template with its flags reset, so the
+// package-level flag variables of one test cannot leak into another.
+func (d entityLabelTestDaemon) run(t *testing.T, template *cobra.Command, args ...string) string {
+	t.Helper()
+	savedPersonJSON, savedEmploymentJSON := personJSON, employmentJSON
+	savedAttributesJSON, savedOrganizationJSON := personAttributesJSONOutput, organizationJSON
+	personJSON, employmentJSON, personAttributesJSONOutput, organizationJSON = false, false, false, false
+	t.Cleanup(func() {
+		personJSON, employmentJSON = savedPersonJSON, savedEmploymentJSON
+		personAttributesJSONOutput, organizationJSON = savedAttributesJSON, savedOrganizationJSON
+	})
+	command := cloneEmploymentCommand(template)
+	command.SetContext(d.ctx)
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	command.SetArgs(args)
+	require.NoError(t, command.Execute(), output.String())
+	return output.String()
+}
+
+func idText(value int64) string { return strconv.FormatInt(value, 10) }
+
+// withoutEntityLabels stands in for a daemon released before the
+// entity-labels endpoint: that route answers 404 and every other request
+// reaches the test's handler. Commands must still succeed and print IDs.
+func withoutEntityLabels(handler http.HandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/entity-labels" {
+			http.NotFound(w, r)
+			return
+		}
+		handler(w, r)
+	})
+}
+
+func TestEmploymentOutputNamesPeopleAndOrganizations(t *testing.T) {
+	daemon := newEntityLabelTestDaemon(t)
+	avery, _ := daemon.person(t, "avery@example.com", "Avery Example")
+	blake, _ := daemon.person(t, "blake@example.com", "Blake Example")
+	organization, err := daemon.store.CreateOrganizationContext(t.Context(), store.OrganizationInput{Name: "Example Widgets"})
+	require.NoError(t, err)
+	title := "Staff Engineer"
+	employment, err := daemon.store.AddEmploymentContext(t.Context(), store.EmploymentInput{
+		PersonID: avery.ID, OrganizationID: organization.ID, Title: &title, Source: store.ProvenanceUser,
+	})
+	require.NoError(t, err)
+	_, err = daemon.store.AddEmploymentContext(t.Context(), store.EmploymentInput{
+		PersonID: blake.ID, OrganizationID: organization.ID, Source: store.ProvenanceUser,
+	})
+	require.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		template *cobra.Command
+		args     []string
+		want     []string
+	}{
+		{
+			name: "organization-scoped list names employees", template: employmentListCmd,
+			args: []string{"--organization", idText(organization.ID)},
+			want: []string{"Avery Example (" + idText(avery.ID) + ")", "Blake Example (" + idText(blake.ID) + ")"},
+		},
+		{
+			name: "person-scoped list names the employer", template: employmentListCmd,
+			args: []string{"--person", idText(avery.ID)},
+			want: []string{"Example Widgets (" + idText(organization.ID) + ")"},
+		},
+		{
+			name: "show names both sides", template: employmentShowCmd,
+			args: []string{idText(employment.ID)},
+			want: []string{
+				"Person: Avery Example (" + idText(avery.ID) + ")",
+				"Organization: Example Widgets (" + idText(organization.ID) + ")",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			output := daemon.run(t, test.template, test.args...)
+			for _, want := range test.want {
+				assert.Contains(t, output, want)
+			}
+		})
+	}
+}
+
+func TestPersonRelationshipOutputNamesBothPeople(t *testing.T) {
+	daemon := newEntityLabelTestDaemon(t)
+	parent, _ := daemon.person(t, "casey@example.com", "Casey Example")
+	child, _ := daemon.person(t, "drew@example.com", "Drew Example")
+
+	output := daemon.run(t, personRelationshipAddCmd, idText(parent.ID), "parent", idText(child.ID))
+	assert.Contains(t, output,
+		"Casey Example ("+idText(parent.ID)+") is the parent of Drew Example ("+idText(child.ID)+")")
+
+	listed := daemon.run(t, personRelationshipListCmd, idText(child.ID))
+	assert.Contains(t, listed, "Casey Example ("+idText(parent.ID)+")")
+	assert.NotContains(t, listed, parent.VCardUID, "a vCard UID is never a counterpart label")
+}
+
+func TestPersonRelationshipReviewsNameThePeople(t *testing.T) {
+	daemon := newEntityLabelTestDaemon(t)
+	owner, _ := daemon.person(t, "emery@example.com", "Emery Example")
+	matched, _ := daemon.person(t, "finley@example.com", "Finley Example")
+	_, err := daemon.store.DB().ExecContext(t.Context(), daemon.store.Rebind(`
+		INSERT INTO person_relationship_reviews
+			(person_id, raw_related_value, raw_related_type, value_kind, matched_person_id, source)
+		VALUES (?, 'Finley', 'friend', 'text', ?, 'system')`), owner.ID, matched.ID)
+	require.NoError(t, err)
+
+	output := daemon.run(t, personRelationshipReviewsCmd)
+	assert.Contains(t, output, "Emery Example ("+idText(owner.ID)+")")
+	assert.Contains(t, output, "Finley Example ("+idText(matched.ID)+")")
+}
+
+func TestPersonOutputNamesParticipantsAndMergeLineage(t *testing.T) {
+	daemon := newEntityLabelTestDaemon(t)
+	survivor, survivorParticipant := daemon.person(t, "gray@example.com", "Gray Example")
+	absorbed, absorbedParticipant := daemon.person(t, "harper@example.com", "Harper Example")
+
+	got := daemon.run(t, personGetCmd, idText(survivor.ID))
+	assert.Contains(t, got, "Participants: Gray Example ("+idText(survivorParticipant)+")")
+
+	merged := daemon.run(t, newPersonMergeCommand(), idText(survivor.ID), idText(absorbed.ID),
+		"--survivor-revision", idText(survivor.Revision), "--absorbed-revision", idText(absorbed.Revision),
+		"--idempotency-key", "synthetic-merge")
+	assert.Contains(t, merged, "Survivor: Gray Example ("+idText(survivor.ID)+")")
+	assert.Contains(t, merged, "Absorbed: Harper Example ("+idText(absorbed.ID)+")",
+		"the daemon names an absorbed person from its merge snapshot")
+
+	history := daemon.run(t, newPersonMergeHistoryCommand(), idText(survivor.ID))
+	assert.Contains(t, history, "Gray Example ("+idText(survivor.ID)+")")
+	mergeLine := strings.Fields(strings.Split(strings.TrimSpace(history), "\n")[1])[0]
+
+	detail := daemon.run(t, newPersonMergeShowCommand(), mergeLine)
+	assert.Contains(t, detail, "Survivor: Gray Example ("+idText(survivor.ID)+")")
+	assert.Contains(t, detail, "Current person: Gray Example ("+idText(survivor.ID)+")")
+	assert.Contains(t, detail, "Absorbed: Harper Example ("+idText(absorbed.ID)+")")
+
+	current, err := daemon.store.GetPersonContext(t.Context(), survivor.ID)
+	require.NoError(t, err)
+	split := daemon.run(t, newPersonSplitCommand(), idText(survivor.ID), "--merge-id", mergeLine,
+		"--revision", idText(current.Revision), "--participant", idText(absorbedParticipant),
+		"--idempotency-key", "synthetic-split")
+	assert.Contains(t, split, "Source person: Gray Example ("+idText(survivor.ID)+")")
+	assert.Regexp(t, `New person: Harper Example \(\d+\)`, split)
+}
+
+func TestPersonAttributeRecordReferenceNamesThePerson(t *testing.T) {
+	daemon := newEntityLabelTestDaemon(t)
+	owner, _ := daemon.person(t, "indigo@example.com", "Indigo Example")
+	referenced, _ := daemon.person(t, "jordan@example.com", "Jordan Example")
+	_, err := daemon.store.CreateAttributeDefinitionContext(t.Context(), store.AttributeDefinitionInput{
+		UniversalID: "test-assistant", ObjectType: store.AttributeObjectPerson, Slug: "assistant",
+		Label: "Assistant", ValueType: store.AttributeValueRecordReference,
+		FieldType: store.AttributeFieldPerson, RecordTarget: new(personValue),
+		Cardinality: store.AttributeCardinalitySingle, Ownership: store.AttributeOwnershipUser,
+		UICreatable: true, UIEditable: true, APIMutable: true, IsAudited: true, IsDeletable: true,
+	})
+	require.NoError(t, err)
+	_, err = daemon.store.SetPersonAttributeValueContext(t.Context(), store.PersonAttributeValueInput{
+		PersonID: owner.ID, DefinitionSlug: "assistant", Source: store.ProvenanceUser,
+		Value: store.AttributeValue{
+			Type: store.AttributeValueRecordReference, RecordType: new(personValue), RecordID: &referenced.ID,
+		},
+	})
+	require.NoError(t, err)
+
+	output := daemon.run(t, personAttributesListCmd, idText(owner.ID))
+	assert.Contains(t, output, "Jordan Example ("+idText(referenced.ID)+")")
+	assert.NotContains(t, output, "person:"+idText(referenced.ID))
+}
+
+func TestDaemonEntityLabelsBatchesPastTheServerCap(t *testing.T) {
+	daemon := newEntityLabelTestDaemon(t)
+	total := store.MaxEntityLabelIDs + 2
+	ids := make([]int64, 0, total)
+	for i := range total {
+		participantID, err := daemon.store.EnsureParticipantByIdentifier(
+			"email", "batch-"+strconv.Itoa(i)+"@example.com", "Batch Person "+strconv.Itoa(i))
+		require.NoError(t, err)
+		ids = append(ids, participantID)
+	}
+	client, _, err := OpenHTTPStore(daemon.ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = client.Close() })
+
+	labels, err := client.EntityLabels(t.Context(), store.EntityLabelRequest{ParticipantIDs: ids})
+	require.NoError(t, err, "a request over the per-kind cap is split, not rejected")
+	assert.Len(t, labels.Participants, total)
+	assert.Equal(t, "Batch Person "+strconv.Itoa(total-1), labels.Participants[ids[total-1]])
+}

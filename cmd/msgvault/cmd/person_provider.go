@@ -45,6 +45,7 @@ type personProviderStore interface {
 	HasActivePersonInferenceConsent(ctx context.Context, fingerprint string) (bool, error)
 	ListPersonSweepRuns(ctx context.Context, filter peoplesweep.RunFilter) ([]peoplesweep.RunSummary, error)
 	ListPersonSweepAttempts(ctx context.Context, filter peoplesweep.AttemptFilter) ([]peoplesweep.AttemptSummary, error)
+	EntityLabelsContext(ctx context.Context, request store.EntityLabelRequest) (store.EntityLabels, error)
 	EnsurePersonSemanticEmbeddingProfile(ctx context.Context, profile vector.SemanticPersonEmbeddingProfile) (bool, error)
 	ListPersonSemanticEmbeddingProfiles(ctx context.Context) ([]vector.SemanticPersonEmbeddingProfile, error)
 	GrantPersonSemanticEmbeddingConsent(ctx context.Context, fingerprint, actor string) (*store.PersonSemanticEmbeddingConsent, bool, error)
@@ -1252,7 +1253,8 @@ func newPersonProviderHistoryCommand(deps personProviderCommandDeps) *cobra.Comm
 			if err != nil {
 				return err
 			}
-			return writePersonSweepHistory(command.OutOrStdout(), safePersonSweepHistory(runs, attempts), jsonOutput)
+			labels := personSweepAttemptLabels(command.Context(), st, attempts, jsonOutput)
+			return writePersonSweepHistory(command.OutOrStdout(), safePersonSweepHistory(runs, attempts), labels, jsonOutput)
 		},
 	}
 	command.Flags().Int64Var(&personID, "person", 0, "Filter by durable person ID")

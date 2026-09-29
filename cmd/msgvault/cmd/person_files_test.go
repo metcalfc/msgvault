@@ -28,6 +28,18 @@ type fakePersonFilesClient struct {
 	visual          *visual.SearchResponse
 	documentErr     error
 	visualErr       error
+	labels          store.EntityLabels
+	labelErr        error
+	accounts        []daemonclient.CLIAccount
+	accountsErr     error
+}
+
+func (f *fakePersonFilesClient) EntityLabels(context.Context, store.EntityLabelRequest) (store.EntityLabels, error) {
+	return f.labels, f.labelErr
+}
+
+func (f *fakePersonFilesClient) GetCLIAccounts(context.Context) ([]daemonclient.CLIAccount, error) {
+	return f.accounts, f.accountsErr
 }
 
 func (f *fakePersonFilesClient) SearchPersonFiles(_ context.Context, request daemonclient.PersonFileSearchOptions) (generated.PersonFileSearchHTTPResponse, error) {
@@ -130,7 +142,8 @@ func TestPersonFilesTextOutputKeepsEveryLaneAligned(t *testing.T) {
 		},
 		Metadata: &generated.PersonFileSearchHTTPResponse{Files: []generated.PersonFileSearchRow{{
 			ID: 11, MessageID: 12, ConversationID: 13, SourceID: 14, EntryKey: "entry-11",
-			OccurredAt: now, Filename: &filename, MimeType: &mimeType,
+			SourceIdentifier: "archive@example.com",
+			OccurredAt:       now, Filename: &filename, MimeType: &mimeType,
 			PersonProvenance: generated.PersonFileProvenance{
 				ParticipantIds: []int64{4}, Roles: []generated.PersonFileProvenanceRoles{generated.From},
 				Directions: []generated.PersonFileProvenanceDirections{generated.FromPerson},
@@ -148,27 +161,61 @@ func TestPersonFilesTextOutputKeepsEveryLaneAligned(t *testing.T) {
 		}}},
 	}
 
-	require.NoError(t, writePersonFilesOutput(command, record))
-	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
-	var headerFields int
+	names := resolvePersonFilesNames(t.Context(), &fakePersonFilesClient{
+		labels: store.EntityLabels{Participants: map[int64]string{4: "Alex Example"}},
+		accounts: []daemonclient.CLIAccount{
+			{ID: 24, Email: "docs@example.com"}, {ID: 34, Email: "photos@example.com"},
+		},
+	}, record)
+	require.NoError(t, writePersonFilesOutput(command, record, names))
+	rendered := output.String()
+	assert.Contains(rendered, "Alex Example (4)", "participants are named, not listed as bare IDs")
+	assert.NotContains(rendered, "[4]")
+	assert.Contains(rendered, "archive@example.com", "a metadata row names its source by identifier")
+	assert.Contains(rendered, "docs@example.com", "a document row names its source from the account list")
+	assert.Contains(rendered, "photos@example.com")
+	assertTabwriterRowsAligned(t, rendered, 3)
+}
+
+// assertTabwriterRowsAligned checks that every result row starts each cell
+// at the header's column offsets. Cells may contain single spaces (names),
+// so the check reads column positions rather than counting fields.
+func assertTabwriterRowsAligned(t *testing.T, rendered string, wantRows int) {
+	t.Helper()
+	var header string
+	var starts []int
 	rows := 0
-	for _, line := range lines {
+	for line := range strings.Lines(rendered) {
+		line = strings.TrimRight(line, "\n")
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
 			continue
 		}
 		if fields[0] == "LANE" {
-			headerFields = len(fields)
+			header = line
+			for i := range header {
+				if header[i] != ' ' && (i == 0 || strings.HasSuffix(header[:i], "  ")) {
+					starts = append(starts, i)
+				}
+			}
 			continue
 		}
-		if fields[0] == personFilesLaneMetadata || fields[0] == personFilesLaneDocuments || fields[0] == personFilesLaneVisual {
-			if len(fields) > 1 && (fields[1] == "available" || fields[1] == "unavailable:") {
-				continue
-			}
-			assert.Len(fields, headerFields, "row: %s", line)
-			rows++
+		if fields[0] != personFilesLaneMetadata && fields[0] != personFilesLaneDocuments && fields[0] != personFilesLaneVisual {
+			continue
 		}
+		if len(fields) > 1 && (fields[1] == "available" || fields[1] == "unavailable:") {
+			continue
+		}
+		require.NotEmpty(t, header, "header precedes rows")
+		for _, start := range starts {
+			require.Greater(t, len(line), start, "row: %s", line)
+			assert.NotEqual(t, byte(' '), line[start], "row %q has no cell at column %d", line, start)
+			if start > 0 {
+				assert.Equal(t, byte(' '), line[start-1], "row %q overflows into column %d", line, start)
+			}
+		}
+		rows++
 	}
-	assert.Equal(14, headerFields)
-	assert.Equal(3, rows)
+	assert.Equal(t, 14, len(starts))
+	assert.Equal(t, wantRows, rows)
 }

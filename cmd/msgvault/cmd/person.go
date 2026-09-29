@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.kenn.io/msgvault/internal/daemonclient"
+	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/textutil"
 	apiclient "go.kenn.io/msgvault/pkg/client"
 	"go.kenn.io/msgvault/pkg/client/generated"
@@ -58,7 +59,7 @@ var personPromoteCmd = &cobra.Command{
 		if person == nil {
 			person = resp.JSON200
 		}
-		return writeCLIPerson(cmd, person)
+		return writeCLIPerson(cmd, client, person)
 	},
 }
 
@@ -80,7 +81,7 @@ var personGetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return writeCLIPerson(cmd, resp.JSON200)
+		return writeCLIPerson(cmd, client, resp.JSON200)
 	},
 }
 
@@ -165,7 +166,7 @@ var personSetDisplayNameCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return writeCLIPerson(cmd, resp.JSON200)
+		return writeCLIPerson(cmd, client, resp.JSON200)
 	},
 }
 
@@ -272,7 +273,7 @@ func newPersonMergeCommand() *cobra.Command {
 			if jsonOutput {
 				return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), resp.JSON200, json.Deterministic(true))
 			}
-			writePersonMergeResult(cmd, resp.JSON200)
+			writePersonMergeResult(cmd, client, resp.JSON200)
 			return nil
 		},
 	}
@@ -338,7 +339,7 @@ func newPersonSplitCommand() *cobra.Command {
 			if jsonOutput {
 				return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), resp.JSON200, json.Deterministic(true))
 			}
-			writePersonSplitResult(cmd, resp.JSON200)
+			writePersonSplitResult(cmd, client, resp.JSON200)
 			return nil
 		},
 	}
@@ -381,7 +382,7 @@ func newPersonMergeHistoryCommand() *cobra.Command {
 			if jsonOutput {
 				return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), resp.JSON200.Merges, json.Deterministic(true))
 			}
-			return writePersonMergeHistory(cmd, resp.JSON200.Merges)
+			return writePersonMergeHistory(cmd, client, resp.JSON200.Merges)
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, flagJSON, false, "Output as JSON")
@@ -436,7 +437,7 @@ func newPersonMergeShowCommand() *cobra.Command {
 			if jsonOutput {
 				return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), resp.JSON200, json.Deterministic(true))
 			}
-			writePersonMergeDetail(cmd, resp.JSON200)
+			writePersonMergeDetail(cmd, client, resp.JSON200)
 			return nil
 		},
 	}
@@ -513,44 +514,64 @@ func newPersonMergeCandidateCommand() *cobra.Command {
 	return command
 }
 
-func writePersonMergeResult(cmd *cobra.Command, result *generated.PersonMergeResult) {
+// writePersonMergeResult names both sides of a merge. The daemon still
+// names the absorbed person from its merge snapshot after its row is gone.
+func writePersonMergeResult(cmd *cobra.Command, labeler cliEntityLabeler, result *generated.PersonMergeResult) {
+	labels := resolveCLIEntityLabels(cmd.Context(), labeler, store.EntityLabelRequest{
+		PersonIDs: []int64{result.Person.ID, result.Merge.AbsorbedPersonID},
+	})
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-		"Merge: %d\nSurvivor: %d\nSurvivor UID: %s\nAbsorbed: %d\nAbsorbed UID: %s\n"+
+		"Merge: %d\nSurvivor: %s\nSurvivor UID: %s\nAbsorbed: %s\nAbsorbed UID: %s\n"+
 			"Survivor revision: %d -> %d\nAbsorbed revision: %d\n"+
 			"Absorbed UID alias: %s -> %s\nReview candidates: %d\n"+
 			"Identity revision: %d\nCache state: %s\n",
-		result.Merge.ID, result.Person.ID, result.Person.VcardUID,
-		result.Merge.AbsorbedPersonID, result.Merge.AbsorbedVcardUID,
+		result.Merge.ID, labels.person(result.Person.ID), textutil.SanitizeTerminal(result.Person.VcardUID),
+		labels.person(result.Merge.AbsorbedPersonID), textutil.SanitizeTerminal(result.Merge.AbsorbedVcardUID),
 		result.Merge.SurvivorRevisionBefore, result.Merge.SurvivorRevisionAfter,
-		result.Merge.AbsorbedRevisionBefore, result.Merge.AbsorbedVcardUID,
-		result.Person.VcardUID, len(result.ReviewCandidates),
+		result.Merge.AbsorbedRevisionBefore, textutil.SanitizeTerminal(result.Merge.AbsorbedVcardUID),
+		textutil.SanitizeTerminal(result.Person.VcardUID), len(result.ReviewCandidates),
 		result.IdentityRevision, result.CacheState)
 }
 
-func writePersonSplitResult(cmd *cobra.Command, result *generated.PersonSplitResult) {
+func writePersonSplitResult(cmd *cobra.Command, labeler cliEntityLabeler, result *generated.PersonSplitResult) {
+	labels := resolveCLIEntityLabels(cmd.Context(), labeler, store.EntityLabelRequest{
+		PersonIDs: []int64{result.SourcePerson.ID, result.NewPerson.ID},
+	})
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-		"Split: %d\nMerge: %d\nSource person: %d\nSource UID: %s\n"+
-			"New person: %d\nNew UID: %s\nSource revision: %d -> %d\n"+
+		"Split: %d\nMerge: %d\nSource person: %s\nSource UID: %s\n"+
+			"New person: %s\nNew UID: %s\nSource revision: %d -> %d\n"+
 			"Exact reversal: %t\nUID alias disposition: %s\nAmbiguous rows: %d\n"+
 			"Identity revision: %d\nCache state: %s\n",
-		result.Split.ID, result.Split.MergeID, result.SourcePerson.ID,
-		result.SourcePerson.VcardUID, result.NewPerson.ID, result.NewPerson.VcardUID,
+		result.Split.ID, result.Split.MergeID, labels.person(result.SourcePerson.ID),
+		textutil.SanitizeTerminal(result.SourcePerson.VcardUID), labels.person(result.NewPerson.ID),
+		textutil.SanitizeTerminal(result.NewPerson.VcardUID),
 		result.Split.SourceRevisionBefore, result.Split.SourceRevisionAfter,
 		result.ExactReversal, result.UIDAliasDisposition, len(result.AmbiguousRows),
 		result.IdentityRevision, result.CacheState)
 }
 
-func writePersonMergeHistory(cmd *cobra.Command, history []generated.PersonMergeSummary) error {
+func writePersonMergeHistory(
+	cmd *cobra.Command, labeler cliEntityLabeler, history []generated.PersonMergeSummary,
+) error {
+	var request store.EntityLabelRequest
+	for _, summary := range history {
+		request.PersonIDs = append(request.PersonIDs,
+			summary.Merge.SurvivorPersonID, summary.Merge.AbsorbedPersonID)
+		if summary.Merge.CurrentPersonID != nil {
+			request.PersonIDs = append(request.PersonIDs, *summary.Merge.CurrentPersonID)
+		}
+	}
+	labels := resolveCLIEntityLabels(cmd.Context(), labeler, request)
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "MERGE\tSURVIVOR\tABSORBED\tCURRENT\tSPLITS\tPENDING\tROWS")
 	for _, summary := range history {
 		current := "-"
 		if summary.Merge.CurrentPersonID != nil {
-			current = strconv.FormatInt(*summary.Merge.CurrentPersonID, 10)
+			current = labels.person(*summary.Merge.CurrentPersonID)
 		}
-		_, _ = fmt.Fprintf(w, "%d\t%d\t%d\t%s\t%d\t%d\t%d\n",
-			summary.Merge.ID, summary.Merge.SurvivorPersonID,
-			summary.Merge.AbsorbedPersonID, current, summary.SplitCount,
+		_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%d\t%d\t%d\n",
+			summary.Merge.ID, labels.person(summary.Merge.SurvivorPersonID),
+			labels.person(summary.Merge.AbsorbedPersonID), current, summary.SplitCount,
 			summary.PendingCandidateCount, summary.RowCount)
 	}
 	if err := w.Flush(); err != nil {
@@ -559,16 +580,25 @@ func writePersonMergeHistory(cmd *cobra.Command, history []generated.PersonMerge
 	return nil
 }
 
-func writePersonMergeDetail(cmd *cobra.Command, detail *generated.PersonMergeDetail) {
+func writePersonMergeDetail(cmd *cobra.Command, labeler cliEntityLabeler, detail *generated.PersonMergeDetail) {
+	request := store.EntityLabelRequest{
+		PersonIDs: []int64{detail.Merge.SurvivorPersonID, detail.Merge.AbsorbedPersonID},
+	}
+	if detail.Merge.CurrentPersonID != nil {
+		request.PersonIDs = append(request.PersonIDs, *detail.Merge.CurrentPersonID)
+	}
+	labels := resolveCLIEntityLabels(cmd.Context(), labeler, request)
 	current := "-"
 	if detail.Merge.CurrentPersonID != nil {
-		current = strconv.FormatInt(*detail.Merge.CurrentPersonID, 10)
+		current = labels.person(*detail.Merge.CurrentPersonID)
 	}
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-		"Merge: %d\nSurvivor: %d (%s)\nAbsorbed: %d (%s)\nCurrent person: %s\n"+
+		"Merge: %d\nSurvivor: %s\nSurvivor UID: %s\nAbsorbed: %s\nAbsorbed UID: %s\nCurrent person: %s\n"+
 			"Participants: %d\nRows: %d\nSplits: %d\nReview candidates: %d\nSnapshot SHA-256: %s\n",
-		detail.Merge.ID, detail.Merge.SurvivorPersonID, detail.Merge.SurvivorVcardUID,
-		detail.Merge.AbsorbedPersonID, detail.Merge.AbsorbedVcardUID, current,
+		detail.Merge.ID, labels.person(detail.Merge.SurvivorPersonID),
+		textutil.SanitizeTerminal(detail.Merge.SurvivorVcardUID),
+		labels.person(detail.Merge.AbsorbedPersonID),
+		textutil.SanitizeTerminal(detail.Merge.AbsorbedVcardUID), current,
 		len(detail.Participants), len(detail.Rows), len(detail.Splits),
 		len(detail.ReviewCandidates), detail.Merge.SnapshotSha256)
 }
@@ -641,17 +671,19 @@ func getCLIPerson(
 		})
 }
 
-func writeCLIPerson(cmd *cobra.Command, person *generated.Person) error {
+func writeCLIPerson(cmd *cobra.Command, labeler cliEntityLabeler, person *generated.Person) error {
 	if person == nil {
 		return errors.New("person response was empty")
 	}
 	if personJSON {
 		return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), person, json.Deterministic(true))
 	}
+	labels := resolveCLIEntityLabels(cmd.Context(), labeler,
+		store.EntityLabelRequest{ParticipantIDs: person.ParticipantIds})
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-		"Person: %d\nDisplay name: %s\nvCard UID: %s\nParticipants: %v\nRevision: %d\n",
+		"Person: %d\nDisplay name: %s\nvCard UID: %s\nParticipants: %s\nRevision: %d\n",
 		person.ID, personDisplayName(person.DisplayName), textutil.SanitizeTerminal(person.VcardUID),
-		person.ParticipantIds, person.Revision)
+		labels.participantList(person.ParticipantIds), person.Revision)
 	return nil
 }
 

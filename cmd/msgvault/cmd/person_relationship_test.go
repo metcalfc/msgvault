@@ -40,7 +40,7 @@ func TestPersonRelationshipAddPostsTheDeclaredEdge(t *testing.T) {
 		StartDate            *string `json:"start_date"`
 		Notes                *string `json:"notes"`
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(withoutEntityLabels(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(http.MethodPost, r.Method)
 		assert.Equal("/api/v1/person-relationships", r.URL.Path)
 		if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
@@ -126,9 +126,11 @@ func TestPersonRelationshipListRendersBothDirections(t *testing.T) {
 
 	require.NoError(command.Execute())
 	rendered := output.String()
-	assert.Contains(rendered, "4 (bob)")
+	assert.Contains(rendered, "bob (4)")
 	assert.Contains(rendered, "child")
-	assert.Contains(rendered, "5 (2f8a1b3c-1111-4111-8111-111111111111)")
+	assert.Contains(rendered, "Unknown person (5)")
+	assert.NotContains(rendered, "2f8a1b3c-1111-4111-8111-111111111111",
+		"a vCard UID is an opaque key, never a counterpart label")
 	assert.Contains(rendered, "parent")
 	assert.Contains(rendered, "2001")
 }
@@ -140,7 +142,7 @@ func TestPersonRelationshipEndSendsIfMatchFromTheCurrentRevision(t *testing.T) {
 	var sentBody struct {
 		EndDate *string `json:"end_date"`
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(withoutEntityLabels(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method {
 		case http.MethodGet:

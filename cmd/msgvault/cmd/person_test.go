@@ -31,7 +31,7 @@ func TestWriteCLIPersonSanitizesTerminalControls(t *testing.T) {
 	var stdout bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&stdout)
-	require.NoError(writeCLIPerson(cmd, &generated.Person{
+	require.NoError(writeCLIPerson(cmd, nil, &generated.Person{
 		ID: 7, DisplayName: &malicious, VcardUID: malicious,
 	}))
 	assert.NotContains(stdout.String(), "\x1b")
@@ -43,7 +43,7 @@ func TestPersonPromoteAcceptsCreatedResponse(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	var participantID int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(withoutEntityLabels(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(http.MethodPost, r.Method)
 		assert.Equal("/api/v1/people", r.URL.Path)
 		var body struct {
@@ -95,7 +95,7 @@ func TestPersonSetDisplayNameClearSendsNull(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(withoutEntityLabels(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		assert.Equal("/api/v1/people/7", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
