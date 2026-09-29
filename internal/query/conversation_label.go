@@ -35,12 +35,96 @@ func sqlStoreParticipantLabelExpr(alias string) string {
 		 ORDER BY pi.is_primary DESC, pi.identifier_type, pi.identifier_value LIMIT 1))`
 }
 
+// conversationLabelRecentMessages bounds how many of a conversation's most
+// recent messages the label query reads: they supply senders for a
+// conversation without membership rows and the owner's own sends.
+const conversationLabelRecentMessages = 50
+
+// sqlConversationLabelQuery returns the label query for n page
+// conversation IDs (bound once, in order). Every step is bounded by the
+// page and index-backed:
+//
+//   - cutoffs finds each conversation's 50th most recent sent_at (or its
+//     oldest, when it has fewer) with idx_messages_conversation
+//     (conversation_id, sent_at DESC) probes, and recent reads only messages
+//     at or after it as an index range scan. Messages without sent_at are
+//     outside the window.
+//   - The sets are MATERIALIZED so the planner evaluates each once instead
+//     of re-probing messages per member.
+//   - members reads conversation_participants by its primary key; only a
+//     conversation with no membership rows falls back to recent senders.
+//   - from_me is the set of recent senders marked as the owner's.
+//   - owners are members matching any account identity (account_identities,
+//     the rows the identity index turns into owner_participants), by the
+//     same rules: the participant's own email, else an email identifier
+//     case-insensitively, else a non-email identifier exactly. Owner
+//     identities are excluded across sources, as the explore counterpart
+//     column does.
+func sqlConversationLabelQuery(n int) string {
+	in := strings.TrimSuffix(strings.Repeat("?, ", n), ", ")
+	return fmt.Sprintf(`
+		WITH page AS (
+			SELECT c.id FROM conversations c WHERE c.id IN (%s)
+		), cutoffs AS (
+			SELECT page.id,
+			       COALESCE(
+			           (SELECT lm.sent_at FROM messages lm
+			            WHERE lm.conversation_id = page.id
+			            ORDER BY lm.sent_at DESC LIMIT 1 OFFSET %d),
+			           (SELECT MIN(lm.sent_at) FROM messages lm
+			            WHERE lm.conversation_id = page.id)) AS cutoff
+			FROM page
+		), recent AS MATERIALIZED (
+			SELECT m.conversation_id, m.sender_id, m.is_from_me, m.identity_is_from_me
+			FROM cutoffs co
+			JOIN messages m ON m.conversation_id = co.id AND m.sent_at >= co.cutoff
+		), members AS MATERIALIZED (
+			SELECT cp.conversation_id, cp.participant_id
+			FROM page
+			JOIN conversation_participants cp ON cp.conversation_id = page.id
+			UNION
+			SELECT rc.conversation_id, rc.sender_id
+			FROM recent rc
+			WHERE rc.sender_id IS NOT NULL
+			  AND NOT EXISTS (
+				SELECT 1 FROM conversation_participants cpx
+				WHERE cpx.conversation_id = rc.conversation_id)
+		), from_me AS MATERIALIZED (
+			SELECT rc.conversation_id, rc.sender_id
+			FROM recent rc
+			WHERE rc.sender_id IS NOT NULL AND (rc.is_from_me OR rc.identity_is_from_me)
+		), owners AS MATERIALIZED (
+			SELECT p.id
+			FROM participants p
+			WHERE p.id IN (SELECT participant_id FROM members)
+			  AND EXISTS (
+				SELECT 1 FROM account_identities ai
+				WHERE (NULLIF(TRIM(p.email_address), '') IS NOT NULL
+				       AND LOWER(p.email_address) = LOWER(ai.address))
+				   OR EXISTS (
+					SELECT 1 FROM participant_identifiers pi
+					WHERE pi.participant_id = p.id
+					  AND ((pi.identifier_type = 'email'
+					        AND NULLIF(TRIM(p.email_address), '') IS NULL
+					        AND LOWER(pi.identifier_value) = LOWER(ai.address))
+					       OR (pi.identifier_type <> 'email'
+					        AND pi.identifier_value = ai.address))))
+		)
+		SELECT mb.conversation_id, %s
+		FROM members mb
+		JOIN participants p ON p.id = mb.participant_id
+		WHERE NOT EXISTS (
+			SELECT 1 FROM from_me f
+			WHERE f.conversation_id = mb.conversation_id AND f.sender_id = mb.participant_id)
+		  AND NOT EXISTS (SELECT 1 FROM owners o WHERE o.id = mb.participant_id)
+		ORDER BY mb.conversation_id, p.id`,
+		in, conversationLabelRecentMessages-1, sqlStoreParticipantLabelExpr("p"))
+}
+
 // fillConversationParticipantLabels names each untitled conversation on a
 // page by its other participants, so no surface has to fall back to the
-// conversation ID. It runs one query bounded by the page: members come from
-// conversation_participants, or from message senders for a conversation
-// with no membership rows, and participants who sent a message marked as
-// the owner's are excluded.
+// conversation ID. It runs one query bounded by the page (see
+// sqlConversationLabelQuery); the owner is never part of the label.
 func (e *SQLiteEngine) fillConversationParticipantLabels(
 	ctx context.Context, rows []ConversationRow,
 ) error {
@@ -58,31 +142,8 @@ func (e *SQLiteEngine) fillConversationParticipantLabels(
 	if len(ids) == 0 {
 		return nil
 	}
-	in := strings.TrimSuffix(strings.Repeat("?, ", len(ids)), ", ")
-	query := `
-		WITH members AS (
-			SELECT cp.conversation_id, cp.participant_id
-			FROM conversation_participants cp
-			WHERE cp.conversation_id IN (` + in + `)
-			UNION
-			SELECT m.conversation_id, m.sender_id
-			FROM messages m
-			WHERE m.conversation_id IN (` + in + `)
-			  AND m.sender_id IS NOT NULL
-			  AND NOT EXISTS (
-				SELECT 1 FROM conversation_participants cpx
-				WHERE cpx.conversation_id = m.conversation_id)
-		)
-		SELECT mb.conversation_id, ` + sqlStoreParticipantLabelExpr("p") + `
-		FROM members mb
-		JOIN participants p ON p.id = mb.participant_id
-		WHERE NOT EXISTS (
-			SELECT 1 FROM messages mine
-			WHERE mine.conversation_id = mb.conversation_id
-			  AND mine.sender_id = mb.participant_id
-			  AND (mine.is_from_me OR mine.identity_is_from_me))
-		ORDER BY mb.conversation_id, p.id`
-	args := append(append([]any{}, ids...), ids...)
+	query := sqlConversationLabelQuery(len(ids))
+	args := ids
 	result, err := e.db.QueryContext(ctx, e.dialect.Rebind(query), args...)
 	if err != nil {
 		return fmt.Errorf("label untitled conversations: %w", err)
