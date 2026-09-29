@@ -2148,14 +2148,21 @@ func reconcilePersonEnrichmentCostTx(
 	}
 	// A hard-cap attempt records its one settled charge. A profile without a
 	// hard cap may already have recorded charges from calls that were
-	// retried (chargePersonEnrichmentRetryCostTx), so its charge adds to them.
-	actualSQL := `actual_cost_usd_micros = ?`
-	if !hard && actualValue != nil {
-		actualSQL = `actual_cost_usd_micros = COALESCE(actual_cost_usd_micros, 0) + ?`
+	// retried (chargePersonEnrichmentRetryCostTx): an observed charge adds to
+	// them, and a missing one leaves them as they are rather than erasing
+	// what the counters already hold.
+	query := `UPDATE person_enrichment_attempts
+		SET reserved_cost_usd_micros = 0, actual_cost_usd_micros = ? WHERE id = ?`
+	args := []any{actualValue, attemptID}
+	switch {
+	case !hard && actualValue == nil:
+		query = `UPDATE person_enrichment_attempts SET reserved_cost_usd_micros = 0 WHERE id = ?`
+		args = []any{attemptID}
+	case !hard:
+		query = `UPDATE person_enrichment_attempts SET reserved_cost_usd_micros = 0,
+			actual_cost_usd_micros = COALESCE(actual_cost_usd_micros, 0) + ? WHERE id = ?`
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE person_enrichment_attempts
-		SET reserved_cost_usd_micros = 0, `+actualSQL+` WHERE id = ?`,
-		actualValue, attemptID); err != nil {
+	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 		return false, fmt.Errorf("record person enrichment actual cost: %w", err)
 	}
 	return violation, nil

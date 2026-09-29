@@ -1419,3 +1419,40 @@ func TestPersonEnrichmentSuccessfulCompletionComposesInsideCallerTransaction(t *
 	require.NotNil(work[0].ActiveAttemptID)
 	assert.Equal(attempt.ID, *work[0].ActiveAttemptID)
 }
+
+// TestPersonEnrichmentFinalReconcileKeepsARecordedRetryCharge: a charge
+// persisted when a call was retried stays on the attempt when the attempt
+// later ends with no observed cost, so the attempt matches the counters.
+func TestPersonEnrichmentFinalReconcileKeepsARecordedRetryCharge(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newEnrichmentWorkFixture(t)
+	run := f.startRun(t, "retry-charge-kept")
+	f.enqueue(t)
+	lease := f.claim(t, run.ID, "worker-a")
+	attempt, _, err := f.store.BeginAttempt(t.Context(), lease.Token,
+		testAttemptStart(&f, run.ID, "a"))
+	require.NoError(err)
+	require.NoError(f.store.ScheduleRetry(t.Context(), attempt.Token, personenrichment.RetryUpdate{
+		Failure: personenrichment.SafeFailure{
+			Class: personenrichment.FailureRateLimited, Message: "rate limited",
+			Cost: personenrichment.Cost{Currency: "USD", AmountMicros: 5000, Estimated: true},
+		},
+		NextActionAt: f.now.Add(time.Minute),
+	}))
+	f.setNow(f.now.Add(2 * time.Minute))
+	reclaimed := f.claim(t, run.ID, "worker-b")
+	require.NotNil(reclaimed.ActiveAttempt)
+	require.NoError(f.store.MarkTerminal(t.Context(), reclaimed.Token, personenrichment.SafeFailure{
+		Class: personenrichment.FailurePolicy, Message: "enrichment consent revoked before dispatch",
+	}))
+
+	settled, err := f.store.GetPersonEnrichmentAttemptContext(t.Context(), attempt.ID)
+	require.NoError(err)
+	require.NotNil(settled.ActualCostUSDMicros, "the retried call's charge stays on the attempt")
+	assert.Equal(int64(5000), *settled.ActualCostUSDMicros)
+	var charged int64
+	require.NoError(f.store.DB().QueryRowContext(t.Context(), f.store.Rebind(`SELECT cost_charged_usd_micros
+		FROM person_enrichment_run_counters WHERE run_id = ?`), run.ID).Scan(&charged))
+	assert.Equal(int64(5000), charged, "and matches the run counter")
+}
