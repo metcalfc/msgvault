@@ -131,12 +131,15 @@ function threadKeyOf(row: EntryRow): string | undefined {
  * matches follow it only while the thread is expanded. Row keys are never
  * rewritten, so selection and the reading pane keep working per message.
  * A thread holding a key in `reveal` (the focused or inspected row) stays
- * expanded so that row is never hidden.
+ * expanded so that row is never hidden, unless the user collapsed that
+ * thread explicitly (`collapsed`), in which case the caller has moved focus
+ * and selection to its lead.
  */
 export function threadRows(
   rows: readonly EntryRow[],
   expanded: ReadonlySet<string>,
   reveal: ReadonlySet<string> = new Set(),
+  collapsed: ReadonlySet<string> = new Set(),
 ): ThreadedRows {
   const groups = new Map<string, EntryRow[]>();
   for (const row of rows) {
@@ -166,7 +169,8 @@ export function threadRows(
     const members = groups.get(role.threadKey)!;
     const lead = leads.get(role.threadKey)!;
     output.push(lead);
-    const open = expanded.has(role.threadKey) || members.some((member) => member !== lead && reveal.has(member.key));
+    const open = expanded.has(role.threadKey) ||
+      (!collapsed.has(role.threadKey) && members.some((member) => member !== lead && reveal.has(member.key)));
     for (const member of members) {
       if (member === lead) continue;
       if (open) output.push(member);

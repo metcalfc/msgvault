@@ -538,6 +538,25 @@ describe('EverythingTable thread grouping', () => {
     expect(keys()).toEqual(['message:1', 'message:3', 'message:4', 'message:2']);
   });
 
+  it('collapses a thread on request even while a member is inspected, moving focus and the pane to its lead', async () => {
+    const onOpen = vi.fn();
+    const onActiveKey = vi.fn();
+    render(EverythingTable, {
+      rows: threadHits(), selection: new ExploreSelectionState(), query: 'plan',
+      inspectedKey: 'message:4', focusedKey: 'message:4', onOpen, onActiveKey
+    });
+    const keys = () => [...document.querySelectorAll('[data-row-key]')].map((element) => element.getAttribute('data-row-key'));
+    expect(keys()).toEqual(['message:1', 'message:3', 'message:4', 'message:2']);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Hide 3 matches in this thread' }));
+    expect(keys()).toEqual(['message:1', 'message:2']);
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ key: 'message:1' }));
+    expect(onActiveKey).toHaveBeenLastCalledWith('message:1');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Show 3 matches in this thread' }));
+    expect(keys()).toEqual(['message:1', 'message:3', 'message:4', 'message:2']);
+  });
+
   it('keeps an inspected thread member visible and leaves unsearched lists alone', () => {
     const { unmount } = render(EverythingTable, {
       rows: threadHits(), selection: new ExploreSelectionState(), query: 'plan', inspectedKey: 'message:4'

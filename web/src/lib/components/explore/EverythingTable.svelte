@@ -94,16 +94,44 @@
   // other matches follow it inline once the thread is expanded. Keys are
   // untouched, so selection and the reading pane still address messages.
   const expandedThreads = new SvelteSet<string>();
+  // Threads the user collapsed: they stay closed even while a member is
+  // still focused or inspected, until the user expands them again.
+  const collapsedThreads = new SvelteSet<string>();
   const threaded = $derived(
     query.trim()
-      ? threadRows(sourceRows, expandedThreads, new Set([focusedKey, inspectedKey].filter((key): key is string => Boolean(key))))
+      ? threadRows(
+        sourceRows, expandedThreads,
+        new Set([focusedKey, inspectedKey].filter((key): key is string => Boolean(key))), collapsedThreads
+      )
       : { rows: sourceRows, roles: new Map<string, ThreadRole>(), hidden: 0 }
   );
   const rows = $derived(threaded.rows);
 
   function setThreadOpen(threadKey: string, open: boolean): void {
-    if (open) expandedThreads.add(threadKey);
-    else expandedThreads.delete(threadKey);
+    if (open) {
+      collapsedThreads.delete(threadKey);
+      expandedThreads.add(threadKey);
+      return;
+    }
+    // Collapsing hides the thread's other matches, so focus and the reading
+    // pane move from a hidden member to the thread's lead first.
+    const lead = sourceRows.find((row) => {
+      const role = threaded.roles.get(row.key);
+      return role?.threadKey === threadKey && role.lead;
+    });
+    const hidden = (key: string | null): boolean => {
+      const role = key ? threaded.roles.get(key) : undefined;
+      return Boolean(role && role.threadKey === threadKey && !role.lead);
+    };
+    if (lead) {
+      if (hidden(activeKey)) {
+        activeKey = lead.key;
+        onActiveKey?.(lead.key);
+      }
+      if (hidden(inspectedKey)) onOpen?.(lead);
+    }
+    expandedThreads.delete(threadKey);
+    collapsedThreads.add(threadKey);
   }
 
   // Semantic and hybrid need free text to embed, so they are offered only
@@ -406,14 +434,7 @@
     else if (!readerOpen && (event.key === 'ArrowRight' || event.key === 'ArrowLeft') && activeRow && threaded.roles.has(activeRow.key)) {
       const role = threaded.roles.get(activeRow.key)!;
       if (event.key === 'ArrowRight') setThreadOpen(role.threadKey, true);
-      else {
-        const lead = sourceRows.find((row) => threaded.roles.get(row.key)?.threadKey === role.threadKey && threaded.roles.get(row.key)?.lead);
-        if (lead && lead.key !== activeRow.key) {
-          activeKey = lead.key;
-          onActiveKey?.(lead.key);
-        }
-        setThreadOpen(role.threadKey, false);
-      }
+      else setThreadOpen(role.threadKey, false);
     }
     else if (event.key === 'Home') await moveTo(0);
     else if (event.key === 'End') {
