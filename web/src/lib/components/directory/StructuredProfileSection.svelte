@@ -297,7 +297,7 @@
   {/if}
   {#if confirmingDelete}
     <div class="person-action close-confirm" role="group" aria-label="Confirm deleting person">
-      <span>Permanently delete this durable person profile?</span>
+      <span>Permanently delete this person from the Directory?</span>
       <div class="record-actions">
         <Button
           label="Cancel delete"

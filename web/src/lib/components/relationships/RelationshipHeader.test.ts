@@ -167,7 +167,7 @@ describe('RelationshipHeader', () => {
       onPromotePerson, onOpenDirectoryPerson
     }));
 
-    expect(screen.queryByRole('button', { name: 'Promote to person' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Save to Directory' })).toBeNull();
     const contactRecord = screen.getByRole('button', { name: 'Open contact record for Alice Example' });
     expect(contactRecord.textContent).toContain('Contact record');
     await fireEvent.click(contactRecord);
@@ -296,12 +296,12 @@ describe('RelationshipHeader', () => {
     const { rerender } = render(RelationshipHeader, baseProps({ onPromotePerson }));
 
     expect(screen.queryByRole('button', { name: /^Open contact record for / })).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: 'Promote to person' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Save to Directory' }));
     expect(onPromotePerson).toHaveBeenCalledWith(12);
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
 
     await rerender(baseProps({ detail: domain(), onPromotePerson }));
-    expect(screen.queryByRole('button', { name: 'Promote to person' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Save to Directory' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Open contact record for / })).toBeNull();
   });
 
@@ -311,17 +311,17 @@ describe('RelationshipHeader', () => {
     }));
     render(RelationshipHeader, baseProps({ onPromotePerson }));
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Promote to person' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Save to Directory' }));
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('Different durable profiles own this cluster.');
-    expect(alert.textContent).toContain('already belongs to another durable person');
+    expect(alert.textContent).toContain('already belongs to another Directory person');
   });
 
   it('drops a promotion failure that belongs to a person no longer open', async () => {
     const onPromotePerson = vi.fn(async () => ({ ok: false as const, code: 'error' as const, message: 'Synthetic failure.' }));
     const { rerender } = render(RelationshipHeader, baseProps({ onPromotePerson }));
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Promote to person' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Save to Directory' }));
     await screen.findByRole('alert');
     await rerender(baseProps({ detail: { ...person(), id: 13 }, onPromotePerson }));
     expect(screen.queryByRole('alert')).toBeNull();

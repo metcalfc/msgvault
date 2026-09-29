@@ -121,7 +121,7 @@
     {#if conflict}
       <div class="merge-required" role="alert">
         <strong>An explicit merge is required before these identities can be linked.</strong>
-        <p>The acceptance was recorded as a conflict and was not retried. Review both durable profiles before choosing a survivor.</p>
+        <p>The acceptance was recorded as a conflict and was not retried. Review both Directory profiles before choosing a survivor.</p>
         <ul aria-label="Profiles requiring merge">
           {#each conflict.profiles ?? [] as profile (profile.person.id)}
             <li>

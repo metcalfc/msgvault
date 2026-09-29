@@ -71,7 +71,7 @@
       <div class="heading-row">
         <div>
           <h3 id={`person-${personID}-carddav-publication-heading`} tabindex="-1">CardDAV publication</h3>
-          <p>Publish this durable person to the selected CardDAV address book.</p>
+          <p>Publish this person to the selected CardDAV address book.</p>
         </div>
         {#if controller.loading}
           <span class="working" aria-label="Loading CardDAV publication" aria-busy="true">

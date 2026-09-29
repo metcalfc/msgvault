@@ -19,7 +19,7 @@
     <div class="chooser">
       <EmptyState
         title="Choose a person in Directory to inspect their fact ledger"
-        description="Fact diagnostics are scoped to one durable Directory person."
+        description="Fact diagnostics are scoped to one Directory person."
       />
       <Button label="Open Directory" onclick={onOpenDirectory} />
     </div>

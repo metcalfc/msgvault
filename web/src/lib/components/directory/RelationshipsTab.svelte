@@ -97,7 +97,7 @@
 
 <section class="relationships-tab" aria-label="Person relationships">
   <header>
-    <div><h2>Relationships</h2><p>Curated, typed connections between durable people.</p></div>
+    <div><h2>Relationships</h2><p>Curated, typed connections between people in the Directory.</p></div>
     <div class="actions">
       <Button label="Add relationship" onclick={() => { relationshipEditor = null; }} />
       <Button label="Add relationship type" onclick={() => { relationshipTypeEditor = null; }} />
@@ -117,7 +117,7 @@
   {/if}
   {#if controller.relationshipsLoading}<p role="status">Loading relationships…</p>{/if}
   {#if controller.relationships.length === 0 && !controller.relationshipsLoading && !controller.errors.relationships}
-    <EmptyState title="No relationships" description="Add a typed relationship to connect this durable person." />
+    <EmptyState title="No relationships" description="Add a typed relationship to connect this person." />
   {:else if controller.relationships.length > 0}
     <ul class="records">
       {#each controller.relationships as view (view.relationship.id)}

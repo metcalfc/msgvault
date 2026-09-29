@@ -199,7 +199,7 @@
 >
   <div class="conflict" aria-busy={pending}>
     <p>
-      These identities already belong to different durable profiles. Inspect both profiles, then choose the one that
+      These identities already belong to different Directory profiles. Inspect both profiles, then choose the one that
       survives.
     </p>
 

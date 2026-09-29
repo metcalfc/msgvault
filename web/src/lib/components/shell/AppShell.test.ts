@@ -1497,7 +1497,7 @@ describe('AppShell', () => {
 
     expect(await screen.findByRole('heading', { name: 'Synthetic Candidate' })).toBeDefined();
     expect(screen.queryByRole('button', { name: /^Open contact record for / })).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: 'Promote to person' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Save to Directory' }));
 
     await waitFor(() => expect(state.current.workspace).toBe('directory'));
     expect(state.current.directoryPersonID).toBe(42);
@@ -1514,7 +1514,7 @@ describe('AppShell', () => {
     // Returning to the same relationship must reflect the new profile.
     state.commitNavigation({ workspace: 'relationships', relationshipTarget: 'cluster:11' });
     expect(await screen.findByRole('button', { name: /^Open contact record for / })).toBeDefined();
-    expect(screen.queryByRole('button', { name: 'Promote to person' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Save to Directory' })).toBeNull();
 
     rendered.unmount();
     state.destroy();
@@ -1548,11 +1548,11 @@ describe('AppShell', () => {
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
 
     expect(await screen.findByRole('heading', { name: 'Synthetic Candidate' })).toBeDefined();
-    await fireEvent.click(screen.getByRole('button', { name: 'Promote to person' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Save to Directory' }));
 
     const alert = await screen.findByText(/already bound to another person/);
     expect(alert.closest('[role="alert"]')).not.toBeNull();
-    expect(alert.textContent).toContain('resolve that binding before promoting');
+    expect(alert.textContent).toContain('resolve that binding before saving');
     expect(state.current.workspace).toBe('relationships');
     expect(state.current.directoryPersonID).toBeNull();
     expect(screen.queryByRole('main', { name: 'Directory' })).toBeNull();

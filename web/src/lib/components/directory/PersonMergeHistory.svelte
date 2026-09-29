@@ -70,7 +70,7 @@
   <div class="section-heading">
     <div>
       <h3 id={`person-${personID}-merge-history-heading`}>Merge history</h3>
-      <p>Inspect durable merge provenance and explicitly restore eligible absorbed lineage.</p>
+      <p>Inspect merge provenance and explicitly restore eligible absorbed lineage.</p>
     </div>
   </div>
 

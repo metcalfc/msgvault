@@ -389,7 +389,7 @@
             />
           {:else if !detail.profile?.id && onPromotePerson}
             <Button
-              label="Promote to person"
+              label="Save to Directory"
               tone="workflow"
               disabled={promoting}
               onclick={() => void promote()}
@@ -414,7 +414,7 @@
       <section class="named-state" role="alert">
         <span>
           {promotionFailure.message}
-          {#if promotionFailure.code === 'person_binding_conflict'} This participant already belongs to another durable person; resolve that binding before promoting it.{/if}
+          {#if promotionFailure.code === 'person_binding_conflict'} This participant already belongs to another Directory person; resolve that binding before saving it.{/if}
         </span>
       </section>
     {/if}

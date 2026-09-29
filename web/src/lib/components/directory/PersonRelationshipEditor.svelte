@@ -62,7 +62,7 @@
       (person): TypeaheadOption => ({
         name: String(person.id),
         label: person.display_name?.trim() || `Person ${person.id}`,
-        meta: person.organizations.length > 0 ? person.organizations.join(', ') : 'Durable person',
+        meta: person.organizations.length > 0 ? person.organizations.join(', ') : 'Directory person',
       }),
     ),
   );
@@ -257,10 +257,10 @@
         <Typeahead
           options={peopleOptions}
           value={counterpartID === null ? '' : String(counterpartID)}
-          fallbackLabel="Choose a durable person"
+          fallbackLabel="Choose a person"
           placeholder="Relationship counterpart"
           title="Relationship counterpart"
-          emptyLabel="No matching durable people"
+          emptyLabel="No matching people"
           loading={searching}
           loadingLabel="Searching…"
           remote
