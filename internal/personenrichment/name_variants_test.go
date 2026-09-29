@@ -12,8 +12,8 @@ func TestNameVariantsAreDeterministicAndBounded(t *testing.T) {
 		in   string
 		want []string
 	}{
-		{name: "plain name has no variants", in: "Susie Singh", want: nil},
-		{name: "middle initial dropped", in: "Susie Q. Singh", want: []string{"susie singh"}},
+		{name: "plain name has no variants", in: "Priya Ramanathan", want: nil},
+		{name: "middle initial dropped", in: "Priya Q. Ramanathan", want: []string{"priya ramanathan"}},
 		{name: "middle name dropped", in: "Alex Morgan Rivera", want: []string{"alex rivera"}},
 		{name: "suffix dropped then middle", in: "Alex Morgan Rivera Jr.", want: []string{"alex morgan rivera", "alex rivera"}},
 		{name: "credential suffix after comma", in: "Dana Example, PhD", want: []string{"dana example"}},
@@ -31,13 +31,13 @@ func TestNameVariantsAreDeterministicAndBounded(t *testing.T) {
 
 func TestNameIdentifierMatchAcceptsOnlyRequestVariants(t *testing.T) {
 	assert := assert.New(t)
-	assert.True(nameIdentifierMatch("Susie Singh", "susie singh"))
-	assert.True(nameIdentifierMatch("Susie Q. Singh", "Susie Singh"), "the returned name may drop the middle initial")
+	assert.True(nameIdentifierMatch("Priya Ramanathan", "priya ramanathan"))
+	assert.True(nameIdentifierMatch("Priya Q. Ramanathan", "Priya Ramanathan"), "the returned name may drop the middle initial")
 	assert.True(nameIdentifierMatch("Rivera, Alex", "Alex Rivera"))
 	assert.True(nameIdentifierMatch("Alex Rivera Jr.", "Alex Rivera"))
-	assert.False(nameIdentifierMatch("Susie Singh", "Susie S."), "an abbreviated surname is not a code variant")
-	assert.False(nameIdentifierMatch("Susie Singh", "Susie Q. Singh"), "variants never run from returned to requested")
-	assert.False(nameIdentifierMatch("Susie Singh", "Susan Singh"))
-	assert.False(nameIdentifierMatch("", "Susie Singh"))
-	assert.False(nameIdentifierMatch("Susie Singh", ""))
+	assert.False(nameIdentifierMatch("Priya Ramanathan", "Priya R."), "an abbreviated surname is not a code variant")
+	assert.False(nameIdentifierMatch("Priya Ramanathan", "Priya Q. Ramanathan"), "variants never run from returned to requested")
+	assert.False(nameIdentifierMatch("Priya Ramanathan", "Priyanka Ramanathan"))
+	assert.False(nameIdentifierMatch("", "Priya Ramanathan"))
+	assert.False(nameIdentifierMatch("Priya Ramanathan", ""))
 }

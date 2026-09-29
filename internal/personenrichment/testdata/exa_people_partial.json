@@ -2,8 +2,8 @@
   "requestId": "request_test_people_partial_7",
   "results": [
     {
-      "title": "Susie S. - Partner",
-      "url": "https://profiles.example.test/susie-s",
+      "title": "Priya R. - Partner",
+      "url": "https://profiles.example.test/priya-r",
       "publishedDate": "2026-08-20T10:00:00Z",
       "entities": [
         {
@@ -11,9 +11,9 @@
           "type": "person",
           "version": 1,
           "properties": {
-            "name": "Susie S.",
-            "firstName": "Susie",
-            "lastName": "S.",
+            "name": "Priya R.",
+            "firstName": "Priya",
+            "lastName": "R.",
             "location": "Example City",
             "workHistory": [
               {
@@ -25,7 +25,7 @@
                 },
                 "company": {
                   "id": "company_test_9",
-                  "name": "Heavybit"
+                  "name": "Example Capital"
                 }
               },
               {

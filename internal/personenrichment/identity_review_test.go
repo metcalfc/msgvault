@@ -66,7 +66,7 @@ func partialRequest() personenrichment.Request {
 	return personenrichment.Request{
 		RequestHash: "hash",
 		Identity: personenrichment.Identity{
-			Name: "susie singh", CurrentCompany: "heavybit", Email: "susie@example.test",
+			Name: "priya ramanathan", CurrentCompany: "example capital", Email: "priya@example.test",
 		},
 	}
 }
@@ -78,7 +78,7 @@ func partialResult(name, company string) personenrichment.Result {
 			{Class: personenrichment.IdentifierCurrentCompany, Value: company, Confidence: 900},
 		},
 		ReturnedIdentity: &personenrichment.ReturnedIdentity{
-			Name: name, FirstName: "Susie", LastName: "S.", Location: "Example City",
+			Name: name, FirstName: "Priya", LastName: "R.", Location: "Example City",
 			CurrentRoles:   []personenrichment.ReturnedRole{{Title: "Partner", Company: company}},
 			PastCompanies:  []string{"Example Ventures"},
 			ProfileURLHost: "profiles.example.test",
@@ -89,16 +89,16 @@ func partialResult(name, company string) personenrichment.Result {
 func TestSemanticIdentityReviewOnlyForExactlyOneMatch(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	review, ok := personenrichment.SemanticIdentityReview(partialRequest(), partialResult("Susie S.", "Heavybit"))
+	review, ok := personenrichment.SemanticIdentityReview(partialRequest(), partialResult("Priya R.", "Example Capital"))
 	require.True(ok)
 	assert.Equal(personenrichment.IdentifierCurrentCompany, review.Exact)
-	assert.Equal(personenrichment.RequestedIdentity{Name: "susie singh", Company: "heavybit", EmailDomain: "example.test"}, review.Requested)
-	assert.Equal("Susie S.", review.Returned.Name)
+	assert.Equal(personenrichment.RequestedIdentity{Name: "priya ramanathan", Company: "example capital", EmailDomain: "example.test"}, review.Requested)
+	assert.Equal("Priya R.", review.Returned.Name)
 	assert.Equal("profiles.example.test", review.Returned.ProfileURLHost)
 
-	both := partialResult("Susie Singh", "Heavybit")
+	both := partialResult("Priya Ramanathan", "Example Capital")
 	both.IdentityMatches = append(both.IdentityMatches, personenrichment.IdentityMatch{
-		Class: personenrichment.IdentifierName, Value: "Susie Singh", Confidence: 900,
+		Class: personenrichment.IdentifierName, Value: "Priya Ramanathan", Confidence: 900,
 	})
 	_, ok = personenrichment.SemanticIdentityReview(partialRequest(), both)
 	assert.False(ok, "two exact matches need no review")
@@ -110,27 +110,27 @@ func TestSemanticIdentityReviewOnlyForExactlyOneMatch(t *testing.T) {
 	nameOnly := personenrichment.Result{
 		State: personenrichment.ResultComplete,
 		IdentityMatches: []personenrichment.IdentityMatch{
-			{Class: personenrichment.IdentifierName, Value: "Susie Singh", Confidence: 900},
+			{Class: personenrichment.IdentifierName, Value: "Priya Ramanathan", Confidence: 900},
 		},
 		ReturnedIdentity: &personenrichment.ReturnedIdentity{
-			Name: "Susie Singh", CurrentRoles: []personenrichment.ReturnedRole{{Company: "Dataherald (YC W21)"}},
+			Name: "Priya Ramanathan", CurrentRoles: []personenrichment.ReturnedRole{{Company: "Example Labs (YC W21)"}},
 		},
 	}
-	dataherald := partialRequest()
-	dataherald.Identity.CurrentCompany = "dataherald"
-	review, ok = personenrichment.SemanticIdentityReview(dataherald, nameOnly)
+	batchTag := partialRequest()
+	batchTag.Identity.CurrentCompany = "example labs"
+	review, ok = personenrichment.SemanticIdentityReview(batchTag, nameOnly)
 	require.True(ok)
 	assert.Equal(personenrichment.IdentifierName, review.Exact)
 
-	noReturned := partialResult("Susie S.", "Heavybit")
+	noReturned := partialResult("Priya R.", "Example Capital")
 	noReturned.ReturnedIdentity = nil
 	_, ok = personenrichment.SemanticIdentityReview(partialRequest(), noReturned)
 	assert.False(ok, "a provider that returned no identity fields cannot be reviewed")
 
-	long := partialResult("Susie S.", "Heavybit")
+	long := partialResult("Priya R.", "Example Capital")
 	for range 20 {
 		long.ReturnedIdentity.PastCompanies = append(long.ReturnedIdentity.PastCompanies, "Another Company")
-		long.ReturnedIdentity.CurrentRoles = append(long.ReturnedIdentity.CurrentRoles, personenrichment.ReturnedRole{Company: "Heavybit"})
+		long.ReturnedIdentity.CurrentRoles = append(long.ReturnedIdentity.CurrentRoles, personenrichment.ReturnedRole{Company: "Example Capital"})
 	}
 	review, ok = personenrichment.SemanticIdentityReview(partialRequest(), long)
 	require.True(ok)
@@ -240,7 +240,7 @@ func TestJevIdentityJudgeSendsOnlyDisclosedFieldsWithConsentedWording(t *testing
 	policy, err := personenrichment.JevIdentityFeature().Policy(cfg)
 	require.NoError(err)
 	judge := personenrichment.NewJevIdentityJudge(service, true)
-	review, ok := personenrichment.SemanticIdentityReview(partialRequest(), partialResult("Susie S.", "Heavybit"))
+	review, ok := personenrichment.SemanticIdentityReview(partialRequest(), partialResult("Priya R.", "Example Capital"))
 	require.True(ok)
 
 	_, err = judge.JudgeIdentity(t.Context(), review)
@@ -257,10 +257,10 @@ func TestJevIdentityJudgeSendsOnlyDisclosedFieldsWithConsentedWording(t *testing
 	require.Len(*bodies, 1)
 	sent := (*bodies)[0]
 	assert.Equal(map[string]any{
-		"requested": map[string]any{"name": "susie singh", "company": "heavybit", "email_domain": "example.test"},
+		"requested": map[string]any{"name": "priya ramanathan", "company": "example capital", "email_domain": "example.test"},
 		"returned": map[string]any{
-			"name": "Susie S.", "first_name": "Susie", "last_name": "S.", "location": "Example City",
-			"current_roles":    []any{map[string]any{"title": "Partner", "company": "Heavybit"}},
+			"name": "Priya R.", "first_name": "Priya", "last_name": "R.", "location": "Example City",
+			"current_roles":    []any{map[string]any{"title": "Partner", "company": "Example Capital"}},
 			"past_companies":   []any{"Example Ventures"},
 			"profile_url_host": "profiles.example.test",
 		},

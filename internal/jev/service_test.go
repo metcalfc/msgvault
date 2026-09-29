@@ -143,7 +143,7 @@ func TestServiceJudgeSendsExactPolicyOnlyWhenEveryGatePasses(t *testing.T) {
 		},
 	})
 	require.NoError(err)
-	state := map[string]any{"left": "Susie Singh", "right": "Susie S."}
+	state := map[string]any{"left": "Priya Ramanathan", "right": "Priya R."}
 
 	_, err = service.Judge(context.Background(), testSpec(), false, state, time.Time{})
 	require.ErrorIs(err, ErrConsentRequired)
@@ -166,7 +166,7 @@ func TestServiceJudgeSendsExactPolicyOnlyWhenEveryGatePasses(t *testing.T) {
 	require.Len(*recorded, 1)
 	sent := (*recorded)[0]
 	assert.Equal("Bearer secret-key", sent.Authorization)
-	assert.Equal(map[string]any{"left": "Susie Singh", "right": "Susie S."}, sent.Body["state"])
+	assert.Equal(map[string]any{"left": "Priya Ramanathan", "right": "Priya R."}, sent.Body["state"])
 	assert.Equal(DefaultModel, sent.Body["model"])
 	assert.Equal(map[string]any{"same": map[string]any{
 		"type": "noul", "instructions": "Is `left` the same person as `right`?",

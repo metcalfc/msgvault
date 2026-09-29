@@ -87,8 +87,8 @@ Feature name: `enrichment_identity`. Setting: `[jev.identity_verification]`.
 
 External [person enrichment](people-enrichment.md) accepts a returned person
 only when both the name and the current company match the request exactly.
-Real providers return "Susie S." for "Susie Singh" or "Dataherald (YC W21)"
-for "Dataherald", which the exact rule rejects.
+Real providers return "Priya R." for "Priya Ramanathan" or "Example Labs (YC W21)"
+for "Example Labs", which the exact rule rejects.
 
 Two things change, in order:
 

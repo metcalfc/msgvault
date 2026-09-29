@@ -118,9 +118,9 @@ Site: `internal/personenrichment/exa.go` (`exaTypedIdentityMatches`,
   > needs an API contract decision and is left open.
 - [x] **Task 1.3 Wire the gate and fallback.** No consent or budget means the
   exact rule alone, exactly as today. Add the feature to `jev status`.
-- [x] **Task 1.4 Tests.** Fake Exa result "Susie S." at "Heavybit" for a
-  request "Susie Singh"/"Heavybit" accepts with fake Jev {0.95, 0.99, 0.02};
-  "Dataherald (YC W21)" vs "Dataherald" accepts; wrong person with matching
+- [x] **Task 1.4 Tests.** Fake Exa result "Priya R." at "Example Capital" for a
+  request "Priya Ramanathan"/"Example Capital" accepts with fake Jev {0.95, 0.99, 0.02};
+  "Example Labs (YC W21)" vs "Example Labs" accepts; wrong person with matching
   common name rejects; Jev unavailable falls back to rejection; consent
   revoked never sends.
 
@@ -253,8 +253,8 @@ Site: `internal/store/person_fact_organization.go`,
 - [ ] **Task 3.3 Employment fingerprint.** Let same-role titles corroborate
   by mapping through the alias table before fingerprinting, so Exa and
   sweep claims for the same role add up. Resolver arithmetic unchanged.
-- [ ] **Task 3.4 Tests.** "Dataherald, Inc." resolves to existing
-  "Dataherald"; unrelated similar name creates new org; alias write is
+- [ ] **Task 3.4 Tests.** "Example Labs, Inc." resolves to existing
+  "Example Labs"; unrelated similar name creates new org; alias write is
   idempotent; replay with stored alias needs no Jev call.
 
 ## Phase 4: hybrid search reranking

@@ -56,7 +56,7 @@ func TestExaPartialMatchIsRejectedWithoutIdentityReview(t *testing.T) {
 	provider, err := personenrichment.NewExaProvider(exaNameCompanyConfig(server.URL+"/search"), "test-key", server.Client())
 	require.NoError(err)
 	_, err = provider.Start(t.Context(), personenrichment.Request{
-		Identity: personenrichment.Identity{Name: "susie singh", CurrentCompany: "heavybit"},
+		Identity: personenrichment.Identity{Name: "priya ramanathan", CurrentCompany: "example capital"},
 		Targets:  exaTypedTargets(t),
 	})
 	require.Error(err, "today's exact rule rejects an abbreviated surname at decode")
@@ -75,7 +75,7 @@ func TestExaPartialMatchPassesDecodeWithReturnedIdentityWhenReviewIsEnabled(t *t
 		personenrichment.WithExaIdentityReview())
 	require.NoError(err)
 	attempt, err := provider.Start(t.Context(), personenrichment.Request{
-		Identity: personenrichment.Identity{Name: "susie singh", CurrentCompany: "heavybit"},
+		Identity: personenrichment.Identity{Name: "priya ramanathan", CurrentCompany: "example capital"},
 		Targets:  exaTypedTargets(t),
 	})
 	require.NoError(err)
@@ -83,12 +83,12 @@ func TestExaPartialMatchPassesDecodeWithReturnedIdentityWhenReviewIsEnabled(t *t
 	result := attempt.Result
 	assert.Zero(result.IdentityConfidence, "a partial match carries no identity confidence of its own")
 	assert.Equal([]personenrichment.IdentityMatch{{
-		Class: personenrichment.IdentifierCurrentCompany, Value: "Heavybit", Confidence: 900,
+		Class: personenrichment.IdentifierCurrentCompany, Value: "Example Capital", Confidence: 900,
 	}}, result.IdentityMatches)
 	require.NotNil(result.ReturnedIdentity)
 	assert.Equal(&personenrichment.ReturnedIdentity{
-		Name: "Susie S.", FirstName: "Susie", LastName: "S.", Location: "Example City",
-		CurrentRoles:   []personenrichment.ReturnedRole{{Title: "Partner", Company: "Heavybit"}},
+		Name: "Priya R.", FirstName: "Priya", LastName: "R.", Location: "Example City",
+		CurrentRoles:   []personenrichment.ReturnedRole{{Title: "Partner", Company: "Example Capital"}},
 		PastCompanies:  []string{"Example Ventures"},
 		ProfileURLHost: "profiles.example.test",
 	}, result.ReturnedIdentity)
@@ -96,7 +96,7 @@ func TestExaPartialMatchPassesDecodeWithReturnedIdentityWhenReviewIsEnabled(t *t
 
 	// The exact rule still declines it; only a judge can change that.
 	assessment := personenrichment.AssessIdentity(personenrichment.Request{
-		Identity: personenrichment.Identity{Name: "susie singh", CurrentCompany: "heavybit"},
+		Identity: personenrichment.Identity{Name: "priya ramanathan", CurrentCompany: "example capital"},
 	}, *result, nil)
 	assert.False(assessment.Accepted)
 	assert.Equal("identity_not_verified", assessment.Reason)

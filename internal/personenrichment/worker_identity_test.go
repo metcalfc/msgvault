@@ -144,21 +144,21 @@ func runPartialIdentityCase(t *testing.T, f *workerFixture, factories map[string
 func TestWorkerAcceptsAbbreviatedSurnameAtTheSameCompanyWithAJudge(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	f, factories, configs := partialIdentityFixture(t, "exa-susie", "susie singh", "heavybit",
+	f, factories, configs := partialIdentityFixture(t, "exa-priya", "priya ramanathan", "example capital",
 		personenrichment.ReturnedIdentity{
-			Name: "Susie S.", FirstName: "Susie", LastName: "S.",
-			CurrentRoles: []personenrichment.ReturnedRole{{Title: "Partner", Company: "Heavybit"}},
+			Name: "Priya R.", FirstName: "Priya", LastName: "R.",
+			CurrentRoles: []personenrichment.ReturnedRole{{Title: "Partner", Company: "Example Capital"}},
 		},
-		personenrichment.IdentityMatch{Class: personenrichment.IdentifierCurrentCompany, Value: "Heavybit", Confidence: 900},
+		personenrichment.IdentityMatch{Class: personenrichment.IdentifierCurrentCompany, Value: "Example Capital", Confidence: 900},
 	)
-	seedNameAndCompany(t, f, "Susie Singh", "Heavybit")
+	seedNameAndCompany(t, f, "Priya Ramanathan", "Example Capital")
 	judge := &fixedJudge{nameCompatible: 0.95, companySame: 0.99, nameConflict: 0.02}
 	attempt := runPartialIdentityCase(t, f, factories, configs, judge)
 	assert.Equal("succeeded", attempt.State)
 	require.Len(judge.reviews, 1)
 	assert.Equal(personenrichment.IdentifierCurrentCompany, judge.reviews[0].Exact)
-	assert.Equal("susie singh", judge.reviews[0].Requested.Name)
-	assert.Equal("Susie S.", judge.reviews[0].Returned.Name)
+	assert.Equal("priya ramanathan", judge.reviews[0].Requested.Name)
+	assert.Equal("Priya R.", judge.reviews[0].Returned.Name)
 
 	judgment, err := f.store.GetPersonEnrichmentIdentityJudgmentContext(t.Context(), attempt.ID)
 	require.NoError(err)
@@ -177,31 +177,31 @@ func TestWorkerAcceptsAbbreviatedSurnameAtTheSameCompanyWithAJudge(t *testing.T)
 func TestWorkerAcceptsAcceleratorBatchTagOnTheCompanyWithAJudge(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	f, factories, configs := partialIdentityFixture(t, "exa-dataherald", "test user", "dataherald",
+	f, factories, configs := partialIdentityFixture(t, "exa-batch-tag", "test user", "example labs",
 		personenrichment.ReturnedIdentity{
-			Name: "Test User", CurrentRoles: []personenrichment.ReturnedRole{{Title: "Founder", Company: "Dataherald (YC W21)"}},
+			Name: "Test User", CurrentRoles: []personenrichment.ReturnedRole{{Title: "Founder", Company: "Example Labs (YC W21)"}},
 		},
 		personenrichment.IdentityMatch{Class: personenrichment.IdentifierName, Value: "Test User", Confidence: 900},
 	)
-	seedNameAndCompany(t, f, "Test User", "Dataherald")
+	seedNameAndCompany(t, f, "Test User", "Example Labs")
 	judge := &fixedJudge{nameCompatible: 0.99, companySame: 0.97, nameConflict: 0.01}
 	attempt := runPartialIdentityCase(t, f, factories, configs, judge)
 	assert.Equal("succeeded", attempt.State)
 	require.Len(judge.reviews, 1)
 	assert.Equal(personenrichment.IdentifierName, judge.reviews[0].Exact)
-	assert.Equal("Dataherald (YC W21)", judge.reviews[0].Returned.CurrentRoles[0].Company)
+	assert.Equal("Example Labs (YC W21)", judge.reviews[0].Returned.CurrentRoles[0].Company)
 }
 
 func TestWorkerRejectsWrongPersonWithMatchingCommonNameDespiteAJudge(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	f, factories, configs := partialIdentityFixture(t, "exa-wrong", "susie singh", "heavybit",
+	f, factories, configs := partialIdentityFixture(t, "exa-wrong", "priya ramanathan", "example capital",
 		personenrichment.ReturnedIdentity{
-			Name: "Susie Okafor", CurrentRoles: []personenrichment.ReturnedRole{{Title: "Analyst", Company: "Heavybit"}},
+			Name: "Priya Okafor", CurrentRoles: []personenrichment.ReturnedRole{{Title: "Analyst", Company: "Example Capital"}},
 		},
-		personenrichment.IdentityMatch{Class: personenrichment.IdentifierCurrentCompany, Value: "Heavybit", Confidence: 900},
+		personenrichment.IdentityMatch{Class: personenrichment.IdentifierCurrentCompany, Value: "Example Capital", Confidence: 900},
 	)
-	seedNameAndCompany(t, f, "Susie Singh", "Heavybit")
+	seedNameAndCompany(t, f, "Priya Ramanathan", "Example Capital")
 	judge := &fixedJudge{nameCompatible: 0.30, companySame: 0.99, nameConflict: 0.85}
 	attempt := runPartialIdentityCase(t, f, factories, configs, judge)
 	assert.Equal("identity_rejected", attempt.State)
@@ -218,13 +218,13 @@ func TestWorkerRejectsWrongPersonWithMatchingCommonNameDespiteAJudge(t *testing.
 func TestWorkerFallsBackToRejectionWhenTheJudgeIsUnavailable(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	f, factories, configs := partialIdentityFixture(t, "exa-unavailable", "susie singh", "heavybit",
+	f, factories, configs := partialIdentityFixture(t, "exa-unavailable", "priya ramanathan", "example capital",
 		personenrichment.ReturnedIdentity{
-			Name: "Susie S.", CurrentRoles: []personenrichment.ReturnedRole{{Company: "Heavybit"}},
+			Name: "Priya R.", CurrentRoles: []personenrichment.ReturnedRole{{Company: "Example Capital"}},
 		},
-		personenrichment.IdentityMatch{Class: personenrichment.IdentifierCurrentCompany, Value: "Heavybit", Confidence: 900},
+		personenrichment.IdentityMatch{Class: personenrichment.IdentifierCurrentCompany, Value: "Example Capital", Confidence: 900},
 	)
-	seedNameAndCompany(t, f, "Susie Singh", "Heavybit")
+	seedNameAndCompany(t, f, "Priya Ramanathan", "Example Capital")
 	judge := &fixedJudge{err: jev.ErrBreakerOpen}
 	attempt := runPartialIdentityCase(t, f, factories, configs, judge)
 	assert.Equal("identity_rejected", attempt.State, "an unavailable judge leaves the exact rule's answer")
@@ -235,13 +235,13 @@ func TestWorkerFallsBackToRejectionWhenTheJudgeIsUnavailable(t *testing.T) {
 
 func TestWorkerWithoutAJudgeRejectsPartialMatchesAsBefore(t *testing.T) {
 	assert := assert.New(t)
-	f, factories, configs := partialIdentityFixture(t, "exa-nojudge", "susie singh", "heavybit",
+	f, factories, configs := partialIdentityFixture(t, "exa-nojudge", "priya ramanathan", "example capital",
 		personenrichment.ReturnedIdentity{
-			Name: "Susie S.", CurrentRoles: []personenrichment.ReturnedRole{{Company: "Heavybit"}},
+			Name: "Priya R.", CurrentRoles: []personenrichment.ReturnedRole{{Company: "Example Capital"}},
 		},
-		personenrichment.IdentityMatch{Class: personenrichment.IdentifierCurrentCompany, Value: "Heavybit", Confidence: 900},
+		personenrichment.IdentityMatch{Class: personenrichment.IdentifierCurrentCompany, Value: "Example Capital", Confidence: 900},
 	)
-	seedNameAndCompany(t, f, "Susie Singh", "Heavybit")
+	seedNameAndCompany(t, f, "Priya Ramanathan", "Example Capital")
 	attempt := runPartialIdentityCase(t, f, factories, configs, nil)
 	assert.Equal("identity_rejected", attempt.State)
 }
@@ -249,13 +249,13 @@ func TestWorkerWithoutAJudgeRejectsPartialMatchesAsBefore(t *testing.T) {
 func TestWorkerRecordsUncertainJudgmentsWithoutApplyingClaims(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	f, factories, configs := partialIdentityFixture(t, "exa-uncertain", "susie singh", "heavybit",
+	f, factories, configs := partialIdentityFixture(t, "exa-uncertain", "priya ramanathan", "example capital",
 		personenrichment.ReturnedIdentity{
-			Name: "S. Singh-Example", CurrentRoles: []personenrichment.ReturnedRole{{Company: "Heavybit"}},
+			Name: "P. Ramanathan-Example", CurrentRoles: []personenrichment.ReturnedRole{{Company: "Example Capital"}},
 		},
-		personenrichment.IdentityMatch{Class: personenrichment.IdentifierCurrentCompany, Value: "Heavybit", Confidence: 900},
+		personenrichment.IdentityMatch{Class: personenrichment.IdentifierCurrentCompany, Value: "Example Capital", Confidence: 900},
 	)
-	seedNameAndCompany(t, f, "Susie Singh", "Heavybit")
+	seedNameAndCompany(t, f, "Priya Ramanathan", "Example Capital")
 	judge := &fixedJudge{nameCompatible: 0.70, companySame: 0.99, nameConflict: 0.10}
 	attempt := runPartialIdentityCase(t, f, factories, configs, judge)
 	assert.Equal("identity_uncertain", attempt.State)
