@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 )
@@ -14,10 +13,10 @@ const contactMatchMergeActor = "user"
 // acceptParticipantPersonMatchCandidateContext applies a participant-to-person
 // candidate, such as a contact match, at participant-cluster level:
 //
-//   - bind (the cluster has no person): the candidate is marked accepted, the
-//     cluster is promoted to a new person, and that person is merged into the
-//     candidate's person as survivor. The survivor keeps its vCard UID and
-//     CardDAV mapping, and the merge is reversible through split.
+//   - bind (the cluster has no person): the cluster is promoted to a new
+//     person, that person is merged into the candidate's person as survivor,
+//     and the candidate is marked accepted. The survivor keeps its vCard UID
+//     and CardDAV mapping, and the merge is reversible through split.
 //   - linked (the cluster already belongs to the candidate's person): the
 //     candidate is marked accepted; nothing else changes.
 //   - merge or ambiguous (the cluster belongs to other people): a
@@ -25,162 +24,145 @@ const contactMatchMergeActor = "user"
 //     candidate is left undecided, so the caller can offer an explicit merge
 //     that lets the user pick the survivor.
 //
-// Promotion and merge are separate transactions. A failure after promotion
-// restores the candidate's previous decision and leaves the promoted person
-// in place; the candidate then reads as a merge, which the user resolves
-// through the normal merge flow.
+// Everything happens in one transaction under the identity lock, so a bind
+// is all or nothing: a cancellation or failure after promotion rolls the
+// promotion back, and the candidate's decision is written only by the
+// transaction that applied it.
 func (s *Store) acceptParticipantPersonMatchCandidateContext(
 	ctx context.Context, candidateID int64, decidedBy string, notes *string,
 ) (*IdentityMatchCandidate, int64, error) {
 	if decidedBy != string(ProvenanceUser) {
 		return nil, 0, ErrIdentityMatchNotAcceptable
 	}
-	var before *IdentityMatchCandidate
-	var classification ContactMatchClassification
-	err := s.withTxContext(ctx, func(tx *loggedTx) error {
-		if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
-			return err
-		}
-		candidate, err := getIdentityMatchCandidateTx(ctx, tx, candidateID)
-		if err != nil {
-			return err
-		}
-		if candidate.LeftKind != IdentityMatchParticipant ||
-			candidate.RightKind != IdentityMatchPerson {
-			return ErrIdentityMatchEndpointUnsupported
-		}
-		for _, endpoint := range []struct {
-			kind IdentityMatchEndpointKind
-			id   int64
-		}{{candidate.LeftKind, candidate.LeftID}, {candidate.RightKind, candidate.RightID}} {
-			if err := validateIdentityMatchEndpointTx(ctx, tx, endpoint.kind, endpoint.id); err != nil {
+	type acceptance struct {
+		candidate *IdentityMatchCandidate
+		revision  int64
+	}
+	result, err := retryBusyWrite(ctx, s, "accept participant-to-person match",
+		func() (*acceptance, error) {
+			var accepted acceptance
+			err := s.withTxContext(ctx, func(tx *loggedTx) error {
+				var err error
+				accepted.candidate, err = s.acceptParticipantPersonMatchTx(
+					ctx, tx, candidateID, decidedBy, notes)
+				if err != nil {
+					return err
+				}
+				accepted.revision, err = readIdentityRevisionContext(ctx, tx)
 				return err
-			}
-		}
-		edges, err := s.loadLinkEdgesTxContext(ctx, tx)
-		if err != nil {
-			return err
-		}
-		members := sortedComponentMembers(candidate.LeftID, edges)
-		persons, err := personIDsForParticipantsTx(ctx, tx, members)
-		if err != nil {
-			return err
-		}
-		classification = classifyContactMatch(candidate.RightID, persons)
-		switch classification {
-		case ContactMatchMerge, ContactMatchAmbiguous:
-			return newPersonBindingConflict(append(slices.Clone(persons), candidate.RightID))
-		case ContactMatchBind:
-			blocks, err := contactMatchBlockReasonsTx(ctx, tx, []int64{candidate.RightID})
+			})
 			if err != nil {
-				return err
+				return nil, err
 			}
-			if _, blocked := blocks[candidate.RightID]; blocked {
-				return ErrPersonCardDAVPublished
-			}
-		case ContactMatchLinked:
-		}
-		before = candidate
-		// The bind is marked accepted before the merge; the pending flag
-		// stays set until the merge commits.
-		_, err = tx.ExecContext(ctx, `UPDATE identity_match_candidates SET
-			state = ?, decided_by = ?, decided_at = `+s.dialect.Now()+`, notes = ?,
-			pre_conflict_state = NULL, application_pending = ?,
-			updated_at = `+s.dialect.Now()+` WHERE id = ?`,
-			IdentityMatchStateAccepted, decidedBy, stringValue(notes),
-			classification == ContactMatchBind, candidate.ID)
-		if err != nil {
-			return fmt.Errorf("accept participant-to-person identity candidate: %w", err)
-		}
-		return nil
-	})
+			return &accepted, nil
+		})
 	if err != nil {
 		return nil, 0, err
 	}
-	if classification == ContactMatchLinked {
-		return s.acceptedParticipantPersonCandidateContext(ctx, candidateID)
-	}
-
-	contactPersonID := before.RightID
-	promoted, created, err := s.CreatePersonFromParticipantContext(ctx, before.LeftID)
-	if err == nil && !created && promoted.ID != contactPersonID {
-		// Another writer bound the cluster between the decision and the
-		// promotion. Merging it now would choose a survivor the user never
-		// saw, so hand the conflict back instead.
-		err = newPersonBindingConflict([]int64{promoted.ID, contactPersonID})
-	}
-	if err == nil && promoted.ID != contactPersonID {
-		err = s.mergeContactMatchBindContext(ctx, candidateID, contactPersonID, promoted)
-	}
-	if err != nil {
-		if restoreErr := s.restoreParticipantPersonDecisionContext(ctx, before); restoreErr != nil {
-			return nil, 0, errors.Join(err, restoreErr)
-		}
-		return nil, 0, err
-	}
-	if _, err := s.db.ExecContext(ctx, `UPDATE identity_match_candidates
-		SET application_pending = FALSE WHERE id = ? AND state = ?`,
-		candidateID, IdentityMatchStateAccepted); err != nil {
-		return nil, 0, fmt.Errorf("complete participant-to-person identity candidate: %w", err)
-	}
-	return s.acceptedParticipantPersonCandidateContext(ctx, candidateID)
+	return result.candidate, result.revision, nil
 }
 
-func (s *Store) mergeContactMatchBindContext(
-	ctx context.Context, candidateID, contactPersonID int64, promoted *Person,
+func (s *Store) acceptParticipantPersonMatchTx(
+	ctx context.Context, tx *loggedTx, candidateID int64, decidedBy string, notes *string,
+) (*IdentityMatchCandidate, error) {
+	if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
+		return nil, err
+	}
+	candidate, err := getIdentityMatchCandidateTx(ctx, tx, candidateID)
+	if err != nil {
+		return nil, err
+	}
+	if candidate.LeftKind != IdentityMatchParticipant ||
+		candidate.RightKind != IdentityMatchPerson {
+		return nil, ErrIdentityMatchEndpointUnsupported
+	}
+	for _, endpoint := range []struct {
+		kind IdentityMatchEndpointKind
+		id   int64
+	}{{candidate.LeftKind, candidate.LeftID}, {candidate.RightKind, candidate.RightID}} {
+		if err := validateIdentityMatchEndpointTx(ctx, tx, endpoint.kind, endpoint.id); err != nil {
+			return nil, err
+		}
+	}
+	edges, err := s.loadLinkEdgesTxContext(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	members := sortedComponentMembers(candidate.LeftID, edges)
+	persons, err := personIDsForParticipantsTx(ctx, tx, members)
+	if err != nil {
+		return nil, err
+	}
+	contactPersonID := candidate.RightID
+	classification := classifyContactMatch(contactPersonID, persons)
+	switch classification {
+	case ContactMatchMerge, ContactMatchAmbiguous:
+		return nil, newPersonBindingConflict(append(slices.Clone(persons), contactPersonID))
+	case ContactMatchBind:
+		blocks, err := contactMatchBlockReasonsTx(ctx, tx, []int64{contactPersonID})
+		if err != nil {
+			return nil, err
+		}
+		if _, blocked := blocks[contactPersonID]; blocked {
+			return nil, ErrPersonCardDAVPublished
+		}
+		if err := s.bindClusterIntoPersonTx(ctx, tx, candidate.ID, candidate.LeftID, contactPersonID); err != nil {
+			return nil, err
+		}
+	case ContactMatchLinked:
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE identity_match_candidates SET
+		state = ?, decided_by = ?, decided_at = `+s.dialect.Now()+`, notes = ?,
+		pre_conflict_state = NULL, application_pending = FALSE,
+		updated_at = `+s.dialect.Now()+` WHERE id = ?`,
+		IdentityMatchStateAccepted, decidedBy, stringValue(notes), candidate.ID,
+	); err != nil {
+		return nil, fmt.Errorf("accept participant-to-person identity candidate: %w", err)
+	}
+	return getIdentityMatchCandidateTx(ctx, tx, candidate.ID)
+}
+
+// bindClusterIntoPersonTx promotes the participant's unbound cluster and
+// merges the new profile into the survivor, inside the caller's transaction.
+func (s *Store) bindClusterIntoPersonTx(
+	ctx context.Context, tx *loggedTx, candidateID, participantID, survivorID int64,
 ) error {
-	contact, err := s.GetPersonContext(ctx, contactPersonID)
+	promoted, created, err := s.createPersonFromParticipantTx(ctx, tx, participantID)
 	if err != nil {
 		return err
 	}
-	_, err = s.MergePersonsContext(ctx, PersonMergeRequest{
-		SurvivorID:               contact.ID,
+	if !created {
+		// The cluster was checked unbound under the same lock, so this is an
+		// invariant failure rather than a race.
+		return newPersonBindingConflict([]int64{promoted.ID, survivorID})
+	}
+	if s.contactMatchBindAfterPromoteHook != nil {
+		s.contactMatchBindAfterPromoteHook()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	survivor, err := s.getPersonTx(ctx, tx, survivorID)
+	if err != nil {
+		return err
+	}
+	request := PersonMergeRequest{
+		SurvivorID:               survivor.ID,
 		AbsorbedID:               promoted.ID,
-		ExpectedSurvivorRevision: contact.Revision,
+		ExpectedSurvivorRevision: survivor.Revision,
 		ExpectedAbsorbedRevision: promoted.Revision,
 		IdempotencyKey:           fmt.Sprintf("identity-match-%d-bind-%d", candidateID, promoted.ID),
 		Actor:                    contactMatchMergeActor,
-	})
+	}
+	if err := request.validate(); err != nil {
+		return err
+	}
+	requestHash, err := personMergeRequestHash(request)
 	if err != nil {
-		return fmt.Errorf("merge bound cluster into person %d: %w", contact.ID, err)
+		return err
+	}
+	if _, err := s.mergePersonsTx(ctx, tx, request, requestHash); err != nil {
+		return fmt.Errorf("merge bound cluster into person %d: %w", survivor.ID, err)
 	}
 	return nil
-}
-
-func (s *Store) acceptedParticipantPersonCandidateContext(
-	ctx context.Context, candidateID int64,
-) (*IdentityMatchCandidate, int64, error) {
-	candidate, err := s.GetIdentityMatchCandidateContext(ctx, candidateID)
-	if err != nil {
-		return nil, 0, err
-	}
-	revision, err := readIdentityRevisionContext(ctx, s.db)
-	if err != nil {
-		return nil, 0, err
-	}
-	return candidate, revision, nil
-}
-
-// restoreParticipantPersonDecisionContext puts back the decision fields a
-// failed bind overwrote, so a refused or failed accept does not consume the
-// candidate.
-func (s *Store) restoreParticipantPersonDecisionContext(
-	ctx context.Context, before *IdentityMatchCandidate,
-) error {
-	return s.withTxContext(ctx, func(tx *loggedTx) error {
-		if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE identity_match_candidates SET
-			state = ?, decided_by = ?, decided_at = ?, notes = ?,
-			application_pending = ?, pre_conflict_state = ?, updated_at = ?
-			WHERE id = ? AND state = ?`,
-			before.State, before.DecidedBy, before.DecidedAt, before.Notes,
-			before.applicationPending, before.conflictState.preConflictState,
-			before.UpdatedAt, before.ID, IdentityMatchStateAccepted,
-		); err != nil {
-			return fmt.Errorf("restore participant-to-person identity decision: %w", err)
-		}
-		return nil
-	})
 }

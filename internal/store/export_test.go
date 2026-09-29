@@ -218,6 +218,13 @@ func (s *Store) SetIdentityMatchAcceptBeforeDecisionHookForTest(fn func()) func(
 	return func() { s.identityMatchAcceptBeforeDecisionHook = nil }
 }
 
+// SetContactMatchBindAfterPromoteHookForTest runs inside a participant-to-
+// person bind after the cluster is promoted and before the merge.
+func (s *Store) SetContactMatchBindAfterPromoteHookForTest(fn func()) func() {
+	s.contactMatchBindAfterPromoteHook = fn
+	return func() { s.contactMatchBindAfterPromoteHook = nil }
+}
+
 // SetPersonOperationBeforeIdentityLockHookForTest installs a per-Store barrier
 // immediately before merge and split transactions acquire the identity lock.
 // Concurrency tests use it to prove every competing transaction is open and at

@@ -71,10 +71,28 @@ func (s *Store) CreatePersonFromParticipantContext(
 		return nil, false, fmt.Errorf("promote participant %d: %w", participantID, ErrInvalidParticipantID)
 	}
 
-	var personID int64
 	var person *Person
 	var created bool
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
+		var err error
+		person, created, err = s.createPersonFromParticipantTx(ctx, tx, participantID)
+		return err
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return person, created, nil
+}
+
+// createPersonFromParticipantTx promotes the participant's cluster inside the
+// caller's transaction; see CreatePersonFromParticipantContext.
+func (s *Store) createPersonFromParticipantTx(
+	ctx context.Context, tx *loggedTx, participantID int64,
+) (*Person, bool, error) {
+	var personID int64
+	var person *Person
+	var created bool
+	err := func() error {
 		if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
 			return err
 		}
@@ -146,7 +164,7 @@ func (s *Store) CreatePersonFromParticipantContext(
 		}
 		person, err = s.getPersonTx(ctx, tx, personID)
 		return err
-	})
+	}()
 	if err != nil {
 		return nil, false, err
 	}

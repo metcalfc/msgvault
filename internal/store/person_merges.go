@@ -287,6 +287,24 @@ func (s *Store) mergePersonsOnce(
 	}
 	var result *PersonMergeResult
 	err = s.withTxContext(ctx, func(tx *loggedTx) error {
+		var err error
+		result, err = s.mergePersonsTx(ctx, tx, request, requestHash)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// mergePersonsTx performs one merge inside the caller's transaction. The
+// caller has validated the request and computed its hash; any error must
+// roll the whole transaction back.
+func (s *Store) mergePersonsTx(
+	ctx context.Context, tx *loggedTx, request PersonMergeRequest, requestHash string,
+) (*PersonMergeResult, error) {
+	var result *PersonMergeResult
+	err := func() error {
 		if s.personOperationBeforeIdentityLockHook != nil {
 			s.personOperationBeforeIdentityLockHook()
 		}
@@ -486,7 +504,7 @@ func (s *Store) mergePersonsOnce(
 			return fmt.Errorf("store person merge result: %w", err)
 		}
 		return nil
-	})
+	}()
 	if err != nil {
 		return nil, err
 	}
