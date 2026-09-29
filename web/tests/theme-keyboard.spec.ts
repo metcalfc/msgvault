@@ -61,7 +61,10 @@ test.beforeEach(async ({ page }) => {
       total_count: 1, cache_revision: 'cache-theme', search_provenance: {}
     }
   }));
-  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+  // Land the way an app-generated Everything link does (with the bounds
+  // marker), so the seven-day default does not ride into the compact
+  // workspace links this spec asserts.
+  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything', dateBoundsChosen: true }))}`);
   await expect(page.getByText('Synthetic archive subject')).toBeVisible();
 });
 
@@ -73,7 +76,9 @@ test('compact workspace links preserve browser navigation and reopen the selecte
 
   await selectKitTopBarTab(page, 'Everything');
   await expect(page.getByText('Synthetic archive subject', { exact: true })).toBeVisible();
-  await expect(page).toHaveURL(/\?workspace=everything&mode=full_text$/);
+  // An Everything link without date bounds carries only the bounds marker,
+  // so it reopens as shared instead of on the seven-day default.
+  await expect(page).toHaveURL(/\?workspace=everything&mode=full_text&explore=%7B%22schemaVersion%22%3A2%2C%22dateBoundsChosen%22%3Atrue%7D$/);
   await page.goBack();
   await expect(page.getByText('synthetic.pdf', { exact: true })).toBeVisible();
   await page.goto(filesURL);
