@@ -224,10 +224,11 @@
    * one cluster or several, and a non-canonical id would not match the
    * hub's cluster:<canonical_id> targets. Every bound id is looked up and
    * grouped by its canonical cluster — reusing the resolution the person
-   * page already made for its reach block when it has settled — and the
-   * hub opens on the cluster with the most activity; when there are
-   * others, it names them so the rest of the person's history is one click
-   * away. */
+   * page already made for its reach block when it settled with every
+   * lookup answered; one that failed at page load may have been transient,
+   * so it is resolved again here — and the hub opens on the cluster with
+   * the most activity; when there are others, it names them so the rest of
+   * the person's history is one click away. */
   async function openDirectoryPersonTimeline(
     participantIDs: number[],
     resolved: BoundClusterResolution | undefined = undefined
@@ -237,7 +238,7 @@
     const origin = canonicalFingerprint(exploreState.current);
     let clusters: BoundCluster[] = [];
     let failedIDs: number[] = ids;
-    if (resolved) {
+    if (resolved && resolved.failedIDs.length === 0) {
       ({ clusters, failedIDs } = resolved);
     } else {
       try {

@@ -977,6 +977,48 @@ describe('AppShell', () => {
     state.destroy();
   });
 
+  it('resolves the bindings again on the handoff when a lookup failed at page load', async () => {
+    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
+      workspace: 'directory', directoryPersonID: 7
+    }))}`);
+    const { fetchFn, requests } = directoryPersonFetch([9, 3], {
+      3: { canonical: 3, members: [3, 9], label: 'Synthetic Person', activity: 5 },
+      9: { canonical: 3, members: [3, 9], label: 'Synthetic Person', activity: 5 }
+    });
+    // The person page's first lookup of binding 9 fails (a transient fault);
+    // every later lookup succeeds.
+    const serve = fetchFn.getMockImplementation()!;
+    let failNine = true;
+    fetchFn.mockImplementation(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      if (new URL(request.url).pathname === '/api/v1/participants/9' && failNine) {
+        failNine = false;
+        requests.push('/api/v1/participants/9');
+        throw new TypeError('network down');
+      }
+      return serve(input);
+    });
+    const state = new ExploreState(window);
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+
+    const handoff = await screen.findByRole('button', { name: 'Open timeline for Synthetic Person' });
+    await waitFor(() => expect(requests).toContain('/api/v1/participants/9'));
+    await waitFor(() => expect(requests).toContain('/api/v1/participants/3'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const requestsBeforeHandoff = requests.length;
+    await fireEvent.click(handoff);
+    await waitFor(() => expect(state.current).toMatchObject({ workspace: 'relationships', relationshipTarget: 'cluster:3' }));
+    // The cached resolution carried a failed id, so the handoff looked the
+    // bindings up again and the retry answered: one cluster, no fallback notice.
+    const handoffLookups = requests.slice(requestsBeforeHandoff).filter((path) => path === '/api/v1/participants/9');
+    expect(handoffLookups).toHaveLength(1);
+    expect(screen.getByRole('status', { name: 'Operation status' }).textContent).not.toContain('Could not resolve');
+    expect(screen.queryByRole('note')).toBeNull();
+
+    rendered.unmount();
+    state.destroy();
+  });
+
   it('falls back to the lowest bound participant and says so when identity lookups fail', async () => {
     window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
       workspace: 'directory', directoryPersonID: 7
