@@ -200,7 +200,7 @@ describe('meeting archive reader navigation', () => {
    const { client } = handler();
    window.history.replaceState(null, '', '/');
    const state = new ExploreState(window);
-   state.commitNavigation({ workspace: 'directory', directoryPersonID: 7 });
+   state.commitNavigation({ workspace: 'directory', directoryPersonID: 7, personTab: 'meetings' });
    const view = render(AppShell, { client, state });
    try {
      const link = await screen.findByRole('link', { name: 'Open archived meeting' });

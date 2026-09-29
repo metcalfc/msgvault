@@ -159,6 +159,10 @@ export interface ExploreURLState {
   directoryLastContactBefore: string;
   directorySort: 'name' | 'last_contact_desc' | 'last_contact_asc';
   directoryPersonID: number | null;
+  /** Only people with a display name in the People list. */
+  directoryHasName: boolean;
+  /** The People list's saved filter: everyone, saved, or not saved. */
+  peopleSaved: '' | 'saved' | 'unsaved';
   /** Which tab of a person page is open (`/people/:id/<tab>`). */
   personTab: PersonTab;
   reviewKind: DirectoryReviewKind;

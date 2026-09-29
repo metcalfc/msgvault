@@ -695,6 +695,7 @@ export * from "./relationshipReview";
 export * from "./relationshipReviewsResponse";
 export * from "./relationshipRow";
 export * from "./relationshipsHTTPRequest";
+export * from "./relationshipsHTTPRequestSort";
 export * from "./relationshipsHTTPResponse";
 export * from "./relationshipSignals";
 export * from "./relationshipTimelineHTTPRequest";

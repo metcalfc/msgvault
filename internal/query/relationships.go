@@ -75,6 +75,9 @@ type RelationshipRow struct {
 	LastAt       time.Time           `json:"last_at"`
 	// PrimaryIdentifier is absent when no cluster member has an email
 	// address, phone number, or handle.
+	// Profile is the saved Directory person the cluster is bound to, set by
+	// the API from the store; the analytical engine never fills it.
+	Profile           *PersonProfile           `json:"profile,omitempty" doc:"The saved Directory person this cluster is bound to, when it has been saved."`
 	PrimaryIdentifier *store.PrimaryIdentifier `json:"primary_identifier,omitempty" doc:"The one identifier a list row shows: the best email address, else phone number, else handle, across the cluster's members in the committed cache. Within a kind, the lowest member participant ID wins (the canonical participant first); a participant's own email address or phone number comes before its stored identifier rows. Absent when the cluster has none."`
 }
 
@@ -88,6 +91,12 @@ type RelationshipsRequest struct {
 	Limit   int
 	Offset  int
 	Now     time.Time
+	// SortByLastContact orders rows newest last interaction first instead
+	// of by score, with the same tie-breakers.
+	SortByLastContact bool
+	// ExcludeParticipants drops every cluster with a member in the set
+	// before paging, so a listing of contacts not yet saved pages cleanly.
+	ExcludeParticipants map[int64]struct{}
 }
 
 // RelationshipsResponse is the ranked page plus the cache/identity revisions
@@ -163,7 +172,9 @@ func (e *DuckDBEngine) Relationships(ctx context.Context, request RelationshipsR
 	page, totalCount, err := e.queryRelationshipCandidates(
 		ctx,
 		explore,
-		request.ShowAll,
+		relationshipCandidateOptions{
+			showAll: request.ShowAll, byLastContact: request.SortByLastContact, exclude: request.ExcludeParticipants,
+		},
 		now.UTC(),
 		request.Offset,
 		limit,
@@ -187,10 +198,16 @@ func (e *DuckDBEngine) Relationships(ctx context.Context, request RelationshipsR
 // queryRelationshipCandidates runs either the compact rollup query or the
 // narrow filtered reduction, then applies the shared gate, score, and total
 // ordering in Go.
+type relationshipCandidateOptions struct {
+	showAll       bool
+	byLastContact bool
+	exclude       map[int64]struct{}
+}
+
 func (e *DuckDBEngine) queryRelationshipCandidates(
 	ctx context.Context,
 	explore ExploreRequest,
-	showAll bool,
+	options relationshipCandidateOptions,
 	now time.Time,
 	offset, limit int,
 ) ([]RelationshipRow, int64, error) {
@@ -231,7 +248,10 @@ func (e *DuckDBEngine) queryRelationshipCandidates(
 		row.Signals.Modalities = modalitiesFromMask(modalityMask)
 		row.Signals.LastInteractionAt = row.LastAt
 		row.Score = RelationshipScore(row.Signals)
-		if !showAll && row.Signals.SentCount < 1 && row.Signals.MeetingCount < 1 {
+		if !options.showAll && row.Signals.SentCount < 1 && row.Signals.MeetingCount < 1 {
+			continue
+		}
+		if relationshipHasExcludedMember(row, options.exclude) {
 			continue
 		}
 		candidates = append(candidates, row)
@@ -241,6 +261,9 @@ func (e *DuckDBEngine) queryRelationshipCandidates(
 	}
 
 	sort.SliceStable(candidates, func(i, j int) bool {
+		if options.byLastContact {
+			return relationshipRowMoreRecent(candidates[i], candidates[j])
+		}
 		return relationshipRowBefore(candidates[i], candidates[j])
 	})
 	totalCount := int64(len(candidates))
@@ -340,6 +363,30 @@ func relationshipRowBefore(left, right RelationshipRow) bool {
 	// identical score, timestamp, and label can duplicate or disappear across
 	// offset-based pages when the database changes its physical scan order.
 	return left.CanonicalID < right.CanonicalID
+}
+
+// relationshipRowMoreRecent orders by last interaction, newest first, then
+// by the score ordering's own tie-breakers so pages stay stable.
+func relationshipRowMoreRecent(left, right RelationshipRow) bool {
+	if !left.LastAt.Equal(right.LastAt) {
+		return left.LastAt.After(right.LastAt)
+	}
+	return relationshipRowBefore(left, right)
+}
+
+func relationshipHasExcludedMember(row RelationshipRow, exclude map[int64]struct{}) bool {
+	if len(exclude) == 0 {
+		return false
+	}
+	if _, ok := exclude[row.CanonicalID]; ok {
+		return true
+	}
+	for _, id := range row.MemberIDs {
+		if _, ok := exclude[id]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func modalitiesFromMask(mask uint8) int {

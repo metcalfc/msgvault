@@ -37,9 +37,9 @@ describe('meeting panel surfaces', () => {
       return ancillary(path);
     });
     const bundle: DirectoryReadBundle = { person, etags: {}, errors: {} };
-    const view = render(PersonDetail, { client, personID: 7, bundle });
+    const view = render(PersonDetail, { client, personID: 7, bundle, tab: 'meetings' });
     await waitFor(() => expect(resolveOld).toBeDefined());
-    await view.rerender({ client, personID: 7, bundle: { ...bundle, person: { ...person, revision: 2, participant_ids: [7, 9] } } });
+    await view.rerender({ client, personID: 7, tab: 'meetings', bundle: { ...bundle, person: { ...person, revision: 2, participant_ids: [7, 9] } } });
     expect(await screen.findByText('4 meetings')).toBeDefined();
     expect(metrics).toEqual([{ scope: { person_id: 7 } }, { scope: { person_id: 7 } }]);
     expect(oldSignal.aborted).toBe(true);

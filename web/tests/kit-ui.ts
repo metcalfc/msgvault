@@ -66,3 +66,9 @@ export async function expectKitTheme(page: Page, theme: 'light' | 'dark'): Promi
   if (theme === 'dark') await expect(root).toHaveClass(/\bdark\b/);
   else await expect(root).not.toHaveClass(/\bdark\b/);
 }
+
+/** Opens a person from the People list by the name on their row. */
+export async function openPersonFromPeople(page: Page, name: string): Promise<void> {
+  await page.getByRole('region', { name: 'People results' })
+    .getByRole('link', { name: new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).first().click();
+}

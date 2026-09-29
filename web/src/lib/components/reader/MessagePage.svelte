@@ -14,6 +14,8 @@
     onBack?: () => void;
     /** Reports the loaded subject so the shell can title the page. */
     onSubject?: (subject: string) => void;
+    /** Opens a participant's person page from their name. */
+    onOpenPerson?: (participantID: number) => void;
   }
 
   let {
@@ -21,6 +23,7 @@
     messageID,
     onBack = () => window.location.assign('/inbox'),
     onSubject = () => undefined,
+    onOpenPerson = undefined,
   }: Props = $props();
   let message = $state<MessageDetail>();
   let error = $state('');
@@ -58,7 +61,7 @@
     <p role="alert">{error}</p>
     <Button onclick={() => retry += 1}>Retry</Button>
   {:else if message}
-    <ConversationView {client} conversationId={message.conversation_id!} anchorId={message.id!} />
+    <ConversationView {client} conversationId={message.conversation_id!} anchorId={message.id!} {onOpenPerson} />
   {:else}
     <p role="status">Loading message…</p>
   {/if}

@@ -36,6 +36,7 @@
     OperationStatusAuthority,
     ExploreURLState,
     ExploreWorkspace,
+    PersonSummary,
     FileViewerTarget,
     FileSearchSort,
   } from '../../explore/models';
@@ -75,7 +76,10 @@
   import FilesWorkspace from '../files/FilesWorkspace.svelte';
   import FileViewer from '../files/FileViewer.svelte';
   import RelationshipsWorkspace from '../relationships/RelationshipsWorkspace.svelte';
-  import DirectoryWorkspace from '../directory/DirectoryWorkspace.svelte';
+  import PeopleWorkspace from '../people/PeopleWorkspace.svelte';
+  import SavedPersonPage from '../people/SavedPersonPage.svelte';
+  import { PeopleHub, type PeopleFilters, type PeopleRow } from '../../people/hub.svelte';
+  import type { PersonTab } from '../../routing/routes';
   import DirectoryReviewWorkspace from '../directory/DirectoryReviewWorkspace.svelte';
   import KeyboardHelp from './KeyboardHelp.svelte';
   import MessagePage from '../reader/MessagePage.svelte';
@@ -88,9 +92,6 @@
   import { getMessage } from '../../api/generated/api/api';
   import type { MessageDetail } from '../../api/generated/models';
   import type { RelationshipSiblingCluster } from '../../relationships/models';
-  import {
-    resolutionCovers, resolveBoundClusters, validParticipantIDs, type BoundCluster, type BoundClusterResolution
-  } from '../../people/clusters';
   import { messageEntryKey, messageRowFilters } from '../../explore/entry-key';
   import { ARCHIVE_MEETING_HISTORY_KEY, parseArchiveMeetingHistory } from '../../meetings/archive-selection';
   import EverythingWorkspace from './EverythingWorkspace.svelte';
@@ -167,7 +168,6 @@
     // does; only beforeCommit's own explicit flush of THIS callback (a
     // navigation committing while the patch is still pending) reached it
     // before.
-    arrivedWithoutExploreParam = false;
     exploreState.replaceCommittedDraft(patch);
   }, SEARCH_TYPING_DEBOUNCE_MS);
   // A pending debounced search patch (People/Domains identity search, Files
@@ -177,13 +177,8 @@
   // dropped; the navigation patch is then committed on top and wins for the
   // fields it touches. Every write to ExploreState funnels through these
   // wrappers so the pending patch is flushed before any navigation commits.
-  // This shared path is also where the one-shot landing fallback (see
-  // `arrivedWithoutExploreParam` below) gets invalidated: any user-initiated
-  // navigation past the initial landing means a later explicit visit to the
-  // Relationships hub must show its own degraded state, not bounce away.
   function beforeCommit(): void {
     debouncedSearchPatch.flush();
-    arrivedWithoutExploreParam = false;
   }
   // Transient replaces (active row, scroll anchor) are user navigation too:
   // apply any pending typed search patch first so it cannot fire later and
@@ -239,54 +234,44 @@
   }
   function openDirectoryPerson(personID: number): void {
     beforeCommit();
-    exploreState.commitNavigation({ workspace: 'directory', directoryPersonID: personID });
-  }
-  /** The inverse of openDirectoryPerson. Person–participant bindings are
-   * independent of participant identity links, so the bound ids can sit in
-   * one cluster or several, and a non-canonical id would not match the
-   * hub's cluster:<canonical_id> targets. Every bound id is looked up and
-   * grouped by its canonical cluster — reusing the resolution the person
-   * page already made for its reach block when it covers these ids with
-   * every lookup answered; a resolution for another person, or one with a
-   * failed lookup (possibly transient), is resolved again here — and the
-   * hub opens on the cluster with
-   * the most activity; when there are others, it names them so the rest of
-   * the person's history is one click away. */
-  async function openDirectoryPersonTimeline(
-    participantIDs: number[],
-    resolved: BoundClusterResolution | undefined = undefined
-  ): Promise<void> {
-    const ids = validParticipantIDs(participantIDs);
-    if (ids.length === 0) return;
-    const origin = canonicalFingerprint(exploreState.current);
-    let clusters: BoundCluster[] = [];
-    let failedIDs: number[] = ids;
-    if (resolved && resolutionCovers(resolved, ids)) {
-      ({ clusters, failedIDs } = resolved);
-    } else {
-      try {
-        ({ clusters, failedIDs } = await resolveBoundClusters(ids, client));
-      } catch {
-        // resolveBoundClusters absorbs per-lookup failures; anything else
-        // (a client-level fault) falls through to the same fallback below.
-      }
-    }
-    if (origin !== canonicalFingerprint(exploreState.current)) return;
-    const first = clusters[0];
-    if (!first) {
-      // Every lookup failed: still open something useful — the lowest
-      // bound id, which the hub resolves on its own — and say why.
-      announceOperation('Could not resolve this person\'s identities; opening the timeline for the first bound participant.');
-      openRelationship(ids[0]!);
+    // Opening the person already on screen (a merge or split handoff)
+    // re-reads them: their bindings or history may have changed.
+    if (exploreState.current.workspace === 'directory' && exploreState.current.directoryPersonID === personID) {
+      if (exploreState.current.personTab !== 'overview') exploreState.commitNavigation({ personTab: 'overview' });
+      void directoryController.reloadSelection();
       return;
     }
-    if (failedIDs.length > 0) {
-      announceOperation(`Could not resolve ${failedIDs.length === 1 ? 'one bound identity' : `${failedIDs.length} bound identities`}; opening the rest.`);
-    }
-    openRelationship(first.canonicalID);
-    relationshipSiblings = clusters.length > 1
-      ? clusters.map((cluster) => ({ target: `cluster:${cluster.canonicalID}`, label: cluster.label, activityCount: cluster.activityCount }))
-      : [];
+    exploreState.commitNavigation({ workspace: 'directory', directoryPersonID: personID, personTab: 'overview' });
+  }
+  /** Opens the People list, keeping its filters. */
+  function openPeopleList(): void {
+    beforeCommit();
+    exploreState.commitNavigation({ workspace: 'directory', directoryPersonID: null, relationshipTarget: null, personTab: 'overview' });
+  }
+  function openPeopleRow(row: PeopleRow): void {
+    if (row.kind === 'saved') openDirectoryPerson(row.id);
+    else openRelationship(row.id);
+  }
+  function changePersonTab(personTab: PersonTab): void {
+    commitNavigation({ personTab });
+  }
+  const peopleFilters = $derived<PeopleFilters>({
+    query: exploreState.current.directoryQuery,
+    saved: exploreState.current.peopleSaved,
+    hasName: exploreState.current.directoryHasName,
+    category: exploreState.current.directoryCategory,
+    organization: exploreState.current.directoryOrganization,
+  });
+  function changePeopleFilters(patch: Partial<PeopleFilters>, history: 'push' | 'replace'): void {
+    const statePatch: Partial<ExploreURLState> = {
+      ...('query' in patch ? { directoryQuery: patch.query } : {}),
+      ...('saved' in patch ? { peopleSaved: patch.saved } : {}),
+      ...('hasName' in patch ? { directoryHasName: patch.hasName } : {}),
+      ...('category' in patch ? { directoryCategory: patch.category } : {}),
+      ...('organization' in patch ? { directoryOrganization: patch.organization } : {}),
+    };
+    if (history === 'replace') replaceCommittedDraft(statePatch);
+    else commitNavigation(statePatch);
   }
   function announceOperation(message: string): void {
     operationAnnouncement = { key: ++operationAnnouncementKey, message };
@@ -395,6 +380,7 @@
     (patch) => commitNavigation(patch),
   );
   const factLedgerController = new FactLedgerController(untrack(() => client));
+  const peopleHub = new PeopleHub(untrack(() => client), directoryController);
   const operationsController = new OperationsController(
     untrack(() => client),
     (patch) => commitNavigation(patch)
@@ -498,24 +484,6 @@
     const context = archiveContextKey;
     untrack(() => { void operationsController.applyURLState(operationState, context); });
   });
-  // A default landing (no `explore` param at all — the very first visit,
-  // not a URL that named a workspace) starts on the Relationships hub. If
-  // the analytical engine turns out to be unavailable, that default silently
-  // steps down to Everything instead of leaving a first-time visitor on a
-  // hub that can't rank anything. An explicit URL naming (or renaming, via
-  // the legacy people/domains rewrite) relationships is a deliberate choice
-  // and keeps showing the hub's own degraded state instead.
-  //
-  // This is a one-shot allowance for the INITIAL landing only: it is
-  // invalidated (set false) on the first user-initiated navigation — any
-  // commit* wrapper call (see `beforeCommit` above) or a Back/Forward
-  // popstate (see `handleHistoryFocus` below) — so a user who lands by
-  // default, navigates elsewhere, then explicitly clicks back into
-  // Relationships later is never silently bounced away again.
-  // Read from the state, not the address: the state has already rewritten
-  // a legacy or bare address to its readable path by now.
-  let arrivedWithoutExploreParam = untrack(() => exploreState.arrivedAtDefault);
-  let landingFallbackApplied = false;
   let contextualViewerFile = $state<FileViewerTarget>();
   let contextualViewerReturnFocus = $state<HTMLElement>();
   let previousAttachmentID: number | undefined;
@@ -582,9 +550,32 @@
       directoryLastContactAfter: exploreState.current.directoryLastContactAfter,
       directoryLastContactBefore: exploreState.current.directoryLastContactBefore,
       directorySort: exploreState.current.directorySort,
+      directoryHasName: exploreState.current.directoryHasName,
       directoryPersonID: exploreState.current.directoryPersonID,
     };
     untrack(() => directoryController.applyURLState(directoryState, historyRestoration));
+  });
+  // Archive contacts follow the People list's filters.
+  $effect(() => {
+    if (exploreState.current.workspace !== 'directory' || exploreState.current.directoryPersonID !== null) return;
+    const filters = peopleFilters;
+    untrack(() => peopleHub.apply(filters));
+  });
+  // One human, one page: an archive contact that has been saved opens as
+  // its saved person, on the same tab.
+  $effect(() => {
+    if (exploreState.current.workspace !== 'relationships') return;
+    const target = exploreState.current.relationshipTarget;
+    const detail = relationshipsController.detail;
+    if (!target?.startsWith('cluster:') || relationshipsController.target !== target) return;
+    const profileID = detail && 'identifiers' in detail ? (detail as PersonSummary).profile?.id : undefined;
+    if (!profileID) return;
+    const personTab = exploreState.current.personTab;
+    untrack(() => replaceCommittedNavigation({
+      workspace: 'directory', directoryPersonID: profileID, relationshipTarget: null, relationshipFiles: false,
+      personTab: personTab === 'overview' || personTab === 'timeline' || personTab === 'files' || personTab === 'meetings'
+        ? personTab : 'overview',
+    }));
   });
   // Review offsets are ephemeral like Directory cursors. A Back/Forward
   // restoration always starts its restored queue at page zero, while an
@@ -1169,7 +1160,7 @@
   async function openPersonFinder(): Promise<void> {
     openWorkspaceTab('directory');
     await tick();
-    document.querySelector<HTMLInputElement>('input[aria-label="Search directory"]')?.focus();
+    document.querySelector<HTMLInputElement>('input[aria-label="Search people"]')?.focus();
   }
   const commandRegistry = $derived([
     ...createCommandRegistry(commandHandlers),
@@ -1259,25 +1250,9 @@
     }
     void relationshipsController.openTarget(target, predicate);
   });
-  $effect(() => {
-    if (landingFallbackApplied || !arrivedWithoutExploreParam) return;
-    if (exploreState.current.workspace !== 'relationships') return;
-    if (!relationshipsController.degraded || relationshipsController.degraded.readiness === 'building') return;
-    landingFallbackApplied = true;
-    // A committed replace, not a transient one: `committed` is what the
-    // next push rewrites the current history entry from (see
-    // ExploreState.navigate's 'push' branch). Leaving `committed` behind at
-    // the degraded 'relationships' landing would mean the very next push
-    // silently rewrites this entry back to a state the user never actually
-    // saw, so Back would return to the degraded hub instead of wherever
-    // they actually came from.
-    exploreState.replaceCommittedNavigation({ workspace: 'everything' });
-  });
-  // Set only by the Directory → timeline handoff; any other way into the
-  // hub clears it so the note never outlives the person it described.
-  let relationshipSiblings = $state<RelationshipSiblingCluster[]>([]);
+  /** Opens an archive contact's person page. A contact that has been saved
+   * redirects to its saved person, so every way in lands on one page. */
   function openRelationship(participantID: number): void {
-    relationshipSiblings = [];
     commitNavigation({
       workspace: 'relationships',
       // Entering the hub never carries the text query (see
@@ -1287,6 +1262,7 @@
       query: '',
       relationshipFacet: 'people',
       relationshipTarget: `cluster:${participantID}`,
+      personTab: 'overview',
       relationshipFiles: false,
       relationshipShowAll: false,
       analysisTarget: null,
@@ -1328,10 +1304,6 @@
       // not survive to later clobber that restored state, so it is discarded
       // rather than flushed.
       debouncedSearchPatch.cancel();
-      // A Back/Forward navigation is user-initiated, same as any commit*
-      // wrapper call — it ends the one-shot landing-fallback allowance (see
-      // `arrivedWithoutExploreParam` above).
-      arrivedWithoutExploreParam = false;
       void restoreHistoryFocus();
     };
     const editableObserver = new MutationObserver(() => queueMicrotask(resyncEditableScope));
@@ -1376,6 +1348,7 @@
     appearance.destroy();
     relationshipsController.destroy();
     directoryController.destroy();
+    peopleHub.destroy();
     directoryReviewController.destroy();
     relationshipReviewController.destroy();
     factLedgerController.destroy();
@@ -1495,6 +1468,7 @@
       messageID={exploreState.current.messageID}
       onBack={leaveMessagePage}
       onSubject={(subject) => (pageSubject = subject)}
+      onOpenPerson={openRelationship}
     />
   {:else if exploreState.current.workspace === 'saved_views'}
     <SavedViewsWorkspace
@@ -1546,7 +1520,11 @@
       personFilePresentation={exploreState.current.personFilePresentation}
       personFileDirections={exploreState.current.personFileDirections}
       onFacetChange={(relationshipFacet) => commitNavigation({ relationshipFacet })}
-      onTargetChange={(relationshipTarget) => commitNavigation({ relationshipTarget, relationshipFiles: false })}
+      onTargetChange={(relationshipTarget) => {
+        // Leaving a contact page (Esc) returns to the People list.
+        if (relationshipTarget === null && exploreState.current.relationshipTarget?.startsWith('cluster:')) openPeopleList();
+        else commitNavigation({ relationshipTarget, relationshipFiles: false });
+      }}
       onShowAllChange={(relationshipShowAll) => commitNavigation({ relationshipShowAll })}
       onFilesToggle={(relationshipFiles) => commitNavigation({ relationshipFiles })}
       onPersonFilePresentationChange={(personFilePresentation) =>
@@ -1566,34 +1544,44 @@
       onOpenEverything={() => commitWorkspace('everything')}
       onPromotePerson={promoteRelationshipParticipant}
       onOpenDirectoryPerson={openDirectoryPerson}
-      siblingClusters={relationshipSiblings}
       onAnnounce={announceOperation}
+      layout={exploreState.current.relationshipTarget?.startsWith('cluster:') ? 'contact' : 'hub'}
+      personTab={exploreState.current.personTab}
+      onTabChange={changePersonTab}
+      onBack={openPeopleList}
       onOpenFileItem={openFileItem}
       onOpenFileConversation={openFileConversation}
       onOpenMeeting={(meeting) => void openArchivedMeeting(meeting)}
     />
   {:else if exploreState.current.workspace === 'directory'}
-    <DirectoryWorkspace
-      {client}
-      controller={directoryController}
-      onOpenMeeting={(meeting) => void openArchivedMeeting(meeting)}
-      state={{
-        directoryQuery: exploreState.current.directoryQuery,
-        directoryContactState: exploreState.current.directoryContactState,
-        directoryCategory: exploreState.current.directoryCategory,
-        directoryOrganization: exploreState.current.directoryOrganization,
-        directoryPrimaryChannel: exploreState.current.directoryPrimaryChannel,
-        directoryLastContactAfter: exploreState.current.directoryLastContactAfter,
-        directoryLastContactBefore: exploreState.current.directoryLastContactBefore,
-        directorySort: exploreState.current.directorySort,
-        directoryPersonID: exploreState.current.directoryPersonID,
-      }}
-      onOpenCardDAVConflict={openCardDAVConflict}
-      onOpenCardDAVSettings={openCardDAVSettings}
-      onAnnounce={announceOperation}
-      onOpenTimeline={(participantIDs, resolution) => void openDirectoryPersonTimeline(participantIDs, resolution)}
-      onOpenMessage={(messageID) => void openMessageByID(messageID)}
-    />
+    {#if exploreState.current.directoryPersonID !== null}
+      <SavedPersonPage
+        {client}
+        controller={directoryController}
+        personID={exploreState.current.directoryPersonID}
+        tab={exploreState.current.personTab}
+        onTabChange={changePersonTab}
+        onBack={openPeopleList}
+        onOpenPerson={openDirectoryPerson}
+        onOpenCardDAVConflict={openCardDAVConflict}
+        onOpenCardDAVSettings={openCardDAVSettings}
+        onAnnounce={announceOperation}
+        onOpenMeeting={(meeting) => void openArchivedMeeting(meeting)}
+        onOpenMessage={(messageID) => void openMessageByID(messageID)}
+      />
+    {:else}
+      <PeopleWorkspace
+        hub={peopleHub}
+        filters={peopleFilters}
+        savedError={directoryController.error}
+        savedPageError={directoryController.pageError}
+        savedPageRecovery={directoryController.pageRecovery}
+        onReloadSaved={() => void directoryController.reloadFirstPage()}
+        onFiltersChange={changePeopleFilters}
+        onOpen={openPeopleRow}
+        onOpenDomains={() => commitNavigation({ workspace: 'relationships', relationshipFacet: 'domains', relationshipTarget: null })}
+      />
+    {/if}
   {:else if exploreState.current.workspace === 'directory_review'}
     <DirectoryReviewWorkspace
       controller={directoryReviewController}

@@ -28,7 +28,8 @@ const currentState: ExploreURLState = {
   relationshipShowAll: false, relationshipFiles: false,
   operationLane: '', operationKind: '', operationState: '',
   operationStartedFrom: '', operationStartedBefore: '', operationRunID: null, operationStatus: '',
-  settingsAuthority: '', settingsSection: '', personTab: 'overview', messageID: null
+  settingsAuthority: '', settingsSection: '', personTab: 'overview', messageID: null,
+  directoryHasName: false, peopleSaved: ''
 };
 
 function savedView(overrides: Record<string, unknown> = {}) {

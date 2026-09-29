@@ -49,6 +49,7 @@ export class DirectoryController {
   lastContactAfter = $state('');
   lastContactBefore = $state('');
   sort = $state<DirectoryURLState['directorySort']>('last_contact_desc');
+  hasName = $state(false);
   rows = $state<DirectoryPerson[]>([]);
   cursor = $state<string | null>(null);
   loading = $state(false);
@@ -89,7 +90,8 @@ export class DirectoryController {
       this.primaryChannel !== state.directoryPrimaryChannel ||
       this.lastContactAfter !== state.directoryLastContactAfter ||
       this.lastContactBefore !== state.directoryLastContactBefore ||
-      this.sort !== state.directorySort;
+      this.sort !== state.directorySort ||
+      this.hasName !== (state.directoryHasName ?? false);
     this.assignFilters(state);
     // The initial restoration can equal the controller's empty defaults; it
     // still needs page one, just like a back/forward restoration does.
@@ -109,7 +111,8 @@ export class DirectoryController {
       this.primaryChannel !== next.directoryPrimaryChannel ||
       this.lastContactAfter !== next.directoryLastContactAfter ||
       this.lastContactBefore !== next.directoryLastContactBefore ||
-      this.sort !== next.directorySort;
+      this.sort !== next.directorySort ||
+      this.hasName !== (next.directoryHasName ?? false);
     if (!filtersChanged) return;
     this.assignFilters(next);
     this.commit(patch, history);
@@ -208,6 +211,11 @@ export class DirectoryController {
   async selectPerson(personID: number | null): Promise<void> {
     await this.loadSelection(personID, true);
   }
+  /** Re-reads the open person without a navigation, e.g. after an
+   * identity edit changed their bindings. */
+  async reloadSelection(): Promise<void> {
+    await this.loadSelection(this.selectedPersonID, false);
+  }
   /** Re-read server-owned Directory projections after a committed split. */
   async reconcilePersonSplit(_context: PersonSplitCommittedContext): Promise<void> {
     await this.reloadFirstPage();
@@ -288,6 +296,7 @@ export class DirectoryController {
       directoryLastContactAfter: this.lastContactAfter,
       directoryLastContactBefore: this.lastContactBefore,
       directorySort: this.sort,
+      directoryHasName: this.hasName,
       directoryPersonID: this.selectedPersonID,
     };
   }
@@ -300,6 +309,7 @@ export class DirectoryController {
     this.lastContactAfter = state.directoryLastContactAfter;
     this.lastContactBefore = state.directoryLastContactBefore;
     this.sort = state.directorySort;
+    this.hasName = state.directoryHasName ?? false;
   }
   private getPage(cursor: string | undefined, signal: AbortSignal) {
     return this.getPageForFilters(this.urlState(), cursor, signal);
@@ -318,6 +328,7 @@ export class DirectoryController {
       ...(lastContactAfter ? { last_contact_after: lastContactAfter } : {}),
       ...(lastContactBefore ? { last_contact_before: lastContactBefore } : {}),
       ...(filters.directorySort !== 'name' ? { sort: filters.directorySort } : {}),
+      ...(filters.directoryHasName ? { has_name: true } : {}),
     };
     return generatedListDirectoryPeople(query, {
       ...this.client,

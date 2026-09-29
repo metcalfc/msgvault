@@ -63,7 +63,7 @@ function overviewCardResponse(request: Request): Response | undefined {
 }
 
 describe('PersonDetail', () => {
-  it('renders available read sections, marks sensitive attributes, and keeps Media & Files person-scoped', async () => {
+  it('renders available read sections, marks sensitive attributes, and keeps Files person-scoped', async () => {
     const requestPaths: string[] = [];
     const client = createAPIClient(vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -105,7 +105,8 @@ describe('PersonDetail', () => {
     void entityController.load();
     render(PersonDetail, { client, bundle, personID: 7, entityController });
 
-    expect(screen.getByText('Names')).toBeDefined();
+    // The name list lives on Profile; the overview leads with contact methods.
+    expect(screen.queryByText('Names')).toBeNull();
     expect(screen.getByText('person@example.test')).toBeDefined();
     expect(document.querySelector('.attribute-summary .sensitive')?.textContent).toBe('concealed');
     expect(document.body.innerHTML).not.toContain('Synthetic value');
@@ -123,7 +124,10 @@ describe('PersonDetail', () => {
     expect(requestPaths).not.toContain('/api/v1/people/7/network');
     expect(screen.getByText('Activity')).toBeDefined();
     expect(screen.queryByText('Provenance and history')).toBeNull();
-    await fireEvent.click(screen.getByRole('tab', { name: 'Media & Files' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Profile' }));
+    expect(screen.getByText('Names')).toBeDefined();
+    expect(requestPaths.filter((path) => path === '/api/v1/people/7/employments')).toHaveLength(1);
+    await fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
     await waitFor(() => expect(requestPaths).toContain('/api/v1/people/7/files/search'));
     expect(requestPaths).not.toContain('/api/v1/participants/7/files/search');
     expect(requestPaths).not.toContain('/api/v1/files/search');
@@ -223,45 +227,33 @@ describe('PersonDetail', () => {
     const entityController = new DirectoryEntityController(client, 7);
     render(PersonDetail, { client, personID: 7, bundle: { etags: {}, errors: {} }, entityController });
 
-    const overview = screen.getByRole('tab', { name: 'Overview' });
-    const organizations = screen.getByRole('tab', { name: 'Organizations' });
-    const relationships = screen.getByRole('tab', { name: 'Relationships' });
-    const network = screen.getByRole('tab', { name: 'Network' });
-    const media = screen.getByRole('tab', { name: 'Media & Files' });
+    const names = ['Overview', 'Timeline', 'Files', 'Meetings', 'Profile', 'Maintenance'];
+    const tabs = names.map((name) => screen.getByRole('tab', { name }));
+    const [overview, timeline] = tabs as [HTMLElement, HTMLElement];
+    const maintenance = tabs.at(-1)!;
+    expect(screen.getAllByRole('tab')).toHaveLength(6);
     expect(overview.getAttribute('tabindex')).toBe('0');
-    expect(screen.getAllByRole('tab')).toHaveLength(5);
-    expect(await screen.findByRole('heading', { name: 'Merge history' })).toBeDefined();
-    expect(organizations.getAttribute('tabindex')).toBe('-1');
-    expect(relationships.getAttribute('tabindex')).toBe('-1');
-    expect(network.getAttribute('tabindex')).toBe('-1');
-    expect(media.getAttribute('tabindex')).toBe('-1');
+    for (const tab of tabs.slice(1)) expect(tab.getAttribute('tabindex')).toBe('-1');
     expect(overview.getAttribute('aria-controls')).toBe(screen.getByRole('tabpanel', { name: 'Overview' }).id);
 
     overview.focus();
     await fireEvent.keyDown(overview, { key: 'ArrowRight' });
-    expect(document.activeElement).toBe(organizations);
-    expect(organizations.getAttribute('aria-selected')).toBe('true');
-    await fireEvent.keyDown(organizations, { key: 'ArrowRight' });
-    expect(document.activeElement).toBe(relationships);
-    await waitFor(() => expect(relationships.getAttribute('aria-controls')).toBe(screen.getByRole('tabpanel', { name: 'Relationships' }).id));
-    await fireEvent.keyDown(relationships, { key: 'ArrowRight' });
-    expect(document.activeElement).toBe(network);
-    await waitFor(() => expect(network.getAttribute('aria-controls')).toBe(screen.getByRole('tabpanel', { name: 'Network' }).id));
-    await fireEvent.keyDown(network, { key: 'ArrowRight' });
-    expect(document.activeElement).toBe(media);
-    expect(media.getAttribute('aria-controls')).toBe(screen.getByRole('tabpanel', { name: 'Media & Files' }).id);
+    expect(document.activeElement).toBe(timeline);
+    expect(timeline.getAttribute('aria-selected')).toBe('true');
+    await waitFor(() => expect(timeline.getAttribute('aria-controls')).toBe(screen.getByRole('tabpanel', { name: 'Timeline' }).id));
 
-    await fireEvent.keyDown(media, { key: 'ArrowRight' });
+    await fireEvent.keyDown(timeline, { key: 'ArrowLeft' });
     expect(document.activeElement).toBe(overview);
     await fireEvent.keyDown(overview, { key: 'ArrowLeft' });
-    expect(document.activeElement).toBe(media);
+    expect(document.activeElement).toBe(maintenance);
+    expect(await screen.findByRole('heading', { name: 'Merge history' })).toBeDefined();
 
-    await fireEvent.keyDown(media, { key: 'Home' });
+    await fireEvent.keyDown(maintenance, { key: 'Home' });
     expect(document.activeElement).toBe(overview);
     expect(overview.getAttribute('aria-selected')).toBe('true');
 
     await fireEvent.keyDown(overview, { key: 'End' });
-    expect(document.activeElement).toBe(media);
+    expect(document.activeElement).toBe(maintenance);
   });
 
   it('selects durable people and opens the exact organization editor from network actions', async () => {
@@ -294,18 +286,17 @@ describe('PersonDetail', () => {
       client, personID: 7, bundle: { etags: {}, errors: {} }, entityController, onOpenPerson
     });
 
-    await fireEvent.click(screen.getByRole('tab', { name: 'Network' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Profile' }));
     await fireEvent.click((await screen.findAllByRole('button', { name: 'Open person Curated Peer' }))[0]!);
     expect(onOpenPerson).toHaveBeenCalledWith(8);
 
-    await fireEvent.click(screen.getByRole('tab', { name: 'Network' }));
     await fireEvent.click(await screen.findByRole('button', { name: 'Open organization Shared Organization' }));
-    await waitFor(() => expect(screen.getByRole('tab', { name: 'Organizations' }).getAttribute('aria-selected')).toBe('true'));
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Profile' }).getAttribute('aria-selected')).toBe('true'));
     expect(await screen.findByRole('dialog', { name: 'Edit Shared Organization' })).toBeDefined();
     expect(entityController.organizationETags.get(21)).toBe('"organization-21-r2"');
   });
 
-  it('mounts one compact profile-maintenance card before CardDAV without adding a tab', async () => {
+  it('keeps profile maintenance before CardDAV on the Maintenance tab', async () => {
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const path = new URL(request.url).pathname;
@@ -335,14 +326,14 @@ describe('PersonDetail', () => {
       }
     });
 
+    expect(screen.queryByRole('heading', { name: 'Profile maintenance' })).toBeNull();
+    await fireEvent.click(screen.getByRole('tab', { name: 'Maintenance' }));
     const maintenance = await screen.findByRole('heading', { name: 'Profile maintenance' });
     const publication = await screen.findByRole('heading', { name: 'CardDAV publication' });
     expect(maintenance.compareDocumentPosition(publication) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getAllByRole('tab')).toHaveLength(5);
-    expect(screen.queryByRole('tab', { name: /maintenance/i })).toBeNull();
   });
 
-  it('mounts compact CardDAV publication in Overview and threads conflict and status callbacks', async () => {
+  it('mounts compact CardDAV publication under Maintenance and threads conflict and status callbacks', async () => {
     const onOpenCardDAVConflict = vi.fn();
     const onAnnounce = vi.fn();
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
@@ -372,18 +363,18 @@ describe('PersonDetail', () => {
         errors: {}
       },
       onOpenCardDAVConflict,
-      onAnnounce
+      onAnnounce,
+      tab: 'maintenance'
     });
 
     expect(await screen.findByRole('heading', { name: 'CardDAV publication' })).toBeDefined();
-    expect(screen.getAllByRole('tab')).toHaveLength(5);
     expect(screen.queryByRole('tab', { name: /CardDAV/i })).toBeNull();
     await fireEvent.click(await screen.findByRole('button', { name: 'Review CardDAV conflict 41' }));
     expect(onOpenCardDAVConflict).toHaveBeenCalledWith(41);
     expect(onAnnounce).not.toHaveBeenCalled();
   });
 
-  it('mounts the brief card in Overview under contact state without adding a tab', async () => {
+  it('mounts the brief card under Maintenance', async () => {
     const paths: string[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -432,13 +423,12 @@ describe('PersonDetail', () => {
       }
     });
 
-    const brief = await screen.findByRole('heading', { name: 'Last time we talked' });
-    const contactState = screen.getByText(/^Last contact /);
-    expect(contactState.compareDocumentPosition(brief) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText(/^Last contact /)).toBeDefined();
+    await fireEvent.click(screen.getByRole('tab', { name: 'Maintenance' }));
+    await screen.findByRole('heading', { name: 'Last time we talked' });
     expect(await screen.findByRole('button', {
       name: 'Last time you talked (Aug 29, chat): they were preparing for a role change.'
     })).toBeDefined();
-    expect(screen.getAllByRole('tab')).toHaveLength(5);
     expect(screen.queryByRole('tab', { name: /brief/i })).toBeNull();
     expect(paths).toContain('/api/v1/people/7/brief');
     expect(document.body.innerHTML).not.toContain('not-rendered.example.test');
@@ -464,7 +454,8 @@ describe('PersonDetail', () => {
       client: createAPIClient(fetchFn),
       personID: 7,
       bundle: { etags: {}, errors: {} },
-      onOpenCardDAVSettings
+      onOpenCardDAVSettings,
+      tab: 'maintenance'
     });
 
     expect(await screen.findByText('CardDAV publication is unavailable. Configure or repair it in CardDAV settings.')).toBeDefined();
@@ -492,7 +483,7 @@ describe('PersonDetail', () => {
     expect(screen.queryByRole('heading', { name: 'Attributes' })).toBeNull();
   });
 
-  it('leads with the person, contact methods, and last contact, and keeps maintenance behind a closed disclosure', async () => {
+  it('leads with the person, contact methods, and last contact, and keeps maintenance on its own tab', async () => {
     const onOpenMessage = vi.fn();
     const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000).toISOString();
     const fiveDaysAgo = new Date(Date.now() - 5 * 86_400_000).toISOString();
@@ -537,14 +528,14 @@ describe('PersonDetail', () => {
     // The Files error is not an Overview alert; it is the Media & Files empty state.
     expect(screen.queryByRole('alert')).toBeNull();
 
-    const maintenance = screen.getByText('Maintenance').closest('details')!;
-    expect(maintenance.open).toBe(false);
-    expect(await within(maintenance).findByRole('heading', { name: 'Profile maintenance' })).toBeDefined();
-    expect(await within(maintenance).findByRole('heading', { name: 'Merge history' })).toBeDefined();
-    expect(line.compareDocumentPosition(maintenance) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Profile maintenance' })).toBeNull();
+    await fireEvent.click(screen.getByRole('tab', { name: 'Maintenance' }));
+    const panel = screen.getByRole('tabpanel', { name: 'Maintenance' });
+    expect(await within(panel).findByRole('heading', { name: 'Profile maintenance' })).toBeDefined();
+    expect(await within(panel).findByRole('heading', { name: 'Merge history' })).toBeDefined();
     expect(screen.getByText('What can be maintained?').closest('details')?.open).toBe(false);
 
-    await fireEvent.click(screen.getByRole('tab', { name: 'Media & Files' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
     expect(screen.getByText('Person has no resolved identities')).toBeDefined();
 
     // A meeting ref has no in-app destination: plain text, no control.
@@ -556,18 +547,30 @@ describe('PersonDetail', () => {
     expect(screen.getByText('Last contact 2d ago via email').tagName).toBe('SPAN');
   });
 
-  it('offers Open timeline for a person with bound participants and passes their ids', async () => {
-    const onOpenTimeline = vi.fn();
-    const client = createAPIClient(quietOverviewFetch());
-    const person = { id: 7, revision: 2, display_name: 'Synthetic Person', participant_ids: [9, 3], vcard_uid: '', created_at: when, updated_at: when };
-    const { rerender } = render(PersonDetail, { client, personID: 7, onOpenTimeline, bundle: { person, etags: {}, errors: {} } });
+  it('shows the timeline of the busiest bound identity on the Timeline tab', async () => {
+    const fetchFn = quietOverviewFetch().mockImplementation(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      const overview = overviewCardResponse(request);
+      if (overview) return overview;
+      if (path === '/api/v1/participants/9') return Response.json({
+        id: 9, display_label: 'Synthetic Person', partial_label: false, identifiers: [], activity_count: 4,
+        meeting_count: 0, file_count: 0, current_relationship_temperature: 0, peak_relationship_temperature: 0,
+        peak_relationship_year: 2026, source_counts: [], first_at: when, last_at: when, cache_revision: 'r1',
+        cluster: { canonical_id: 9, member_ids: [9], edges: [] }
+      });
+      if (path === '/api/v1/relationships/9/timeline') return Response.json({
+        participant_id: 9, canonical_id: 9, rows: [], cache_revision: 'r1', identity_revision: 1
+      });
+      return Response.json({ merges: [], limit: 100, offset: 0 });
+    });
+    const client = createAPIClient(fetchFn);
+    const person = { id: 7, revision: 2, display_name: 'Synthetic Person', participant_ids: [9], vcard_uid: '', created_at: when, updated_at: when };
+    render(PersonDetail, { client, personID: 7, bundle: { person, etags: {}, errors: {} }, tab: 'timeline' });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Open timeline for Synthetic Person' }));
-    expect(onOpenTimeline).toHaveBeenCalledOnce();
-    expect(onOpenTimeline.mock.calls[0]?.[0]).toEqual([9, 3]);
-
-    await rerender({ client, personID: 7, onOpenTimeline, bundle: { person: { ...person, participant_ids: [] }, etags: {}, errors: {} } });
-    expect(screen.queryByRole('button', { name: /^Open timeline/ })).toBeNull();
+    expect(await screen.findByRole('region', { name: 'Timeline' })).toBeDefined();
+    await waitFor(() => expect(fetchFn.mock.calls.some(([input]) =>
+      new URL(input instanceof Request ? input.url : String(input)).pathname === '/api/v1/relationships/9/timeline')).toBe(true));
   });
 
   it('moves focus to the attributes section when Edit attributes is pressed', async () => {

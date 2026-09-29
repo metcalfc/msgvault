@@ -850,3 +850,53 @@ func TestRelationshipsPrimaryIdentifierPrefersEmailThenPhoneThenHandle(t *testin
 		assert.Equal(want, got, name)
 	}
 }
+
+func TestRelationshipsSortByLastContactAndExcludeSavedClusters(t *testing.T) {
+	b := NewTestDataBuilder(t)
+	srcID := b.AddSource("owner@example.com")
+	ownerID := b.AddParticipant("owner@example.com", "example.com", "Owner")
+	b.AddOwnerParticipant(srcID, ownerID)
+	frequentID := b.AddParticipant("frequent@example.com", "example.com", "Frequent")
+	recentID := b.AddParticipant("recent@example.com", "example.com", "Recent")
+	recentAliasID := b.AddParticipant("recent@chat.example", "chat.example", "Recent Chat")
+	b.LinkCluster(recentID, recentAliasID)
+
+	now := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+	// Many messages five days ago outscore one message yesterday.
+	for range 10 {
+		msgID := b.AddMessage(MessageOpt{SourceID: srcID, IsFromMe: true, SentAt: now.AddDate(0, 0, -5)})
+		b.AddFrom(msgID, ownerID, "Owner")
+		b.AddTo(msgID, frequentID, "Frequent")
+	}
+	msgID := b.AddMessage(MessageOpt{SourceID: srcID, IsFromMe: true, SentAt: now.AddDate(0, 0, -1)})
+	b.AddFrom(msgID, ownerID, "Owner")
+	b.AddTo(msgID, recentID, "Recent")
+
+	engine := b.BuildEngine()
+	ctx := context.Background()
+	canonicalIDs := func(rows []RelationshipRow) []int64 {
+		ids := make([]int64, len(rows))
+		for i, row := range rows {
+			ids[i] = row.CanonicalID
+		}
+		return ids
+	}
+
+	byScore, err := engine.Relationships(ctx, RelationshipsRequest{Now: now, Limit: 10})
+	require.NoError(t, err)
+	assert.Equal(t, []int64{frequentID, recentID}, canonicalIDs(byScore.Rows))
+
+	byLastContact, err := engine.Relationships(ctx, RelationshipsRequest{Now: now, Limit: 10, SortByLastContact: true})
+	require.NoError(t, err)
+	assert.Equal(t, []int64{recentID, frequentID}, canonicalIDs(byLastContact.Rows))
+
+	// Excluding any member of a cluster drops the whole cluster before
+	// paging, so the total and the page agree.
+	unsaved, err := engine.Relationships(ctx, RelationshipsRequest{
+		Now: now, Limit: 10, SortByLastContact: true,
+		ExcludeParticipants: map[int64]struct{}{recentAliasID: {}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []int64{frequentID}, canonicalIDs(unsaved.Rows))
+	assert.Equal(t, int64(1), unsaved.TotalCount)
+}

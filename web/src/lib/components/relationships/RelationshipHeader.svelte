@@ -48,6 +48,8 @@
      * contact block so address-book values sit beside archive-observed ones. */
     loadContactPoints?: (personID: number) => Promise<PersonContactPoint[]>;
     onAnnounce?: (message: string) => void;
+    /** The Messages/Files switch; person pages use their own tabs instead. */
+    showViewToggle?: boolean;
   }
 
   let {
@@ -66,7 +68,8 @@
     onOpenSibling = undefined,
     loadAttributes = undefined,
     loadContactPoints = undefined,
-    onAnnounce = undefined
+    onAnnounce = undefined,
+    showViewToggle = true
   }: Props = $props();
 
   type LinkMutation = { kind: 'link' | 'unlink'; a: number; b: number };
@@ -400,15 +403,17 @@
       />
       <h2 data-page-title>{displayLabel(detail)}</h2>
       <div class="actions">
-        <SegmentedControl
-          ariaLabel="Relationship view"
-          value={filesOpen ? 'files' : 'messages'}
-          options={[
-            { value: 'messages', label: 'Messages' },
-            { value: 'files', label: `Files ${detail.file_count.toLocaleString()}` }
-          ]}
-          onchange={(value) => onFilesToggle(value === 'files')}
-        />
+        {#if showViewToggle}
+          <SegmentedControl
+            ariaLabel="Relationship view"
+            value={filesOpen ? 'files' : 'messages'}
+            options={[
+              { value: 'messages', label: 'Messages' },
+              { value: 'files', label: `Files ${detail.file_count.toLocaleString()}` }
+            ]}
+            onchange={(value) => onFilesToggle(value === 'files')}
+          />
+        {/if}
         {#if isPersonDetail(detail)}
           {#if detail.profile?.id && onOpenDirectoryPerson}
             <Button

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -20,6 +21,10 @@ type RelationshipsHTTPRequest struct {
 	ShowAll bool            `json:"show_all,omitzero"`
 	Cursor  string          `json:"cursor,omitempty"`
 	Limit   int             `json:"limit,omitzero" minimum:"0" maximum:"500"`
+	Sort    string          `json:"sort,omitempty" enum:"score,last_contact" doc:"Row order: score (the reciprocity ranking, the default) or last_contact (newest last interaction first)."`
+	// UnsavedOnly lists only clusters not yet saved to the Directory, so
+	// the People list can merge them with saved people without duplicates.
+	UnsavedOnly bool `json:"unsaved_only,omitzero" doc:"List only counterparts whose cluster is not bound to a saved Directory person."`
 }
 
 // RelationshipsHTTPResponse echoes both revisions a page was computed
@@ -154,8 +159,32 @@ func (s *Server) handleRelationships(w http.ResponseWriter, r *http.Request) {
 		s.writeExploreUnavailable(r.Context(), w, query.CacheAbsent)
 		return
 	}
+	if request.Sort != "" && request.Sort != "score" && request.Sort != "last_contact" {
+		writeError(w, http.StatusBadRequest, "invalid_sort", "sort must be score or last_contact")
+		return
+	}
+	var exclude map[int64]struct{}
+	if request.UnsavedOnly {
+		bound, ok := s.store.(BoundParticipantStore)
+		if !ok {
+			writeError(w, http.StatusServiceUnavailable, "saved_people_unavailable",
+				"Saved people are unavailable, so unsaved contacts cannot be listed")
+			return
+		}
+		ids, err := bound.BoundParticipantIDsContext(r.Context())
+		if err != nil {
+			s.logger.Error("bound participant lookup failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "Could not read saved people")
+			return
+		}
+		exclude = make(map[int64]struct{}, len(ids))
+		for _, id := range ids {
+			exclude[id] = struct{}{}
+		}
+	}
 	result, err := analyzer.Relationships(r.Context(), query.RelationshipsRequest{
 		Context: analyticalContext, ShowAll: request.ShowAll, Limit: request.Limit, Offset: offset, Now: decayDate,
+		SortByLastContact: request.Sort == "last_contact", ExcludeParticipants: exclude,
 	})
 	if err != nil {
 		s.writeExploreError(r.Context(), w, err)
@@ -177,6 +206,7 @@ func (s *Server) handleRelationships(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	s.attachRelationshipRowProfiles(r.Context(), result.Rows)
 	response := RelationshipsHTTPResponse{
 		Rows: result.Rows, TotalCount: result.TotalCount,
 		CacheRevision: result.CacheRevision, IdentityRevision: result.IdentityRevision,
@@ -323,4 +353,48 @@ func (s *Server) handleRelationshipTimeline(w http.ResponseWriter, r *http.Reque
 
 func canonicalizeRelationshipFilters(filters []ExploreFilter) {
 	canonicalizeExploreFilters(filters)
+}
+
+// BoundParticipantStore lists every participant bound to a saved Directory
+// person, for listings that show only contacts not yet saved.
+type BoundParticipantStore interface {
+	BoundParticipantIDsContext(ctx context.Context) ([]int64, error)
+}
+
+// attachRelationshipRowProfiles marks each ranked row whose cluster has been
+// saved to the Directory with that person, so the People list can open the
+// saved person instead of a second page for the same human. A cluster is
+// bound all-or-none, so its canonical member resolves the person. A missing
+// capability or failed lookup leaves rows unmarked rather than failing.
+func (s *Server) attachRelationshipRowProfiles(ctx context.Context, rows []query.RelationshipRow) {
+	if len(rows) == 0 {
+		return
+	}
+	profiles, ok := s.store.(PersonProfileBatchStore)
+	if !ok {
+		return
+	}
+	ids := make([]int64, 0, len(rows))
+	for i := range rows {
+		ids = append(ids, rows[i].CanonicalID)
+		ids = append(ids, rows[i].MemberIDs...)
+	}
+	found, err := profiles.PersonsForParticipantsContext(ctx, ids)
+	if err != nil {
+		s.logger.Error("relationship profile lookup failed", "error", err, "participant_count", len(ids))
+		return
+	}
+	for i := range rows {
+		person := found[rows[i].CanonicalID]
+		for _, id := range rows[i].MemberIDs {
+			if person != nil {
+				break
+			}
+			person = found[id]
+		}
+		if person == nil {
+			continue
+		}
+		rows[i].Profile = &query.PersonProfile{ID: person.ID, DisplayName: person.DisplayName, Revision: person.Revision}
+	}
 }

@@ -45,7 +45,7 @@ export function isRoutedField(workspace: ExploreWorkspace, field: keyof ExploreU
 export const ROUTE_PARAMETERS: readonly string[] = ['workspace', 'explore', 'mode', 'q', 'since', 'after', 'before', 'domain'];
 
 /** The workspace a bare `/` opens when no legacy parameter names one. */
-export const DEFAULT_WORKSPACE: ExploreWorkspace = 'relationships';
+export const DEFAULT_WORKSPACE: ExploreWorkspace = 'directory';
 
 export interface RouteLocation {
   pathname: string;
@@ -111,7 +111,7 @@ export function routeForState(state: ExploreURLState, now: Date = new Date()): R
       // A domain rides as a parameter: a dotted final path segment reads as
       // a file extension to the daemon, which would not serve the app for it.
       if (domain) return { pathname: '/people/domains', parameters: [['domain', domain]], routesDateBounds: false };
-      return plain(state.relationshipFacet === 'domains' ? '/people/domains' : '/people/contacts');
+      return plain('/people/domains');
     }
     case 'directory_review':
       return plain('/reviews');
@@ -159,7 +159,8 @@ export function stateFromRoute(pathname: string, parameters: URLSearchParams, no
       };
     case 'people': {
       if (second === undefined) return { workspace: 'directory', directoryPersonID: null };
-      if (second === 'contacts') return { workspace: 'relationships', relationshipFacet: 'people', relationshipTarget: null };
+      // The old observed-contacts list is the People list's Not saved filter.
+      if (second === 'contacts') return { workspace: 'directory', directoryPersonID: null, peopleSaved: 'unsaved' };
       if (second === 'domains') {
         const domain = parameters.get('domain');
         return {

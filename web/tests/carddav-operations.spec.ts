@@ -224,8 +224,8 @@ test('keyboard publication ambiguity locks mutation, retries GET only, and repea
     workspace: 'directory', directoryPersonID: 42
   }))}`);
 
-  // The publication card lives behind the Overview's closed "Maintenance" disclosure.
-  await page.getByText('Maintenance', { exact: true }).click();
+  // The publication card lives on the Maintenance tab.
+  await page.getByRole('tab', { name: 'Maintenance' }).click();
   const publish = page.getByRole('switch', { name: 'Publish person to CardDAV' });
   await expect(publish).toBeVisible();
   await expect(page.getByText(/^Attributes:/)).toHaveCount(0);
@@ -265,7 +265,7 @@ test('keyboard publication ambiguity locks mutation, retries GET only, and repea
   await page.goBack();
   await expect(page.getByRole('heading', { name: 'Archive Person' })).toBeVisible();
   // Back remounts the person page, so its Maintenance disclosure starts closed again.
-  await page.getByText('Maintenance', { exact: true }).click();
+  await page.getByRole('tab', { name: 'Maintenance' }).click();
   const repeatedHandoff = page.getByRole('button', { name: 'Review CardDAV conflict 42' });
   await repeatedHandoff.focus();
   await page.keyboard.press('Enter');

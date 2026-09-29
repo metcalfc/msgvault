@@ -9,7 +9,7 @@ async function tabTo(page: Page, accessibleName: string, limit = 120, key: 'Tab'
     const name = await page.evaluate(() => {
       const active = document.activeElement;
       if (!active) return '';
-      if (!active.matches('button, input, select, textarea, [role]')) return '';
+      if (!active.matches('a[href], button, input, select, textarea, [role]')) return '';
       return active.getAttribute('aria-label') || active.textContent?.trim() || '';
     });
     seen.add(name);
@@ -120,16 +120,17 @@ test('pointer-free archive journey preserves focus, announcements, and history',
   await expect(page.getByRole('button', { name: 'Log in' })).toBeFocused();
   await page.keyboard.press('Enter');
 
-  // Relationships is the default landing workspace. j/k move the ranked
-  // list's selection, Enter opens a cluster into the timeline, a second
-  // Enter opens the reading pane, and Esc walks back one layer at a time.
-  await expect(page.getByRole('main', { name: 'Relationships' })).toBeVisible();
-  await tabTo(page, 'Relationship results');
-  const relationshipList = page.getByRole('grid', { name: 'Relationship results' });
-  await expect(relationshipList).toBeFocused();
-  await page.keyboard.press('j');
+  // People is the default landing. Enter on a row opens the person page,
+  // the Timeline tab and its grid open the reading pane, and Esc walks
+  // back one layer at a time to the list.
+  await expect(page.getByRole('main', { name: 'People' })).toBeVisible();
+  await tabTo(page, 'Beta Person');
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: 'Beta Person' })).toBeVisible();
+  // Person tabs are one tab stop; arrows move between them.
+  await tabTo(page, 'Overview');
+  await page.keyboard.press('ArrowRight');
+  await expect(page).toHaveURL(/\/timeline$/);
 
   await tabTo(page, 'Relationship activity');
   const relationshipTimeline = page.getByRole('grid', { name: 'Relationship activity' });
@@ -142,7 +143,7 @@ test('pointer-free archive journey preserves focus, announcements, and history',
   await expect(relationshipReading).toBeHidden();
   await expect(relationshipTimeline).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(relationshipList).toBeFocused();
+  await expect(page.getByRole('main', { name: 'People' })).toBeVisible();
   await expect.poll(async () => (await exploreHistoryState(page)).relationshipTarget).toBeNull();
   await expect(page.getByRole('heading', { name: 'Beta Person' })).toBeHidden();
 

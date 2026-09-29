@@ -3,8 +3,8 @@ import { installMixedArchive } from './e2e/fixtures/mixed-archive';
 
 test('Files view switch settles its colors immediately with reduced motion', async ({ page }) => {
   await installMixedArchive(page);
-  await page.goto('/');
-  await page.getByRole('grid', { name: 'Relationship results' }).getByText('Archive Person').click();
+  // Person pages use tabs; the domain view keeps the Messages/Files switch.
+  await page.goto('/people/domains?domain=example.com');
   const files = page.getByRole('radio', { name: 'Files 1' });
   await files.click();
   await expect(files).toHaveAttribute('aria-checked', 'true');

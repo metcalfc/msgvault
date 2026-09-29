@@ -41,7 +41,8 @@ test('Directory network shows curated connections, omits message-only contacts, 
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(directoryURL(42));
   await expect(page.getByRole('heading', { name: 'Archive Person' })).toBeVisible();
-  await page.getByRole('tab', { name: 'Network' }).click();
+  // The network is part of the person's Profile.
+  await page.getByRole('tab', { name: 'Profile' }).click();
 
   const list = page.getByRole('list', { name: 'Directory network connections' });
   await expect(list).toContainText('Archive Person works with Curated Peer');
@@ -50,13 +51,12 @@ test('Directory network shows curated connections, omits message-only contacts, 
   await expect(page.locator('.person-network > .projection > svg')).toHaveAttribute('aria-hidden', 'true');
 
   await page.getByRole('button', { name: 'Open organization Shared Organization' }).click();
-  await expect(page.getByRole('tab', { name: 'Organizations' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'Profile' })).toHaveAttribute('aria-selected', 'true');
   const organizationEditor = page.getByRole('dialog', { name: 'Edit Shared Organization' });
   await expect(organizationEditor).toBeVisible();
   await organizationEditor.getByRole('button', { name: 'Close organization editor' }).click();
 
-  await page.getByRole('tab', { name: 'Network' }).click();
   await page.getByRole('button', { name: 'Open person Curated Peer' }).first().click();
-  await expect(page).toHaveURL(/\/people\/43$/);
+  await expect(page).toHaveURL(/\/people\/43(\?|$)/);
   await expect(page.getByRole('heading', { name: 'Curated Peer' })).toBeVisible();
 });

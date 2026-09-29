@@ -43,6 +43,8 @@ export interface DirectoryURLState {
   directoryLastContactAfter: string;
   directoryLastContactBefore: string;
   directorySort: 'name' | 'last_contact_desc' | 'last_contact_asc';
+  /** Only people with a display name (the server's has_name filter). */
+  directoryHasName?: boolean;
   directoryPersonID: number | null;
 }
 

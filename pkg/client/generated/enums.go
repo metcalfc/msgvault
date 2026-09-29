@@ -1991,6 +1991,24 @@ func (r RelationshipCalendarDayLevel) Validate() error {
 	}
 }
 
+// RelationshipsHTTPRequestSort Row order: score (the reciprocity ranking, the default) or last_contact (newest last interaction first).
+type RelationshipsHTTPRequestSort string
+
+const (
+	LastContact RelationshipsHTTPRequestSort = "last_contact"
+	Score       RelationshipsHTTPRequestSort = "score"
+)
+
+// Validate checks if the RelationshipsHTTPRequestSort value is valid
+func (r RelationshipsHTTPRequestSort) Validate() error {
+	switch r {
+	case LastContact, Score:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid RelationshipsHTTPRequestSort value, got: %v", r))
+	}
+}
+
 type RemoveResultCacheState string
 
 const (

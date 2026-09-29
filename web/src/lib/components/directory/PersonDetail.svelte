@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { Button, EmptyState, Notice } from '@kenn-io/kit-ui';
   import type { MeetingRef, PersonIdentifier } from '../../api/generated/models';
   import MeetingPanel from '../meetings/MeetingPanel.svelte';
@@ -25,6 +25,8 @@
   import PersonAgenda from './PersonAgenda.svelte';
   import CardDAVPublicationControl from './CardDAVPublicationControl.svelte';
   import type { PersonSplitCommittedContext } from '../../directory/person-merge-history-controller.svelte';
+  import { PERSON_TABS, type PersonTab } from '../../routing/routes';
+  import PersonClusterPanel from '../people/PersonClusterPanel.svelte';
 
   interface Props {
     client: APIClient;
@@ -38,17 +40,21 @@
     onOpenCardDAVSettings?: () => void;
     onAnnounce?: (message: string) => void;
     onOpenMeeting?: (meeting: MeetingRef) => void;
-    /** Opens the Relationships hub for this person's archive participants —
-     * the inverse of the hub's "Contact record" action. The cluster
-     * resolution this page already made for the reach block rides along
-     * (once it has settled) so the shell need not repeat the lookups. */
-    onOpenTimeline?: (participantIDs: number[], resolution?: BoundClusterResolution) => void;
-    /** Opens the last-contact message in the Everything reading pane. */
+    /** Opens the last-contact message. */
     onOpenMessage?: (messageID: number) => void;
+    /** The open tab when the address names one (`/people/:id/<tab>`);
+     * omitted, the page keeps its own tab. */
+    tab?: PersonTab;
+    onTabChange?: (tab: PersonTab) => void;
+    /** Identity edits under Maintenance can change the person's bindings. */
+    onReload?: () => void;
   }
 
-  type DetailTab = 'overview' | 'organizations' | 'relationships' | 'network' | 'media';
-  const tabOrder: DetailTab[] = ['overview', 'organizations', 'relationships', 'network', 'media'];
+  type DetailTab = PersonTab;
+  const tabOrder: DetailTab[] = [...PERSON_TABS];
+  const tabLabels: Record<DetailTab, string> = {
+    overview: 'Overview', timeline: 'Timeline', files: 'Files', meetings: 'Meetings', profile: 'Profile', maintenance: 'Maintenance'
+  };
   let {
     client,
     bundle,
@@ -61,17 +67,16 @@
     onOpenCardDAVSettings = () => undefined,
     onAnnounce = () => undefined,
     onOpenMeeting = undefined,
-    onOpenTimeline = undefined,
-    onOpenMessage = undefined
+    onOpenMessage = undefined,
+    tab = undefined,
+    onTabChange = undefined,
+    onReload = undefined
   }: Props = $props();
-  let activeTab = $state<DetailTab>('overview');
+  let ownTab = $state<DetailTab>('overview');
+  const activeTab = $derived(tab ?? ownTab);
   let organizationRequest = $state<{ id: number; key: number }>();
   let organizationRequestKey = 0;
-  let overviewTab = $state<HTMLButtonElement>();
-  let organizationsTab = $state<HTMLButtonElement>();
-  let relationshipsTab = $state<HTMLButtonElement>();
-  let networkTab = $state<HTMLButtonElement>();
-  let mediaTab = $state<HTMLButtonElement>();
+  const tabButtons: Partial<Record<DetailTab, HTMLButtonElement>> = $state({});
   const profile = $derived(profileController?.structuredProfile ?? bundle.structuredProfile);
   // Archive-observed identifiers for every participant bound to this person,
   // best-effort: the address book rows render without them. Bindings resolve
@@ -96,16 +101,8 @@
     reachEntriesFromContactPoints(profile?.contact_points),
     reachEntriesFromIdentifiers({ identifiers: participantIdentifiers })
   ));
-  const overviewTabID = $derived(`person-${personID}-overview-tab`);
-  const overviewPanelID = $derived(`person-${personID}-overview-panel`);
-  const organizationsTabID = $derived(`person-${personID}-organizations-tab`);
-  const organizationsPanelID = $derived(`person-${personID}-organizations-panel`);
-  const relationshipsTabID = $derived(`person-${personID}-relationships-tab`);
-  const relationshipsPanelID = $derived(`person-${personID}-relationships-panel`);
-  const networkTabID = $derived(`person-${personID}-network-tab`);
-  const networkPanelID = $derived(`person-${personID}-network-panel`);
-  const mediaTabID = $derived(`person-${personID}-media-tab`);
-  const mediaPanelID = $derived(`person-${personID}-media-panel`);
+  const tabID = (value: DetailTab) => `person-${personID}-${value}-tab`;
+  const panelID = (value: DetailTab) => `person-${personID}-${value}-panel`;
   const sectionNames: Record<DirectoryReadSection, string> = {
     person: 'Person', structuredProfile: 'Profile', attributes: 'Attributes', contactState: 'Contact state',
     activity: 'Activity', files: 'Files'
@@ -138,8 +135,8 @@
 
   const displayName = $derived(bundle.person?.display_name ?? profile?.person?.display_name ?? `Person ${personID}`);
 
-  /** `message:<id>` refs open in the Everything reading pane; other kinds
-   * (meetings) have no in-app destination and render as plain text. */
+  /** `message:<id>` refs open the message; other kinds have no in-app
+   * destination here and render as plain text. */
   function contactRefMessageID(ref: string | undefined): number | undefined {
     const match = /^message:([1-9]\d*)$/.exec(ref ?? '');
     return match ? Number(match[1]) : undefined;
@@ -162,16 +159,26 @@
     };
   });
 
-  async function selectTab(tab: DetailTab, focus = false): Promise<void> {
-    activeTab = tab;
+  async function selectTab(next: DetailTab, focus = false): Promise<void> {
+    ownTab = next;
+    if (next !== activeTab) onTabChange?.(next);
     if (!focus) return;
     await Promise.resolve();
-    ({ overview: overviewTab, organizations: organizationsTab, relationships: relationshipsTab, network: networkTab, media: mediaTab }[tab])?.focus();
+    tabButtons[next]?.focus();
+  }
+
+  /** Edit attributes opens Profile and puts focus on its attributes. */
+  async function editAttributes(): Promise<void> {
+    await selectTab('profile');
+    await tick();
+    const section = document.getElementById('person-attributes');
+    section?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+    section?.focus({ preventScroll: true });
   }
 
   function openOrganization(organizationID: number): void {
     organizationRequest = { id: organizationID, key: ++organizationRequestKey };
-    void selectTab('organizations');
+    void selectTab('profile');
   }
 
   function handleTabKeydown(event: KeyboardEvent): void {
@@ -180,7 +187,7 @@
     if (event.key === 'ArrowRight') next = tabOrder[(index + 1) % tabOrder.length];
     else if (event.key === 'ArrowLeft') next = tabOrder[(index - 1 + tabOrder.length) % tabOrder.length];
     else if (event.key === 'Home') next = 'overview';
-    else if (event.key === 'End') next = 'media';
+    else if (event.key === 'End') next = tabOrder.at(-1);
     if (!next) return;
     event.preventDefault();
     void selectTab(next, true);
@@ -188,35 +195,27 @@
 </script>
 
 <section class="person-detail" aria-label="Person detail">
+  {#if bundle.person || profile}
+    <header class="person-header">
+      <h2 data-page-title>{displayName}</h2>
+      {#if subtitle}<p class="person-subtitle">{subtitle}</p>{/if}
+    </header>
+  {/if}
   <div class="detail-tabs" role="tablist" aria-label="Person detail sections">
-    <button bind:this={overviewTab} id={overviewTabID} type="button" role="tab"
-      aria-selected={activeTab === 'overview'} aria-controls={overviewPanelID}
-      tabindex={activeTab === 'overview' ? 0 : -1} onkeydown={handleTabKeydown}
-      onclick={() => void selectTab('overview')}>Overview</button>
-    <button bind:this={organizationsTab} id={organizationsTabID} type="button" role="tab"
-      aria-selected={activeTab === 'organizations'} aria-controls={organizationsPanelID}
-      tabindex={activeTab === 'organizations' ? 0 : -1} onkeydown={handleTabKeydown}
-      onclick={() => void selectTab('organizations')}>Organizations</button>
-    <button bind:this={relationshipsTab} id={relationshipsTabID} type="button" role="tab"
-      aria-selected={activeTab === 'relationships'} aria-controls={relationshipsPanelID}
-      tabindex={activeTab === 'relationships' ? 0 : -1} onkeydown={handleTabKeydown}
-      onclick={() => void selectTab('relationships')}>Relationships</button>
-    <button bind:this={networkTab} id={networkTabID} type="button" role="tab"
-      aria-selected={activeTab === 'network'} aria-controls={networkPanelID}
-      tabindex={activeTab === 'network' ? 0 : -1} onkeydown={handleTabKeydown}
-      onclick={() => void selectTab('network')}>Network</button>
-    <button bind:this={mediaTab} id={mediaTabID} type="button" role="tab"
-      aria-selected={activeTab === 'media'} aria-controls={mediaPanelID}
-      tabindex={activeTab === 'media' ? 0 : -1} onkeydown={handleTabKeydown}
-      onclick={() => void selectTab('media')}>Media &amp; Files</button>
+    {#each tabOrder as value (value)}
+      <button bind:this={tabButtons[value]} id={tabID(value)} type="button" role="tab"
+        aria-selected={activeTab === value} aria-controls={panelID(value)}
+        tabindex={activeTab === value ? 0 : -1} onkeydown={handleTabKeydown}
+        onclick={() => void selectTab(value)}>{tabLabels[value]}</button>
+    {/each}
   </div>
 
   {#each Object.entries(bundle.errors).filter(([section]) => section !== 'files') as [section, message]}
     <Notice tone="error" message={`${sectionNames[section as DirectoryReadSection]}: ${message}`} />
   {/each}
 
-  {#if activeTab === 'media'}
-    <div id={mediaPanelID} role="tabpanel" aria-labelledby={mediaTabID} tabindex="0">
+  <div id={panelID(activeTab)} role="tabpanel" aria-labelledby={tabID(activeTab)} tabindex="0">
+    {#if activeTab === 'files'}
       {#if bundle.errors.files}
         <EmptyState title="No files to show" description={bundle.errors.files} />
       {:else}
@@ -229,59 +228,21 @@
           embedded
         />
       {/if}
-    </div>
-  {:else if activeTab === 'network'}
-    <div id={networkPanelID} role="tabpanel" aria-labelledby={networkTabID} tabindex="0">
-      {#if entityController}<PersonNetwork controller={entityController} {onOpenPerson} onOpenOrganization={openOrganization} />
-      {:else}<section><h2 data-section-title>Network</h2><p>The curated network is unavailable for this selection.</p></section>{/if}
-    </div>
-  {:else if activeTab === 'relationships'}
-    <div id={relationshipsPanelID} role="tabpanel" aria-labelledby={relationshipsTabID} tabindex="0">
-      {#if entityController}<RelationshipsTab {client} controller={entityController} {personID} />
-      {:else}<section><h2 data-section-title>Relationships</h2><p>Relationships are unavailable for this selection.</p></section>{/if}
-    </div>
-  {:else if activeTab === 'organizations'}
-    <div id={organizationsPanelID} role="tabpanel" aria-labelledby={organizationsTabID} tabindex="0">
-      {#if entityController}<OrganizationEmploymentTab controller={entityController} {personID} {organizationRequest} />
-      {:else}<section><h2 data-section-title>Organizations</h2><p>Organizations are unavailable for this selection.</p></section>{/if}
-    </div>
-  {:else}
-    <div id={overviewPanelID} role="tabpanel" aria-labelledby={overviewTabID} tabindex="0">
-      {#if bundle.person || profile}
-        <header class="person-header">
-          <div class="person-title-row">
-            <h2 data-page-title>{displayName}</h2>
-            {#if onOpenTimeline && bundle.person?.participant_ids?.length}
-              <Button
-                label="Open timeline"
-                ariaLabel={`Open timeline for ${displayName}`}
-                surface="outline"
-                size="sm"
-                onclick={() => onOpenTimeline([...(bundle.person?.participant_ids ?? [])], participantResolution)}
-              />
-            {/if}
-          </div>
-          {#if subtitle}<p class="person-subtitle">{subtitle}</p>{/if}
-        </header>
+    {:else if activeTab === 'timeline'}
+      {#if participantResolution || !(bundle.person?.participant_ids?.length)}
+        <PersonClusterPanel {client} clusters={participantResolution?.clusters ?? []} mode="timeline" {onOpenMeeting} />
+      {:else}
+        <p class="state" role="status">Loading timeline…</p>
       {/if}
-      <PersonReachBlock entries={reachEntries} {onAnnounce} />
-      {#if lastContact}
-        <p class="last-contact">
-          {#if lastContact.messageID !== undefined && onOpenMessage}
-            {@const messageID = lastContact.messageID}
-            <button type="button" class="link-button" onclick={() => onOpenMessage(messageID)}>{lastContact.lead}</button>
-          {:else}<span>{lastContact.lead}</span>{/if}
-          {#each lastContact.rest as part}<span class="separator" aria-hidden="true">·</span><span>{part}</span>{/each}
-        </p>
+    {:else if activeTab === 'meetings'}
+      {#if bundle.person?.id === personID}
+        <MeetingPanel {client} scope={{ kind: 'direct', scope: { person_id: personID } }}
+          refreshKey={JSON.stringify([bundle.person.revision, [...bundle.person.participant_ids].sort((a, b) => a - b)])}
+          {onOpenMeeting} />
+      {:else}
+        <p class="state">Meetings are unavailable for this person.</p>
       {/if}
-      <AttributeSummary
-        groups={profileController?.attributes?.attributes ?? bundle.attributes?.attributes ?? []}
-        onEdit={profileController ? () => {
-          const section = document.getElementById('person-attributes');
-          section?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-          section?.focus({ preventScroll: true });
-        } : undefined}
-      />
+    {:else if activeTab === 'profile'}
       {#if profileController}
         <StructuredProfileSection {client} controller={profileController} {personID} />
       {:else if profile?.names?.length}
@@ -299,38 +260,71 @@
       {#if profileController && profileController.attributes}
         <AttributeSection controller={profileController} />
       {/if}
+      {#if entityController}
+        <section class="profile-group" aria-label="Organizations">
+          <h3 data-section-title>Organizations</h3>
+          <OrganizationEmploymentTab controller={entityController} {personID} {organizationRequest} />
+        </section>
+        <section class="profile-group" aria-label="Relationships">
+          <h3 data-section-title>Relationships</h3>
+          <RelationshipsTab {client} controller={entityController} {personID} />
+        </section>
+        <section class="profile-group" aria-label="Network">
+          <h3 data-section-title>Network</h3>
+          <PersonNetwork controller={entityController} {onOpenPerson} onOpenOrganization={openOrganization} />
+        </section>
+      {:else}
+        <section><h3 data-section-title>Organizations, relationships, and network</h3><p>These are unavailable for this selection.</p></section>
+      {/if}
+    {:else if activeTab === 'maintenance'}
+      <div class="maintenance-body">
+        <PersonAgenda {client} {personID} {onAnnounce} />
+        <PersonTrackingControl {client} {personID} {onAnnounce} />
+        <CardDAVPublicationControl
+          {client}
+          {personID}
+          onOpenConflict={onOpenCardDAVConflict}
+          onOpenSettings={onOpenCardDAVSettings}
+          {onAnnounce}
+        />
+        <PersonBriefCard {client} {personID} {onAnnounce} />
+        <PersonMergeHistory {client} {personID} {onOpenPerson} {onSplitCommitted} />
+        <section class="profile-group" aria-label="Identities">
+          <h3 data-section-title>Identities</h3>
+          {#if participantResolution || !(bundle.person?.participant_ids?.length)}
+            <PersonClusterPanel {client} clusters={participantResolution?.clusters ?? []} mode="identities" {onAnnounce}
+              onIdentitiesChanged={onReload} />
+          {:else}
+            <p class="state" role="status">Loading identities…</p>
+          {/if}
+        </section>
+      </div>
+    {:else}
+      <PersonReachBlock entries={reachEntries} {onAnnounce} />
+      {#if lastContact}
+        <p class="last-contact">
+          {#if lastContact.messageID !== undefined && onOpenMessage}
+            {@const messageID = lastContact.messageID}
+            <button type="button" class="link-button" onclick={() => onOpenMessage(messageID)}>{lastContact.lead}</button>
+          {:else}<span>{lastContact.lead}</span>{/if}
+          {#each lastContact.rest as part}<span class="separator" aria-hidden="true">·</span><span>{part}</span>{/each}
+        </p>
+      {/if}
+      <AttributeSummary
+        groups={profileController?.attributes?.attributes ?? bundle.attributes?.attributes ?? []}
+        onEdit={profileController ? () => void editAttributes() : undefined}
+      />
       {#if entityController?.employments.length}
         <section><h3 data-section-title>Organizations and employment</h3><ul>{#each entityController.employments as employment}<li><span>{employment.title ?? employment.role ?? 'Employment'} · {employmentOrganization(employment.id) ?? `Organization ${employment.organization_id}`}</span>{#if employment.is_current}<small class="employment-flag">Current</small>{/if}</li>{/each}</ul></section>
       {/if}
       {#if entityController?.relationships.length}
         <section><h3 data-section-title>Relationships</h3><ul>{#each entityController.relationships as view}<li>{view.counterpart_display_name?.trim() || view.counterpart_vcard_uid || `Person ${view.counterpart_person_id}`} · {view.counterpart_label}</li>{/each}</ul></section>
       {/if}
-      {#if bundle.person?.id === personID}
-        <MeetingPanel {client} collapsible scope={{ kind: 'direct', scope: { person_id: personID } }}
-          refreshKey={JSON.stringify([bundle.person.revision, [...bundle.person.participant_ids].sort((a, b) => a - b)])}
-          {onOpenMeeting} />
-      {/if}
       {#if bundle.activity}
         <section><h3 data-section-title>Activity</h3><p>{bundle.activity.total_count} recorded days</p></section>
       {/if}
-      <details class="maintenance">
-        <summary>Maintenance</summary>
-        <div class="maintenance-body">
-          <PersonAgenda {client} {personID} {onAnnounce} />
-          <PersonTrackingControl {client} {personID} {onAnnounce} />
-          <CardDAVPublicationControl
-            {client}
-            {personID}
-            onOpenConflict={onOpenCardDAVConflict}
-            onOpenSettings={onOpenCardDAVSettings}
-            {onAnnounce}
-          />
-          <PersonBriefCard {client} {personID} {onAnnounce} />
-          <PersonMergeHistory {client} {personID} {onOpenPerson} {onSplitCommitted} />
-        </div>
-      </details>
-    </div>
-  {/if}
+    {/if}
+  </div>
 </section>
 
 <style>
@@ -348,13 +342,13 @@
   small { color: var(--text-muted); font-size: var(--font-size-sm); }
   ul { padding-left: var(--space-5); }
   .person-header { display: grid; gap: var(--space-1); }
-  .person-title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
   .person-subtitle { color: var(--text-secondary); font-size: var(--font-size-sm); }
   .last-contact { display: flex; flex-wrap: wrap; gap: var(--space-2); color: var(--text-secondary); font-size: var(--font-size-sm); }
   .link-button { border: 0; padding: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
   .link-button:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
   .separator { color: var(--text-muted); }
   .employment-flag { margin-left: var(--space-2); }
-  .maintenance summary { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-sm); }
-  .maintenance-body { display: grid; gap: var(--space-6); margin-top: var(--space-4); }
+  .maintenance-body { display: grid; gap: var(--space-6); }
+  .profile-group { display: grid; gap: var(--space-3); padding-top: var(--space-4); border-top: 1px solid var(--hairline); }
+  .state { color: var(--text-muted); font-size: var(--font-size-sm); }
 </style>

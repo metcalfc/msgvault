@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { exploreHistoryState } from './explore-state';
+import { openPersonFromPeople } from './kit-ui';
 
 const when = '2026-07-19T10:00:00Z';
 
@@ -130,58 +131,50 @@ async function prepare(page: Page, personFileBodies: Record<string, unknown>[] =
   } }));
 }
 
-test('legacy People URL lands on the Relationships hub and walks list, timeline, reading pane, facet, and history', async ({ page }) => {
+test('legacy People URL lands on the People list and walks contact page, timeline, reading pane, and history', async ({ page }) => {
   await prepare(page);
 
-  // A pre-rewrite bookmark for the deleted People workspace normalizes to
-  // the relationships hub instead of erroring or landing somewhere blank.
+  // A pre-rewrite bookmark for the deleted People workspace opens the
+  // People list on archive contacts that are not saved yet.
   await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'people' }))}`);
+  await expect(page).toHaveURL(/\/people\?explore=/);
+  await expect(page.getByRole('main', { name: 'People' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Not saved' })).toHaveAttribute('aria-pressed', 'true');
 
-  const hub = page.getByRole('main', { name: 'Relationships' });
-  await expect(hub).toBeVisible();
-  const list = page.getByRole('grid', { name: 'Relationship results' });
-  await expect(list.getByText('Alice Example')).toBeVisible();
-  await expect(page.getByText('Select a person or domain', { exact: true })).toBeVisible();
-  await expect(page.getByRole('radio', { name: 'People' })).toHaveAttribute('aria-checked', 'true');
-
-  // Opening a person from the ranked list drives the controller and shows
-  // the timeline for that cluster.
-  await list.getByText('Alice Example').click();
+  // Opening the contact shows one person page with tabs.
+  await openPersonFromPeople(page, 'Alice Example');
+  await expect(page).toHaveURL(/\/people\/contact-1$/);
   await expect(page.getByRole('heading', { name: 'Alice Example' })).toBeVisible();
+  await page.getByRole('tablist', { name: 'Contact sections' }).getByRole('tab', { name: 'Timeline' }).click();
+  await expect(page).toHaveURL(/\/people\/contact-1\/timeline$/);
   const timeline = page.getByRole('grid', { name: 'Relationship activity' });
   await expect(timeline.getByText('Subject line')).toBeVisible();
 
-  // A chat-burst row opens straight into the bounded conversation window in
-  // the reading pane rather than the plain entry summary: the anchor message
-  // renders expanded as a card in the thread.
+  // A chat-burst row opens straight into the bounded conversation window.
   await timeline.getByText('6 messages in Team Chat').click();
   const reading = page.getByRole('complementary', { name: /Reading pane: 6 messages in Team Chat/ });
   await expect(reading).toBeVisible();
   await expect(reading.getByRole('button', { name: 'Collapse message 500 from Bob Example' })).toBeVisible();
   await expect(reading.getByText('Latest chat message')).toBeVisible();
 
-  // Toggling the facet switches the ranked list to Domains without losing
-  // the open person detail underneath.
-  await page.getByRole('radio', { name: 'Domains' }).click();
-  await expect(page.getByRole('radio', { name: 'Domains' })).toHaveAttribute('aria-checked', 'true');
-  await expect(list.getByText('example.com')).toBeVisible();
-
-  // Browser back undoes the facet toggle first...
+  // Back walks the tab, then the contact, back to the list.
   await page.goBack();
-  await expect(page.getByRole('radio', { name: 'People' })).toHaveAttribute('aria-checked', 'true');
-  await expect(list.getByText('Alice Example')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Alice Example' })).toBeVisible();
-
-  // ...and a second back undoes opening the person, clearing the list's
-  // active selection, closing the person detail, and — since the reading
-  // pane's own open/close state lives outside the URL entirely — closing
-  // the conversation reading pane that was still open underneath it too.
-  await page.goBack();
-  await expect.poll(async () => (await exploreHistoryState(page)).relationshipTarget).toBeNull();
-  await expect(list.getByRole('row', { name: /Alice Example/ })).toHaveAttribute('aria-selected', 'false');
-  await expect(page.getByRole('heading', { name: 'Alice Example' })).toBeHidden();
+  await expect(page).toHaveURL(/\/people\/contact-1$/);
   await expect(reading).toBeHidden();
-  await expect(page.getByText('Select a person or domain', { exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('main', { name: 'People' })).toBeVisible();
+  await expect.poll(async () => (await exploreHistoryState(page)).relationshipTarget).toBeNull();
+  await page.goForward();
+  await expect(page.getByRole('heading', { name: 'Alice Example' })).toBeVisible();
+});
+
+test('the domains view lists domains with the relationships hub', async ({ page }) => {
+  await prepare(page);
+  await page.goto('/people');
+  await page.getByRole('button', { name: 'Domains' }).click();
+  await expect(page).toHaveURL(/\/people\/domains/);
+  await expect(page.getByRole('main', { name: 'Relationships' })).toBeVisible();
+  await expect(page.getByRole('grid', { name: 'Relationship results' }).getByText('example.com')).toBeVisible();
 });
 
 test('person attachment gallery preserves directions and Media state across source-message history', async ({ page }) => {
@@ -189,9 +182,8 @@ test('person attachment gallery preserves directions and Media state across sour
   await prepare(page, personFileBodies);
   await page.goto('/');
 
-  const list = page.getByRole('grid', { name: 'Relationship results' });
-  await list.getByText('Alice Example').click();
-  await page.getByRole('radio', { name: 'Files 1' }).click();
+  await openPersonFromPeople(page, 'Alice Example');
+  await page.getByRole('tablist', { name: 'Contact sections' }).getByRole('tab', { name: 'Files' }).click();
   await expect(page.getByRole('grid', { name: 'Files results' }).getByText('notes.pdf')).toBeVisible();
   expect(personFileBodies[0]).toMatchObject({
     directions: ['from_person'],
@@ -222,7 +214,7 @@ test('person attachment gallery preserves directions and Media state across sour
   await expect(page.getByRole('button', { name: 'Open photo.png' })).toBeVisible();
   const restored = await exploreHistoryState(page);
   expect(restored).toMatchObject({
-    workspace: 'relationships', relationshipTarget: 'cluster:1', relationshipFiles: true,
+    workspace: 'relationships', relationshipTarget: 'cluster:1', personTab: 'files',
     personFilePresentation: 'media', personFileDirections: ['from_person', 'group']
   });
 });

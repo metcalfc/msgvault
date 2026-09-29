@@ -186,8 +186,8 @@ for (const profile of [
 
     await expect(page).toHaveURL(new RegExp(`/people/${profile.id}$`));
     await expect(page.getByRole('heading', { name: profile.name })).toBeVisible();
-    // Merge history sits behind the Overview's closed "Maintenance" disclosure.
-    await page.getByText('Maintenance', { exact: true }).click();
+    // Merge history lives on the Maintenance tab.
+    await page.getByRole('tab', { name: 'Maintenance' }).click();
     await expect(page.getByText('No merge history on this page.')).toBeVisible();
     await expect(page.getByRole('table', { name: 'Person merge history' })).toHaveCount(0);
     expect(fixture.requests.filter((request) => request.path.endsWith('/merge'))).toHaveLength(0);
@@ -217,10 +217,6 @@ for (const completionTarget of [
   await expect(page.getByRole('heading', { name: 'Synthetic One' })).toBeVisible();
   await expect(page.getByRole('status', { name: 'Operation status' }))
     .toContainText('People merged into Synthetic One. Identity cache ready.');
-  const directoryPeople = page.getByRole('grid', { name: 'Directory people' });
-  await expect(directoryPeople).toContainText('Synthetic One');
-  await expect(directoryPeople).not.toContainText('Synthetic Two');
-  await expect(directoryPeople).not.toContainText('Synthetic Restored');
   await expect.poll(() => fixture.requests.filter((request) =>
     request.method === 'GET' && request.path === '/api/v1/people/7').length).toBe(1);
   const mergeRequests = fixture.requests.filter((request) => request.path === '/api/v1/people/7/merge');
@@ -231,7 +227,7 @@ for (const completionTarget of [
     .toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   expect(fixture.requests.filter((request) => request.path.endsWith('/19/accept'))).toHaveLength(1);
 
-  await page.getByText('Maintenance', { exact: true }).click();
+  await page.getByRole('tab', { name: 'Maintenance' }).click();
   const history = page.getByRole('table', { name: 'Person merge history' });
   await expect(history).toBeVisible();
   expect(fixture.requests.filter((request) => request.path.endsWith('/snapshot'))).toHaveLength(0);
@@ -266,9 +262,6 @@ for (const completionTarget of [
   await expect(split.getByRole('button', { name: 'Open source profile Synthetic One (Person 7)' })).toBeVisible();
   await expect(split.getByRole('button', { name: 'Open restored profile Synthetic Restored (Person 19)' })).toBeVisible();
   await expect(split).toContainText('Ambiguous rows');
-  await expect(directoryPeople).toContainText('Synthetic One');
-  await expect(directoryPeople).toContainText('Synthetic Restored');
-  await expect(directoryPeople).not.toContainText('Synthetic Two');
   const splitRequests = fixture.requests.filter((request) => request.path === '/api/v1/people/7/split');
   expect(splitRequests).toHaveLength(1);
   expect(splitRequests[0]!.body).toEqual({ merge_id: 41, participant_ids: [901] });
@@ -288,14 +281,21 @@ for (const completionTarget of [
   await expect(page.getByRole('heading', { name: completionTarget.heading })).toBeVisible();
 
   if (completionTarget.id === 7) {
-    // The completion handoff reloads the person page, closing its Maintenance disclosure.
-    await page.getByText('Maintenance', { exact: true }).click();
+    // The completion handoff opens the person on Overview.
+    await page.getByRole('tab', { name: 'Maintenance' }).click();
     const updatedHistory = page.getByRole('table', { name: 'Person merge history' });
     await expect(updatedHistory).toBeVisible();
     await updatedHistory.getByRole('button', { name: 'Inspect merge 41' }).focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('table', { name: 'Prior splits' })).toContainText('55');
   }
+
+  // The People list reflects the merge and the split.
+  await page.getByRole('button', { name: 'Back to People' }).click();
+  const people = page.getByRole('region', { name: 'People results' });
+  await expect(people).toContainText('Synthetic One');
+  await expect(people).toContainText('Synthetic Restored');
+  await expect(people).not.toContainText('Synthetic Two');
 });
 
 test('Fact review is a keyboard-readable private ledger with honest unavailable gates', async ({ page }) => {

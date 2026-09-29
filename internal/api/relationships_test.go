@@ -582,3 +582,34 @@ func TestRelationshipsUnavailableUnderNonAnalyzerEngine(t *testing.T) {
 	require.Equal(http.StatusServiceUnavailable, response.Code, response.Body.String())
 	assert.Contains(response.Body.String(), "analytical_cache_unavailable")
 }
+
+func TestRelationshipsMarksSavedPeopleAndListsOnlyUnsaved(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	now := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+	srv, identityStore, _ := newRelationshipIdentityAPIServer(t, newRelationshipsDuckDBFixture(t, now), []string{
+		"owner@example.test", "alice@example.test", "alice@chat.example", "newsletter@example.test",
+	})
+	person, _, err := identityStore.CreatePersonFromParticipant(relAliceID)
+	require.NoError(err)
+
+	all := relationshipsPage(t, srv, `{"show_all":true}`)
+	alice := relationshipRowOf(t, all, relAliceID)
+	require.NotNil(alice.Profile, "a saved cluster names its Directory person")
+	assert.Equal(person.ID, alice.Profile.ID)
+	assert.Nil(relationshipRowOf(t, all, relNewsletterID).Profile)
+
+	unsaved := relationshipsPage(t, srv, `{"show_all":true,"unsaved_only":true,"sort":"last_contact"}`)
+	require.Len(unsaved.Rows, 1)
+	assert.Equal(relNewsletterID, unsaved.Rows[0].CanonicalID)
+	assert.Equal(int64(1), unsaved.TotalCount)
+
+	byLastContact := relationshipsPage(t, srv, `{"show_all":true,"sort":"last_contact"}`)
+	require.Len(byLastContact.Rows, 2)
+	assert.False(byLastContact.Rows[0].LastAt.Before(byLastContact.Rows[1].LastAt))
+
+	invalid := postExploreJSON(t, srv, "/api/v1/relationships", `{"sort":"alphabetical"}`)
+	assert.Equal(http.StatusBadRequest, invalid.Code)
+}

@@ -1005,3 +1005,25 @@ func scanPersonBinding(row scanner) (*Person, sql.NullInt64, error) {
 	}
 	return &person, participantID, nil
 }
+
+// BoundParticipantIDsContext returns every participant bound to a saved
+// person, for listings of contacts that have not been saved yet.
+func (s *Store) BoundParticipantIDsContext(ctx context.Context) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT participant_id FROM person_participants ORDER BY participant_id`)
+	if err != nil {
+		return nil, fmt.Errorf("list bound participants: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan bound participant: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate bound participants: %w", err)
+	}
+	return ids, nil
+}

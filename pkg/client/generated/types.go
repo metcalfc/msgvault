@@ -10424,6 +10424,7 @@ type RelationshipRow struct {
 	LastAt            time.Time           `json:"last_at" validate:"required"`
 	MemberIds         []int64             `json:"member_ids" validate:"required"`
 	PrimaryIdentifier *PrimaryIdentifier  `json:"primary_identifier,omitempty"`
+	Profile           *PersonProfile      `json:"profile,omitempty"`
 	Score             float64             `json:"score"`
 	Signals           RelationshipSignals `json:"signals"`
 }
@@ -10443,6 +10444,13 @@ func (r RelationshipRow) Validate() error {
 		if v, ok := any(r.PrimaryIdentifier).(runtime.Validator); ok {
 			if err := v.Validate(); err != nil {
 				errors = errors.Append("PrimaryIdentifier", err)
+			}
+		}
+	}
+	if r.Profile != nil {
+		if v, ok := any(r.Profile).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("Profile", err)
 			}
 		}
 	}
@@ -10573,6 +10581,12 @@ type RelationshipsHTTPRequest struct {
 	Filters []ExploreFilter `json:"filters,omitempty"`
 	Limit   *int64          `json:"limit,omitempty" validate:"omitempty,gte=0,lte=500"`
 	ShowAll *bool           `json:"show_all,omitempty"`
+
+	// Sort Row order: score (the reciprocity ranking, the default) or last_contact (newest last interaction first).
+	Sort *RelationshipsHTTPRequestSort `json:"sort,omitempty"`
+
+	// UnsavedOnly List only counterparts whose cluster is not bound to a saved Directory person.
+	UnsavedOnly *bool `json:"unsaved_only,omitempty"`
 }
 
 func (r RelationshipsHTTPRequest) Validate() error {
@@ -10587,6 +10601,13 @@ func (r RelationshipsHTTPRequest) Validate() error {
 	if r.Limit != nil {
 		if err := typesValidator.Var(r.Limit, "omitempty,gte=0,lte=500"); err != nil {
 			errors = errors.Append("Limit", err)
+		}
+	}
+	if r.Sort != nil {
+		if v, ok := any(r.Sort).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("Sort", err)
+			}
 		}
 	}
 	if len(errors) == 0 {

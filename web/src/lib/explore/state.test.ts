@@ -54,7 +54,7 @@ describe('Explore URL state', () => {
   it('keeps inactive workspace choices in browser history while sharing only the current view', async () => {
     window.history.replaceState(null, '', '/');
     const state = new ExploreState(window);
-    state.commitNavigation({ relationshipTarget: 'cluster:42' });
+    state.commitNavigation({ workspace: 'relationships', relationshipTarget: 'cluster:42' });
     state.commitWorkspace('everything');
     expect(window.location.pathname).toBe('/inbox');
     expect(new URLSearchParams(window.location.search).get('since')).toBe('7d');
@@ -356,6 +356,7 @@ describe('Explore URL state', () => {
   it('restores mailing-list filters without dropping unrelated filters', () => {
     const state: ExploreURLState = {
       ...defaultExploreURLState,
+      workspace: 'files',
       filters: [
         { dimension: 'mailing_list', values: ['<dev@example.test>'] },
         { dimension: 'deletion', values: ['active'] }
@@ -368,6 +369,7 @@ describe('Explore URL state', () => {
   it('drops identity when its single parent source changes or is removed', () => {
     const withChangedSource = parseExploreURLState(serializeExploreURLState({
       ...defaultExploreURLState,
+      workspace: 'files',
       filters: [
         { dimension: 'source', values: ['15'] },
         { dimension: 'identity', values: ['14', 'archive@example.com', 'sender'] }
@@ -375,6 +377,7 @@ describe('Explore URL state', () => {
     }));
     const withoutSource = parseExploreURLState(serializeExploreURLState({
       ...defaultExploreURLState,
+      workspace: 'files',
       filters: [{ dimension: 'identity', values: ['14', 'archive@example.com', 'recipient'] }]
     }));
 
@@ -514,6 +517,8 @@ describe('Explore URL state', () => {
   it('normalizes restorable person gallery controls into stable finite values', () => {
     const restored = parseExploreURLState(serializeExploreURLState({
       ...defaultExploreURLState,
+      workspace: 'relationships',
+      relationshipTarget: 'cluster:7',
       personFilePresentation: 'media',
       personFileDirections: ['group', 'from_person', 'group']
     }));
@@ -564,15 +569,17 @@ describe('relationships workspace state', () => {
       workspace: 'people',
       analysisTarget: null
     } as unknown as ExploreURLState));
-    expect(withoutTarget.workspace).toBe('relationships');
-    expect(withoutTarget.relationshipFacet).toBe('people');
+    // The ranked contacts list is now the People list's Not saved filter.
+    expect(withoutTarget.workspace).toBe('directory');
+    expect(withoutTarget.peopleSaved).toBe('unsaved');
     expect(withoutTarget.relationshipTarget).toBeNull();
   });
 
-  it('defaults workspace to relationships', () => {
-    expect(defaultExploreURLState.workspace).toBe('relationships');
+  it('defaults workspace to the People list', () => {
+    expect(defaultExploreURLState.workspace).toBe('directory');
     const restored = parseExploreURLState(`?explore=${encodeURIComponent('{}')}`);
-    expect(restored.workspace).toBe('relationships');
+    expect(restored.workspace).toBe('directory');
+    expect(restored.peopleSaved).toBe('');
     expect(restored.relationshipFacet).toBe('people');
     expect(restored.relationshipTarget).toBeNull();
     expect(restored.relationshipShowAll).toBe(false);
@@ -604,7 +611,7 @@ describe('relationships workspace state', () => {
     state.commitWorkspace('everything');
     state.commitSearch('quarterly plan', 'full_text');
 
-    state.commitWorkspace('relationships');
+    state.commitWorkspace('relationships', { relationshipTarget: 'cluster:7' });
 
     expect(state.current.workspace).toBe('relationships');
     expect(state.current.query).toBe('');
@@ -622,6 +629,7 @@ describe('relationships workspace state', () => {
   it('rejects invalid facet/target shapes', () => {
     const restored = parseExploreURLState(serializeExploreURLState({
       ...defaultExploreURLState,
+      workspace: 'relationships',
       relationshipFacet: 'x',
       relationshipTarget: 'garbage'
     } as unknown as ExploreURLState));
@@ -631,18 +639,21 @@ describe('relationships workspace state', () => {
 
     const validCluster = parseExploreURLState(serializeExploreURLState({
       ...defaultExploreURLState,
+      workspace: 'relationships',
       relationshipTarget: 'cluster:12'
     } as unknown as ExploreURLState));
     expect(validCluster.relationshipTarget).toBe('cluster:12');
 
     const invalidCluster = parseExploreURLState(serializeExploreURLState({
       ...defaultExploreURLState,
+      workspace: 'relationships',
       relationshipTarget: 'cluster:abc'
     } as unknown as ExploreURLState));
     expect(invalidCluster.relationshipTarget).toBeNull();
 
     const validDomain = parseExploreURLState(serializeExploreURLState({
       ...defaultExploreURLState,
+      workspace: 'relationships',
       relationshipTarget: 'domain:example.com'
     } as unknown as ExploreURLState));
     expect(validDomain.relationshipTarget).toBe('domain:example.com');
@@ -906,7 +917,7 @@ describe('ExploreState history ownership', () => {
   });
 
   it('keeps transient typing and resizing in the current entry while committing navigation state', () => {
-    window.history.replaceState(null, '', '/?');
+    window.history.replaceState(null, '', '/files');
     const state = new ExploreState(window);
 
     state.replaceTransient({ query: 'quarter', columnWidths: { title: 420 } });
@@ -1014,7 +1025,7 @@ describe('ExploreState history ownership', () => {
   });
 
   it('keeps ordered nested groups distinct from filters and semantic search', () => {
-    window.history.replaceState(null, '', '/');
+    window.history.replaceState(null, '', '/files');
     const state = new ExploreState(window);
 
     state.commitGrouping('participant');
@@ -1207,7 +1218,7 @@ describe('ExploreState history ownership', () => {
     await new Promise((resolve) => window.addEventListener('popstate', resolve, { once: true }));
 
     expect(state.current).toMatchObject({
-      workspace: 'relationships',
+      workspace: 'directory',
       query: 'alpha',
       searchMode: 'full_text',
       columns: ['kind', 'title', 'time'],

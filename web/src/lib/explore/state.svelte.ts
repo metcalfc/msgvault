@@ -81,6 +81,8 @@ const RESTORATION_INVALIDATING_FIELDS = new Set<keyof ExploreURLState>([
   'directoryLastContactBefore',
   'directorySort',
   'directoryPersonID',
+  'directoryHasName',
+  'peopleSaved',
   'personTab',
   'reviewKind',
   'identityState',
@@ -143,6 +145,9 @@ const OPERATION_KINDS_BY_LANE: Record<OperationLane, ReadonlySet<OperationKind>>
   documents: new Set(['document_extraction', 'document_embedding']),
   visual_attachments: new Set(['visual_embedding'])
 };
+const NORMALIZED_VIEW_FIELDS = [
+  'workspace', 'directoryPersonID', 'peopleSaved', 'personTab'
+] as const satisfies ReadonlyArray<keyof ExploreURLState>;
 const OPERATION_FILTER_FIELDS = [
   'operationLane',
   'operationKind',
@@ -153,7 +158,7 @@ const OPERATION_FILTER_FIELDS = [
 
 export const defaultExploreURLState: ExploreURLState = {
   schemaVersion: 2,
-  workspace: 'relationships',
+  workspace: 'directory',
   directoryQuery: '',
   directoryContactState: '',
   directoryCategory: '',
@@ -163,6 +168,8 @@ export const defaultExploreURLState: ExploreURLState = {
   directoryLastContactBefore: '',
   directorySort: 'last_contact_desc',
   directoryPersonID: null,
+  directoryHasName: false,
+  peopleSaved: '',
   personTab: 'overview',
   reviewKind: 'identity',
   identityState: 'candidate',
@@ -424,7 +431,8 @@ function normalize(value: unknown): ExploreURLState {
       : defaultExploreURLState.presentation;
   const legacyFacet: RelationshipFacet | undefined =
     value.workspace === 'people' ? 'people' : value.workspace === 'domains' ? 'domains' : undefined;
-  const workspace = value.workspace === 'everything' || value.workspace === 'directory' || value.workspace === 'directory_review' || value.workspace === 'settings' ||
+  // Legacy People and Domains workspaces were Relationships facets.
+  const workspace = legacyFacet ? 'relationships' : value.workspace === 'everything' || value.workspace === 'directory' || value.workspace === 'directory_review' || value.workspace === 'settings' ||
     value.workspace === 'files' || value.workspace === 'relationships' ||
     value.workspace === 'saved_views' || value.workspace === 'sources' ||
     value.workspace === 'deletions' || value.workspace === 'operations' ||
@@ -476,6 +484,9 @@ function normalize(value: unknown): ExploreURLState {
     operationStartedBefore = '';
   }
 
+  // The ranked contacts list became the People list's Not saved filter;
+  // only domains and single contacts still open the relationships views.
+  const peopleList = workspace === 'relationships' && relationshipFacet === 'people' && relationshipTarget === null;
   return {
     ...knownAndFuture,
     schemaVersion: value.schemaVersion === 1
@@ -483,7 +494,7 @@ function normalize(value: unknown): ExploreURLState {
       : typeof value.schemaVersion === 'number' && Number.isSafeInteger(value.schemaVersion)
         ? value.schemaVersion
         : defaultExploreURLState.schemaVersion,
-    workspace,
+    workspace: peopleList ? 'directory' : workspace,
     directoryQuery: typeof value.directoryQuery === 'string' ? value.directoryQuery : '',
     directoryContactState: typeof value.directoryContactState === 'string' ? value.directoryContactState : '',
     directoryCategory: typeof value.directoryCategory === 'string' ? value.directoryCategory : '',
@@ -492,8 +503,13 @@ function normalize(value: unknown): ExploreURLState {
     directoryLastContactAfter: typeof value.directoryLastContactAfter === 'string' ? value.directoryLastContactAfter : '',
     directoryLastContactBefore: typeof value.directoryLastContactBefore === 'string' ? value.directoryLastContactBefore : '',
     directorySort: value.directorySort === 'name' || value.directorySort === 'last_contact_asc' ? value.directorySort : 'last_contact_desc',
-    directoryPersonID: directoryPersonID(value.directoryPersonID),
-    personTab: personTab(value.personTab),
+    directoryPersonID: peopleList ? null : directoryPersonID(value.directoryPersonID),
+    directoryHasName: value.directoryHasName === true,
+    peopleSaved: peopleList ? 'unsaved'
+      : value.peopleSaved === 'saved' || value.peopleSaved === 'unsaved' ? value.peopleSaved : '',
+    // A contact opened with its files pane (before person tabs) opens on Files.
+    personTab: personTab(value.personTab) === 'overview' && value.relationshipFiles === true &&
+      relationshipTarget?.startsWith('cluster:') ? 'files' : personTab(value.personTab),
     reviewKind,
     identityState,
     relationshipReviewState,
@@ -564,6 +580,8 @@ const WORKSPACE_FIELDS: Partial<Record<keyof ExploreURLState, ReadonlyArray<Expl
   directoryLastContactBefore: ['directory'],
   directorySort: ['directory'],
   directoryPersonID: ['directory', 'directory_review'],
+  directoryHasName: ['directory'],
+  peopleSaved: ['directory'],
   reviewKind: ['directory_review'],
   identityState: ['directory_review'],
   relationshipReviewState: ['directory_review'],
@@ -593,6 +611,8 @@ const WORKSPACE_FIELDS: Partial<Record<keyof ExploreURLState, ReadonlyArray<Expl
   messageID: ['message'],
   dateBoundsChosen: ['everything']
 };
+const ARCHIVE_PREDICATE_FIELDS = new Set<keyof ExploreURLState>(['filters', 'groupingChain', 'presentation', 'sort']);
+const FILTERLESS_WORKSPACES = new Set<ExploreWorkspace>(['directory', 'directory_review', 'settings', 'message', 'saved_views']);
 // Keyboard focus and scroll position live only in browser history.
 const SESSION_ONLY_FIELDS = new Set<keyof ExploreURLState>(['activeRow', 'scrollAnchor']);
 
@@ -601,6 +621,9 @@ function sharedDetails(state: ExploreURLState, routesDateBounds: boolean): Recor
     const field = key as keyof ExploreURLState;
     if (field === 'schemaVersion') return [];
     if (isRoutedField(state.workspace, field)) return [];
+    // Archive filters shape Inbox, Files, and contact timelines; a person,
+    // review, settings, or message link does not carry them.
+    if (ARCHIVE_PREDICATE_FIELDS.has(field) && FILTERLESS_WORKSPACES.has(state.workspace)) return [];
     if (SESSION_ONLY_FIELDS.has(field)) return [];
     const owners = WORKSPACE_FIELDS[field];
     if (owners && !owners.includes(state.workspace)) return [];
@@ -993,9 +1016,12 @@ export class ExploreState {
     // Preserve per-field reactivity: transient scroll/column changes must not
     // invalidate consumers that only read the canonical server predicate.
     const patchKeys = Object.keys(effectivePatch);
+    // Normalizing can move a view (a contact list with no contact is the
+    // People list), so those fields apply even when the patch omits them.
+    const normalizedKeys = NORMALIZED_VIEW_FIELDS.filter((key) => next[key] !== this.current[key]);
     const keysToApply = OPERATION_FILTER_FIELDS.some((key) => key in effectivePatch)
-      ? [...new Set([...patchKeys, ...OPERATION_FILTER_FIELDS, 'operationRunID'])]
-      : patchKeys;
+      ? [...new Set([...patchKeys, ...normalizedKeys, ...OPERATION_FILTER_FIELDS, 'operationRunID'])]
+      : [...new Set([...patchKeys, ...normalizedKeys])];
     for (const key of keysToApply) {
       if (key in next) this.current[key] = next[key];
     }

@@ -33,6 +33,8 @@
   import RelationshipList from './RelationshipList.svelte';
   import RelationshipTimeline from './RelationshipTimeline.svelte';
   import { localDayBoundsUTC, timelineRowToSelection } from './timeline-support';
+  import type { PersonTab } from '../../routing/routes';
+  import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 
   const QUERY_DEBOUNCE_MS = 250;
 
@@ -75,6 +77,13 @@
      * existed. */
     onOpenFileItem?: (entryKey: string) => void;
     onOpenFileConversation?: (entryKey: string, messageID: number, conversationID: number) => void;
+    /** 'hub' is the domain browser: list, detail, and reading pane. 'contact'
+     * is one archive contact's person page: no list, with tabs. */
+    layout?: 'hub' | 'contact';
+    personTab?: PersonTab;
+    onTabChange?: (tab: PersonTab) => void;
+    /** Leaves a contact page for the People list. */
+    onBack?: () => void;
   }
 
   let {
@@ -100,8 +109,31 @@
     onAnnounce = undefined,
     onOpenMeeting = undefined,
     onOpenFileItem = undefined,
-    onOpenFileConversation = undefined
+    onOpenFileConversation = undefined,
+    layout = 'hub',
+    personTab = 'overview',
+    onTabChange = undefined,
+    onBack = undefined
   }: Props = $props();
+
+  // A contact page shows these tabs; Profile and Maintenance belong to
+  // saved people (saving is one click in the header).
+  const CONTACT_TABS: { id: PersonTab; label: string }[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'timeline', label: 'Timeline' },
+    { id: 'files', label: 'Files' },
+    { id: 'meetings', label: 'Meetings' },
+  ];
+  const contactTab = $derived(CONTACT_TABS.some((tab) => tab.id === personTab) ? personTab : 'overview');
+  const contactFilesOpen = $derived(layout === 'contact' ? contactTab === 'files' : filesOpen);
+  function contactTabKeydown(event: KeyboardEvent, index: number): void {
+    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const next = CONTACT_TABS[(index + step + CONTACT_TABS.length) % CONTACT_TABS.length]!;
+    onTabChange?.(next.id);
+    void tick().then(() => rootElement?.querySelector<HTMLButtonElement>(`[data-contact-tab="${next.id}"]`)?.focus());
+  }
 
   let selection = $state<ReadingPaneSelection | undefined>();
   let conversationAnchorId = $state<number | undefined>();
@@ -142,7 +174,7 @@
   const TIMELINE_GRID_SELECTOR = '[role="grid"][aria-label="Relationship activity"]';
   const FILES_GRID_SELECTOR = '[role="grid"][aria-label="Files results"]';
   const LIST_GRID_SELECTOR = '[role="grid"][aria-label="Relationship results"]';
-  const layout = $derived(computeHubLayout(containerWidth));
+  const hubLayout = $derived(computeHubLayout(containerWidth));
   const predicateFingerprint = $derived(JSON.stringify(predicate));
   const selectedRowKey = $derived(selection?.kind === 'entry' ? selection.row.key : null);
 
@@ -243,7 +275,7 @@
   // instead, the one focusable stand-in for "the list" in that state.
   async function focusListPane(): Promise<void> {
     await tick();
-    if (layout === 'narrow' && !mobileListOpen) {
+    if (hubLayout === 'narrow' && !mobileListOpen) {
       rootElement?.querySelector<HTMLButtonElement>('.drawer-toggle')?.focus();
       return;
     }
@@ -293,6 +325,16 @@
     conversationBounds = undefined;
   });
 
+  // A contact page's reading pane belongs to its Timeline tab.
+  let previousContactTab: PersonTab = untrack(() => contactTab);
+  $effect(() => {
+    if (contactTab === previousContactTab) return;
+    previousContactTab = contactTab;
+    selection = undefined;
+    conversationAnchorId = undefined;
+    conversationBounds = undefined;
+  });
+
   async function closeDrawer(): Promise<void> {
     mobileListOpen = false;
     await tick();
@@ -302,7 +344,7 @@
   // Keep the hub's raw Escape handler inactive while Kit owns the open
   // drawer's focus trap and dismissal.
   $effect(() => {
-    if (layout !== 'narrow' || !mobileListOpen) return;
+    if (hubLayout !== 'narrow' || !mobileListOpen) return;
     return appShortcuts.pushScope('relationships-list-drawer');
   });
 
@@ -360,7 +402,7 @@
     {facet}
     query={queryInput}
     {showAll}
-    autofocusSearch={layout === 'narrow' && mobileListOpen}
+    autofocusSearch={hubLayout === 'narrow' && mobileListOpen}
     activeTarget={target}
     onQueryChange={handleQueryChange}
     {onFacetChange}
@@ -396,7 +438,8 @@
               <RelationshipHeader
                 detail={controller.detail}
                 loading={controller.timelineLoading}
-                {filesOpen}
+                filesOpen={contactFilesOpen}
+                showViewToggle={layout === 'hub'}
                 {onFilesToggle}
                 {client}
                 {onPromotePerson}
@@ -411,7 +454,17 @@
                 onLinkParticipants={(a, b) => controller.linkParticipants(a, b)}
                 onUnlinkParticipants={(a, b) => controller.unlinkParticipants(a, b)}
               />
-              {#if target !== null && domainOf(target) === undefined}
+              {#if layout === 'contact'}
+                <div class="contact-tabs" role="tablist" aria-label="Contact sections">
+                  {#each CONTACT_TABS as tab, index (tab.id)}
+                    <button type="button" role="tab" data-contact-tab={tab.id}
+                      aria-selected={contactTab === tab.id} tabindex={contactTab === tab.id ? 0 : -1}
+                      onkeydown={(event) => contactTabKeydown(event, index)}
+                      onclick={() => onTabChange?.(tab.id)}>{tab.label}</button>
+                  {/each}
+                </div>
+              {/if}
+              {#if target !== null && domainOf(target) === undefined && (layout === 'hub' || contactTab === 'overview')}
                 <RelationshipCalendar
                   calendar={controller.relationshipCalendar}
                   loading={controller.relationshipCalendarLoading}
@@ -422,12 +475,16 @@
                   onYearChange={(year) => { void controller.loadRelationshipYear(year); }}
                 />
               {/if}
-              {#if meetingContext?.scope}
-                <MeetingPanel {client} collapsible scope={meetingContext.scope} refreshKey={String(controller.identityRevision ?? '')} {onOpenMeeting} />
-              {:else if meetingContext?.error}
-                <p role="status">{meetingContext.error}</p>
+              {#if layout === 'hub' || contactTab === 'meetings'}
+                {#if meetingContext?.scope}
+                  <MeetingPanel {client} collapsible={layout === 'hub'} scope={meetingContext.scope} refreshKey={String(controller.identityRevision ?? '')} {onOpenMeeting} />
+                {:else if meetingContext?.error}
+                  <p role="status">{meetingContext.error}</p>
+                {/if}
               {/if}
-              {#if filesOpen && filesReady}
+              {#if layout === 'contact' && (contactTab === 'meetings' || contactTab === 'overview')}
+                <!-- Overview is the calendar; Meetings is the meeting list. -->
+              {:else if contactFilesOpen && filesReady}
                 <FilesWorkspace
                   {client}
                   embedded
@@ -487,13 +544,24 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -- landmark container scoping the hub's own Esc-layering; not a control itself. -->
 <main
   class="relationships-hub"
-  aria-label="Relationships"
-  class:layout-narrow={layout === 'narrow'}
+  aria-label={layout === 'contact' ? 'Contact' : 'Relationships'}
+  class:layout-narrow={hubLayout === 'narrow'}
   bind:this={rootElement}
   onkeydown={handleEscape}
 >
-  <h1 class="kit-sr-only">Relationships</h1>
-  {#if layout === 'narrow'}
+  <h1 class="kit-sr-only">{layout === 'contact' ? 'Contact' : 'Relationships'}</h1>
+  {#if layout === 'contact'}
+    <div class="contact-page">
+      {#if onBack}
+        <nav class="contact-nav" aria-label="Contact navigation">
+          <Button size="sm" surface="soft" label="People" ariaLabel="Back to People" onclick={onBack}>
+            <ArrowLeftIcon size={14} aria-hidden="true" />
+          </Button>
+        </nav>
+      {/if}
+      {@render centerAndReading()}
+    </div>
+  {:else if hubLayout === 'narrow'}
     <Button
       class="drawer-toggle"
       label="Contacts"
@@ -599,6 +667,36 @@
     margin-inline: auto;
     padding: var(--space-6) var(--space-7);
   }
+
+  .contact-page {
+    display: flex;
+    width: 100%;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+  }
+
+  .contact-nav {
+    display: flex;
+    padding: var(--space-3) var(--space-7) 0;
+  }
+
+  .contact-tabs { display: flex; gap: var(--space-2); border-bottom: 1px solid var(--hairline); }
+  .contact-tabs [role='tab'] {
+    margin-bottom: -1px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    padding: var(--space-2) var(--space-3);
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .contact-tabs [role='tab']:hover { color: var(--text-primary); }
+  .contact-tabs [role='tab'][aria-selected='true'] { border-bottom-color: var(--accent-blue); color: var(--text-primary); }
+  .contact-tabs [role='tab']:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 
   .hub-empty {
     display: flex;

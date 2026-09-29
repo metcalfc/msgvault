@@ -9,12 +9,12 @@ import { SEARCH_MODE_PREFERENCE_KEY } from './lib/search/modes';
 import { chooseSelectOption } from './test/kit-ui';
 import { exploreLink } from './test/explore-url';
 describe('application foundation', () => {
-  it('mounts the Relationships landmark once bootstrap succeeds', async () => {
+  it('mounts the People landmark once bootstrap succeeds', async () => {
     const session = createSessionController(async () =>
       Response.json({ auth_mode: 'loopback', https: false, plain_http_warning: true }),
     );
     render(App, { session });
-    expect(await screen.findByRole('main', { name: 'Relationships' })).toBeDefined();
+    expect(await screen.findByRole('main', { name: 'People' })).toBeDefined();
   });
   it('shows a quiet connecting state until bootstrap resolves, then login when required', async () => {
     const session = createSessionController(async () =>
@@ -22,11 +22,11 @@ describe('application foundation', () => {
     );
     render(App, { session });
     expect(screen.getByRole('main', { name: 'Connecting' })).toBeDefined();
-    expect(screen.queryByRole('main', { name: 'Relationships' })).toBeNull();
+    expect(screen.queryByRole('main', { name: 'People' })).toBeNull();
     expect(screen.queryByRole('form', { name: 'Log in' })).toBeNull();
     await session.bootstrap();
     expect(await screen.findByRole('form', { name: 'Log in' })).toBeDefined();
-    expect(screen.queryByRole('main', { name: 'Relationships' })).toBeNull();
+    expect(screen.queryByRole('main', { name: 'People' })).toBeNull();
   });
   it('shows a bootstrap error with retry instead of the shell, and recovers on retry', async () => {
     let sessionCalls = 0;
@@ -54,10 +54,10 @@ describe('application foundation', () => {
     const retry = await screen.findByRole('button', { name: 'Retry' });
     expect(screen.getByRole('main', { name: 'Connection error' })).toBeDefined();
     expect(screen.getByRole('alert')).toBeDefined();
-    expect(screen.queryByRole('main', { name: 'Relationships' })).toBeNull();
+    expect(screen.queryByRole('main', { name: 'People' })).toBeNull();
     expect(screen.queryByRole('form', { name: 'Log in' })).toBeNull();
     await fireEvent.click(retry);
-    expect(await screen.findByRole('main', { name: 'Relationships' })).toBeDefined();
+    expect(await screen.findByRole('main', { name: 'People' })).toBeDefined();
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
     await waitFor(() => expect(document.documentElement.dataset.density).toBe('comfortable'));
   });
@@ -237,6 +237,7 @@ describe('application foundation', () => {
         JSON.stringify({
           workspace: 'directory',
           directoryPersonID: 7,
+          personTab: 'maintenance',
         }),
       )}`,
     );

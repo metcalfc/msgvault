@@ -19,7 +19,6 @@ describe('readable routes', () => {
     ['/people/42', { workspace: 'directory', directoryPersonID: 42 }],
     ['/people/42/timeline', { workspace: 'directory', directoryPersonID: 42, personTab: 'timeline' }],
     ['/people/42/profile', { workspace: 'directory', directoryPersonID: 42, personTab: 'profile' }],
-    ['/people/contacts', { workspace: 'relationships' }],
     ['/people/contact-7', { workspace: 'relationships', relationshipTarget: 'cluster:7' }],
     ['/people/contact-7/files', { workspace: 'relationships', relationshipTarget: 'cluster:7', personTab: 'files' }],
     ['/people/domains', { workspace: 'relationships', relationshipFacet: 'domains' }],
@@ -37,6 +36,12 @@ describe('readable routes', () => {
     expect(url.pathname).toBe(pathname);
     expect(url.searchParams.has('workspace')).toBe(false);
     expect(parseExploreURLState(url.search, url.pathname)).toMatchObject(state);
+  });
+
+  it('opens the old contacts list as the People list filtered to Not saved', () => {
+    expect(parseExploreURLState('', '/people/contacts')).toMatchObject({ workspace: 'directory', peopleSaved: 'unsaved' });
+    expect(parseExploreURLState('?workspace=relationships', '/')).toMatchObject({ workspace: 'directory', peopleSaved: 'unsaved' });
+    expect(address({ workspace: 'directory', peopleSaved: 'unsaved' }).pathname).toBe('/people');
   });
 
   it('names a domain with a parameter so the daemon serves the app for it', () => {
@@ -126,7 +131,7 @@ describe('legacy address redirects', () => {
     window.history.replaceState(null, '', '/');
     const state = new ExploreState(window);
     expect(state.arrivedAtDefault).toBe(true);
-    expect(window.location.pathname).toBe('/people/contacts');
+    expect(window.location.pathname).toBe('/people');
     state.destroy();
   });
 

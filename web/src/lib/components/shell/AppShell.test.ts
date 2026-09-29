@@ -942,9 +942,10 @@ describe('AppShell', () => {
     const state = new ExploreState(window);
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
 
-    expect(await screen.findByRole('heading', { name: 'Directory' })).toBeDefined();
+    expect(await screen.findByRole('heading', { name: 'People' })).toBeDefined();
     expect(await screen.findByText('Synthetic Person')).toBeDefined();
     expect(state.current.workspace).toBe('directory');
+    expect(window.location.pathname).toBe('/people');
     expect(new URL(requests[0]!.url).searchParams.get('q')).toBe('synthetic');
 
     rendered.unmount();
@@ -999,123 +1000,27 @@ describe('AppShell', () => {
     return { fetchFn, requests };
   }
 
-  it('opens the Relationships timeline on the canonical cluster of a Directory person\'s bound participants', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
-      workspace: 'directory', directoryPersonID: 7
-    }))}`);
-    // 9 is a non-canonical member of cluster 3: both lookups collapse to cluster 3.
-    const { fetchFn, requests } = directoryPersonFetch([9, 3], {
-      3: { canonical: 3, members: [3, 9], label: 'Synthetic Person', activity: 5 },
-      9: { canonical: 3, members: [3, 9], label: 'Synthetic Person', activity: 5 }
-    });
-    const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
-
-    // Let the person page's own identifier lookups settle before measuring the handoff.
-    const handoff = await screen.findByRole('button', { name: 'Open timeline for Synthetic Person' });
-    await waitFor(() => expect(requests).toContain('/api/v1/participants/3'));
-    await waitFor(() => expect(requests).toContain('/api/v1/participants/9'));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const requestsBeforeHandoff = requests.length;
-    await fireEvent.click(handoff);
-    await waitFor(() => expect(state.current).toMatchObject({
-      workspace: 'relationships', relationshipFacet: 'people', relationshipTarget: 'cluster:3', relationshipFiles: false
-    }));
-    expect(await screen.findByRole('main', { name: 'Relationships' })).toBeDefined();
-    // The handoff reuses the person page's resolution (both bindings dedupe
-    // to the one cluster: no note) instead of looking the bindings up again;
-    // the hub's own fetch of the opened cluster (3) is not a binding lookup.
-    const handoffLookups = requests.slice(requestsBeforeHandoff).filter((path) => /^\/api\/v1\/participants\/\d+$/.test(path));
-    expect(handoffLookups.filter((path) => path === '/api/v1/participants/9')).toHaveLength(0);
-    expect(screen.queryByRole('note')).toBeNull();
-
-    rendered.unmount();
-    state.destroy();
-  });
-
-  it('resolves the bindings again on the handoff when a lookup failed at page load', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
-      workspace: 'directory', directoryPersonID: 7
-    }))}`);
-    const { fetchFn, requests } = directoryPersonFetch([9, 3], {
-      3: { canonical: 3, members: [3, 9], label: 'Synthetic Person', activity: 5 },
-      9: { canonical: 3, members: [3, 9], label: 'Synthetic Person', activity: 5 }
-    });
-    // The person page's first lookup of binding 9 fails (a transient fault);
-    // every later lookup succeeds.
-    const serve = fetchFn.getMockImplementation()!;
-    let failNine = true;
-    fetchFn.mockImplementation(async (input) => {
-      const request = input instanceof Request ? input : new Request(input);
-      if (new URL(request.url).pathname === '/api/v1/participants/9' && failNine) {
-        failNine = false;
-        requests.push('/api/v1/participants/9');
-        throw new TypeError('network down');
-      }
-      return serve(input);
-    });
-    const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
-
-    const handoff = await screen.findByRole('button', { name: 'Open timeline for Synthetic Person' });
-    await waitFor(() => expect(requests).toContain('/api/v1/participants/9'));
-    await waitFor(() => expect(requests).toContain('/api/v1/participants/3'));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const requestsBeforeHandoff = requests.length;
-    await fireEvent.click(handoff);
-    await waitFor(() => expect(state.current).toMatchObject({ workspace: 'relationships', relationshipTarget: 'cluster:3' }));
-    // The cached resolution carried a failed id, so the handoff looked the
-    // bindings up again and the retry answered: one cluster, no fallback notice.
-    const handoffLookups = requests.slice(requestsBeforeHandoff).filter((path) => path === '/api/v1/participants/9');
-    expect(handoffLookups).toHaveLength(1);
-    expect(screen.getByRole('status', { name: 'Operation status' }).textContent).not.toContain('Could not resolve');
-    expect(screen.queryByRole('note')).toBeNull();
-
-    rendered.unmount();
-    state.destroy();
-  });
-
-  it('falls back to the lowest bound participant and says so when identity lookups fail', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
-      workspace: 'directory', directoryPersonID: 7
-    }))}`);
-    const { fetchFn } = directoryPersonFetch([9, 3], {});
-    fetchFn.mockImplementation(async (input) => {
-      const request = input instanceof Request ? input : new Request(input);
-      const path = new URL(request.url).pathname;
-      if (/^\/api\/v1\/participants\/\d+$/.test(path)) throw new TypeError('network down');
-      return directoryPersonFetch([9, 3], {}).fetchFn(input);
-    });
-    const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
-
-    await fireEvent.click(await screen.findByRole('button', { name: 'Open timeline for Synthetic Person' }));
-    await waitFor(() => expect(state.current).toMatchObject({ workspace: 'relationships', relationshipTarget: 'cluster:3' }));
-    expect(screen.getByRole('status', { name: 'Operation status' }).textContent).toContain('Could not resolve this person');
-
-    rendered.unmount();
-    state.destroy();
-  });
-
-  it('opens the busiest cluster when bound participants span several and names the others', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
-      workspace: 'directory', directoryPersonID: 7
-    }))}`);
-    const { fetchFn } = directoryPersonFetch([3, 9], {
+  it('shows a saved person\'s timeline on the Timeline tab from their busiest identity', async () => {
+    window.history.replaceState(null, '', '/people/7/timeline');
+    const { fetchFn, requests } = directoryPersonFetch([3, 9], {
       3: { canonical: 3, members: [3], label: 'Synthetic Person', activity: 5 },
       9: { canonical: 9, members: [9], label: 'Synthetic Alias', activity: 20 }
     });
     const state = new ExploreState(window);
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Open timeline for Synthetic Person' }));
-    await waitFor(() => expect(state.current).toMatchObject({ workspace: 'relationships', relationshipTarget: 'cluster:9' }));
-    const note = await screen.findByRole('note');
-    expect(note.textContent).toContain('other identities');
-    await fireEvent.click(screen.getByRole('button', { name: 'Open identity Synthetic Person' }));
-    await waitFor(() => expect(state.current.relationshipTarget).toBe('cluster:3'));
-    // The note follows the person: the busiest cluster is now the "other" one.
-    expect((await screen.findByRole('button', { name: 'Open identity Synthetic Alias' }))).toBeDefined();
+    expect(await screen.findByRole('region', { name: 'Timeline' })).toBeDefined();
+    await waitFor(() => expect(requests).toContain('/api/v1/relationships/9/timeline'));
+    // Both identities are one click apart; the page never leaves the person.
+    await fireEvent.click(screen.getByRole('radio', { name: 'Synthetic Person · 5' }));
+    await waitFor(() => expect(requests).toContain('/api/v1/relationships/3/timeline'));
+    expect(state.current).toMatchObject({ workspace: 'directory', directoryPersonID: 7, personTab: 'timeline' });
+
+    await fireEvent.click(screen.getByRole('tab', { name: 'Overview' }));
+    expect(window.location.pathname).toBe('/people/7');
+    window.history.back();
+    await new Promise((resolve) => window.addEventListener('popstate', resolve, { once: true }));
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Timeline' }).getAttribute('aria-selected')).toBe('true'));
 
     rendered.unmount();
     state.destroy();
@@ -1260,9 +1165,7 @@ describe('AppShell', () => {
   });
 
   it('owns an ephemeral CardDAV conflict handoff and Browser Back restores the prior Directory person', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
-      workspace: 'directory', directoryPersonID: 7
-    }))}`);
+    window.history.replaceState(null, '', '/people/7/maintenance');
     let publicationReads = 0;
     let restoredPublicationSignal: AbortSignal | undefined;
     let resolveRestoredPublication!: (response: Response) => void;
@@ -1367,11 +1270,14 @@ describe('AppShell', () => {
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
 
     await screen.findByText('Synthetic Person');
-    await fireEvent.click(screen.getByRole('row', { name: /Synthetic Person/ }));
+    await fireEvent.click(screen.getByRole('link', { name: /Synthetic Person/ }));
     await Promise.resolve();
+    expect(state.current.directoryPersonID).toBe(7);
+    expect(window.location.pathname).toBe('/people/7');
     expect(directoryRequests).toHaveLength(1);
 
-    await fireEvent.input(screen.getByRole('searchbox', { name: 'Search directory' }), {
+    state.commitNavigation({ directoryPersonID: null });
+    await fireEvent.input(await screen.findByRole('searchbox', { name: 'Search people' }), {
       target: { value: 'refined' }
     });
     await waitFor(() => expect(screen.getByText('Refined Person')).toBeDefined());
@@ -1468,60 +1374,68 @@ describe('AppShell', () => {
   });
 
 
-  it('renders the Relationships hub for the default landing workspace', async () => {
+  it('lands on People, listing saved people and archive contacts together by last contact', async () => {
     window.history.replaceState(null, '', '/');
+    const relationshipBodies: unknown[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
-      const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
-      if (path === '/api/v1/relationships') return Response.json({
-        rows: [{
-          canonical_id: 1, display_label: 'Alice Example', last_at: '2026-07-19T10:00:00Z', member_ids: [1], score: 1,
-          signals: {
-            last_interaction_at: '2026-07-19T10:00:00Z', meeting_count: 0, meetings_together: 0, modalities: 1,
-            received_from_them: 1, sent_count: 1, sent_to_them: 1
-          }
-        }]
-      });
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      if (path === '/api/v1/relationships') {
+        relationshipBodies.push(await request.clone().json());
+        return Response.json({
+          rows: [{
+            canonical_id: 1, display_label: 'Alice Example', last_at: '2026-07-19T10:00:00Z', member_ids: [1], score: 1,
+            primary_identifier: { kind: 'email', value: 'alice@example.test' },
+            signals: {
+              last_interaction_at: '2026-07-19T10:00:00Z', meeting_count: 0, meetings_together: 0, modalities: 1,
+              received_from_them: 1, sent_count: 1, sent_to_them: 1
+            }
+          }], total_count: 1, cache_revision: 'c', identity_revision: 1
+        });
+      }
+      if (path === '/api/v1/people/directory') return Response.json({ people: [{
+        id: 7, revision: 1, display_name: 'Saved Person', contact_state: 'active', categories: ['Friends'],
+        organizations: [], last_contact_at: '2026-07-18T10:00:00Z',
+        primary_identifier: { kind: 'phone', value: '+15555550100' }
+      }] });
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
 
-    expect(await screen.findByRole('main', { name: 'Relationships' })).toBeDefined();
-    expect(await screen.findByText('Alice Example')).toBeDefined();
-    expect(state.current.workspace).toBe('relationships');
+    expect(await screen.findByRole('main', { name: 'People' })).toBeDefined();
+    expect(window.location.pathname).toBe('/people');
+    expect(document.title).toBe('People · msgvault');
+    const results = screen.getByRole('region', { name: 'People results' });
+    await waitFor(() => expect(within(results).getAllByRole('link').map((link) => link.textContent?.replace(/\s+/g, ' ').trim()))
+      .toEqual([
+        expect.stringMatching(/^Alice Example Not saved .* alice@example\.test$/),
+        expect.stringMatching(/^Saved Person .* \+15555550100 · Friends$/),
+      ]));
+    expect(relationshipBodies[0]).toMatchObject({ unsaved_only: true, sort: 'last_contact' });
+
+    await fireEvent.click(within(results).getByRole('link', { name: /Alice Example/ }));
+    expect(state.current).toMatchObject({ workspace: 'relationships', relationshipTarget: 'cluster:1' });
+    expect(window.location.pathname).toBe('/people/contact-1');
 
     rendered.unmount();
     state.destroy();
   });
 
-  it('starts a newly selected person on Messages and restores the prior Files view on Back', async () => {
-    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
-      workspace: 'relationships', relationshipTarget: 'cluster:1'
-    }))}`);
+  it('opens an archive contact as a person page with tabs and restores the tab on Back', async () => {
+    window.history.replaceState(null, '', '/people/contact-1');
     const when = '2026-07-19T10:00:00Z';
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
       const meetingResponse = meetingFixtureResponse(path);
       if (meetingResponse) return meetingResponse;
-      if (path === '/api/v1/relationships') return Response.json({
-        rows: [1, 2].map((id) => ({
-          canonical_id: id, display_label: id === 1 ? 'Alice Example' : 'Bob Example',
-          last_at: when, member_ids: [id], score: 1,
-          signals: { last_interaction_at: when, meeting_count: 0, meetings_together: 0,
-            modalities: 1, received_from_them: 1, sent_count: 1, sent_to_them: 1 }
-        }))
+      if (path === '/api/v1/participants/1') return Response.json({
+        id: 1, display_label: 'Alice Example', partial_label: false,
+        identifiers: [], activity_count: 1, meeting_count: 0, file_count: 1,
+        source_counts: [], first_at: when, last_at: when, cache_revision: 'cache-rel'
       });
-      if (path === '/api/v1/participants/1' || path === '/api/v1/participants/2') {
-        const id = Number(path.at(-1));
-        return Response.json({
-          id, display_label: id === 1 ? 'Alice Example' : 'Bob Example', partial_label: false,
-          identifiers: [], activity_count: 1, meeting_count: 0, file_count: 1,
-          source_counts: [], first_at: when, last_at: when, cache_revision: 'cache-rel'
-        });
-      }
       if (path.endsWith('/timeline')) return Response.json({
-        canonical_id: Number(path.split('/')[4]), identity_revision: 1,
-        cache_revision: 'cache-rel', rows: [], total_count: 0
+        canonical_id: 1, identity_revision: 1, cache_revision: 'cache-rel', rows: [], total_count: 0
       });
       if (path.endsWith('/files/search')) return Response.json({
         files: [], total_count: 0, cache_revision: 'cache-rel', search_provenance: {}
@@ -1532,28 +1446,26 @@ describe('AppShell', () => {
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
 
     expect(await screen.findByRole('heading', { name: 'Alice Example' })).toBeDefined();
-    await fireEvent.click(screen.getByRole('radio', { name: 'Files 1' }));
-    expect(state.current.relationshipFiles).toBe(true);
-    await fireEvent.click((await screen.findByText('Bob Example')).closest('[role="row"]')!);
-    await waitFor(() => expect(state.current).toMatchObject({
-      relationshipTarget: 'cluster:2', relationshipFiles: false
-    }));
-    expect(await screen.findByRole('heading', { name: 'Bob Example' })).toBeDefined();
-    expect(screen.getByRole('radio', { name: 'Messages' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.queryByRole('grid', { name: 'Relationship results' })).toBeNull();
+    const tabs = screen.getByRole('tablist', { name: 'Contact sections' });
+    expect(within(tabs).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Overview', 'Timeline', 'Files', 'Meetings']);
+    await fireEvent.click(within(tabs).getByRole('tab', { name: 'Files' }));
+    expect(window.location.pathname).toBe('/people/contact-1/files');
+    expect(await screen.findByRole('grid', { name: 'Files results' })).toBeDefined();
 
     window.history.back();
-    await waitFor(() => expect(state.current).toMatchObject({
-      relationshipTarget: 'cluster:1', relationshipFiles: true
-    }));
-    expect(await screen.findByRole('heading', { name: 'Alice Example' })).toBeDefined();
-    expect(screen.getByRole('radio', { name: 'Files 1' }).getAttribute('aria-checked')).toBe('true');
+    await waitFor(() => expect(state.current.personTab).toBe('overview'));
+    expect(within(screen.getByRole('tablist', { name: 'Contact sections' })).getByRole('tab', { name: 'Overview' })
+      .getAttribute('aria-selected')).toBe('true');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Back to People' }));
+    expect(state.current).toMatchObject({ workspace: 'directory', directoryPersonID: null });
 
     rendered.unmount();
     state.destroy();
   });
 
-
-  it('restores a legacy workspace=people URL into the hub with the facet set', async () => {
+  it('restores a legacy workspace=people URL onto the contact page', async () => {
     window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
       workspace: 'people', analysisTarget: 'person:42'
     }))}`);
@@ -1572,11 +1484,11 @@ describe('AppShell', () => {
     const state = new ExploreState(window);
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
 
-    expect(await screen.findByRole('main', { name: 'Relationships' })).toBeDefined();
+    expect(await screen.findByRole('main', { name: 'Contact' })).toBeDefined();
     expect(state.current.workspace).toBe('relationships');
     expect(state.current.relationshipFacet).toBe('people');
     expect(state.current.relationshipTarget).toBe('cluster:42');
-    expect(screen.getByRole('radio', { name: 'People' }).getAttribute('aria-checked')).toBe('true');
+    expect(window.location.pathname).toBe('/people/contact-42');
     expect(await screen.findByRole('heading', { name: 'Legacy Person' })).toBeDefined();
 
     rendered.unmount();
@@ -1584,147 +1496,35 @@ describe('AppShell', () => {
   });
 
 
-  it('keeps Relationships and shows its degraded state when the URL explicitly names it', async () => {
+  it('keeps saved people listed and says archive contacts are unavailable while the analytical cache is down', async () => {
     window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'relationships' }))}`);
-    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({
-      error: 'analytical_cache_unavailable', message: 'The committed analytical cache is unavailable',
-      readiness: 'stale_schema', recovery_action: 'Rebuild the analytical cache'
-    }, { status: 503 }));
-    const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
-
-    expect(await screen.findByText('Relationship ranking needs the analytical cache/engine')).toBeDefined();
-    expect(screen.getByRole('main', { name: 'Relationships' })).toBeDefined();
-    expect(state.current.workspace).toBe('relationships');
-    expect(screen.queryByRole('main', { name: /^(Inbox|Search)$/ })).toBeNull();
-
-    rendered.unmount();
-    state.destroy();
-  });
-
-
-  it('falls back to Everything from the default Relationships landing when the archive engine is unavailable', async () => {
-    window.history.replaceState(null, '', '/');
-    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({
-      error: 'analytical_cache_unavailable', message: 'The committed analytical cache is unavailable',
-      readiness: 'stale_schema', recovery_action: 'Rebuild the analytical cache'
-    }, { status: 503 }));
-    const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
-
-    await waitFor(() => expect(state.current.workspace).toBe('everything'));
-    expect(await screen.findByRole('main', { name: /^(Inbox|Search)$/ })).toBeDefined();
-    expect(screen.queryByRole('main', { name: 'Relationships' })).toBeNull();
-
-    rendered.unmount();
-    state.destroy();
-  });
-
-  it('keeps the default Relationships landing while the analytical cache is building', async () => {
-    window.history.replaceState(null, '', '/');
-    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({
-      error: 'analytical_cache_unavailable', message: 'The analytical cache is being prepared',
-      readiness: 'building', recovery_action: ''
-    }, { status: 503 }));
-    const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
-
-    expect(await screen.findByText('Preparing relationship ranking…')).toBeDefined();
-    expect(state.current.workspace).toBe('relationships');
-    expect(screen.queryByRole('main', { name: /^(Inbox|Search)$/ })).toBeNull();
-
-    rendered.unmount();
-    state.destroy();
-  });
-
-
-  it('a committed replace for the landing fallback keeps Back from resurrecting the degraded hub', async () => {
-    window.history.replaceState(null, '', '/');
-    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({
-      error: 'analytical_cache_unavailable', message: 'The committed analytical cache is unavailable',
-      readiness: 'stale_schema', recovery_action: 'Rebuild the analytical cache'
-    }, { status: 503 }));
-    const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
-
-    await waitFor(() => expect(state.current.workspace).toBe('everything'));
-    expect(await screen.findByRole('main', { name: /^(Inbox|Search)$/ })).toBeDefined();
-
-    // Any later push navigation (state.svelte.ts's `navigate()`, 'push'
-    // branch) rewrites the CURRENT history entry from `committed` before
-    // pushing the new one — a transient replace never updates `committed`,
-    // so this push would otherwise rewrite entry #1 back to the degraded
-    // 'relationships' landing the user never actually saw past.
-    state.commitSearch('synthetic', 'full_text');
-    await waitFor(() => expect(state.current.query).toBe('synthetic'));
-
-    window.history.back();
-    await waitFor(() => expect(state.current.query).toBe(''));
-    expect(state.current.workspace).toBe('everything');
-    expect(screen.queryByRole('main', { name: 'Relationships' })).toBeNull();
-
-    rendered.unmount();
-    state.destroy();
-  });
-
-
-  it('keeps a later explicit Relationships visit degraded instead of bouncing, after the landing fallback allowance was already spent', async () => {
-    window.history.replaceState(null, '', '/');
-    let relationshipsDegraded = false;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
-      if (path === '/api/v1/relationships') {
-        if (relationshipsDegraded) return Response.json({
-          error: 'analytical_cache_unavailable', message: 'The committed analytical cache is unavailable',
-          readiness: 'stale_schema', recovery_action: 'Rebuild the analytical cache'
-        }, { status: 503 });
-        return Response.json({
-          rows: [{
-            canonical_id: 1, display_label: 'Alice Example', last_at: '2026-07-19T10:00:00Z', member_ids: [1], score: 1,
-            signals: {
-              last_interaction_at: '2026-07-19T10:00:00Z', meeting_count: 0, meetings_together: 0, modalities: 1,
-              received_from_them: 1, sent_count: 1, sent_to_them: 1
-            }
-          }]
-        });
-      }
-      return Response.json(exploreResponse());
+      if (path === '/api/v1/people/directory') return Response.json({ people: [{
+        id: 7, revision: 1, display_name: 'Saved Person', contact_state: 'active', categories: [], organizations: []
+      }] });
+      return Response.json({
+        error: 'analytical_cache_unavailable', message: 'The committed analytical cache is unavailable',
+        readiness: 'stale_schema', recovery_action: 'Rebuild the analytical cache'
+      }, { status: 503 });
     });
     const state = new ExploreState(window);
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
 
-    // The default landing is healthy, so the one-shot landing fallback never
-    // fires: the hub stays on Relationships and the allowance is still
-    // unspent going into the next step.
-    expect(await screen.findByRole('main', { name: 'Relationships' })).toBeDefined();
-    expect(await screen.findByText('Alice Example')).toBeDefined();
-    expect(state.current.workspace).toBe('relationships');
-
-    // The user explicitly navigates to Everything via the tab. That
-    // user-initiated navigation spends the one-shot landing-fallback
-    // allowance, even though it never fired.
-    const nav = screen.getByRole('navigation', { name: 'Primary' });
-    await fireEvent.click(within(nav).getByRole('button', { name: 'Inbox' }));
-    expect(await screen.findByRole('main', { name: /^(Inbox|Search)$/ })).toBeDefined();
-
-    // Now the relationships list starts reporting the cache as unavailable,
-    // and the user explicitly returns to Relationships via the tab.
-    relationshipsDegraded = true;
-    state.commitWorkspace('relationships');
-
-    // It degrades, but this is no longer the initial landing, so it must
-    // show its own degraded state rather than bounce back to Everything.
-    expect(await screen.findByText('Relationship ranking needs the analytical cache/engine')).toBeDefined();
-    expect(screen.getByRole('main', { name: 'Relationships' })).toBeDefined();
-    expect(state.current.workspace).toBe('relationships');
+    // The old ranked-contacts link is the People list's Not saved filter.
+    expect(await screen.findByRole('main', { name: 'People' })).toBeDefined();
+    expect(state.current).toMatchObject({ workspace: 'directory', peopleSaved: 'unsaved' });
+    expect(screen.getByRole('button', { name: 'Not saved' }).getAttribute('aria-pressed')).toBe('true');
+    expect(await screen.findByText(/Archive contacts are unavailable/)).toBeDefined();
+    await fireEvent.click(screen.getByRole('button', { name: 'Not saved' }));
+    expect(await screen.findByText('Saved Person')).toBeDefined();
     expect(screen.queryByRole('main', { name: /^(Inbox|Search)$/ })).toBeNull();
 
     rendered.unmount();
     state.destroy();
   });
 
-
-  it('clears the hub detail pane when the URL target becomes null (Esc / Back)', async () => {
+  it('returns to the People list when the URL contact becomes null (Esc / Back)', async () => {
     window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
       workspace: 'relationships', relationshipTarget: 'cluster:1'
     }))}`);
@@ -1748,9 +1548,10 @@ describe('AppShell', () => {
 
     state.commitNavigation({ relationshipTarget: null });
 
+    // Without a contact the page returns to the People list.
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'Alice Example' })).toBeNull());
-    expect(screen.getByText('Select a person or domain')).toBeDefined();
-    expect(state.current.workspace).toBe('relationships');
+    expect(await screen.findByRole('main', { name: 'People' })).toBeDefined();
+    expect(state.current.workspace).toBe('directory');
 
     rendered.unmount();
     state.destroy();
@@ -1815,7 +1616,7 @@ describe('AppShell', () => {
 
     await waitFor(() => expect(state.current.workspace).toBe('directory'));
     expect(state.current.directoryPersonID).toBe(42);
-    expect(await screen.findByRole('main', { name: 'Directory' })).toBeDefined();
+    expect(await screen.findByRole('main', { name: 'Person' })).toBeDefined();
     expect(window.location.pathname).toBe('/people/42');
     const promotion = requests.find((request) =>
       new URL(request.url).pathname === '/api/v1/people' && request.method === 'POST'
@@ -1825,9 +1626,10 @@ describe('AppShell', () => {
     expect(requests.filter((request) => new URL(request.url).pathname === '/api/v1/people/directory').length)
       .toBeGreaterThanOrEqual(1);
 
-    // Returning to the same relationship must reflect the new profile.
+    // Returning to the same contact now opens the saved person: one page per human.
     state.commitNavigation({ workspace: 'relationships', relationshipTarget: 'cluster:11' });
-    expect(await screen.findByRole('button', { name: /^Open contact record for / })).toBeDefined();
+    await waitFor(() => expect(state.current).toMatchObject({ workspace: 'directory', directoryPersonID: 42 }));
+    expect(window.location.pathname).toBe('/people/42');
     expect(screen.queryByRole('button', { name: 'Save to Directory' })).toBeNull();
 
     rendered.unmount();
@@ -1869,7 +1671,7 @@ describe('AppShell', () => {
     expect(alert.textContent).toContain('resolve that binding before saving');
     expect(state.current.workspace).toBe('relationships');
     expect(state.current.directoryPersonID).toBeNull();
-    expect(screen.queryByRole('main', { name: 'Directory' })).toBeNull();
+    expect(screen.queryByRole('main', { name: 'Person' })).toBeNull();
 
     rendered.unmount();
     state.destroy();
@@ -1962,11 +1764,11 @@ describe('AppShell', () => {
   });
 
 
-  it('does not mutate Everything state when Escape bubbles up from an empty Relationships hub', async () => {
-    window.history.replaceState(null, '', '/');
+  it('does not mutate Inbox state when Escape bubbles up from an empty domains hub', async () => {
+    window.history.replaceState(null, '', '/people/domains');
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
-      if (path === '/api/v1/relationships') return Response.json({ rows: [] });
+      if (path === '/api/v1/domains/search') return Response.json({ rows: [], total_count: 0, cache_revision: 'c', search_provenance: {} });
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);

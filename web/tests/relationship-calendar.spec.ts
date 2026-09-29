@@ -1,3 +1,4 @@
+import { openPersonFromPeople } from './kit-ui';
 import { expect, test, type Page } from '@playwright/test';
 
 // Touch contexts let the scroll-dismissal flow tap a day for real, matching
@@ -44,7 +45,7 @@ async function openCalendar(page: Page, firstAt: string | Promise<string> = pers
     score_version: 1, effective_date: '2026-12-31', cache_revision: 'cache-calendar', identity_revision: 1
   } }));
   await page.goto('/');
-  await page.getByRole('grid', { name: 'Relationship results' }).getByText(person.display_label).click();
+  await openPersonFromPeople(page, person.display_label);
   await expect(page.getByRole('region', { name: 'Relationship activity calendar' })).toBeVisible();
 }
 

@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { exploreLink } from '../../src/test/explore-url';
 import { expect, test, type Page } from '@playwright/test';
-import { expectKitTheme, openActivity, openFromGear, selectKitOption, selectKitTopBarTab, setKitTheme, setDensity } from '../kit-ui';
+import { expectKitTheme, openActivity, openFromGear, openPersonFromPeople, selectKitOption, selectKitTopBarTab, setKitTheme, setDensity } from '../kit-ui';
 import { assertCardDAVForbiddenMarkersAbsent, installCardDAV } from './fixtures/carddav';
 import { installDirectoryReviewArchive, installMixedArchive } from './fixtures/mixed-archive';
 import { installOperations, OPERATION_REFERENCES } from './fixtures/operations';
@@ -9,9 +9,9 @@ import { installOperations, OPERATION_REFERENCES } from './fixtures/operations';
 /** The person Overview keeps its maintenance cards (tracking, CardDAV
  * publication, brief, merge history) behind a closed disclosure. */
 async function openMaintenance(page: Page) {
-  const summary = page.getByText('Maintenance', { exact: true });
-  await expect(summary).toBeVisible();
-  await summary.click();
+  const tab = page.getByRole('tab', { name: 'Maintenance' });
+  await expect(tab).toBeVisible();
+  await tab.click();
 }
 
 async function assertNoViolations(page: Page, label: string) {
@@ -74,26 +74,28 @@ for (const theme of ['light', 'dark'] as const) {
       await setKitTheme(page, theme);
       await setDensity(page, density);
 
-      // The Relationships hub is the default landing workspace; walk its
-      // three panes (list, timeline, reading pane) open one at a time so
-      // each incremental layout gets its own axe pass.
-      const hub = page.getByRole('main', { name: 'Relationships' });
-      await expect(hub).toBeVisible();
-      const relationshipList = page.getByRole('grid', { name: 'Relationship results' });
-      await expect(relationshipList.getByText('Archive Person')).toBeVisible();
-      await assertNoViolations(page, `Relationships list ${theme}/${density}`);
-      await relationshipList.getByText('Archive Person').click();
+      // People is the default landing; walk an archive contact's page tab
+      // by tab so each layout gets its own axe pass.
+      await expect(page.getByRole('main', { name: 'People' })).toBeVisible();
+      const people = page.getByRole('region', { name: 'People results' });
+      await expect(people.getByText('Archive Person').first()).toBeVisible();
+      await assertNoViolations(page, `People list ${theme}/${density}`);
+      await page.getByRole('button', { name: 'Not saved' }).click();
+      await openPersonFromPeople(page, 'Archive Person');
       await expect(page.getByRole('heading', { name: 'Archive Person' })).toBeVisible();
+      await assertNoViolations(page, `Contact overview ${theme}/${density}`);
+      const contactTabs = page.getByRole('tablist', { name: 'Contact sections' });
+      await contactTabs.getByRole('tab', { name: 'Timeline' }).click();
       const relationshipTimeline = page.getByRole('grid', { name: 'Relationship activity' });
       await expect(relationshipTimeline.locator('[data-row-key]').first()).toBeVisible();
-      await assertNoViolations(page, `Relationships timeline ${theme}/${density}`);
-      await page.getByRole('radio', { name: 'Files 1' }).click();
+      await assertNoViolations(page, `Contact timeline ${theme}/${density}`);
+      await contactTabs.getByRole('tab', { name: 'Files' }).click();
       await expect(page.getByRole('grid', { name: 'Files results' }).getByText('archive-notes.pdf')).toBeVisible();
       await assertNoViolations(page, `Person files ${theme}/${density}`);
       await page.getByRole('radio', { name: 'Media' }).click();
       await expect(page.getByRole('button', { name: 'Open archive-photo.png' })).toBeVisible();
       await assertNoViolations(page, `Person media ${theme}/${density}`);
-      await page.getByRole('radio', { name: 'Messages' }).click();
+      await contactTabs.getByRole('tab', { name: 'Timeline' }).click();
       await expect(relationshipTimeline).toBeVisible();
       await relationshipTimeline.focus();
       await page.keyboard.press('Enter');
@@ -118,7 +120,7 @@ for (const theme of ['light', 'dark'] as const) {
       await keyboardHelp.getByRole('button', { name: 'Close' }).click();
 
       const destinations: Array<[string, () => Promise<void>]> = [
-        ['Directory', () => selectKitTopBarTab(page, 'People')],
+        ['People', () => selectKitTopBarTab(page, 'People')],
         ['Files', () => selectKitTopBarTab(page, 'Files')],
         ['Saved Views', () => openFromGear(page, 'Saved Views')],
         ['Sources', () => openActivity(page, 'Sources')],
@@ -147,7 +149,7 @@ test('Directory network list and visualization have no axe violations', async ({
   await installMixedArchive(page);
   await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'directory', directoryPersonID: 42 }))}`);
   await expect(page.getByRole('heading', { name: 'Archive Person' })).toBeVisible();
-  await page.getByRole('tab', { name: 'Network' }).click();
+  await page.getByRole('tab', { name: 'Profile' }).click();
   await expect(page.getByRole('list', { name: 'Directory network connections' })).toContainText('Curated Peer');
   await assertNoViolations(page, 'Directory network');
 });

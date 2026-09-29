@@ -10855,6 +10855,9 @@ components:
         primary_identifier:
           $ref: "#/components/schemas/PrimaryIdentifier"
           description: "The one identifier a list row shows: the best email address, else phone number, else handle, across the cluster's members in the committed cache. Within a kind, the lowest member participant ID wins (the canonical participant first); a participant's own email address or phone number comes before its stored identifier rows. Absent when the cluster has none."
+        profile:
+          $ref: "#/components/schemas/PersonProfile"
+          description: The saved Directory person this cluster is bound to, when it has been saved.
         score:
           format: double
           type: number
@@ -11022,6 +11025,15 @@ components:
           minimum: 0
           type: integer
         show_all:
+          type: boolean
+        sort:
+          description: "Row order: score (the reciprocity ranking, the default) or last_contact (newest last interaction first)."
+          enum:
+            - score
+            - last_contact
+          type: string
+        unsaved_only:
+          description: List only counterparts whose cluster is not bound to a saved Directory person.
           type: boolean
       type: object
     RelationshipsHTTPResponse:
