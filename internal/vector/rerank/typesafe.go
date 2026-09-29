@@ -49,6 +49,10 @@ func NewJev(shape, key string, budget *Budget, transport http.RoundTripper) (*Je
 	if budget == nil {
 		return nil, errors.New("reranker budget is required")
 	}
+	// Reranking runs are bounded evaluations: --rerank-cost-stop-usd caps
+	// the whole run, not one UTC day, and a provider failure or unknowable
+	// usage stops the run rather than pausing for a cool-down.
+	budget.PerRun = true
 	client, err := jev.NewClient(jev.Options{APIKey: key, Budget: budget, Transport: transport})
 	if err != nil {
 		return nil, err

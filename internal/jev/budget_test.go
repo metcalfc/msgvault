@@ -251,6 +251,51 @@ func TestBudgetCostAccountingResetsEachUTCDay(t *testing.T) {
 	}
 }
 
+func TestPerRunBudgetStaysCappedAcrossMidnightAndStopsForGood(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 9, 28, 23, 0, 0, 0, time.UTC)
+	// Each measured response costs 0.00011 USD; the run cap admits two.
+	budget := &Budget{MaxRequests: 100, StopUSD: 0.0002, InputUSDPerM: 1, OutputUSDPerM: 1, PerRun: true, Now: func() time.Time { return now }}
+	var failing atomic.Bool
+	client := newTestClient(t, budget, func(*http.Request) (*http.Response, error) {
+		if failing.Load() {
+			return nil, errors.New("connection refused")
+		}
+		return jsonResponse(measuredResponse), nil
+	})
+	_, err := client.Ask(context.Background(), noulRequest("matches"))
+	require.NoError(err)
+	now = now.Add(2 * time.Hour) // the run crosses midnight UTC
+	_, err = client.Ask(context.Background(), noulRequest("matches"))
+	require.NoError(err)
+	_, err = client.Ask(context.Background(), noulRequest("matches"))
+	require.ErrorIs(err, ErrCostStop, "the run's spend does not reset with the day")
+	assert.InDelta(0.00022, budget.State().CostUSD, 1e-9)
+
+	sticky := &Budget{MaxRequests: 100, StopUSD: 1, PerRun: true, Cooldown: time.Second, Now: func() time.Time { return now }}
+	failing.Store(true)
+	stickyClient := newTestClient(t, sticky, func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("connection refused")
+	})
+	_, err = stickyClient.Ask(context.Background(), noulRequest("matches"))
+	require.Error(err)
+	now = now.Add(time.Hour)
+	_, err = stickyClient.Ask(context.Background(), noulRequest("matches"))
+	require.ErrorIs(err, ErrRunHalted, "one failure stops a run for good")
+	assert.Equal("provider request failed", SafeFailure(err))
+
+	unknown := &Budget{MaxRequests: 100, StopUSD: 1, InputUSDPerM: 1, PerRun: true, Cooldown: time.Second, Now: func() time.Time { return now }}
+	unknownClient := newTestClient(t, unknown, func(*http.Request) (*http.Response, error) {
+		return jsonResponse(`{"model":"jev-1.13.0","answers":{"matches":{"type":"noul","noul":0.5}}}`), nil
+	})
+	_, err = unknownClient.Ask(context.Background(), noulRequest("matches"))
+	require.NoError(err)
+	now = now.Add(time.Hour)
+	_, err = unknownClient.Ask(context.Background(), noulRequest("matches"))
+	require.ErrorIs(err, ErrUsageUnknown, "unknowable spend stops a priced run for good")
+}
+
 func TestBudgetUnknownUsageStopExpiresWithTheCooldown(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

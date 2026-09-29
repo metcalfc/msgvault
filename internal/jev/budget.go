@@ -19,6 +19,10 @@ const (
 // requests until the cool-down ends.
 var ErrBreakerOpen = errors.New("provider circuit breaker open")
 
+// ErrRunHalted reports that a per-run budget saw a provider failure and will
+// start no further requests for the rest of the run.
+var ErrRunHalted = errors.New("provider failed; no further requests will start")
+
 // Budget shares in-process request and cost limits across every client that
 // holds it and carries the circuit breaker. Set its limits before use.
 //
@@ -38,13 +42,19 @@ type Budget struct {
 	FailureThreshold int
 	Cooldown         time.Duration
 	Now              func() time.Time
-	attempts         int
-	cost             float64
-	costDay          string
-	unknownUntil     time.Time
-	failures         int
-	openUntil        time.Time
-	probing          bool
+	// PerRun switches to the accounting a bounded run such as `msgvault
+	// eval` documents: spend accumulates for the whole run instead of
+	// resetting each UTC day, and the first provider failure or unknowable
+	// usage stops the run for good instead of pausing for a cool-down.
+	PerRun       bool
+	halted       bool
+	attempts     int
+	cost         float64
+	costDay      string
+	unknownUntil time.Time
+	failures     int
+	openUntil    time.Time
+	probing      bool
 }
 
 // BudgetState is a snapshot for status output and logs. It carries no
@@ -86,9 +96,13 @@ func (b *Budget) State() BudgetState {
 }
 
 // rollDay forgets the previous day's spend once the UTC day changes, so a
-// long-running process is capped per day rather than for its lifetime. The
-// caller holds the lock.
+// long-running process is capped per day rather than for its lifetime. A
+// per-run budget keeps its total for the whole run. The caller holds the
+// lock.
 func (b *Budget) rollDay() {
+	if b.PerRun {
+		return
+	}
 	day := UTCDay(b.now())
 	if b.costDay == day {
 		return
@@ -131,6 +145,9 @@ func (b *Budget) priced() bool {
 // blocked reports the first reason no request may start. The caller holds
 // the lock.
 func (b *Budget) blocked() error {
+	if b.halted {
+		return ErrRunHalted
+	}
 	now := b.now()
 	if !b.openUntil.IsZero() {
 		if now.Before(b.openUntil) || b.probing {
@@ -203,8 +220,12 @@ func (b *Budget) record(usage Usage) {
 	if usage.InputTokens == nil || usage.OutputTokens == nil {
 		if b.priced() {
 			// The day's spend is now unknowable; pause for one cool-down
-			// rather than for the life of the process.
+			// rather than for the life of the process. A per-run budget
+			// cannot bound the run's spend any more and stops it.
 			b.unknownUntil = b.now().Add(b.cooldown())
+			if b.PerRun {
+				b.unknownUntil = stickyUntil
+			}
 		}
 		return
 	}
@@ -233,7 +254,14 @@ func (b *Budget) fail() {
 	defer b.mu.Unlock()
 	b.probing = false
 	b.failures++
+	if b.PerRun {
+		b.halted = true
+		return
+	}
 	if b.failures >= b.threshold() {
 		b.openUntil = b.now().Add(b.cooldown())
 	}
 }
+
+// stickyUntil is a deadline no clock reaches: a per-run stop never expires.
+var stickyUntil = time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC)

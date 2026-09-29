@@ -133,6 +133,15 @@ func TestJevRerankFailureKeepsAttemptedUsageAndRedactsBodies(t *testing.T) {
 	assert.Equal("provider request failed", SafeFailure(errors.New("provider returned HTTP 503 secret")))
 }
 
+func TestJevRerankBudgetAccountsPerRun(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	budget := &Budget{MaxRequests: 10, StopUSD: 1}
+	_, err := NewJev("batched", "secret", budget, nil)
+	require.NoError(err)
+	assert.True(budget.PerRun, "reranking budgets cap the run, not the UTC day")
+}
+
 func TestNewJevRejectsInvalidInputs(t *testing.T) {
 	require := require.New(t)
 	_, err := NewJev("weird", "secret", &Budget{}, nil)
