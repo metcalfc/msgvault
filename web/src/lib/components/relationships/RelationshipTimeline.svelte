@@ -214,8 +214,6 @@
                      on the focused grid opens the same row via handleKeydown. -->
                 <div
                   class="timeline-row"
-                  class:active={item.key === activeKey}
-                  class:selected={item.key === selectedKey}
                   role="row"
                   tabindex="-1"
                   data-list-row

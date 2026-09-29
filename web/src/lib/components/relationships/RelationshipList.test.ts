@@ -203,7 +203,7 @@ describe('RelationshipList', () => {
     // click: the row may become active (highlight) but must not open.
     await fireEvent.pointerDown(row);
     expect(props.onSelect).not.toHaveBeenCalled();
-    expect(row.classList.contains('active')).toBe(true);
+    expect(row.getAttribute('data-active')).toBe('true');
 
     await fireEvent.click(row);
     expect(props.onSelect).toHaveBeenCalledWith('cluster:2');
@@ -258,7 +258,7 @@ describe('RelationshipList', () => {
     });
 
     const activeRow = screen.getByText('Bob Example').closest('[role="row"]')!;
-    expect(activeRow.classList.contains('active')).toBe(true);
+    expect(activeRow.getAttribute('data-active')).toBe('true');
     expect(screen.getByText('Cara Example')).toBeDefined();
   });
 

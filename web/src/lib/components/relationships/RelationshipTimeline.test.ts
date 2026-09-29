@@ -48,8 +48,8 @@ describe('RelationshipTimeline', () => {
     });
 
     const selectedRow = document.querySelector('[data-row-key="message:2"]');
-    expect(selectedRow?.classList.contains('selected')).toBe(true);
-    expect(document.querySelector('[data-row-key="message:1"]')?.classList.contains('selected')).toBe(false);
+    expect(selectedRow?.getAttribute('aria-selected')).toBe('true');
+    expect(document.querySelector('[data-row-key="message:1"]')?.getAttribute('aria-selected')).toBe('false');
   });
 
   it('moves the keyboard cursor with j/k and opens the active row with Enter', async () => {

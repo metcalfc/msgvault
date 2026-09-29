@@ -113,8 +113,6 @@
             data-list-row
             data-active={person.id === activeID}
             data-person-id={person.id}
-            class:active={person.id === activeID}
-            class:selected={person.id === selectedPersonID}
             aria-selected={person.id === selectedPersonID}
             tabindex={person.id === activeID ? 0 : -1}
             onkeydown={handleKeydown}

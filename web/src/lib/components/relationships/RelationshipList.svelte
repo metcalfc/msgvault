@@ -251,8 +251,6 @@
                the focused grid opens the same row via handleKeydown. -->
           <div
             class="result-row"
-            class:active={index === activeIndex}
-            class:selected={view.target === activeTarget}
             role="row"
             tabindex="-1"
             data-list-row
