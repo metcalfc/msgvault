@@ -23,7 +23,7 @@
     FileViewerTarget,
   } from '../../explore/models';
   import { createExploreAPI } from '../../explore/api';
-  import { filtersForGroup, parseGroupSelection } from '../../explore/group-context';
+  import { filtersForGroup, parseGroupSelection, withPersonFilter } from '../../explore/group-context';
   import { findGroupDetail } from '../../explore/group-detail';
   import type { ExploreLoader } from '../../explore/loader.svelte';
   import { groupingByDimension } from '../../grouping/catalog';
@@ -582,17 +582,10 @@
   );
 
   function filterByPerson(participantID: number): void {
-    const id = String(participantID);
     const current = exploreState.current.filters;
-    const existing = current.find((filter) => filter.dimension === 'participant');
-    if (existing?.values.includes(id)) return;
-    commitNavigation({
-      filters: existing
-        ? current.map((filter) => (filter === existing ? { ...filter, values: [...filter.values, id] } : filter))
-        : [...current, { dimension: 'participant', values: [id] }],
-      activeRow: null,
-      scrollAnchor: null,
-    });
+    const next = withPersonFilter(current, String(participantID));
+    if (next.length === current.length) return;
+    commitNavigation({ filters: next, activeRow: null, scrollAnchor: null });
   }
 
   let savedNotice = $state('');

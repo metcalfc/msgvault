@@ -23,6 +23,7 @@
   import { shortDate } from '../../util/dates';
   import { messageTypeLabel } from '../../util/labels';
   import { FilterLabels } from '../../explore/filter-labels.svelte';
+  import { withPersonFilter } from '../../explore/group-context';
   import {
     effectiveSearchMode, queryHasAttachmentOperator, queryOperatorChips, withAttachmentOperator, withoutQueryToken
   } from '../../search/query';
@@ -117,11 +118,8 @@
 
   function addPerson(participantID: string, label: string): void {
     labels.rememberParticipant(participantID, label);
-    const existing = filters.find((filter) => filter.dimension === 'participant');
-    if (existing?.values.includes(participantID)) return;
-    onFiltersChange(existing
-      ? filters.map((filter) => filter === existing ? { ...filter, values: [...filter.values, participantID] } : filter)
-      : [...filters, { dimension: 'participant', values: [participantID] }]);
+    const next = withPersonFilter(filters, participantID);
+    if (next.length !== filters.length) onFiltersChange(next);
   }
 
   /** A multi-valued participant filter shows one chip per person; removing

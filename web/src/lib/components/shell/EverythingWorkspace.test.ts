@@ -184,6 +184,40 @@ describe('EverythingWorkspace', () => {
     state.destroy();
   });
 
+  it('filters by a person from the reader as a separate participant filter', async () => {
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
+      if (path.endsWith('/participants/completions')) return Response.json({ cache_revision: 'c', rows: [
+        { participant_id: 55, display_label: 'Bob Example', kind: 'email', source: 'observed', value: 'bob@example.com' }
+      ] });
+      if (path.endsWith('/conversations/7')) return Response.json({
+        id: 7, anchor_id: 1, has_before: false, has_after: false, total: 1,
+        messages: [{
+          id: 1, conversation_id: 7, subject: 'Thread', message_type: 'email', from: 'alice@example.com',
+          to: ['bob@example.com'], sent_at: '2026-07-11T12:00:00Z', snippet: 'Preview', labels: [],
+          has_attachments: false, size_bytes: 1, body: 'Body', attachments: []
+        }]
+      });
+      if (/\/participants\/\d+$/.test(path)) return Response.json({ id: 4, display_label: 'Avery Example' });
+      return Response.json(exploreResponse({ rows: [{ ...entry(1), conversation_id: 7, anchor_message_id: 1 }], total_count: 1 }));
+    });
+    const state = new ExploreState(window);
+    state.replaceTransient({ filters: [{ dimension: 'participant', values: ['4'] }] });
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    await screen.findByText('Synthetic subject 1');
+    state.commitNavigation({ selectedRow: 'message:1' });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'bob@example.com: person actions' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Filter by person' }));
+    await waitFor(() => expect(state.current.filters.filter((filter) => filter.dimension === 'participant')).toEqual([
+      { dimension: 'participant', values: ['4'] },
+      { dimension: 'participant', values: ['55'] }
+    ]));
+    rendered.unmount();
+    state.destroy();
+  });
+
   it('moves dimensioned operators into removable chips on submit and keeps the rest as text', async () => {
     window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async () => Response.json(exploreResponse({ rows: [entry(1)], total_count: 1 })));

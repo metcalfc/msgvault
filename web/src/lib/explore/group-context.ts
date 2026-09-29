@@ -52,7 +52,7 @@ export function filtersForGroup(
 // filters ANDed by the backend) instead of replacing A with B. An identical
 // filter already present (same dimension, same single value) is not
 // duplicated.
-function appendGroupMembershipFilter(
+export function appendGroupMembershipFilter(
   filters: readonly ExploreFilter[],
   dimension: 'participant' | 'domain',
   key: string
@@ -89,4 +89,11 @@ function laterBound(groupBound: string, existing: string | undefined): string {
 function earlierBound(groupBound: string, existing: string | undefined): string {
   return existing && Number.isFinite(Date.parse(existing)) && Date.parse(existing) < Date.parse(groupBound)
     ? existing : groupBound;
+}
+
+/** Narrows to entries with this person as well as any already filtered
+ * on: each person is their own participant filter, which the backend ANDs.
+ * One filter holding several people would OR them and widen the view. */
+export function withPersonFilter(filters: readonly ExploreFilter[], participantID: string): ExploreFilter[] {
+  return appendGroupMembershipFilter(filters, 'participant', participantID);
 }

@@ -261,3 +261,33 @@ describe('ContextBar save view', () => {
     });
   });
 });
+
+describe('ContextBar person filters', () => {
+  it('adds a second person as its own filter so people narrow together, one chip each', async () => {
+    const onFiltersChange = vi.fn();
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
+      if (path.endsWith('/participants/completions')) return Response.json({
+        cache_revision: 'cache-1',
+        rows: [{ participant_id: 12, display_label: 'Casey Example', kind: 'email', source: 'observed', value: 'casey@example.com' }]
+      });
+      return Response.json({ id: 4, display_label: 'Avery Example' });
+    });
+    const filters: ExploreFilter[] = [{ dimension: 'participant', values: ['4'] }];
+    const { rerender } = render(ContextBar, baseProps({ client: createAPIClient(fetchFn), filters, onFiltersChange }));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const input = await openTypeahead('Name, email, or phone');
+    await fireEvent.input(input, { target: { value: 'cas' } });
+    await fireEvent.mouseDown(await screen.findByRole('option', { name: /Casey Example/ }));
+    const both: ExploreFilter[] = [
+      { dimension: 'participant', values: ['4'] },
+      { dimension: 'participant', values: ['12'] }
+    ];
+    expect(onFiltersChange).toHaveBeenLastCalledWith(both);
+
+    await rerender(baseProps({ client: createAPIClient(fetchFn), filters: both, onFiltersChange }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Remove Person: Casey Example' }));
+    expect(onFiltersChange).toHaveBeenLastCalledWith([{ dimension: 'participant', values: ['4'] }]);
+  });
+});
