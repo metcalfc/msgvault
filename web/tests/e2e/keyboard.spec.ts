@@ -184,9 +184,10 @@ test('pointer-free archive journey preserves focus, announcements, and history',
   await page.keyboard.press('Enter');
   const everythingReading = page.getByRole('complementary', { name: /Reading pane/ });
   await expect(everythingReading).toBeVisible();
-  // The conversation thread renders directly in the pane: the anchor
-  // message arrives expanded, with no intermediate metadata step.
-  await expect(everythingReading.getByRole('button', { name: /Collapse message/ })).toBeVisible();
+  // The conversation renders directly in the pane, as an email thread or a
+  // chat transcript: the anchor message is shown with no intermediate
+  // metadata step.
+  await expect(everythingReading.locator('[data-message-id][aria-current="true"]')).toBeVisible();
   await expect(grid).toHaveAttribute('aria-busy', 'false');
   await page.keyboard.press('Escape');
   await expect(everythingReading).toBeHidden();

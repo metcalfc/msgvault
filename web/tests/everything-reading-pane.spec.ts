@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { exploreLink } from '../src/test/explore-url';
 
 function entry(index: number) {
   return {
@@ -44,7 +45,29 @@ function exploreURLState(overrides: Record<string, unknown> = {}) {
   };
 }
 
+test('the reading pane opens on the right by default', async ({ page }) => {
+  await page.route('**/api/session', (route) =>
+    route.fulfill({ json: { auth_mode: 'loopback', https: false, plain_http_warning: false } })
+  );
+  await page.route('**/api/v1/explore', (route) => route.fulfill({
+    json: { rows: [entry(1), entry(2)], total_count: 2, cache_revision: 'cache-reading-pane', search_provenance: {} }
+  }));
+
+  await page.goto(exploreLink({ workspace: 'everything' }));
+  const grid = page.getByRole('grid', { name: 'Everything results' });
+  await grid.getByText('Synthetic subject 1').click();
+  await expect(page.getByRole('complementary', { name: 'Reading pane: Synthetic subject 1' })).toBeVisible();
+  const paneBox = await page.locator('[data-pane="secondary"]').boundingBox();
+  const gridBox = await grid.boundingBox();
+  expect(paneBox!.x).toBeGreaterThan(gridBox!.x + gridBox!.width - 1);
+  await expect(page.getByRole('radio', { name: 'Right' })).toHaveAttribute('aria-checked', 'true');
+});
+
 test('the bottom reading pane opens on a single click, resizes, and persists its height', async ({ page }) => {
+  // The pane opens on the right by default; this covers the bottom split.
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('msgvault.reading-pane.position')) localStorage.setItem('msgvault.reading-pane.position', 'below');
+  });
   await page.route('**/api/session', (route) =>
     route.fulfill({ json: { auth_mode: 'loopback', https: false, plain_http_warning: false } })
   );
@@ -57,7 +80,7 @@ test('the bottom reading pane opens on a single click, resizes, and persists its
     }
   }));
 
-  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+  await page.goto(exploreLink({ workspace: 'everything' }));
   const grid = page.getByRole('grid', { name: 'Everything results' });
   await expect(grid.getByText('Synthetic subject 1')).toBeVisible();
 
@@ -96,7 +119,7 @@ test('a checked row that is also open in the reading pane keeps its own tint', a
   await page.route('**/api/v1/explore', (route) => route.fulfill({
     json: { rows: [entry(1), entry(2)], total_count: 2, cache_revision: 'cache-reading-pane', search_provenance: {} }
   }));
-  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+  await page.goto(exploreLink({ workspace: 'everything' }));
   const grid = page.getByRole('grid', { name: 'Everything results' });
   await expect(grid.getByText('Synthetic subject 2')).toBeVisible();
   const first = page.locator('[data-row-key="message:1"]');
@@ -207,7 +230,7 @@ test('global command and Escape shortcuts stay suspended in editable controls', 
   await page.route('**/api/v1/explore', (route) => route.fulfill({ json: {
     rows: [], total_count: 0, cache_revision: 'cache-editable', search_provenance: {}
   } }));
-  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+  await page.goto(exploreLink({ workspace: 'everything' }));
   await page.evaluate(() => {
     const textarea = document.createElement('textarea');
     textarea.id = 'shortcut-textarea';
@@ -241,7 +264,7 @@ test('right preview resizes, restores its width, and falls back below on narrow 
     rows: [entry(1), entry(2)], total_count: 2,
     cache_revision: 'cache-layout', search_provenance: {}
   } }));
-  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+  await page.goto(exploreLink({ workspace: 'everything' }));
   const grid = page.getByRole('grid', { name: 'Everything results' });
   await grid.getByText('Synthetic subject 1').click();
   const reading = page.getByRole('complementary', { name: 'Reading pane: Synthetic subject 1' });
