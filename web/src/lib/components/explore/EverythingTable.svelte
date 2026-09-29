@@ -13,7 +13,9 @@
   import { DEFAULT_EXPLORE_COLUMNS, EXPLORE_COLUMN_LABELS, isEmailMessageType } from '../../explore/models';
   import type { ExploreSelectionState } from '../../explore/state.svelte';
   import { rebaseVirtualScroll, RowGeometry, tableViewportHeight } from '../../theme/preferences.svelte';
+  import PaperclipIcon from '@lucide/svelte/icons/paperclip';
   import IdentityBadge from './IdentityBadge.svelte';
+  import { duplicateEventAccounts, highlightSegments, highlightTerms, listTime, rowPeople } from '../../explore/row-display';
   import { decodeHTMLEntities } from '../../util/html-text';
   import RowKind from './RowKind.svelte';
 
@@ -251,21 +253,16 @@
     return `${generation}:${anchor.key}:${anchor.offset}:${rows.length}`;
   }
 
-  function people(row: EntryRow): string {
-    const labels = (row.participant_labels ?? [])
-      .map((label) => label.trim())
-      .filter((label) => label !== '');
-    return labels.length > 0 ? labels.join(', ') : row.source_identifier;
-  }
+  // Lexical terms are highlighted only where the daemon matched text
+  // lexically; a semantic-only excerpt is the strongest passage as ranked.
+  const terms = $derived(searchMode === 'semantic' ? [] : highlightTerms(query));
+  const alsoIn = $derived(duplicateEventAccounts(rows));
 
-  function formatTime(value: string): string {
+  function fullTime(value: string): string {
     const date = new Date(value);
-    if (Number.isNaN(date.valueOf())) return value;
-    return new Intl.DateTimeFormat(undefined, {
-      month: 'short',
-      day: 'numeric',
-      year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric'
-    }).format(date);
+    return Number.isNaN(date.valueOf())
+      ? value
+      : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
   }
 
   function formatBytes(value: number): string {
@@ -448,7 +445,7 @@
           class={`header-cell header-cell--${column}`}
           aria-label={column === 'attachments' ? 'Attachments' : undefined}
         >
-          {column === 'attachments' ? '⌕' : EXPLORE_COLUMN_LABELS[column]}
+          {#if column === 'attachments'}<PaperclipIcon size={12} aria-hidden="true" />{:else}{EXPLORE_COLUMN_LABELS[column]}{/if}
         </span>
       {/each}
     </div>
@@ -555,7 +552,12 @@
                       {/if}
                       <RowKind kind={row.kind} messageType={row.message_type} />
                     {:else if column === 'people'}
-                      {people(row)}
+                      {@const who = rowPeople(row)}
+                      <span class="people" title={who.title}>{who.primary}</span>
+                      {#if who.others > 0}<span class="people-more">+{who.others}</span>{/if}
+                      {#if alsoIn.has(row.key)}
+                        <span class="also-in">also in {alsoIn.get(row.key)!.join(', ')}</span>
+                      {/if}
                       {#if isEmailMessageType(row.message_type)}
                         <IdentityBadge
                           senderIdentities={row.matched_sender_identities}
@@ -565,15 +567,19 @@
                     {:else if column === 'title'}
                       <strong data-row-title>{row.title || '(untitled)'}</strong>
                     {:else if column === 'excerpt'}
-                      {decodeHTMLEntities(row.match.strongest_excerpt || row.preview)}
+                      {#each highlightSegments(decodeHTMLEntities(row.match.strongest_excerpt || row.preview), terms) as segment, segmentIndex (segmentIndex)}
+                        {#if segment.match}<mark>{segment.text}</mark>{:else}{segment.text}{/if}
+                      {/each}
                       {#if row.match.lexical_match_count !== undefined}
                         <span class="match-count">{row.match.lexical_match_count} lexical matches</span>
                       {/if}
                     {:else if column === 'time'}
-                      <time datetime={row.occurred_at} data-mono>{formatTime(row.occurred_at)}</time>
+                      <time datetime={row.occurred_at} title={fullTime(row.occurred_at)} data-mono>{listTime(row.occurred_at)}</time>
                     {:else if column === 'attachments'}
                       {#if row.has_attachments}
-                        <span class="attachment" aria-label={`${row.attachment_count} attachments`}>⌕</span>
+                        <span class="attachment" aria-label={`${row.attachment_count} ${row.attachment_count === 1 ? 'attachment' : 'attachments'}`}>
+                          <PaperclipIcon size={14} aria-hidden="true" />{#if row.attachment_count > 1}<span aria-hidden="true">{row.attachment_count}</span>{/if}
+                        </span>
                       {:else}
                         <span aria-label="No attachments">—</span>
                       {/if}
@@ -754,7 +760,30 @@
   }
 
   .attachment {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
     color: var(--artifact-ink);
+    font-size: var(--font-size-2xs);
+  }
+
+  .people-more,
+  .also-in {
+    margin-left: var(--space-2);
+    color: var(--text-muted);
+    font-size: var(--font-size-2xs);
+  }
+
+  .also-in {
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-sm);
+  }
+
+  .cell--excerpt mark {
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--accent-amber) 24%, transparent);
+    color: inherit;
   }
 
   .selection-marker {

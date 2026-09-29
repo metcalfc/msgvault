@@ -32,6 +32,14 @@
   --selected-bg: color-mix(in srgb, var(--accent-blue) 12%, var(--bg-surface));
   --selected-border: var(--accent-blue);
   --artifact-ink: var(--accent-purple);
+  /* One ink per modality for list glyphs, so a row's kind reads at a
+   * glance without its word. */
+  --modality-email: var(--accent-blue);
+  --modality-text: var(--accent-green);
+  --modality-chat: var(--accent-teal);
+  --modality-event: var(--accent-amber);
+  --modality-meeting: var(--accent-purple);
+  --modality-other: var(--text-muted);
   --status-success-bg: color-mix(in srgb, var(--accent-green) 10%, var(--bg-surface));
   --status-success-ink: color-mix(in srgb, var(--accent-green) 72%, var(--text-primary));
   --status-warning-bg: color-mix(in srgb, var(--accent-amber) 10%, var(--bg-surface));

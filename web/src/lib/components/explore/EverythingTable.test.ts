@@ -112,7 +112,7 @@ describe('EverythingTable', () => {
     expect(getComputedStyle(document.documentElement).getPropertyValue('--row-height').trim()).toBe('36px');
     expect(screen.getByRole('columnheader', { name: 'Kind' })).toBeDefined();
     expect(screen.getByRole('columnheader', { name: 'People / source' })).toBeDefined();
-    expect(screen.getByRole('columnheader', { name: 'Attachments' }).textContent).toBe('⌕');
+    expect(screen.getByRole('columnheader', { name: 'Attachments' }).querySelector('svg')).not.toBeNull();
     expect(screen.getByLabelText('Email')).toBeDefined();
   });
 
@@ -474,5 +474,37 @@ describe('EverythingTable', () => {
     expect(screen.getByRole('alert').textContent).toContain('The query could not be completed.');
     expect(screen.queryByText('No items match this view')).toBeNull();
     expect(screen.getByRole('grid', { name: 'Everything results' }).getAttribute('aria-rowcount')).toBeNull();
+  });
+});
+
+describe('EverythingTable result row', () => {
+  it('leads with the counterpart, marks matched terms, and badges a duplicate event', () => {
+    render(EverythingTable, {
+      rows: [
+        row(1, {
+          counterpart_label: 'Blake Example', participant_labels: ['Alice Owner', 'Blake Example', 'Casey Example'],
+          participant_ids: [1, 2, 3], preview: 'Budget review <b>notes</b> for the budget',
+          has_attachments: true, attachment_count: 3
+        }),
+        row(2, { message_type: 'calendar_event', kind: 'event', title: 'Planning', source_id: 1, source_identifier: 'work@example.com' }),
+        row(3, { message_type: 'calendar_event', kind: 'event', title: 'Planning', source_id: 2, source_identifier: 'home@example.com' })
+      ],
+      selection: new ExploreSelectionState(),
+      query: 'budget from:alice@example.com',
+      searchMode: 'full_text'
+    });
+
+    const first = screen.getByRole('row', { name: /Synthetic subject 1/ });
+    const people = first.querySelector('.cell--people')!;
+    expect(people.textContent).toContain('Blake Example');
+    expect(people.textContent).toContain('+1');
+    expect(people.textContent).not.toContain('Alice Owner');
+    const marks = [...first.querySelectorAll('mark')].map((mark) => mark.textContent);
+    expect(marks).toEqual(['Budget', 'budget']);
+    // Archived markup stays text; nothing is parsed into elements.
+    expect(first.querySelector('.cell--excerpt b')).toBeNull();
+    expect(within(first as HTMLElement).getByLabelText('3 attachments')).toBeDefined();
+    expect(screen.getByText('also in home@example.com')).toBeDefined();
+    expect(screen.getByText('also in work@example.com')).toBeDefined();
   });
 });

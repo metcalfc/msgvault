@@ -18,4 +18,17 @@ describe('RowKind', () => {
     expect(screen.getByLabelText(label).textContent).toContain(label);
     expect(document.body.textContent).not.toContain(messageType === 'unknown' ? 'never' : messageType);
   });
+
+  it.each([
+    ['conversation', 'imessage', 'text'],
+    ['conversation', 'whatsapp', 'chat'],
+    ['email', 'email', 'email'],
+    ['event', 'calendar_event', 'event'],
+    ['meeting', 'meeting_transcript', 'meeting'],
+  ])('gives %s/%s the %s glyph ink', (kind, messageType, modality) => {
+    const { container } = render(RowKind, { kind, messageType });
+    const glyph = container.querySelector('.row-kind')!;
+    expect(glyph.getAttribute('data-modality')).toBe(modality);
+    expect(glyph.querySelector('svg')?.getAttribute('width')).toBe('16');
+  });
 });
