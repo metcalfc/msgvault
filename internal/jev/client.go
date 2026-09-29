@@ -1,0 +1,563 @@
+// Package jev is the shared client for TypeSafe's System One model (Jev). It
+// owns transport, request and response bounds, budgets, and the three typed
+// question kinds (Choice, Noul, Score). Feature packages build a small state
+// object, ask independent questions in one request, and apply their own
+// thresholds to the probabilities that come back. Nothing here decides what a
+// judgment means.
+package jev
+
+import (
+	"bytes"
+	"context"
+	"encoding/json/v2"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"mime"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"golang.org/x/sync/errgroup"
+)
+
+const (
+	// DefaultEndpoint is the pinned System One evaluation endpoint.
+	DefaultEndpoint = "https://api.typesafe.ai/v1/systemone"
+	// DefaultModel is the pinned model. Responses from any other model are
+	// rejected so a silent upgrade cannot change judgments.
+	DefaultModel = "jev-1.13.0"
+	// DefaultRequestTimeout bounds one HTTP exchange.
+	DefaultRequestTimeout = 10 * time.Second
+	// DefaultMaxRequestBytes caps one encoded request body.
+	DefaultMaxRequestBytes = 128 << 10
+	// DefaultMaxResponseBytes caps one response body.
+	DefaultMaxResponseBytes = 64 << 10
+	// MaxConcurrentRequests bounds fan-out inside AskAll.
+	MaxConcurrentRequests = 8
+)
+
+// QuestionType selects one of the three System One primitives.
+type QuestionType string
+
+const (
+	// QuestionChoice picks one option from criteria and returns a distribution.
+	QuestionChoice QuestionType = "choice"
+	// QuestionNoul answers a yes/no question with a probability of yes.
+	QuestionNoul QuestionType = "noul"
+	// QuestionScore rates the state along ordered levels.
+	QuestionScore QuestionType = "score"
+)
+
+// Failure categories let callers report errors without exposing provider
+// content, credentials, or state.
+var (
+	ErrRequestLimit    = errors.New("request limit reached")
+	ErrCostStop        = errors.New("local cost stop reached")
+	ErrUsageUnknown    = errors.New("provider usage unavailable")
+	ErrRequestBounds   = errors.New("request bounds exceeded")
+	ErrInvalidResponse = errors.New("invalid provider response")
+)
+
+type httpStatusError int
+
+func (e httpStatusError) Error() string { return fmt.Sprintf("provider returned HTTP %d", int(e)) }
+
+// Question is one typed question keyed by ID inside a request. Instructions
+// and Criteria accept a string, an object, or an array exactly as the API
+// does; Criteria is omitted from the wire when nil.
+type Question struct {
+	ID           string
+	Type         QuestionType
+	Instructions any
+	Criteria     any
+}
+
+// NoulCriteria describes what yes and no mean for a Noul.
+type NoulCriteria struct {
+	True  any `json:"true"`
+	False any `json:"false"`
+}
+
+// Answer is one decoded answer. Fields outside the answer's Type are zero.
+type Answer struct {
+	Type          QuestionType
+	Choice        string
+	Probabilities map[string]float64
+	Confidence    float64
+	Score         float64
+	Noul          float64
+}
+
+// Request is one evaluation of a state against a set of questions. Deadline,
+// when set, bounds the exchange in addition to the caller's context and the
+// client's per-request timeout.
+type Request struct {
+	State     any
+	Questions []Question
+	Deadline  time.Time
+}
+
+// Usage records attempted requests and provider token accounting. Complete is
+// false when at least one attempt lacks usage, so token counts are subtotals.
+type Usage struct {
+	Requests     int
+	InputTokens  *int64
+	OutputTokens *int64
+	Complete     bool
+}
+
+// Response carries every answer keyed by question ID plus usage.
+type Response struct {
+	Model   string
+	Answers map[string]Answer
+	Usage   Usage
+}
+
+// BatchResult is the outcome of AskAll. Responses aligns with the requests;
+// a failed request leaves a nil entry. Usage is the aggregate of every
+// attempted request.
+type BatchResult struct {
+	Responses []*Response
+	Usage     Usage
+}
+
+// Options configure a client. Zero values take the pinned defaults.
+type Options struct {
+	Endpoint         string
+	Model            string
+	APIKey           string
+	Transport        http.RoundTripper
+	Budget           *Budget
+	RequestTimeout   time.Duration
+	MaxRequestBytes  int
+	MaxResponseBytes int
+}
+
+// Client sends bounded System One requests.
+type Client struct {
+	endpoint    string
+	model       string
+	key         string
+	client      *http.Client
+	budget      *Budget
+	timeout     time.Duration
+	maxRequest  int
+	maxResponse int
+}
+
+// NewClient validates the options and builds a client. Construction performs
+// no I/O.
+func NewClient(options Options) (*Client, error) {
+	if strings.TrimSpace(options.APIKey) == "" {
+		return nil, errors.New("jev API key is required")
+	}
+	if options.Budget == nil {
+		return nil, errors.New("jev budget is required")
+	}
+	endpoint := options.Endpoint
+	if endpoint == "" {
+		endpoint = DefaultEndpoint
+	}
+	if err := ValidateEndpoint(endpoint); err != nil {
+		return nil, err
+	}
+	model := options.Model
+	if model == "" {
+		model = DefaultModel
+	}
+	if strings.TrimSpace(model) != model || model == "" {
+		return nil, errors.New("jev model is invalid")
+	}
+	timeout := options.RequestTimeout
+	if timeout <= 0 {
+		timeout = DefaultRequestTimeout
+	}
+	maxRequest := options.MaxRequestBytes
+	if maxRequest <= 0 {
+		maxRequest = DefaultMaxRequestBytes
+	}
+	maxResponse := options.MaxResponseBytes
+	if maxResponse <= 0 {
+		maxResponse = DefaultMaxResponseBytes
+	}
+	return &Client{
+		endpoint: endpoint, model: model, key: options.APIKey,
+		client: &http.Client{Transport: options.Transport, CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}},
+		budget: options.Budget, timeout: timeout, maxRequest: maxRequest, maxResponse: maxResponse,
+	}, nil
+}
+
+// Model returns the pinned model this client requires in every response.
+func (c *Client) Model() string { return c.model }
+
+// Endpoint returns the destination every request is sent to.
+func (c *Client) Endpoint() string { return c.endpoint }
+
+// SetTransport replaces the HTTP transport. Tests use it to point the client
+// at a fake server; production code sets Options.Transport instead.
+func (c *Client) SetTransport(transport http.RoundTripper) {
+	c.client.Transport = transport
+}
+
+type wireRequest struct {
+	State     any                     `json:"state"`
+	Model     string                  `json:"model"`
+	Questions map[string]wireQuestion `json:"questions"`
+}
+
+type wireQuestion struct {
+	Type         QuestionType `json:"type"`
+	Instructions any          `json:"instructions"`
+	Criteria     any          `json:"criteria,omitzero"`
+}
+
+type wireResponse struct {
+	Model   string                `json:"model"`
+	Answers map[string]wireAnswer `json:"answers"`
+	Usage   *wireUsage            `json:"usage"`
+}
+
+type wireAnswer struct {
+	Type          QuestionType        `json:"type"`
+	Noul          *float64            `json:"noul"`
+	Choice        *string             `json:"choice"`
+	Score         *float64            `json:"score"`
+	Probabilities map[string]*float64 `json:"probabilities"`
+	Confidence    *float64            `json:"confidence"`
+}
+
+type wireUsage struct {
+	InputTokens  *int64 `json:"input_tokens"`
+	OutputTokens *int64 `json:"output_tokens"`
+}
+
+// Encode validates a request and returns its wire body. It is exported so
+// callers can size batches and tests can assert the exact wire shape.
+func (c *Client) Encode(request Request) ([]byte, error) {
+	if request.State == nil {
+		return nil, fmt.Errorf("%w: request has no state", ErrRequestBounds)
+	}
+	if len(request.Questions) == 0 {
+		return nil, fmt.Errorf("%w: request has no questions", ErrRequestBounds)
+	}
+	questions := make(map[string]wireQuestion, len(request.Questions))
+	for i, question := range request.Questions {
+		if question.ID == "" || strings.TrimSpace(question.ID) != question.ID {
+			return nil, fmt.Errorf("%w: question %d has an invalid id", ErrRequestBounds, i)
+		}
+		if _, duplicate := questions[question.ID]; duplicate {
+			return nil, fmt.Errorf("%w: duplicate question id", ErrRequestBounds)
+		}
+		if question.Instructions == nil {
+			return nil, fmt.Errorf("%w: question %d has no instructions", ErrRequestBounds, i)
+		}
+		switch question.Type {
+		case QuestionNoul:
+		case QuestionChoice, QuestionScore:
+			if question.Criteria == nil {
+				return nil, fmt.Errorf("%w: question %d requires criteria", ErrRequestBounds, i)
+			}
+		default:
+			return nil, fmt.Errorf("%w: question %d has an unknown type", ErrRequestBounds, i)
+		}
+		questions[question.ID] = wireQuestion{
+			Type: question.Type, Instructions: question.Instructions, Criteria: question.Criteria,
+		}
+	}
+	body, err := json.Marshal(wireRequest{State: request.State, Model: c.model, Questions: questions}, json.Deterministic(true))
+	if err != nil {
+		return nil, errors.New("encode Jev request")
+	}
+	if len(body) > c.maxRequest {
+		return nil, fmt.Errorf("%w: encoded Jev request exceeds %d bytes", ErrRequestBounds, c.maxRequest)
+	}
+	return body, nil
+}
+
+// Ask sends one request and returns its answers. The budget is consulted
+// before any bytes leave the process.
+func (c *Client) Ask(ctx context.Context, request Request) (Response, error) {
+	body, err := c.Encode(request)
+	if err != nil {
+		return emptyResponse(), err
+	}
+	if err := c.budget.preflight(1); err != nil {
+		return emptyResponse(), err
+	}
+	if err := c.budget.reserve(); err != nil {
+		return emptyResponse(), err
+	}
+	response, err := c.send(ctx, request.Deadline, body, questionIDs(request.Questions))
+	if err != nil {
+		c.budget.fail()
+		return Response{Usage: Usage{Requests: 1}}, err
+	}
+	c.budget.record(response.Usage)
+	response.Usage.Requests = 1
+	return response, nil
+}
+
+// AskAll sends several independent requests concurrently and aggregates
+// usage. The first failure cancels the remaining requests; responses that
+// completed before it are kept so callers can account for their usage.
+func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, error) {
+	bodies := make([][]byte, len(requests))
+	for i, request := range requests {
+		body, err := c.Encode(request)
+		if err != nil {
+			return emptyBatch(), err
+		}
+		bodies[i] = body
+	}
+	if err := c.budget.preflight(len(requests)); err != nil {
+		return emptyBatch(), err
+	}
+	result := BatchResult{Responses: make([]*Response, len(requests))}
+	var mu sync.Mutex
+	var totalInput, totalOutput int64
+	complete := true
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(MaxConcurrentRequests)
+	for i, body := range bodies {
+		group.Go(func() error {
+			if err := c.budget.reserve(); err != nil {
+				return err
+			}
+			mu.Lock()
+			result.Usage.Requests++
+			mu.Unlock()
+			response, err := c.send(groupCtx, requests[i].Deadline, body, questionIDs(requests[i].Questions))
+			if err != nil {
+				mu.Lock()
+				complete = false
+				mu.Unlock()
+				c.budget.fail()
+				return err
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			response.Usage.Requests = 1
+			result.Responses[i] = &response
+			if response.Usage.InputTokens == nil {
+				complete = false
+			} else {
+				totalInput += *response.Usage.InputTokens
+			}
+			if response.Usage.OutputTokens == nil {
+				complete = false
+			} else {
+				totalOutput += *response.Usage.OutputTokens
+			}
+			c.budget.record(response.Usage)
+			return nil
+		})
+	}
+	groupErr := group.Wait()
+	result.Usage.InputTokens = &totalInput
+	result.Usage.OutputTokens = &totalOutput
+	result.Usage.Complete = complete
+	if groupErr != nil {
+		return result, fmt.Errorf("jev requests failed: %w", groupErr)
+	}
+	return result, nil
+}
+
+func questionIDs(questions []Question) []string {
+	ids := make([]string, len(questions))
+	for i, question := range questions {
+		ids[i] = question.ID
+	}
+	return ids
+}
+
+func emptyResponse() Response {
+	input, output := int64(0), int64(0)
+	return Response{Usage: Usage{InputTokens: &input, OutputTokens: &output, Complete: true}}
+}
+
+func emptyBatch() BatchResult {
+	input, output := int64(0), int64(0)
+	return BatchResult{Usage: Usage{InputTokens: &input, OutputTokens: &output, Complete: true}}
+}
+
+// SafeFailure reports a known error category without including state, message
+// text, credentials, or provider response bodies.
+func SafeFailure(err error) string {
+	for _, category := range []error{
+		ErrRequestLimit, ErrCostStop, ErrUsageUnknown, ErrRequestBounds, ErrInvalidResponse,
+	} {
+		if errors.Is(err, category) {
+			return category.Error()
+		}
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return "provider timeout or cancellation"
+	}
+	if status, ok := errors.AsType[httpStatusError](err); ok {
+		return status.Error()
+	}
+	return "provider request failed"
+}
+
+func (c *Client) send(ctx context.Context, deadline time.Time, body []byte, ids []string) (Response, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+	if !deadline.IsZero() {
+		var cancelDeadline context.CancelFunc
+		ctx, cancelDeadline = context.WithDeadline(ctx, deadline)
+		defer cancelDeadline()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+	if err != nil {
+		return Response{}, errors.New("construct Jev request")
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.key)
+	response, err := c.client.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return Response{}, ctx.Err()
+		}
+		return Response{}, errors.New("provider request failed")
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return Response{}, httpStatusError(response.StatusCode)
+	}
+	mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if parseErr != nil || (mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json")) {
+		return Response{}, fmt.Errorf("%w: non-JSON content type", ErrInvalidResponse)
+	}
+	limited := io.LimitReader(response.Body, int64(c.maxResponse)+1)
+	body, err = io.ReadAll(limited)
+	if err != nil {
+		if ctx.Err() != nil {
+			return Response{}, ctx.Err()
+		}
+		return Response{}, fmt.Errorf("%w: cannot read body", ErrInvalidResponse)
+	}
+	if len(body) > c.maxResponse {
+		return Response{}, fmt.Errorf("%w: response exceeds %d bytes", ErrInvalidResponse, c.maxResponse)
+	}
+	return c.Decode(body, ids)
+}
+
+// Decode validates a response body against the question IDs that were sent.
+// Every answer must be present, typed, and carry finite probabilities.
+func (c *Client) Decode(data []byte, ids []string) (Response, error) {
+	var wire wireResponse
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return Response{}, fmt.Errorf("%w: malformed JSON", ErrInvalidResponse)
+	}
+	if wire.Model != c.model || len(wire.Answers) != len(ids) {
+		return Response{}, fmt.Errorf("%w: model or answer count did not match request", ErrInvalidResponse)
+	}
+	answers := make(map[string]Answer, len(ids))
+	for _, id := range ids {
+		raw, ok := wire.Answers[id]
+		if !ok {
+			return Response{}, fmt.Errorf("%w: missing answer", ErrInvalidResponse)
+		}
+		answer, err := decodeAnswer(raw)
+		if err != nil {
+			return Response{}, err
+		}
+		answers[id] = answer
+	}
+	var usage Usage
+	if wire.Usage != nil {
+		if wire.Usage.InputTokens != nil && *wire.Usage.InputTokens < 0 ||
+			wire.Usage.OutputTokens != nil && *wire.Usage.OutputTokens < 0 {
+			return Response{}, fmt.Errorf("%w: invalid token usage", ErrInvalidResponse)
+		}
+		usage.InputTokens = validTokenPointer(wire.Usage.InputTokens)
+		usage.OutputTokens = validTokenPointer(wire.Usage.OutputTokens)
+	}
+	usage.Complete = usage.InputTokens != nil && usage.OutputTokens != nil
+	return Response{Model: wire.Model, Answers: answers, Usage: usage}, nil
+}
+
+func decodeAnswer(raw wireAnswer) (Answer, error) {
+	switch raw.Type {
+	case QuestionNoul:
+		if !validProbability(raw.Noul) {
+			return Answer{}, fmt.Errorf("%w: invalid noul answer", ErrInvalidResponse)
+		}
+		return Answer{Type: QuestionNoul, Noul: *raw.Noul}, nil
+	case QuestionChoice:
+		probabilities, err := decodeProbabilities(raw.Probabilities)
+		if err != nil {
+			return Answer{}, err
+		}
+		if raw.Choice == nil || !validProbability(raw.Confidence) {
+			return Answer{}, fmt.Errorf("%w: invalid choice answer", ErrInvalidResponse)
+		}
+		if _, ok := probabilities[*raw.Choice]; !ok {
+			return Answer{}, fmt.Errorf("%w: choice is not an option", ErrInvalidResponse)
+		}
+		return Answer{
+			Type: QuestionChoice, Choice: *raw.Choice, Probabilities: probabilities,
+			Confidence: *raw.Confidence,
+		}, nil
+	case QuestionScore:
+		probabilities, err := decodeProbabilities(raw.Probabilities)
+		if err != nil {
+			return Answer{}, err
+		}
+		if raw.Score == nil || math.IsNaN(*raw.Score) || math.IsInf(*raw.Score, 0) ||
+			*raw.Score < 0 || !validProbability(raw.Confidence) {
+			return Answer{}, fmt.Errorf("%w: invalid score answer", ErrInvalidResponse)
+		}
+		return Answer{
+			Type: QuestionScore, Score: *raw.Score, Probabilities: probabilities,
+			Confidence: *raw.Confidence,
+		}, nil
+	default:
+		return Answer{}, fmt.Errorf("%w: unknown answer type", ErrInvalidResponse)
+	}
+}
+
+func decodeProbabilities(raw map[string]*float64) (map[string]float64, error) {
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("%w: missing probabilities", ErrInvalidResponse)
+	}
+	probabilities := make(map[string]float64, len(raw))
+	for option, value := range raw {
+		if !validProbability(value) {
+			return nil, fmt.Errorf("%w: invalid probability", ErrInvalidResponse)
+		}
+		probabilities[option] = *value
+	}
+	return probabilities, nil
+}
+
+func validProbability(value *float64) bool {
+	return value != nil && !math.IsNaN(*value) && !math.IsInf(*value, 0) && *value >= 0 && *value <= 1
+}
+
+func validTokenPointer(value *int64) *int64 {
+	if value == nil || *value < 0 {
+		return nil
+	}
+	usage := *value
+	return &usage
+}
+
+// ValidateEndpoint accepts only an absolute HTTPS URL without credentials,
+// query, or fragment. Tests may use plain HTTP against loopback hosts.
+func ValidateEndpoint(endpoint string) error {
+	origin, err := EndpointOrigin(endpoint)
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(origin, "http://") && !loopbackOrigin(origin) {
+		return errors.New("jev endpoint must use https")
+	}
+	return nil
+}

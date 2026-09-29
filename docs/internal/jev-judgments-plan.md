@@ -54,7 +54,7 @@ do not invent field names.
 
 ## Phase 0: shared client and consent (prerequisite)
 
-- [ ] **Task 0.1 Move and generalize the client.** Create `internal/jev` from
+- [x] **Task 0.1 Move and generalize the client.** Create `internal/jev` from
   `internal/vector/rerank/typesafe.go`. Keep `Budget`, `send()` bounds
   (timeout, no redirects, JSON content-type check, response cap), request
   cap, `SafeFailure`, pinned endpoint and model. Replace the fixed Noul with:

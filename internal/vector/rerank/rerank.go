@@ -5,16 +5,13 @@ import (
 	"fmt"
 	"math"
 	"slices"
+
+	"go.kenn.io/msgvault/internal/jev"
 )
 
 // Usage records attempted requests and provider token accounting. Complete is
 // false when at least one attempt lacks usage, so token counts are subtotals.
-type Usage struct {
-	Requests     int
-	InputTokens  *int64
-	OutputTokens *int64
-	Complete     bool
-}
+type Usage = jev.Usage
 
 // Result contains one score for every candidate, in the request's order.
 type Result struct {
