@@ -745,7 +745,10 @@
   }
   async function openSavedView(state: Partial<ExploreURLState>): Promise<void> {
     selection.clear();
-    replaceCommittedNavigation(state);
+    // From Saved Views the view replaces the list's entry (Back skips the
+    // list); from anywhere else it is a new place, so Back returns there.
+    if (exploreState.current.workspace === 'saved_views') replaceCommittedNavigation(state);
+    else commitNavigation(state);
     await tick();
     const grid = currentGrid();
     if (grid) grid.focus();

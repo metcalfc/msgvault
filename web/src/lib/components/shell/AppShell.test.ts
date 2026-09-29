@@ -272,6 +272,32 @@ describe('AppShell', () => {
     state.destroy();
   });
 
+  it('opens a Saved View from the header menu as a new history entry', async () => {
+    window.history.replaceState(null, '', '/files');
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (url.pathname === '/api/v1/saved-views') return Response.json({ saved_views: [{
+        id: 3, name: 'Invoices', description: '', schema_version: 1, revision: 1,
+        created_at: '2026-07-19T10:00:00Z', updated_at: '2026-07-19T10:00:00Z',
+        canonical_state: { query: 'invoice', search_mode: 'full_text', filters: [], grouping: [], presentation: 'table',
+          sort: [{ field: 'occurred_at', direction: 'desc' }], columns: ['kind', 'title'] }
+      }] });
+      return Response.json(exploreResponse());
+    });
+    const state = new ExploreState(window);
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Saved Views' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Invoices' }));
+    expect(state.current).toMatchObject({ workspace: 'everything', query: 'invoice' });
+    window.history.back();
+    await new Promise((resolve) => window.addEventListener('popstate', resolve, { once: true }));
+    expect(state.current.workspace).toBe('files');
+
+    rendered.unmount();
+    state.destroy();
+  });
+
   it('commits workspace navigation to URL history', async () => {
     window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
