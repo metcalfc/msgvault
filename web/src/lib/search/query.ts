@@ -1,5 +1,5 @@
 import type { ExploreFilter, ExploreSearchMode } from '../explore/models';
-import { dateInputBound, type DateDimension } from '../explore/date-range';
+import { dateInputBound } from '../explore/date-range';
 
 /**
  * Client-side mirror of the daemon's Gmail-style query tokenizer
@@ -127,10 +127,13 @@ export function searchModeFellBack(query: string, mode: ExploreSearchMode): bool
 }
 
 /** after:/before: take a day; the daemon also reads RFC3339 and US-style
- * dates, which stay text operators rather than guessing a local day. */
-function operatorDateBound(value: string, dimension: DateDimension): string | undefined {
+ * dates, which stay text operators rather than guessing a local day.
+ * Both bounds are the start of that day: the daemon's before:2025-06-30
+ * excludes the 30th, and the explore before filter is exclusive, so the
+ * chip keeps the operator's meaning. */
+function operatorDateBound(value: string): string | undefined {
   const day = /^\d{4}[-/]\d{2}[-/]\d{2}$/.test(value) ? value.replaceAll('/', '-') : '';
-  return day ? dateInputBound(day, dimension) : undefined;
+  return day ? dateInputBound(day, 'after') : undefined;
 }
 
 function withFilterValue(filters: ExploreFilter[], dimension: ExploreFilter['dimension'], value: string): ExploreFilter[] {
@@ -164,7 +167,7 @@ export function extractQueryFilters(
     const value = split ? unquoteValue(split.value).trim() : '';
     if (split && value) {
       if (split.operator === 'after' || split.operator === 'before') {
-        const bound = operatorDateBound(value, split.operator);
+        const bound = operatorDateBound(value);
         if (bound) {
           next = [...next.filter((filter) => filter.dimension !== split.operator), { dimension: split.operator, values: [bound] }];
           moved = true;

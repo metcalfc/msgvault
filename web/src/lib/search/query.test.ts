@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { dateInputBound } from '../explore/date-range';
 import {
   effectiveSearchMode, extractQueryFilters, freeTextTerms, hasFreeText, queryOperatorChips, tokenizeQuery,
   withAttachmentOperator, withoutQueryToken
@@ -17,8 +16,9 @@ describe('extractQueryFilters', () => {
     expect(extracted.moved).toBe(true);
     expect(extracted.query).toBe('budget from:alice@example.com subject:"q3 plan"');
     expect(extracted.filters).toEqual([
-      { dimension: 'after', values: [dateInputBound('2025-01-01', 'after')] },
-      { dimension: 'before', values: [dateInputBound('2025-06-30', 'before')] },
+      { dimension: 'after', values: [new Date(2025, 0, 1).toISOString()] },
+      // before: excludes its day, so the bound is that day's first instant.
+      { dimension: 'before', values: [new Date(2025, 5, 30).toISOString()] },
       { dimension: 'message_type', values: ['imessage'] },
     ]);
   });
