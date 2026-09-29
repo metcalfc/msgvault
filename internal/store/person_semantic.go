@@ -208,7 +208,7 @@ func (s *Store) loadPersonSemanticSnapshotTx(
 		return nil, err
 	}
 	if snapshot.relationships, err = s.listPersonRelationshipsContext(
-		ctx, tx, personID, PersonRelationshipListOptions{},
+		ctx, tx, personID, PersonRelationshipListOptions{}, false,
 	); err != nil {
 		return nil, fmt.Errorf("load active person relationships for semantic projection: %w", err)
 	}
@@ -366,8 +366,8 @@ func renderPersonSemanticDocument(
 	}
 	for _, relationship := range snapshot.relationships {
 		value := relationship.CounterpartLabel
-		if relationship.counterpartCuratedName != nil {
-			counterpart := normalizePersonSemanticText(*relationship.counterpartCuratedName)
+		if relationship.CounterpartDisplayName != nil {
+			counterpart := normalizePersonSemanticText(*relationship.CounterpartDisplayName)
 			if counterpart != "" {
 				value += " — " + counterpart
 			}

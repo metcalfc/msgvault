@@ -617,12 +617,6 @@ type PersonRelationshipView struct {
 	CounterpartLabel       string                `json:"counterpart_label"`
 	CounterpartDisplayName *string               `json:"counterpart_display_name,omitzero" nullable:"false"`
 	CounterpartVCardUID    string                `json:"counterpart_vcard_uid"`
-
-	// counterpartCuratedName is the counterpart's own display name, without
-	// the participant fallbacks CounterpartDisplayName applies. The semantic
-	// person document discloses only curated names, never a participant's
-	// address or phone number.
-	counterpartCuratedName *string
 }
 
 // PersonRelationshipListOptions scopes an endpoint view. The default shows
@@ -645,16 +639,30 @@ type PersonRelationshipListOptions struct {
 func (s *Store) ListPersonRelationshipsContext(
 	ctx context.Context, personID int64, opts PersonRelationshipListOptions,
 ) ([]PersonRelationshipView, error) {
-	return s.listPersonRelationshipsContext(ctx, s.db, personID, opts)
+	return s.listPersonRelationshipsContext(ctx, s.db, personID, opts, true)
 }
 
+// listPersonRelationshipsContext lists personID's relationships. With
+// labelCounterparts, CounterpartDisplayName is the counterpart's durable
+// person label and the list sorts by it; that is for display only. Without
+// it, CounterpartDisplayName is the counterpart's own curated display name,
+// the input the vCard projection fingerprint and the semantic person
+// document depend on. The durable label reads participant rows whose writes
+// do not advance the vCard projection revision, and it can disclose a
+// participant's address or phone number.
 func (s *Store) listPersonRelationshipsContext(
 	ctx context.Context, queryer contextRowsQuerier,
-	personID int64, opts PersonRelationshipListOptions,
+	personID int64, opts PersonRelationshipListOptions, labelCounterparts bool,
 ) ([]PersonRelationshipView, error) {
 	currentFilter := ""
 	if !opts.IncludeEnded {
 		currentFilter = " AND r.end_year IS NULL"
+	}
+	counterpartName := "cp.display_name"
+	counterpartOrder := "LOWER(COALESCE(cp.display_name, cp.vcard_uid))"
+	if labelCounterparts {
+		counterpartName = sqlDurablePersonLabelExpr("cp")
+		counterpartOrder = "LOWER(COALESCE(" + counterpartName + ", ''))"
 	}
 	query := `
 		SELECT ` + personRelationshipColumns + `,
@@ -663,16 +671,15 @@ func (s *Store) listPersonRelationshipsContext(
 		       CASE WHEN r.source_person_id = ? THEN ? ELSE ? END AS direction,
 		       CASE WHEN r.source_person_id = ? THEN t.reverse_label
 		            ELSE t.forward_label END AS counterpart_label,
-		       ` + sqlDurablePersonLabelExpr("cp") + ` AS counterpart_display_name,
-		       cp.vcard_uid AS counterpart_vcard_uid,
-		       cp.display_name AS counterpart_curated_name
+		       ` + counterpartName + ` AS counterpart_display_name,
+		       cp.vcard_uid AS counterpart_vcard_uid
 		` + personRelationshipFrom + `
 		JOIN persons cp ON cp.id = CASE WHEN r.source_person_id = ?
 		                                THEN r.target_person_id
 		                                ELSE r.source_person_id END
 		WHERE (r.source_person_id = ? OR r.target_person_id = ?)` + currentFilter + `
 		ORDER BY CASE WHEN r.end_year IS NULL THEN 0 ELSE 1 END,
-		         LOWER(COALESCE(` + sqlDurablePersonLabelExpr("cp") + `, '')),
+		         ` + counterpartOrder + `,
 		         t.slug, r.id
 	`
 	rows, err := queryer.QueryContext(ctx, query,
@@ -707,12 +714,11 @@ func scanPersonRelationshipView(row scanner) (*PersonRelationshipView, error) {
 		view        PersonRelationshipView
 		direction   string
 		displayName sql.NullString
-		curatedName sql.NullString
 	)
 	destinations := scan.destinations()
 	destinations = append(destinations,
 		&view.CounterpartPersonID, &direction, &view.CounterpartLabel,
-		&displayName, &view.CounterpartVCardUID, &curatedName,
+		&displayName, &view.CounterpartVCardUID,
 	)
 	if err := row.Scan(destinations...); err != nil {
 		return nil, err
@@ -721,9 +727,6 @@ func scanPersonRelationshipView(row scanner) (*PersonRelationshipView, error) {
 	view.Direction = RelationshipDirection(direction)
 	if displayName.Valid {
 		view.CounterpartDisplayName = &displayName.String
-	}
-	if curatedName.Valid {
-		view.counterpartCuratedName = &curatedName.String
 	}
 	return &view, nil
 }

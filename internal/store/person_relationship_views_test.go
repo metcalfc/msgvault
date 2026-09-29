@@ -275,4 +275,22 @@ func TestListPersonRelationshipsNamesUnnamedCounterpartFromParticipants(t *testi
 	assert.Contains(document.Text, "Relationship: child")
 	assert.NotContains(document.Text, "unnamed@example.com",
 		"the semantic document must not disclose a participant address")
+
+	// Naming the counterpart's participant changes the displayed label but
+	// not the vCard projection fingerprint: participant writes do not
+	// advance the projection revision, so the fingerprint must not read them.
+	before, err := f.Store.LoadPersonVCardSnapshotContext(ctx, named)
+	require.NoError(err)
+	updated, err := f.Store.UpdateParticipantDisplayNameByEmail("unnamed@example.com", "Carol Participant")
+	require.NoError(err)
+	require.True(updated)
+	after, err := f.Store.LoadPersonVCardSnapshotContext(ctx, named)
+	require.NoError(err)
+	assert.Equal(before.Fingerprint, after.Fingerprint)
+
+	views, err = f.Store.ListPersonRelationshipsContext(ctx, named, store.PersonRelationshipListOptions{})
+	require.NoError(err)
+	require.Len(views, 1)
+	require.NotNil(views[0].CounterpartDisplayName)
+	assert.Equal("Carol Participant", *views[0].CounterpartDisplayName)
 }

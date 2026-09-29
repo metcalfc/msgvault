@@ -194,7 +194,7 @@ func (s *Store) loadPersonVCardSnapshotTx(
 		})
 	}
 	if snapshot.Relationships, err = s.listPersonRelationshipsContext(
-		ctx, tx, personID, PersonRelationshipListOptions{},
+		ctx, tx, personID, PersonRelationshipListOptions{}, false,
 	); err != nil {
 		return nil, err
 	}
