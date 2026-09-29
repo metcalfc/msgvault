@@ -710,7 +710,7 @@ func TestGroupFilesDeduplicatesParticipantAndDomainMembershipPerFile(t *testing.
 // on a non-chat message: files still attribute to them (matching the legacy
 // direct-plus-roster membership), but the relationship_people dataset has no
 // row for them — the label must come from the base participant record, not
-// the "Unknown person #" fallback.
+// the "Unknown person" fallback.
 func TestGroupFilesLabelsRosterOnlyParticipants(t *testing.T) {
 	requirements := require.New(t)
 	assertions := assert.New(t)
@@ -852,4 +852,39 @@ func TestGroupFilesNamesUnavailableCache(t *testing.T) {
 	var unavailable *CacheUnavailableError
 	require.ErrorAs(t, err, &unavailable)
 	assert.Equal(t, CacheAbsent, unavailable.Readiness)
+}
+
+// TestGroupFilesLabelSkipsFallbackIndexLabel pins that a people-dataset label
+// marked partial_label (a fallback the identity index wrote because it found
+// no name) never outranks the participant's own label, and that a participant
+// nothing names reads "Unknown person" rather than its ID.
+func TestGroupFilesLabelSkipsFallbackIndexLabel(t *testing.T) {
+	requirements := require.New(t)
+	assertions := assert.New(t)
+	b := NewTestDataBuilder(t)
+	source := b.AddSource("archive@example.com")
+	avery := b.AddParticipant("avery@example.com", "example.com", "Avery Example")
+	unnamed := b.AddParticipant("", "", "")
+	message := b.AddMessage(MessageOpt{SourceID: source, ConversationID: 91, SenderID: &avery, Subject: "Files"})
+	b.AddFrom(message, avery, "Avery Example")
+	b.AddConversationParticipant(91, avery)
+	b.AddConversationParticipant(91, unnamed)
+	b.AddAttachmentWithMIME(501, message, 64, "plan.pdf", "application/pdf")
+
+	analyticsDir, cleanup := b.Build()
+	t.Cleanup(cleanup)
+	rewritePeopleDataset(t, analyticsDir,
+		`'+15555550101' AS display_label, true AS partial_label`)
+	engine, err := NewDuckDBEngine(analyticsDir, "", nil)
+	requirements.NoError(err)
+	t.Cleanup(func() { _ = engine.Close() })
+
+	result, err := engine.GroupFiles(context.Background(), FileGroupRequest{
+		Dimension: "participant", Sort: SortSpec{Field: "key", Direction: "asc"}, Page: PageSpec{Limit: 10},
+	})
+	requirements.NoError(err)
+	requirements.Len(result.Rows, 2)
+	assertions.Equal("Avery Example", result.Rows[0].Label,
+		"the participant's own name outranks a fallback index label")
+	assertions.Equal("Unknown person", result.Rows[1].Label)
 }

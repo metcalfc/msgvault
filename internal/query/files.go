@@ -586,9 +586,11 @@ func fileGroupExpressions(
 	WHERE a.canonical_id IS NOT NULL
 	  AND (a.is_direct OR a.is_conversation_member)
 ), participant_file_labels AS (
-	SELECT pf.*, COALESCE(dp.display_label,
+	SELECT pf.*, COALESCE(
+		CASE WHEN NOT COALESCE(dp.partial_label, false) THEN NULLIF(dp.display_label, '') END,
 		NULLIF(` + sqlAnalyticalEntriesParticipantLabel("pb") + `, ''),
-		'Unknown person #' || CAST(pf.person_id AS VARCHAR)) AS person_label
+		NULLIF(dp.display_label, ''),
+		'Unknown person') AS person_label
 	FROM participant_files pf
 	LEFT JOIN read_parquet('` + peopleGlob + `') dp ON dp.canonical_id = pf.person_id
 	LEFT JOIN read_parquet('` + participantsGlob + `') pb ON pb.id = pf.person_id

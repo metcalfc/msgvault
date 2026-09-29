@@ -178,7 +178,7 @@ func sqlActivityEntryEdges(selectExpr, messagePredicate, conversationPredicate s
 func sqlIndexedPersonGroupLabelExpr(peopleGlob string) string {
 	return "COALESCE(" +
 		"(SELECT dp.display_label FROM read_parquet('" + peopleGlob + "') dp WHERE dp.canonical_id = person_id), " +
-		"'Unknown person #' || CAST(person_id AS VARCHAR))"
+		"'Unknown person')"
 }
 
 // sqlMessageTypeGroupExpr renders the message-type group key/label: NULL or

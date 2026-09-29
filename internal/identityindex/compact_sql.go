@@ -345,7 +345,7 @@ WITH canon AS (
 )
 SELECT m.canonical_id,
        coalesce(pnm.display_name, n.display_name, f.display_label,
-                'Unknown person #' || m.canonical_id)::VARCHAR AS display_label,
+                'Unknown person')::VARCHAR AS display_label,
        (pnm.display_name IS NULL AND n.display_name IS NULL) AS partial_label,
        m.member_ids,
        coalesce(s.search_values, []::VARCHAR[]) AS search_values,

@@ -146,7 +146,7 @@ func TestPersonOverrideLeavesUnboundAndBlankNameLabelsUnchanged(t *testing.T) {
 			requirements := require.New(t)
 			b := NewTestDataBuilder(t)
 			source := b.AddSourceWithType("user@example.com", "gmail")
-			names := []string{"Alice Observed", "+15550100001", "alice@example.com", "alice_handle", "Unknown person #5"}
+			names := []string{"Alice Observed", "+15550100001", "alice@example.com", "alice_handle", "Unknown person"}
 			for i := range names {
 				id := b.AddParticipant("", "", "")
 				switch i {

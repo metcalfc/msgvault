@@ -1407,7 +1407,7 @@ func TestExploreOtherParticipantCountSkipsOutboundSenderAlias(t *testing.T) {
 }
 
 // TestExploreCounterpartLabelSkipsFallbackIndexLabel pins that an identity
-// index label marked partial_label (a fallback such as "Unknown person #N")
+// index label marked partial_label (a fallback such as "Unknown person")
 // never outranks a named member of the counterpart's cluster.
 func TestExploreCounterpartLabelSkipsFallbackIndexLabel(t *testing.T) {
 	require := require.New(t)
@@ -1427,32 +1427,8 @@ func TestExploreCounterpartLabelSkipsFallbackIndexLabel(t *testing.T) {
 	t.Cleanup(cleanup)
 	// Rewrite the derived people dataset so the cluster's index label is a
 	// fallback, as the identity index writes when it finds no name.
-	peopleFiles, err := filepath.Glob(filepath.Join(analyticsDir, identityindex.DatasetPeople, "*.parquet"))
-	require.NoError(err)
-	require.NotEmpty(peopleFiles)
-	db, err := sql.Open("duckdb", "")
-	require.NoError(err)
-	t.Cleanup(func() { _ = db.Close() })
-	rewritten := filepath.Join(t.TempDir(), "people.parquet")
-	_, err = db.Exec(`COPY (SELECT * REPLACE (
-			'Unknown person #' || canonical_id AS display_label, true AS partial_label)
-		FROM read_parquet('` + filepath.Join(analyticsDir, identityindex.DatasetPeople, "*.parquet") + `'))
-		TO '` + rewritten + `' (FORMAT PARQUET)`)
-	require.NoError(err)
-	for _, file := range peopleFiles {
-		require.NoError(os.Remove(file))
-	}
-	data, err := os.ReadFile(rewritten)
-	require.NoError(err)
-	require.NoError(os.WriteFile(peopleFiles[0], data, 0o600))
-	// Re-stamp the cache state for the rewritten dataset.
-	state, err := ReadCacheSyncState(analyticsDir)
-	require.NoError(err)
-	state.DatasetFingerprint, err = CacheDatasetFingerprint(analyticsDir)
-	require.NoError(err)
-	stateData, err := json.Marshal(state)
-	require.NoError(err)
-	require.NoError(os.WriteFile(CacheStatePath(analyticsDir), stateData, 0o600))
+	rewritePeopleDataset(t, analyticsDir,
+		`'Unknown person' AS display_label, true AS partial_label`)
 
 	engine, err := NewDuckDBEngine(analyticsDir, "", nil)
 	require.NoError(err)
@@ -1463,6 +1439,38 @@ func TestExploreCounterpartLabelSkipsFallbackIndexLabel(t *testing.T) {
 	require.NotNil(response.Rows[0].CounterpartParticipantID)
 	assert.Equal(t, phone, *response.Rows[0].CounterpartParticipantID)
 	assert.Equal(t, "Avery Example", response.Rows[0].CounterpartLabel)
+}
+
+// rewritePeopleDataset replaces columns of the committed derived people
+// dataset (a DuckDB SELECT * REPLACE list) and re-stamps the cache state, so a
+// test can pin how readers treat labels the identity index wrote.
+func rewritePeopleDataset(t *testing.T, analyticsDir, replace string) {
+	t.Helper()
+	require := require.New(t)
+	peopleFiles, err := filepath.Glob(filepath.Join(analyticsDir, identityindex.DatasetPeople, "*.parquet"))
+	require.NoError(err)
+	require.NotEmpty(peopleFiles)
+	db, err := sql.Open("duckdb", "")
+	require.NoError(err)
+	t.Cleanup(func() { _ = db.Close() })
+	rewritten := filepath.Join(t.TempDir(), "people.parquet")
+	_, err = db.Exec(`COPY (SELECT * REPLACE (` + replace + `)
+		FROM read_parquet('` + filepath.Join(analyticsDir, identityindex.DatasetPeople, "*.parquet") + `'))
+		TO '` + rewritten + `' (FORMAT PARQUET)`)
+	require.NoError(err)
+	for _, file := range peopleFiles {
+		require.NoError(os.Remove(file))
+	}
+	data, err := os.ReadFile(rewritten)
+	require.NoError(err)
+	require.NoError(os.WriteFile(peopleFiles[0], data, 0o600))
+	state, err := ReadCacheSyncState(analyticsDir)
+	require.NoError(err)
+	state.DatasetFingerprint, err = CacheDatasetFingerprint(analyticsDir)
+	require.NoError(err)
+	stateData, err := json.Marshal(state)
+	require.NoError(err)
+	require.NoError(os.WriteFile(CacheStatePath(analyticsDir), stateData, 0o600))
 }
 
 // TestExploreCounterpartParticipantIDNilWhenOwnerUnknown verifies that when

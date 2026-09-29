@@ -160,7 +160,7 @@ func (e *DuckDBEngine) Explore(ctx context.Context, request ExploreRequest) (*Ex
 // own display name, the identity index's person label for its cluster when
 // that label is a real name, any named member of its identity cluster,
 // then the phone number or address. An index label marked partial_label is
-// a fallback ("Unknown person #N", or another member's number or address)
+// a fallback ("Unknown person", or another member's number or address)
 // and never outranks a named member or the participant's own number.
 // The lookup covers only the page's counterpart IDs.
 func (e *DuckDBEngine) labelExploreCounterparts(ctx context.Context, rows []EntryRow) error {

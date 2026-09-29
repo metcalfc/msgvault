@@ -241,7 +241,7 @@ func TestExploreGroupsParticipantLabelsUseDurableIdentityPrecedence(t *testing.T
 	alice := b.AddParticipant("alice@example.com", "example.com", "Alice Example")
 	phone := b.AddPhoneParticipant("+15551234567", "")
 	email := b.AddParticipant("email-only@example.net", "example.net", "")
-	stableID := b.AddParticipant("", "", "")
+	unnamed := b.AddParticipant("", "", "")
 
 	first := b.AddMessage(MessageOpt{SourceID: source, SenderID: &alice, Subject: "First"})
 	b.AddFrom(first, alice, "Alice alias")
@@ -252,8 +252,8 @@ func TestExploreGroupsParticipantLabelsUseDurableIdentityPrecedence(t *testing.T
 	b.AddTo(third, phone, "")
 	fourth := b.AddMessage(MessageOpt{SourceID: source, Subject: "Email"})
 	b.AddTo(fourth, email, "")
-	fifth := b.AddMessage(MessageOpt{SourceID: source, Subject: "Stable ID"})
-	b.AddTo(fifth, stableID, "")
+	fifth := b.AddMessage(MessageOpt{SourceID: source, Subject: "Unnamed"})
+	b.AddTo(fifth, unnamed, "")
 
 	result, err := b.BuildEngine().ExploreGroups(context.Background(), ExploreGroupRequest{
 		Explore: ExploreRequest{}, Dimension: "participant",
@@ -265,7 +265,7 @@ func TestExploreGroupsParticipantLabelsUseDurableIdentityPrecedence(t *testing.T
 		{Key: "1", Label: "Alice Example", Count: 2, LatestAt: result.Rows[0].LatestAt},
 		{Key: "2", Label: "+15551234567", Count: 1, LatestAt: result.Rows[1].LatestAt},
 		{Key: "3", Label: "email-only@example.net", Count: 1, LatestAt: result.Rows[2].LatestAt},
-		{Key: "4", Label: "Unknown person #4", Count: 1, LatestAt: result.Rows[3].LatestAt},
+		{Key: "4", Label: "Unknown person", Count: 1, LatestAt: result.Rows[3].LatestAt},
 	}, result.Rows)
 }
 

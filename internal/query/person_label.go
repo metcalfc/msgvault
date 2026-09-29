@@ -9,7 +9,7 @@ package query
 // display_name of the smallest-ID member wins, so linking an older unnamed
 // participant to a named alias never degrades the label to a bare identifier
 // or "Unknown person". The identifier fallback chain (phone → email → stored
-// identifier evidence → "Unknown person #id") applies only when no member of
+// identifier evidence → "Unknown person") applies only when no member of
 // the cluster is named.
 
 // sqlClusterBestNameExpr renders the deterministic best-name selection: a
@@ -25,14 +25,15 @@ func sqlClusterBestNameExpr(memberFilter string) string {
 
 // sqlPersonIdentifierFallbackExpr renders the identifier fallback chain for
 // one participants row (alias): phone → email → best stored identifier
-// evidence → "Unknown person #id". It deliberately excludes display_name;
+// evidence → "Unknown person". It never renders the participant ID, so
+// callers order unnamed rows by ID. It deliberately excludes display_name;
 // callers put a best-name expression (the participant's own name, or
 // sqlClusterBestNameExpr across its cluster) in front of it.
 func sqlPersonIdentifierFallbackExpr(alias string) string {
 	return "COALESCE(NULLIF(TRIM(" + alias + ".phone_number), ''), NULLIF(TRIM(" + alias + ".email_address), ''),\n" +
 		"        (SELECT COALESCE(NULLIF(TRIM(pi.display_value), ''), pi.identifier_value) FROM participant_identifiers pi\n" +
 		"         WHERE pi.participant_id = " + alias + ".id ORDER BY pi.is_primary DESC, pi.identifier_type, pi.identifier_value LIMIT 1),\n" +
-		"        'Unknown person #' || CAST(" + alias + ".id AS VARCHAR))"
+		"        'Unknown person')"
 }
 
 // sqlPersonDisplayLabelExpr orders observed names before identifier fallbacks.
