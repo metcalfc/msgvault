@@ -36,8 +36,8 @@ const (
 	DefaultMaxRequestBytes = 128 << 10
 	// DefaultMaxResponseBytes caps one response body.
 	DefaultMaxResponseBytes = 64 << 10
-	// MaxConcurrentRequests bounds fan-out inside AskAll.
-	MaxConcurrentRequests = 8
+	// DefaultMaxConcurrent bounds fan-out inside AskAll.
+	DefaultMaxConcurrent = 8
 )
 
 // QuestionType selects one of the three System One primitives.
@@ -142,22 +142,30 @@ type Options struct {
 	RequestTimeout   time.Duration
 	MaxRequestBytes  int
 	MaxResponseBytes int
+	// MaxConcurrent bounds AskAll fan-out; zero takes DefaultMaxConcurrent.
+	MaxConcurrent int
 }
 
 // Client sends bounded System One requests.
 type Client struct {
-	endpoint    string
-	model       string
-	key         string
-	client      *http.Client
-	budget      *Budget
-	ledger      Ledger
-	dayLimits   DayLimits
-	now         func() time.Time
-	timeout     time.Duration
-	maxRequest  int
-	maxResponse int
+	endpoint      string
+	model         string
+	key           string
+	client        *http.Client
+	budget        *Budget
+	ledger        Ledger
+	dayLimits     DayLimits
+	now           func() time.Time
+	timeout       time.Duration
+	maxRequest    int
+	maxResponse   int
+	maxConcurrent int
 }
+
+// errNotSent marks a request the client refused to dispatch because its
+// context was already done. Nothing left the process, so its reservations
+// are returned and it neither counts toward the breaker nor the ledger.
+var errNotSent = errors.New("jev request was not sent")
 
 // NewClient validates the options and builds a client. Construction performs
 // no I/O.
@@ -194,6 +202,10 @@ func NewClient(options Options) (*Client, error) {
 	if maxResponse <= 0 {
 		maxResponse = DefaultMaxResponseBytes
 	}
+	maxConcurrent := options.MaxConcurrent
+	if maxConcurrent <= 0 {
+		maxConcurrent = DefaultMaxConcurrent
+	}
 	now := options.Now
 	if now == nil {
 		now = time.Now
@@ -204,7 +216,7 @@ func NewClient(options Options) (*Client, error) {
 			return http.ErrUseLastResponse
 		}},
 		budget: options.Budget, ledger: options.Ledger, dayLimits: options.DayLimits, now: now,
-		timeout: timeout, maxRequest: maxRequest, maxResponse: maxResponse,
+		timeout: timeout, maxRequest: maxRequest, maxResponse: maxResponse, maxConcurrent: maxConcurrent,
 	}, nil
 }
 
@@ -225,6 +237,19 @@ func (c *Client) reserveDay(ctx context.Context, feature string) (string, error)
 		return "", err
 	}
 	return day, nil
+}
+
+// releaseDay returns a day reservation for a request that never left the
+// process.
+func (c *Client) releaseDay(ctx context.Context, feature, day string) {
+	if c.ledger == nil {
+		return
+	}
+	if err := c.ledger.ReleaseJevDayRequest(context.WithoutCancel(ctx), DayReservation{
+		Feature: feature, UTCDay: day, Limits: c.dayLimits,
+	}); err != nil {
+		slog.Warn("jev day reservation was not released", "feature", feature, "utc_day", day, "error", err.Error())
+	}
 }
 
 // recordDay persists what a completed request measured. A ledger write
@@ -343,6 +368,9 @@ func (c *Client) Ask(ctx context.Context, request Request) (Response, error) {
 	if err := c.budget.preflight(1); err != nil {
 		return emptyResponse(), err
 	}
+	if err := ctx.Err(); err != nil {
+		return emptyResponse(), err
+	}
 	// The in-process budget is reserved first: a breaker or cost stop must
 	// never touch the persisted day counters. A refused day reservation
 	// releases the in-process slot so neither count drifts.
@@ -355,6 +383,11 @@ func (c *Client) Ask(ctx context.Context, request Request) (Response, error) {
 		return emptyResponse(), err
 	}
 	response, err := c.send(ctx, request.Deadline, body, request.Questions)
+	if errors.Is(err, errNotSent) {
+		c.budget.release()
+		c.releaseDay(ctx, request.Feature, day)
+		return emptyResponse(), ctx.Err()
+	}
 	if err != nil {
 		c.budget.outcome(ctx, err)
 		c.recordDay(ctx, request.Feature, day, Usage{})
@@ -401,10 +434,15 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 		first = 1
 	}
 	group, groupCtx := errgroup.WithContext(ctx)
-	group.SetLimit(MaxConcurrentRequests)
+	group.SetLimit(c.maxConcurrent)
 	for i := first; i < len(bodies); i++ {
 		body := bodies[i]
 		group.Go(func() error {
+			// A sibling's failure cancels the group; a request that has not
+			// reserved anything yet must not start charging the day.
+			if err := groupCtx.Err(); err != nil {
+				return err
+			}
 			if err := c.budget.reserve(); err != nil {
 				return err
 			}
@@ -413,10 +451,15 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 				c.budget.release()
 				return err
 			}
+			response, err := c.send(groupCtx, requests[i].Deadline, body, requests[i].Questions)
+			if errors.Is(err, errNotSent) {
+				c.budget.release()
+				c.releaseDay(groupCtx, requests[i].Feature, day)
+				return groupCtx.Err()
+			}
 			mu.Lock()
 			result.Usage.Requests++
 			mu.Unlock()
-			response, err := c.send(groupCtx, requests[i].Deadline, body, requests[i].Questions)
 			if err != nil {
 				mu.Lock()
 				complete = false
@@ -491,6 +534,9 @@ func SafeFailure(err error) string {
 }
 
 func (c *Client) send(ctx context.Context, deadline time.Time, body []byte, questions []Question) (Response, error) {
+	if err := ctx.Err(); err != nil {
+		return Response{}, fmt.Errorf("%w: %w", errNotSent, err)
+	}
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	if !deadline.IsZero() {

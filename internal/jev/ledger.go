@@ -57,9 +57,11 @@ type DayCounters struct {
 }
 
 // Ledger persists daily request and cost counters so limits survive daemon
-// restarts. *store.Store implements it.
+// restarts. *store.Store implements it. ReleaseJevDayRequest returns a
+// reservation for a request the client never dispatched.
 type Ledger interface {
 	ReserveJevDayRequest(ctx context.Context, reservation DayReservation) error
+	ReleaseJevDayRequest(ctx context.Context, reservation DayReservation) error
 	RecordJevDayUsage(ctx context.Context, usage DayUsage) error
 	JevDayCounters(ctx context.Context, feature, utcDay string) (DayCounters, error)
 }

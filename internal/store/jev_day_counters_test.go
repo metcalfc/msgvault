@@ -43,6 +43,18 @@ func TestJevDayCountersReserveRecordAndCap(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(int64(2), counters.Requests, "a refused reservation does not count")
 
+	require.NoError(st.ReleaseJevDayRequest(ctx, reservation))
+	counters, err = st.JevDayCounters(ctx, "enrichment_identity", "2026-09-28")
+	require.NoError(err)
+	assert.Equal(int64(1), counters.Requests, "a released reservation frees the slot")
+	require.NoError(st.ReserveJevDayRequest(ctx, reservation), "the freed slot can be used again")
+	require.NoError(st.ReleaseJevDayRequest(ctx, jev.DayReservation{Feature: "never", UTCDay: "2026-09-28"}),
+		"releasing an unknown day is harmless")
+	require.NoError(st.ReleaseJevDayRequest(ctx, jev.DayReservation{Feature: "never", UTCDay: "2026-09-28"}))
+	never, err := st.JevDayCounters(ctx, "never", "2026-09-28")
+	require.NoError(err)
+	assert.Zero(never.Requests, "a day never goes below zero")
+
 	require.NoError(st.ReserveJevDayRequest(ctx, jev.DayReservation{
 		Feature: "enrichment_identity", UTCDay: "2026-09-29", Limits: limits,
 	}), "a new day starts fresh")

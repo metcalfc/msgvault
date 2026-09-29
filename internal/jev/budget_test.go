@@ -279,6 +279,7 @@ func TestBudgetUnknownUsageStopExpiresWithTheCooldown(t *testing.T) {
 type fakeLedger struct {
 	mu           sync.Mutex
 	reservations []DayReservation
+	released     []DayReservation
 	usage        []DayUsage
 	reserveErr   error
 	recordErr    error
@@ -289,6 +290,13 @@ func (l *fakeLedger) ReserveJevDayRequest(_ context.Context, reservation DayRese
 	defer l.mu.Unlock()
 	l.reservations = append(l.reservations, reservation)
 	return l.reserveErr
+}
+
+func (l *fakeLedger) ReleaseJevDayRequest(_ context.Context, reservation DayReservation) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.released = append(l.released, reservation)
+	return nil
 }
 
 func (l *fakeLedger) RecordJevDayUsage(_ context.Context, usage DayUsage) error {
@@ -380,6 +388,62 @@ func TestClientReservesTheProcessBudgetBeforeTheDay(t *testing.T) {
 	assert.Equal(1, budget.Attempts(), "a refused day reservation releases the in-process slot")
 	assert.Equal(1, budget.State().ConsecutiveFailures, "a refused day reservation is not a provider failure")
 	assert.Len(ledger.usage, 1, "nothing is recorded for a request that never left")
+}
+
+func TestAskAllSiblingFailureLeavesUnsentRequestsOffTheLedger(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ledger := &fakeLedger{}
+	var calls atomic.Int32
+	client, err := NewClient(Options{
+		APIKey: "k", Budget: &Budget{MaxRequests: 100, FailureThreshold: 10}, Ledger: ledger, MaxConcurrent: 1,
+		Transport: testTransport(func(*http.Request) (*http.Response, error) {
+			calls.Add(1)
+			return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: http.Header{"Content-Type": []string{"text/plain"}}, Body: http.NoBody}, nil
+		}),
+	})
+	require.NoError(err)
+	requests := make([]Request, 8)
+	for i := range requests {
+		requests[i] = noulRequest("matches")
+		requests[i].Feature = "enrichment_identity"
+	}
+	batch, err := client.AskAll(context.Background(), requests)
+	require.ErrorContains(err, "HTTP 503")
+	assert.Equal(int32(1), calls.Load(), "the first failure cancels the group before the next request reserves")
+	assert.Len(ledger.reservations, 1, "only the request that left the process charged the day")
+	assert.Empty(ledger.released)
+	assert.Equal(1, batch.Usage.Requests)
+	assert.Equal(1, client.BudgetState().Attempts, "unsent requests do not consume in-process attempts either")
+}
+
+func TestClientReleasesTheDayWhenTheContextIsDoneBeforeDispatch(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ledger := &fakeLedger{}
+	var calls atomic.Int32
+	client, err := NewClient(Options{
+		APIKey: "k", Budget: &Budget{MaxRequests: 100}, Ledger: ledger,
+		Transport: testTransport(func(*http.Request) (*http.Response, error) {
+			calls.Add(1)
+			return jsonResponse(measuredResponse), nil
+		}),
+	})
+	require.NoError(err)
+	request := noulRequest("matches")
+	request.Feature = "enrichment_identity"
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = client.Ask(ctx, request)
+	require.ErrorIs(err, context.Canceled)
+	assert.Zero(calls.Load())
+	assert.Empty(ledger.reservations, "a done context reserves nothing")
+	assert.Empty(ledger.usage)
+	assert.Zero(client.BudgetState().Attempts)
+
+	_, err = client.AskAll(ctx, []Request{request, request})
+	require.ErrorIs(err, context.Canceled)
+	assert.Empty(ledger.reservations)
 }
 
 func TestClientLedgerRecordsFailedRequestsWithoutUsage(t *testing.T) {

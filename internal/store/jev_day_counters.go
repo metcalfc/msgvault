@@ -58,6 +58,21 @@ func (s *Store) ReserveJevDayRequest(ctx context.Context, reservation jev.DayRes
 	})
 }
 
+// ReleaseJevDayRequest returns one reservation for a request that never left
+// the process. It never takes the day below zero.
+func (s *Store) ReleaseJevDayRequest(ctx context.Context, reservation jev.DayReservation) error {
+	if err := validateJevDay(reservation.Feature, reservation.UTCDay); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE jev_day_counters
+		SET requests = requests - 1
+		WHERE feature = ? AND utc_day = ? AND requests > 0`,
+		reservation.Feature, reservation.UTCDay); err != nil {
+		return fmt.Errorf("release jev day request: %w", err)
+	}
+	return nil
+}
+
 // RecordJevDayUsage adds a completed request's measured tokens and cost to
 // its day. Requests are counted at reservation, so only usage moves here.
 func (s *Store) RecordJevDayUsage(ctx context.Context, usage jev.DayUsage) error {
