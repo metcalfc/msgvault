@@ -39,13 +39,14 @@ describe('ContextBar date range', () => {
     const group = screen.getByRole('radiogroup', { name: 'Date range' });
     expect(screen.getByRole('radio', { name: 'All time' }).getAttribute('aria-checked')).toBe('true');
     expect(group.textContent).not.toContain('Custom range');
-    await fireEvent.click(screen.getByRole('radio', { name: 'This week' }));
+    await fireEvent.click(screen.getByRole('radio', { name: 'Last 7 days' }));
 
     const filters = onFiltersChange.mock.calls[0]![0] as ExploreFilter[];
     expect(filters.map((filter) => filter.dimension)).toEqual(['source', 'after', 'before']);
+    // Rolling window counting today: starts at local midnight six days ago.
     const after = new Date(filters[1]!.values[0]!).getTime();
-    expect(Date.now() - after).toBeGreaterThan(6.9 * 86_400_000);
-    expect(Date.now() - after).toBeLessThan(7.1 * 86_400_000);
+    expect(Date.now() - after).toBeGreaterThan(6 * 86_400_000);
+    expect(Date.now() - after).toBeLessThan(7 * 86_400_000);
     expect(filters[1]!.values[0]).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 

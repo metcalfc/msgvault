@@ -2,18 +2,23 @@ import { describe, expect, it } from 'vitest';
 
 import {
   activeDateRangePreset, dateInputBound, dateInputValue, dateRangeFilters, defaultEverythingFilters,
-  withDateBound, withDateRange
+  endOfLocalDay, presetStart, startOfLocalDay, withDateBound, withDateRange
 } from './date-range';
 
-const now = new Date('2026-09-29T15:00:00Z');
+// Local noon: an hour either way stays on the same local day in every zone.
+const now = new Date(2026, 8, 29, 12, 0, 0);
 
 describe('date range presets', () => {
-  it('writes after/before filter dimensions as RFC3339 instants', () => {
+  it('writes start-of-local-day windows as RFC3339 after/before filter dimensions', () => {
     const filters = dateRangeFilters('week', now);
     expect(filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
-    expect(filters[0]?.values).toEqual(['2026-09-22T15:00:00.000Z']);
-    expect(new Date(filters[1]!.values[0]!).getTime()).toBeGreaterThan(now.getTime());
-    expect(new Date(filters[1]!.values[0]!).getTime()).toBeLessThan(now.getTime() + 86_400_000);
+    // "Last 7 days" counts today: the window starts six local days ago at midnight.
+    const expectedStart = startOfLocalDay(new Date(2026, 8, 23, 12));
+    expect(filters[0]?.values).toEqual([expectedStart.toISOString()]);
+    expect(presetStart('week', now).getTime()).toBe(expectedStart.getTime());
+    expect(presetStart('month', now).getTime()).toBe(startOfLocalDay(new Date(2026, 7, 31, 12)).getTime());
+    expect(filters[1]?.values).toEqual([endOfLocalDay(now).toISOString()]);
+    expect(filters[0]!.values[0]).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(dateRangeFilters('all', now)).toEqual([]);
     expect(defaultEverythingFilters(now)).toEqual(dateRangeFilters('week', now));
   });
@@ -25,16 +30,18 @@ describe('date range presets', () => {
     );
     expect(filters[0]).toEqual({ dimension: 'source', values: ['2'] });
     expect(filters.map((filter) => filter.dimension)).toEqual(['source', 'after', 'before']);
-    expect(filters[1]?.values).toEqual(['2026-08-30T15:00:00.000Z']);
+    expect(filters[1]?.values).toEqual([presetStart('month', now).toISOString()]);
     expect(withDateRange(filters, 'all', now)).toEqual([{ dimension: 'source', values: ['2'] }]);
   });
 
-  it('recognizes which preset the current bounds amount to', () => {
+  it('recognizes a preset only by an exact match of both bounds for today', () => {
     expect(activeDateRangePreset([], now)).toBe('all');
     expect(activeDateRangePreset(dateRangeFilters('week', now), now)).toBe('week');
     expect(activeDateRangePreset(dateRangeFilters('month', now), now)).toBe('month');
-    // Set earlier in the session, the preset still reads as itself.
+    // The same local day reads the same at any hour; an earlier day is custom.
     expect(activeDateRangePreset(dateRangeFilters('week', new Date(now.getTime() - 3_600_000)), now)).toBe('week');
+    expect(activeDateRangePreset(dateRangeFilters('week', new Date(now.getTime() - 86_400_000)), now)).toBe('custom');
+    expect(activeDateRangePreset(dateRangeFilters('week', now).slice(0, 1), now)).toBe('custom');
     expect(activeDateRangePreset([{ dimension: 'after', values: ['2020-01-01T00:00:00Z'] }], now)).toBe('custom');
     expect(activeDateRangePreset([{ dimension: 'before', values: ['2020-01-01T00:00:00Z'] }], now)).toBe('custom');
     expect(activeDateRangePreset([{ dimension: 'after', values: ['not a date'] }], now)).toBe('custom');

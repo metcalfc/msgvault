@@ -1415,9 +1415,10 @@ describe('Everything date default', () => {
     state.commitWorkspace('everything');
     const dimensions = state.current.filters.map((filter) => filter.dimension);
     expect(dimensions).toEqual(['after', 'before']);
+    // "Last 7 days" counting today: starts at local midnight six days ago.
     const after = new Date(state.current.filters[0]!.values[0]!).getTime();
-    expect(Date.now() - after).toBeGreaterThan(6.9 * 86_400_000);
-    expect(Date.now() - after).toBeLessThan(7.1 * 86_400_000);
+    expect(Date.now() - after).toBeGreaterThan(6 * 86_400_000);
+    expect(Date.now() - after).toBeLessThan(7 * 86_400_000);
     expect(state.predicate().filters).toEqual(state.current.filters);
 
     // "All time" clears the bounds; re-entering Everything must not restore them.

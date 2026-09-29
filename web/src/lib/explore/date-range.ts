@@ -6,13 +6,16 @@ import type { ExploreFilter } from './models';
 export type DateRangePreset = 'week' | 'month' | 'all';
 export type DateDimension = 'after' | 'before';
 
+/** Rolling windows, so the chips say so. */
 export const DATE_RANGE_PRESETS: ReadonlyArray<{ value: DateRangePreset; label: string }> = [
-  { value: 'week', label: 'This week' },
-  { value: 'month', label: 'This month' },
+  { value: 'week', label: 'Last 7 days' },
+  { value: 'month', label: 'Last 30 days' },
   { value: 'all', label: 'All time' }
 ];
 
 const DAY_MS = 86_400_000;
+/** "Last N days" counts today, like kit-ui's DateRangePicker: the window
+ * starts at the start of the local day N−1 days ago. */
 const PRESET_DAYS: Record<Exclude<DateRangePreset, 'all'>, number> = { week: 7, month: 30 };
 
 export function isDateDimension(dimension: string): dimension is DateDimension {
@@ -48,10 +51,18 @@ export function withoutDateRange(filters: readonly ExploreFilter[]): ExploreFilt
   return filters.filter((filter) => !isDateDimension(filter.dimension));
 }
 
+/** The first instant of a preset's window: the start of the local day
+ * N−1 days before `now`. */
+export function presetStart(preset: Exclude<DateRangePreset, 'all'>, now: Date = new Date()): Date {
+  const start = startOfLocalDay(now);
+  start.setDate(start.getDate() - (PRESET_DAYS[preset] - 1));
+  return start;
+}
+
 export function dateRangeFilters(preset: DateRangePreset, now: Date = new Date()): ExploreFilter[] {
   if (preset === 'all') return [];
   return [
-    { dimension: 'after', values: [new Date(now.getTime() - PRESET_DAYS[preset] * DAY_MS).toISOString()] },
+    { dimension: 'after', values: [presetStart(preset, now).toISOString()] },
     { dimension: 'before', values: [endOfLocalDay(now).toISOString()] }
   ];
 }
@@ -60,23 +71,16 @@ export function withDateRange(filters: readonly ExploreFilter[], preset: DateRan
   return [...withoutDateRange(filters), ...dateRangeFilters(preset, now)];
 }
 
-/** Which preset the current bounds amount to, or 'custom' when the bounds
- * were set by hand (or a preset has aged out of tolerance). */
+/** Which preset the current bounds are, by exact match against the
+ * preset's bounds for today's local day, or 'custom' for anything else
+ * (hand-set bounds, or a preset set on an earlier day). */
 export function activeDateRangePreset(filters: readonly ExploreFilter[], now: Date = new Date()): DateRangePreset | 'custom' {
   const after = dateBound(filters, 'after');
   const before = dateBound(filters, 'before');
   if (!after && !before) return 'all';
-  if (!after) return 'custom';
-  const afterAt = new Date(after).getTime();
-  const beforeAt = before ? new Date(before).getTime() : undefined;
-  if (Number.isNaN(afterAt) || (beforeAt !== undefined && Number.isNaN(beforeAt))) return 'custom';
-  // A preset's `before` bound is the end of the day it was set on: accept
-  // anything from a day ago to two days out so a bound set earlier in the
-  // session still reads as the preset.
-  if (beforeAt !== undefined && (beforeAt < now.getTime() - DAY_MS || beforeAt > now.getTime() + 2 * DAY_MS)) return 'custom';
-  const ageDays = (now.getTime() - afterAt) / DAY_MS;
   for (const preset of ['week', 'month'] as const) {
-    if (Math.abs(ageDays - PRESET_DAYS[preset]) <= 0.5) return preset;
+    const [expectedAfter, expectedBefore] = dateRangeFilters(preset, now);
+    if (after === expectedAfter!.values[0] && before === expectedBefore!.values[0]) return preset;
   }
   return 'custom';
 }
