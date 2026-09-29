@@ -3,7 +3,9 @@ package jev
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -928,4 +930,82 @@ func TestBudgetStaleSuccessDoesNotResetFailuresOfANewerOpening(t *testing.T) {
 	_, err = budget.reserve()
 	require.ErrorIs(err, ErrBreakerOpen, "the breaker stays open for its cool-down")
 	require.Equal(1, budget.State().ConsecutiveFailures)
+}
+
+// slowReserveLedger holds every day reservation for a while, so a request
+// deadline can pass between reserving and sending.
+type slowReserveLedger struct {
+	fakeLedger
+	delay time.Duration
+}
+
+func (l *slowReserveLedger) ReserveJevDayRequest(ctx context.Context, reservation DayReservation) error {
+	time.Sleep(l.delay)
+	return l.fakeLedger.ReserveJevDayRequest(ctx, reservation)
+}
+
+// TestClientExpiredDeadlineReservesNothing: a request whose own deadline has
+// already passed cannot leave the process, so it must not consume in-process
+// or persisted day capacity.
+func TestClientExpiredDeadlineReservesNothing(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ledger := &fakeLedger{}
+	var calls atomic.Int32
+	client, err := NewClient(Options{
+		APIKey: "k", Budget: &Budget{MaxRequests: 10}, Ledger: ledger,
+		Transport: testTransport(func(request *http.Request) (*http.Response, error) {
+			calls.Add(1)
+			if err := request.Context().Err(); err != nil {
+				return nil, err
+			}
+			return jsonResponse(measuredResponse), nil
+		}),
+	})
+	require.NoError(err)
+	request := noulRequest("matches")
+	request.Feature = "enrichment_identity"
+	request.Deadline = time.Now().Add(-time.Second)
+	_, err = client.Ask(context.Background(), request)
+	require.ErrorIs(err, context.DeadlineExceeded)
+	assert.Zero(calls.Load(), "nothing is handed to the transport")
+	assert.Empty(ledger.reservations, "no day capacity is consumed")
+	assert.Empty(ledger.usage)
+	assert.Zero(client.BudgetState().Attempts)
+	assert.Zero(client.BudgetState().InFlight)
+}
+
+// TestClientDeadlineThatPassesBeforeDialReleasesBothReservations: the
+// deadline passes after both reservations but before the real transport dials,
+// so no byte leaves the process and both reservations are returned.
+func TestClientDeadlineThatPassesBeforeDialReleasesBothReservations(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var received atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		received.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, measuredResponse)
+	}))
+	t.Cleanup(server.Close)
+	ledger := &slowReserveLedger{delay: 100 * time.Millisecond}
+	budget := &Budget{MaxRequests: 10, FailureThreshold: 1}
+	client, err := NewClient(Options{
+		APIKey: "k", Budget: budget, Ledger: ledger, Endpoint: server.URL,
+	})
+	require.NoError(err)
+	request := noulRequest("matches")
+	request.Feature = "enrichment_identity"
+	request.Deadline = time.Now().Add(20 * time.Millisecond)
+	_, err = client.Ask(context.Background(), request)
+	require.ErrorIs(err, context.DeadlineExceeded)
+	assert.Zero(received.Load(), "the provider saw nothing")
+	ledger.mu.Lock()
+	defer ledger.mu.Unlock()
+	assert.Len(ledger.reservations, 1)
+	assert.Len(ledger.released, 1, "the day reservation is returned")
+	assert.Empty(ledger.usage)
+	assert.Zero(budget.State().Attempts, "the in-process attempt is returned")
+	assert.Zero(budget.State().ConsecutiveFailures)
+	assert.Zero(budget.State().InFlight)
 }

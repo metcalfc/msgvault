@@ -17,8 +17,10 @@ import (
 	"math"
 	"mime"
 	"net/http"
+	"net/http/httptrace"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -167,9 +169,10 @@ type Client struct {
 	outputUSDPerM float64
 }
 
-// errNotSent marks a request the client refused to dispatch because its
-// context was already done. Nothing left the process, so its reservations
-// are returned and it neither counts toward the breaker nor the ledger.
+// errNotSent marks a request that never left the process: its context or
+// deadline was done before dispatch, or the transport gave up on a context
+// error before writing any of it. Its reservations are returned and it
+// neither counts toward the breaker nor the ledger.
 var errNotSent = errors.New("jev request was not sent")
 
 // NewClient validates the options and builds a client. Construction performs
@@ -395,6 +398,11 @@ func (c *Client) dispatch(ctx context.Context, request Request, body []byte) (Re
 	if err := ctx.Err(); err != nil {
 		return Response{}, false, err
 	}
+	if !request.Deadline.IsZero() && time.Until(request.Deadline) <= 0 {
+		// The request's own deadline already passed: send could only fail
+		// without egress, so reserve nothing.
+		return Response{}, false, context.DeadlineExceeded
+	}
 	admitted, err := c.budget.reserve()
 	if err != nil {
 		return Response{}, false, err
@@ -409,7 +417,7 @@ func (c *Client) dispatch(ctx context.Context, request Request, body []byte) (Re
 	if errors.Is(err, errNotSent) {
 		c.budget.release(admitted)
 		c.releaseDay(ctx, request.Feature, day)
-		return Response{}, false, ctx.Err()
+		return Response{}, false, err
 	}
 	if err != nil {
 		c.budget.outcome(ctx, admitted, err, c.callerBound(request.Deadline, started))
@@ -547,16 +555,27 @@ func (c *Client) send(ctx context.Context, deadline time.Time, body []byte, ques
 		ctx, cancelDeadline = context.WithDeadline(ctx, deadline)
 		defer cancelDeadline()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+	// egress records whether any part of the request may have left the
+	// process: the transport wrote the headers or read the body.
+	var egress atomic.Bool
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		WroteHeaders: func() { egress.Store(true) },
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint,
+		&egressReader{reader: bytes.NewReader(body), egress: &egress})
 	if err != nil {
 		return Response{}, errors.New("construct Jev request")
 	}
+	req.ContentLength = int64(len(body))
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.key)
 	response, err := c.client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
+			if !egress.Load() {
+				return Response{}, fmt.Errorf("%w: %w", errNotSent, ctx.Err())
+			}
 			return Response{}, ctx.Err()
 		}
 		return Response{}, errors.New("provider request failed")
@@ -581,6 +600,17 @@ func (c *Client) send(ctx context.Context, deadline time.Time, body []byte, ques
 		return Response{}, fmt.Errorf("%w: response exceeds %d bytes", ErrInvalidResponse, c.maxResponse)
 	}
 	return c.Decode(body, questions)
+}
+
+// egressReader marks egress on the first read of the request body.
+type egressReader struct {
+	reader io.Reader
+	egress *atomic.Bool
+}
+
+func (r *egressReader) Read(p []byte) (int, error) {
+	r.egress.Store(true)
+	return r.reader.Read(p)
 }
 
 // Decode validates a response body against the questions that were sent.
