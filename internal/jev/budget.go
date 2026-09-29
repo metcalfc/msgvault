@@ -23,8 +23,9 @@ var ErrBreakerOpen = errors.New("provider circuit breaker open")
 //
 // Prices are USD per million tokens. When both are zero the budget counts
 // requests only: the cost stop is not consulted and missing provider usage is
-// tolerated. When a price is set, a response without usage makes the spend
-// unknowable and the budget stops until the process restarts.
+// tolerated. When a price is set, the measured spend is accounted per UTC day
+// and StopUSD caps that day; a response without usage makes the day's spend
+// unknowable and pauses requests for one cool-down, like a failure would.
 type Budget struct {
 	mu            sync.Mutex
 	MaxRequests   int
@@ -38,21 +39,22 @@ type Budget struct {
 	Now              func() time.Time
 	attempts         int
 	cost             float64
-	unknown          bool
-	stopped          bool
+	costDay          string
+	unknownUntil     time.Time
 	failures         int
 	openUntil        time.Time
 	probing          bool
 }
 
 // BudgetState is a snapshot for status output and logs. It carries no
-// request content.
+// request content. CostUSD and CostStopped describe the current UTC day.
 type BudgetState struct {
 	Attempts            int       `json:"attempts"`
 	CostUSD             float64   `json:"cost_usd"`
+	CostDay             string    `json:"cost_day,omitzero"`
 	ConsecutiveFailures int       `json:"consecutive_failures"`
 	OpenUntil           time.Time `json:"open_until,omitzero"`
-	UsageUnknown        bool      `json:"usage_unknown"`
+	UsageUnknownUntil   time.Time `json:"usage_unknown_until,omitzero"`
 	CostStopped         bool      `json:"cost_stopped"`
 }
 
@@ -63,10 +65,11 @@ func (b *Budget) Attempts() int {
 	return b.attempts
 }
 
-// CostUSD reports the measured spend so far.
+// CostUSD reports the measured spend for the current UTC day.
 func (b *Budget) CostUSD() float64 {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.rollDay()
 	return b.cost
 }
 
@@ -74,10 +77,29 @@ func (b *Budget) CostUSD() float64 {
 func (b *Budget) State() BudgetState {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.rollDay()
 	return BudgetState{
-		Attempts: b.attempts, CostUSD: b.cost, ConsecutiveFailures: b.failures,
-		OpenUntil: b.openUntil, UsageUnknown: b.unknown, CostStopped: b.stopped,
+		Attempts: b.attempts, CostUSD: b.cost, CostDay: b.costDay, ConsecutiveFailures: b.failures,
+		OpenUntil: b.openUntil, UsageUnknownUntil: b.unknownUntil, CostStopped: b.costStopped(),
 	}
+}
+
+// rollDay forgets the previous day's spend once the UTC day changes, so a
+// long-running process is capped per day rather than for its lifetime. The
+// caller holds the lock.
+func (b *Budget) rollDay() {
+	day := UTCDay(b.now())
+	if b.costDay == day {
+		return
+	}
+	b.costDay = day
+	b.cost = 0
+}
+
+// costStopped reports whether the current day's measured spend reached the
+// cap. A zero StopUSD means no cost cap. The caller holds the lock.
+func (b *Budget) costStopped() bool {
+	return b.priced() && b.StopUSD > 0 && b.cost >= b.StopUSD
 }
 
 func (b *Budget) now() time.Time {
@@ -108,16 +130,17 @@ func (b *Budget) priced() bool {
 // blocked reports the first reason no request may start. The caller holds
 // the lock.
 func (b *Budget) blocked() error {
+	now := b.now()
 	if !b.openUntil.IsZero() {
-		if b.now().Before(b.openUntil) || b.probing {
+		if now.Before(b.openUntil) || b.probing {
 			return ErrBreakerOpen
 		}
 	}
-	if b.unknown {
+	if !b.unknownUntil.IsZero() && now.Before(b.unknownUntil) {
 		return ErrUsageUnknown
 	}
-	if b.priced() && (b.stopped || b.cost >= b.StopUSD) {
-		b.stopped = true
+	b.rollDay()
+	if b.costStopped() {
 		return ErrCostStop
 	}
 	return nil
@@ -149,23 +172,35 @@ func (b *Budget) preflight(requests int) error {
 	return b.blocked()
 }
 
+// release returns a reservation that never left the process, so a refused
+// day reservation does not consume an in-process attempt or a probe.
+func (b *Budget) release() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.attempts > 0 {
+		b.attempts--
+	}
+	b.probing = false
+}
+
 func (b *Budget) record(usage Usage) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.failures = 0
 	b.openUntil = time.Time{}
 	b.probing = false
+	b.unknownUntil = time.Time{}
 	if usage.InputTokens == nil || usage.OutputTokens == nil {
 		if b.priced() {
-			b.unknown = true
+			// The day's spend is now unknowable; pause for one cool-down
+			// rather than for the life of the process.
+			b.unknownUntil = b.now().Add(b.cooldown())
 		}
 		return
 	}
+	b.rollDay()
 	b.cost += float64(*usage.InputTokens)*b.InputUSDPerM/1e6 +
 		float64(*usage.OutputTokens)*b.OutputUSDPerM/1e6
-	if b.priced() && b.cost >= b.StopUSD {
-		b.stopped = true
-	}
 }
 
 func (b *Budget) fail() {

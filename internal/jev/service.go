@@ -266,9 +266,9 @@ func (s *Service) clientFor(cfg Config, key string) (*Client, error) {
 	s.options.Budget.mu.Lock()
 	s.options.Budget.InputUSDPerM = cfg.InputUSDPerMillionTokens
 	s.options.Budget.OutputUSDPerM = cfg.OutputUSDPerMillionTokens
-	if s.options.Budget.StopUSD <= 0 {
-		s.options.Budget.StopUSD = cfg.MaxCostUSDPerDay
-	}
+	// The in-process cost stop mirrors the daily cap: the budget accounts
+	// spend per UTC day, so a long-running daemon is never disabled for good.
+	s.options.Budget.StopUSD = cfg.MaxCostUSDPerDay
 	s.options.Budget.mu.Unlock()
 	client, err := NewClient(Options{
 		Endpoint: cfg.Endpoint, Model: cfg.Model, APIKey: key, Transport: s.options.Transport,

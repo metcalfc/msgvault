@@ -101,9 +101,72 @@ func TestBudgetWithoutPricesCountsRequestsOnly(t *testing.T) {
 	_, err = client.Ask(context.Background(), noulRequest("matches"))
 	require.ErrorIs(err, ErrRequestLimit)
 	state := budget.State()
-	assert.False(state.UsageUnknown)
+	assert.True(state.UsageUnknownUntil.IsZero())
 	assert.False(state.CostStopped)
 	assert.Zero(state.CostUSD)
+}
+
+func TestBudgetCostAccountingResetsEachUTCDay(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 9, 28, 23, 0, 0, 0, time.UTC)
+	// Each measured response costs 100 in + 10 out at 1 USD/M each = 0.00011 USD.
+	budget := &Budget{MaxRequests: 100, StopUSD: 0.0002, InputUSDPerM: 1, OutputUSDPerM: 1, Now: func() time.Time { return now }}
+	client := newTestClient(t, budget, func(*http.Request) (*http.Response, error) {
+		return jsonResponse(measuredResponse), nil
+	})
+	_, err := client.Ask(context.Background(), noulRequest("matches"))
+	require.NoError(err)
+	_, err = client.Ask(context.Background(), noulRequest("matches"))
+	require.NoError(err)
+	_, err = client.Ask(context.Background(), noulRequest("matches"))
+	require.ErrorIs(err, ErrCostStop, "two responses reach the day's cap")
+	assert.True(budget.State().CostStopped)
+
+	now = now.Add(2 * time.Hour) // 01:00 the next UTC day
+	_, err = client.Ask(context.Background(), noulRequest("matches"))
+	require.NoError(err, "a new UTC day starts a new cost account")
+	state := budget.State()
+	assert.Equal("2026-09-29", state.CostDay)
+	assert.InDelta(0.00011, state.CostUSD, 1e-9)
+	assert.False(state.CostStopped)
+
+	uncapped := &Budget{MaxRequests: 100, InputUSDPerM: 1, OutputUSDPerM: 1, Now: func() time.Time { return now }}
+	free := newTestClient(t, uncapped, func(*http.Request) (*http.Response, error) {
+		return jsonResponse(measuredResponse), nil
+	})
+	for range 3 {
+		_, err = free.Ask(context.Background(), noulRequest("matches"))
+		require.NoError(err, "a zero StopUSD is no cap, even when priced")
+	}
+}
+
+func TestBudgetUnknownUsageStopExpiresWithTheCooldown(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	budget := &Budget{MaxRequests: 100, StopUSD: 1, InputUSDPerM: 1, Cooldown: time.Minute, Now: func() time.Time { return now }}
+	var withUsage atomic.Bool
+	var calls atomic.Int32
+	client := newTestClient(t, budget, func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		if withUsage.Load() {
+			return jsonResponse(measuredResponse), nil
+		}
+		return jsonResponse(`{"model":"jev-1.13.0","answers":{"matches":{"type":"noul","noul":0.5}}}`), nil
+	})
+	_, err := client.Ask(context.Background(), noulRequest("matches"))
+	require.NoError(err)
+	_, err = client.Ask(context.Background(), noulRequest("matches"))
+	require.ErrorIs(err, ErrUsageUnknown, "unknowable spend pauses a priced budget")
+	assert.Equal(now.Add(time.Minute), budget.State().UsageUnknownUntil)
+	assert.Equal(int32(1), calls.Load())
+
+	now = now.Add(61 * time.Second)
+	withUsage.Store(true)
+	_, err = client.Ask(context.Background(), noulRequest("matches"))
+	require.NoError(err, "the pause expires with the cool-down instead of lasting the process lifetime")
+	assert.True(budget.State().UsageUnknownUntil.IsZero(), "a measured response clears the pause")
 }
 
 type fakeLedger struct {
