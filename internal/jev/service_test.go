@@ -292,3 +292,51 @@ func TestSafeAnswersAndQuestionText(t *testing.T) {
 	assert.Equal("plain text", QuestionText("plain text"))
 	assert.JSONEq(`{"focus":"names","question":"Same?"}`, QuestionText(map[string]any{"question": "Same?", "focus": "names"}))
 }
+
+// TestServiceRebindingPricesDoesNotRaceInFlightLedgerWrites runs judgments
+// concurrently while the configured prices alternate, which makes the
+// service rebind the shared budget's prices under its lock on almost every
+// call. Under -race, a client that read those prices unlocked to price its
+// ledger write fails here. Each recorded cost must match one price whole.
+func TestServiceRebindingPricesDoesNotRaceInFlightLedgerWrites(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	server, _ := newFakeJev(t, `{"model":"jev-1.13.0","answers":{"same":{"type":"noul","noul":0.5}},"usage":{"input_tokens":100,"output_tokens":10}}`)
+	base := serviceConfig(server.URL)
+	spec := testSpec()
+	policy, err := spec.Policy(base)
+	require.NoError(err)
+	var calls atomic.Int64
+	ledger := &fakeLedger{}
+	service, err := NewService(ServiceOptions{
+		Config: func() (Config, error) {
+			cfg := base
+			if calls.Add(1)%2 == 0 {
+				cfg.InputUSDPerMillionTokens, cfg.OutputUSDPerMillionTokens = 1, 1
+			} else {
+				cfg.InputUSDPerMillionTokens, cfg.OutputUSDPerMillionTokens = 2, 4
+			}
+			return cfg, nil
+		},
+		Consents:   &fakeConsents{active: map[string]string{FeatureEnrichmentIdentity: policy.Fingerprint}},
+		Credential: func(string, string) (string, bool, error) { return "k", true, nil },
+		Ledger:     ledger,
+	})
+	require.NoError(err)
+	var group sync.WaitGroup
+	for range 16 {
+		group.Go(func() {
+			for range 4 {
+				_, judgeErr := service.Judge(context.Background(), spec, false, map[string]any{"left": "a", "right": "b"}, time.Time{})
+				assert.NoError(judgeErr)
+			}
+		})
+	}
+	group.Wait()
+	ledger.mu.Lock()
+	defer ledger.mu.Unlock()
+	require.Len(ledger.usage, 64)
+	for _, usage := range ledger.usage {
+		assert.Contains([]int64{110, 240}, usage.CostUSDMicros, "each request is priced by exactly one binding")
+	}
+}

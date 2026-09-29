@@ -160,6 +160,11 @@ type Client struct {
 	maxRequest    int
 	maxResponse   int
 	maxConcurrent int
+	// inputUSDPerM and outputUSDPerM are the budget's prices when the client
+	// was built. The day ledger prices each request with them rather than
+	// reading the shared budget unlocked while a service rebinds it.
+	inputUSDPerM  float64
+	outputUSDPerM float64
 }
 
 // errNotSent marks a request the client refused to dispatch because its
@@ -210,6 +215,7 @@ func NewClient(options Options) (*Client, error) {
 	if now == nil {
 		now = time.Now
 	}
+	inputUSDPerM, outputUSDPerM := options.Budget.prices()
 	return &Client{
 		endpoint: endpoint, model: model, key: options.APIKey,
 		client: &http.Client{Transport: options.Transport, CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -217,6 +223,7 @@ func NewClient(options Options) (*Client, error) {
 		}},
 		budget: options.Budget, ledger: options.Ledger, dayLimits: options.DayLimits, now: now,
 		timeout: timeout, maxRequest: maxRequest, maxResponse: maxResponse, maxConcurrent: maxConcurrent,
+		inputUSDPerM: inputUSDPerM, outputUSDPerM: outputUSDPerM,
 	}, nil
 }
 
@@ -272,7 +279,7 @@ func (c *Client) recordDay(ctx context.Context, feature, day string, usage Usage
 		record.InputTokens = *usage.InputTokens
 		record.OutputTokens = *usage.OutputTokens
 		record.CostUSDMicros = CostUSDMicros(record.InputTokens, record.OutputTokens,
-			c.budget.InputUSDPerM, c.budget.OutputUSDPerM)
+			c.inputUSDPerM, c.outputUSDPerM)
 	}
 	if err := c.ledger.RecordJevDayUsage(context.WithoutCancel(ctx), record); err != nil {
 		slog.Warn("jev day usage was not recorded", "feature", feature, "utc_day", day, "error", err.Error())

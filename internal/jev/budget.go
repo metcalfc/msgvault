@@ -123,6 +123,14 @@ func (b *Budget) cooldown() time.Duration {
 	return DefaultCooldown
 }
 
+// prices reads the token prices under the lock, for a client snapshotting
+// them while a service may be rebinding the shared budget.
+func (b *Budget) prices() (inputUSDPerM, outputUSDPerM float64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.InputUSDPerM, b.OutputUSDPerM
+}
+
 func (b *Budget) priced() bool {
 	return b.InputUSDPerM > 0 || b.OutputUSDPerM > 0
 }
