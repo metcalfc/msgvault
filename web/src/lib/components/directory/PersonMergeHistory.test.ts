@@ -90,12 +90,17 @@ function summary(mergeDetail: MergeDetail) {
 
 const syntheticNames: Record<string, Record<number, string>> = {
   person: { 7: 'Avery Survivor', 9: 'Blair Absorbed', 12: 'Casey Current', 19: 'Drew Restored' },
-  participant: { 701: 'avery@example.com', 702: 'blair@example.org' },
+  participant: { 701: 'Avery Survivor', 702: 'Avery Survivor' },
 };
+
+// Both participants belong to one person: their labels repeat, their identities differ.
+const syntheticIdentities: Record<number, string> = { 701: 'Avery S · avery@example.com', 702: 'avery.home@example.org' };
 
 function labelsResponse(url: URL): Response {
   const answer = (kind: string) =>
-    url.searchParams.getAll(kind).map(Number).filter((id) => syntheticNames[kind]?.[id]).map((id) => ({ id, label: syntheticNames[kind][id] }));
+    url.searchParams.getAll(kind).map(Number).filter((id) => syntheticNames[kind]?.[id]).map((id) => ({
+      id, label: syntheticNames[kind][id], ...(kind === 'participant' ? { identity: syntheticIdentities[id] } : {}),
+    }));
   return Response.json({ people: answer('person'), participants: answer('participant'), organizations: [] });
 }
 
@@ -158,10 +163,10 @@ describe('PersonMergeHistory', () => {
     await fireEvent.click(within(history).getByRole('button', { name: 'Inspect merge 41' }));
 
     const participants = await screen.findByRole('table', { name: 'Merge participants' });
-    await waitFor(() => expect(within(participants).getByText('avery@example.com')).toBeDefined());
-    expect(within(participants).getByText('blair@example.org')).toBeDefined();
+    await waitFor(() => expect(within(participants).getByText('Avery S · avery@example.com')).toBeDefined());
+    expect(within(participants).getByText('avery.home@example.org')).toBeDefined();
     const rows = screen.getByRole('table', { name: 'Merge row dispositions' });
-    expect(within(rows).getByText('avery@example.com')).toBeDefined();
+    expect(within(rows).getByText('Avery S · avery@example.com')).toBeDefined();
     const splits = screen.getByRole('table', { name: 'Prior splits' });
     await waitFor(() => expect(within(splits).getByText('Drew Restored')).toBeDefined());
     expect(within(splits).getByText('Casey Current')).toBeDefined();

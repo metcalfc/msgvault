@@ -28,7 +28,7 @@ export function endpointLabel(
   if (address) return address;
   if (summary && !summary.found) return `${endpointRole(kind)} (removed)`;
   if (kind === 'person') return names.label('person', id);
-  if (kind === 'participant') return names.label('participant', id);
+  if (kind === 'participant') return names.identity(id);
   const personName = summary?.person_display_name?.trim();
   if (personName) return personName;
   return endpointRole(kind);

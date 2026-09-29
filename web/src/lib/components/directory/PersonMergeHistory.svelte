@@ -65,8 +65,10 @@
     return id ? names.label('person', id) : 'None';
   }
 
+  // Merge participants are identities of the same people, so each reads as
+  // its own name and address rather than the person it belongs to.
   function participantName(id: number | undefined): string {
-    return id ? names.label('participant', id) : 'None';
+    return id ? names.identity(id) : 'None';
   }
 
   onMount(() => void controller.loadHistory());

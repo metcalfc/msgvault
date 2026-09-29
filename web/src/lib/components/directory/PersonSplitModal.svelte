@@ -22,7 +22,7 @@
     : 'current source profile');
   const selectionLabel = $derived(controller.isZeroParticipantLineage
     ? 'the zero-participant lineage'
-    : controller.selectedParticipantIDs.map((id) => names.label('participant', id)).join(', ') || 'the selected lineage');
+    : controller.selectedParticipantIDs.map((id) => names.identity(id)).join(', ') || 'the selected lineage');
   const confirmationLabel = $derived(`I confirm splitting ${selectionLabel} from ${sourceName}.`);
   const committed = $derived(controller.committedResult?.result ?? null);
   const partial = $derived(!!committed && (!committed.exact_reversal ||
@@ -130,7 +130,7 @@
           {#each controller.eligibleParticipantIDs as participantID}
             <Checkbox
               checked={controller.selectedParticipantIDs.includes(participantID)}
-              label={names.label('participant', participantID)}
+              label={names.identity(participantID)}
               disabled={controller.splitBusy}
               onchange={(checked) => controller.setParticipantSelected(participantID, checked)}
             />

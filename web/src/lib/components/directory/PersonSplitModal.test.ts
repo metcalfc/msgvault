@@ -120,6 +120,45 @@ function result(exactReversal: boolean) {
 }
 
 describe('PersonSplitModal', () => {
+  it('lists each identity of one person by its own name and address', async () => {
+    const participants = [701, 702, 703].map((id) => ({ merge_id: 41, participant_id: id, origin_side: 'absorbed' }));
+    const detail = mergeDetail(participants);
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      if (path === '/api/v1/person-merges/41') return Response.json(detail);
+      if (path === '/api/v1/entity-labels') {
+        return Response.json({
+          people: [],
+          participants: [
+            { id: 701, label: 'Avery Example', identity: 'Avery E · avery@example.com' },
+            { id: 702, label: 'Avery Example', identity: 'avery.home@example.org' },
+            { id: 703, label: 'Avery Example', identity: 'Avery Mobile · +15550100003' },
+          ],
+          organizations: [],
+        });
+      }
+      return Response.json(
+        { ...(await sourceResponse().json()), participant_ids: [701, 702, 703] },
+        { headers: { ETag: '"person-12-r4"' } },
+      );
+    });
+    const client = createAPIClient(fetchFn);
+    const controller = new PersonMergeHistoryController(client, 7);
+    await controller.selectMerge(41);
+    await controller.openSplit();
+    render(PersonSplitModal, { controller, names: entityNames(client), onClose: vi.fn(), onOpenPerson: vi.fn() });
+
+    const identities = ['Avery E · avery@example.com', 'avery.home@example.org', 'Avery Mobile · +15550100003'];
+    for (const identity of identities) expect(await screen.findByRole('checkbox', { name: identity })).toBeDefined();
+    await fireEvent.click(screen.getByRole('checkbox', { name: identities[0] }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: identities[2] }));
+    expect(screen.getByRole('checkbox', {
+      name: `I confirm splitting ${identities[0]}, ${identities[2]} from Synthetic Source.`,
+    })).toBeDefined();
+    expect(screen.queryByText(/Avery Example/)).toBeNull();
+  });
+
   it('names the actual source and selection in confirmation, then shows two fresh navigation actions with partial copy', async () => {
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);

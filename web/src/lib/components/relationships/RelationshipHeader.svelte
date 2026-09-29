@@ -197,7 +197,7 @@
     return entry.participantIDs.filter(isOtherMember);
   }
 
-  /** A member's name and address, else an address it was seen with, else the server's label. */
+  /** A member's name and address, else an address it was seen with, else the server's identity for it. */
   function baseMemberLabel(participantID: number): string {
     const member = memberFor(participantID);
     const name = member?.display_name?.trim();
@@ -206,7 +206,7 @@
         (identifier.type === 'email' || identifier.type === 'phone'))?.value?.trim()
       : undefined);
     if (name && address && address !== name) return `${name} (${address})`;
-    return name || address || names.label('participant', participantID);
+    return name || address || names.identity(participantID);
   }
 
   /** Every cluster member's label, with repeats numbered so no two controls share a name. */
