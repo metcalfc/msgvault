@@ -162,11 +162,13 @@ type personProfileAttribute struct {
 // references a person, so a reader never has to present the bare ID.
 type personProfileAttributeValue struct {
 	store.PersonAttributeValue
+
 	Value personProfileValue `json:"value"`
 }
 
 type personProfileValue struct {
 	store.AttributeValue
+
 	RecordLabel string `json:"record_label,omitempty"`
 }
 

@@ -180,39 +180,43 @@ func TestPersonRelationshipReviewsNameThePeople(t *testing.T) {
 }
 
 func TestPersonOutputNamesParticipantsAndMergeLineage(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	daemon := newEntityLabelTestDaemon(t)
 	survivor, survivorParticipant := daemon.person(t, "gray@example.com", "Gray Example")
 	absorbed, absorbedParticipant := daemon.person(t, "harper@example.com", "Harper Example")
 
 	got := daemon.run(t, personGetCmd, idText(survivor.ID))
-	assert.Contains(t, got, "Participants: Gray Example ("+idText(survivorParticipant)+")")
+	assert.Contains(got, "Participants: Gray Example ("+idText(survivorParticipant)+")")
 
 	merged := daemon.run(t, newPersonMergeCommand(), idText(survivor.ID), idText(absorbed.ID),
 		"--survivor-revision", idText(survivor.Revision), "--absorbed-revision", idText(absorbed.Revision),
 		"--idempotency-key", "synthetic-merge")
-	assert.Contains(t, merged, "Survivor: Gray Example ("+idText(survivor.ID)+")")
-	assert.Contains(t, merged, "Absorbed: Harper Example ("+idText(absorbed.ID)+")",
+	assert.Contains(merged, "Survivor: Gray Example ("+idText(survivor.ID)+")")
+	assert.Contains(merged, "Absorbed: Harper Example ("+idText(absorbed.ID)+")",
 		"the daemon names an absorbed person from its merge snapshot")
 
 	history := daemon.run(t, newPersonMergeHistoryCommand(), idText(survivor.ID))
-	assert.Contains(t, history, "Gray Example ("+idText(survivor.ID)+")")
+	assert.Contains(history, "Gray Example ("+idText(survivor.ID)+")")
 	mergeLine := strings.Fields(strings.Split(strings.TrimSpace(history), "\n")[1])[0]
 
 	detail := daemon.run(t, newPersonMergeShowCommand(), mergeLine)
-	assert.Contains(t, detail, "Survivor: Gray Example ("+idText(survivor.ID)+")")
-	assert.Contains(t, detail, "Current person: Gray Example ("+idText(survivor.ID)+")")
-	assert.Contains(t, detail, "Absorbed: Harper Example ("+idText(absorbed.ID)+")")
+	assert.Contains(detail, "Survivor: Gray Example ("+idText(survivor.ID)+")")
+	assert.Contains(detail, "Current person: Gray Example ("+idText(survivor.ID)+")")
+	assert.Contains(detail, "Absorbed: Harper Example ("+idText(absorbed.ID)+")")
 
 	current, err := daemon.store.GetPersonContext(t.Context(), survivor.ID)
-	require.NoError(t, err)
+	require.NoError(err)
 	split := daemon.run(t, newPersonSplitCommand(), idText(survivor.ID), "--merge-id", mergeLine,
 		"--revision", idText(current.Revision), "--participant", idText(absorbedParticipant),
 		"--idempotency-key", "synthetic-split")
-	assert.Contains(t, split, "Source person: Gray Example ("+idText(survivor.ID)+")")
-	assert.Regexp(t, `New person: Harper Example \(\d+\)`, split)
+	assert.Contains(split, "Source person: Gray Example ("+idText(survivor.ID)+")")
+	assert.Regexp(`New person: Harper Example \(\d+\)`, split)
 }
 
 func TestPersonAttributeRecordReferenceNamesThePerson(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	daemon := newEntityLabelTestDaemon(t)
 	owner, _ := daemon.person(t, "indigo@example.com", "Indigo Example")
 	referenced, _ := daemon.person(t, "jordan@example.com", "Jordan Example")
@@ -223,43 +227,47 @@ func TestPersonAttributeRecordReferenceNamesThePerson(t *testing.T) {
 		Cardinality: store.AttributeCardinalitySingle, Ownership: store.AttributeOwnershipUser,
 		UICreatable: true, UIEditable: true, APIMutable: true, IsAudited: true, IsDeletable: true,
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 	_, err = daemon.store.SetPersonAttributeValueContext(t.Context(), store.PersonAttributeValueInput{
 		PersonID: owner.ID, DefinitionSlug: "assistant", Source: store.ProvenanceUser,
 		Value: store.AttributeValue{
 			Type: store.AttributeValueRecordReference, RecordType: new(personValue), RecordID: &referenced.ID,
 		},
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 
 	output := daemon.run(t, personAttributesListCmd, idText(owner.ID))
-	assert.Contains(t, output, "Jordan Example ("+idText(referenced.ID)+")")
-	assert.NotContains(t, output, "person:"+idText(referenced.ID))
+	assert.Contains(output, "Jordan Example ("+idText(referenced.ID)+")")
+	assert.NotContains(output, "person:"+idText(referenced.ID))
 }
 
 func TestDaemonEntityLabelsBatchesPastTheServerCap(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	daemon := newEntityLabelTestDaemon(t)
 	total := store.MaxEntityLabelIDs + 2
 	ids := make([]int64, 0, total)
 	for i := range total {
 		participantID, err := daemon.store.EnsureParticipantByIdentifier(
 			"email", "batch-"+strconv.Itoa(i)+"@example.com", "Batch Person "+strconv.Itoa(i))
-		require.NoError(t, err)
+		require.NoError(err)
 		ids = append(ids, participantID)
 	}
 	client, _, err := OpenHTTPStore(daemon.ctx)
-	require.NoError(t, err)
+	require.NoError(err)
 	t.Cleanup(func() { _ = client.Close() })
 
 	labels, err := client.EntityLabels(t.Context(), store.EntityLabelRequest{ParticipantIDs: ids})
-	require.NoError(t, err, "a request over the per-kind cap is split, not rejected")
-	assert.Len(t, labels.Participants, total)
-	assert.Equal(t, "Batch Person "+strconv.Itoa(total-1), labels.Participants[ids[total-1]])
+	require.NoError(err, "a request over the per-kind cap is split, not rejected")
+	assert.Len(labels.Participants, total)
+	assert.Equal("Batch Person "+strconv.Itoa(total-1), labels.Participants[ids[total-1]])
 }
 
 // The TUI and MCP server read through the daemon client in daemon mode, so
 // these cover the labels they show arriving over the production API.
 func TestDaemonClientCarriesLabelsTheTUIAndMCPShow(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	daemon := newEntityLabelTestDaemon(t)
 	owner, _ := daemon.person(t, "kai@example.com", "Kai Example")
 	referenced, _ := daemon.person(t, "lane@example.com", "Lane Example")
@@ -270,45 +278,45 @@ func TestDaemonClientCarriesLabelsTheTUIAndMCPShow(t *testing.T) {
 		Cardinality: store.AttributeCardinalitySingle, Ownership: store.AttributeOwnershipUser,
 		UICreatable: true, UIEditable: true, APIMutable: true, IsAudited: true, IsDeletable: true,
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 	_, err = daemon.store.SetPersonAttributeValueContext(t.Context(), store.PersonAttributeValueInput{
 		PersonID: owner.ID, DefinitionSlug: "mentor", Source: store.ProvenanceUser,
 		Value: store.AttributeValue{
 			Type: store.AttributeValueRecordReference, RecordType: new(personValue), RecordID: &referenced.ID,
 		},
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 
 	source, err := daemon.store.GetOrCreateSource("whatsapp", "+15550000000")
-	require.NoError(t, err)
+	require.NoError(err)
 	conversationID, err := daemon.store.EnsureConversation(source.ID, "untitled-chat", "")
-	require.NoError(t, err)
+	require.NoError(err)
 	senderID, err := daemon.store.EnsureParticipantByIdentifier("email", "morgan@example.com", "Morgan Example")
-	require.NoError(t, err)
+	require.NoError(err)
 	_, err = daemon.store.UpsertMessage(&store.Message{
 		SourceID: source.ID, ConversationID: conversationID, SourceMessageID: "untitled-1",
 		MessageType: "whatsapp", SenderID: sql.NullInt64{Int64: senderID, Valid: true},
 		SentAt: sql.NullTime{Time: time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC), Valid: true},
 	})
-	require.NoError(t, err)
+	require.NoError(err)
 
 	client, _, err := OpenHTTPStore(daemon.ctx)
-	require.NoError(t, err)
+	require.NoError(err)
 	t.Cleanup(func() { _ = client.Close() })
 	browser := daemonclient.NewPeopleBrowser(daemonclient.NewEngineAdapter(client))
 
 	attributes, err := browser.ListAttributes(t.Context(), owner.ID)
-	require.NoError(t, err)
-	assert.Equal(t, "Lane Example", attributes.RecordLabels[referenced.ID])
+	require.NoError(err)
+	assert.Equal("Lane Example", attributes.RecordLabels[referenced.ID])
 
 	profile, err := browser.GetPersonProfile(t.Context(), owner.ID)
-	require.NoError(t, err)
-	assert.Equal(t, "Kai Example", profile.Label, "the MCP profile names an uncurated person by its durable label")
-	assert.Equal(t, "Lane Example", profile.RecordLabels[referenced.ID])
+	require.NoError(err)
+	assert.Equal("Kai Example", profile.Label, "the MCP profile names an uncurated person by its durable label")
+	assert.Equal("Lane Example", profile.RecordLabels[referenced.ID])
 
 	page, err := browser.ListConversations(t.Context(), query.TextFilter{})
-	require.NoError(t, err)
-	require.Len(t, page.Rows, 1)
-	assert.Empty(t, page.Rows[0].Title)
-	assert.Equal(t, "Morgan Example", page.Rows[0].ParticipantLabel)
+	require.NoError(err)
+	require.Len(page.Rows, 1)
+	assert.Empty(page.Rows[0].Title)
+	assert.Equal("Morgan Example", page.Rows[0].ParticipantLabel)
 }

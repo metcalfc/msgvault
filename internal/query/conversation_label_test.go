@@ -71,18 +71,20 @@ func conversationLabelsByID(rows []ConversationRow) map[int64]string {
 }
 
 func TestSQLiteConversationParticipantLabels(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	db := conversationLabelFixture(t)
 	engine := NewSQLiteEngine(db)
 	sourceID := int64(7)
 	filter := TextFilter{SourceID: &sourceID}
 
 	listed, err := engine.ListConversations(t.Context(), filter)
-	require.NoError(t, err)
-	assert.Equal(t, wantConversationLabels, conversationLabelsByID(listed))
+	require.NoError(err)
+	assert.Equal(wantConversationLabels, conversationLabelsByID(listed))
 
 	snapshot, _, err := engine.ListConversationsSnapshot(t.Context(), filter)
-	require.NoError(t, err)
-	assert.Equal(t, wantConversationLabels, conversationLabelsByID(snapshot))
+	require.NoError(err)
+	assert.Equal(wantConversationLabels, conversationLabelsByID(snapshot))
 }
 
 func TestDuckDBConversationParticipantLabelsComeFromTheArchive(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 // provides to the recording people backend.
 type labelingPeopleBackend struct {
 	recordingPeopleBackend
+
 	labels   map[int64]string
 	requests []store.EntityLabelRequest
 }

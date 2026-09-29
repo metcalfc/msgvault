@@ -216,6 +216,6 @@ func assertTabwriterRowsAligned(t *testing.T, rendered string, wantRows int) {
 		}
 		rows++
 	}
-	assert.Equal(t, 14, len(starts))
+	assert.Len(t, starts, 14)
 	assert.Equal(t, wantRows, rows)
 }

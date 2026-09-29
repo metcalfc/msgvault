@@ -47,12 +47,13 @@ func TestConversationListsNeverLabelByConversationID(t *testing.T) {
 		{name: "people inbox conversations", rendered: strings.Join(peopleView.peopleInboxLines(), "\n")},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			assert.Contains(t, test.rendered, "Weekend plans")
-			assert.Contains(t, test.rendered, "Avery Example, Blake Example",
+			assert := assert.New(t)
+			assert.Contains(test.rendered, "Weekend plans")
+			assert.Contains(test.rendered, "Avery Example, Blake Example",
 				"an untitled conversation is named by its other participants")
-			assert.Contains(t, test.rendered, untitledConversationLabel)
+			assert.Contains(test.rendered, untitledConversationLabel)
 			for _, forbidden := range []string{"(conv 70", "Conversation 70", "702", "703"} {
-				assert.NotContains(t, test.rendered, forbidden)
+				assert.NotContains(test.rendered, forbidden)
 			}
 		})
 	}
