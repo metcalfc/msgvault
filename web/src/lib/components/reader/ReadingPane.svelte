@@ -35,6 +35,7 @@
   import { filtersForGroup } from '../../explore/group-context';
   import type { ExploreCacheUnavailable, ExploreFileFact, ExploreFilter, FileViewerTarget } from '../../explore/models';
   import { isEmailMessageType } from '../../explore/models';
+  import { isChatEntry } from '../../explore/entry-key';
   import IdentityBadge from '../explore/IdentityBadge.svelte';
   import TaskLinks from '../tasks/TaskLinks.svelte';
   import MeetingPanel from '../meetings/MeetingPanel.svelte';
@@ -115,6 +116,11 @@
   const conversationRow = $derived(selection?.kind === 'entry' && selection.row.conversation_id &&
     selection.row.anchor_message_id ? selection.row : undefined);
   const archiveMessage = $derived(selection?.kind === 'archive' ? selection.message : undefined);
+  // Chat conversations (iMessage, SMS, WhatsApp, …) read as a transcript;
+  // the classification mirrors the daemon's identityindex.IsChat.
+  const chatThread = $derived(selection?.kind === 'entry'
+    ? isChatEntry(selection.row.message_type, selection.row.conversation_type)
+    : archiveMessage ? isChatEntry(archiveMessage.message_type, undefined) : false);
   const conversationID = $derived(archiveMessage?.conversation_id ?? conversationRow?.conversation_id);
   // The thread opens immediately at the entry's own anchor; an explicit
   // anchor (in-thread navigation restored from the URL) overrides it.
@@ -313,6 +319,8 @@
         {onOpenAttachment}
         {onOpenPerson}
         {onFilterPerson}
+        chat={chatThread}
+        counterpartLabel={selection?.kind === 'entry' ? (selection.row.counterpart_label ?? '') : ''}
       />
     {:else if !selection}
       <section class="pane-status" aria-label="Reading pane status">

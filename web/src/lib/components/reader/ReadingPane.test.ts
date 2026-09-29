@@ -190,3 +190,34 @@ describe('ReadingPane group file drill-down', () => {
     ]);
   });
 });
+
+describe('ReadingPane chat transcript', () => {
+  it.each([
+    ['imessage', '', true],
+    ['chat', 'direct_chat', true],
+    ['email', '', false],
+  ])('renders %s/%j as a transcript: %s', async (messageType, conversationType, transcript) => {
+    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({
+      id: 7, anchor_id: 42, has_before: false, has_after: false, total: 1,
+      messages: [{
+        id: 42, conversation_id: 7, subject: '', message_type: messageType, from: '+15555550101',
+        from_phone: '+15555550101', to: [], sent_at: '2026-07-18T12:00:00Z', snippet: 'Hello there',
+        body: 'Hello there', labels: [], has_attachments: false, size_bytes: 1, attachments: []
+      }]
+    }));
+    render(ReadingPane, {
+      props: {
+        client: createAPIClient(fetchFn),
+        selection: {
+          kind: 'entry',
+          row: entryRow({ message_type: messageType, conversation_type: conversationType, conversation_id: 7, counterpart_label: 'Avery Example' })
+        },
+        predicate: {} satisfies ExplorePredicate
+      }
+    });
+
+    await screen.findByText('Hello there');
+    expect(screen.queryByRole('list', { name: 'Chat transcript' }) !== null).toBe(transcript);
+    if (transcript) expect(screen.getByText('Avery Example')).toBeDefined();
+  });
+});
