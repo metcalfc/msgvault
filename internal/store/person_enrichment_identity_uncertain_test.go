@@ -308,3 +308,94 @@ func TestPersonEnrichmentIdentityUncertainMigrationRefusesDanglingAttemptReferen
 		})
 	}
 }
+
+func personParticipantIDs(t *testing.T, st *Store, personID int64) []int64 {
+	t.Helper()
+	rows, err := st.DB().QueryContext(t.Context(), st.Rebind(`SELECT participant_id
+		FROM person_participants WHERE person_id = ? ORDER BY participant_id`), personID)
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		require.NoError(t, rows.Scan(&id))
+		ids = append(ids, id)
+	}
+	require.NoError(t, rows.Err())
+	return ids
+}
+
+func identityJudgmentRows(t *testing.T, st *Store, personID int64) (judgments, attempts int64) {
+	t.Helper()
+	require.NoError(t, st.DB().QueryRowContext(t.Context(), st.Rebind(`SELECT
+		(SELECT COUNT(*) FROM person_enrichment_identity_judgments WHERE person_id = ?),
+		(SELECT COUNT(*) FROM person_enrichment_attempts WHERE person_id = ?)`), personID, personID).
+		Scan(&judgments, &attempts))
+	return judgments, attempts
+}
+
+// TestPersonMergeAndSplitTreatIdentityJudgmentsLikeTheirAttempts pins the
+// merge policy for identity judgments: like the attempt each belongs to, a
+// judgment stays scoped to the person it was made for. The survivor keeps
+// its judgments through a merge and a split; an absorbed person's judgments
+// cascade with its root and are not restored onto the split-out person.
+func TestPersonMergeAndSplitTreatIdentityJudgmentsLikeTheirAttempts(t *testing.T) {
+	for _, side := range []string{"survivor", "absorbed"} {
+		t.Run(side, func(t *testing.T) {
+			checks := assert.New(t)
+			requirements := require.New(t)
+			f := newEnrichmentResultFixture(t)
+			f.commit.IdentityAssessment = personenrichment.IdentityAssessment{
+				Reason: personenrichment.IdentityUncertainReason, Judgment: uncertainJudgment(),
+			}
+			f.reseal(t)
+			_, err := f.store.CommitEnrichmentClaims(t.Context(), f.commit)
+			requirements.NoError(err)
+			judged, attempts := identityJudgmentRows(t, f.store, f.person.ID)
+			requirements.Equal(int64(1), judged)
+			requirements.Equal(int64(1), attempts)
+
+			participantID, err := f.store.EnsureParticipant(
+				"merge-judgment-"+side+"@example.test", "Merge Judgment", "example.test")
+			requirements.NoError(err)
+			other, _, err := f.store.CreatePersonFromParticipantContext(t.Context(), participantID)
+			requirements.NoError(err)
+			judgedPerson, err := f.store.GetPersonContext(t.Context(), f.person.ID)
+			requirements.NoError(err)
+			survivor, absorbed := judgedPerson, other
+			if side == "absorbed" {
+				survivor, absorbed = other, judgedPerson
+			}
+			absorbedParticipants := personParticipantIDs(t, f.store, absorbed.ID)
+			merged, err := f.store.MergePersonsContext(t.Context(), PersonMergeRequest{
+				SurvivorID: survivor.ID, AbsorbedID: absorbed.ID,
+				ExpectedSurvivorRevision: survivor.Revision, ExpectedAbsorbedRevision: absorbed.Revision,
+				IdempotencyKey: "merge-judgment-" + side, Actor: "test",
+			})
+			requirements.NoError(err)
+
+			wantSurvivor := int64(0)
+			if side == "survivor" {
+				wantSurvivor = 1
+			}
+			judged, attempts = identityJudgmentRows(t, f.store, merged.Person.ID)
+			checks.Equal(wantSurvivor, judged, "judgments follow the attempts they belong to")
+			checks.Equal(wantSurvivor, attempts)
+			judged, _ = identityJudgmentRows(t, f.store, absorbed.ID)
+			checks.Equal(int64(0), judged, "no judgment is left on the absorbed root")
+			checks.Equal(wantSurvivor, enrichmentTableCount(t, f.store, "person_enrichment_identity_judgments"))
+
+			split, err := f.store.SplitPersonMergeContext(t.Context(), PersonSplitRequest{
+				SourcePersonID: merged.Person.ID, MergeID: merged.Merge.ID,
+				ParticipantIDs:         absorbedParticipants,
+				ExpectedSourceRevision: merged.Person.Revision,
+				IdempotencyKey:         "split-judgment-" + side, Actor: "test",
+			})
+			requirements.NoError(err)
+			judged, _ = identityJudgmentRows(t, f.store, merged.Person.ID)
+			checks.Equal(wantSurvivor, judged, "a split leaves the survivor's judgments in place")
+			judged, _ = identityJudgmentRows(t, f.store, split.NewPerson.ID)
+			checks.Equal(int64(0), judged, "an absorbed person's judgments are not restored by a split")
+		})
+	}
+}

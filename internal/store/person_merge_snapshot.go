@@ -252,6 +252,10 @@ var personMergeTableRegistry = map[string]personMergeTableSpec{
 		TableName: "person_enrichment_attempts", KeyColumn: "id", Snapshot: false,
 		PersonReferences: []personMergeReference{directPersonReference(personMergePersonIDColumn)},
 	},
+	"person_enrichment_identity_judgments": {
+		TableName: "person_enrichment_identity_judgments", KeyColumn: "attempt_id", Snapshot: false,
+		PersonReferences: []personMergeReference{directPersonReference(personMergePersonIDColumn)},
+	},
 	"person_enrichment_provider_identities": {
 		TableName: "person_enrichment_provider_identities", KeyColumn: personMergePersonIDColumn, Snapshot: false,
 		PersonReferences: []personMergeReference{directPersonReference(personMergePersonIDColumn)},
