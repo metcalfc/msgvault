@@ -143,11 +143,14 @@ function withFilterValue(filters: ExploreFilter[], dimension: ExploreFilter['dim
 /**
  * Moves operators that have an Explore filter dimension out of the query
  * and into filters, so each shows as its own removable chip:
- * after:/before: (a YYYY-MM-DD day), message_type:, and list:/list-id:.
- * Everything else stays in the query text for the daemon to apply —
- * including from:/to:/cc:/bcc:, whose direction the participant filter
- * cannot express, and has:attachment, subject:, label:, larger:/smaller:,
- * which have no filter dimension.
+ * after:/before: (a YYYY-MM-DD day) and message_type:. Everything else
+ * stays in the query text for the daemon to apply, each still shown as a
+ * removable token chip. That includes from:/to:/cc:/bcc:, whose direction
+ * the participant filter cannot express; list:/list-id:, which the daemon
+ * matches as a case-insensitive substring with AND semantics while the
+ * mailing_list filter is an exact value with OR semantics; and
+ * has:attachment, subject:, label:, larger:/smaller:, which have no filter
+ * dimension.
  */
 export function extractQueryFilters(
   query: string,
@@ -169,10 +172,6 @@ export function extractQueryFilters(
         }
       } else if (split.operator === 'message_type') {
         next = withFilterValue(next, 'message_type', value.toLowerCase());
-        moved = true;
-        continue;
-      } else if ((split.operator === 'list' || split.operator === 'list-id') && !value.startsWith('(')) {
-        next = withFilterValue(next, 'mailing_list', value);
         moved = true;
         continue;
       }

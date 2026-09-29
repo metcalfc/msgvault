@@ -10,7 +10,7 @@ describe('extractQueryFilters', () => {
   it('moves operators with a filter dimension into chips and keeps the rest as text', () => {
     const existing = [{ dimension: 'after' as const, values: ['2020-01-01T00:00:00.000Z'] }];
     const extracted = extractQueryFilters(
-      'budget after:2025-01-01 before:2025/06/30 message_type:imessage list:team.example.com from:alice@example.com subject:"q3 plan"',
+      'budget after:2025-01-01 before:2025/06/30 message_type:imessage from:alice@example.com subject:"q3 plan"',
       existing,
     );
 
@@ -20,8 +20,13 @@ describe('extractQueryFilters', () => {
       { dimension: 'after', values: [dateInputBound('2025-01-01', 'after')] },
       { dimension: 'before', values: [dateInputBound('2025-06-30', 'before')] },
       { dimension: 'message_type', values: ['imessage'] },
-      { dimension: 'mailing_list', values: ['team.example.com'] },
     ]);
+  });
+
+  it('keeps list:/list-id: as text, since the daemon matches them as substrings', () => {
+    const extracted = extractQueryFilters('list:golang-nuts list-id:Team.Example budget', []);
+    expect(extracted).toEqual({ query: 'list:golang-nuts list-id:Team.Example budget', filters: [], moved: false });
+    expect(queryOperatorChips(extracted.query).map((chip) => chip.label)).toEqual(['List: golang-nuts', 'List: Team.Example']);
   });
 
   it('merges repeated message types and leaves unparseable dates as text', () => {
