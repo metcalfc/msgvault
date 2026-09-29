@@ -21,6 +21,7 @@ For maintenance rules, see the [documentation contributor guide](../README.md).
 | Daemon command routing | [CLI audit](daemon-cli-request-audit.md) | [Daemon guide](../guides/daemon-migration.md) |
 | PostgreSQL | [Original implementation tracker](PG_STATUS.md) | [PostgreSQL backend](../architecture/postgresql.md) |
 | Recovery | [Recovery notes](recovery.md) | [Backup](../usage/backup.md) and [troubleshooting](../troubleshooting.md) |
+| Jev judgments | [Implementation plan](jev-judgments-plan.md) | pending |
 
 Retain recorded approvals, unresolved decisions, and exception-removal
 conditions when updating these records. Consult current source and the owning
