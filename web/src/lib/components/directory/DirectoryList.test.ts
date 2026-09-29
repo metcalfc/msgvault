@@ -49,15 +49,16 @@ describe('DirectoryList', () => {
 
   it('humanizes the last-contact timestamp and keeps unnamed records behind a chip', async () => {
     const { last_contact_at: _never, ...bravo } = rows[1]!;
-    render(DirectoryList, {
+    const props = {
       rows: [
         { ...rows[0]!, last_contact_at: '2026-08-20T10:00:00Z' },
         bravo,
         { ...rows[2]!, display_name: undefined }
       ],
       loading: false, loadingMore: false, error: null, pageError: null, pageRecovery: null,
-      hasMore: false, selectedPersonID: null, onSelect: vi.fn(), onLoadMore: vi.fn(), onReload: vi.fn()
-    });
+      hasMore: false, selectedPersonID: null as number | null, onSelect: vi.fn(), onLoadMore: vi.fn(), onReload: vi.fn()
+    };
+    const { rerender } = render(DirectoryList, props);
 
     const alpha = screen.getByRole('row', { name: /Alpha Fixture/ });
     expect(alpha.textContent).toMatch(/Last contact Aug (19|20|21)/);
@@ -66,9 +67,15 @@ describe('DirectoryList', () => {
     expect(screen.getByRole('row', { name: /Bravo Fixture/ }).textContent).toContain('Never contacted');
     expect(screen.queryByRole('row', { name: /Person 3/ })).toBeNull();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Show 1 unnamed' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Show unnamed (1 loaded)' }));
     expect(screen.getByRole('row', { name: /Person 3/ })).toBeDefined();
-    await fireEvent.click(screen.getByRole('button', { name: 'Hide 1 unnamed' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Hide unnamed (1 loaded)' }));
     expect(screen.queryByRole('row', { name: /Person 3/ })).toBeNull();
+
+    // The selected person stays visible even when unnamed and hidden by the chip.
+    await rerender({ ...props, selectedPersonID: 3 });
+    const selected = screen.getByRole('row', { name: /Person 3/ });
+    expect(selected.getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Show unnamed (1 loaded)' })).toBeDefined();
   });
 });

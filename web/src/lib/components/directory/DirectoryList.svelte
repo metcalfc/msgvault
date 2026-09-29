@@ -23,13 +23,17 @@
   let activeID = $state<number | null>(null);
   // Unnamed contact-only records ("Person 42" rows with nothing to tell
   // them apart) sit behind a chip so the list opens on recognizable people.
-  // Client-side over the loaded pages: the server has no such filter yet.
+  // Client-side over the loaded pages (the chip says so): the server has no
+  // such filter yet. The selected person always stays visible so the row,
+  // the keyboard target, and the detail pane never disagree.
   let showQuiet = $state(false);
   function isQuiet(person: DirectoryPerson): boolean {
     return !person.display_name?.trim();
   }
   const quietCount = $derived(rows.filter(isQuiet).length);
-  const visibleRows = $derived(showQuiet ? rows : rows.filter((person) => !isQuiet(person)));
+  const visibleRows = $derived(
+    showQuiet ? rows : rows.filter((person) => !isQuiet(person) || person.id === selectedPersonID)
+  );
   const activeIndex = $derived(activeID === null ? -1 : visibleRows.findIndex((row) => row.id === activeID));
 
   $effect(() => {
@@ -84,9 +88,9 @@
           size="sm"
           uppercase={false}
           expanded={showQuiet}
-          ariaLabel={showQuiet ? `Hide ${quietCount} unnamed` : `Show ${quietCount} unnamed`}
+          ariaLabel={`${showQuiet ? 'Hide' : 'Show'} unnamed (${quietCount} loaded)`}
           onclick={() => { showQuiet = !showQuiet; }}
-        >{showQuiet ? 'Hide' : 'Show'} {quietCount.toLocaleString()} unnamed</Chip>
+        >{showQuiet ? 'Hide' : 'Show'} unnamed ({quietCount.toLocaleString()} loaded)</Chip>
       </div>
     {/if}
     {#if loading && rows.length === 0}
@@ -94,7 +98,7 @@
     {:else if rows.length === 0}
       <EmptyState title="No people found" description="Try a different search or filter." />
     {:else if visibleRows.length === 0}
-      <p class="empty">Only unnamed records on this page.</p>
+      <p class="empty">Only unnamed records among the loaded people.</p>
     {:else}
       <div
         bind:this={gridElement}
