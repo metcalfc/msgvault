@@ -493,3 +493,40 @@ func TestRelationshipTimelineHasAttachmentsUsesMessageFlag(t *testing.T) {
 	assert.True(result.Rows[2].HasAttachments,
 		"a chat burst must inherit the flag from its messages")
 }
+
+// TestRelationshipTimelineReportsFromMe pins each row's direction, so a
+// person's page can lead a row with who wrote it: the owner's reply reads
+// as from me and the counterpart's message does not.
+func TestRelationshipTimelineReportsFromMe(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	b := NewTestDataBuilder(t)
+	srcID := b.AddSource("owner@example.com")
+	ownerID := b.AddParticipant("owner@example.com", "example.com", "Owner")
+	b.AddOwnerParticipant(srcID, ownerID)
+	xID := b.AddParticipant("x@example.com", "example.com", "X")
+
+	replyID := b.AddMessage(MessageOpt{
+		SourceID: srcID, MessageType: "email", IsFromMe: true,
+		SentAt: time.Date(2026, 2, 3, 9, 0, 0, 0, time.UTC),
+	})
+	b.AddFrom(replyID, ownerID, "Owner")
+	b.AddTo(replyID, xID, "X")
+
+	incomingID := b.AddMessage(MessageOpt{
+		SourceID: srcID, MessageType: "email",
+		SentAt: time.Date(2026, 2, 2, 9, 0, 0, 0, time.UTC),
+	})
+	b.AddFrom(incomingID, xID, "X")
+	b.AddTo(incomingID, ownerID, "Owner")
+
+	engine := b.BuildEngine()
+	result, err := engine.RelationshipTimeline(context.Background(), RelationshipTimelineRequest{
+		CanonicalID: xID, Limit: 10,
+	})
+	require.NoError(err)
+	require.Len(result.Rows, 2)
+	assert.True(result.Rows[0].FromMe, "the owner's reply is from me")
+	assert.False(result.Rows[1].FromMe, "the counterpart's message is not")
+}

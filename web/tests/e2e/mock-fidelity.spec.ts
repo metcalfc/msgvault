@@ -28,6 +28,8 @@ const employments = [
 const timelineRows = [
   { key: 'message:901', kind: 'email', title: 'Re: Q3 portfolio update', preview: 'Sounds good, lets lock in Thursday',
     occurred_at: daysAgo(2), source_id: 1, message_count: 1, has_attachments: false, anchor_message_id: 901, conversation_id: 91 },
+  { key: 'message:904', kind: 'email', title: 'Deck for Thursday', preview: '', from_me: true,
+    occurred_at: daysAgo(3), source_id: 1, message_count: 1, has_attachments: true, anchor_message_id: 904, conversation_id: 94 },
   { key: 'message:902', kind: 'calendar_event', title: 'Example Ventures partners sync', preview: '6 attendees · 45 min',
     occurred_at: daysAgo(4), source_id: 1, message_count: 1, has_attachments: false, anchor_message_id: 902, conversation_id: 92 },
   { key: 'burst:903', kind: 'chat_burst', title: 'Avery Example', preview: 'can you send the deck when it is final?',
@@ -187,8 +189,14 @@ for (const theme of ['light', 'dark'] as const) {
     // Recent and Context.
     const recent = main.getByRole('region', { name: 'Recent' });
     await expect(recent.getByText('See all in Timeline')).toBeVisible();
-    await expect(recent.locator('.recent-item')).toHaveCount(3);
-    await expect(recent.locator('.recent-item .title')).toHaveText(['Re: Q3 portfolio update', 'Example Ventures partners sync', 'Avery Example']);
+    await expect(recent.locator('.recent-item')).toHaveCount(4);
+    await expect(recent.locator('.recent-item .title')).toHaveText(['Re: Q3 portfolio update', 'Deck for Thursday', 'Example Ventures partners sync', 'Avery Example']);
+    // Authored rows lead with who wrote them; dates keep a single space.
+    await expect(recent.locator('.recent-item small')).toHaveText([
+      'Avery · "Sounds good, lets lock in Thursday"', 'you · attachment', '"6 attendees · 45 min"',
+      'Avery · 4 messages · "can you send the deck when it is final?"',
+    ]);
+    await expect(recent.locator('.recent-item time').first()).toHaveText(/^[A-Z][a-z]{2} \d{1,2}$/);
     const context = main.getByRole('region', { name: 'Context' });
     await expect(context.getByText('filled attributes only')).toBeVisible();
     await expect(context.locator('[data-fact-label]')).toHaveText(['Location', 'Employment']);

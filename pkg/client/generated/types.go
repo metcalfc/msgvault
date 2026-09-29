@@ -12468,14 +12468,17 @@ type TimelineRow struct {
 	AnchorMessageID *int64     `json:"anchor_message_id,omitempty"`
 	ConversationID  *int64     `json:"conversation_id,omitempty"`
 	FirstAt         *time.Time `json:"first_at,omitempty"`
-	HasAttachments  bool       `json:"has_attachments"`
-	Key             string     `json:"key" validate:"required"`
-	Kind            string     `json:"kind" validate:"required"`
-	MessageCount    int64      `json:"message_count"`
-	OccurredAt      time.Time  `json:"occurred_at" validate:"required"`
-	Preview         string     `json:"preview" validate:"required"`
-	SourceID        int64      `json:"source_id"`
-	Title           string     `json:"title" validate:"required"`
+
+	// FromMe Whether the archive owner sent the anchor message (a burst's latest message)
+	FromMe         *bool     `json:"from_me,omitempty"`
+	HasAttachments bool      `json:"has_attachments"`
+	Key            string    `json:"key" validate:"required"`
+	Kind           string    `json:"kind" validate:"required"`
+	MessageCount   int64     `json:"message_count"`
+	OccurredAt     time.Time `json:"occurred_at" validate:"required"`
+	Preview        string    `json:"preview" validate:"required"`
+	SourceID       int64     `json:"source_id"`
+	Title          string    `json:"title" validate:"required"`
 }
 
 func (t TimelineRow) Validate() error {

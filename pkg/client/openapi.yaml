@@ -12851,6 +12851,9 @@ components:
         first_at:
           format: date-time
           type: string
+        from_me:
+          description: Whether the archive owner sent the anchor message (a burst's latest message)
+          type: boolean
         has_attachments:
           type: boolean
         key:

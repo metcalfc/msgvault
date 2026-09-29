@@ -34,6 +34,10 @@ type TimelineRow struct {
 	ConversationID  *int64    `json:"conversation_id,omitzero" nullable:"false"`
 	AnchorMessageID *int64    `json:"anchor_message_id,omitzero" nullable:"false"`
 	HasAttachments  bool      `json:"has_attachments"`
+	// FromMe reports whether the archive owner sent the row's anchor
+	// message (for a burst, its latest message), so a person's page can
+	// say who wrote it without another lookup.
+	FromMe bool `json:"from_me,omitempty" doc:"Whether the archive owner sent the anchor message (a burst's latest message)"`
 }
 
 // RelationshipTimelineRequest scopes and pages one counterpart's timeline.
@@ -131,10 +135,16 @@ func (e *DuckDBEngine) RelationshipTimeline(ctx context.Context, request Relatio
 	}
 	args = append(args, limit, request.Offset)
 
+	// Caches written before is_from_me existed read as not from me.
+	fromMeExpr := "false"
+	if e.hasCol(datasetMessages, "is_from_me") {
+		fromMeExpr = "COALESCE(TRY_CAST(m.is_from_me AS BOOLEAN), false)"
+	}
 	queryText := buildRelationshipTimelineSQL(
 		conditions,
 		quoteIdentitySQLPath(e.parquetGlob()),
 		quoteIdentitySQLPath(e.parquetPath(datasetConversations)),
+		fromMeExpr,
 	)
 	rows, err := e.db.QueryContext(ctx, queryText, args...)
 	if err != nil {
@@ -154,7 +164,7 @@ func (e *DuckDBEngine) RelationshipTimeline(ctx context.Context, request Relatio
 		if err := rows.Scan(
 			&key, &row.Kind, &anchorMessageID, &conversationID, &row.OccurredAt, &row.FirstAt,
 			&row.SourceID, &row.Title, &row.Preview, &row.MessageCount, &row.HasAttachments,
-			&response.TotalCount,
+			&row.FromMe, &response.TotalCount,
 		); err != nil {
 			return nil, fmt.Errorf("scan relationship timeline row: %w", err)
 		}
@@ -259,7 +269,7 @@ func validateRelationshipTimelineRequest(request RelationshipTimelineRequest) er
 // (MIME structure at sync time), not attachment_count: extraction can lag
 // or fail, leaving the flag true with a zero count, and the indicator must
 // match what the message list shows for the same message.
-func buildRelationshipTimelineSQL(conditions, messagesGlob, conversationsGlob string) string {
+func buildRelationshipTimelineSQL(conditions, messagesGlob, conversationsGlob, fromMeExpr string) string {
 	// The membership IN-subquery is a semi-join whose build side is the
 	// subject's bare message IDs (compact even for archive-scale clusters);
 	// the outer scan then folds per-message facts and owner presence into
@@ -334,7 +344,7 @@ SELECT
             NULLIF(CAST(c.title AS VARCHAR), ''), CAST(m.snippet AS VARCHAR), '')
     END AS title,
     COALESCE(CAST(m.snippet AS VARCHAR), '') AS preview,
-    p.message_count, p.has_attachments, p.total_count
+    p.message_count, p.has_attachments, ` + fromMeExpr + ` AS from_me, p.total_count
 FROM page p
 LEFT JOIN read_parquet('` + messagesGlob + `',
     hive_partitioning=true, union_by_name=true) m ON m.id = p.anchor_message_id

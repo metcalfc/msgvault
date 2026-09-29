@@ -444,7 +444,7 @@
       {#if bundle.person?.participant_ids?.length}
         <RecentActivity rows={recentRows} loading={recentLoading || (!participantResolution && !identitiesUnavailable)}
           error={identitiesUnavailable ? 'Recent activity is unavailable while identities fail to load.' : recentError}
-          onOpen={openRecent} onSeeAll={() => void selectTab('timeline')} />
+          onOpen={openRecent} onSeeAll={() => void selectTab('timeline')} counterpart={displayName} />
       {/if}
       {#if locationFact || employmentText || (profileController?.attributes?.attributes ?? bundle.attributes?.attributes ?? []).some((group) => (group.current ?? []).length > 0)}
         <section class="context" aria-label="Context">

@@ -6,6 +6,8 @@ export interface TimelineRow {
   anchor_message_id?: number;
   conversation_id?: number;
   first_at?: string;
+  /** Whether the archive owner sent the anchor message (a burst's latest message) */
+  from_me?: boolean;
   has_attachments: boolean;
   key: string;
   kind: string;

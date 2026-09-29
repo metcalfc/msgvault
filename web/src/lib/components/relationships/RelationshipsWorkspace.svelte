@@ -472,7 +472,8 @@
               />
               {#if layout === 'contact' && contactTab === 'overview' && controller.detail}
                 <RecentActivity rows={controller.timelineRows} loading={controller.timelineLoading}
-                  error={controller.timelineError} onOpen={openTimelineRow} onSeeAll={() => onTabChange?.('timeline')} />
+                  error={controller.timelineError} onOpen={openTimelineRow} onSeeAll={() => onTabChange?.('timeline')}
+                  counterpart={'display_label' in controller.detail ? String(controller.detail.display_label ?? '') : ''} />
               {/if}
               {#if target !== null && domainOf(target) === undefined && (layout === 'hub' || contactTab === 'overview')}
                 <RelationshipCalendar

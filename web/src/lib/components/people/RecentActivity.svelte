@@ -10,9 +10,17 @@
     /** Opens one item: a message, a text burst, or a meeting. */
     onOpen: (row: TimelineRow) => void;
     onSeeAll: () => void;
+    /** The person's name; rows they wrote lead with its first word. */
+    counterpart?: string;
   }
 
-  let { rows, loading = false, error = null, onOpen, onSeeAll }: Props = $props();
+  let { rows, loading = false, error = null, onOpen, onSeeAll, counterpart = '' }: Props = $props();
+
+  /** "Avery" for "Avery Example"; an address or handle stays whole. */
+  const counterpartShort = $derived.by(() => {
+    const name = counterpart.trim();
+    return /[@+\d]/.test(name) ? name : name.split(/\s+/)[0] ?? '';
+  });
   const RECENT_LIMIT = 5;
   const recent = $derived(rows.slice(0, RECENT_LIMIT));
 
@@ -23,11 +31,15 @@
     return { kind: row.kind, type: messageType || row.kind };
   }
 
+  /** Who wrote it, then what: "Avery · "Sounds good…"", "you · attachment".
+   * Calendar entries have no author to lead with. */
   function secondary(row: TimelineRow): string {
+    const authored = !['event', 'calendar_event', 'meeting', 'meeting_transcript'].includes(row.kind);
+    const who = !authored ? '' : row.from_me ? 'you' : counterpartShort;
     const count = row.kind === 'chat_burst' && row.message_count > 1 ? `${row.message_count} messages` : '';
-    const who = typeof row.sender === 'string' ? row.sender : typeof row.from === 'string' ? row.from : '';
     const preview = row.preview?.trim() ? `"${row.preview.trim()}"` : '';
-    return [who, count, preview].filter(Boolean).join(' · ');
+    const attachment = row.has_attachments ? 'attachment' : '';
+    return [who, count, preview, attachment].filter(Boolean).join(' · ');
   }
 </script>
 
