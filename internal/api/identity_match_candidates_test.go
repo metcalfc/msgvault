@@ -130,6 +130,67 @@ func TestAcceptIdentityMatchCandidateAcrossPersonsReturnsPersonMergeRequired(t *
 	}
 }
 
+// seedContactProfileCandidate creates a profile with no participants and a
+// participant-to-person candidate that points a participant at it.
+func seedContactProfileCandidate(
+	t *testing.T, st *stubIdentityCacheStore, participantID int64,
+) (*store.IdentityMatchCandidate, int64) {
+	t.Helper()
+	var personID int64
+	require.NoError(t, st.DB().QueryRow(
+		`INSERT INTO persons (vcard_uid, display_name) VALUES (?, ?) RETURNING id`,
+		fmt.Sprintf("contact-%d", participantID), "Contact Example",
+	).Scan(&personID))
+	value := "contact@example.com"
+	candidate, _, err := st.UpsertIdentityMatchCandidateContext(
+		context.Background(), store.IdentityMatchCandidateInput{
+			LeftKind: store.IdentityMatchParticipant, LeftID: participantID,
+			RightKind: store.IdentityMatchPerson, RightID: personID,
+			Basis: store.IdentityMatchEmail, NormalizedValue: &value,
+			State: store.IdentityMatchStateCandidate, Source: store.ProvenanceSystem,
+		})
+	require.NoError(t, err)
+	return candidate, personID
+}
+
+func TestAcceptParticipantPersonCandidateBindsUnboundCluster(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, st := newIdentityLinkTestServer(t)
+	participant := st.mustParticipant(t, "contact@example.com", "Contact", "example.com")
+	candidate, personID := seedContactProfileCandidate(t, st, participant)
+
+	response := personRequest(t, srv, http.MethodPost, acceptPath(candidate.ID), nil, "")
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	var accepted IdentityMatchAcceptResponse
+	require.NoError(json.Unmarshal(response.Body.Bytes(), &accepted), response.Body.String())
+	assert.Equal(store.IdentityMatchStateAccepted, accepted.Candidate.State)
+	person, err := st.GetPersonContext(context.Background(), personID)
+	require.NoError(err)
+	assert.Equal([]int64{participant}, person.ParticipantIDs)
+}
+
+func TestAcceptParticipantPersonCandidateOwnedElsewhereReturnsPersonMergeRequired(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, st := newIdentityLinkTestServer(t)
+	participant := st.mustParticipant(t, "contact@example.com", "Contact", "example.com")
+	existing, _, err := st.CreatePersonFromParticipantContext(context.Background(), participant)
+	require.NoError(err)
+	candidate, personID := seedContactProfileCandidate(t, st, participant)
+	contact, err := st.GetPersonContext(context.Background(), personID)
+	require.NoError(err)
+
+	response := personRequest(t, srv, http.MethodPost, acceptPath(candidate.ID), nil, "")
+	require.Equal(http.StatusConflict, response.Code, response.Body.String())
+	assertPersonMergeRequiredResponse(t, response, *existing, *contact)
+	reloaded, err := st.GetIdentityMatchCandidateContext(context.Background(), candidate.ID)
+	require.NoError(err)
+	assert.Equal(store.IdentityMatchStateCandidate, reloaded.State)
+}
+
 func TestRejectIdentityMatchCandidateRetainsTheRow(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

@@ -175,7 +175,7 @@ profile is removed and re-imported.
   confidence 1.0, `normalized_value` set. Record the contact point id and
   matched identifier in `identity_match_evidence`. The unique index gives
   idempotency.
-- [ ] **Task 1b.3 Accept path (1.5 to 2 days).** New branch in
+- [x] **Task 1b.3 Accept path (1.5 to 2 days).** New branch in
   `AcceptIdentityMatchCandidateContext`: `bind` promotes the participant
   cluster then merges the new profile into the contact profile as survivor;
   `merge` returns `PersonBindingConflictError` so the existing 409

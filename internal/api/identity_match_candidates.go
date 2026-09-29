@@ -89,8 +89,12 @@ func (s *Server) registerIdentityMatchRoutes(api huma.API) {
 	accept := rawAPIV1Operation("acceptIdentityMatchCandidate", http.MethodPost,
 		"/identity/match-candidates/{id}/accept", "Accept an identity match candidate")
 	accept.Description = "Accepting is the explicit user confirmation the matching policy " +
-		"requires. The participant link is applied through the normal identity link path, so " +
-		"a match spanning two curated people is refused rather than merged."
+		"requires. A participant pair is linked through the normal identity link path, so " +
+		"a match spanning two curated people is refused rather than merged. A " +
+		"participant-to-person match whose participant cluster has no person promotes the " +
+		"cluster and merges it into that person, which survives; when the cluster already " +
+		"belongs to another person, the 409 names both profiles so the user can choose the " +
+		"survivor of an explicit merge."
 	accept.RequestBody = jsonRequestBodyFor[DecideIdentityMatchRequest](api)
 	accept.RequestBody.Required = false
 	accept.Responses = jsonResponsesFor[IdentityMatchAcceptResponse](api)
@@ -328,7 +332,12 @@ func (s *Server) writeIdentityMatchError(w http.ResponseWriter, err error) {
 			"The identity match changed before its participant link could be applied")
 	case errors.Is(err, store.ErrIdentityMatchEndpointUnsupported):
 		writeError(w, http.StatusConflict, "identity_match_endpoint_unsupported",
-			"Only participant-to-participant matches can be applied")
+			"Only participant, participant-to-person, and CardDAV card matches can be applied")
+	case errors.Is(err, store.ErrPersonCardDAVPublished):
+		writeError(w, http.StatusConflict, "person_carddav_published",
+			"Unpublish the person profile or resolve its CardDAV conflict before linking")
+	case errors.Is(err, store.ErrIdentityMatchEndpointNotFound):
+		writeError(w, http.StatusNotFound, "identity_match_endpoint_not_found", err.Error())
 	case errors.Is(err, store.ErrPersonBindingConflict):
 		writeError(w, http.StatusConflict, "person_binding_conflict",
 			"The identity clusters belong to different person profiles")

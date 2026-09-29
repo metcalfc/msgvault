@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -173,4 +174,158 @@ func TestBuildContactMatchCandidatesWritesIdempotentSystemRowsWithEvidence(t *te
 	require.NoError(err)
 	require.Len(again, 1)
 	assert.Len(again[0].Evidence, 1)
+}
+
+func (f *contactMatchFixture) publish(personID int64, card store.CardDAVRemoteResource) {
+	f.t.Helper()
+	snapshot, err := f.st.LoadPersonVCardSnapshotContext(f.t.Context(), personID)
+	require.NoError(f.t, err)
+	_, err = f.st.PrepareCardDAVPublicationContext(f.t.Context(), store.CardDAVPublicationPlan{
+		PersonID: personID, Desired: true, AddressBookID: f.book.ID, Href: card.Href,
+		OutgoingBody: card.RemoteBody, OutgoingSemanticHash: card.SemanticHash,
+		LocalHash: snapshot.Fingerprint,
+	})
+	require.NoError(f.t, err)
+}
+
+func (f *contactMatchFixture) buildCandidate(personID int64) store.IdentityMatchCandidate {
+	f.t.Helper()
+	_, err := f.st.BuildContactMatchCandidatesContext(f.t.Context())
+	require.NoError(f.t, err)
+	candidates, err := f.st.ListIdentityMatchCandidatesContext(f.t.Context(), nil, 500, 0)
+	require.NoError(f.t, err)
+	for _, candidate := range candidates {
+		if candidate.RightKind == store.IdentityMatchPerson && candidate.RightID == personID {
+			return candidate
+		}
+	}
+	require.FailNow(f.t, "no contact match candidate for person")
+	return store.IdentityMatchCandidate{}
+}
+
+func TestAcceptContactMatchBindPromotesClusterIntoContactProfile(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	first := f.emailParticipant("di@example.test", "Di")
+	second := f.emailParticipant("di.work@example.test", "Di")
+	_, err := f.st.LinkParticipants(first, second)
+	require.NoError(err)
+	card := f.card("card-di", "Di Contact", []string{"di.work@example.test"}, nil)
+	people := f.importCards(card)
+	contactID := people["card-di"]
+	contactBefore, err := f.st.GetPersonContext(t.Context(), contactID)
+	require.NoError(err)
+	candidate := f.buildCandidate(contactID)
+
+	accepted, revision, err := f.st.AcceptIdentityMatchCandidateContext(
+		t.Context(), candidate.ID, "user", nil)
+	require.NoError(err)
+	assert.Positive(revision)
+	assert.Equal(store.IdentityMatchStateAccepted, accepted.State)
+	require.NotNil(accepted.DecidedBy)
+	assert.Equal("user", *accepted.DecidedBy)
+
+	contactAfter, err := f.st.GetPersonContext(t.Context(), contactID)
+	require.NoError(err)
+	assert.Equal(contactBefore.VCardUID, contactAfter.VCardUID, "the contact profile survives")
+	assert.ElementsMatch([]int64{first, second}, contactAfter.ParticipantIDs)
+	resource, err := f.st.GetCardDAVResourceContext(t.Context(), f.book.ID, card.Href)
+	require.NoError(err)
+	require.NotNil(resource.PersonID)
+	assert.Equal(contactID, *resource.PersonID, "the card mapping stays on the survivor")
+
+	merges, err := f.st.ListPersonMergesContext(t.Context(), contactID)
+	require.NoError(err)
+	require.Len(merges, 1)
+	assert.Equal(contactID, merges[0].Merge.SurvivorPersonID)
+
+	again, _, err := f.st.AcceptIdentityMatchCandidateContext(t.Context(), candidate.ID, "user", nil)
+	require.NoError(err, "re-accepting a linked match is idempotent")
+	assert.Equal(store.IdentityMatchStateAccepted, again.State)
+	merges, err = f.st.ListPersonMergesContext(t.Context(), contactID)
+	require.NoError(err)
+	assert.Len(merges, 1)
+}
+
+func TestAcceptContactMatchMergeRequiresExplicitSurvivorChoice(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	participant := f.emailParticipant("eve@example.test", "Eve")
+	existing, _, err := f.st.CreatePersonFromParticipantContext(t.Context(), participant)
+	require.NoError(err)
+	people := f.importCards(f.card("card-eve", "Eve Contact", []string{"eve@example.test"}, nil))
+	contactID := people["card-eve"]
+	candidate := f.buildCandidate(contactID)
+
+	_, _, err = f.st.AcceptIdentityMatchCandidateContext(t.Context(), candidate.ID, "user", nil)
+	conflict, ok := errors.AsType[*store.PersonBindingConflictError](err)
+	require.True(ok, "a merge candidate must return a person binding conflict: %v", err)
+	assert.ElementsMatch([]int64{existing.ID, contactID}, conflict.PersonIDs)
+
+	unchanged, err := f.st.GetIdentityMatchCandidateContext(t.Context(), candidate.ID)
+	require.NoError(err)
+	assert.Equal(store.IdentityMatchStateCandidate, unchanged.State, "the refusal must not consume the candidate")
+
+	// The user merges, choosing the existing profile as survivor; the
+	// candidate is then linked and accepting it records the decision.
+	survivor, err := f.st.GetPersonContext(t.Context(), existing.ID)
+	require.NoError(err)
+	absorbed, err := f.st.GetPersonContext(t.Context(), contactID)
+	require.NoError(err)
+	_, err = f.st.MergePersonsContext(t.Context(), store.PersonMergeRequest{
+		SurvivorID: survivor.ID, AbsorbedID: absorbed.ID,
+		ExpectedSurvivorRevision: survivor.Revision, ExpectedAbsorbedRevision: absorbed.Revision,
+		IdempotencyKey: "merge-eve", Actor: "user",
+	})
+	require.NoError(err)
+	retargeted, err := f.st.GetIdentityMatchCandidateContext(t.Context(), candidate.ID)
+	require.NoError(err)
+	assert.Equal(existing.ID, retargeted.RightID, "the absorbed side is retargeted to the survivor")
+	accepted, _, err := f.st.AcceptIdentityMatchCandidateContext(t.Context(), candidate.ID, "user", nil)
+	require.NoError(err)
+	assert.Equal(store.IdentityMatchStateAccepted, accepted.State)
+}
+
+func TestAcceptContactMatchBindRefusesPublishedContactProfile(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	f.emailParticipant("fay@example.test", "Fay")
+	card := f.card("card-fay", "Fay Contact", []string{"fay@example.test"}, nil)
+	people := f.importCards(card)
+	contactID := people["card-fay"]
+	f.publish(contactID, card)
+	candidate := f.buildCandidate(contactID)
+
+	matches, err := f.st.FindContactMatchesContext(t.Context())
+	require.NoError(err)
+	require.Len(matches, 1)
+	require.NotNil(matches[0].BlockedReason)
+	assert.Equal(store.ContactMatchBlockedPublished, *matches[0].BlockedReason)
+
+	_, _, err = f.st.AcceptIdentityMatchCandidateContext(t.Context(), candidate.ID, "user", nil)
+	require.ErrorIs(err, store.ErrPersonCardDAVPublished)
+	unchanged, err := f.st.GetIdentityMatchCandidateContext(t.Context(), candidate.ID)
+	require.NoError(err)
+	assert.Equal(store.IdentityMatchStateCandidate, unchanged.State)
+	contact, err := f.st.GetPersonContext(t.Context(), contactID)
+	require.NoError(err)
+	assert.Empty(contact.ParticipantIDs, "a refused bind promotes nothing")
+}
+
+func TestAcceptContactMatchRefusesSystemDecision(t *testing.T) {
+	require := require.New(t)
+	f := newContactMatchFixture(t)
+
+	f.emailParticipant("gus@example.test", "Gus")
+	people := f.importCards(f.card("card-gus", "Gus Contact", []string{"gus@example.test"}, nil))
+	candidate := f.buildCandidate(people["card-gus"])
+
+	_, _, err := f.st.AcceptIdentityMatchCandidateContext(t.Context(), candidate.ID, "system", nil)
+	require.ErrorIs(err, store.ErrIdentityMatchNotAcceptable)
 }

@@ -504,10 +504,16 @@ func TestAcceptRejectsUnsupportedEndpointKinds(t *testing.T) {
 	person, _, err := st.CreatePersonFromParticipantContext(ctx, alice)
 	require.NoError(err, "promote alice")
 
+	point, err := st.AddPersonContactPointContext(ctx, person.ID, store.PersonContactPointInput{
+		AddressKind: store.ContactAddressEmail, OriginalValue: "alice@example.test",
+		Envelope: store.ValueEnvelopeInput{Source: store.ProvenanceUser},
+	})
+	require.NoError(err, "AddPersonContactPointContext")
+
 	candidate, _, err := st.UpsertIdentityMatchCandidateContext(ctx, store.IdentityMatchCandidateInput{
 		LeftKind: store.IdentityMatchParticipant, LeftID: alice,
-		RightKind: store.IdentityMatchPerson, RightID: person.ID,
-		Basis: store.IdentityMatchStableProviderID, State: store.IdentityMatchStateCandidate,
+		RightKind: store.IdentityMatchContactPoint, RightID: point.Envelope.ID,
+		Basis: store.IdentityMatchEmail, State: store.IdentityMatchStateCandidate,
 		Source: store.ProvenanceArchiveObservation,
 	})
 	require.NoError(err, "UpsertIdentityMatchCandidateContext")

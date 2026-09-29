@@ -1688,7 +1688,7 @@ export const listIdentityMatchCandidates = (
   );
 };
 /**
- * Accepting is the explicit user confirmation the matching policy requires. The participant link is applied through the normal identity link path, so a match spanning two curated people is refused rather than merged.
+ * Accepting is the explicit user confirmation the matching policy requires. A participant pair is linked through the normal identity link path, so a match spanning two curated people is refused rather than merged. A participant-to-person match whose participant cluster has no person promotes the cluster and merges it into that person, which survives; when the cluster already belongs to another person, the 409 names both profiles so the user can choose the survivor of an explicit merge.
  * @summary Accept an identity match candidate
  */
 export const acceptIdentityMatchCandidate = (

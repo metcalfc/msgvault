@@ -7,12 +7,10 @@ import (
 	"log/slog"
 )
 
-// ErrIdentityMatchEndpointUnsupported reports that a candidate cannot be
-// applied automatically because its endpoints are not two participants.
-// Participant-to-person and observation-to-contact-point candidates are
-// representable and reviewable, but binding a participant to a curated person
-// is a different write path than the participant link forest, and this PR
-// deliberately does not automate it.
+// ErrIdentityMatchEndpointUnsupported reports that a candidate's endpoint
+// kinds have no apply path. Participant pairs are linked, participant-to-person
+// candidates bind or require a merge, and CardDAV resources map to a person;
+// every other pairing (observations, contact points) is reviewable only.
 var ErrIdentityMatchEndpointUnsupported = errors.New(
 	"identity match endpoint kind cannot be applied automatically")
 
@@ -63,6 +61,12 @@ func (s *Store) GetIdentityMatchCandidateContext(
 // re-accepting is idempotent. ErrPersonBindingConflict means the two clusters
 // are curated as different durable people; the candidate is recorded as a
 // conflict for review and the error is returned. Neither ever merges profiles.
+//
+// A participant-to-person candidate takes its own path: an unbound cluster is
+// promoted and merged into the person (see
+// acceptParticipantPersonMatchCandidateContext), while a cluster owned by
+// another person returns PersonBindingConflictError without a decision so the
+// user can choose the survivor of an explicit merge.
 func (s *Store) AcceptIdentityMatchCandidateContext(
 	ctx context.Context, candidateID int64, decidedBy string, notes *string,
 ) (*IdentityMatchCandidate, int64, error) {
@@ -73,6 +77,12 @@ func (s *Store) AcceptIdentityMatchCandidateContext(
 	if candidate.LeftKind == IdentityMatchCardDAVResource &&
 		candidate.RightKind == IdentityMatchPerson {
 		return s.acceptCardDAVIdentityMatchCandidateContext(
+			ctx, candidateID, decidedBy, notes,
+		)
+	}
+	if candidate.LeftKind == IdentityMatchParticipant &&
+		candidate.RightKind == IdentityMatchPerson {
+		return s.acceptParticipantPersonMatchCandidateContext(
 			ctx, candidateID, decidedBy, notes,
 		)
 	}
