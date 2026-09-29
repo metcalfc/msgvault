@@ -55,28 +55,35 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-/** "5m ago", "3h ago", "Yesterday", "4d ago" (and "in 2d" for upcoming
- * events) within seven days; a short date beyond that. */
+/** Calendar days from `from` to `to` in local time (DST-safe). */
+function localDayDifference(from: Date, to: Date): number {
+  const day = (date: Date) => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  return Math.round((day(to) - day(from)) / DAY);
+}
+
+/** Within a week, a time reads relative to today by the calendar: "5m ago"
+ * or "3h ago" today (or within the last hour), "Yesterday"/"Tomorrow" one
+ * local calendar day away, and the weekday ("Mon") two to six days away.
+ * Anything further reads as a short date. */
 export function listTime(value: string, now: Date = new Date()): string {
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return value;
   const delta = now.getTime() - date.getTime();
   const distance = Math.abs(delta);
-  if (distance < 7 * DAY) {
-    const future = delta < 0;
-    if (distance < MINUTE) return future ? 'In a moment' : 'Just now';
-    if (distance < HOUR) {
-      const minutes = Math.floor(distance / MINUTE);
-      return future ? `in ${minutes}m` : `${minutes}m ago`;
-    }
-    if (distance < DAY) {
-      const hours = Math.floor(distance / HOUR);
-      return future ? `in ${hours}h` : `${hours}h ago`;
-    }
-    const days = Math.floor(distance / DAY);
-    if (days === 1) return future ? 'Tomorrow' : 'Yesterday';
-    return future ? `in ${days}d` : `${days}d ago`;
+  const future = delta < 0;
+  const days = localDayDifference(date, now);
+  if (distance < MINUTE) return future ? 'In a moment' : 'Just now';
+  if (distance < HOUR) {
+    const minutes = Math.floor(distance / MINUTE);
+    return future ? `in ${minutes}m` : `${minutes}m ago`;
   }
+  if (days === 0) {
+    const hours = Math.floor(distance / HOUR);
+    return future ? `in ${hours}h` : `${hours}h ago`;
+  }
+  if (days === 1) return 'Yesterday';
+  if (days === -1) return 'Tomorrow';
+  if (Math.abs(days) < 7) return new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(date);
   return new Intl.DateTimeFormat(undefined, {
     month: 'short',
     day: 'numeric',

@@ -3,20 +3,32 @@ import { describe, expect, it } from 'vitest';
 import { highlightSegments, highlightTerms, listTime } from './row-display';
 
 describe('listTime', () => {
-  const now = new Date('2026-07-18T12:00:00Z');
+  // Local times, so calendar days are the viewer's days in any zone.
+  const now = new Date(2026, 6, 18, 12, 0);
+  const weekday = (date: Date) => new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(date);
   it.each([
-    ['2026-07-18T11:59:30Z', 'Just now'],
-    ['2026-07-18T11:15:00Z', '45m ago'],
-    ['2026-07-18T02:00:00Z', '10h ago'],
-    ['2026-07-17T06:00:00Z', 'Yesterday'],
-    ['2026-07-14T12:00:00Z', '4d ago'],
-    ['2026-07-20T13:00:00Z', 'in 2d'],
-  ])('reads %s as %s within a week', (value, want) => {
-    expect(listTime(value, now)).toBe(want);
+    [new Date(2026, 6, 18, 11, 59, 30), 'Just now'],
+    [new Date(2026, 6, 18, 11, 15), '45m ago'],
+    [new Date(2026, 6, 18, 2, 0), '10h ago'],
+    [new Date(2026, 6, 17, 6, 0), 'Yesterday'],
+    [new Date(2026, 6, 19, 9, 0), 'Tomorrow'],
+    [new Date(2026, 6, 20, 13, 0), weekday(new Date(2026, 6, 20))],
+    [new Date(2026, 6, 14, 12, 0), weekday(new Date(2026, 6, 14))],
+  ])('reads %s by the calendar within a week', (date, want) => {
+    expect(listTime(date.toISOString(), now)).toBe(want);
+  });
+
+  it('counts calendar days, not 24-hour spans', () => {
+    // At 08:00, a message 47 hours old was sent the day before yesterday.
+    const morning = new Date(2026, 6, 18, 8, 0);
+    const sent = new Date(morning.getTime() - 47 * 3_600_000);
+    expect(listTime(sent.toISOString(), morning)).toBe(weekday(sent));
+    // Late last night is Yesterday even though under 24 hours have passed.
+    expect(listTime(new Date(2026, 6, 17, 23, 0).toISOString(), morning)).toBe('Yesterday');
   });
 
   it('falls back to a short date beyond a week', () => {
-    expect(listTime('2026-07-01T12:00:00Z', now)).not.toMatch(/ago|in /);
+    expect(listTime(new Date(2026, 6, 1, 12, 0).toISOString(), now)).not.toMatch(/ago|in |day|Mon|Tue|Wed|Thu|Fri|Sat|Sun/);
   });
 });
 
