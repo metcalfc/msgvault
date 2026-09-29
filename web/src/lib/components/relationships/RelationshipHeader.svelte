@@ -1,19 +1,23 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import CopyIcon from '@lucide/svelte/icons/copy';
-  import XIcon from '@lucide/svelte/icons/x';
-  import { Button, IconButton, SegmentedControl, copyToClipboard } from '@kenn-io/kit-ui';
+  import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
+  import { Button, Menu, MenuContent, MenuItem, MenuTrigger, SegmentedControl } from '@kenn-io/kit-ui';
 
   import type { APIClient } from '../../api/client';
-  import type { PersonAttributeGroup } from '../../api/generated/models';
+  import type { PersonAttributeGroup, PersonContactPoint } from '../../api/generated/models';
   import type { DomainSummary, PersonSummary } from '../../explore/models';
   import type { LinkOutcome, RelationshipsMergeContext } from '../../relationships/controller.svelte';
   import { identityChipText } from '../../relationships/identity-chip';
   import type { PersonMergeSuccess, ValidatedPersonMergeRequired } from '../../directory/person-merge';
   import type { DirectoryPromotionResult } from '../../directory/models';
+  import {
+    mergeReachEntries, reachEntriesFromContactPoints, reachEntriesFromIdentifiers, reachEntriesFromMembers,
+    type ReachEntry
+  } from '../../people/reach';
   import IdentityAvatar from '../common/IdentityAvatar.svelte';
   import AttributeSummary from '../directory/AttributeSummary.svelte';
   import PersonBindingConflictModal from '../directory/PersonBindingConflictModal.svelte';
+  import PersonReachBlock from '../people/PersonReachBlock.svelte';
   import LinkIdentityDialog from './LinkIdentityDialog.svelte';
 
   const STALE_CACHE_MESSAGE =
@@ -35,6 +39,9 @@
     onReconcilePersonMerge?: (context: RelationshipsMergeContext) => Promise<void>;
     onOpenDirectoryPerson?: (personID: number) => void;
     loadAttributes?: (personID: number) => Promise<PersonAttributeGroup[]>;
+    /** The Directory profile's curated contact points, merged into the
+     * contact block so address-book values sit beside archive-observed ones. */
+    loadContactPoints?: (personID: number) => Promise<PersonContactPoint[]>;
     onAnnounce?: (message: string) => void;
   }
 
@@ -51,6 +58,7 @@
     onReconcilePersonMerge = undefined,
     onOpenDirectoryPerson = undefined,
     loadAttributes = undefined,
+    loadContactPoints = undefined,
     onAnnounce = undefined
   }: Props = $props();
 
@@ -68,8 +76,8 @@
   let unlinkError = $state<string | null>(null);
   let promoting = $state(false);
   let promotionFailure = $state<Extract<DirectoryPromotionResult, { ok: false }> | null>(null);
-  let identitiesOpen = $state(false);
   let attributeGroups = $state<PersonAttributeGroup[]>([]);
+  let contactPoints = $state<PersonContactPoint[]>([]);
 
   function isPersonDetail(value: PersonSummary | DomainSummary): value is PersonSummary {
     return 'identifiers' in value;
@@ -104,41 +112,34 @@
     const known = new Set((detail.identifiers ?? []).map((identifier) => identifier.participant_id));
     return (detail.cluster.member_ids ?? []).filter((id) => id !== detail.id && !known.has(id));
   });
-  const identityCount = $derived(
-    detail && isPersonDetail(detail) ? (detail.identifiers ?? []).length + unrepresentedMembers.length : 0
-  );
-  const forceIdentitiesOpen = $derived(confirmingParticipantID !== null || unlinkError !== null);
+  /** Unrepresented members with a stored email or phone become contact
+   * rows; the rest are listed below the block so their unlink control
+   * remains reachable. */
+  const bareMembers = $derived(unrepresentedMembers.filter((id) => {
+    const member = memberFor(id);
+    return !member?.email?.trim() && !member?.phone?.trim();
+  }));
 
-  function handleIdentitiesToggle(event: Event): void {
-    const disclosure = event.currentTarget as HTMLDetailsElement;
-    if (forceIdentitiesOpen) {
-      disclosure.open = true;
-      return;
-    }
-    identitiesOpen = disclosure.open;
-  }
-
-  /** A single identity with nothing linked has nothing to explain — the
-   * identities section only appears once there are at least two identities,
-   * or any linked cluster member (whose unlink control lives here and must
-   * therefore always be reachable). */
-  const showIdentities = $derived.by((): boolean => {
-    if (!detail || !isPersonDetail(detail)) return false;
-    const identifiers = detail.identifiers ?? [];
-    if (identifiers.length + unrepresentedMembers.length > 1) return true;
-    if (unrepresentedMembers.length > 0) return true;
-    if (!detail.cluster) return false;
-    const ownID = detail.id;
-    return identifiers.some((identifier) => identifier.participant_id !== ownID);
+  /** Every way to reach the open person: the Directory profile's contact
+   * points (address book) merged with the cluster's identifiers and member
+   * addresses (archive), deduplicated by normalized value. */
+  const reachEntries = $derived.by((): ReachEntry[] => {
+    if (!detail || !isPersonDetail(detail)) return [];
+    const members = detail.cluster?.members ?? [];
+    const edges = detail.cluster?.edges ?? [];
+    return mergeReachEntries(
+      reachEntriesFromContactPoints(contactPoints),
+      reachEntriesFromIdentifiers({
+        identifiers: detail.identifiers, ownID: detail.id, members, edges, clustered: Boolean(detail.cluster)
+      }),
+      reachEntriesFromMembers(
+        unrepresentedMembers.map((id) => memberFor(id) ?? { participant_id: id }), edges
+      )
+    );
   });
 
-  /** Evidence detail lives in the chip tooltip, in human words — internal
-   * provenance identifiers never reach user-visible text. */
-  function identifierTooltip(identifier: { type: string; is_primary: boolean; provenance: string }): string {
-    const parts = [identifier.type, identifier.is_primary ? 'primary' : 'secondary'];
-    if (identifier.provenance === 'participant_identifiers') parts.push('stored identifier');
-    else if (identifier.provenance) parts.push(identifier.provenance.replaceAll('_', ' '));
-    return parts.join(' · ');
+  function isOtherMember(participantID: number): boolean {
+    return Boolean(detail && isPersonDetail(detail) && detail.cluster && participantID !== detail.id);
   }
 
   function memberFor(participantID: number) {
@@ -150,11 +151,6 @@
     return detail && isPersonDetail(detail)
       ? (detail.cluster?.edges ?? []).filter((edge) => edge.participant_a === participantID || edge.participant_b === participantID)
       : [];
-  }
-
-  async function copyIdentifier(value: string): Promise<void> {
-    const copied = await copyToClipboard(value);
-    onAnnounce?.(copied ? 'Identity copied' : 'Could not copy identity');
   }
 
   // Navigating to a different person must not leave behind a stale banner
@@ -176,7 +172,6 @@
     unlinkError = null;
     promotionFailure = null;
     activeDialog = undefined;
-    identitiesOpen = false;
   });
 
   $effect(() => {
@@ -188,6 +183,19 @@
       ?.then((groups) => { if (!cancelled) attributeGroups = groups; })
       .catch(() => {
         // This summary is best-effort; failed requests leave it empty.
+      });
+    return () => { cancelled = true; };
+  });
+
+  $effect(() => {
+    const id = profileID;
+    contactPoints = [];
+    if (!id) return;
+    let cancelled = false;
+    void untrack(() => loadContactPoints?.(id))
+      ?.then((points) => { if (!cancelled) contactPoints = points; })
+      .catch(() => {
+        // Best-effort: the archive-derived rows still render without it.
       });
     return () => { cancelled = true; };
   });
@@ -321,6 +329,32 @@
   }
 </script>
 
+{#snippet memberActions(participantID: number, label: string)}
+  {#if confirmingParticipantID === participantID}
+    <span class="chip-confirm" role="group" aria-label={`Confirm unlinking ${label}`}>
+      <span>Not the same person?</span>
+      <Button
+        label="Unlink"
+        tone="danger"
+        surface="solid"
+        size="sm"
+        disabled={unlinking}
+        onclick={() => void confirmUnlink(participantID)}
+      />
+      <Button label="Cancel" surface="soft" size="sm" disabled={unlinking} onclick={cancelUnlink} />
+    </span>
+  {:else}
+    <Menu align="end">
+      <MenuTrigger class="row-menu-trigger" ariaLabel={`Actions for ${label}`} title="More actions">
+        <EllipsisIcon size="14" aria-hidden="true" />
+      </MenuTrigger>
+      <MenuContent ariaLabel={`Actions for ${label}`}>
+        <MenuItem tone="danger" onselect={() => startUnlink(participantID)}>Unlink</MenuItem>
+      </MenuContent>
+    </Menu>
+  {/if}
+{/snippet}
+
 <header class="relationship-header" class:has-detail={Boolean(detail)} aria-label="Relationship detail">
   {#if !detail}
     <p class="header-empty" role="status">
@@ -396,102 +430,29 @@
         onEdit={onOpenDirectoryPerson ? () => onOpenDirectoryPerson(detail.profile!.id) : undefined}
       />
     {/if}
-    {#if isPersonDetail(detail) && showIdentities}
+    {#if isPersonDetail(detail) && (reachEntries.length > 0 || bareMembers.length > 0)}
       {#key detail.id}
-      <details class="identities" open={identitiesOpen || forceIdentitiesOpen} ontoggle={handleIdentitiesToggle}>
-        <summary data-section-label>Identities ({identityCount})</summary>
-        <div class="identifiers" aria-label="Linked identities">
-        {#each detail.identifiers ?? [] as identifier (`${identifier.participant_id}:${identifier.type}:${identifier.value}`)}
-          {@const isOtherMember = !!detail.cluster && identifier.participant_id !== detail.id}
-          {@const opaque = identifier.type !== 'email' && identifier.type !== 'phone'}
-          {@const edges = isOtherMember ? edgesFor(identifier.participant_id) : []}
-          {@const member = memberFor(identifier.participant_id)}
-          {@const text = identityChipText(identifier, member, edges)}
-          {@const memberName = identifier.participant_display_name || member?.display_name}
-          {@const chipName = opaque
-            ? `${text.title} identifier for ${memberName ? `${memberName} (profile ${identifier.participant_id})` : `profile ${identifier.participant_id}`}`
-            : identifier.display_value?.trim() || identifier.value}
-          {@const relation = isOtherMember ? (edges.some((edge) => edge.link_origin) ? '' : 'linked') : 'this profile'}
-          <span class="chip" class:two-actions={isOtherMember && confirmingParticipantID !== identifier.participant_id} aria-label={`Identity ${chipName}`} title={opaque ? `${text.detail} · ${identifierTooltip(identifier)}` : identifierTooltip(identifier)}>
-            {#if !opaque && identifier.display_value?.trim() && identifier.display_value.trim() !== identifier.value}
-              <span class="chip-display">{identifier.display_value}</span>
+      <div class="reach">
+        <PersonReachBlock entries={reachEntries} ariaLabel="Contact methods" {onAnnounce}>
+          {#snippet actions(entry)}
+            {#if entry.participantID !== undefined && isOtherMember(entry.participantID)}
+              {@render memberActions(entry.participantID, entry.label)}
             {/if}
-            <strong>{text.title}</strong>
-            <small>{[text.subtitle, relation].filter(Boolean).join(' · ')}</small>
-            <span class="chip-actions">
-              <IconButton
-                size="sm"
-                ariaLabel={opaque ? `Copy ${chipName}` : `Copy ${identifier.value}`}
-                onclick={() => void copyIdentifier(identifier.value)}
-              >
-                <CopyIcon size="12" aria-hidden="true" />
-              </IconButton>
-              {#if isOtherMember && confirmingParticipantID !== identifier.participant_id}
-                <IconButton
-                  class="chip-unlink"
-                  size="sm"
-                  tone="danger"
-                  ariaLabel={`Unlink ${chipName}`}
-                  onclick={() => startUnlink(identifier.participant_id)}
-                >
-                  <XIcon size="12" aria-hidden="true" />
-                </IconButton>
-              {/if}
-            </span>
-            {#if isOtherMember && confirmingParticipantID === identifier.participant_id}
-                <span class="chip-confirm" role="group" aria-label={`Confirm unlinking ${chipName}`}>
-                  <span>Not the same person?</span>
-                  <Button
-                    label="Unlink"
-                    tone="danger"
-                    surface="solid"
-                    size="sm"
-                    disabled={unlinking}
-                    onclick={() => void confirmUnlink(identifier.participant_id)}
-                  />
-                  <Button label="Cancel" surface="soft" size="sm" disabled={unlinking} onclick={cancelUnlink} />
-                </span>
-            {/if}
-          </span>
-        {/each}
-        {#each unrepresentedMembers as memberID (memberID)}
+          {/snippet}
+        </PersonReachBlock>
+        {#each bareMembers as memberID (memberID)}
           {@const member = memberFor(memberID)}
           {@const text = identityChipText(undefined, member, edgesFor(memberID))}
-          {@const chipName = `profile ${member?.display_name ? `${text.title} (${memberID})` : member?.email || member?.phone || memberID}`}
-          <span class="chip" aria-label={`Linked ${chipName}`}>
-            <strong>{text.title}</strong>
-            <small>{text.subtitle}</small>
-            {#if confirmingParticipantID === memberID}
-              <span class="chip-confirm" role="group" aria-label={`Confirm unlinking ${chipName}`}>
-                <span>Not the same person?</span>
-                <Button
-                  label="Unlink"
-                  tone="danger"
-                  surface="solid"
-                  size="sm"
-                  disabled={unlinking}
-                  onclick={() => void confirmUnlink(memberID)}
-                />
-                <Button label="Cancel" surface="soft" size="sm" disabled={unlinking} onclick={cancelUnlink} />
-              </span>
-            {:else}
-              <IconButton
-                class="chip-unlink"
-                size="sm"
-                tone="danger"
-                ariaLabel={`Unlink ${chipName}`}
-                onclick={() => startUnlink(memberID)}
-              >
-                <XIcon size="12" aria-hidden="true" />
-              </IconButton>
-            {/if}
-          </span>
+          {@const label = `profile ${member?.display_name ? `${text.title} (${memberID})` : memberID}`}
+          <div class="linked-profile" aria-label={`Linked ${label}`}>
+            <span class="linked-profile-text"><strong>{text.title}</strong> <small>{text.subtitle}</small></span>
+            {@render memberActions(memberID, label)}
+          </div>
         {/each}
-        </div>
         {#if unlinkError}
           <p class="unlink-error" role="alert">{unlinkError}</p>
         {/if}
-      </details>
+      </div>
       {/key}
     {/if}
     {#if activeDialog?.kind === 'link' && isPersonDetail(detail)}
@@ -527,18 +488,6 @@
   .relationship-header.has-detail {
     padding-bottom: var(--space-6);
     border-bottom: 1px solid var(--border-muted);
-  }
-
-  .identities {
-    margin-top: var(--space-2);
-  }
-
-  .identities summary {
-    cursor: pointer;
-  }
-
-  .identities .identifiers {
-    margin-top: var(--space-2);
   }
 
   .header-empty {
@@ -591,46 +540,48 @@
     font-size: var(--font-size-sm);
   }
 
-  /* Chips size to their content and wrap — a row of quiet cards, not a
-   * stretched grid fighting the header for width. */
-  .identifiers {
+  .reach {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: var(--space-2);
   }
 
-  .chip {
-    position: relative;
+  .linked-profile {
     display: flex;
-    max-width: 100%;
-    flex-direction: column;
-    gap: 2px;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
-    background: var(--bg-subtle);
-    padding: var(--space-2) 2.5rem var(--space-2) var(--space-3);
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
+    font-size: var(--font-size-sm);
   }
 
-  .chip.two-actions {
-    padding-right: 4.5rem;
+  .linked-profile-text {
+    flex: 1;
+    min-width: 0;
   }
 
-  .chip-display {
-    color: var(--text-secondary);
-    font-size: var(--font-size-xs);
-  }
-
-  .chip small {
+  .linked-profile small {
     color: var(--text-muted);
     font-size: var(--font-size-2xs);
   }
 
-  .chip-actions {
-    position: absolute;
-    top: var(--space-1);
-    right: var(--space-1);
-    display: flex;
-    gap: var(--space-1);
+  .reach :global(.row-menu-trigger) {
+    display: inline-flex;
+    width: 26px;
+    height: 26px;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 0;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .reach :global(.row-menu-trigger:hover),
+  .reach :global(.row-menu-trigger[aria-expanded="true"]) {
+    background: var(--bg-surface-hover);
+    color: var(--text-secondary);
   }
 
   .chip-confirm {

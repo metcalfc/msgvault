@@ -3,7 +3,7 @@ import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
-import type { PersonAttributeGroup } from '../../api/generated/models';
+import type { PersonAttributeGroup, PersonContactPoint } from '../../api/generated/models';
 import type { DomainSummary, PersonSummary } from '../../explore/models';
 import type { LinkOutcome } from '../../relationships/controller.svelte';
 import type { ValidatedPersonMergeRequired } from '../../directory/person-merge';
@@ -120,6 +120,28 @@ async function linkToSearchResult(): Promise<void> {
   await fireEvent.click(screen.getByRole('button', { name: 'These are the same person' }));
 }
 
+/** Opens the overflow menu on the contact row (or linked-profile row) named
+ * by `label` and picks Unlink, which raises the inline confirm. */
+async function startUnlinkFor(label: string): Promise<void> {
+  await fireEvent.click(screen.getByRole('button', { name: `Actions for ${label}` }));
+  await fireEvent.click(await screen.findByRole('menuitem', { name: 'Unlink' }));
+}
+
+function rowFor(text: string | RegExp): HTMLElement {
+  const row = screen.getByText(text).closest('li');
+  if (!row) throw new Error(`no contact row for ${String(text)}`);
+  return row;
+}
+
+function contactPoint(overrides: Partial<PersonContactPoint>): PersonContactPoint {
+  return {
+    person_id: 5, address_kind: 'email', original_value: 'alice@example.com', normalized_value: 'alice@example.com',
+    normalization: 'email', normalization_version: 1, service_slug: 'email',
+    envelope: { id: 1, ordinal: 0, source: 'user', created_at: when, updated_at: when, vcard: {} },
+    ...overrides
+  };
+}
+
 describe('RelationshipHeader', () => {
   it('shows current attributes for a durable person and opens their editor in Directory', async () => {
     const loadAttributes = vi.fn(async () => [attributeGroup('Pronouns', 'they/them')]);
@@ -198,50 +220,48 @@ describe('RelationshipHeader', () => {
     expect(onFilesToggle).toHaveBeenCalledWith(false);
   });
 
-  it('collapses linked identities by default and opens them on request', async () => {
+  it('lists every contact method, including the open profile\'s own address, with quiet copy controls', () => {
     render(RelationshipHeader, baseProps());
 
-    const summary = screen.getByText('Identities (2)');
-    const disclosure = summary.closest('details');
-    expect(disclosure?.open).toBe(false);
-    await fireEvent.click(summary);
-    expect(disclosure?.open).toBe(true);
-    expect(screen.getByLabelText('Identity Alice')).toBeDefined();
+    const block = screen.getByRole('list', { name: 'Contact methods' });
+    expect(block.querySelectorAll('li')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Copy alice@example.com' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Copy +15550100001' })).toBeDefined();
+    expect(screen.getByRole('img', { name: 'Email' })).toBeDefined();
+    expect(screen.getByRole('img', { name: 'Phone' })).toBeDefined();
+    // Archive-derived values carry the observed badge; no unlink control
+    // appears outside a linked cluster.
+    expect(screen.getAllByText('observed')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: /^Actions for / })).toBeNull();
   });
 
-  it('collapses identities again when the selected person changes', async () => {
-    const props = baseProps();
-    const { rerender } = render(RelationshipHeader, props);
-    await fireEvent.click(screen.getByText('Identities (2)'));
-    expect(screen.getByText('Identities (2)').closest('details')?.open).toBe(true);
+  it('merges the Directory profile\'s contact points and lets the address book outrank the archive', async () => {
+    const loadContactPoints = vi.fn(async () => [
+      contactPoint({}),
+      contactPoint({ address_kind: 'url', original_value: 'https://example.com/in/alice', normalized_value: 'https://example.com/in/alice', service_slug: 'linkedin',
+        envelope: { id: 2, ordinal: 0, source: 'user', created_at: when, updated_at: when, vcard: {} } }),
+      contactPoint({ address_kind: 'phone', original_value: '+1 555 010 0001', normalized_value: '+15550100001', service_slug: 'phone',
+        envelope: { id: 3, ordinal: 0, source: 'archive_observation', created_at: when, updated_at: when, vcard: {} } })
+    ]);
+    render(RelationshipHeader, baseProps({ detail: { ...person(), profile: { id: 5, revision: 1 } }, loadContactPoints }));
 
-    await rerender({ ...props, detail: { ...person(), id: 99 } });
-    expect(screen.getByText('Identities (2)').closest('details')?.open).toBe(false);
+    await waitFor(() => expect(loadContactPoints).toHaveBeenCalledWith(5));
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(3));
+    expect(screen.getAllByRole('listitem').map((row) => row.querySelector('.reach-value')?.textContent)).toEqual([
+      'alice@example.com', '+1 555 010 0001', 'https://example.com/in/alice'
+    ]);
+    expect(rowFor('alice@example.com').textContent).not.toContain('observed');
+    expect(rowFor('+1 555 010 0001').textContent).toContain('observed');
+    expect(rowFor('https://example.com/in/alice').textContent).toContain('LinkedIn');
+    expect(screen.getByRole('img', { name: 'Profile' })).toBeDefined();
   });
 
-  it('keeps identities open across a reload, then collapses them for another person', async () => {
-    const props = baseProps();
-    const { rerender } = render(RelationshipHeader, props);
-    await fireEvent.click(screen.getByText('Identities (2)'));
-    await fireEvent(screen.getByText('Identities (2)').closest('details')!, new Event('toggle'));
-
-    await rerender({ ...props, detail: null, loading: true });
-    await rerender({ ...props, detail: person() });
-    expect(screen.getByText('Identities (2)').closest('details')?.open).toBe(true);
-
-    await rerender({ ...props, detail: null, loading: true });
-    await rerender({ ...props, detail: { ...person(), id: 99 } });
-    expect(screen.getByText('Identities (2)').closest('details')?.open).toBe(false);
-  });
-
-  it('keeps identities visible during unlink confirmation', async () => {
+  it('keeps a pending unlink confirm visible on its row', async () => {
     render(RelationshipHeader, baseProps({ detail: clusteredPerson() }));
-    await fireEvent.click(screen.getByText('Identities (3)'));
-    await fireEvent.click(screen.getByRole('button', { name: 'Unlink +15550100002' }));
+    await startUnlinkFor('+15550100002');
 
-    await fireEvent.click(screen.getByText('Identities (3)'));
-    await waitFor(() => expect(screen.getByText('Identities (3)').closest('details')?.open).toBe(true));
     expect(screen.getByRole('group', { name: 'Confirm unlinking +15550100002' })).toBeDefined();
+    expect(rowFor('+15550100002').textContent).toContain('Not the same person?');
   });
 
   it('shows a placeholder status when nothing is selected', () => {
@@ -257,14 +277,12 @@ describe('RelationshipHeader', () => {
     expect(screen.getByText(/42 items/)).toBeDefined();
     expect(screen.getByText(/3 files/)).toBeDefined();
     expect(screen.getByText('Alice')).toBeDefined();
-    expect(screen.getByText(/alice@example\.com/)).toBeDefined();
-    expect(screen.getByText(/\+15550100001/)).toBeDefined();
+    expect(screen.getByText('alice@example.com')).toBeDefined();
+    expect(screen.getByText('+15550100001')).toBeDefined();
     // Evidence detail lives in the tooltip, phrased in human words — never
     // internal field names like participant_identifiers.
-    const emailChip = screen.getByLabelText('Identity Alice');
-    expect(emailChip.getAttribute('title')).toBe('email · primary · stored identifier');
-    const phoneChip = screen.getByLabelText('Identity +15550100001');
-    expect(phoneChip.getAttribute('title')).toBe('phone · secondary · stored identifier');
+    expect(rowFor('alice@example.com').getAttribute('title')).toBe('email · primary · stored identifier');
+    expect(rowFor('+15550100001').getAttribute('title')).toBe('phone · secondary · stored identifier');
     expect(document.body.textContent).not.toContain('participant_identifiers');
 
     await fireEvent.click(screen.getByRole('radio', { name: 'Files 3' }));
@@ -307,21 +325,19 @@ describe('RelationshipHeader', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('hides the identities section entirely for a single identity with nothing linked', () => {
+  it('still shows a single address with nothing linked', () => {
     const single = { ...person(), identifiers: [person().identifiers![0]!] };
     render(RelationshipHeader, baseProps({ detail: single }));
 
-    expect(screen.queryByText('Identities')).toBeNull();
-    expect(screen.queryByLabelText('Linked identities')).toBeNull();
+    expect(screen.getByRole('list', { name: 'Contact methods' }).querySelectorAll('li')).toHaveLength(1);
+    expect(screen.getByText('alice@example.com')).toBeDefined();
   });
 
-  it('labels chips for linked cluster members as linked, and the open profile\'s own as this profile', () => {
+  it('notes rows for linked cluster members as linked, and the open profile\'s own as this profile', () => {
     render(RelationshipHeader, baseProps({ detail: clusteredPerson() }));
 
-    const own = screen.getByLabelText('Identity Alice');
-    expect(own.textContent).toContain('this profile');
-    const linked = screen.getByLabelText('Identity +15550100002');
-    expect(linked.textContent).toContain('linked');
+    expect(rowFor('alice@example.com').textContent).toContain('this profile');
+    expect(rowFor('+15550100002').textContent).toContain('linked');
   });
 
   it('renders a domain by domain name and person count, without identity chips or a Same person button', () => {
@@ -436,43 +452,45 @@ describe('RelationshipHeader', () => {
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });
 
-  it('shows an unlink × only on chips for other cluster members, never on the open cluster\'s own identifiers', () => {
+  it('offers an overflow menu with Unlink only on rows for other cluster members, never on the open cluster\'s own', async () => {
     render(RelationshipHeader, baseProps({ detail: clusteredPerson() }));
 
-    expect(screen.queryByRole('button', { name: /Unlink alice@example.com|Unlink Alice/ })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Unlink +15550100002' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Unlink carol@example.com' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Actions for alice@example.com' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Actions for +15550100002' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Actions for carol@example.com' })).toBeDefined();
+    // No red × beside the address: unlink lives in the menu.
+    expect(screen.queryByRole('button', { name: /^Unlink / })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for carol@example.com' }));
+    expect(await screen.findByRole('menuitem', { name: 'Unlink' })).toBeDefined();
   });
 
   it('does not show unlink controls when the person has no cluster', () => {
     render(RelationshipHeader, baseProps());
-    expect(screen.queryByRole('button', { name: /^Unlink / })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Actions for / })).toBeNull();
   });
 
-  it('renders a fallback chip with its own detach control for a cluster member with no identifier rows', async () => {
+  it('lists a cluster member with no identifier rows below the block with its own detach control', async () => {
     const onUnlinkParticipants = vi.fn(async (): Promise<LinkOutcome> => ({ ok: true, identityRevision: 4, cacheState: 'ready' }));
     render(RelationshipHeader, baseProps({ detail: clusteredPersonWithBareMember(), onUnlinkParticipants }));
 
     expect(screen.getByLabelText('Linked profile 78').textContent).toContain('no stored address');
-    const detachButton = screen.getByRole('button', { name: 'Unlink profile 78' });
-    await fireEvent.click(detachButton);
+    await startUnlinkFor('profile 78');
     await fireEvent.click(screen.getByRole('button', { name: 'Unlink' }));
 
     await waitFor(() => expect(onUnlinkParticipants).toHaveBeenCalledWith(12, 78));
   });
 
-  it('names a linked member chip and its controls by its visible address', async () => {
+  it('turns a linked member with a stored address into a contact row named by that address', async () => {
     const base = clusteredPersonWithBareMember();
     render(RelationshipHeader, baseProps({ detail: {
       ...base,
       cluster: { ...base.cluster!, members: [{ participant_id: 78, email: 'bare@example.com' }] }
     } }));
 
-    const chip = screen.getByLabelText('Linked profile bare@example.com');
-    expect(chip.textContent).toContain('bare@example.com');
-    expect(chip.textContent).not.toContain('no stored address');
-    await fireEvent.click(screen.getByRole('button', { name: 'Unlink profile bare@example.com' }));
-    expect(screen.getByRole('group', { name: 'Confirm unlinking profile bare@example.com' })).toBeDefined();
+    expect(screen.queryByLabelText(/^Linked profile/)).toBeNull();
+    expect(rowFor('bare@example.com').textContent).toContain('linked');
+    await startUnlinkFor('bare@example.com');
+    expect(screen.getByRole('group', { name: 'Confirm unlinking bare@example.com' })).toBeDefined();
   });
 
   it('distinguishes member-only controls with identical display names', () => {
@@ -486,8 +504,8 @@ describe('RelationshipHeader', () => {
       ] }
     } }));
 
-    expect(screen.getByRole('button', { name: 'Unlink profile Shared Example (56)' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Unlink profile Shared Example (78)' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Actions for profile Shared Example (56)' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Actions for profile Shared Example (78)' })).toBeDefined();
   });
 
   it('falls back to the member ID for a chip whose member has no stored name or address', () => {
@@ -518,12 +536,14 @@ describe('RelationshipHeader', () => {
       } }));
 
       const copy = screen.getByRole('button', { name: 'Copy WhatsApp identifier for Alias Example (profile 12)' });
-      const chip = copy.closest('.chip');
-      expect(chip?.textContent).toContain('WhatsApp');
-      expect(chip?.textContent).not.toContain('local-whatsapp_ba_example');
-      expect(chip?.getAttribute('title')).toContain('account: local-whatsapp_ba_example');
-      expect(chip?.textContent).not.toContain(key);
-      expect(chip?.getAttribute('title')).toContain(key);
+      const row = copy.closest('li');
+      expect(row?.textContent).toContain('WhatsApp');
+      expect(row?.textContent).toContain('Alias Example');
+      expect(row?.textContent).not.toContain('local-whatsapp_ba_example');
+      expect(row?.getAttribute('title')).toContain('account: local-whatsapp_ba_example');
+      expect(row?.textContent).not.toContain(key);
+      expect(row?.getAttribute('title')).toContain(key);
+      expect(screen.getByRole('img', { name: 'Chat' })).toBeDefined();
       await fireEvent.click(copy);
       await waitFor(() => expect(copied).toBe(key));
     } finally {
@@ -543,9 +563,9 @@ describe('RelationshipHeader', () => {
       ] }
     } }));
 
-    const chip = screen.getByLabelText('Identity +15550100002');
-    expect(chip.textContent).toContain('linked manually');
-    expect(chip.textContent).toContain('matched from CardDAV (email)');
+    const row = rowFor('+15550100002');
+    expect(row.textContent).toContain('linked manually');
+    expect(row.textContent).toContain('matched from CardDAV (email)');
   });
 
   it('does not describe other links on the viewed profile’s own identifier', () => {
@@ -557,9 +577,9 @@ describe('RelationshipHeader', () => {
       ] }
     } }));
 
-    expect(screen.getByLabelText('Identity Alice').textContent).toContain('this profile');
-    expect(screen.getByLabelText('Identity Alice').textContent).not.toContain('linked manually');
-    expect(screen.getByLabelText('Identity +15550100002').textContent).toContain('linked manually');
+    expect(rowFor('alice@example.com').textContent).toContain('this profile');
+    expect(rowFor('alice@example.com').textContent).not.toContain('linked manually');
+    expect(rowFor('+15550100002').textContent).toContain('linked manually');
   });
 
   it('distinguishes opaque identity controls even when service and member names match', async () => {
@@ -575,8 +595,8 @@ describe('RelationshipHeader', () => {
 
     expect(screen.getByRole('button', { name: 'Copy WhatsApp identifier for Alias Example (profile 34)' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Copy WhatsApp identifier for Alias Example (profile 56)' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Unlink WhatsApp identifier for Alias Example (profile 34)' })).toBeDefined();
-    await fireEvent.click(screen.getByRole('button', { name: 'Unlink WhatsApp identifier for Alias Example (profile 56)' }));
+    expect(screen.getByRole('button', { name: 'Actions for WhatsApp identifier for Alias Example (profile 34)' })).toBeDefined();
+    await startUnlinkFor('WhatsApp identifier for Alias Example (profile 56)');
     expect(screen.getByRole('group', { name: 'Confirm unlinking WhatsApp identifier for Alias Example (profile 56)' })).toBeDefined();
   });
 
@@ -584,7 +604,7 @@ describe('RelationshipHeader', () => {
     const onUnlinkParticipants = vi.fn(async (): Promise<LinkOutcome> => ({ ok: true, identityRevision: 4, cacheState: 'ready' }));
     render(RelationshipHeader, baseProps({ detail: clusteredPerson(), onUnlinkParticipants }));
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Unlink +15550100002' }));
+    await startUnlinkFor('+15550100002');
     expect(screen.getByRole('group', { name: 'Confirm unlinking +15550100002' })).toBeDefined();
     await fireEvent.click(screen.getByRole('button', { name: 'Unlink' }));
 
@@ -599,11 +619,11 @@ describe('RelationshipHeader', () => {
     const onUnlinkParticipants = vi.fn();
     render(RelationshipHeader, baseProps({ detail: clusteredPerson(), onUnlinkParticipants }));
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Unlink carol@example.com' }));
+    await startUnlinkFor('carol@example.com');
     await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(screen.queryByRole('group', { name: 'Confirm unlinking carol@example.com' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Unlink carol@example.com' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Actions for carol@example.com' })).toBeDefined();
     expect(onUnlinkParticipants).not.toHaveBeenCalled();
   });
 
@@ -613,7 +633,7 @@ describe('RelationshipHeader', () => {
     const onUnlinkParticipants = vi.fn(async (): Promise<LinkOutcome> => ({ ok: true, identityRevision: 5, cacheState: 'ready' }));
     render(RelationshipHeader, baseProps({ detail: clusteredPerson(), onUnlinkParticipants }));
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Unlink +15550100002' }));
+    await startUnlinkFor('+15550100002');
     await fireEvent.click(screen.getByRole('button', { name: 'Unlink' }));
 
     await waitFor(() => expect(onUnlinkParticipants).toHaveBeenCalledTimes(2));
@@ -625,13 +645,11 @@ describe('RelationshipHeader', () => {
     const onUnlinkParticipants = vi.fn(async (): Promise<LinkOutcome> => ({ ok: false, code: 'error', message: 'Request failed (500)' }));
     render(RelationshipHeader, baseProps({ detail: clusteredPerson(), onUnlinkParticipants }));
 
-    await fireEvent.click(screen.getByText('Identities (3)'));
-    await fireEvent.click(screen.getByRole('button', { name: 'Unlink +15550100002' }));
+    await startUnlinkFor('+15550100002');
     await fireEvent.click(screen.getByRole('button', { name: 'Unlink' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('Request failed (500)');
-    await fireEvent.click(screen.getByText('Identities (3)'));
-    await waitFor(() => expect(screen.getByText('Identities (3)').closest('details')?.open).toBe(true));
+    expect(screen.getByRole('group', { name: 'Confirm unlinking +15550100002' })).toBeDefined();
     expect(onUnlinkParticipants).toHaveBeenCalledTimes(1);
   });
 
@@ -688,7 +706,7 @@ describe('RelationshipHeader', () => {
     });
     const { rerender } = render(RelationshipHeader, baseProps({ detail: clusteredPerson(), onUnlinkParticipants }));
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Unlink +15550100002' }));
+    await startUnlinkFor('+15550100002');
     await fireEvent.click(screen.getByRole('button', { name: 'Unlink' }));
     await waitFor(() => expect(onUnlinkParticipants).toHaveBeenCalledWith(12, 34));
     await waitFor(() => expect(onUnlinkParticipants).toHaveBeenCalledWith(34, 56));
@@ -719,7 +737,7 @@ describe('RelationshipHeader', () => {
     });
     const { rerender } = render(RelationshipHeader, baseProps({ detail: clusteredPerson(), onUnlinkParticipants }));
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Unlink +15550100002' }));
+    await startUnlinkFor('+15550100002');
     await fireEvent.click(screen.getByRole('button', { name: 'Unlink' }));
     await waitFor(() => expect(onUnlinkParticipants).toHaveBeenCalledWith(12, 34));
     expect(onUnlinkParticipants).toHaveBeenCalledTimes(1);

@@ -1,7 +1,11 @@
 <script lang="ts">
-  import type { MeetingRef } from '../../api/generated/models';
+  import { untrack } from 'svelte';
+  import type { MeetingRef, PersonIdentifier } from '../../api/generated/models';
+  import { getParticipant } from '../../api/generated/api/api';
   import MeetingPanel from '../meetings/MeetingPanel.svelte';
   import type { APIClient } from '../../api/client';
+  import { mergeReachEntries, reachEntriesFromContactPoints, reachEntriesFromIdentifiers } from '../../people/reach';
+  import PersonReachBlock from '../people/PersonReachBlock.svelte';
   import type { DirectoryReadBundle, DirectoryReadSection } from '../../directory/models';
   import type { DirectoryProfileController } from '../../directory/profile-controller.svelte';
   import type { DirectoryEntityController } from '../../directory/entity-controller.svelte';
@@ -56,7 +60,31 @@
   let relationshipsTab = $state<HTMLButtonElement>();
   let networkTab = $state<HTMLButtonElement>();
   let mediaTab = $state<HTMLButtonElement>();
-  const profile = $derived(bundle.structuredProfile);
+  const profile = $derived(profileController?.structuredProfile ?? bundle.structuredProfile);
+  // Archive-observed identifiers for every participant bound to this person,
+  // best-effort: the address book rows render without them.
+  let participantIdentifiers = $state<PersonIdentifier[]>([]);
+  const participantKey = $derived(JSON.stringify([...(bundle.person?.participant_ids ?? [])].sort((a, b) => a - b)));
+  $effect(() => {
+    const ids: number[] = JSON.parse(participantKey);
+    participantIdentifiers = [];
+    if (ids.length === 0) return;
+    const abort = new AbortController();
+    void untrack(() => Promise.all(ids.map(async (id) => {
+      try {
+        return (await getParticipant({ id }, { ...client, signal: abort.signal })).data?.identifiers ?? [];
+      } catch {
+        return [];
+      }
+    }))).then((groups) => {
+      if (!abort.signal.aborted) participantIdentifiers = groups.flat();
+    });
+    return () => abort.abort();
+  });
+  const reachEntries = $derived(mergeReachEntries(
+    reachEntriesFromContactPoints(profile?.contact_points),
+    reachEntriesFromIdentifiers({ identifiers: participantIdentifiers })
+  ));
   const overviewTabID = $derived(`person-${personID}-overview-tab`);
   const overviewPanelID = $derived(`person-${personID}-overview-panel`);
   const organizationsTabID = $derived(`person-${personID}-organizations-tab`);
@@ -79,15 +107,6 @@
 
   function nameText(name: NonNullable<NonNullable<DirectoryReadBundle['structuredProfile']>['names']>[number]): string {
     return name.formatted ?? ([name.given_name, name.family_name].filter(Boolean).join(' ') || name.original_value);
-  }
-
-  function groupedContacts() {
-    const groups = new Map<string, NonNullable<DirectoryReadBundle['structuredProfile']>['contact_points']>();
-    for (const point of profile?.contact_points ?? []) {
-      const service = point.service_slug ?? 'other';
-      groups.set(service, [...(groups.get(service) ?? []), point]);
-    }
-    return [...groups.entries()];
   }
 
   function employmentOrganization(employmentID: number): string | undefined {
@@ -179,6 +198,7 @@
       {#if bundle.person || profile}
         <header><h2>{bundle.person?.display_name ?? profile?.person?.display_name ?? `Person ${personID}`}</h2></header>
       {/if}
+      <PersonReachBlock entries={reachEntries} {onAnnounce} />
       <AttributeSummary
         groups={profileController?.attributes?.attributes ?? bundle.attributes?.attributes ?? []}
         onEdit={profileController ? () => {
@@ -200,9 +220,6 @@
         <StructuredProfileSection {client} controller={profileController} {personID} />
       {:else if profile?.names?.length}
         <section><h3>Names</h3><ul>{#each profile.names as name}<li>{nameText(name)} <small>{name.name_kind}</small></li>{/each}</ul></section>
-      {/if}
-      {#if !profileController && groupedContacts().length}
-        <section><h3>Contact observations</h3>{#each groupedContacts() as [service, points]}<h4>{service}</h4><ul>{#each points as point}<li>{point.original_value} <small>{point.address_kind}</small></li>{/each}</ul>{/each}</section>
       {/if}
       {#if !profileController && profile?.addresses?.length}
         <section><h3>Addresses</h3><ul>{#each profile.addresses as address}<li>{address.original_value} <small>{address.address_kind}</small></li>{/each}</ul></section>
@@ -246,8 +263,8 @@
   [role="tab"] { border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); background: var(--bg-inset); color: var(--text-secondary); cursor: pointer; }
   [role="tab"][aria-selected="true"] { background: var(--bg-surface-hover); color: var(--text-primary); }
   section { display: grid; gap: var(--space-2); }
-  h2, h3, h4, p, ul { margin: 0; }
-  h3 { font-size: var(--font-size-md); } h4, small { color: var(--text-muted); font-size: var(--font-size-sm); }
+  h2, h3, p, ul { margin: 0; }
+  h3 { font-size: var(--font-size-md); } small { color: var(--text-muted); font-size: var(--font-size-sm); }
   ul { padding-left: var(--space-5); }
   .section-error { margin: 0; padding: var(--space-2); background: var(--bg-inset); color: var(--text-secondary); }
 </style>

@@ -12,6 +12,7 @@
   } from '../../api/generated/models';
   import type { PersonProfilePatchRequest } from '../../directory/models';
   import type { DirectoryProfileController } from '../../directory/profile-controller.svelte';
+  import { reachKindForAddressKind, reachKindLabels, serviceLabelForSlug } from '../../people/reach';
   import ProfileHistoryDialog from './ProfileHistoryDialog.svelte';
   import StructuredProfileEditor, {
     type StructuredProfileRecord,
@@ -86,8 +87,16 @@
     }
     return result;
   }
+  /** Group heading for a contact point: the service when it has one, else
+   * the address kind itself — email and phone are never "other". */
   function contactService(record: StructuredProfileRecord): string {
-    return (record as PersonContactPoint).service_slug?.trim() || 'other';
+    const point = record as PersonContactPoint;
+    const service = serviceLabelForSlug(point.service_slug);
+    if (service) return service;
+    const kind = reachKindForAddressKind(point.address_kind);
+    if (kind) return reachKindLabels[kind];
+    const raw = point.address_kind.trim().replaceAll('_', ' ');
+    return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : 'Other';
   }
   function sameObservation(point: PersonContactPoint, observation: ParticipantContactObservation): boolean {
     return (

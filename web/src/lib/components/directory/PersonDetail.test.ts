@@ -124,6 +124,43 @@ describe('PersonDetail', () => {
     expect(requestPaths).not.toContain('/api/v1/files/search');
   });
 
+  it('shows every contact method under the name, merging address-book points with observed participant identifiers', async () => {
+    const client = createAPIClient(quietOverviewFetch().mockImplementation(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      const overview = overviewCardResponse(request);
+      if (overview) return overview;
+      if (path === '/api/v1/participants/3') return Response.json({
+        id: 3, display_label: 'Synthetic Person', identifiers: [
+          { type: 'email', value: 'PERSON@example.test', participant_id: 3, is_primary: true, provenance: 'participant_identifiers' },
+          { type: 'phone', value: '+1 555 010 0009', participant_id: 3, is_primary: false, provenance: 'participant_identifiers' }
+        ], activity_count: 0, file_count: 0, source_counts: [], first_at: when, last_at: when, cache_revision: 'c'
+      });
+      if (path === '/api/v1/carddav/publications/7') return Response.json({ error: 'carddav_unavailable', message: 'not rendered' }, { status: 503 });
+      return Response.json({ merges: [], limit: 100, offset: 0 });
+    }));
+    render(PersonDetail, { client, personID: 7, bundle: {
+      person: { id: 7, revision: 2, display_name: 'Synthetic Person', participant_ids: [3], vcard_uid: '', created_at: when, updated_at: when },
+      structuredProfile: {
+        person: { id: 7, revision: 2, participant_ids: [3], vcard_uid: '', created_at: when, updated_at: when },
+        names: [],
+        contact_points: [{ person_id: 7, address_kind: 'email', original_value: 'person@example.test', normalized_value: 'person@example.test', normalization: 'email', normalization_version: 1, service_slug: 'email', envelope: { id: 2, ordinal: 0, source: 'user', created_at: when, updated_at: when, vcard: {} } }],
+        addresses: [], dates: [], categories: [], media: []
+      },
+      etags: {}, errors: {}
+    } });
+
+    const block = screen.getByRole('list', { name: 'Contact methods' });
+    expect(screen.getByRole('heading', { name: 'Synthetic Person' }).compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2));
+    const rows = screen.getAllByRole('listitem');
+    expect(rows[0]?.textContent).toContain('person@example.test');
+    expect(rows[0]?.textContent).not.toContain('observed');
+    expect(rows[1]?.textContent).toContain('+1 555 010 0009');
+    expect(rows[1]?.textContent).toContain('observed');
+    expect(screen.getByRole('button', { name: 'Copy +1 555 010 0009' })).toBeDefined();
+  });
+
   it('does not claim an organization name for an employment outside the primary projection', async () => {
     const client = createAPIClient(vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);

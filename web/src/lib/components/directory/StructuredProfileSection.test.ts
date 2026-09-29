@@ -214,7 +214,7 @@ describe('StructuredProfileSection', () => {
       }]
     })), '"person-7-r3"', structuredProfile);
 
-    expect(await screen.findByRole('heading', { name: 'slack' })).toBeDefined();
+    expect(await screen.findByRole('heading', { name: 'Slack' })).toBeDefined();
     expect(await screen.findByText('Observed 2026-08-03T12:00:00Z · Source 4')).toBeDefined();
   });
 

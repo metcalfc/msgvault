@@ -33,7 +33,8 @@ function linkOriginText(edge: PersonClusterEdge): string {
   return `matched from ${from || 'another source'}${basis ? ` (${basis})` : ''}`;
 }
 
-function linkOrigins(edges: PersonClusterEdge[]): string {
+/** Every distinct link origin among the given edges, in human words. */
+export function linkOriginSummary(edges: PersonClusterEdge[]): string {
   return [...new Set(edges.map(linkOriginText).filter(Boolean))].sort().join(' · ');
 }
 
@@ -42,7 +43,7 @@ export function identityChipText(
   member: PersonClusterMember | undefined,
   edges: PersonClusterEdge[]
 ): IdentityChipText {
-  const origin = linkOrigins(edges);
+  const origin = linkOriginSummary(edges);
   if (identifier) {
     const ordinary = identifier.type === 'email' || identifier.type === 'phone';
     const title = identifier.service_label
