@@ -41,8 +41,11 @@ describe('StructuredProfileSection', () => {
 
     expect(screen.getByText('Test User')).toBeDefined();
     expect(screen.getByText(/Source: user/)).toBeDefined();
-    expect(screen.getByText(/Valid from: 2026-08-01T00:00:00Z/)).toBeDefined();
-    expect(screen.getByText(/Updated: 2026-08-01T00:00:00Z/)).toBeDefined();
+    // Stamps render through kit's formatTimestamp in the runner's zone, so
+    // 2026-08-01T00:00:00Z reads as Aug 1 or the evening of Jul 31.
+    expect(screen.getByText(/Valid from: (Aug 1|Jul 31)/)).toBeDefined();
+    expect(screen.getByText(/Updated: (Aug 1|Jul 31)/)).toBeDefined();
+    expect(screen.queryByText(/2026-08-01T00:00:00Z/)).toBeNull();
   });
 
   it('requires explicit confirmation before closing a current fact', async () => {
@@ -215,7 +218,7 @@ describe('StructuredProfileSection', () => {
     })), '"person-7-r3"', structuredProfile);
 
     expect(await screen.findByRole('heading', { name: 'Slack' })).toBeDefined();
-    expect(await screen.findByText('Observed 2026-08-03T12:00:00Z · Source 4')).toBeDefined();
+    expect(await screen.findByText(/^Observed Aug 3, .* · Source 4$/)).toBeDefined();
   });
 
   it('loads observations when a contact point is added after the section mounts', async () => {
@@ -239,7 +242,7 @@ describe('StructuredProfileSection', () => {
 
     controller.structuredProfile = { ...profile(), contact_points: [contactPoint] };
 
-    expect(await screen.findByText('Observed 2026-08-03T12:00:00Z · Source 4')).toBeDefined();
+    expect(await screen.findByText(/^Observed Aug 3, .* · Source 4$/)).toBeDefined();
     expect(fetchFn).toHaveBeenCalledOnce();
   });
 

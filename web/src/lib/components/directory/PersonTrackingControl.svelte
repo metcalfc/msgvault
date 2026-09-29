@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Card, EmptyState, Spinner, Toggle, formatTimestamp } from '@kenn-io/kit-ui';
+  import { Button, Chip, EmptyState, Spinner, Toggle, formatTimestamp } from '@kenn-io/kit-ui';
   import { onDestroy, tick, untrack } from 'svelte';
 
   import type { APIClient } from '../../api/client';
@@ -63,131 +63,127 @@
 <section
   bind:this={root}
   class="maintenance"
+  data-section
   aria-labelledby={`person-${personID}-profile-maintenance-heading`}
 >
-  <Card level="default" padding="sm">
-    <div class="maintenance-content">
-      <div class="heading-row">
-        <div>
-          <h3 id={`person-${personID}-profile-maintenance-heading`} tabindex="-1">Profile maintenance</h3>
-          <p>Tracking makes this person eligible for future automatic profile maintenance.</p>
-        </div>
-        {#if controller.trackingLoading || controller.catalogLoading}
-          <span class="working" aria-label="Loading profile maintenance" aria-busy="true">
-            <Spinner size={14} label="Loading profile maintenance" />
-          </span>
-        {/if}
-      </div>
+  <header data-section-header>
+    <div>
+      <h3 id={`person-${personID}-profile-maintenance-heading`} data-section-title tabindex="-1">Profile maintenance</h3>
+      <p data-meta>Tracking makes this person eligible for future automatic profile maintenance.</p>
+    </div>
+    {#if controller.trackingLoading || controller.catalogLoading}
+      <span class="working" aria-label="Loading profile maintenance" aria-busy="true">
+        <Spinner size={14} label="Loading profile maintenance" />
+      </span>
+    {/if}
+  </header>
 
-      {#if controller.trackingError}
-        <div class="notice notice--error" role="alert">
-          <span>{controller.trackingError}</span>
+  {#if controller.trackingError}
+    <div class="notice" role="alert">
+      <span>{controller.trackingError}</span>
+      <Button
+        size="sm"
+        surface="soft"
+        label={controller.stateUnknown ? 'Retry profile maintenance state' : 'Retry profile maintenance'}
+        disabled={controller.trackingLoading || controller.pending}
+        onclick={() => void retryTracking()}
+      />
+    </div>
+  {/if}
+
+  {#if controller.tracking}
+    <div class="tracking-row">
+      <Toggle
+        checked={controller.tracking.tracked}
+        ariaLabel="Track this person for profile maintenance"
+        disabled={controller.trackingLoading || controller.pending || controller.stateUnknown}
+        onchange={(checked) => void changeTracking(checked)}
+      />
+      {#if controller.tracking.tracked_at}
+        <span class="tracked-time" data-meta>
+          Tracked since
+          <time datetime={controller.tracking.tracked_at}>{formatTimestamp(controller.tracking.tracked_at)}</time>
+        </span>
+      {/if}
+    </div>
+  {:else if !controller.trackingLoading && !controller.trackingError}
+    <p data-meta>Profile maintenance state is unavailable.</p>
+  {/if}
+
+  {#if controller.pending}
+    <p class="working" role="status" aria-busy="true">
+      <Spinner size={14} label="Updating profile maintenance" />
+      Updating profile maintenance…
+    </p>
+  {/if}
+
+  <details class="catalog-disclosure">
+    <summary>What can be maintained?</summary>
+    <div class="catalog" data-section aria-labelledby={`person-${personID}-eligible-fields-heading`}>
+      <div data-section-header>
+        <div>
+          <h4 id={`person-${personID}-eligible-fields-heading`} data-row-title>Eligible profile fields</h4>
+          <p data-meta>Definitions describe fields the maintenance system may update; they do not show this person's values.</p>
+        </div>
+        {#if !controller.catalogIncludesSensitive}
           <Button
             size="sm"
-            label={controller.stateUnknown ? 'Retry profile maintenance state' : 'Retry profile maintenance'}
-            disabled={controller.trackingLoading || controller.pending}
-            onclick={() => void retryTracking()}
+            surface="soft"
+            label="Show sensitive eligible fields"
+            disabled={controller.catalogLoading}
+            onclick={() => void loadSensitiveCatalog()}
           />
-        </div>
-      {/if}
-
-      {#if controller.tracking}
-        <div class="tracking-row">
-          <Toggle
-            checked={controller.tracking.tracked}
-            ariaLabel="Track this person for profile maintenance"
-            disabled={controller.trackingLoading || controller.pending || controller.stateUnknown}
-            onchange={(checked) => void changeTracking(checked)}
-          />
-          {#if controller.tracking.tracked_at}
-            <span class="tracked-time">
-              Tracked since
-              <time datetime={controller.tracking.tracked_at}>{formatTimestamp(controller.tracking.tracked_at)}</time>
-            </span>
-          {/if}
-        </div>
-      {:else if !controller.trackingLoading && !controller.trackingError}
-        <p>Profile maintenance state is unavailable.</p>
-      {/if}
-
-      {#if controller.pending}
-        <p class="working" role="status" aria-busy="true">
-          <Spinner size={14} label="Updating profile maintenance" />
-          Updating profile maintenance…
-        </p>
-      {/if}
-
-      <details class="catalog-disclosure">
-        <summary>What can be maintained?</summary>
-      <div class="catalog" aria-labelledby={`person-${personID}-eligible-fields-heading`}>
-        <div class="catalog-heading">
-          <div>
-            <h4 id={`person-${personID}-eligible-fields-heading`}>Eligible profile fields</h4>
-            <p>Definitions describe fields the maintenance system may update; they do not show this person's values.</p>
-          </div>
-          {#if !controller.catalogIncludesSensitive}
-            <Button
-              size="sm"
-              label="Show sensitive eligible fields"
-              disabled={controller.catalogLoading}
-              onclick={() => void loadSensitiveCatalog()}
-            />
-          {:else}
-            <span class="disclosure">Sensitive eligible fields are shown.</span>
-          {/if}
-        </div>
-
-        {#if controller.catalogError}
-          <div class="notice notice--error" role="alert">
-            <span>{controller.catalogError}</span>
-            <Button
-              size="sm"
-              label="Retry eligible profile fields"
-              disabled={controller.catalogLoading}
-              onclick={() => void controller.retryCatalog(catalogRetryIncludesSensitive)}
-            />
-          </div>
-        {/if}
-
-        {#if controller.targets.length > 0}
-          <ul class="target-list">
-            {#each controller.targets as target}
-              <li>
-                <strong>{target.description}</strong>
-                <span>{kindLabel(target.kind)} · {target.value_type} · {target.cardinality}</span>
-                {#if target.sensitive}<span class="sensitive">Sensitive</span>{/if}
-              </li>
-            {/each}
-          </ul>
-        {:else if !controller.catalogLoading && !controller.catalogError}
-          <EmptyState
-            title="No eligible profile fields"
-            description="The server catalog does not currently expose fields for automatic maintenance."
-          />
+        {:else}
+          <span data-meta>Sensitive eligible fields are shown.</span>
         {/if}
       </div>
-      </details>
+
+      {#if controller.catalogError}
+        <div class="notice" role="alert">
+          <span>{controller.catalogError}</span>
+          <Button
+            size="sm"
+            surface="soft"
+            label="Retry eligible profile fields"
+            disabled={controller.catalogLoading}
+            onclick={() => void controller.retryCatalog(catalogRetryIncludesSensitive)}
+          />
+        </div>
+      {/if}
+
+      {#if controller.targets.length > 0}
+        <ul class="target-list" data-detail-list>
+          {#each controller.targets as target}
+            <li data-detail-row>
+              <span data-detail-label>{target.description}</span>
+              <span data-detail-value>{kindLabel(target.kind)} · {target.value_type} · {target.cardinality}</span>
+              <span data-detail-actions>
+                {#if target.sensitive}<Chip tone="warning" size="xs" uppercase={false}>Sensitive</Chip>{/if}
+              </span>
+            </li>
+          {/each}
+        </ul>
+      {:else if !controller.catalogLoading && !controller.catalogError}
+        <EmptyState
+          title="No eligible profile fields"
+          description="The server catalog does not currently expose fields for automatic maintenance."
+        />
+      {/if}
     </div>
-  </Card>
+  </details>
 </section>
 
 <style>
-  .maintenance, .maintenance-content, .catalog { display: grid; gap: var(--space-3); min-width: 0; }
-  .heading-row, .catalog-heading, .tracking-row, .notice { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
-  .heading-row > div, .catalog-heading > div { display: grid; gap: var(--space-1); }
-  h3, h4, p, ul { margin: 0; }
-  .heading-row p, .catalog-heading p, .target-list span, .tracked-time, .disclosure { color: var(--text-muted); font-size: var(--font-size-sm); }
+  h3, h4, p { margin: 0; }
+  .tracking-row, .notice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .tracking-row { justify-content: flex-start; }
   .working, .tracked-time { display: flex; align-items: center; gap: var(--space-2); }
   .catalog-disclosure summary { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-sm); }
   .catalog-disclosure[open] summary { margin-bottom: var(--space-3); }
-  .notice { align-items: center; padding: var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); }
-  .notice--error { border-color: var(--status-error-ink); background: var(--status-error-bg); color: var(--status-error-ink); }
-  .target-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); padding: 0; list-style: none; }
-  .target-list li { display: grid; align-content: start; gap: var(--space-1); min-width: 0; padding: var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); overflow-wrap: anywhere; }
-  .sensitive { width: fit-content; padding: 1px 5px; border-radius: var(--radius-sm); background: var(--bg-warning); color: var(--text-primary) !important; }
+  /* A failure reads as a toned row with a 2px bar, not a box. */
+  .notice { padding: var(--space-2) var(--space-3); border-left: 2px solid var(--status-error-ink); background: var(--status-error-bg); color: var(--status-error-ink); font-size: var(--font-size-sm); }
 
   @media (max-width: 760px) {
-    .heading-row, .catalog-heading, .tracking-row, .notice { align-items: stretch; flex-direction: column; }
-    .target-list { grid-template-columns: minmax(0, 1fr); }
+    .notice { align-items: stretch; flex-direction: column; }
   }
 </style>

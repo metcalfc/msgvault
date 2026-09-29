@@ -160,7 +160,7 @@
   header p, .empty, small { color: var(--text-muted); font-size: var(--font-size-sm); }
   .controls { grid-auto-flow: column; align-items: end; }
   .controls label { display: grid; gap: var(--space-1); color: var(--text-muted); font-size: var(--font-size-xs); }
-  .projection { position: relative; min-height: 7rem; overflow: auto; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-inset); }
+  .projection { position: relative; min-height: 7rem; overflow: auto; border-radius: var(--radius-sm); background: var(--surface-well); }
   svg { min-width: 100%; max-height: 24rem; }
   line { stroke: var(--edge); stroke-width: 1.5; }
   circle { fill: var(--bg-surface); stroke: var(--accent-blue); stroke-width: 2; }
@@ -169,7 +169,7 @@
   .network-error { justify-items: start; padding: var(--space-3); border-radius: var(--radius-sm); background: var(--bg-inset); color: var(--text-danger); }
   .truncated { padding: var(--space-3); border-radius: var(--radius-sm); background: var(--bg-warning); color: var(--text-primary); }
   .connection-list, .hop-group > ul { list-style: none; padding: 0; }
-  .hop-group, .root-only { padding: var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-sm); }
+  .hop-group, .root-only { padding: var(--space-2) 0; border-bottom: 1px solid var(--hairline); }
   .connection { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
   .connection small { margin-left: auto; }
   @media (max-width: 640px) { header { grid-template-columns: 1fr; } .controls { grid-auto-flow: row; justify-items: start; } }

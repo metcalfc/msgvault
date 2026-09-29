@@ -1,0 +1,137 @@
+/* Section and row anatomy shared by detail pages, maintenance sections,
+ * and settings. Nothing here draws a box: hierarchy comes from the surface
+ * ladder, one hairline under a section header, and one hairline under each
+ * row.
+ *
+ *   data-section          a section: header + rows, stacked on the grid
+ *   data-section-header   title (with optional supporting line) on the
+ *                         left, trailing controls on the right, hairline
+ *   data-section-actions  the trailing control cluster in a header
+ *   data-detail-list      a list of detail rows (no bullets, no gaps)
+ *   data-detail-row       label / value / trailing action in one grid,
+ *                         hairline below; "plain" drops the label column
+ *   data-detail-label     the muted label column
+ *   data-detail-value     the value column (stacks value and its meta)
+ *   data-detail-actions   the trailing column; "hover" keeps it quiet
+ *                         until the row is hovered or holds focus
+ *   data-detail-below     content that spans the row under the value
+ *                         (an inline editor, a confirmation) */
+
+:where([data-section]) {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+:where([data-section-header]) {
+  display: flex;
+  min-height: 32px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+}
+
+:where([data-section-header] > div:first-child) {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+:where([data-section-header] p) {
+  margin: 0;
+}
+
+:where([data-section-actions]) {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+:where([data-detail-list]) {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+:where([data-detail-row]) {
+  display: grid;
+  min-height: 32px;
+  grid-template-columns: minmax(96px, 14rem) minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: var(--space-4);
+  row-gap: var(--space-1);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+:where([data-detail-row='plain']) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+:where([data-detail-label]) {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+
+:where([data-detail-value]) {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+
+:where([data-detail-value] small) {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+:where([data-detail-actions]) {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+:where([data-detail-actions='hover']) {
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+:where([data-detail-row]:hover [data-detail-actions='hover']),
+:where([data-detail-row]:focus-within [data-detail-actions='hover']) {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  :where([data-detail-actions='hover']) {
+    opacity: 1;
+  }
+}
+
+:where([data-detail-below]) {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  :where([data-detail-row]) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  :where([data-detail-row] > [data-detail-label]) {
+    grid-column: 1 / -1;
+  }
+}

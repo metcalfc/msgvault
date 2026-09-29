@@ -188,7 +188,8 @@
   h2, h3, p, ul { margin: 0; }
   header p, small, .muted { color: var(--text-muted); font-size: var(--font-size-sm); }
   .records, .types { list-style: none; padding: 0; display: grid; gap: var(--space-2); }
-  .records li { display: flex; gap: var(--space-3); justify-content: space-between; align-items: start; flex-wrap: wrap; padding: var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-sm); }
+  .records { gap: 0; }
+  .records li { display: flex; gap: var(--space-3); justify-content: space-between; align-items: start; flex-wrap: wrap; padding: var(--space-2) 0; border-bottom: 1px solid var(--hairline); }
   .records li > div:first-child { display: grid; gap: var(--space-1); }
   .row-actions { justify-content: flex-start; }
   [role="alert"] { color: var(--text-danger); }

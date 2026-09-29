@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button, TextInput } from '@kenn-io/kit-ui';
+
   import {
     createPersonAgendaItem,
     getKataIntegrationStatus,
@@ -44,6 +46,8 @@
     }
     return '';
   });
+  const titleFieldID = $derived(`person-${personID}-agenda-title`);
+  const listFieldID = $derived(`person-${personID}-agenda-list`);
 
   $effect(() => {
     const selectedPersonID = personID;
@@ -201,14 +205,14 @@
      until the integration reports ready there is nothing here to act on, so
      the section renders nothing at all (Settings owns the integration state). -->
 {#if integrationState === 'loading' || integrationState === 'ready'}
-<section class="person-agenda" aria-labelledby={`person-${personID}-agenda-heading`}>
-  <div class="heading">
+<section class="person-agenda" data-section aria-labelledby={`person-${personID}-agenda-heading`}>
+  <header data-section-header>
     <div>
-      <h3 id={`person-${personID}-agenda-heading`}>Agenda</h3>
-      <p>Open tasks linked to this person. Edit and complete them in Kata.</p>
+      <h3 id={`person-${personID}-agenda-heading`} data-section-title>Agenda</h3>
+      <p data-meta>Open tasks linked to this person. Edit and complete them in Kata.</p>
     </div>
-    {#if loading}<span role="status">Loading…</span>{/if}
-  </div>
+    {#if loading}<span role="status" data-meta>Loading…</span>{/if}
+  </header>
 
   {#if error}<p class="notice" role="status">{error}</p>{/if}
 
@@ -222,17 +226,28 @@
 
   {#each groups as [list, listItems]}
     <div class="list">
-      <h4>{label(list)}</h4>
-      <ul>
+      <h4 data-meta="caps">{label(list)}</h4>
+      <ul data-detail-list>
         {#each listItems as item (item.uid)}
-          <li>
-            <span>
-              <strong>{item.title}</strong>
-              {#if item.state !== 'open'}<small>{label(item.state)}</small>{/if}
-              {#if item.status !== item.state}<small>{label(item.status)}</small>{/if}
-              {#if item.web_url}<a href={item.web_url} target="_blank" rel="noreferrer">Open in Kata</a>{/if}
+          <li data-detail-row="plain">
+            <span data-detail-value>
+              <span class="item-title">
+                <strong>{item.title}</strong>
+                {#if item.state !== 'open'}<small>{label(item.state)}</small>{/if}
+                {#if item.status !== item.state}<small>{label(item.status)}</small>{/if}
+                {#if item.web_url}<a href={item.web_url} target="_blank" rel="noreferrer">Open in Kata</a>{/if}
+              </span>
             </span>
-            <button type="button" disabled={mutating || !mutationReady} onclick={() => void unlink(item.ref)} aria-label={`Unlink ${item.title}`}>Unlink</button>
+            <span data-detail-actions="hover">
+              <Button
+                size="sm"
+                surface="soft"
+                label="Unlink"
+                ariaLabel={`Unlink ${item.title}`}
+                disabled={mutating || !mutationReady}
+                onclick={() => void unlink(item.ref)}
+              />
+            </span>
           </li>
         {/each}
       </ul>
@@ -240,24 +255,22 @@
   {/each}
 
   <form onsubmit={(event) => { event.preventDefault(); void createItem(); }}>
-    <label>New agenda item <input bind:value={title} disabled={mutating || !mutationReady} /></label>
-    <label>List <input bind:value={listName} disabled={mutating || !mutationReady} /></label>
-    <button type="submit" disabled={mutating || !mutationReady || !title.trim()}>Add item</button>
+    <label for={titleFieldID}>New agenda item</label>
+    <TextInput id={titleFieldID} bind:value={title} size="sm" disabled={mutating || !mutationReady} />
+    <label for={listFieldID}>List</label>
+    <TextInput id={listFieldID} bind:value={listName} size="sm" disabled={mutating || !mutationReady} />
+    <Button type="submit" size="sm" tone="info" surface="soft" label="Add item" disabled={mutating || !mutationReady || !title.trim()} />
   </form>
 </section>
 {/if}
 
 <style>
-  .person-agenda { display: grid; gap: var(--space-3); }
-  .heading, li, form { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
   h3, h4, p, ul { margin: 0; }
-  h4 { font-size: var(--font-size-sm); color: var(--text-secondary); }
-  ul { list-style: none; padding: 0; display: grid; gap: var(--space-2); }
-  li { padding: var(--space-2); border: 1px solid var(--border-default); border-radius: var(--radius-sm); }
-  li span { display: flex; align-items: baseline; gap: var(--space-2); }
+  .list { display: grid; gap: var(--space-1); }
+  .item-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+  .item-title strong { font-weight: 500; }
   small { color: var(--text-muted); }
-  form { flex-wrap: wrap; justify-content: flex-start; }
-  label { display: grid; gap: var(--space-1); color: var(--text-secondary); font-size: var(--font-size-sm); }
-  input { min-width: 12rem; }
-  .notice { color: var(--text-secondary); }
+  form { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+  label { color: var(--text-secondary); font-size: var(--font-size-sm); }
+  .notice { color: var(--text-secondary); font-size: var(--font-size-sm); }
 </style>

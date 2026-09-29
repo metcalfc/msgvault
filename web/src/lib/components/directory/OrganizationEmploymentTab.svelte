@@ -221,7 +221,8 @@
   h2, h3, p, ul { margin: 0; } header p, .dates, small, .empty { color: var(--text-muted); font-size: var(--font-size-sm); }
   .projection { padding: var(--space-3); border-radius: var(--radius-sm); background: var(--bg-inset); }
   .records, .organizations { list-style: none; padding: 0; display: grid; gap: var(--space-2); }
-  .records li { display: grid; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-sm); }
+  .records { gap: 0; }
+  .records li { display: grid; gap: var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--hairline); }
   .row-actions { justify-content: flex-start; } .dates { display: block; } .search :global(.kit-search-input) { flex: 1; min-width: 14rem; }
   [role="alert"] { color: var(--text-danger); }
 </style>

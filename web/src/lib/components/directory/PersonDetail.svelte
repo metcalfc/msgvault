@@ -227,24 +227,24 @@
   {:else if activeTab === 'network'}
     <div id={networkPanelID} role="tabpanel" aria-labelledby={networkTabID} tabindex="0">
       {#if entityController}<PersonNetwork controller={entityController} {onOpenPerson} onOpenOrganization={openOrganization} />
-      {:else}<section><h2>Network</h2><p>The curated network is unavailable for this selection.</p></section>{/if}
+      {:else}<section><h2 data-section-title>Network</h2><p>The curated network is unavailable for this selection.</p></section>{/if}
     </div>
   {:else if activeTab === 'relationships'}
     <div id={relationshipsPanelID} role="tabpanel" aria-labelledby={relationshipsTabID} tabindex="0">
       {#if entityController}<RelationshipsTab {client} controller={entityController} {personID} />
-      {:else}<section><h2>Relationships</h2><p>Relationships are unavailable for this selection.</p></section>{/if}
+      {:else}<section><h2 data-section-title>Relationships</h2><p>Relationships are unavailable for this selection.</p></section>{/if}
     </div>
   {:else if activeTab === 'organizations'}
     <div id={organizationsPanelID} role="tabpanel" aria-labelledby={organizationsTabID} tabindex="0">
       {#if entityController}<OrganizationEmploymentTab controller={entityController} {personID} {organizationRequest} />
-      {:else}<section><h2>Organizations</h2><p>Organizations are unavailable for this selection.</p></section>{/if}
+      {:else}<section><h2 data-section-title>Organizations</h2><p>Organizations are unavailable for this selection.</p></section>{/if}
     </div>
   {:else}
     <div id={overviewPanelID} role="tabpanel" aria-labelledby={overviewTabID} tabindex="0">
       {#if bundle.person || profile}
         <header class="person-header">
           <div class="person-title-row">
-            <h2>{displayName}</h2>
+            <h2 data-page-title>{displayName}</h2>
             {#if onOpenTimeline && bundle.person?.participant_ids?.length}
               <Button
                 label="Open timeline"
@@ -279,25 +279,25 @@
       {#if profileController}
         <StructuredProfileSection {client} controller={profileController} {personID} />
       {:else if profile?.names?.length}
-        <section><h3>Names</h3><ul>{#each profile.names as name}<li>{nameText(name)} <small>{name.name_kind}</small></li>{/each}</ul></section>
+        <section><h3 data-section-title>Names</h3><ul>{#each profile.names as name}<li>{nameText(name)} <small>{name.name_kind}</small></li>{/each}</ul></section>
       {/if}
       {#if !profileController && profile?.addresses?.length}
-        <section><h3>Addresses</h3><ul>{#each profile.addresses as address}<li>{address.original_value} <small>{address.address_kind}</small></li>{/each}</ul></section>
+        <section><h3 data-section-title>Addresses</h3><ul>{#each profile.addresses as address}<li>{address.original_value} <small>{address.address_kind}</small></li>{/each}</ul></section>
       {/if}
       {#if !profileController && profile?.dates?.length}
-        <section><h3>Dates</h3><ul>{#each profile.dates as date}<li>{date.label ?? date.date_kind}: {date.date_text ?? valueText(date.date)}</li>{/each}</ul></section>
+        <section><h3 data-section-title>Dates</h3><ul>{#each profile.dates as date}<li>{date.label ?? date.date_kind}: {date.date_text ?? valueText(date.date)}</li>{/each}</ul></section>
       {/if}
       {#if !profileController && profile?.categories?.length}
-        <section><h3>Categories</h3><ul>{#each profile.categories as category}<li>{category.original_value}</li>{/each}</ul></section>
+        <section><h3 data-section-title>Categories</h3><ul>{#each profile.categories as category}<li>{category.original_value}</li>{/each}</ul></section>
       {/if}
       {#if profileController && profileController.attributes}
         <AttributeSection controller={profileController} />
       {/if}
       {#if entityController?.employments.length}
-        <section><h3>Organizations and employment</h3><ul>{#each entityController.employments as employment}<li><span>{employment.title ?? employment.role ?? 'Employment'} · {employmentOrganization(employment.id) ?? `Organization ${employment.organization_id}`}</span>{#if employment.is_current}<small class="employment-flag">Current</small>{/if}</li>{/each}</ul></section>
+        <section><h3 data-section-title>Organizations and employment</h3><ul>{#each entityController.employments as employment}<li><span>{employment.title ?? employment.role ?? 'Employment'} · {employmentOrganization(employment.id) ?? `Organization ${employment.organization_id}`}</span>{#if employment.is_current}<small class="employment-flag">Current</small>{/if}</li>{/each}</ul></section>
       {/if}
       {#if entityController?.relationships.length}
-        <section><h3>Relationships</h3><ul>{#each entityController.relationships as view}<li>{view.counterpart_display_name?.trim() || view.counterpart_vcard_uid || `Person ${view.counterpart_person_id}`} · {view.counterpart_label}</li>{/each}</ul></section>
+        <section><h3 data-section-title>Relationships</h3><ul>{#each entityController.relationships as view}<li>{view.counterpart_display_name?.trim() || view.counterpart_vcard_uid || `Person ${view.counterpart_person_id}`} · {view.counterpart_label}</li>{/each}</ul></section>
       {/if}
       {#if bundle.person?.id === personID}
         <MeetingPanel {client} collapsible scope={{ kind: 'direct', scope: { person_id: personID } }}
@@ -305,7 +305,7 @@
           {onOpenMeeting} />
       {/if}
       {#if bundle.activity}
-        <section><h3>Activity</h3><p>{bundle.activity.total_count} recorded days</p></section>
+        <section><h3 data-section-title>Activity</h3><p>{bundle.activity.total_count} recorded days</p></section>
       {/if}
       <details class="maintenance">
         <summary>Maintenance</summary>
@@ -328,16 +328,20 @@
 </section>
 
 <style>
-  .person-detail { padding: var(--space-4); display: grid; gap: var(--space-4); }
-  .detail-tabs { display: flex; gap: var(--space-2); }
-  [role="tabpanel"] { display: grid; gap: var(--space-4); outline: none; }
-  [role="tab"] { border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); background: var(--bg-inset); color: var(--text-secondary); cursor: pointer; }
-  [role="tab"][aria-selected="true"] { background: var(--bg-surface-hover); color: var(--text-primary); }
+  .person-detail { padding: var(--space-4); display: grid; gap: var(--space-5); }
+  [role="tabpanel"] { display: grid; gap: var(--space-5); outline: none; }
+  /* Text tabs: the selected one carries a 2px accent underline on the
+   * strip's hairline; nothing is boxed. */
+  .detail-tabs { display: flex; gap: var(--space-2); border-bottom: 1px solid var(--hairline); }
+  [role="tab"] { margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; padding: var(--space-2) var(--space-3); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--font-size-sm); font-weight: 500; line-height: var(--leading-body); cursor: pointer; }
+  [role="tab"]:hover { color: var(--text-primary); }
+  [role="tab"][aria-selected="true"] { border-bottom-color: var(--accent-blue); color: var(--text-primary); }
+  [role="tab"]:focus-visible { outline: var(--focus-ring); outline-offset: -2px; border-radius: var(--radius-sm); }
   section { display: grid; gap: var(--space-2); }
   h2, h3, p, ul { margin: 0; }
-  h3 { font-size: var(--font-size-md); } small { color: var(--text-muted); font-size: var(--font-size-sm); }
+  small { color: var(--text-muted); font-size: var(--font-size-sm); }
   ul { padding-left: var(--space-5); }
-  .section-error { margin: 0; padding: var(--space-2); background: var(--bg-inset); color: var(--text-secondary); }
+  .section-error { margin: 0; padding: var(--space-2) var(--space-3); border-left: 2px solid var(--status-error-ink); background: var(--status-error-bg); color: var(--status-error-ink); font-size: var(--font-size-sm); }
   .person-header { display: grid; gap: var(--space-1); }
   .person-title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
   .person-subtitle { color: var(--text-secondary); font-size: var(--font-size-sm); }
@@ -347,5 +351,5 @@
   .separator { color: var(--text-muted); }
   .employment-flag { margin-left: var(--space-2); }
   .maintenance summary { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-sm); }
-  .maintenance-body { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
+  .maintenance-body { display: grid; gap: var(--space-6); margin-top: var(--space-4); }
 </style>

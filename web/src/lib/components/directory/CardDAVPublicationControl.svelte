@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Card, Spinner, Toggle } from '@kenn-io/kit-ui';
+  import { Button, Spinner, Toggle } from '@kenn-io/kit-ui';
   import { onDestroy, tick, untrack } from 'svelte';
 
   import type { APIClient } from '../../api/client';
@@ -65,117 +65,119 @@
   }
 </script>
 
-<section bind:this={root} class="publication" aria-labelledby={`person-${personID}-carddav-publication-heading`}>
-  <Card level="default" padding="sm">
-    <div class="publication-content">
-      <div class="heading-row">
-        <div>
-          <h3 id={`person-${personID}-carddav-publication-heading`} tabindex="-1">CardDAV publication</h3>
-          <p>Publish this person to the selected CardDAV address book.</p>
-        </div>
-        {#if controller.loading}
-          <span class="working" aria-label="Loading CardDAV publication" aria-busy="true">
-            <Spinner size={14} label="Loading CardDAV publication" />
-          </span>
-        {/if}
-      </div>
-
-      {#if controller.error}
-        <div class="notice notice--error" role="alert">
-          <span>{controller.error}</span>
-          <Button
-            size="sm"
-            label={controller.stateUnknown ? 'Retry CardDAV publication state' : 'Retry CardDAV publication'}
-            disabled={controller.loading}
-            onclick={() => void controller.retryState()}
-          />
-        </div>
-      {/if}
-
-      {#if controller.unavailable}
-        <div class="state-copy">
-          <p>CardDAV publication is unavailable. Configure or repair it in CardDAV settings.</p>
-          <Button label="Open CardDAV settings" onclick={onOpenSettings} />
-        </div>
-      {:else if controller.publication}
-        {@const publication = controller.publication}
-        <div class="state-copy">
-          <strong>{stateText(publication.state)}</strong>
-          <span>Desired publication: {publication.desired ? 'Published' : 'Unpublished'}</span>
-          {#if publication.address_book}
-            <span>Publication address book: {publication.address_book.name}.</span>
-          {:else}
-            <span>No publish address book is selected.</span>
-          {/if}
-        </div>
-
-        {#if controller.pendingAction}
-          <p class="working" role="status" aria-busy="true">
-            <Spinner size={14} label="Updating CardDAV publication" />
-            {controller.pendingAction === 'publish' ? 'Publishing this person to CardDAV…' : 'Removing this person from CardDAV…'}
-          </p>
-        {/if}
-
-        {#if publication.state === 'unpublished' && publication.address_book}
-          <Toggle
-            checked={controller.pendingAction === 'publish'}
-            ariaLabel="Publish person to CardDAV"
-            disabled={!controller.canPublish()}
-            onchange={(checked) => void togglePublication(checked)}
-          />
-        {:else if publication.state === 'published'}
-          <Toggle
-            checked={controller.pendingAction !== 'unpublish'}
-            ariaLabel="Remove person from CardDAV"
-            disabled={!controller.canUnpublish()}
-            onchange={(checked) => void togglePublication(checked)}
-          />
-        {:else if publication.state === 'pending'}
-          <Toggle
-            checked={publication.desired}
-            ariaLabel={publication.desired ? 'Publish person to CardDAV' : 'Remove person from CardDAV'}
-            disabled
-          />
-          <p>{publication.pending_operation ? pendingText(publication.pending_operation) : 'CardDAV publication is pending.'}</p>
-        {:else if publication.state === 'conflict'}
-          <Toggle
-            checked={publication.desired}
-            ariaLabel={publication.desired ? 'Publish person to CardDAV' : 'Remove person from CardDAV'}
-            disabled
-          />
-          {#if publication.conflict_id}
-            <Button
-              tone="workflow"
-              surface="solid"
-              label={`Review CardDAV conflict ${publication.conflict_id}`}
-              onclick={() => onOpenConflict(publication.conflict_id!)}
-            />
-          {:else}
-            <p>CardDAV conflict details are unavailable.</p>
-          {/if}
-        {/if}
-
-        {#if !publication.address_book}
-          <Button label="Open CardDAV settings" onclick={onOpenSettings} />
-        {/if}
-      {:else if !controller.loading && !controller.error}
-        <p>CardDAV publication state is unavailable.</p>
-      {/if}
+<section bind:this={root} class="publication" data-section aria-labelledby={`person-${personID}-carddav-publication-heading`}>
+  <header data-section-header>
+    <div>
+      <h3 id={`person-${personID}-carddav-publication-heading`} data-section-title tabindex="-1">CardDAV publication</h3>
+      <p data-meta>Publish this person to the selected CardDAV address book.</p>
     </div>
-  </Card>
+    {#if controller.loading}
+      <span class="working" aria-label="Loading CardDAV publication" aria-busy="true">
+        <Spinner size={14} label="Loading CardDAV publication" />
+      </span>
+    {/if}
+  </header>
+
+  {#if controller.error}
+    <div class="notice" role="alert">
+      <span>{controller.error}</span>
+      <Button
+        size="sm"
+        surface="soft"
+        label={controller.stateUnknown ? 'Retry CardDAV publication state' : 'Retry CardDAV publication'}
+        disabled={controller.loading}
+        onclick={() => void controller.retryState()}
+      />
+    </div>
+  {/if}
+
+  {#if controller.unavailable}
+    <div class="state-copy">
+      <p>CardDAV publication is unavailable. Configure or repair it in CardDAV settings.</p>
+      <Button label="Open CardDAV settings" surface="soft" onclick={onOpenSettings} />
+    </div>
+  {:else if controller.publication}
+    {@const publication = controller.publication}
+    <dl data-detail-list>
+      <div data-detail-row>
+        <dt data-detail-label>State</dt>
+        <dd data-detail-value><strong>{stateText(publication.state)}</strong></dd>
+        <dd data-detail-actions>
+          {#if publication.state === 'unpublished' && publication.address_book}
+            <Toggle
+              checked={controller.pendingAction === 'publish'}
+              ariaLabel="Publish person to CardDAV"
+              disabled={!controller.canPublish()}
+              onchange={(checked) => void togglePublication(checked)}
+            />
+          {:else if publication.state === 'published'}
+            <Toggle
+              checked={controller.pendingAction !== 'unpublish'}
+              ariaLabel="Remove person from CardDAV"
+              disabled={!controller.canUnpublish()}
+              onchange={(checked) => void togglePublication(checked)}
+            />
+          {:else if publication.state === 'pending' || publication.state === 'conflict'}
+            <Toggle
+              checked={publication.desired}
+              ariaLabel={publication.desired ? 'Publish person to CardDAV' : 'Remove person from CardDAV'}
+              disabled
+            />
+          {/if}
+        </dd>
+      </div>
+      <div data-detail-row>
+        <dt data-detail-label>Desired publication</dt>
+        <dd data-detail-value>{publication.desired ? 'Published' : 'Unpublished'}</dd>
+      </div>
+      <div data-detail-row>
+        <dt data-detail-label>Address book</dt>
+        <dd data-detail-value>
+          {#if publication.address_book}{publication.address_book.name}{:else}No publish address book is selected.{/if}
+        </dd>
+        <dd data-detail-actions>
+          {#if !publication.address_book}
+            <Button size="sm" surface="soft" label="Open CardDAV settings" onclick={onOpenSettings} />
+          {/if}
+        </dd>
+      </div>
+    </dl>
+
+    {#if controller.pendingAction}
+      <p class="working" role="status" aria-busy="true">
+        <Spinner size={14} label="Updating CardDAV publication" />
+        {controller.pendingAction === 'publish' ? 'Publishing this person to CardDAV…' : 'Removing this person from CardDAV…'}
+      </p>
+    {/if}
+
+    {#if publication.state === 'pending'}
+      <p data-meta>{publication.pending_operation ? pendingText(publication.pending_operation) : 'CardDAV publication is pending.'}</p>
+    {:else if publication.state === 'conflict'}
+      {#if publication.conflict_id}
+        <div class="state-copy">
+          <Button
+            tone="workflow"
+            surface="solid"
+            label={`Review CardDAV conflict ${publication.conflict_id}`}
+            onclick={() => onOpenConflict(publication.conflict_id!)}
+          />
+        </div>
+      {:else}
+        <p data-meta>CardDAV conflict details are unavailable.</p>
+      {/if}
+    {/if}
+  {:else if !controller.loading && !controller.error}
+    <p data-meta>CardDAV publication state is unavailable.</p>
+  {/if}
 </section>
 
 <style>
-  .publication, .publication-content, .state-copy { display: grid; gap: var(--space-3); min-width: 0; }
-  .heading-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
-  .heading-row > div { display: grid; gap: var(--space-1); }
-  h3, p { margin: 0; }
-  .heading-row p, .state-copy span { color: var(--text-muted); font-size: var(--font-size-sm); }
+  h3, p, dl, dd { margin: 0; }
+  .state-copy { display: grid; justify-items: start; gap: var(--space-3); min-width: 0; }
   .working { display: flex; align-items: center; gap: var(--space-2); }
-  .notice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); }
-  .notice--error { border-color: var(--status-error-ink); background: var(--status-error-bg); color: var(--status-error-ink); }
+  .notice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-left: 2px solid var(--status-error-ink); background: var(--status-error-bg); color: var(--status-error-ink); font-size: var(--font-size-sm); }
 
   @media (max-width: 760px) {
-    .heading-row, .notice { align-items: stretch; flex-direction: column; }
+    .notice { align-items: stretch; flex-direction: column; }
   }
 </style>

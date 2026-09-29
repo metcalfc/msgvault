@@ -1,3 +1,5 @@
+import { formatTimestamp } from '@kenn-io/kit-ui';
+
 /** Superhuman-style compact timestamp for list rows: recent activity reads
  * as an age ("5m", "3h", "2d"), older activity this year as a short date
  * ("Jun 29"), and anything before this year collapses to the year ("2024").
@@ -49,6 +51,14 @@ export function humanizeDate(value: string | null | undefined, now: Date = new D
   if (magnitude < dayMs) return phrase(Math.floor(magnitude / hourMs), 'h');
   if (magnitude < 7 * dayMs) return phrase(Math.floor(magnitude / dayMs), 'd');
   return shortDate(value, now);
+}
+
+/** Kit's readable timestamp ("Aug 29, 01:00") for a stored ISO instant on a
+ * detail row. Empty input reads as "—"; unparseable input passes through so
+ * a raw value stays visible instead of throwing on an invalid date. */
+export function stampText(value: string | null | undefined): string {
+  if (!value) return '—';
+  return Number.isNaN(new Date(value).valueOf()) ? value : formatTimestamp(value);
 }
 
 /** Short calendar date for crumbs and bounds: "Sep 22", or "Sep 22, 2024"

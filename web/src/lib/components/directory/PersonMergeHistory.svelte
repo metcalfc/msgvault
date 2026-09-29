@@ -164,15 +164,15 @@
 
 <style>
   .merge-history, .merge-detail { display: grid; gap: var(--space-3); }
-  .merge-history { padding-top: var(--space-3); border-top: var(--border-width) solid var(--border-default); }
+  .merge-history { padding-top: var(--space-3); border-top: 1px solid var(--hairline); }
   .section-heading, .pagination { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
   h3, h4, p, pre { margin: 0; }
   .section-heading p, .pagination { color: var(--text-muted); font-size: var(--font-size-sm); }
   .table-scroll, .snapshot { max-width: 100%; overflow: auto; }
   table { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
-  th, td { padding: var(--space-2); border-bottom: var(--border-width) solid var(--border-default); text-align: left; vertical-align: top; }
+  th, td { padding: var(--space-2); border-bottom: 1px solid var(--hairline); text-align: left; vertical-align: top; }
   thead th { color: var(--text-muted); white-space: nowrap; }
-  .snapshot { max-height: 22rem; padding: var(--space-3); border: var(--border-width) solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-inset); }
+  .snapshot { max-height: 22rem; padding: var(--space-3); border-radius: var(--radius-sm); background: var(--surface-well); }
   .snapshot:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset, 2px); }
   .snapshot pre { white-space: pre-wrap; overflow-wrap: anywhere; }
   .message { display: flex; gap: var(--space-2); align-items: center; }

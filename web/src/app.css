@@ -1,6 +1,7 @@
 @import '@kenn-io/kit-ui/theme.css';
 @import './styles/tokens.css';
 @import './styles/density.css';
+@import './styles/anatomy.css';
 
 * {
   box-sizing: border-box;

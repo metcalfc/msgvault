@@ -4,6 +4,7 @@
   import type { APIClient } from '../../api/client';
   import type {
     ParticipantContactObservation as GeneratedParticipantContactObservation,
+    PersonAddress as GeneratedPersonAddress,
     PersonContactPoint as GeneratedPersonContactPoint,
     PersonDate as GeneratedPersonDate,
     PersonMedia as GeneratedPersonMedia,
@@ -13,6 +14,7 @@
   import type { PersonProfilePatchRequest } from '../../directory/models';
   import type { DirectoryProfileController } from '../../directory/profile-controller.svelte';
   import { reachKindForAddressKind, reachKindLabels, serviceLabelForSlug } from '../../people/reach';
+  import { stampText } from '../../util/dates';
   import ProfileHistoryDialog from './ProfileHistoryDialog.svelte';
   import StructuredProfileEditor, {
     type StructuredProfileRecord,
@@ -95,8 +97,20 @@
     if (service) return service;
     const kind = reachKindForAddressKind(point.address_kind);
     if (kind) return reachKindLabels[kind];
-    const raw = point.address_kind.trim().replaceAll('_', ' ');
-    return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : 'Other';
+    return humanize(point.address_kind) || 'Other';
+  }
+  function humanize(raw: string | undefined): string {
+    const text = (raw ?? '').trim().replaceAll('_', ' ');
+    return text ? text.charAt(0).toUpperCase() + text.slice(1) : '';
+  }
+  /** The row's label column: the kind of record, when the section has
+   * one. Names, addresses, and contact points carry a kind; dates carry
+   * theirs inside the value; categories and media have none. */
+  function rowLabel(section: StructuredProfileSectionName, record: StructuredProfileRecord): string {
+    if (section === 'names') return humanize((record as GeneratedPersonName).name_kind);
+    if (section === 'addresses') return humanize((record as GeneratedPersonAddress).address_kind);
+    if (section === 'contact_points') return humanize((record as PersonContactPoint).address_kind);
+    return '';
   }
   function sameObservation(point: PersonContactPoint, observation: ParticipantContactObservation): boolean {
     return (
@@ -121,7 +135,7 @@
     const observation = backingObservation(record);
     if (!observation) return null;
     const when = observation.observed_at ?? observation.envelope.updated_at;
-    return `Observed ${when}${observation.source_id === undefined ? '' : ` · Source ${observation.source_id}`}`;
+    return `Observed ${stampText(when)}${observation.source_id === undefined ? '' : ` · Source ${observation.source_id}`}`;
   }
   async function loadObservations(signal: AbortSignal): Promise<void> {
     try {
@@ -186,9 +200,9 @@
   function provenance(envelope: ValueEnvelope): string {
     return [
       `Source: ${envelope.source}`,
-      envelope.active_from ? `Valid from: ${envelope.active_from}` : undefined,
-      envelope.active_until ? `Valid until: ${envelope.active_until}` : undefined,
-      `Updated: ${envelope.updated_at}`,
+      envelope.active_from ? `Valid from: ${stampText(envelope.active_from)}` : undefined,
+      envelope.active_until ? `Valid until: ${stampText(envelope.active_until)}` : undefined,
+      `Updated: ${stampText(envelope.updated_at)}`,
     ]
       .filter(Boolean)
       .join(' · ');
@@ -242,14 +256,15 @@
   }
 </script>
 
-<section class="structured-profile" aria-label="Structured profile">
-  <header class="profile-header">
-    <h3>Structured profile</h3>
-    <div class="record-actions">
-      <Button label="Rename person" size="sm" disabled={!controller.canWritePerson} onclick={beginRename} />
+<section class="structured-profile" data-section aria-label="Structured profile">
+  <header data-section-header>
+    <h3 data-section-title>Structured profile</h3>
+    <div data-section-actions>
+      <Button label="Rename person" size="sm" surface="soft" disabled={!controller.canWritePerson} onclick={beginRename} />
       <Button
         label="View profile history"
         size="sm"
+        surface="soft"
         onclick={() => {
           historyOpen = true;
         }}
@@ -281,6 +296,7 @@
         <Button
           label="Cancel rename"
           size="sm"
+          surface="soft"
           disabled={controller.mutationPending}
           onclick={() => {
             renaming = false;
@@ -289,6 +305,8 @@
         <Button
           label={controller.mutationPending ? 'Renaming…' : 'Save display name'}
           size="sm"
+          tone="info"
+          surface="solid"
           disabled={!controller.canWritePerson}
           onclick={() => void saveRename()}
         />
@@ -302,6 +320,7 @@
         <Button
           label="Cancel delete"
           size="sm"
+          surface="soft"
           disabled={controller.mutationPending}
           onclick={() => {
             confirmingDelete = false;
@@ -320,26 +339,31 @@
   {/if}
 
   {#each sections as descriptor (descriptor.section)}
-    <section class="profile-group">
+    <section class="profile-group" data-section>
       <header class="group-header">
-        <h4>{descriptor.title}</h4>
-        <Button
-          label={`Add ${descriptor.singular}`}
-          size="sm"
-          disabled={!controller.canWriteProfile}
-          onclick={() => {
-            editing = { section: descriptor.section };
-            confirming = undefined;
-          }}
-        />
+        <h4 data-row-title>{descriptor.title}</h4>
+        <div data-section-actions>
+          <Button
+            label={`Add ${descriptor.singular}`}
+            size="sm"
+            surface="soft"
+            disabled={!controller.canWriteProfile}
+            onclick={() => {
+              editing = { section: descriptor.section };
+              confirming = undefined;
+            }}
+          />
+        </div>
       </header>
-      <ul>
+      <ul data-detail-list>
         {#each rows(descriptor.section) as record, index (record.envelope.id)}
           {#if descriptor.section === 'contact_points' && (index === 0 || contactService(record) !== contactService(rows(descriptor.section)[index - 1]!))}
-            <li class="service-heading"><h5>{contactService(record)}</h5></li>
+            <li class="service-heading"><h5 data-meta="caps">{contactService(record)}</h5></li>
           {/if}
-          <li>
-            <div class="record-copy">
+          {@const label = rowLabel(descriptor.section, record)}
+          <li data-detail-row={label ? undefined : 'plain'}>
+            {#if label}<span data-detail-label>{label}</span>{/if}
+            <div class="record-copy" data-detail-value>
               <strong>{value(descriptor.section, record)}</strong>
               {#if descriptor.section === 'contact_points' && providerContext(record)}<small
                   >{providerContext(record)}</small
@@ -352,12 +376,13 @@
                 >{/if}
               <small>{provenance(record.envelope)}</small>
             </div>
-            <div class="record-actions">
+            <div class="record-actions" data-detail-actions="hover">
               {#if !isInlineMedia(descriptor.section, record)}
                 <Button
                   label={`Edit ${descriptor.singular} ${actionValue(descriptor.section, record)}`}
                   shortLabel="Edit"
                   size="sm"
+                  surface="soft"
                   disabled={!controller.canWriteProfile}
                   onclick={() => {
                     editing = { section: descriptor.section, current: record };
@@ -380,6 +405,7 @@
             {#if confirming?.section === descriptor.section && confirming.current.envelope.id === record.envelope.id}
               <div
                 class="close-confirm"
+                data-detail-below
                 role="group"
                 aria-label={`Confirm closing ${descriptor.singular} ${actionValue(descriptor.section, record)}`}
               >
@@ -387,6 +413,7 @@
                 <Button
                   label="Cancel"
                   size="sm"
+                  surface="soft"
                   onclick={() => {
                     confirming = undefined;
                   }}
@@ -430,12 +457,12 @@
       {controller.conflict.code === 'person_revision_conflict'
         ? 'This person changed elsewhere. Reload and retry.'
         : controller.conflict.message}
-      <Button label="Reload profile" size="sm" disabled={!controller.canReload} onclick={() => void reload()} />
+      <Button label="Reload profile" size="sm" surface="soft" disabled={!controller.canReload} onclick={() => void reload()} />
     </div>
   {:else if !controller.structuredProfileETag && !editing}
     <div class="profile-error" role="status">
       <span>Profile revision unavailable. Reload to edit.</span>
-      <Button label="Reload profile" size="sm" disabled={!controller.canReload} onclick={() => void reload()} />
+      <Button label="Reload profile" size="sm" surface="soft" disabled={!controller.canReload} onclick={() => void reload()} />
     </div>
   {/if}
 </section>
@@ -451,15 +478,13 @@
 {/if}
 
 <style>
-  .structured-profile,
-  .profile-group,
-  li,
-  .record-copy,
+  .profile-group {
+    gap: var(--space-1);
+  }
   .person-action {
     display: grid;
     gap: var(--space-2);
   }
-  .profile-header,
   .group-header,
   .record-actions,
   .close-confirm {
@@ -468,9 +493,9 @@
     gap: var(--space-2);
     flex-wrap: wrap;
   }
-  .profile-header,
   .group-header {
     justify-content: space-between;
+    min-height: 28px;
   }
   h3,
   h4,
@@ -478,25 +503,11 @@
   ul {
     margin: 0;
   }
-  h4,
-  h5 {
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-  }
-  ul {
-    display: grid;
-    gap: var(--space-2);
-    padding: 0;
-    list-style: none;
-  }
-  li {
-    padding: var(--space-2);
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
+  .record-copy strong {
+    font-weight: 500;
   }
   .service-heading {
-    padding: var(--space-1) 0 0;
-    border: 0;
+    padding: var(--space-3) 0 var(--space-1);
   }
   .record-actions {
     justify-content: flex-end;
@@ -504,19 +515,20 @@
   small,
   .empty {
     color: var(--text-muted);
+    font-size: var(--font-size-xs);
+  }
+  .empty {
+    padding: var(--space-2) 0;
     font-size: var(--font-size-sm);
   }
   .close-confirm,
-  .profile-error {
-    padding: var(--space-2);
-    background: var(--bg-inset);
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-  }
+  .profile-error,
   .person-action {
     padding: var(--space-3);
-    border: 1px solid var(--border-muted);
     border-radius: var(--radius-sm);
+    background: var(--surface-well);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
   }
   .observation-error {
     margin: 0;

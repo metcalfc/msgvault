@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button } from '@kenn-io/kit-ui';
+  import { Button, Chip } from '@kenn-io/kit-ui';
   import { untrack } from 'svelte';
 
   import type {
@@ -8,6 +8,7 @@
     PersonAttributeValue as GeneratedPersonAttributeValue,
   } from '../../api/generated/models';
   import type { DirectoryProfileController } from '../../directory/profile-controller.svelte';
+  import { stampText } from '../../util/dates';
   import AttributeDefinitionDialog from './AttributeDefinitionDialog.svelte';
   import AttributeEditor from './AttributeEditor.svelte';
   import { displayAttributeValue } from './attribute-value';
@@ -109,10 +110,10 @@
       value.actor ? `Actor: ${value.actor}` : undefined,
       value.source_ref ? `Reference: ${value.source_ref}` : undefined,
       value.confidence === undefined ? undefined : `Confidence: ${value.confidence}`,
-      `Valid from: ${value.active_from}`,
-      value.active_until ? `Valid until: ${value.active_until}` : undefined,
-      value.superseded_at ? `Superseded: ${value.superseded_at}` : undefined,
-      `Created: ${value.created_at}`,
+      `Valid from: ${stampText(value.active_from)}`,
+      value.active_until ? `Valid until: ${stampText(value.active_until)}` : undefined,
+      value.superseded_at ? `Superseded: ${stampText(value.superseded_at)}` : undefined,
+      `Created: ${stampText(value.created_at)}`,
     ]
       .filter(Boolean)
       .join(' · ');
@@ -226,17 +227,20 @@
   }
 </script>
 
-<section id="person-attributes" class="attribute-section" aria-label="Attributes" tabindex="-1">
-  <header class="section-header">
-    <h3>Attributes</h3>
-    <Button
-      label="Create attribute field"
-      size="sm"
-      disabled={!canCreateDefinition()}
-      onclick={() => {
-        creatingDefinition = true;
-      }}
-    />
+<section id="person-attributes" class="attribute-section" data-section aria-label="Attributes" tabindex="-1">
+  <header data-section-header>
+    <h3 data-section-title>Attributes</h3>
+    <div data-section-actions>
+      <Button
+        label="Create attribute field"
+        size="sm"
+        surface="soft"
+        disabled={!canCreateDefinition()}
+        onclick={() => {
+          creatingDefinition = true;
+        }}
+      />
+    </div>
   </header>
 
   {#if creatingDefinition}
@@ -248,39 +252,26 @@
     />
   {/if}
 
+  <div class="fields">
   {#each visibleFields as field (field.definition.universal_id)}
-    <section class="attribute-field" aria-labelledby={`attribute-title-${field.definition.id}`}>
-      <header class="field-header">
-        <div class="definition-copy">
-          <div class="title-row">
-            <h4 id={`attribute-title-${field.definition.id}`}>{field.definition.label}</h4>
-            {#if field.definition.is_sensitive}<span class="sensitive">Sensitive</span>{/if}
-          </div>
-          {#if field.definition.description}<p>{field.definition.description}</p>{/if}
-          <small>{metadata(field.definition)}</small>
-          {#if field.definition.options?.choices?.length}
-            <small>Allowed choices: {field.definition.options.choices.map((choice) => choice.label).join(', ')}</small>
-          {/if}
-          {#if field.definition.derived_source}<small>Computed by {field.definition.derived_source}</small>{/if}
+    <!-- One detail row per field: the definition on the left, its current
+         values in the middle, the field's actions trailing; an editor,
+         history, or conflict spans the row underneath. -->
+    <section class="attribute-field" data-detail-row aria-labelledby={`attribute-title-${field.definition.id}`}>
+      <div class="definition-copy" data-detail-label>
+        <div class="title-row">
+          <h4 id={`attribute-title-${field.definition.id}`} data-row-title>{field.definition.label}</h4>
+          {#if field.definition.is_sensitive}<Chip tone="warning" size="xs" uppercase={false}>Sensitive</Chip>{/if}
         </div>
-        <div class="field-actions">
-          {#if field.definition.is_sensitive}
-            <Button
-              label={`${isRevealed(field.definition) ? 'Hide' : 'Reveal'} ${field.definition.label} values`}
-              size="sm"
-              onclick={() => toggleReveal(field.definition)}
-            />
-          {/if}
-          <Button
-            label={`Add ${field.definition.label} value`}
-            size="sm"
-            disabled={!canAdd(field)}
-            onclick={() => openEditor(field)}
-          />
-        </div>
-      </header>
+        {#if field.definition.description}<p>{field.definition.description}</p>{/if}
+        <small>{metadata(field.definition)}</small>
+        {#if field.definition.options?.choices?.length}
+          <small>Allowed choices: {field.definition.options.choices.map((choice) => choice.label).join(', ')}</small>
+        {/if}
+        {#if field.definition.derived_source}<small>Computed by {field.definition.derived_source}</small>{/if}
+      </div>
 
-      <ul class="current-values">
+      <ul class="current-values" data-detail-value>
         {#each field.current as value, index (value.id)}
           <li>
             <div class="value-copy">
@@ -291,12 +282,13 @@
               {/if}
               <small>{provenance(value)}</small>
             </div>
-            <div class="value-actions">
+            <div class="value-actions" data-detail-actions="hover">
               {#if isRevealed(field.definition)}
                 <Button
                   label={`Edit ${field.definition.label} value ${index + 1}`}
                   shortLabel="Edit"
                   size="sm"
+                  surface="soft"
                   disabled={!canEdit(field.definition)}
                   onclick={() => openEditor(field, value)}
                 />
@@ -323,6 +315,7 @@
                 <Button
                   label="Cancel"
                   size="sm"
+                  surface="soft"
                   onclick={() => {
                     confirming = undefined;
                   }}
@@ -343,23 +336,43 @@
         {/each}
       </ul>
 
-      {#if editing?.universalID === field.definition.universal_id}
-        {#key editing.current?.id ?? 'new'}
-          <AttributeEditor
-            {controller}
-            definition={field.definition}
-            current={editing.current}
-            sensitiveRevealed={isRevealed(field.definition)}
-            onDone={() => {
-              editing = undefined;
-            }}
-            onCancel={() => discardEditor(field.definition)}
+      <div class="field-actions" data-detail-actions="hover">
+        {#if field.definition.is_sensitive}
+          <Button
+            label={`${isRevealed(field.definition) ? 'Hide' : 'Reveal'} ${field.definition.label} values`}
+            size="sm"
+            surface="soft"
+            onclick={() => toggleReveal(field.definition)}
           />
-        {/key}
+        {/if}
+        <Button
+          label={`Add ${field.definition.label} value`}
+          size="sm"
+          surface="soft"
+          disabled={!canAdd(field)}
+          onclick={() => openEditor(field)}
+        />
+      </div>
+
+      {#if editing?.universalID === field.definition.universal_id}
+        <div data-detail-below>
+          {#key editing.current?.id ?? 'new'}
+            <AttributeEditor
+              {controller}
+              definition={field.definition}
+              current={editing.current}
+              sensitiveRevealed={isRevealed(field.definition)}
+              onDone={() => {
+                editing = undefined;
+              }}
+              onCancel={() => discardEditor(field.definition)}
+            />
+          {/key}
+        </div>
       {/if}
 
       {#if field.history.length}
-        <details>
+        <details data-detail-below>
           <summary>History ({field.history.length})</summary>
           <ul class="history-values">
             {#each field.history as value (value.id)}
@@ -377,7 +390,7 @@
       {/if}
 
       {#if attributeConflict(field.definition) && editing?.universalID !== field.definition.universal_id}
-        <div class="attribute-error" role="alert">
+        <div class="attribute-error" data-detail-below role="alert">
           <span
             >{controller.conflict?.code === 'attribute_conflict'
               ? 'This person changed elsewhere. Reload and retry.'
@@ -387,6 +400,7 @@
             <Button
               label="Reload attributes"
               size="sm"
+              surface="soft"
               disabled={!controller.canReload}
               onclick={() => void reload()}
             />
@@ -397,31 +411,31 @@
   {:else}
     {#if fields.length === 0}<p class="empty">No attribute definitions are available.</p>{/if}
   {/each}
+  </div>
   {#if emptyCount > 0}
-    <Button
-      label={showEmpty ? 'Hide empty fields' : `Show empty fields (${emptyCount})`}
-      surface="soft"
-      size="sm"
-      ariaExpanded={showEmpty}
-      onclick={() => (showEmpty = !showEmpty)}
-    />
+    <div>
+      <Button
+        label={showEmpty ? 'Hide empty fields' : `Show empty fields (${emptyCount})`}
+        surface="soft"
+        size="sm"
+        ariaExpanded={showEmpty}
+        onclick={() => (showEmpty = !showEmpty)}
+      />
+    </div>
   {/if}
 </section>
 
 <style>
-  .attribute-section,
-  .attribute-field,
+  .fields,
   .definition-copy,
-  .value-copy,
-  li {
+  .value-copy {
     display: grid;
-    gap: var(--space-2);
+    gap: var(--space-1);
   }
-  .section-header,
-  .field-header,
-  .field-actions,
+  .fields {
+    gap: 0;
+  }
   .title-row,
-  .value-actions,
   .close-confirm,
   .attribute-error {
     display: flex;
@@ -429,36 +443,19 @@
     gap: var(--space-2);
     flex-wrap: wrap;
   }
-  .section-header {
-    justify-content: space-between;
-  }
-  .field-header {
-    align-items: flex-start;
-    justify-content: space-between;
-  }
-  .field-actions,
-  .value-actions {
-    justify-content: flex-end;
-  }
   h3,
   h4,
   p,
   ul {
     margin: 0;
   }
-  h4 {
-    color: var(--text-secondary);
+  .definition-copy p {
     font-size: var(--font-size-sm);
   }
   small,
   .empty {
     color: var(--text-muted);
-    font-size: var(--font-size-sm);
-  }
-  .attribute-field {
-    padding: var(--space-3);
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
   }
   .current-values,
   .history-values {
@@ -467,19 +464,18 @@
     padding: 0;
     list-style: none;
   }
-  .current-values > li,
-  .history-values > li {
-    padding: var(--space-2);
-    background: var(--bg-inset);
-    border-radius: var(--radius-sm);
+  .current-values > li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: var(--space-1) var(--space-3);
   }
-  .sensitive {
-    display: inline-block;
-    padding: 1px 5px;
-    border-radius: var(--radius-sm);
-    background: var(--bg-warning);
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
+  .current-values strong {
+    font-weight: 500;
+  }
+  .history-values > li {
+    display: grid;
+    gap: var(--space-1);
   }
   summary {
     cursor: pointer;
@@ -491,8 +487,10 @@
   }
   .close-confirm,
   .attribute-error {
+    grid-column: 1 / -1;
     padding: var(--space-2);
-    background: var(--bg-inset);
+    border-radius: var(--radius-sm);
+    background: var(--surface-well);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
   }

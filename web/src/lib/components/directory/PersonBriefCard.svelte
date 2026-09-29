@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { Button, Card, Checkbox, Spinner, TextInput, Toggle } from '@kenn-io/kit-ui';
+  import { Button, Checkbox, Spinner, TextInput, Toggle } from '@kenn-io/kit-ui';
   import { onDestroy, tick, untrack } from 'svelte';
 
   import type { APIClient } from '../../api/client';
   import { PersonBriefController } from '../../directory/person-brief-controller.svelte';
   import type { PersonBriefVersionView } from '../../directory/person-brief-controller.svelte';
+  import { stampText } from '../../util/dates';
 
   interface Props {
     client: APIClient;
@@ -141,13 +142,11 @@
   }
 </script>
 
-<section bind:this={root} class="brief" aria-labelledby={headingID}>
-  <Card level="default" padding="sm">
-    <div class="brief-content">
-      <div class="heading-row">
+<section bind:this={root} class="brief" data-section aria-labelledby={headingID}>
+      <header data-section-header>
         <div>
-          <h3 id={headingID} tabindex="-1">Last time we talked</h3>
-          <p>
+          <h3 id={headingID} data-section-title tabindex="-1">Last time we talked</h3>
+          <p data-meta>
             Catch up before your next conversation with a summary of what this person recently shared
             in supported chat and text messages. Expand a sentence to see its sources.
           </p>
@@ -157,13 +156,14 @@
             <Spinner size={14} label="Loading the brief" />
           </span>
         {/if}
-      </div>
+      </header>
 
       {#if controller.enrollmentError}
         <div class="notice notice--error" role="alert">
           <span>{controller.enrollmentError}</span>
           <Button
             size="sm"
+            surface="soft"
             label="Retry brief enrollment"
             disabled={controller.enrollmentLoading || controller.pending !== null}
             onclick={() => void controller.retryEnrollment()}
@@ -190,7 +190,7 @@
           {:else if enrollment.enabled_at}
             <span class="muted">
               Enrolled since
-              <time datetime={enrollment.enabled_at}>{enrollment.enabled_at}</time>
+              <time datetime={enrollment.enabled_at}>{stampText(enrollment.enabled_at)}</time>
             </span>
           {/if}
         </div>
@@ -204,6 +204,7 @@
             <span>{controller.briefError}</span>
             <Button
               size="sm"
+              surface="soft"
               label="Retry the brief"
               disabled={controller.briefLoading || controller.pending !== null}
               onclick={() => void controller.retryBrief()}
@@ -212,7 +213,7 @@
         {/if}
 
         {#if controller.actionError}
-          <div class="notice notice--error" role="alert">{controller.actionError}</div>
+          <div class="notice notice--error" role="alert"><span>{controller.actionError}</span></div>
         {/if}
 
         {#if controller.pending === 'generate'}
@@ -228,9 +229,9 @@
           {@const brief = controller.brief}
           <p class="version-line">
             Version {brief.version} · {statusLabel(brief.status)} · generated
-            <time datetime={brief.generated_at}>{brief.generated_at}</time>
+            <time datetime={brief.generated_at}>{stampText(brief.generated_at)}</time>
             {#if brief.rejected_at}
-              · rejected <time datetime={brief.rejected_at}>{brief.rejected_at}</time>
+              · rejected <time datetime={brief.rejected_at}>{stampText(brief.rejected_at)}</time>
               {#if brief.rejected_reason}({brief.rejected_reason}){/if}
             {/if}
           </p>
@@ -263,12 +264,12 @@
                     </ul>
                   {/if}
                   {#if sentence.evidence.length > 0}
-                    <h4>Archive items this sentence cites</h4>
-                    <ul class="evidence">
+                    <h4 data-row-title>Archive items this sentence cites</h4>
+                    <ul class="evidence" data-detail-list>
                       {#each sentence.evidence as item (item.ordinal)}
-                        <li>
+                        <li data-detail-row="plain">
                           <strong>{item.source_ref}</strong>
-                          <span><time datetime={item.event_time}>{item.event_time}</time></span>
+                          <span><time datetime={item.event_time}>{stampText(item.event_time)}</time></span>
                           <span>{directnessLabel(item.directness)}</span>
                           {#if !item.supported}
                             <span class="unsupported">Supporting source is no longer available</span>
@@ -277,17 +278,17 @@
                       {/each}
                     </ul>
                   {:else}
-                    <h4>Archive items this brief cites</h4>
+                    <h4 data-row-title>Archive items this brief cites</h4>
                     <p class="muted">
                       Cited by the brief as a whole. Msgvault does not attribute them to a single
                       sentence.
                     </p>
                     {#if brief.evidence.length > 0}
-                      <ul class="evidence">
+                      <ul class="evidence" data-detail-list>
                         {#each brief.evidence as item (item.ordinal)}
-                          <li>
+                          <li data-detail-row="plain">
                             <strong>{item.source_ref}</strong>
-                            <span><time datetime={item.event_time}>{item.event_time}</time></span>
+                            <span><time datetime={item.event_time}>{stampText(item.event_time)}</time></span>
                             <span>{directnessLabel(item.directness)}</span>
                             {#if !item.supported}
                               <span class="unsupported">Supporting source is no longer available</span>
@@ -326,12 +327,14 @@
             <Button
               size="sm"
               tone="danger"
+              surface="soft"
               label="Reject this brief version"
               disabled={actionsDisabled}
               onclick={() => void rejectBrief()}
             />
             <Button
               size="sm"
+              surface="soft"
               label="Regenerate this brief"
               disabled={actionsDisabled}
               onclick={() => void generateBrief()}
@@ -342,6 +345,7 @@
           <div class="actions">
             <Button
               size="sm"
+              surface="soft"
               label="Generate a brief now"
               disabled={actionsDisabled}
               onclick={() => void generateBrief()}
@@ -349,11 +353,12 @@
           </div>
         {/if}
 
-        <div class="history">
-          <div class="history-heading">
-            <h4>Version history</h4>
+        <div class="history" data-section>
+          <div class="history-heading" data-section-header>
+            <h4 data-row-title>Version history</h4>
             <Button
               size="sm"
+              surface="soft"
               label={controller.versionsShown ? 'Hide brief version history' : 'Show brief version history'}
               ariaExpanded={controller.versionsShown}
               disabled={controller.versionsLoading}
@@ -366,6 +371,7 @@
               <span>{controller.versionsError}</span>
               <Button
                 size="sm"
+                surface="soft"
                 label="Retry brief version history"
                 disabled={controller.versionsLoading}
                 onclick={() => void controller.retryVersions()}
@@ -374,16 +380,16 @@
           {/if}
 
           {#if controller.versionsShown && controller.versions.length > 0}
-            <ul class="version-list" aria-label="Brief version history">
+            <ul class="version-list" data-detail-list aria-label="Brief version history">
               {#each controller.versions as version (version.version)}
-                <li>
+                <li data-detail-row="plain">
                   <strong>{versionSummary(version)}</strong>
-                  <span>Generated <time datetime={version.generated_at}>{version.generated_at}</time></span>
+                  <span>Generated <time datetime={version.generated_at}>{stampText(version.generated_at)}</time></span>
                   {#if version.superseded_at}
-                    <span>Superseded <time datetime={version.superseded_at}>{version.superseded_at}</time></span>
+                    <span>Superseded <time datetime={version.superseded_at}>{stampText(version.superseded_at)}</time></span>
                   {/if}
                   {#if version.rejected_at}
-                    <span>Rejected <time datetime={version.rejected_at}>{version.rejected_at}</time></span>
+                    <span>Rejected <time datetime={version.rejected_at}>{stampText(version.rejected_at)}</time></span>
                   {/if}
                   {#if version.rejected_reason}<span>Reason: {version.rejected_reason}</span>{/if}
                 </li>
@@ -394,39 +400,34 @@
           {/if}
         </div>
       {/if}
-    </div>
-  </Card>
 </section>
 
 <style>
-  .brief, .brief-content, .expansion, .history { display: grid; gap: var(--space-3); min-width: 0; }
-  .heading-row, .enrollment-row, .notice, .actions, .history-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
-  .heading-row > div, .history-heading { align-items: center; }
-  .heading-row > div { display: grid; gap: var(--space-1); }
+  .expansion { display: grid; gap: var(--space-3); min-width: 0; }
+  .enrollment-row, .notice, .actions { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
   .enrollment-row, .actions { align-items: center; justify-content: flex-start; flex-wrap: wrap; }
   h3, h4, p, ul { margin: 0; }
-  h3 { font-size: var(--font-size-md); }
-  h4 { font-size: var(--font-size-sm); }
-  .heading-row p, .muted, .version-line, .meta, .evidence span { color: var(--text-muted); font-size: var(--font-size-sm); }
+  .muted, .version-line, .meta, .evidence span { color: var(--text-muted); font-size: var(--font-size-sm); }
   .working { display: flex; align-items: center; gap: var(--space-2); }
-  .notice { align-items: center; padding: var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); }
-  .notice--error { border-color: var(--status-error-ink); background: var(--status-error-bg); color: var(--status-error-ink); }
-  .run-outcome { padding: var(--space-2) var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); }
-  .paragraph { line-height: 1.6; overflow-wrap: anywhere; }
+  /* A failure reads as a toned row with a 2px bar, not a box. */
+  .notice { align-items: center; padding: var(--space-2) var(--space-3); font-size: var(--font-size-sm); }
+  .notice--error { border-left: 2px solid var(--status-error-ink); background: var(--status-error-bg); color: var(--status-error-ink); }
+  .run-outcome { color: var(--text-secondary); font-size: var(--font-size-sm); }
+  .paragraph { line-height: var(--leading-reading); overflow-wrap: anywhere; }
   .paragraph--plain { padding: var(--space-1) 0; }
   .sentence { display: inline; margin: 0 2px 0 0; padding: 0 2px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
   .sentence:hover, .sentence[aria-expanded="true"] { background: var(--bg-surface-hover); }
   .sentence[aria-expanded="true"] { box-shadow: inset 0 -1px 0 var(--edge); }
-  .expansion { padding: var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-inset); }
+  /* The expanded sources sit in a well inside the panel. */
+  .expansion { padding: var(--space-3); border-radius: var(--radius-md); background: var(--surface-well); }
   .detail { font-weight: 600; }
-  .meta, .evidence { display: grid; gap: var(--space-1); padding: 0; list-style: none; }
-  .evidence li, .version-list li { display: grid; align-content: start; gap: var(--space-1); min-width: 0; padding: var(--space-2); border: 1px solid var(--border-default); border-radius: var(--radius-md); overflow-wrap: anywhere; }
+  .meta { display: grid; gap: var(--space-1); padding: 0; list-style: none; }
+  .evidence li, .version-list li { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-3); row-gap: var(--space-1); min-width: 0; overflow-wrap: anywhere; }
+  .evidence strong, .version-list strong { font-weight: 500; }
   .unsupported { color: var(--status-error-ink) !important; }
-  .version-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); padding: 0; list-style: none; }
   .version-list span { color: var(--text-muted); font-size: var(--font-size-sm); }
 
   @media (max-width: 760px) {
-    .heading-row, .notice, .history-heading { align-items: stretch; flex-direction: column; }
-    .version-list { grid-template-columns: minmax(0, 1fr); }
+    .notice { align-items: stretch; flex-direction: column; }
   }
 </style>

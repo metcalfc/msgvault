@@ -30,7 +30,7 @@ describe('CardDAVPublicationControl', () => {
       label: 'Publish person to CardDAV',
       checked: false,
       disabled: false,
-      copy: ['Not published', 'Desired publication: Published', 'Publication address book: Synthetic contacts.']
+      copy: ['Not published', 'Published', 'Synthetic contacts']
     },
     {
       name: 'published',
@@ -38,7 +38,7 @@ describe('CardDAVPublicationControl', () => {
       label: 'Remove person from CardDAV',
       checked: true,
       disabled: false,
-      copy: ['Published', 'Desired publication: Unpublished', 'Publication address book: Synthetic contacts.']
+      copy: ['Published', 'Unpublished', 'Synthetic contacts']
     },
     {
       name: 'pending',
@@ -46,7 +46,7 @@ describe('CardDAVPublicationControl', () => {
       label: 'Publish person to CardDAV',
       checked: true,
       disabled: true,
-      copy: ['Publication pending', 'Desired publication: Published', 'CardDAV publication is waiting to create this contact.']
+      copy: ['Publication pending', 'Published', 'CardDAV publication is waiting to create this contact.']
     },
     {
       name: 'conflict',
@@ -54,7 +54,7 @@ describe('CardDAVPublicationControl', () => {
       label: 'Remove person from CardDAV',
       checked: false,
       disabled: true,
-      copy: ['Publication conflict', 'Desired publication: Unpublished']
+      copy: ['Publication conflict', 'Unpublished']
     }
   ])('renders the generated $name state without unsafe response fields', async ({ response, label, checked, disabled, copy }) => {
     render(CardDAVPublicationControl, {
