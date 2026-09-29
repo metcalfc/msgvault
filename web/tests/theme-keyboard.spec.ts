@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { exploreLink } from '../src/test/explore-url';
 import { selectKitOption, selectKitTopBarTab, setKitTheme } from './kit-ui';
 
 const row = {
@@ -64,7 +65,7 @@ test.beforeEach(async ({ page }) => {
   // Land the way an app-generated Everything link does (with the bounds
   // marker), so the seven-day default does not ride into the compact
   // workspace links this spec asserts.
-  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything', dateBoundsChosen: true }))}`);
+  await page.goto(exploreLink({ workspace: 'everything' }));
   await expect(page.getByText('Synthetic archive subject')).toBeVisible();
 });
 

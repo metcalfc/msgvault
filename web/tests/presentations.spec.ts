@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { exploreLink } from '../src/test/explore-url';
 import { selectKitOption } from './kit-ui';
 import { exploreHistoryState } from './explore-state';
 
@@ -57,7 +58,7 @@ test('Show as preserves analytical meaning, keyboard focus, history, and Saved V
     return route.fulfill({ json: { saved_views: savedViews } });
   });
 
-  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+  await page.goto(exploreLink({ workspace: 'everything' }));
   await expect(page.getByRole('grid', { name: 'Everything results' })).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search everything' }).fill('pasta');
   await page.getByRole('button', { name: 'Search', exact: true }).click();

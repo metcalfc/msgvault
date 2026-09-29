@@ -1,8 +1,6 @@
 /** Date-range presets for the Everything view, expressed as `after`/`before`
  * filter dimensions (RFC3339 instants, which is what the explore API
  * requires) rather than `after:`/`before:` text operators in the query. */
-import { resolveRange, type RangeSelection } from '@kenn-io/kit-ui';
-
 import type { ExploreFilter } from './models';
 
 export type DateRangePreset = 'week' | 'month' | 'all';
@@ -135,17 +133,4 @@ export function withPickedDays(filters: readonly ExploreFilter[], days: { from: 
     next = withDateBound(next, dimension, dateInputBound(day, dimension));
   }
   return next;
-}
-
-/** Applies a range picker selection. Only a custom selection preserves the
- * instants of bounds whose day did not change; a relative or calendar
- * preset means whole days, so both bounds become full-day edges even when
- * a bound already sat somewhere inside the preset's first or last day. A
- * relative selection of no days is "All time". */
-export function withRangeSelection(filters: readonly ExploreFilter[], selection: RangeSelection): ExploreFilter[] {
-  if (selection.mode === 'relative' && selection.days <= 0) return withoutDateRange(filters);
-  const range = resolveRange(selection);
-  if (selection.mode === 'custom') return withPickedDays(filters, range);
-  const bounded = withDateBound(filters, 'after', dateInputBound(range.from, 'after'));
-  return withDateBound(bounded, 'before', dateInputBound(range.to, 'before'));
 }

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { exploreLink } from '../src/test/explore-url';
 
 const row = {
   key: 'source:1:message:m1', kind: 'message', message_type: 'email', conversation_type: 'email',
@@ -63,7 +64,7 @@ test('archive management workspaces preserve reviewed authority and daemon job b
       columns: ['kind', 'title'], inspector_pinned: false }
   }] } }));
 
-  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+  await page.goto(exploreLink({ workspace: 'everything' }));
   const grid = page.getByRole('grid', { name: 'Everything results' });
   await expect(grid.getByText('Reviewed message')).toBeVisible();
   await grid.focus();

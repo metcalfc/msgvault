@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { exploreLink } from '../src/test/explore-url';
 
 function syntheticRow(index: number) {
   return {
@@ -72,7 +73,7 @@ test('50,000 rows keep a bounded keyed DOM and stable grid focus', async ({ page
     });
   });
 
-  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+  await page.goto(exploreLink({ workspace: 'everything' }));
   expect(
     await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent-blue').trim())
   ).toBe('#2563eb');
@@ -169,8 +170,7 @@ test('committed searches survive transient typing across real back and forward t
     })
   );
 
-  const explore = encodeURIComponent(JSON.stringify({ workspace: 'everything' }));
-  await page.goto(`/?feature=preview&explore=${explore}`);
+  await page.goto(`${exploreLink({ workspace: 'everything' })}&feature=preview`);
   const search = page.getByRole('searchbox', { name: 'Search everything' });
   await search.fill('alpha');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
@@ -211,7 +211,7 @@ test('End stops safely when a cursor repeats without progress', async ({ page })
     });
   });
 
-  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+  await page.goto(exploreLink({ workspace: 'everything' }));
   const grid = page.getByRole('grid', { name: 'Everything results' });
   await expect(grid.getByText('Synthetic subject 1')).toBeVisible();
   await grid.focus();

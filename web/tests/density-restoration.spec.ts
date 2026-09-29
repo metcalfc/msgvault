@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { exploreLink } from '../src/test/explore-url';
 import { selectKitOption } from './kit-ui';
 
 const total = 300;
@@ -20,7 +21,7 @@ test('Everything preserves a deep focused row across density changes', async ({ 
     rows: Array.from({ length: total }, (_, index) => entry(index + 1)),
     total_count: total, cache_revision: 'density-everything', search_provenance: {}
   } }));
-  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+  await page.goto(exploreLink({ workspace: 'everything' }));
   const grid = page.getByRole('grid', { name: 'Everything results' });
   await grid.evaluate((element) => {
     element.scrollTop = 249 * 36;

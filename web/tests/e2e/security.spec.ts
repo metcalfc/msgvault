@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { exploreLink } from '../../src/test/explore-url';
 import { installOperations, OPERATION_PRIVACY_SENTINELS } from './fixtures/operations';
 
 const secureRow = {
@@ -53,7 +54,7 @@ test('sanitized archived HTML requires remote-image consent and rejects forged f
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64') });
   });
 
-  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+  await page.goto(exploreLink({ workspace: 'everything' }));
   const grid = page.getByRole('grid', { name: 'Everything results' });
   await grid.focus();
   await page.keyboard.press('Enter');
@@ -141,7 +142,7 @@ test('daemon API key stays host-managed and never crosses the browser settings w
 		} });
   });
 
-	await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+	await page.goto(exploreLink({ workspace: 'everything' }));
 	await expect(page.getByRole('main', { name: 'Everything' })).toBeVisible();
 	await page.getByRole('button', { name: 'Settings', exact: true }).click();
 	await expect(page.getByText('dae…key')).toBeVisible();

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { exploreLink } from '../../src/test/explore-url';
 import {
   CHAT_CONVERSATION_COUNT,
   RAW_CHAT_MESSAGE_COUNT,
@@ -16,7 +17,7 @@ test('100k raw chat fragments reach Everything only as logical conversation rows
   expect(fixture.firstPage.rows).toHaveLength(50);
   expect(fixture.firstPage.total_count).toBe(fixture.logicalRows.length);
 
-  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+  await page.goto(exploreLink({ workspace: 'everything' }));
   const grid = page.getByRole('grid', { name: 'Everything results' });
   await expect(grid).toBeVisible();
   await expect(grid.locator('[data-row-key]').first()).toBeVisible();

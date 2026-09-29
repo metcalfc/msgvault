@@ -12,8 +12,9 @@
   import { EXPLORE_COLUMN_LABELS } from '../../explore/models';
   import {
     DATE_RANGE_PRESETS, activeDateRangePreset, dateBound, dateInputValue, isDateDimension,
-    withDateRange, withRangeSelection, type DateRangePreset
+    withDateRange, type DateRangePreset
   } from '../../explore/date-range';
+  import { withRangeSelection } from '../../explore/date-range-selection';
   import {
     groupingDimensionLabel,
     groupingOptions,

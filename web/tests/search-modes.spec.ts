@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { exploreLink } from '../src/test/explore-url';
+
 const baseState = {
   schemaVersion: 1,
   workspace: 'everything',
@@ -32,13 +34,19 @@ test('URL mode overrides the remembered default and remains selected through a n
     json: { error: 'vector_initializing', message: 'Vector search is still building.' }
   }));
 
-  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+  // An app link stamps an explicit mode; drop it so the remembered one applies.
+  const withoutMode = new URL(exploreLink({ workspace: 'everything' }), 'http://localhost');
+  withoutMode.searchParams.delete('mode');
+  await page.goto(`${withoutMode.pathname}${withoutMode.search}`);
   await expect(page.getByRole('radio', { name: 'Hybrid' })).toHaveAttribute('aria-checked', 'true');
 
   await page.goto(`/?explore=${encodeURIComponent(JSON.stringify(baseState))}`);
   await expect(page.getByRole('radio', { name: 'Full text' })).toBeVisible();
   await expect(page.getByRole('radio', { name: 'Semantic' })).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByRole('radio', { name: 'Hybrid' })).toBeVisible();
+  // Coverage folds into the one-line result status; the full sentence sits behind Details.
+  await expect(page.getByRole('status', { name: 'Result status' })).toContainText('semantic index 50%');
+  await page.getByText('Details', { exact: true }).click();
   await expect(page.getByText(/Semantic index: 50% of 2 items/)).toBeVisible();
   await expect(page.getByRole('alert')).toContainText('Vector search is still building.');
   await expect(page.getByRole('radio', { name: 'Semantic' })).toHaveAttribute('aria-checked', 'true');

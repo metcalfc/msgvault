@@ -1,4 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
+import { exploreLink } from '../../src/test/explore-url';
 import { expect, test, type Page } from '@playwright/test';
 import { expectKitTheme, selectKitOption, selectKitTopBarTab, setKitTheme } from '../kit-ui';
 import { assertCardDAVForbiddenMarkersAbsent, installCardDAV } from './fixtures/carddav';
@@ -382,7 +383,7 @@ for (const theme of ['light', 'dark'] as const) {
       // This test exercises Everything's own loading/empty/error/degraded
       // states, not the Relationships hub, so it lands there explicitly
       // rather than relying on whatever the default landing workspace is.
-      await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+      await page.goto(exploreLink({ workspace: 'everything' }));
       await expectKitTheme(page, theme);
       await expect(page.locator('html')).toHaveAttribute('data-density', density);
       await expect(page.getByRole('main', { name: 'Authentication' })).toBeVisible();

@@ -1,4 +1,6 @@
 import { test as base, expect, type Page } from "@playwright/test";
+import type { ExploreURLState } from "../../../src/lib/explore/models";
+import { exploreLink } from "../../../src/test/explore-url";
 import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { access, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -254,7 +256,13 @@ export function meetingURL(
   daemon: MeetingDaemon,
   state: Record<string, unknown> = {},
 ): string {
-  return `${daemon.origin}/?explore=${encodeURIComponent(JSON.stringify({ workspace: "everything", filters: [{ dimension: "message_type", values: ["meeting_transcript"] }], ...state }))}`;
+  // exploreLink carries the date-bounds marker an app link would, so the
+  // seven-day default never hides the fixture's older meetings.
+  return `${daemon.origin}${exploreLink({
+    workspace: "everything",
+    filters: [{ dimension: "message_type", values: ["meeting_transcript"] }],
+    ...(state as Partial<ExploreURLState>),
+  })}`;
 }
 
 export async function loginToMeetingArchive(

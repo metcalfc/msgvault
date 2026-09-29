@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { exploreLink } from '../src/test/explore-url';
 import { selectKitOption } from './kit-ui';
 
 test('Strict session cookie returns on same-origin bootstrap after a cross-site navigation', async ({
@@ -8,7 +9,7 @@ test('Strict session cookie returns on same-origin bootstrap after a cross-site 
 }) => {
   if (!baseURL) throw new Error('Playwright baseURL is required');
   const appURL = new URL('/', baseURL).toString();
-  const landingURL = `${appURL}?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`;
+  const landingURL = new URL(exploreLink({ workspace: 'everything' }), baseURL).toString();
   const cookieName = 'msgvault_session';
   const cookieValue = 'opaque-browser-session';
   const navigationCookieName = 'navigation_control';

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { exploreLink } from '../src/test/explore-url';
 import { setKitTheme } from './kit-ui';
 
 const row = {
@@ -115,8 +116,7 @@ test('archived content has an opaque capability boundary and durable conversatio
     });
   });
 
-  const explore = encodeURIComponent(JSON.stringify({ workspace: 'everything' }));
-  await page.goto(`/?feature=reader-security&explore=${explore}`);
+  await page.goto(`${exploreLink({ workspace: 'everything' })}&feature=reader-security`);
   const grid = page.getByRole('grid', { name: 'Everything results' });
   await expect(grid.getByText(row.title)).toBeVisible();
   await grid.focus();
@@ -361,8 +361,7 @@ test('opening a message fires no sender-host request until images are enabled', 
     });
   });
 
-  const explore = encodeURIComponent(JSON.stringify({ workspace: 'everything' }));
-  await page.goto(`/?feature=reader-security&explore=${explore}`);
+  await page.goto(`${exploreLink({ workspace: 'everything' })}&feature=reader-security`);
   const grid = page.getByRole('grid', { name: 'Everything results' });
   await expect(grid.getByText(row.title)).toBeVisible();
   await grid.focus();
@@ -408,7 +407,7 @@ test('email colors follow the app theme with an original-colors override', async
         '<div class="gmail_quote"><div style="color: #111111">Gmail quoted text</div></div>'
     }]
   } }));
-  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+  await page.goto(exploreLink({ workspace: 'everything' }));
   await expect(page.locator('html')).toHaveClass(/dark/);
   await page.getByRole('grid', { name: 'Everything results' }).getByText(row.title).click();
   const content = page.locator('iframe[title="Message body"]').contentFrame();
@@ -458,7 +457,7 @@ test('switching to light ignores the original-colors override for simple mail', 
       body: 'Simple reply', body_html: '<p style="color: #112233">Simple reply</p>', attachments: []
     }]
   } }));
-  await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({ workspace: 'everything' }))}`);
+  await page.goto(exploreLink({ workspace: 'everything' }));
   await page.getByRole('grid', { name: 'Everything results' }).getByText(row.title).click();
   const frame = page.locator('iframe[title="Message body"]');
   await expect(frame.contentFrame().getByText('Simple reply')).toHaveCSS('color', 'rgb(242, 243, 245)');

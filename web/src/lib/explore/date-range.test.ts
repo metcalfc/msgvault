@@ -4,8 +4,9 @@ import { resolveRange } from '@kenn-io/kit-ui';
 
 import {
   activeDateRangePreset, dateInputBound, dateInputValue, dateRangeFilters, defaultEverythingFilters,
-  endOfLocalDay, presetStart, startOfLocalDay, withDateBound, withDateRange, withPickedDays, withRangeSelection
+  endOfLocalDay, presetStart, startOfLocalDay, withDateBound, withDateRange, withPickedDays
 } from './date-range';
+import { withRangeSelection } from './date-range-selection';
 
 // Local noon: an hour either way stays on the same local day in every zone.
 const now = new Date(2026, 8, 29, 12, 0, 0);
