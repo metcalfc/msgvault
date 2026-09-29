@@ -1317,7 +1317,7 @@ what each feature sends, thresholds, and budgets.
 | `api_key_env` | `TYPESAFE_API_KEY` | Environment variable read when no stored credential exists. A key pasted in Settings is stored as `jev/api_key`, bound to the endpoint origin, and takes precedence. |
 | `request_timeout` | `10s` | Longest wait for one request. |
 | `max_requests_per_day` | `500` | Requests each feature may send per UTC day. `0` means no cap. Counters are persisted in the archive. |
-| `max_cost_usd_per_day` | `1.0` | Spend each feature may reach per UTC day. Applies only when a price below is set. |
+| `max_cost_usd_per_day` | `1.0` | Spend each feature may reach per UTC day. `0` means no cap. Applies only when a price below is set. |
 | `input_usd_per_million_tokens` | `0` | Price used for cost accounting. `0` on both prices means requests are counted and no cost is reported or assumed. |
 | `output_usd_per_million_tokens` | `0` | See above. |
 

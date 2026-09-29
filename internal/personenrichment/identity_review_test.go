@@ -217,8 +217,7 @@ func fakeJevServer(t *testing.T, nameCompatible, companySame, nameConflict float
 
 func jevServiceFor(t *testing.T, endpoint string, consents jev.ConsentChecker) (*jev.Service, jev.Config) {
 	t.Helper()
-	var cfg jev.Config
-	cfg.ApplyDefaults()
+	cfg := jev.DefaultConfig()
 	cfg.Enabled = true
 	cfg.Endpoint = endpoint
 	cfg.IdentityVerification = jev.FeatureConfig{Enabled: true, Automatic: true}

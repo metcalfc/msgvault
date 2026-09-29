@@ -22,6 +22,10 @@ var environmentNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // Config is the [jev] section. Everything is off by default; a feature also
 // needs its own section enabled and an active consent before it may send.
 //
+// Decode over DefaultConfig so an omitted daily limit takes its default while
+// an explicit 0 keeps its documented meaning of "no cap". ApplyDefaults never
+// rewrites a numeric limit.
+//
 //nolint:recvcheck // defaults mutate while validation reads the resulting value.
 type Config struct {
 	Enabled                   bool          `toml:"enabled"`
@@ -45,8 +49,21 @@ type FeatureConfig struct {
 	Automatic bool `toml:"automatic"`
 }
 
+// DefaultConfig returns the section with every default filled, including
+// the daily limits. It is the decode target, so only an omitted limit takes
+// the default and an explicit 0 survives as "no cap".
+func DefaultConfig() Config {
+	cfg := Config{
+		MaxRequestsPerDay: DefaultMaxRequestsPerDay,
+		MaxCostUSDPerDay:  DefaultMaxCostUSDPerDay,
+	}
+	cfg.ApplyDefaults()
+	return cfg
+}
+
 // ApplyDefaults fills the pinned endpoint and model, the key variable, and
-// conservative daily limits.
+// the request timeout. It leaves the daily limits alone: 0 means no cap and
+// the defaults come from DefaultConfig before decoding.
 func (c *Config) ApplyDefaults() {
 	if c.Endpoint == "" {
 		c.Endpoint = DefaultEndpoint
@@ -59,12 +76,6 @@ func (c *Config) ApplyDefaults() {
 	}
 	if c.RequestTimeout == 0 {
 		c.RequestTimeout = DefaultRequestTimeout
-	}
-	if c.MaxRequestsPerDay == 0 {
-		c.MaxRequestsPerDay = DefaultMaxRequestsPerDay
-	}
-	if c.MaxCostUSDPerDay == 0 {
-		c.MaxCostUSDPerDay = DefaultMaxCostUSDPerDay
 	}
 }
 
@@ -98,8 +109,9 @@ func (c Config) Priced() bool {
 	return c.InputUSDPerMillionTokens > 0 || c.OutputUSDPerMillionTokens > 0
 }
 
-// DayLimits derives the per-feature daily caps. The cost cap only applies
-// when prices are configured; without prices spend is unknowable.
+// DayLimits derives the per-feature daily caps. A zero limit is no cap. The
+// cost cap only applies when prices are configured; without prices spend is
+// unknowable.
 func (c Config) DayLimits() DayLimits {
 	limits := DayLimits{MaxRequests: c.MaxRequestsPerDay}
 	if c.Priced() {

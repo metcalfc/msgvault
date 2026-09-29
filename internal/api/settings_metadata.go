@@ -167,7 +167,7 @@ var settingsMetadata = map[string]settingMetadata{
 	"jev.api_key":                         {"Jev API key", "Stored TypeSafe key. It overrides the environment variable.", sectionProvider},
 	"jev.request_timeout":                 {"Request timeout", "Longest wait for one Jev request.", sectionProvider},
 	"jev.max_requests_per_day":            {"Daily request limit", "Requests each feature may send per UTC day. 0 means no cap.", "limits"},
-	"jev.max_cost_usd_per_day":            {"Daily cost limit", "Spend each feature may reach per UTC day. Applies only when prices are set.", "limits"},
+	"jev.max_cost_usd_per_day":            {"Daily cost limit", "Spend each feature may reach per UTC day. 0 means no cap. Applies only when prices are set.", "limits"},
 	"jev.input_usd_per_million_tokens":    {"Input price", "USD per million input tokens. 0 turns off cost accounting.", "limits"},
 	"jev.output_usd_per_million_tokens":   {"Output price", "USD per million output tokens. 0 turns off cost accounting.", "limits"},
 	"jev.identity_verification.enabled":   {"Enrichment identity check", "Ask Jev whether a partially matching enrichment result is the requested person.", "features"},

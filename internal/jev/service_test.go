@@ -73,8 +73,7 @@ func newFakeJev(t *testing.T, response string) (*httptest.Server, *[]recordedReq
 }
 
 func serviceConfig(endpoint string) Config {
-	var cfg Config
-	cfg.ApplyDefaults()
+	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.Endpoint = endpoint
 	cfg.IdentityVerification = FeatureConfig{Enabled: true}

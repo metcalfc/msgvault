@@ -54,6 +54,17 @@ automatic = true
 
 	require.NoError(os.WriteFile(configPath, []byte(`
 [jev]
+max_requests_per_day = 0
+max_cost_usd_per_day = 0
+`), 0o644))
+	cfg, err = Load(configPath, "")
+	require.NoError(err)
+	assert.Zero(cfg.Jev.MaxRequestsPerDay, "an explicit 0 means no cap, not the default")
+	assert.Zero(cfg.Jev.MaxCostUSDPerDay)
+	assert.Equal(jev.DayLimits{}, cfg.Jev.DayLimits())
+
+	require.NoError(os.WriteFile(configPath, []byte(`
+[jev]
 endpoint = "http://api.typesafe.ai/v1/systemone"
 `), 0o644))
 	_, err = Load(configPath, "")

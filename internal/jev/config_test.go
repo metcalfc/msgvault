@@ -11,8 +11,7 @@ import (
 func TestConfigDefaultsArePinnedAndOff(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	var cfg Config
-	cfg.ApplyDefaults()
+	cfg := DefaultConfig()
 	require.NoError(cfg.Validate())
 	assert.False(cfg.Enabled)
 	assert.False(cfg.IdentityVerification.Enabled)
@@ -30,6 +29,25 @@ func TestConfigDefaultsArePinnedAndOff(t *testing.T) {
 	cfg.InputUSDPerMillionTokens = 0.5
 	assert.True(cfg.Priced())
 	assert.Equal(DayLimits{MaxRequests: DefaultMaxRequestsPerDay, MaxCostUSDMicros: 1_000_000}, cfg.DayLimits())
+}
+
+func TestConfigZeroLimitsMeanNoCapAndOnlyOmittedLimitsDefault(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	explicit := DefaultConfig()
+	explicit.MaxRequestsPerDay = 0
+	explicit.MaxCostUSDPerDay = 0
+	explicit.InputUSDPerMillionTokens = 1
+	explicit.ApplyDefaults()
+	require.NoError(explicit.Validate())
+	assert.Zero(explicit.MaxRequestsPerDay, "ApplyDefaults must not rewrite an explicit 0")
+	assert.Equal(DayLimits{}, explicit.DayLimits(), "0 is no cap on both dimensions")
+
+	var omitted Config
+	omitted.ApplyDefaults()
+	assert.Zero(omitted.MaxRequestsPerDay, "a bare ApplyDefaults never invents a limit")
+	assert.Equal(int64(DefaultMaxRequestsPerDay), DefaultConfig().MaxRequestsPerDay,
+		"decoding over DefaultConfig is what supplies the default")
 }
 
 func TestConfigValidateRejectsUnsafeValues(t *testing.T) {

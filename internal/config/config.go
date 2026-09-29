@@ -871,7 +871,7 @@ func NewDefaultConfig() *Config {
 	cfg.Activity.ApplyDefaults()
 	cfg.People.Sweep.ApplyDefaults()
 	cfg.People.Enrichment.ApplyDefaults()
-	cfg.Jev.ApplyDefaults()
+	cfg.Jev = jev.DefaultConfig()
 	return cfg
 }
 
