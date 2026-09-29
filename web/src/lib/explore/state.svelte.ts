@@ -200,6 +200,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** The date bounds among a filter list, as a comparable key. */
+function dateBoundsKey(filters: readonly ExploreFilter[]): string {
+  return JSON.stringify(filters.filter((filter) => isDateDimension(filter.dimension)));
+}
+
 function freshDefaults(): ExploreURLState {
   return {
     ...defaultExploreURLState,
@@ -837,11 +842,12 @@ export class ExploreState {
     mode: 'push' | 'replace'
   ): void {
     let effectivePatch = patch;
-    // A change to the filters is the user's choice of bounds (including
-    // "All time"), so it is never overwritten by the default and survives a
-    // bookmark.
-    if (patch.filters && JSON.stringify(normalize({ ...this.current, filters: patch.filters }).filters) !==
-      JSON.stringify(this.current.filters)) {
+    // A change to Everything's date bounds (after/before added, removed, or
+    // changed — including "All time") is the user's choice, so it is never
+    // overwritten by the default and survives a bookmark. Filter edits in
+    // other workspaces, and non-date filters, leave the default in place.
+    if (patch.filters && (patch.workspace ?? this.current.workspace) === 'everything' &&
+      dateBoundsKey(normalize({ ...this.current, filters: patch.filters }).filters) !== dateBoundsKey(this.current.filters)) {
       effectivePatch = { ...patch, dateBoundsChosen: true };
       this.everythingDefaultApplied = true;
     }

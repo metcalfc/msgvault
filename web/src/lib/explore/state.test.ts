@@ -1521,6 +1521,24 @@ describe('Everything date default after a reload', () => {
     bare.destroy();
   });
 
+  it('leaves the default in place after filter edits outside Everything', () => {
+    // Drilling a person in Files edits the shared filters, but not
+    // Everything's date bounds.
+    window.history.replaceState(null, '', '/');
+    const state = new ExploreState(window);
+    state.commitWorkspace('files');
+    state.commitNavigation({ filters: [{ dimension: 'participant', values: ['12'] }] });
+    expect(state.current.dateBoundsChosen).toBe(false);
+    state.commitWorkspace('everything');
+    expect(state.current.filters.map((filter) => filter.dimension)).toEqual(['participant', 'after', 'before']);
+    expect(state.current.dateBoundsChosen).toBe(true);
+    // A non-date filter edit inside Everything is not a choice of bounds either.
+    state.commitNavigation({ filters: [] });
+    state.commitNavigation({ filters: [{ dimension: 'source', values: ['2'] }] });
+    expect(state.current.filters).toEqual([{ dimension: 'source', values: ['2'] }]);
+    state.destroy();
+  });
+
   it('applies the default after a Directory deep link, which is not an Everything view', () => {
     window.history.replaceState(null, '', `/?workspace=directory&mode=full_text&explore=${
       encodeURIComponent(JSON.stringify({ workspace: 'directory', directoryPersonID: 42 }))}`);
