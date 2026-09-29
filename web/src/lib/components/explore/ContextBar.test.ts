@@ -71,6 +71,24 @@ describe('ContextBar date range', () => {
     expect(onFiltersChange).toHaveBeenLastCalledWith([{ dimension: 'after', values: ['2020-03-05T00:00:00Z'] }]);
   });
 
+  it('shows a multi-valued message-type filter as Multiple and never narrows it on render', async () => {
+    const onFiltersChange = vi.fn();
+    render(ContextBar, baseProps({
+      filters: [{ dimension: 'message_type', values: ['imessage', 'sms'] }],
+      onFiltersChange
+    }));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(screen.getByRole('combobox', { name: 'Message type: Multiple' })).toBeDefined();
+    expect(screen.getByText('Type: Text (iMessage), Text (SMS)')).toBeDefined();
+    expect(onFiltersChange).not.toHaveBeenCalled();
+
+    // Only an explicit pick replaces the filter.
+    await chooseSelectOption(screen.getByRole('combobox', { name: 'Message type: Multiple' }), 'Email');
+    expect(onFiltersChange).toHaveBeenCalledTimes(1);
+    expect(onFiltersChange).toHaveBeenCalledWith([{ dimension: 'message_type', values: ['email'] }]);
+  });
+
   it('offers date and message-type inputs in the Filters popover', async () => {
     const onFiltersChange = vi.fn();
     render(ContextBar, baseProps({ onFiltersChange }));

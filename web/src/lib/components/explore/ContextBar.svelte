@@ -57,18 +57,24 @@
     { value: 'timeline', label: 'Timeline' },
     { value: 'files', label: 'Files' }
   ];
-  const messageTypeOptions = [
+  // A multi-valued message_type filter (from a URL or a drilled group) is
+  // shown as "Multiple" and left exactly as it is until the user picks a
+  // value; the control never narrows a filter merely by rendering it.
+  const MULTIPLE_MESSAGE_TYPES = '\u0000multiple';
+  const messageTypeValues = $derived(filters.find((filter) => filter.dimension === 'message_type')?.values ?? []);
+  const messageType = $derived(messageTypeValues.length > 1 ? MULTIPLE_MESSAGE_TYPES : (messageTypeValues[0] ?? ''));
+  const messageTypeOptions = $derived([
     { value: '', label: 'Any type' },
+    ...(messageTypeValues.length > 1 ? [{ value: MULTIPLE_MESSAGE_TYPES, label: 'Multiple', disabled: true }] : []),
     ...['email', 'chat', 'imessage', 'sms', 'calendar_event', 'meeting_transcript']
       .map((value) => ({ value, label: messageTypeLabel(value) }))
-  ];
+  ]);
 
   const datePreset = $derived(activeDateRangePreset(filters));
   const dateRangeOptions = $derived([
     ...DATE_RANGE_PRESETS,
     ...(datePreset === 'custom' ? [{ value: 'custom', label: 'Custom range', disabled: true }] : [])
   ]);
-  const messageType = $derived(filters.find((filter) => filter.dimension === 'message_type')?.values[0] ?? '');
   // The popover's picker is controlled from the after/before filters: no
   // bounds read as "all time", a single bound as an incomplete custom range
   // the picker reopens armed to complete.
@@ -103,6 +109,7 @@
   }
 
   function selectMessageType(value: string): void {
+    if (value === MULTIPLE_MESSAGE_TYPES || value === messageType) return;
     const rest = filters.filter((filter) => filter.dimension !== 'message_type');
     onFiltersChange(value ? [...rest, { dimension: 'message_type', values: [value] }] : rest);
   }
