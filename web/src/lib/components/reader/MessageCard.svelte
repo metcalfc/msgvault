@@ -7,6 +7,7 @@
   import IdentityAvatar from '../common/IdentityAvatar.svelte';
   import ContentFrame from './ContentFrame.svelte';
   import ParticipantPill from './ParticipantPill.svelte';
+  import EventCard from './EventCard.svelte';
   import MessageAttachments from './MessageAttachments.svelte';
   import type { FileViewerTarget } from '../../explore/models';
   import { gmailMessageURL } from '../../reader/address';
@@ -51,6 +52,7 @@
   }: Props = $props();
 
   const gmailURL = $derived(sourceType === 'gmail' ? gmailMessageURL(message.sourceMessageId) : undefined);
+  const isEvent = $derived(message.messageType === 'calendar_event');
   const fromAddress = $derived(message.isFromMe ? '' : (message.from ?? ''));
 
   let menuOpen = $state(false);
@@ -118,7 +120,7 @@
       {/if}
     </div>
 
-    {#if fromAddress || message.recipients.length > 0 || (message.cc?.length ?? 0) > 0 || gmailURL}
+    {#if !isEvent && (fromAddress || message.recipients.length > 0 || (message.cc?.length ?? 0) > 0 || gmailURL)}
       <div class="people-line">
         {#if fromAddress}
           <span class="people-role">from</span>
@@ -152,6 +154,9 @@
           <p class="body-state" role="alert">{bodyError}</p>
         {:else if bodyPending}
           <p class="body-state" role="status">Loading message…</p>
+        {:else if isEvent && viewMode === 'html' && !renderAsHTML}
+          <!-- The organizer is the sender and attendees are the recipients. -->
+          <EventCard {message} {client} {onOpenPerson} {onFilterPerson} />
         {:else if renderAsHTML}
           <ContentFrame
             {client}

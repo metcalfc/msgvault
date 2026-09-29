@@ -43,11 +43,11 @@ describe('MessageCard', () => {
     expect(container.textContent).not.toContain('<p>');
   });
 
-  it('keeps plain calendar descriptions and plain-text view mode in a <pre>', () => {
+  it('keeps plain calendar descriptions as text and plain-text view mode in a <pre>', () => {
     const plain = render(MessageCard, {
       props: { message: detail({ messageType: 'calendar_event', body: 'Bring the deck' }), expanded: true }
     });
-    expect(plain.container.querySelector('pre')?.textContent).toBe('Bring the deck');
+    expect(plain.container.querySelector('.event-description')?.textContent).toBe('Bring the deck');
     plain.unmount();
 
     // Angle-bracketed addresses and entities in prose are not markup: the
@@ -56,13 +56,37 @@ describe('MessageCard', () => {
       props: { message: detail({ messageType: 'calendar_event', body: 'Ask <alice@example.test>\nabout R&amp;D' }), expanded: true }
     });
     expect(prose.container.querySelector('iframe')).toBeNull();
-    expect(prose.container.querySelector('pre')?.textContent).toBe('Ask <alice@example.test>\nabout R&amp;D');
+    expect(prose.container.querySelector('.event-description')?.textContent).toBe('Ask <alice@example.test>\nabout R&amp;D');
     prose.unmount();
 
     const text = render(MessageCard, {
       props: { message: detail({ messageType: 'calendar_event', body: '<p>Agenda</p>' }), expanded: true, viewMode: 'text' }
     });
     expect(text.container.querySelector('pre')?.textContent).toBe('<p>Agenda</p>');
+  });
+
+  it('shows a calendar event as when, where, organizer, and attendees above its description', () => {
+    render(MessageCard, {
+      props: {
+        message: detail({
+          messageType: 'calendar_event',
+          subject: 'Planning review',
+          from: 'Alice Example <alice@example.com>',
+          recipients: ['Bob Example <bob@example.com>', 'casey@example.com'],
+          body: 'Planning review\nWhen: 2026-07-18 10:00 - 2026-07-18 10:30\nLocation: Room 4 https://meet.example.com/abc\nBring the deck\nAttendees: Bob Example'
+        }),
+        expanded: true
+      }
+    });
+
+    const card = screen.getByRole('region', { name: 'Event details' });
+    const facts = [...card.querySelectorAll('dt')].map((term) => term.textContent);
+    expect(facts).toEqual(['When', 'Where', 'Organizer', 'Attendees']);
+    expect(card.querySelector('dd')?.textContent).toMatch(/Jul 18, 2026 · .*10:00.*–.*10:30/);
+    expect(screen.getByRole('link', { name: 'https://meet.example.com/abc' }).getAttribute('rel')).toBe('noopener noreferrer');
+    expect(screen.getByRole('button', { name: 'Alice Example (alice@example.com): person actions' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Bob Example (bob@example.com): person actions' })).toBeDefined();
+    expect(card.querySelector('.event-description')?.textContent).toBe('Bring the deck');
   });
 
   it('collapses to one line of sender, snippet, and date that expands on click', async () => {
