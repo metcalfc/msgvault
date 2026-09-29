@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../api/client';
-
+import { withEntityLabels } from '../../test/entity-labels';
+import { entityNames, LOADING_LABEL, UNKNOWN_LABELS } from '../names/entity-names.svelte';
 import { filterNotPeople, looksUnnamed, mergePeople, ObservedContacts, savedRow, type PeopleRow } from './hub.svelte';
 
 function row(kind: PeopleRow['kind'], id: number, lastContactAt?: string, name = `Person ${id}`): PeopleRow {
@@ -55,6 +56,15 @@ describe('People list merge', () => {
     expect(looksUnnamed('ada@example.test')).toBe(true);
     expect(looksUnnamed('+1 555 555 0100')).toBe(true);
     expect(looksUnnamed('Ada', { kind: 'email', value: 'ada@example.test' })).toBe(false);
+  });
+  it('names a saved person without a display name through the label lookup, never by ID', async () => {
+    const client = createAPIClient(withEntityLabels(vi.fn<typeof fetch>(), { person: { 9: 'Ada Example' } }));
+    const names = entityNames(client);
+    const person = { id: 9, revision: 1, contact_state: 'inactive', categories: [], organizations: [] };
+    expect(savedRow(person, names).name).toBe(LOADING_LABEL);
+    await names.load('person', [9]);
+    expect(savedRow(person, names).name).toBe('Ada Example');
+    expect(savedRow({ ...person, id: 10 }).name).toBe(UNKNOWN_LABELS.person);
   });
 });
 

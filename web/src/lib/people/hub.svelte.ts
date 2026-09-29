@@ -4,7 +4,7 @@ import type { PrimaryIdentifier } from '../api/generated/models';
 import type { DirectoryController } from '../directory/controller.svelte';
 import type { DirectoryPerson } from '../directory/models';
 import type { CorrespondentKindRecord } from '../api/generated/models';
-import { UNKNOWN_LABELS } from '../names/entity-names.svelte';
+import { entityNames, type EntityNames, UNKNOWN_LABELS } from '../names/entity-names.svelte';
 import { clearKind, isNotAPerson, listNotPeople } from './correspondent-kind';
 
 /** Which people the list shows: everyone, only saved, only not saved, or
@@ -52,17 +52,30 @@ export function looksUnnamed(name: string, identifier?: PrimaryIdentifier): bool
   return text.includes('@') || /^[+\d\s().-]{5,}$/.test(text);
 }
 
-export function savedRow(person: DirectoryPerson): PeopleRow {
+/**
+ * A saved person's row. Without a display name the row is named by the
+ * server's label (a person name or a bound identity) once it arrives, by the
+ * primary identifier meanwhile, and never by its ID.
+ */
+export function savedRow(person: DirectoryPerson, names?: EntityNames): PeopleRow {
   const primary = person.primary_identifier as PrimaryIdentifier | undefined;
   return {
     kind: 'saved',
     key: `person:${person.id}`,
     id: person.id,
-    name: person.display_name?.trim() || primary?.value || UNKNOWN_LABELS.person,
+    name: person.display_name?.trim() || savedFallbackName(person.id, primary, names),
     identifier: primary,
     lastContactAt: person.last_contact_at ?? undefined,
     meta: [...(person.organizations ?? []), ...(person.categories ?? [])],
   };
+}
+
+function savedFallbackName(id: number, primary: PrimaryIdentifier | undefined, names?: EntityNames): string {
+  if (!names) return primary?.value || UNKNOWN_LABELS.person;
+  const known = names.known('person', id);
+  if (known) return known;
+  const pending = names.label('person', id);
+  return primary?.value || pending;
 }
 
 /**
@@ -316,9 +329,11 @@ export class PeopleHub {
   readonly notPeople: NotPeopleRecords;
   filters = $state<PeopleFilters>({ query: '', saved: '', hasName: false, category: '', organization: '' });
   private readonly directory: DirectoryController;
+  private readonly names: EntityNames;
   private observedKey: string | undefined;
 
   constructor(client: APIClient, directory: DirectoryController) {
+    this.names = entityNames(client);
     this.observed = new ObservedContacts(client);
     this.notPeople = new NotPeopleRecords(client);
     this.directory = directory;
@@ -364,7 +379,7 @@ export class PeopleHub {
       : this.observed.rows;
     return mergePeople({
       saved: this.includesSaved
-        ? { rows: this.directory.rows.map(savedRow), hasMore: this.directory.cursor !== null }
+        ? { rows: this.directory.rows.map((person) => savedRow(person, this.names)), hasMore: this.directory.cursor !== null }
         : undefined,
       observed: this.includesObserved ? {
         rows: observed, hasMore: this.observed.cursor !== null,
