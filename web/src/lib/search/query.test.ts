@@ -37,6 +37,19 @@ describe('extractQueryFilters', () => {
     expect(extracted.filters).toEqual([{ dimension: 'message_type', values: ['sms', 'imessage'] }]);
   });
 
+  it.each(['after:2025-02-30', 'before:2025-13-01', 'after:2025-00-10', 'before:2024-02-29x'])(
+    'leaves the impossible date %s as query text for the daemon to reject',
+    (query) => {
+      expect(extractQueryFilters(query, [])).toEqual({ query, filters: [], moved: false });
+    }
+  );
+
+  it('accepts a real leap day', () => {
+    expect(extractQueryFilters('after:2024-02-29', []).filters).toEqual([
+      { dimension: 'after', values: [new Date(2024, 1, 29).toISOString()] }
+    ]);
+  });
+
   it('leaves a query with nothing to move untouched', () => {
     const extracted = extractQueryFilters("has:attachment 'exact words'", []);
     expect(extracted).toEqual({ query: "has:attachment 'exact words'", filters: [], moved: false });

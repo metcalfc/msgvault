@@ -132,8 +132,14 @@ export function searchModeFellBack(query: string, mode: ExploreSearchMode): bool
  * excludes the 30th, and the explore before filter is exclusive, so the
  * chip keeps the operator's meaning. */
 function operatorDateBound(value: string): string | undefined {
-  const day = /^\d{4}[-/]\d{2}[-/]\d{2}$/.test(value) ? value.replaceAll('/', '-') : '';
-  return day ? dateInputBound(day, 'after') : undefined;
+  const match = /^(\d{4})[-/](\d{2})[-/](\d{2})$/.exec(value);
+  if (!match) return undefined;
+  // An impossible date (2025-02-30, 2025-13-01) would roll over into the
+  // next month; it stays query text so the daemon reports the error.
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return undefined;
+  return dateInputBound(`${match[1]}-${match[2]}-${match[3]}`, 'after');
 }
 
 function withFilterValue(filters: ExploreFilter[], dimension: ExploreFilter['dimension'], value: string): ExploreFilter[] {
