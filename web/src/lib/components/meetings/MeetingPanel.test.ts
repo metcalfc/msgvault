@@ -38,12 +38,25 @@ describe('MeetingPanel', () => {
   it('renders a closed disclosure with the meeting count when collapsible', async () => {
     render(MeetingPanel, { client: createAPIClient(async (input) => response(input instanceof Request ? input : new Request(input))),
       scope: { kind: 'direct', scope: { person_id: 7 } }, collapsible: true });
-    expect(await screen.findByText('Meeting activity and follow-ups · 4 meetings')).toBeDefined();
+    // The same summary element carries the loading and loaded states.
+    const summary = document.querySelector('details.meeting-overview > summary')!;
+    expect(summary.textContent).toBe('Meeting activity · loading…');
+    expect(await screen.findByText('Meeting activity and follow-ups · 4 meetings')).toBe(summary);
     const details = document.querySelector<HTMLDetailsElement>('details.meeting-overview');
     expect(details?.open).toBe(false);
     // The body, not the disclosure, is the bounded scroller.
     expect(details?.querySelector('section.meeting-panel')?.hasAttribute('data-scroll')).toBe(true);
     expect(screen.getByRole('textbox', { name: 'Assignee email' })).toBeDefined();
+  });
+
+  it('opens itself and names the failure in the summary when collapsible loading fails', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({ error: 'meeting_scope_changed', message: 'Meetings changed.' }, { status: 409 }));
+    render(MeetingPanel, { client: createAPIClient(fetchFn), scope: { kind: 'direct', scope: { person_id: 7 } }, collapsible: true });
+    expect(await screen.findByText('Meeting activity · could not load')).toBeDefined();
+    const details = document.querySelector<HTMLDetailsElement>('details.meeting-overview');
+    expect(details?.open).toBe(true);
+    expect(screen.getByRole('alert').textContent).toContain('Meetings changed.');
+    expect(screen.getByRole('button', { name: 'Reload meeting activity' })).toBeDefined();
   });
 
   it('collapses to a single "No meetings" line when the scope has no meetings', async () => {
@@ -53,10 +66,10 @@ describe('MeetingPanel', () => {
         ? meetingMetrics({ totals: { ...meetingMetrics().totals, meeting_count: 0 }, months: [], duration_by_basis: [] })
         : meetingActions({ coverage: { meeting_count: 0, available: 0, partial: 0, unsupported: 0, unavailable: 0 } }));
     }), scope: { kind: 'direct', scope: { person_id: 7 } }, collapsible: true });
-    expect(await screen.findByText('No meetings')).toBeDefined();
-    expect(document.querySelector('details.meeting-overview')).toBeNull();
+    const summary = await screen.findByText('No meetings');
+    expect(summary.tagName).toBe('SUMMARY');
+    expect(summary.closest('details')?.open).toBe(false);
     expect(screen.queryByRole('textbox', { name: 'Assignee email' })).toBeNull();
-    expect(screen.queryByText('0 meetings')).toBeNull();
   });
 
   it('asks the owner for fresh Explore authority on explicit reload without repeating failed authority', async () => {

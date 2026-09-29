@@ -42,9 +42,21 @@
   const noMeetings = $derived(
     controller.metrics !== undefined && controller.metrics.totals.meeting_count === 0 && actionCount === 0 && !filtersActive
   );
+  // One <details> for the whole lifecycle: the summary line carries the
+  // loading, error, empty, and loaded states so the header never swaps
+  // elements or shifts as the scope resolves.
+  let open = $state(false);
   const summaryLabel = $derived.by(() => {
+    if (errors.length > 0) return 'Meeting activity · could not load';
     const count = controller.metrics?.totals.meeting_count;
-    return count === undefined ? 'Meeting activity and follow-ups' : `Meeting activity and follow-ups · ${count.toLocaleString()} meetings`;
+    if (count === undefined) return controller.metricsLoading ? 'Meeting activity · loading…' : 'Meeting activity and follow-ups';
+    if (noMeetings) return 'No meetings';
+    return `Meeting activity and follow-ups · ${count.toLocaleString()} meetings`;
+  });
+  // An error inside a closed disclosure would be invisible: open it so the
+  // alert and its Reload control are on screen.
+  $effect(() => {
+    if (errors.length > 0) open = true;
   });
 
   $effect.pre(() => {
@@ -86,10 +98,8 @@
   {#if controller.actionsLoading}<p role="status">Loading action evidence…</p>{/if}
 {/snippet}
 
-{#if collapsible && noMeetings}
-  <p class="meeting-none" aria-label="Meeting activity">No meetings</p>
-{:else if collapsible}
-  <details class="meeting-overview">
+{#if collapsible}
+  <details class="meeting-overview" bind:open>
     <summary>{summaryLabel}</summary>
     <!-- The open body scrolls within a bounded height so a long action
          list never squeezes the timeline or results beneath it. -->
@@ -112,5 +122,4 @@
   .action-filters { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
   .meeting-overview { flex: none; min-width: 0; }
   .meeting-overview summary { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-sm); }
-  .meeting-none { flex: none; color: var(--text-muted); font-size: var(--font-size-sm); }
 </style>
