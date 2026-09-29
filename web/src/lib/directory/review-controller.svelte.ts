@@ -5,6 +5,7 @@ import {
 } from '../api/generated/api/api';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type { APIClient } from '../api/client';
+import { entityNames } from '../names/entity-names.svelte';
 import type {
   ContactMatchStatus as GeneratedContactMatchStatus,
   IdentityMatchCandidate as GeneratedIdentityMatchCandidate,
@@ -318,7 +319,9 @@ export class DirectoryReviewController {
     this.decisionDrafts.delete(candidateID);
     if (!this.isReviewContextCurrent(context)) return;
     if (this.mergeRequired?.candidateID === candidateID) this.mergeRequired = null;
-    const name = success.survivor.display_name?.trim() || `Person ${success.survivor.id}`;
+    const name = success.survivor.display_name?.trim() ||
+      await entityNames(this.client).settledLabel('person', success.survivor.id, 'the surviving person');
+    if (this.disposed || !this.isReviewContextCurrent(context)) return;
     const candidate = this.rows.find((row) => row.id === candidateID);
     if (candidate?.left_kind === 'participant' && candidate.right_kind === 'person') {
       // After the merge the participant belongs to the merged profile, so

@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
+import { withEntityLabels } from '../../../test/entity-labels';
 import { FactLedgerController } from '../../directory/fact-ledger-controller.svelte';
 import {
   DirectoryReviewController,
@@ -11,13 +12,15 @@ import {
 import DirectoryReviewCentre from './DirectoryReviewCentre.svelte';
 import { RelationshipReviewController } from '../../directory/relationship-review-controller.svelte';
 
+
+const syntheticNames = { person: { 42: 'Avery Example', 170: 'Avery Example' }, participant: { 171: 'blair@example.org' } };
 afterEach(() => cleanup());
 
 function candidate(id: number, state = 'candidate'): IdentityMatchCandidate {
   return {
     id,
     left_id: id * 10,
-    left_kind: 'beeper_user',
+    left_kind: 'person',
     right_id: id * 10 + 1,
     right_kind: 'participant',
     basis: 'stable_provider_id',
@@ -61,8 +64,8 @@ describe('DirectoryReviewCentre', () => {
       calls.push({ method: request.method, path: url.pathname, status: url.searchParams.get('status') });
       return Response.json({ reviews: [] });
     });
-    const review = new DirectoryReviewController(createAPIClient(fetchFn));
-    const relationships = new RelationshipReviewController(createAPIClient(fetchFn));
+    const review = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
+    const relationships = new RelationshipReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
     render(DirectoryReviewCentre, { controller: review, relationshipController: relationships });
 
     await fireEvent.click(screen.getByRole('radio', { name: 'Imported relationships' }));
@@ -86,7 +89,7 @@ describe('DirectoryReviewCentre', () => {
       requests.push(request);
       return Response.json(conflict, { status: 409 });
     });
-    const controller = new DirectoryReviewController(createAPIClient(fetchFn));
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
     controller.rows = [candidate(17)];
     renderReview(controller);
 
@@ -109,7 +112,7 @@ describe('DirectoryReviewCentre', () => {
       const state = new URL(request.url).searchParams.get('state') ?? 'candidate';
       return page([candidate(state === 'conflict' ? 22 : 17, state)]);
     });
-    const controller = new DirectoryReviewController(createAPIClient(fetchFn), commit);
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)), commit);
     await controller.loadIdentityPage();
     renderReview(controller);
 
@@ -136,7 +139,7 @@ describe('DirectoryReviewCentre', () => {
         return page([candidate(17)]);
       });
       const commit = vi.fn();
-      const apiClient = createAPIClient(fetchFn);
+      const apiClient = createAPIClient(withEntityLabels(fetchFn, syntheticNames));
       const controller = new DirectoryReviewController(apiClient, commit);
       const factController = new FactLedgerController(apiClient);
       if (mode === 'restoration') {
@@ -179,7 +182,7 @@ describe('DirectoryReviewCentre', () => {
       }
       return page(firstRows);
     });
-    const controller = new DirectoryReviewController(createAPIClient(fetchFn));
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
     controller.rows = firstRows;
     renderReview(controller);
 
@@ -208,7 +211,7 @@ describe('DirectoryReviewCentre', () => {
       }
       return page([]);
     });
-    const controller = new DirectoryReviewController(createAPIClient(fetchFn));
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
     await controller.loadIdentityPage();
     renderReview(controller);
 
@@ -228,7 +231,7 @@ describe('DirectoryReviewCentre', () => {
       offsets.push(offset);
       return offset === 100 ? page([], 100) : page([candidate(17)], 0);
     });
-    const controller = new DirectoryReviewController(createAPIClient(fetchFn));
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
     await controller.loadIdentityPage(100);
     renderReview(controller);
 
@@ -271,7 +274,7 @@ describe('DirectoryReviewCentre', () => {
       const state = new URL(request.url).searchParams.get('state') ?? 'candidate';
       return page([candidate(state === 'conflict' ? 88 : 17, state)]);
     });
-    const apiClient = createAPIClient(fetchFn);
+    const apiClient = createAPIClient(withEntityLabels(fetchFn, syntheticNames));
     const controller = new DirectoryReviewController(apiClient);
     const factController = new FactLedgerController(apiClient);
     controller.rows = [current];
@@ -306,7 +309,7 @@ describe('DirectoryReviewCentre', () => {
       }
       return page([current]);
     });
-    const controller = new DirectoryReviewController(createAPIClient(fetchFn));
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
     controller.rows = [current];
     renderReview(controller);
     const trigger = screen.getByRole('button', { name: 'Link identities' });
@@ -335,7 +338,7 @@ describe('DirectoryReviewCentre', () => {
       }
       return page([]);
     });
-    const controller = new DirectoryReviewController(createAPIClient(fetchFn));
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
     controller.rows = [current];
     renderReview(controller);
     const trigger = screen.getByRole('button', { name: 'Link identities' });
@@ -361,7 +364,7 @@ describe('DirectoryReviewCentre', () => {
       }
       return Response.json({ error: 'unavailable', message: 'Reload failed' }, { status: 503 });
     });
-    const controller = new DirectoryReviewController(createAPIClient(fetchFn));
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
     controller.rows = [current];
     renderReview(controller);
 

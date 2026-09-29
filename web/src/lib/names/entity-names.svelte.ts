@@ -89,6 +89,24 @@ export class EntityNames {
     return entry?.state === 'named' ? entry.label : undefined;
   }
 
+  /** A name the page already holds when it has one, else the resolver's label. */
+  name(kind: EntityKind, id: number | null | undefined, known?: string | null): string {
+    return known?.trim() || this.label(kind, id);
+  }
+
+  /**
+   * Waits for a settled name, for one-off text such as an announcement.
+   * Returns the fallback when the server has no name or the lookup failed.
+   */
+  async settledLabel(kind: EntityKind, id: number | null | undefined, fallback: string): Promise<string> {
+    try {
+      await this.load(kind, [id]);
+    } catch {
+      // The fallback stands in for a name that could not be looked up.
+    }
+    return this.known(kind, id) ?? fallback;
+  }
+
   /** Records a name the page already has (from a listing), so it is not fetched. */
   seed(kind: EntityKind, id: number | null | undefined, label: string | null | undefined): void {
     const name = label?.trim();

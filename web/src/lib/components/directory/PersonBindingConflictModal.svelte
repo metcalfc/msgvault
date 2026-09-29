@@ -7,12 +7,14 @@
     appShortcuts,
     Button,
     Checkbox,
+    formatTimestamp,
     Modal,
     SegmentedControl,
     type SegmentedControlOption,
   } from '@kenn-io/kit-ui';
   import { onDestroy, onMount, untrack } from 'svelte';
   import type { APIClient } from '../../api/client';
+  import { entityNames } from '../../names/entity-names.svelte';
   import {
     isMatchingPersonETag,
     isPersonMergeRevisionConflict,
@@ -29,6 +31,7 @@
     onClose: () => void;
   }
   let { client, conflict, onOpenProfile, onSuccess, onClose }: Props = $props();
+  const names = $derived(entityNames(client));
   let profiles = $state<[Profile, Profile]>(untrack(() => [conflict.profiles[0], conflict.profiles[1]]));
   let survivorID = $state<number | null>(null);
   let confirmed = $state(false);
@@ -57,10 +60,17 @@
     releaseShortcutScope?.();
   });
   function profileName(profile: Profile): string {
-    return profile.person.display_name?.trim() || `Person ${profile.person.id}`;
+    return names.name('person', profile.person.id, profile.person.display_name);
   }
+  function profileDetail(profile: Profile): string {
+    const identities = profile.person.participant_ids?.length ?? 0;
+    return `Created ${formatTimestamp(profile.person.created_at)} · ${identities} ${identities === 1 ? 'identity' : 'identities'} · revision ${profile.person.revision}`;
+  }
+  // Two profiles can share a name; the creation time tells them apart.
   function profileLabel(profile: Profile): string {
-    return `${profileName(profile)} (Person ${profile.person.id})`;
+    const name = profileName(profile);
+    const twin = profiles.some((other) => other.person.id !== profile.person.id && profileName(other) === name);
+    return twin ? `${name} (created ${formatTimestamp(profile.person.created_at)})` : name;
   }
   function selectSurvivor(value: string): void {
     const nextID = Number(value);
@@ -207,7 +217,7 @@
       {#each profiles as profile (profile.person.id)}
         <article>
           <strong>{profileName(profile)}</strong>
-          <span>Person {profile.person.id}, revision {profile.person.revision}</span>
+          <span>{profileDetail(profile)}</span>
           <Button
             surface="soft"
             label={`Open ${profileName(profile)} profile`}

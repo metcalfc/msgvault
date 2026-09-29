@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
+import { withEntityLabels } from '../../../test/entity-labels';
 import type { Person as GeneratedPerson } from '../../api/generated/models';
 import type { PersonMergeSuccess, ValidatedPersonMergeRequired } from '../../directory/person-merge';
 import PersonBindingConflictModal from './PersonBindingConflictModal.svelte';
@@ -86,12 +87,33 @@ function renderModal(
   return { ...rendered, onOpenProfile, onSuccess, onClose };
 }
 
-async function selectSurvivor(label = 'Synthetic One (Person 7)'): Promise<void> {
+async function selectSurvivor(label = 'Synthetic One'): Promise<void> {
   await fireEvent.click(screen.getByRole('radio', { name: label }));
   await fireEvent.click(screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i }));
 }
 
 describe('PersonBindingConflictModal', () => {
+  it('names an unnamed profile through the resolver and tells same-named profiles apart without IDs', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({}));
+    const unnamed = { ...person(7, 4, ''), created_at: '2026-07-01T00:00:00Z' };
+    render(PersonBindingConflictModal, {
+      client: createAPIClient(withEntityLabels(fetchFn, { person: { 7: 'Synthetic Two' } })),
+      conflict: { ...conflict(), profiles: [{ person: unnamed, etag: '"person-7-r4"' }, conflict().profiles[1]] },
+      onOpenProfile: vi.fn(),
+      onSuccess: vi.fn(),
+      onClose: vi.fn(),
+    });
+
+    const radios = await waitFor(() => {
+      const found = screen.getAllByRole('radio').map((radio) => radio.getAttribute('aria-label') ?? radio.textContent ?? '');
+      expect(found.every((label) => label.startsWith('Synthetic Two (created '))).toBe(true);
+      return found;
+    });
+    expect(new Set(radios).size).toBe(2);
+    expect(document.body.textContent).not.toMatch(/Person \d|\b(7|9)\b,/);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
   it('sends the exact survivor-first merge request and reports operation-result metadata once', async () => {
     const requests: Request[] = [];
     const merged = person(7, 5, 'Synthetic One');
@@ -162,7 +184,7 @@ describe('PersonBindingConflictModal', () => {
     await selectSurvivor();
     await fireEvent.click(screen.getByRole('button', { name: 'Merge into selected survivor' }));
     await screen.findByRole('alert');
-    await fireEvent.click(screen.getByRole('radio', { name: 'Synthetic Two (Person 9)' }));
+    await fireEvent.click(screen.getByRole('radio', { name: 'Synthetic Two' }));
     expect(screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i })).toHaveProperty(
       'checked',
       false,
@@ -209,8 +231,8 @@ describe('PersonBindingConflictModal', () => {
     await selectSurvivor();
     await fireEvent.click(screen.getByRole('button', { name: 'Merge into selected survivor' }));
 
-    expect(await screen.findByText('Synthetic One Updated (Person 7)')).toBeDefined();
-    expect(screen.getByText('Synthetic Two Updated (Person 9)')).toBeDefined();
+    expect(await screen.findByRole('radio', { name: 'Synthetic One Updated' })).toBeDefined();
+    expect(screen.getByRole('radio', { name: 'Synthetic Two Updated' })).toBeDefined();
     expect(
       requests
         .filter((request) => request.method === 'GET')
@@ -218,8 +240,8 @@ describe('PersonBindingConflictModal', () => {
         .sort(),
     ).toEqual(['/api/v1/people/7', '/api/v1/people/9']);
     expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
-    const refreshedSurvivor = screen.getByRole('radio', { name: 'Synthetic One Updated (Person 7)' });
-    const refreshedAbsorbed = screen.getByRole('radio', { name: 'Synthetic Two Updated (Person 9)' });
+    const refreshedSurvivor = screen.getByRole('radio', { name: 'Synthetic One Updated' });
+    const refreshedAbsorbed = screen.getByRole('radio', { name: 'Synthetic Two Updated' });
     const confirmation = screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i });
     const submit = screen.getByRole('button', { name: 'Merge into selected survivor' });
     expect(refreshedSurvivor.getAttribute('aria-checked')).toBe('false');
@@ -311,8 +333,8 @@ describe('PersonBindingConflictModal', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Merge into selected survivor' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('could not load both current profile revisions');
-    expect(screen.getByRole('radio', { name: 'Synthetic One (Person 7)' })).toBeDefined();
-    expect(screen.getByRole('radio', { name: 'Synthetic Two (Person 9)' })).toBeDefined();
+    expect(screen.getByRole('radio', { name: 'Synthetic One' })).toBeDefined();
+    expect(screen.getByRole('radio', { name: 'Synthetic Two' })).toBeDefined();
     expect(screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i })).toHaveProperty(
       'checked',
       false,
@@ -339,9 +361,9 @@ describe('PersonBindingConflictModal', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Merge into selected survivor' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('could not load both current profile revisions');
-    expect(screen.getByText('Synthetic One (Person 7)')).toBeDefined();
-    expect(screen.getByText('Synthetic Two (Person 9)')).toBeDefined();
-    expect(screen.queryByText('Synthetic One Updated (Person 7)')).toBeNull();
+    expect(screen.getByRole('radio', { name: 'Synthetic One' })).toBeDefined();
+    expect(screen.getByRole('radio', { name: 'Synthetic Two' })).toBeDefined();
+    expect(screen.queryByRole('radio', { name: 'Synthetic One Updated' })).toBeNull();
   });
 
   it('blocks reconfirmation and another merge POST after the stale profile reload fails', async () => {
@@ -364,7 +386,7 @@ describe('PersonBindingConflictModal', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Merge into selected survivor' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('could not load both current profile revisions');
-    const survivor = screen.getByRole('radio', { name: 'Synthetic One (Person 7)' });
+    const survivor = screen.getByRole('radio', { name: 'Synthetic One' });
     const confirmation = screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i });
     const submit = screen.getByRole('button', { name: 'Merge into selected survivor' });
     expect(survivor).toHaveProperty('disabled', true);
@@ -418,7 +440,7 @@ describe('PersonBindingConflictModal', () => {
       expect(screen.getByRole('button', { name: 'Retry profile reload' })).toHaveProperty('disabled', false),
     );
     expect((await screen.findByRole('alert')).textContent).toContain('could not load both current profile revisions');
-    expect(screen.getByRole('radio', { name: 'Synthetic One (Person 7)' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('radio', { name: 'Synthetic One' })).toHaveProperty('disabled', true);
     expect(screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i })).toHaveProperty(
       'disabled',
       true,
@@ -468,12 +490,12 @@ describe('PersonBindingConflictModal', () => {
     );
     await fireEvent.click(screen.getByRole('button', { name: 'Retry profile reload' }));
 
-    expect(await screen.findByText('Synthetic One Updated (Person 7)')).toBeDefined();
-    expect(screen.getByText('Synthetic Two Updated (Person 9)')).toBeDefined();
+    expect(await screen.findByRole('radio', { name: 'Synthetic One Updated' })).toBeDefined();
+    expect(screen.getByRole('radio', { name: 'Synthetic Two Updated' })).toBeDefined();
     expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'Retry profile reload' })).toBeNull();
-    const refreshedSurvivor = screen.getByRole('radio', { name: 'Synthetic One Updated (Person 7)' });
-    const refreshedAbsorbed = screen.getByRole('radio', { name: 'Synthetic Two Updated (Person 9)' });
+    const refreshedSurvivor = screen.getByRole('radio', { name: 'Synthetic One Updated' });
+    const refreshedAbsorbed = screen.getByRole('radio', { name: 'Synthetic Two Updated' });
     await waitFor(() => expect(refreshedSurvivor).toHaveProperty('disabled', false));
     expect(refreshedSurvivor.getAttribute('aria-checked')).toBe('false');
     expect(refreshedAbsorbed.getAttribute('aria-checked')).toBe('false');

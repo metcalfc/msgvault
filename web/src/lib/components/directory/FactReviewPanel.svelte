@@ -2,6 +2,7 @@
   import { Button, EmptyState } from '@kenn-io/kit-ui';
 
   import type { FactLedgerController } from '../../directory/fact-ledger-controller.svelte';
+  import { entityNames } from '../../names/entity-names.svelte';
   import FactLedger from './FactLedger.svelte';
 
   interface Props {
@@ -11,6 +12,7 @@
     onOpenPerson?: (personID: number) => void;
   }
   let { controller, personID, onOpenDirectory = () => undefined, onOpenPerson = () => undefined }: Props = $props();
+  const names = $derived(entityNames(controller.apiClient));
 </script>
 
 <section class="fact-review" aria-labelledby="fact-review-heading">
@@ -25,7 +27,7 @@
     </div>
   {:else}
     <div class="person-context">
-      <strong>Person ID {personID}</strong>
+      <strong>{names.label('person', personID)}</strong>
       <Button label="Open person profile" size="sm" onclick={() => onOpenPerson(personID)} />
     </div>
     <div class="notices" aria-label="Unavailable fact features">

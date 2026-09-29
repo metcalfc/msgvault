@@ -153,6 +153,10 @@ export class FactLedgerController {
     pins: { generation: 0 },
     history: { generation: 0 },
   };
+  get apiClient(): APIClient {
+    return this.client;
+  }
+
   constructor(client: APIClient) {
     this.client = client;
   }

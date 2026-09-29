@@ -2,16 +2,19 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/sve
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
+import { withEntityLabels } from '../../../test/entity-labels';
 import { FactLedgerController } from '../../directory/fact-ledger-controller.svelte';
 import FactReviewPanel from './FactReviewPanel.svelte';
 
+
+const syntheticNames = { person: { 42: 'Avery Example', 170: 'Avery Example' }, participant: { 171: 'blair@example.org' } };
 afterEach(() => cleanup());
 
 describe('FactReviewPanel', () => {
   it('asks for a durable Directory person and remains network-silent without one', async () => {
     const fetchFn = vi.fn<typeof fetch>();
     const onOpenDirectory = vi.fn();
-    const controller = new FactLedgerController(createAPIClient(fetchFn));
+    const controller = new FactLedgerController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
 
     render(FactReviewPanel, { controller, personID: null, onOpenDirectory });
 
@@ -23,12 +26,13 @@ describe('FactReviewPanel', () => {
   });
 
   it('renders exact honest gates and selected durable-person navigation without decision controls', async () => {
-    const controller = new FactLedgerController(createAPIClient(vi.fn<typeof fetch>()));
+    const controller = new FactLedgerController(createAPIClient(withEntityLabels(vi.fn<typeof fetch>(), syntheticNames)));
     controller.personID = 42;
     const onOpenPerson = vi.fn();
     render(FactReviewPanel, { controller, personID: 42, onOpenPerson });
 
-    expect(screen.getByText('Person ID 42')).toBeDefined();
+    expect(await screen.findByText('Avery Example')).toBeDefined();
+    expect(document.body.textContent).not.toContain('42');
     expect(screen.getByText('Fact candidate decisions are unavailable until a generated candidate contract is installed.')).toBeDefined();
     expect(screen.getByText('A dated last-time-we-talked brief is unavailable until the server exposes a generated brief contract.')).toBeDefined();
     expect(screen.queryByRole('button', { name: /accept|reject|unsure|run/i })).toBeNull();

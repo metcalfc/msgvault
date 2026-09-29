@@ -15,11 +15,13 @@
     sharedMailboxReason
   } from '../../directory/identity-endpoints';
   import { addressLinkInput } from '../../links/contact-links';
+  import type { EntityNames } from '../../names/entity-names.svelte';
   import { NOT_A_PERSON_CHOICES, type NotAPersonKind } from '../../people/correspondent-kind';
   import LinkedValue from '../common/LinkedValue.svelte';
 
   interface Props {
     candidate: IdentityMatchCandidate;
+    names: EntityNames;
     pending: boolean;
     left?: IdentityMatchEndpointSummary;
     right?: IdentityMatchEndpointSummary;
@@ -33,13 +35,13 @@
   }
 
   let {
-    candidate, pending, left = undefined, right = undefined, contactMatch = undefined, onAccept, onReject,
+    candidate, names, pending, left = undefined, right = undefined, contactMatch = undefined, onAccept, onReject,
     onNotAPerson = undefined, onIsPerson = undefined
   }: Props = $props();
   const headingID = $derived(`identity-match-${candidate.id}-heading`);
   const evidence = $derived(candidate.evidence ?? []);
-  const leftLabel = $derived(endpointLabel(candidate.left_kind, candidate.left_id, left));
-  const rightLabel = $derived(endpointLabel(candidate.right_kind, candidate.right_id, right));
+  const leftLabel = $derived(endpointLabel(names, candidate.left_kind, candidate.left_id, left));
+  const rightLabel = $derived(endpointLabel(names, candidate.right_kind, candidate.right_id, right));
   const blockedMessage = $derived(contactMatchBlockedMessage(contactMatch));
   const endpoints = $derived([
     { side: 'left', kind: candidate.left_kind, id: candidate.left_id, label: leftLabel, summary: left },
@@ -70,9 +72,8 @@
             {#if address !== endpoint.label}<span class="address"><LinkedValue input={addressLinkInput(address)} text={address} /></span>{/if}
           {/each}
           {#if endpoint.kind !== 'person' && endpoint.summary?.person_id !== undefined}
-            <span class="owner">Profile: {endpoint.summary.person_display_name?.trim() || `Person ${endpoint.summary.person_id}`}</span>
+            <span class="owner">Profile: {names.name('person', endpoint.summary.person_id, endpoint.summary.person_display_name)}</span>
           {/if}
-          <span class="reference">{endpoint.kind} / {endpoint.id}</span>
         </Card>
       {/each}
     </section>
@@ -177,7 +178,6 @@
   .endpoints span, dt { color: var(--text-muted); font-size: var(--font-size-xs); }
   .endpoints strong, dd { color: var(--text-secondary); overflow-wrap: anywhere; }
   .endpoints .address, .endpoints .owner { color: var(--text-secondary); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
-  .endpoints .reference { color: var(--text-muted); font-size: var(--font-size-xs); }
   .names { color: var(--text-primary); font-weight: var(--font-weight-medium, 500); overflow-wrap: anywhere; }
   .match-summary { color: var(--text-secondary); font-size: var(--font-size-sm); }
   .match-summary.blocked { color: var(--text-danger); }

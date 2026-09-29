@@ -1,4 +1,5 @@
 import type { ContactMatchStatus, IdentityMatchEndpointSummary, SharedMailboxSignal } from '../api/generated/models';
+import type { EntityNames } from '../names/entity-names.svelte';
 
 const ENDPOINT_ROLES: Record<string, string> = {
   participant: 'Archive identity',
@@ -15,17 +16,22 @@ export function endpointRole(kind: string): string {
 
 /**
  * The name a reviewer recognizes for an endpoint: its own display name, else
- * its first address, else its owning profile's name, else the kind and ID.
+ * its first address, else the resolver's name for a person or participant,
+ * else its owning profile's name, else its kind. Never its ID.
  */
-export function endpointLabel(kind: string, id: number, summary?: IdentityMatchEndpointSummary): string {
+export function endpointLabel(
+  names: EntityNames, kind: string, id: number, summary?: IdentityMatchEndpointSummary
+): string {
   const name = summary?.display_name?.trim();
   if (name) return name;
   const address = summary?.addresses?.[0]?.trim();
   if (address) return address;
+  if (summary && !summary.found) return `${endpointRole(kind)} (removed)`;
+  if (kind === 'person') return names.label('person', id);
+  if (kind === 'participant') return names.label('participant', id);
   const personName = summary?.person_display_name?.trim();
   if (personName) return personName;
-  if (summary && !summary.found) return `${endpointRole(kind)} ${id} (removed)`;
-  return `${endpointRole(kind)} ${id}`;
+  return endpointRole(kind);
 }
 
 /** What accepting a participant-to-person match does now, in plain words. */

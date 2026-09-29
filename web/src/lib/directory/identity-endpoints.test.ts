@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import { createAPIClient } from '../api/client';
+import { entityNames, LOADING_LABEL } from '../names/entity-names.svelte';
 import {
   contactMatchBlockedMessage,
   contactMatchSummary,
@@ -9,19 +11,23 @@ import {
 } from './identity-endpoints';
 
 describe('identity endpoint labels', () => {
-  it('prefers a display name, then an address, then the owning profile, then the kind and ID', () => {
-    expect(endpointLabel('participant', 4, {
+  it('prefers a display name, then an address, then the resolver, then the owning profile, then the kind', () => {
+    const names = entityNames(createAPIClient(vi.fn<typeof fetch>(async () => Response.json({
+      people: [], participants: [], organizations: []
+    }))));
+    expect(endpointLabel(names, 'participant', 4, {
       kind: 'participant', id: 4, found: true, display_name: ' Ada Example ', addresses: ['ada@example.test'],
     })).toBe('Ada Example');
-    expect(endpointLabel('participant', 4, {
+    expect(endpointLabel(names, 'participant', 4, {
       kind: 'participant', id: 4, found: true, addresses: ['ada@example.test'],
     })).toBe('ada@example.test');
-    expect(endpointLabel('carddav_resource', 9, {
+    expect(endpointLabel(names, 'carddav_resource', 9, {
       kind: 'carddav_resource', id: 9, found: true, addresses: [], person_id: 2, person_display_name: 'Card Owner',
     })).toBe('Card Owner');
-    expect(endpointLabel('person', 5, { kind: 'person', id: 5, found: false, addresses: [] }))
-      .toBe('Person profile 5 (removed)');
-    expect(endpointLabel('observation', 6)).toBe('Observed address 6');
+    expect(endpointLabel(names, 'person', 5, { kind: 'person', id: 5, found: false, addresses: [] }))
+      .toBe('Person profile (removed)');
+    expect(endpointLabel(names, 'observation', 6)).toBe('Observed address');
+    expect(endpointLabel(names, 'person', 5)).toBe(LOADING_LABEL);
     expect(endpointRole('unknown_kind')).toBe('unknown_kind');
   });
 

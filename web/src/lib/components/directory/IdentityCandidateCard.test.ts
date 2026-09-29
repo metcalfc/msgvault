@@ -1,14 +1,16 @@
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 
+import { createAPIClient } from '../../api/client';
 import type { IdentityMatchCandidate } from '../../directory/review-controller.svelte';
+import { entityNames } from '../../names/entity-names.svelte';
 import IdentityCandidateCard from './IdentityCandidateCard.svelte';
 
 function completeCandidate(state = 'candidate'): IdentityMatchCandidate {
   return {
     id: 17,
     left_id: 170,
-    left_kind: 'beeper_user',
+    left_kind: 'person',
     right_id: 171,
     right_kind: 'participant',
     basis: 'stable_provider_id',
@@ -46,16 +48,54 @@ function completeCandidate(state = 'candidate'): IdentityMatchCandidate {
   };
 }
 
+function labelledNames() {
+  const fetchFn = vi.fn<typeof fetch>(async () =>
+    Response.json({
+      people: [{ id: 170, label: 'Avery Example' }],
+      participants: [{ id: 171, label: 'blair@example.org' }],
+      organizations: []
+    })
+  );
+  return { names: entityNames(createAPIClient(fetchFn)), fetchFn };
+}
+
 describe('IdentityCandidateCard', () => {
+  it('names both endpoints instead of showing their kind and ID', async () => {
+    const { names, fetchFn } = labelledNames();
+    render(IdentityCandidateCard, {
+      candidate: completeCandidate(), names, pending: false, onAccept: vi.fn(), onReject: vi.fn()
+    });
+
+    const endpoints = screen.getByRole('region', { name: 'Candidate endpoints for identity match 17' });
+    await waitFor(() => expect(within(endpoints).getByText('Avery Example')).toBeDefined());
+    expect(within(endpoints).getByText('blair@example.org')).toBeDefined();
+    expect(within(endpoints).getByText('Person profile')).toBeDefined();
+    expect(within(endpoints).getByText('Archive identity')).toBeDefined();
+    expect(endpoints.textContent).not.toMatch(/170|171/);
+    expect(fetchFn).toHaveBeenCalledOnce();
+  });
+
+  it('reads an endpoint without a name lookup as its kind, never its ID', () => {
+    const { names, fetchFn } = labelledNames();
+    render(IdentityCandidateCard, {
+      candidate: { ...completeCandidate(), left_kind: 'observation', right_kind: 'carddav_resource' },
+      names, pending: false, onAccept: vi.fn(), onReject: vi.fn()
+    });
+
+    const endpoints = screen.getByRole('region', { name: 'Candidate endpoints for identity match 17' });
+    expect(within(endpoints).getAllByText('Observed address')).toHaveLength(2);
+    expect(within(endpoints).getAllByText('Contact card')).toHaveLength(2);
+    expect(endpoints.textContent).not.toMatch(/170|171/);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
   it('renders every candidate field and each evidence record as labelled evidence', () => {
     render(IdentityCandidateCard, {
-      candidate: completeCandidate(), pending: false, onAccept: vi.fn(), onReject: vi.fn()
+      candidate: completeCandidate(), names: labelledNames().names, pending: false, onAccept: vi.fn(), onReject: vi.fn()
     });
 
     const card = screen.getByRole('article', { name: 'Identity match 17' });
     expect(within(card).getByRole('region', { name: 'Candidate endpoints for identity match 17' })).toBeDefined();
-    expect(within(card).getByText('beeper_user / 170')).toBeDefined();
-    expect(within(card).getByText('participant / 171')).toBeDefined();
     expect(card.textContent).toContain('stable_provider_id');
     expect(card.textContent).toContain('synthetic@example.com');
     expect(card.textContent).toContain('synthetic-chat');
@@ -97,7 +137,7 @@ describe('IdentityCandidateCard', () => {
   it('shows an explicit no-evidence message and hides decisions for reviewed rows', () => {
     const reviewed = { ...completeCandidate('accepted'), evidence: [] };
     render(IdentityCandidateCard, {
-      candidate: reviewed, pending: false, onAccept: vi.fn(), onReject: vi.fn()
+      candidate: reviewed, names: labelledNames().names, pending: false, onAccept: vi.fn(), onReject: vi.fn()
     });
 
     expect(screen.getByText('No evidence supplied.')).toBeDefined();
@@ -109,7 +149,7 @@ describe('IdentityCandidateCard', () => {
     const onAccept = vi.fn();
     const onReject = vi.fn();
     const view = render(IdentityCandidateCard, {
-      candidate: completeCandidate(), pending: false, onAccept, onReject
+      candidate: completeCandidate(), names: labelledNames().names, pending: false, onAccept, onReject
     });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Link identities' }));
@@ -129,6 +169,7 @@ describe('IdentityCandidateCard', () => {
     };
     render(IdentityCandidateCard, {
       candidate: contactMatch,
+      names: labelledNames().names,
       pending: false,
       left: { kind: 'participant', id: 40, found: true, display_name: 'Ada Sender', addresses: ['ada@example.test'] },
       right: {
@@ -157,6 +198,7 @@ describe('IdentityCandidateCard', () => {
   it('disables linking when a merge the match needs would be refused', () => {
     render(IdentityCandidateCard, {
       candidate: { ...completeCandidate(), left_kind: 'participant', right_kind: 'person' },
+      names: labelledNames().names,
       pending: false,
       contactMatch: {
         candidate_id: 17, classification: 'merge', blocked_reason: 'published', cluster_person_ids: [9]
@@ -175,6 +217,7 @@ describe('IdentityCandidateCard', () => {
     const onIsPerson = vi.fn();
     render(IdentityCandidateCard, {
       candidate: { ...completeCandidate(), left_kind: 'participant', left_id: 40, right_kind: 'person', right_id: 41 },
+      names: labelledNames().names,
       pending: false,
       left: { kind: 'participant', id: 40, found: true, display_name: 'Support', addresses: ['support@shop.example.test'] },
       right: { kind: 'person', id: 41, found: true, display_name: 'Avery Stone', addresses: [] },
@@ -207,6 +250,7 @@ describe('IdentityCandidateCard', () => {
   it('names each archive identity when both sides are identities', async () => {
     render(IdentityCandidateCard, {
       candidate: { ...completeCandidate(), left_kind: 'participant', left_id: 40, right_kind: 'participant', right_id: 42 },
+      names: labelledNames().names,
       pending: false,
       left: { kind: 'participant', id: 40, found: true, display_name: 'Desk', addresses: [] },
       right: { kind: 'participant', id: 42, found: true, display_name: 'Casey', addresses: [] },

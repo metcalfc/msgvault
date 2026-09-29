@@ -17,6 +17,7 @@
   import PersonBindingConflictModal from './PersonBindingConflictModal.svelte';
   import EnrichmentIdentityReviewQueue from './EnrichmentIdentityReviewQueue.svelte';
   import { EnrichmentReviewController } from '../../directory/enrichment-review-controller.svelte';
+  import { entityNames } from '../../names/entity-names.svelte';
   import type { PersonMergeSuccess, ValidatedPersonMergeRequired } from '../../directory/person-merge';
   import type { NotAPersonKind } from '../../people/correspondent-kind';
 
@@ -43,6 +44,7 @@
     | { kind: 'decision'; candidate: IdentityMatchCandidate; decision: 'accept' | 'reject'; context: DirectoryReviewContextSnapshot }
     | { kind: 'not_a_person'; candidate: IdentityMatchCandidate; participantID: number; notAPersonKind: NotAPersonKind; context: DirectoryReviewContextSnapshot }
     | { kind: 'merge'; candidate: IdentityMatchCandidate; context: DirectoryReviewContextSnapshot; conflict: ValidatedPersonMergeRequired };
+  const names = $derived(entityNames(controller.apiClient));
   let activeDecision = $state<ActiveModal>();
   // svelte-ignore state_referenced_locally
   const enrichmentController = new EnrichmentReviewController(controller.apiClient);
@@ -101,9 +103,14 @@
     const origin = activeDecision;
     void controller.completePersonMerge(origin.candidate.id, origin.context, success);
     activeDecision = undefined;
-    const name = success.survivor.display_name?.trim() || `Person ${success.survivor.id}`;
-    onAnnounce(`People merged into ${name}. Identity cache ${success.result.cache_state}.`);
     onOpenPerson(success.survivor.id);
+    void mergedName(success).then((name) =>
+      onAnnounce(`People merged into ${name}. Identity cache ${success.result.cache_state}.`));
+  }
+
+  function mergedName(success: PersonMergeSuccess): Promise<string> {
+    const known = success.survivor.display_name?.trim();
+    return known ? Promise.resolve(known) : names.settledLabel('person', success.survivor.id, 'the surviving person');
   }
 
   async function focusCurrentReviewSurface(): Promise<void> {
@@ -229,6 +236,7 @@
               {#each controller.rows as row (row.id)}
                 <IdentityCandidateCard
                   candidate={row}
+                  {names}
                   left={controller.endpointFor(row.left_kind, row.left_id)}
                   right={controller.endpointFor(row.right_kind, row.right_id)}
                   contactMatch={controller.contactMatchFor(row.id)}

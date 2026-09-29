@@ -9,6 +9,7 @@
     PersonMergeRequiredError
   } from '../../directory/review-controller.svelte';
   import { contactMatchSummary, endpointLabel } from '../../directory/identity-endpoints';
+  import { entityNames } from '../../names/entity-names.svelte';
   import { kindLabel, type NotAPersonKind } from '../../people/correspondent-kind';
   import NotAPersonDialog from '../people/NotAPersonDialog.svelte';
 
@@ -35,6 +36,7 @@
     onContextInvalidated,
     onResolveMerge = undefined
   }: Props = $props();
+  const names = $derived(entityNames(controller.apiClient));
   let submitting = $state(false);
   let error = $state<string | null>(null);
   let conflict = $state<PersonMergeRequiredError | null>(null);
@@ -44,14 +46,14 @@
   const title = $derived(decision === 'accept' ? 'Link identities' : decision === 'reject' ? 'Keep separate' : 'Not a person');
   const draft = $derived(controller.getDecisionDraft(candidate.id));
   const leftLabel = $derived(endpointLabel(
-    candidate.left_kind, candidate.left_id, controller.endpointFor(candidate.left_kind, candidate.left_id)));
+    names, candidate.left_kind, candidate.left_id, controller.endpointFor(candidate.left_kind, candidate.left_id)));
   const rightLabel = $derived(endpointLabel(
-    candidate.right_kind, candidate.right_id, controller.endpointFor(candidate.right_kind, candidate.right_id)));
+    names, candidate.right_kind, candidate.right_id, controller.endpointFor(candidate.right_kind, candidate.right_id)));
   const contactMatch = $derived(controller.contactMatchFor(candidate.id));
   const notAPersonLabel = $derived.by(() => {
     if (!notAPerson) return '';
     const summary = controller.endpointFor('participant', notAPerson.participantID);
-    return endpointLabel('participant', notAPerson.participantID, summary);
+    return endpointLabel(names, 'participant', notAPerson.participantID, summary);
   });
   const notAPersonOrganization = $derived.by(() => {
     if (!notAPerson) return '';
@@ -114,7 +116,7 @@
   }
 
   function profileLabel(profile: NonNullable<PersonMergeRequiredError['profiles']>[number]): string {
-    return `${profile.person.display_name?.trim() || `Person ${profile.person.id}`} (Person ${profile.person.id})`;
+    return names.name('person', profile.person.id, profile.person.display_name);
   }
 </script>
 

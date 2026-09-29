@@ -3,6 +3,7 @@ import { appShortcuts } from '@kenn-io/kit-ui';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
+import { withEntityLabels } from '../../../test/entity-labels';
 import {
   DirectoryReviewController,
   type IdentityMatchCandidate,
@@ -10,13 +11,15 @@ import {
 } from '../../directory/review-controller.svelte';
 import IdentityDecisionModal from './IdentityDecisionModal.svelte';
 
+
+const syntheticNames = { person: { 42: 'Avery Example', 170: 'Avery Example' }, participant: { 171: 'blair@example.org' } };
 afterEach(() => cleanup());
 
 function candidate(state = 'candidate'): IdentityMatchCandidate {
   return {
     id: 17,
     left_id: 170,
-    left_kind: 'beeper_user',
+    left_kind: 'person',
     right_id: 171,
     right_kind: 'participant',
     basis: 'stable_provider_id',
@@ -57,7 +60,7 @@ describe('IdentityDecisionModal', () => {
       }
       return page([decided]);
     });
-    const controller = new DirectoryReviewController(createAPIClient(fetchFn));
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
     const onClose = vi.fn();
     render(IdentityDecisionModal, {
       controller,
@@ -90,7 +93,7 @@ describe('IdentityDecisionModal', () => {
       requests.push(request);
       return Response.json({ error: 'unavailable', message: 'Decision unavailable' }, { status: 503 });
     });
-    const controller = new DirectoryReviewController(createAPIClient(fetchFn));
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
     controller.rows = [candidate(), { ...candidate(), id: 18, left_id: 180, right_id: 181 }];
     controller.setDecisionDraft(18, 'Other row note');
     const onClose = vi.fn();
@@ -124,7 +127,7 @@ describe('IdentityDecisionModal', () => {
       requests.push(request);
       return page([candidate()]);
     });
-    const controller = new DirectoryReviewController(createAPIClient(fetchFn));
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
     const onContextInvalidated = vi.fn();
     render(IdentityDecisionModal, {
       controller,
@@ -152,7 +155,7 @@ describe('IdentityDecisionModal', () => {
       }
       return page([candidate()]);
     });
-    const controller = new DirectoryReviewController(createAPIClient(fetchFn));
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
     const onContextInvalidated = vi.fn();
     render(IdentityDecisionModal, {
       controller,
@@ -175,7 +178,7 @@ describe('IdentityDecisionModal', () => {
   it('blocks every close path and the root shortcut scope while a decision is pending', async () => {
     const pending = deferredResponse();
     const fetchFn = vi.fn<typeof fetch>(async () => pending.promise);
-    const controller = new DirectoryReviewController(createAPIClient(fetchFn));
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
     const onClose = vi.fn();
     const rootShortcut = vi.fn();
     const unregister = appShortcuts.register('x', rootShortcut);
@@ -236,7 +239,7 @@ describe('IdentityDecisionModal', () => {
       requests.push(request);
       return Response.json(conflict, { status: 409 });
     });
-    const controller = new DirectoryReviewController(createAPIClient(fetchFn));
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
     const onResolveMerge = vi.fn();
     render(IdentityDecisionModal, {
       controller,
@@ -251,18 +254,18 @@ describe('IdentityDecisionModal', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Link identities' }));
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('An explicit merge is required');
-    expect(within(alert).getByText('Synthetic One (Person 7)')).toBeDefined();
-    expect(within(alert).getByText('Synthetic Two (Person 9)')).toBeDefined();
+    expect(within(alert).getByText('Synthetic One')).toBeDefined();
+    expect(within(alert).getByText('Synthetic Two')).toBeDefined();
     const profiles = within(alert).getByRole('list', { name: 'Profiles requiring merge' });
     const profileItems = within(profiles).getAllByRole('listitem');
     expect(profileItems).toHaveLength(2);
     expect(within(profileItems[0]!).getAllByRole('term').map((term) => term.textContent)).toEqual(['Profile', 'ETag']);
     expect(within(profileItems[0]!).getAllByRole('definition').map((definition) => definition.textContent)).toEqual([
-      'Synthetic One (Person 7)', '"person-7-r4"'
+      'Synthetic One', '"person-7-r4"'
     ]);
     expect(within(profileItems[1]!).getAllByRole('term').map((term) => term.textContent)).toEqual(['Profile', 'ETag']);
     expect(within(profileItems[1]!).getAllByRole('definition').map((definition) => definition.textContent)).toEqual([
-      'Synthetic Two (Person 9)', '"person-9-r2"'
+      'Synthetic Two', '"person-9-r2"'
     ]);
     expect(screen.getByRole('dialog', { name: 'Link identities' })).toBeDefined();
 
