@@ -508,6 +508,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err := registerSQLiteMaintenanceJob(sched, s); err != nil {
 		return fmt.Errorf("schedule SQLite maintenance: %w", err)
 	}
+	if err := registerContactMatchJob(sched, s); err != nil {
+		return fmt.Errorf("schedule contact matches: %w", err)
+	}
 	if err := configureDocumentReconcileJob(
 		ctx, sched, s, cfg.Attachments.Documents.Enabled,
 	); err != nil {

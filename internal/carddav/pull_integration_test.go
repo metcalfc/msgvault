@@ -270,6 +270,36 @@ func TestETagOnlyChurnUpdatesLedgerWithoutDuplicatingPerson(t *testing.T) {
 	assert.Equal(before.MappingRevision+1, after.MappingRevision)
 }
 
+func TestSuccessfulSyncProposesContactMatchesForImportedCards(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(readRequestBody(t, r), "sync-collection") {
+			writeDAVXML(t, w, syncResponse(changedResponse("/books/personal/alice.vcf", `&quot;one&quot;`), "next"))
+			return
+		}
+		writeDAVXML(t, w, syncResponse(cardResponse("/books/personal/alice.vcf", `&quot;one&quot;`, "alice"), ""))
+	}))
+	t.Cleanup(server.Close)
+	service, st, book := newPullService(t, server, true)
+	participantID, err := st.EnsureParticipant("alice@example.test", "Alice Sender", "example.test")
+	require.NoError(err)
+
+	_, err = service.Sync(t.Context(), SyncOptions{Full: true})
+	require.NoError(err)
+
+	resource, err := st.GetCardDAVResourceContext(t.Context(), book.ID, server.URL+"/books/personal/alice.vcf")
+	require.NoError(err)
+	require.NotNil(resource.PersonID)
+	candidates, err := st.ListContactMatchCandidatesContext(t.Context(), nil, 100, 0)
+	require.NoError(err)
+	require.Len(candidates, 1, "a successful sync refreshes contact matches")
+	assert.Equal(participantID, candidates[0].LeftID)
+	assert.Equal(*resource.PersonID, candidates[0].RightID)
+	assert.Equal(store.IdentityMatchStateCandidate, candidates[0].State)
+}
+
 func TestSyncCanonicalizesEquivalentHrefSpellingsForUpdatesAndTombstones(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

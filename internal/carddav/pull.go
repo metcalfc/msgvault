@@ -89,7 +89,26 @@ func (s *Service) Sync(ctx context.Context, options SyncOptions) (result SyncRes
 		}
 		err = errors.Join(publicCardDAVSyncError(syncErr), finishErr)
 	}()
-	return s.sync(ctx, options)
+	result, err = s.sync(ctx, options)
+	if err == nil {
+		s.refreshContactMatches(ctx)
+	}
+	return result, err
+}
+
+// refreshContactMatches proposes archive identities for the contact profiles
+// this sync may have created. It runs only after a fully successful sync and
+// never fails it: the daily contact-match job retries any missed refresh.
+func (s *Service) refreshContactMatches(ctx context.Context) {
+	result, err := s.store.BuildContactMatchCandidatesContext(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "CardDAV sync could not refresh contact matches", "error", err)
+		return
+	}
+	if result.Created > 0 {
+		slog.InfoContext(ctx, "CardDAV sync proposed contact matches",
+			"created", result.Created, "matches", result.Matches)
+	}
 }
 
 func (s *Service) sync(ctx context.Context, options SyncOptions) (SyncResult, error) {

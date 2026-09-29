@@ -188,7 +188,7 @@ profile is removed and re-imported.
   reused.
 - [x] **Task 1b.5 CLI (0.5 to 1 day).** New `person contact-matches
   list|accept|reject|build` through the daemon.
-- [ ] **Task 1b.6 Scheduling (0.5 day).** Refresh candidates at the end of a
+- [x] **Task 1b.6 Scheduling (0.5 day).** Refresh candidates at the end of a
   successful `carddav.Service.Sync`, and add a small dedicated daily job
   modeled on the SQLite maintenance job, not the people sweep, since mail
   and chat syncs also create participants.

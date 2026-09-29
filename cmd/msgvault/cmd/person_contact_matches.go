@@ -282,8 +282,10 @@ func newPersonContactMatchesBuildCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "build",
 		Short: "Refresh contact matches now",
-		Long:  "Refresh contact matches now. Refreshing never accepts a match.",
-		Args:  cobra.NoArgs,
+		Long: "Refresh contact matches now. The daemon also refreshes them after each\n" +
+			"successful CardDAV sync and in a daily contact-matches job. Refreshing never\n" +
+			"accepts a match.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, _, err := OpenHTTPStore(cmd.Context())
 			if err != nil {

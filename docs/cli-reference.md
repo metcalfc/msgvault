@@ -2229,8 +2229,9 @@ msgvault person contact-matches build [--json]
 `(blocked: published)` or `(blocked: carddav_conflict)` means a profile is
 published to CardDAV or has an unresolved CardDAV conflict, so the merge would
 be refused. The owner's own identities are never proposed. `reject` keeps the
-decision, so the same pair is not proposed again. `build` refreshes matches now.
-Nothing is accepted automatically.
+decision, so the same pair is not proposed again. `build` refreshes matches now;
+the daemon also refreshes them after each successful CardDAV sync and in a daily
+`contact-matches` job at 04:41. Nothing is accepted automatically.
 
 ---
 
