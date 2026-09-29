@@ -69,21 +69,6 @@ type BudgetState struct {
 	CostStopped         bool      `json:"cost_stopped"`
 }
 
-// Attempts reports how many requests have been reserved so far.
-func (b *Budget) Attempts() int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.attempts
-}
-
-// CostUSD reports the measured spend for the current UTC day.
-func (b *Budget) CostUSD() float64 {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.rollDay()
-	return b.cost
-}
-
 // State returns a snapshot of the budget and breaker.
 func (b *Budget) State() BudgetState {
 	b.mu.Lock()

@@ -172,7 +172,7 @@ func TestClientBounds(t *testing.T) {
 	})
 	_, err := client.Ask(context.Background(), noulRequest("matches"))
 	require.ErrorIs(err, ErrRequestLimit)
-	assert.Equal(0, budget.Attempts(), "the request limit is checked before egress")
+	assert.Zero(budget.State().Attempts, "the request limit is checked before egress")
 
 	preflightBudget := &Budget{MaxRequests: 2, StopUSD: 1, attempts: 1}
 	var preflightCalls atomic.Int32
@@ -212,7 +212,7 @@ func TestClientRejectsInvalidOptions(t *testing.T) {
 	require.ErrorContains(err, "credentials")
 	client, err := NewClient(Options{APIKey: "k", Budget: &Budget{}, Endpoint: "http://127.0.0.1:8080/v1/systemone"})
 	require.NoError(err, "loopback HTTP is allowed for fake servers")
-	assert.Equal(DefaultModel, client.Model())
+	assert.Equal(DefaultModel, client.model)
 }
 
 func TestClientAccountingStopsAtMeasuredCost(t *testing.T) {
@@ -231,7 +231,7 @@ func TestClientAccountingStopsAtMeasuredCost(t *testing.T) {
 	assert.Equal(1, result.Usage.Requests)
 	assert.Equal(int64(438), *result.Usage.InputTokens)
 	assert.Equal(int64(40), *result.Usage.OutputTokens)
-	assert.InDelta(0.000518, budget.CostUSD(), 1e-9)
+	assert.InDelta(0.000518, budget.State().CostUSD, 1e-9)
 	_, err = client.Ask(context.Background(), noulRequest("matches"))
 	require.ErrorIs(err, ErrCostStop)
 	assert.Equal(int32(1), requests.Load(), "a measured cost stop prevents another provider call")

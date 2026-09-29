@@ -51,14 +51,6 @@ type ConfigSource func() (Config, error)
 // when nothing is configured and never logs the value.
 type CredentialSource func(endpoint, apiKeyEnv string) (key string, ok bool, err error)
 
-// Inactive reports the expected administrative states that skip a judgment
-// without being a provider fault.
-func Inactive(err error) bool {
-	return errors.Is(err, ErrDisabled) || errors.Is(err, ErrFeatureDisabled) ||
-		errors.Is(err, ErrAutomaticDisabled) || errors.Is(err, ErrConsentRequired) ||
-		errors.Is(err, ErrCredentialMissing) || errors.Is(err, ErrUnknownFeature)
-}
-
 // Skipped classifies why a judgment did not happen, for the caller's
 // `jev: skipped:<category>` report. It never includes state.
 func Skipped(err error) string {
@@ -142,19 +134,6 @@ func NewService(options ServiceOptions) (*Service, error) {
 	return &Service{options: options}, nil
 }
 
-// Policy returns the feature's current policy without checking enablement,
-// so a disabled feature stays auditable and revocable.
-func (s *Service) Policy(spec FeatureSpec) (Policy, error) {
-	if s == nil {
-		return Policy{}, errServiceUnavailable
-	}
-	cfg, err := s.options.Config()
-	if err != nil {
-		return Policy{}, fmt.Errorf("%w: %w", ErrPolicyUnavailable, err)
-	}
-	return spec.Policy(cfg)
-}
-
 // clearance is everything one passed gate resolved: the configuration and
 // policy the request runs under and the credential it sends. Judge reuses it
 // so the credential store and the fingerprint are read once per request.
@@ -162,13 +141,6 @@ type clearance struct {
 	config Config
 	policy Policy
 	key    string
-}
-
-// Check reports whether the feature may send right now and returns the
-// policy the request would run under. automatic marks unattended callers.
-func (s *Service) Check(ctx context.Context, spec FeatureSpec, automatic bool) (Policy, error) {
-	cleared, err := s.check(ctx, spec, automatic)
-	return cleared.policy, err
 }
 
 // check runs every gate once and hands back what it resolved. On error the
@@ -248,20 +220,6 @@ func (s *Service) Judge(ctx context.Context, spec FeatureSpec, automatic bool, s
 		"output_tokens", tokenValue(response.Usage.OutputTokens),
 		"answers", SafeAnswers(response.Answers), "budget", client.BudgetState())
 	return response, nil
-}
-
-// BudgetState snapshots the live client's budget, or a zero state when no
-// request has been built yet.
-func (s *Service) BudgetState() BudgetState {
-	if s == nil {
-		return BudgetState{}
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.client == nil {
-		return s.options.Budget.State()
-	}
-	return s.client.BudgetState()
 }
 
 func (s *Service) clientFor(cfg Config, key string) (*Client, error) {

@@ -279,18 +279,6 @@ func (c *Client) recordDay(ctx context.Context, feature, day string, usage Usage
 	}
 }
 
-// Model returns the pinned model this client requires in every response.
-func (c *Client) Model() string { return c.model }
-
-// Endpoint returns the destination every request is sent to.
-func (c *Client) Endpoint() string { return c.endpoint }
-
-// SetTransport replaces the HTTP transport. Tests use it to point the client
-// at a fake server; production code sets Options.Transport instead.
-func (c *Client) SetTransport(transport http.RoundTripper) {
-	c.client.Transport = transport
-}
-
 type wireRequest struct {
 	State     any                     `json:"state"`
 	Model     string                  `json:"model"`

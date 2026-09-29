@@ -150,10 +150,9 @@ func TestServiceJudgeSendsExactPolicyOnlyWhenEveryGatePasses(t *testing.T) {
 	_, err = service.Judge(context.Background(), testSpec(), false, state, time.Time{})
 	require.ErrorIs(err, ErrConsentRequired)
 	assert.Equal("consent_required", Skipped(err))
-	assert.True(Inactive(err))
 	assert.Empty(*recorded, "no consent means nothing is sent")
 
-	policy, err := service.Policy(testSpec())
+	policy, err := testSpec().Policy(cfg)
 	require.NoError(err)
 	consents.active[FeatureEnrichmentIdentity] = policy.Fingerprint
 
@@ -207,7 +206,6 @@ func TestServiceJudgeSendsExactPolicyOnlyWhenEveryGatePasses(t *testing.T) {
 	_, err = service.Judge(context.Background(), testSpec(), false, state, time.Time{})
 	require.ErrorIs(err, ErrPolicyUnavailable)
 	assert.Equal("policy_unavailable", Skipped(err))
-	assert.False(Inactive(err), "an unreadable policy is a fault, not an administrative state")
 	assert.Len(*recorded, 2, "gate failures never reach the provider")
 }
 
@@ -239,7 +237,7 @@ func TestServiceJudgeReportsProviderFailuresAsCategories(t *testing.T) {
 	_, err = service.Judge(context.Background(), spec, false, map[string]any{"left": "a", "right": "b"}, time.Time{})
 	require.ErrorIs(err, ErrBreakerOpen)
 	assert.Equal("breaker_open", Skipped(err))
-	assert.Equal(2, service.BudgetState().ConsecutiveFailures)
+	assert.Equal(2, budget.State().ConsecutiveFailures)
 }
 
 func TestSafeAnswersAndQuestionText(t *testing.T) {

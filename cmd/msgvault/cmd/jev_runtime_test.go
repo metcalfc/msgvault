@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -50,9 +51,10 @@ func TestNewJevIdentityJudgeIsNilUntilJevAndTheFeatureAreOn(t *testing.T) {
 
 	service, err := newJevService(cfg, st)
 	require.NoError(err)
-	_, err = service.Check(t.Context(), jevFeatureSpecs()[0], true)
+	state := map[string]any{"requested": map[string]any{}, "returned": map[string]any{}}
+	_, err = service.Judge(t.Context(), jevFeatureSpecs()[0], true, state, time.Time{})
 	require.ErrorIs(err, jev.ErrAutomaticDisabled, "scheduled runs stay off until automatic = true")
 	cfg.Jev.IdentityVerification.Automatic = true
-	_, err = service.Check(t.Context(), jevFeatureSpecs()[0], true)
-	require.ErrorIs(err, jev.ErrCredentialMissing, "no key resolves in a fresh home")
+	_, err = service.Judge(t.Context(), jevFeatureSpecs()[0], true, state, time.Time{})
+	require.ErrorIs(err, jev.ErrCredentialMissing, "no key resolves in a fresh home, and nothing is sent")
 }

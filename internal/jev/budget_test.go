@@ -194,7 +194,7 @@ func TestBudgetHalfOpenAllowsOneProbeAtATime(t *testing.T) {
 	require.ErrorIs(budget.preflight(1), ErrBreakerOpen)
 	budget.record(Usage{InputTokens: new(int64(1)), OutputTokens: new(int64(1)), Complete: true})
 	require.NoError(budget.reserve())
-	assert.Equal(3, budget.Attempts())
+	assert.Equal(3, budget.State().Attempts)
 }
 
 func TestBudgetWithoutPricesCountsRequestsOnly(t *testing.T) {
@@ -433,7 +433,7 @@ func TestClientReservesTheProcessBudgetBeforeTheDay(t *testing.T) {
 	ledger.reserveErr = ErrDayRequestLimit
 	_, err = client.Ask(context.Background(), request)
 	require.ErrorIs(err, ErrDayRequestLimit)
-	assert.Equal(1, budget.Attempts(), "a refused day reservation releases the in-process slot")
+	assert.Equal(1, budget.State().Attempts, "a refused day reservation releases the in-process slot")
 	assert.Equal(1, budget.State().ConsecutiveFailures, "a refused day reservation is not a provider failure")
 	assert.Len(ledger.usage, 1, "nothing is recorded for a request that never left")
 }

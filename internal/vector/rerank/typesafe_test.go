@@ -105,13 +105,15 @@ func TestJevBounds(t *testing.T) {
 	assert.LessOrEqual(len(body), 128<<10, "the largest reranking request stays under the shared request cap")
 
 	budget := &Budget{MaxRequests: 0, StopUSD: 1}
+	var calls atomic.Int32
 	limited, err := NewJev("batched", "secret", budget, testTransport(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: http.NoBody}, nil
 	}))
 	require.NoError(err)
 	_, err = limited.Rerank(context.Background(), Request{Query: "query", Candidates: []string{"a", "b"}})
 	require.ErrorIs(err, ErrRequestLimit)
-	assert.Equal(0, budget.Attempts(), "the request limit is checked before egress")
+	assert.Zero(calls.Load(), "the request limit is checked before egress")
 }
 
 func TestJevRerankFailureKeepsAttemptedUsageAndRedactsBodies(t *testing.T) {
