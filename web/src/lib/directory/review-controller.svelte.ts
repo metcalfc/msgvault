@@ -5,8 +5,17 @@ import {
 } from '../api/generated/api/api';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type { APIClient } from '../api/client';
-import type { IdentityMatchCandidate as GeneratedIdentityMatchCandidate } from '../api/generated/models';
-import type { DirectoryReviewKind, IdentityReviewState, RelationshipReviewState } from '../explore/models';
+import type {
+  ContactMatchStatus as GeneratedContactMatchStatus,
+  IdentityMatchCandidate as GeneratedIdentityMatchCandidate,
+  IdentityMatchEndpointSummary as GeneratedIdentityMatchEndpointSummary,
+} from '../api/generated/models';
+import type {
+  DirectoryReviewKind,
+  IdentityReviewOrigin,
+  IdentityReviewState,
+  RelationshipReviewState,
+} from '../explore/models';
 import {
   validatePersonMergeRequired,
   type PersonMergeSuccess,
@@ -14,10 +23,13 @@ import {
 } from './person-merge';
 export const IDENTITY_REVIEW_PAGE_LIMIT = 100;
 export type IdentityMatchCandidate = GeneratedIdentityMatchCandidate;
+export type IdentityMatchEndpointSummary = GeneratedIdentityMatchEndpointSummary;
+export type ContactMatchStatus = GeneratedContactMatchStatus;
 export type PersonMergeRequiredError = ValidatedPersonMergeRequired;
 type ReviewCommit = (patch: {
   reviewKind?: DirectoryReviewKind;
   identityState?: IdentityReviewState;
+  identityOrigin?: IdentityReviewOrigin;
   relationshipReviewState?: RelationshipReviewState;
 }) => void;
 export type IdentityDecisionResult =
@@ -40,6 +52,7 @@ export type IdentityDecisionResult =
 interface ReviewURLState {
   reviewKind: DirectoryReviewKind;
   identityState: IdentityReviewState;
+  identityOrigin?: IdentityReviewOrigin;
 }
 export interface DirectoryReviewContextSnapshot extends ReviewURLState {
   generation: number;
@@ -56,7 +69,10 @@ export type DirectoryReviewMergeCompletion = PersonMergeSuccess & {
 export class DirectoryReviewController {
   reviewKind = $state<DirectoryReviewKind>('identity');
   identityState = $state<IdentityReviewState>('candidate');
+  identityOrigin = $state<IdentityReviewOrigin>('all');
   rows = $state<IdentityMatchCandidate[]>([]);
+  endpoints = $state<IdentityMatchEndpointSummary[]>([]);
+  contactMatches = $state<ContactMatchStatus[]>([]);
   offset = $state(0);
   loading = $state(false);
   error = $state<string | null>(null);
@@ -92,6 +108,12 @@ export class DirectoryReviewController {
   get apiClient(): APIClient {
     return this.client;
   }
+  endpointFor(kind: string, id: number): IdentityMatchEndpointSummary | undefined {
+    return this.endpoints.find((endpoint) => endpoint.kind === kind && endpoint.id === id);
+  }
+  contactMatchFor(candidateID: number): ContactMatchStatus | undefined {
+    return this.contactMatches.find((status) => status.candidate_id === candidateID);
+  }
   isDecisionPending(candidateID: number): boolean {
     return this.pendingDecisions.has(candidateID);
   }
@@ -112,6 +134,7 @@ export class DirectoryReviewController {
       generation: this.reviewContextGeneration,
       reviewKind: this.reviewKind,
       identityState: this.identityState,
+      identityOrigin: this.identityOrigin,
       offset: this.offset,
     };
   }
@@ -121,14 +144,20 @@ export class DirectoryReviewController {
       context.generation === this.reviewContextGeneration &&
       context.reviewKind === this.reviewKind &&
       context.identityState === this.identityState &&
+      context.identityOrigin === this.identityOrigin &&
       context.offset === this.offset
     );
   }
   applyURLState(state: ReviewURLState, historyRestoration = false): void {
     if (this.disposed) return;
-    const changed = this.reviewKind !== state.reviewKind || this.identityState !== state.identityState;
+    const origin = state.identityOrigin ?? 'all';
+    const changed =
+      this.reviewKind !== state.reviewKind ||
+      this.identityState !== state.identityState ||
+      this.identityOrigin !== origin;
     this.reviewKind = state.reviewKind;
     this.identityState = state.identityState;
+    this.identityOrigin = origin;
     if (state.reviewKind !== 'identity') {
       if (!this.initialized || changed || historyRestoration) this.resetIdentityContext(state.identityState);
       this.initialized = true;
@@ -157,6 +186,15 @@ export class DirectoryReviewController {
     this.resetIdentityContext(identityState);
     void this.loadIdentityPage(0, identityState);
   }
+  setIdentityOrigin(identityOrigin: IdentityReviewOrigin): void {
+    if (this.reviewKind === 'identity' && this.identityOrigin === identityOrigin && this.initialized) return;
+    this.identityOrigin = identityOrigin;
+    this.reviewKind = 'identity';
+    this.commit({ reviewKind: 'identity', identityOrigin });
+    this.initialized = true;
+    this.resetIdentityContext(this.identityState);
+    void this.loadIdentityPage(0, this.identityState);
+  }
   async loadIdentityPage(
     targetOffset = this.offset,
     state: IdentityReviewState = this.identityState,
@@ -181,7 +219,12 @@ export class DirectoryReviewController {
     this.retryOffset = undefined;
     try {
       const response = await generatedListIdentityMatchCandidates(
-        { state, limit: IDENTITY_REVIEW_PAGE_LIMIT, offset: targetOffset },
+        {
+          state,
+          limit: IDENTITY_REVIEW_PAGE_LIMIT,
+          offset: targetOffset,
+          ...(this.identityOrigin === 'contact_match' ? { origin: 'contact_match' } : {}),
+        },
         {
           ...this.client,
           signal: abort.signal,
@@ -190,6 +233,8 @@ export class DirectoryReviewController {
       if (!this.ownsPage(abort, generation)) return false;
       if (response.data) {
         this.rows = response.data.candidates ?? [];
+        this.endpoints = response.data.endpoints ?? [];
+        this.contactMatches = response.data.contact_matches ?? [];
         this.offset = response.data.offset;
         return true;
       }
@@ -239,6 +284,15 @@ export class DirectoryReviewController {
     if (!this.isReviewContextCurrent(context)) return;
     if (this.mergeRequired?.candidateID === candidateID) this.mergeRequired = null;
     const name = success.survivor.display_name?.trim() || `Person ${success.survivor.id}`;
+    const candidate = this.rows.find((row) => row.id === candidateID);
+    if (candidate?.left_kind === 'participant' && candidate.right_kind === 'person') {
+      // After the merge the participant belongs to the merged profile, so
+      // accepting records the decision without further changes.
+      const accepted = await this.decideIdentity(candidateID, 'accept', undefined, context);
+      if (!accepted.ok) return;
+      this.status = `People merged into ${name}. Identity match accepted.`;
+      return;
+    }
     this.status = `People merged into ${name}. Identity cache ${success.result.cache_state}.`;
     await this.loadIdentityPage(context.offset, context.identityState);
   }
@@ -343,6 +397,8 @@ export class DirectoryReviewController {
     ++this.pageGeneration;
     this.identityState = identityState;
     this.rows = [];
+    this.endpoints = [];
+    this.contactMatches = [];
     this.offset = 0;
     this.loading = false;
     this.error = null;

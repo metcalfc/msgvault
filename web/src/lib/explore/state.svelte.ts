@@ -16,6 +16,7 @@ import type {
   ExploreURLState,
   ExploreWorkspace,
   DirectoryReviewKind,
+  IdentityReviewOrigin,
   IdentityReviewState,
   RelationshipReviewState,
   RelationshipFacet,
@@ -86,6 +87,7 @@ const RESTORATION_INVALIDATING_FIELDS = new Set<keyof ExploreURLState>([
   'personTab',
   'reviewKind',
   'identityState',
+  'identityOrigin',
   'relationshipReviewState',
   'query',
   'searchMode',
@@ -177,6 +179,7 @@ export const defaultExploreURLState: ExploreURLState = {
   personTab: 'overview',
   reviewKind: 'identity',
   identityState: 'candidate',
+  identityOrigin: 'all',
   relationshipReviewState: 'pending',
   query: '',
   searchMode: 'full_text',
@@ -464,6 +467,7 @@ function normalize(value: unknown): ExploreURLState {
     value.identityState === 'conflict' || value.identityState === 'accepted' || value.identityState === 'rejected'
       ? value.identityState
       : 'candidate';
+  const identityOrigin: IdentityReviewOrigin = value.identityOrigin === 'contact_match' ? 'contact_match' : 'all';
   const relationshipReviewState: RelationshipReviewState =
     value.relationshipReviewState === 'accepted' || value.relationshipReviewState === 'rejected'
       ? value.relationshipReviewState
@@ -520,6 +524,7 @@ function normalize(value: unknown): ExploreURLState {
       relationshipTarget?.startsWith('cluster:') ? 'files' : personTab(value.personTab),
     reviewKind,
     identityState,
+    identityOrigin,
     relationshipReviewState,
     query: typeof value.query === 'string' ? value.query : '',
     searchMode,
@@ -596,6 +601,7 @@ const WORKSPACE_FIELDS: Partial<Record<keyof ExploreURLState, ReadonlyArray<Expl
   peopleSaved: ['directory'],
   reviewKind: ['directory_review'],
   identityState: ['directory_review'],
+  identityOrigin: ['directory_review'],
   relationshipReviewState: ['directory_review'],
   fileSort: ['files'],
   fileFilenameQuery: ['files'],

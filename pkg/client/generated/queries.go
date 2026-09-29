@@ -448,6 +448,9 @@ type ListIdentityMatchCandidatesQuery struct {
 	// State Candidate state filter (candidate, accepted, rejected, conflict); repeat or comma-separate for multiple values
 	State *string `json:"state,omitempty"`
 
+	// Origin Candidate origin filter: contact_match lists only contact profiles that match archive participants
+	Origin *string `json:"origin,omitempty"`
+
 	// Limit Maximum candidates to return (default 100, max 500)
 	Limit *int64 `json:"limit,omitempty"`
 

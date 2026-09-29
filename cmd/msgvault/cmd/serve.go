@@ -2689,6 +2689,18 @@ func (a *storeAPIAdapter) ListIdentityMatchCandidatesContext(
 	return a.store.ListIdentityMatchCandidatesContext(ctx, states, limit, offset)
 }
 
+func (a *storeAPIAdapter) ListContactMatchCandidatesContext(
+	ctx context.Context, states []store.IdentityMatchState, limit, offset int,
+) ([]store.IdentityMatchCandidate, error) {
+	return a.store.ListContactMatchCandidatesContext(ctx, states, limit, offset)
+}
+
+func (a *storeAPIAdapter) DescribeIdentityMatchCandidatesContext(
+	ctx context.Context, candidates []store.IdentityMatchCandidate,
+) ([]store.IdentityMatchEndpointSummary, []store.ContactMatchStatus, error) {
+	return a.store.DescribeIdentityMatchCandidatesContext(ctx, candidates)
+}
+
 func (a *storeAPIAdapter) GetIdentityMatchCandidateContext(
 	ctx context.Context, candidateID int64,
 ) (*store.IdentityMatchCandidate, error) {

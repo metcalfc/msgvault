@@ -2247,6 +2247,36 @@ type ConfidenceInputs struct {
 	ReportedScore int64 `json:"reported_score"`
 }
 
+type ContactMatchStatus struct {
+	BlockedReason    *ContactMatchStatusBlockedReason `json:"blocked_reason,omitempty"`
+	CandidateID      int64                            `json:"candidate_id"`
+	Classification   ContactMatchStatusClassification `json:"classification" validate:"required"`
+	ClusterPersonIds []int64                          `json:"cluster_person_ids" validate:"required"`
+}
+
+func (c ContactMatchStatus) Validate() error {
+	var errors runtime.ValidationErrors
+	if c.BlockedReason != nil {
+		if v, ok := any(c.BlockedReason).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("BlockedReason", err)
+			}
+		}
+	}
+	if v, ok := any(c.Classification).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("Classification", err)
+		}
+	}
+	if err := typesValidator.Var(c.ClusterPersonIds, "required"); err != nil {
+		errors = errors.Append("ClusterPersonIds", err)
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
 type ContactState struct {
 	CadenceDueAt        *time.Time `json:"cadence_due_at,omitempty"`
 	CadenceStatus       string     `json:"cadence_status" validate:"required"`
@@ -4853,9 +4883,11 @@ func (i IdentityMatchCandidate) Validate() error {
 }
 
 type IdentityMatchCandidatesResponse struct {
-	Candidates []IdentityMatchCandidate `json:"candidates" validate:"required"`
-	Limit      int64                    `json:"limit"`
-	Offset     int64                    `json:"offset"`
+	Candidates     []IdentityMatchCandidate       `json:"candidates" validate:"required"`
+	ContactMatches []ContactMatchStatus           `json:"contact_matches" validate:"required"`
+	Endpoints      []IdentityMatchEndpointSummary `json:"endpoints" validate:"required"`
+	Limit          int64                          `json:"limit"`
+	Offset         int64                          `json:"offset"`
 }
 
 func (i IdentityMatchCandidatesResponse) Validate() error {
@@ -4867,10 +4899,38 @@ func (i IdentityMatchCandidatesResponse) Validate() error {
 			}
 		}
 	}
+	for i, item := range i.ContactMatches {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("ContactMatches[%d]", i), err)
+			}
+		}
+	}
+	for i, item := range i.Endpoints {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("Endpoints[%d]", i), err)
+			}
+		}
+	}
 	if len(errors) == 0 {
 		return nil
 	}
 	return errors
+}
+
+type IdentityMatchEndpointSummary struct {
+	Addresses         []string `json:"addresses" validate:"required"`
+	DisplayName       *string  `json:"display_name,omitzero"`
+	Found             bool     `json:"found"`
+	ID                int64    `json:"id"`
+	Kind              string   `json:"kind" validate:"required"`
+	PersonDisplayName *string  `json:"person_display_name,omitzero"`
+	PersonID          *int64   `json:"person_id,omitempty"`
+}
+
+func (i IdentityMatchEndpointSummary) Validate() error {
+	return runtime.ConvertValidatorError(typesValidator.Struct(i))
 }
 
 type IdentityMatchEvidence struct {

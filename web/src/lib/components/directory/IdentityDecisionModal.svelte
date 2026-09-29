@@ -8,6 +8,7 @@
     IdentityMatchCandidate,
     PersonMergeRequiredError
   } from '../../directory/review-controller.svelte';
+  import { contactMatchSummary, endpointLabel } from '../../directory/identity-endpoints';
 
   interface Props {
     controller: DirectoryReviewController;
@@ -36,6 +37,11 @@
   const pending = $derived(submitting || controller.isDecisionPending(candidate.id));
   const title = $derived(decision === 'accept' ? 'Link identities' : 'Keep separate');
   const draft = $derived(controller.getDecisionDraft(candidate.id));
+  const leftLabel = $derived(endpointLabel(
+    candidate.left_kind, candidate.left_id, controller.endpointFor(candidate.left_kind, candidate.left_id)));
+  const rightLabel = $derived(endpointLabel(
+    candidate.right_kind, candidate.right_id, controller.endpointFor(candidate.right_kind, candidate.right_id)));
+  const contactMatch = $derived(controller.contactMatchFor(candidate.id));
 
   onMount(() => {
     releaseShortcutScope = appShortcuts.pushScope('identity-decision-modal');
@@ -96,12 +102,14 @@
 >
   <div class="decision" aria-busy={pending}>
     <p class="candidate-context">
-      <strong>{candidate.left_kind} / {candidate.left_id}</strong>
+      <strong>{leftLabel}</strong>
       <span aria-hidden="true">↔</span>
-      <strong>{candidate.right_kind} / {candidate.right_id}</strong>
+      <strong>{rightLabel}</strong>
     </p>
 
-    {#if decision === 'accept'}
+    {#if decision === 'accept' && contactMatch}
+      <p>{contactMatchSummary(contactMatch)}</p>
+    {:else if decision === 'accept'}
       <p>Link these identities only when the supplied evidence shows they belong to the same person.</p>
     {:else}
       <p>Keep these identities separate when the supplied evidence does not establish that they belong to the same person.</p>

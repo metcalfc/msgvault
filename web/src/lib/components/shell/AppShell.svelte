@@ -633,6 +633,7 @@
     const reviewState = {
       reviewKind: exploreState.current.reviewKind,
       identityState: exploreState.current.identityState,
+      identityOrigin: exploreState.current.identityOrigin,
     };
     untrack(() => directoryReviewController.applyURLState(reviewState, historyRestoration));
     untrack(() =>

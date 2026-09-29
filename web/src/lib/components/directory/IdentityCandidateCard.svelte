@@ -1,18 +1,38 @@
 <script lang="ts">
   import { Button, Card } from '@kenn-io/kit-ui';
 
-  import type { IdentityMatchCandidate } from '../../directory/review-controller.svelte';
+  import type {
+    ContactMatchStatus,
+    IdentityMatchCandidate,
+    IdentityMatchEndpointSummary
+  } from '../../directory/review-controller.svelte';
+  import {
+    contactMatchBlockedMessage,
+    contactMatchSummary,
+    endpointLabel,
+    endpointRole
+  } from '../../directory/identity-endpoints';
 
   interface Props {
     candidate: IdentityMatchCandidate;
     pending: boolean;
+    left?: IdentityMatchEndpointSummary;
+    right?: IdentityMatchEndpointSummary;
+    contactMatch?: ContactMatchStatus;
     onAccept: () => void;
     onReject: () => void;
   }
 
-  let { candidate, pending, onAccept, onReject }: Props = $props();
+  let { candidate, pending, left = undefined, right = undefined, contactMatch = undefined, onAccept, onReject }: Props = $props();
   const headingID = $derived(`identity-match-${candidate.id}-heading`);
   const evidence = $derived(candidate.evidence ?? []);
+  const leftLabel = $derived(endpointLabel(candidate.left_kind, candidate.left_id, left));
+  const rightLabel = $derived(endpointLabel(candidate.right_kind, candidate.right_id, right));
+  const blockedMessage = $derived(contactMatchBlockedMessage(contactMatch));
+  const endpoints = $derived([
+    { side: 'left', kind: candidate.left_kind, id: candidate.left_id, label: leftLabel, summary: left },
+    { side: 'right', kind: candidate.right_kind, id: candidate.right_id, label: rightLabel, summary: right }
+  ]);
 </script>
 
 <Card level="default" padding="md">
@@ -21,14 +41,32 @@
       <div>
         <p class="state">{candidate.state}</p>
         <h3 id={headingID}>Identity match {candidate.id}</h3>
+        <p class="names">{leftLabel} <span aria-hidden="true">↔</span><span class="kit-sr-only">and</span> {rightLabel}</p>
       </div>
       {#if pending}<span class="pending">Decision pending…</span>{/if}
     </header>
 
     <section class="endpoints" aria-label={`Candidate endpoints for identity match ${candidate.id}`}>
-      <Card level="inset" padding="sm"><span>Left endpoint</span><strong>{candidate.left_kind} / {candidate.left_id}</strong></Card>
-      <Card level="inset" padding="sm"><span>Right endpoint</span><strong>{candidate.right_kind} / {candidate.right_id}</strong></Card>
+      {#each endpoints as endpoint (endpoint.side)}
+        <Card level="inset" padding="sm">
+          <span>{endpointRole(endpoint.kind)}</span>
+          <strong>{endpoint.label}</strong>
+          {#each endpoint.summary?.addresses ?? [] as address (address)}
+            {#if address !== endpoint.label}<span class="address">{address}</span>{/if}
+          {/each}
+          {#if endpoint.kind !== 'person' && endpoint.summary?.person_id !== undefined}
+            <span class="owner">Profile: {endpoint.summary.person_display_name?.trim() || `Person ${endpoint.summary.person_id}`}</span>
+          {/if}
+          <span class="reference">{endpoint.kind} / {endpoint.id}</span>
+        </Card>
+      {/each}
     </section>
+
+    {#if contactMatch}
+      <p class="match-summary" class:blocked={!!blockedMessage}>
+        {blockedMessage ?? contactMatchSummary(contactMatch)}
+      </p>
+    {/if}
 
     <dl class="metadata">
       <div><dt>Basis</dt><dd>{candidate.basis}</dd></div>
@@ -73,7 +111,7 @@
     {#if candidate.state === 'candidate'}
       <div class="actions">
         <Button label="Keep separate" size="sm" disabled={pending} onclick={onReject} />
-        <Button label="Link identities" size="sm" tone="info" surface="solid" disabled={pending} onclick={onAccept} />
+        <Button label="Link identities" size="sm" tone="info" surface="solid" disabled={pending || !!blockedMessage} onclick={onAccept} />
       </div>
     {/if}
   </article>
@@ -92,6 +130,11 @@
   .endpoints :global(.kit-card__body) { display: grid; gap: var(--space-1); }
   .endpoints span, dt { color: var(--text-muted); font-size: var(--font-size-xs); }
   .endpoints strong, dd { color: var(--text-secondary); overflow-wrap: anywhere; }
+  .endpoints .address, .endpoints .owner { color: var(--text-secondary); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
+  .endpoints .reference { color: var(--text-muted); font-size: var(--font-size-xs); }
+  .names { color: var(--text-primary); font-weight: var(--font-weight-medium, 500); overflow-wrap: anywhere; }
+  .match-summary { color: var(--text-secondary); font-size: var(--font-size-sm); }
+  .match-summary.blocked { color: var(--text-danger); }
   .metadata { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--space-3) var(--space-5); }
   .metadata > div, li dl > div { display: grid; gap: var(--space-1); }
   .evidence-section { display: grid; gap: var(--space-2); }

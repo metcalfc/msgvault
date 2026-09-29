@@ -2475,6 +2475,34 @@ components:
       required:
         - reported_score
       type: object
+    ContactMatchStatus:
+      additionalProperties: true
+      properties:
+        blocked_reason:
+          enum:
+            - published
+            - carddav_conflict
+          type: string
+        candidate_id:
+          format: int64
+          type: integer
+        classification:
+          enum:
+            - bind
+            - merge
+            - ambiguous
+            - linked
+          type: string
+        cluster_person_ids:
+          items:
+            format: int64
+            type: integer
+          type: array
+      required:
+        - candidate_id
+        - classification
+        - cluster_person_ids
+      type: object
     ContactState:
       additionalProperties: true
       properties:
@@ -5353,6 +5381,14 @@ components:
           items:
             $ref: "#/components/schemas/IdentityMatchCandidate"
           type: array
+        contact_matches:
+          items:
+            $ref: "#/components/schemas/ContactMatchStatus"
+          type: array
+        endpoints:
+          items:
+            $ref: "#/components/schemas/IdentityMatchEndpointSummary"
+          type: array
         limit:
           format: int64
           type: integer
@@ -5361,8 +5397,37 @@ components:
           type: integer
       required:
         - candidates
+        - endpoints
+        - contact_matches
         - limit
         - offset
+      type: object
+    IdentityMatchEndpointSummary:
+      additionalProperties: true
+      properties:
+        addresses:
+          items:
+            type: string
+          type: array
+        display_name:
+          type: string
+        found:
+          type: boolean
+        id:
+          format: int64
+          type: integer
+        kind:
+          type: string
+        person_display_name:
+          type: string
+        person_id:
+          format: int64
+          type: integer
+      required:
+        - kind
+        - id
+        - found
+        - addresses
       type: object
     IdentityMatchEvidence:
       additionalProperties: true
@@ -18967,6 +19032,11 @@ paths:
         - description: Candidate state filter (candidate, accepted, rejected, conflict); repeat or comma-separate for multiple values
           in: query
           name: state
+          schema:
+            type: string
+        - description: "Candidate origin filter: contact_match lists only contact profiles that match archive participants"
+          in: query
+          name: origin
           schema:
             type: string
         - description: Maximum candidates to return (default 100, max 500)

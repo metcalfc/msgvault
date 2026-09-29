@@ -2,7 +2,7 @@
   import { Button, EmptyState, SegmentedControl, Spinner } from '@kenn-io/kit-ui';
   import { tick } from 'svelte';
 
-  import type { DirectoryReviewKind, IdentityReviewState } from '../../explore/models';
+  import type { DirectoryReviewKind, IdentityReviewOrigin, IdentityReviewState } from '../../explore/models';
   import type { FactLedgerController } from '../../directory/fact-ledger-controller.svelte';
   import type {
     DirectoryReviewContextSnapshot,
@@ -60,8 +60,17 @@
     relationshipController?.applyContext(kind === 'relationship', relationshipController.state, false);
   }
 
+  const identityOriginOptions = [
+    { value: 'all', label: 'All matches' },
+    { value: 'contact_match', label: 'Contacts that match your archive' }
+  ];
+
   function selectIdentityState(value: string): void {
     controller.setIdentityState(value as IdentityReviewState);
+  }
+
+  function selectIdentityOrigin(value: string): void {
+    controller.setIdentityOrigin(value as IdentityReviewOrigin);
   }
 
   function openDecision(candidate: IdentityMatchCandidate, decision: 'accept' | 'reject'): void {
@@ -148,13 +157,22 @@
           <h2 bind:this={identityReviewHeading} id="identity-review-heading" tabindex="-1">Identity matches</h2>
           <p>Review server-supplied evidence before linking or separating identities.</p>
         </div>
-        <SegmentedControl
-          options={identityStateOptions}
-          value={controller.identityState}
-          onchange={selectIdentityState}
-          ariaLabel="Identity review state"
-          disabled={!!activeDecision}
-        />
+        <div class="filters">
+          <SegmentedControl
+            options={identityOriginOptions}
+            value={controller.identityOrigin}
+            onchange={selectIdentityOrigin}
+            ariaLabel="Identity match source"
+            disabled={!!activeDecision}
+          />
+          <SegmentedControl
+            options={identityStateOptions}
+            value={controller.identityState}
+            onchange={selectIdentityState}
+            ariaLabel="Identity review state"
+            disabled={!!activeDecision}
+          />
+        </div>
       </div>
 
       {#if controller.status}
@@ -181,7 +199,9 @@
         {#if controller.rows.length === 0}
           <EmptyState
             title="No identity matches in this queue."
-            description="Choose another review state or return when new evidence is available."
+            description={controller.identityOrigin === 'contact_match'
+              ? 'No contact profiles match archive identities in this state. Matches refresh after each contact sync and daily.'
+              : 'Choose another review state or return when new evidence is available.'}
           />
         {:else}
           <div class="queue" aria-busy={controller.loading}>
@@ -194,6 +214,9 @@
               {#each controller.rows as row (row.id)}
                 <IdentityCandidateCard
                   candidate={row}
+                  left={controller.endpointFor(row.left_kind, row.left_id)}
+                  right={controller.endpointFor(row.right_kind, row.right_id)}
+                  contactMatch={controller.contactMatchFor(row.id)}
                   pending={controller.isDecisionPending(row.id)}
                   onAccept={() => openDecision(row, 'accept')}
                   onReject={() => openDecision(row, 'reject')}
@@ -255,6 +278,7 @@
   .review-centre { display: grid; gap: var(--space-5); padding: var(--space-5); }
   .page-header, .review-toolbar { display: flex; align-items: start; justify-content: space-between; gap: var(--space-5); flex-wrap: wrap; }
   .page-header > div, .review-toolbar > div, .identity-review { display: grid; gap: var(--space-2); }
+  .review-toolbar > .filters { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
   h1, h2, p { margin: 0; }
   .page-header p, .review-toolbar p { color: var(--text-muted); }
   .identity-review { gap: var(--space-4); }
@@ -268,5 +292,6 @@
   @media (max-width: 760px) {
     .review-centre { padding: var(--space-4); }
     .page-header :global(.kit-segmented), .review-toolbar :global(.kit-segmented) { width: 100%; }
+    .review-toolbar > .filters { width: 100%; }
   }
 </style>

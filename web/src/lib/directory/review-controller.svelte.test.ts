@@ -628,4 +628,68 @@ describe('DirectoryReviewController', () => {
     expect(controller.getDecisionDraft(17)).toBe('');
     expect(controller.loading).toBe(false);
   });
+
+  it('filters to contact matches, commits the origin, and keeps endpoint summaries per page', async () => {
+    const requests: Request[] = [];
+    const contactCandidate = { ...candidate(5), left_kind: 'participant', left_id: 50, right_kind: 'person', right_id: 51 };
+    const endpoints = [
+      { kind: 'participant', id: 50, found: true, display_name: 'Ada Sender', addresses: ['ada@example.test'] },
+      { kind: 'person', id: 51, found: true, display_name: 'Ada Contact', addresses: [] }
+    ];
+    const statuses = [{ candidate_id: 5, classification: 'bind', cluster_person_ids: [] }];
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = requestOf(input);
+      requests.push(request);
+      return Response.json({
+        candidates: [contactCandidate], endpoints, contact_matches: statuses,
+        limit: IDENTITY_REVIEW_PAGE_LIMIT, offset: 0
+      });
+    });
+    const commits: unknown[] = [];
+    const controller = new DirectoryReviewController(createAPIClient(fetchFn), (patch) => commits.push(patch));
+
+    controller.setIdentityOrigin('contact_match');
+    await vi.waitFor(() => expect(controller.rows).toHaveLength(1));
+
+    expect(new URL(requests[0]!.url).searchParams.get('origin')).toBe('contact_match');
+    expect(commits).toEqual([{ reviewKind: 'identity', identityOrigin: 'contact_match' }]);
+    expect(controller.endpointFor('participant', 50)?.display_name).toBe('Ada Sender');
+    expect(controller.endpointFor('person', 51)?.display_name).toBe('Ada Contact');
+    expect(controller.endpointFor('person', 50)).toBeUndefined();
+    expect(controller.contactMatchFor(5)?.classification).toBe('bind');
+
+    controller.applyURLState({ reviewKind: 'identity', identityState: 'candidate', identityOrigin: 'all' });
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    expect(new URL(requests[1]!.url).searchParams.has('origin')).toBe(false);
+  });
+
+  it('accepts a contact match after the user resolves its merge', async () => {
+    const requests: Request[] = [];
+    const contactCandidate = { ...candidate(6), left_kind: 'participant', left_id: 60, right_kind: 'person', right_id: 61 };
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = requestOf(input);
+      requests.push(request);
+      if (request.method === 'POST') {
+        return Response.json({
+          candidate: { ...contactCandidate, state: 'accepted' }, identity_revision: 3, cache_state: 'ready'
+        });
+      }
+      return page([contactCandidate as ReturnType<typeof candidate>]);
+    });
+    const controller = new DirectoryReviewController(createAPIClient(fetchFn));
+    await controller.loadIdentityPage();
+    const context = controller.reviewContextSnapshot();
+    const success = {
+      result: { cache_state: 'ready', identity_revision: 3, merge: {} as never, person: { id: 61 } as never, review_candidates: [] },
+      survivor: { id: 61, display_name: 'Synthetic survivor' } as never,
+      responseETag: '"person-61-r2"'
+    } as unknown as import('./person-merge').PersonMergeSuccess;
+
+    await controller.completePersonMerge(6, context, success);
+
+    const posts = requests.filter((request) => request.method === 'POST');
+    expect(posts).toHaveLength(1);
+    expect(new URL(posts[0]!.url).pathname).toBe('/api/v1/identity/match-candidates/6/accept');
+    expect(controller.status).toBe('People merged into Synthetic survivor. Identity match accepted.');
+  });
 });

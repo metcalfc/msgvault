@@ -121,4 +121,49 @@ describe('IdentityCandidateCard', () => {
     expect(screen.getByRole('button', { name: 'Link identities' })).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: 'Keep separate' })).toHaveProperty('disabled', true);
   });
+
+  it('names both endpoints of a contact match and explains the bind', () => {
+    const contactMatch: IdentityMatchCandidate = {
+      ...completeCandidate(), left_kind: 'participant', left_id: 40, right_kind: 'person', right_id: 41,
+      basis: 'email', evidence: []
+    };
+    render(IdentityCandidateCard, {
+      candidate: contactMatch,
+      pending: false,
+      left: { kind: 'participant', id: 40, found: true, display_name: 'Ada Sender', addresses: ['ada@example.test'] },
+      right: {
+        kind: 'person', id: 41, found: true, display_name: 'Ada Contact',
+        addresses: ['ada@example.test', '+15550100100']
+      },
+      contactMatch: { candidate_id: 17, classification: 'bind', cluster_person_ids: [] },
+      onAccept: vi.fn(),
+      onReject: vi.fn()
+    });
+
+    const card = screen.getByRole('article', { name: 'Identity match 17' });
+    const endpoints = within(card).getByRole('region', { name: 'Candidate endpoints for identity match 17' });
+    expect(within(endpoints).getByText('Archive identity')).toBeDefined();
+    expect(within(endpoints).getByText('Ada Sender')).toBeDefined();
+    expect(within(endpoints).getByText('Person profile')).toBeDefined();
+    expect(within(endpoints).getByText('Ada Contact')).toBeDefined();
+    expect(within(endpoints).getByText('+15550100100')).toBeDefined();
+    expect(card.textContent).toContain('Accepting links this archive identity to the profile.');
+    expect(screen.getByRole('button', { name: 'Link identities' })).toHaveProperty('disabled', false);
+  });
+
+  it('disables linking when a merge the match needs would be refused', () => {
+    render(IdentityCandidateCard, {
+      candidate: { ...completeCandidate(), left_kind: 'participant', right_kind: 'person' },
+      pending: false,
+      contactMatch: {
+        candidate_id: 17, classification: 'merge', blocked_reason: 'published', cluster_person_ids: [9]
+      },
+      onAccept: vi.fn(),
+      onReject: vi.fn()
+    });
+
+    expect(screen.getByText(/Blocked: a profile is published to CardDAV/)).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Link identities' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Keep separate' })).toHaveProperty('disabled', false);
+  });
 });

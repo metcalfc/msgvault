@@ -8,6 +8,10 @@ export type ListIdentityMatchCandidatesParams = {
    */
   state?: string;
   /**
+   * Candidate origin filter: contact_match lists only contact profiles that match archive participants
+   */
+  origin?: string;
+  /**
    * Maximum candidates to return (default 100, max 500)
    */
   limit?: number;

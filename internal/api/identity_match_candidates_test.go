@@ -191,6 +191,65 @@ func TestAcceptParticipantPersonCandidateOwnedElsewhereReturnsPersonMergeRequire
 	assert.Equal(store.IdentityMatchStateCandidate, reloaded.State)
 }
 
+func TestListIdentityMatchCandidatesResolvesEndpointsAndFiltersContactMatches(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, st := newIdentityLinkTestServer(t)
+	pair, _, _ := seedMatchCandidate(t, st, store.IdentityMatchServiceScopeUsername)
+	participant := st.mustParticipant(t, "contact@example.com", "Contact Sender", "example.com")
+	var personID int64
+	require.NoError(st.DB().QueryRow(
+		`INSERT INTO persons (vcard_uid, display_name) VALUES ('contact-card', 'Contact Card') RETURNING id`,
+	).Scan(&personID))
+	_, err := st.AddPersonContactPointContext(context.Background(), personID, store.PersonContactPointInput{
+		AddressKind: store.ContactAddressEmail, OriginalValue: "contact@example.com",
+		Envelope: store.ValueEnvelopeInput{Source: store.ProvenanceCardDAVImport},
+	})
+	require.NoError(err)
+	built, err := st.BuildContactMatchCandidatesContext(context.Background())
+	require.NoError(err)
+	require.Equal(1, built.Created)
+
+	response := personRequest(t, srv, http.MethodGet,
+		"/api/v1/identity/match-candidates?origin=contact_match", nil, "")
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	var listed IdentityMatchCandidatesResponse
+	require.NoError(json.Unmarshal(response.Body.Bytes(), &listed), response.Body.String())
+	require.Len(listed.Candidates, 1)
+	assert.NotEqual(pair.ID, listed.Candidates[0].ID)
+	require.Len(listed.ContactMatches, 1)
+	assert.Equal(listed.Candidates[0].ID, listed.ContactMatches[0].CandidateID)
+	assert.Equal(store.ContactMatchBind, listed.ContactMatches[0].Classification)
+	require.Len(listed.Endpoints, 2)
+	byKind := map[store.IdentityMatchEndpointKind]store.IdentityMatchEndpointSummary{}
+	for _, endpoint := range listed.Endpoints {
+		byKind[endpoint.Kind] = endpoint
+	}
+	sender := byKind[store.IdentityMatchParticipant]
+	assert.Equal(participant, sender.ID)
+	require.NotNil(sender.DisplayName)
+	assert.Equal("Contact Sender", *sender.DisplayName)
+	assert.Equal([]string{"contact@example.com"}, sender.Addresses)
+	assert.Nil(sender.PersonID)
+	card := byKind[store.IdentityMatchPerson]
+	assert.True(card.Found)
+	require.NotNil(card.DisplayName)
+	assert.Equal("Contact Card", *card.DisplayName)
+	assert.Equal([]string{"contact@example.com"}, card.Addresses)
+
+	all := personRequest(t, srv, http.MethodGet, "/api/v1/identity/match-candidates", nil, "")
+	require.Equal(http.StatusOK, all.Code, all.Body.String())
+	var everything IdentityMatchCandidatesResponse
+	require.NoError(json.Unmarshal(all.Body.Bytes(), &everything), all.Body.String())
+	assert.Len(everything.Candidates, 2)
+	assert.Len(everything.Endpoints, 4)
+
+	invalid := personRequest(t, srv, http.MethodGet,
+		"/api/v1/identity/match-candidates?origin=elsewhere", nil, "")
+	assert.Equal(http.StatusBadRequest, invalid.Code, invalid.Body.String())
+}
+
 func TestRejectIdentityMatchCandidateRetainsTheRow(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

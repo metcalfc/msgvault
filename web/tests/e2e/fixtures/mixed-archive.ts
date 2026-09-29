@@ -686,6 +686,44 @@ function reviewCandidate(id: number, overrides: Partial<IdentityMatchCandidate> 
   };
 }
 
+// A contact-only profile imported from an address book whose email matches
+// an unbound archive participant: accepting it binds the participant.
+function contactMatchCandidate(): IdentityMatchCandidate {
+  return reviewCandidate(25, {
+    left_kind: 'participant',
+    left_id: 250,
+    right_kind: 'person',
+    right_id: 251,
+    basis: 'email',
+    normalized_value: 'ada@example.test',
+    service_slug: undefined,
+    scope_kind: undefined,
+    scope_value: undefined,
+    confidence: 1,
+    source: 'system',
+    source_ref: 'contact_match',
+    evidence: [
+      {
+        id: 2500,
+        candidate_id: 25,
+        evidence_kind: 'contact_point_match',
+        source: 'system',
+        evidence_ref: 'person_contact_point:2510',
+        detail: 'participant 250 participants.email_address=ada@example.test',
+        created_at: '2026-01-01T10:05:00Z',
+      },
+    ],
+  });
+}
+
+const reviewEndpointSummaries = [
+  { kind: 'participant', id: 250, found: true, display_name: 'Ada Sender', addresses: ['ada@example.test'] },
+  {
+    kind: 'person', id: 251, found: true, display_name: 'Ada Contact',
+    addresses: ['ada@example.test', '+15550100100'],
+  },
+];
+
 /**
  * Installs the intercepted HTTP boundary used by the Directory review browser
  * journeys. This is deliberately not a live-backend fixture: generated-client
@@ -693,7 +731,7 @@ function reviewCandidate(id: number, overrides: Partial<IdentityMatchCandidate> 
  */
 export async function installDirectoryReviewArchive(page: Page) {
   const archive = await installMixedArchive(page);
-  const candidates = [reviewCandidate(17), reviewCandidate(18), reviewCandidate(19)];
+  const candidates = [reviewCandidate(17), reviewCandidate(18), reviewCandidate(19), contactMatchCandidate()];
   const people = new Map([
     [7, reviewPerson(7, 4, 'Synthetic One')],
     [9, reviewPerson(9, 2, 'Synthetic Two')],
@@ -950,9 +988,19 @@ export async function installDirectoryReviewArchive(page: Page) {
     const url = new URL(route.request().url());
     const state = url.searchParams.get('state') ?? 'candidate';
     const offset = Number(url.searchParams.get('offset') ?? 0);
+    const contactOnly = url.searchParams.get('origin') === 'contact_match';
+    const listed = candidates.filter((candidate) =>
+      candidate.state === state && (!contactOnly || candidate.source_ref === 'contact_match'));
     return route.fulfill({
       json: {
-        candidates: candidates.filter((candidate) => candidate.state === state),
+        candidates: listed,
+        endpoints: reviewEndpointSummaries.filter((endpoint) =>
+          listed.some((candidate) =>
+            (candidate.left_kind === endpoint.kind && candidate.left_id === endpoint.id) ||
+            (candidate.right_kind === endpoint.kind && candidate.right_id === endpoint.id))),
+        contact_matches: listed
+          .filter((candidate) => candidate.left_kind === 'participant' && candidate.right_kind === 'person')
+          .map((candidate) => ({ candidate_id: candidate.id, classification: 'bind', cluster_person_ids: [] })),
         limit: 100,
         offset,
       },

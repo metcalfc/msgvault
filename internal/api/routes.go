@@ -858,6 +858,9 @@ func rawRouteParameters(operationID string) []*huma.Param {
 			queryStringParam("state",
 				"Candidate state filter (candidate, accepted, rejected, conflict); "+
 					"repeat or comma-separate for multiple values", false),
+			queryStringParam("origin",
+				"Candidate origin filter: contact_match lists only contact profiles that "+
+					"match archive participants", false),
 			queryIntegerParam(limitParam, "Maximum candidates to return (default 100, max 500)"),
 			queryIntegerParam("offset", "Zero-based candidate offset"),
 		}

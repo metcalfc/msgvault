@@ -85,6 +85,23 @@ describe('Explore URL state', () => {
     });
   });
 
+  it('restores the contact-match identity filter and normalizes an unknown origin', () => {
+    const restored = parseExploreURLState(serializeExploreURLState({
+      ...defaultExploreURLState,
+      workspace: 'directory_review',
+      reviewKind: 'identity',
+      identityOrigin: 'contact_match'
+    }));
+    expect(restored).toMatchObject({ workspace: 'directory_review', identityOrigin: 'contact_match' });
+
+    const invalid = parseExploreURLState(serializeExploreURLState({
+      ...defaultExploreURLState,
+      workspace: 'directory_review',
+      identityOrigin: 'future-origin'
+    } as unknown as ExploreURLState));
+    expect(invalid.identityOrigin).toBe('all');
+  });
+
   it('keeps the selected person when sharing a Fact review', () => {
     const restored = parseExploreURLState(serializeExploreURLState({
       ...defaultExploreURLState,

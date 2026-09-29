@@ -13,7 +13,7 @@ const currentState: ExploreURLState = {
   dateBoundsChosen: false,
   directoryQuery: '', directoryContactState: '', directoryCategory: '', directoryOrganization: '',
   directoryPrimaryChannel: '', directoryLastContactAfter: '', directoryLastContactBefore: '', directorySort: 'name', directoryPersonID: null,
-  reviewKind: 'identity', identityState: 'candidate', relationshipReviewState: 'pending',
+  reviewKind: 'identity', identityState: 'candidate', identityOrigin: 'all', relationshipReviewState: 'pending',
   query: 'invoice',
   searchMode: 'full_text',
   filters: [{ dimension: 'source', values: ['1'] }],

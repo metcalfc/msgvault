@@ -424,6 +424,42 @@ func (c CardDAVStatusResponseRepairReason) Validate() error {
 	}
 }
 
+type ContactMatchStatusBlockedReason string
+
+const (
+	CarddavConflict ContactMatchStatusBlockedReason = "carddav_conflict"
+	Published       ContactMatchStatusBlockedReason = "published"
+)
+
+// Validate checks if the ContactMatchStatusBlockedReason value is valid
+func (c ContactMatchStatusBlockedReason) Validate() error {
+	switch c {
+	case CarddavConflict, Published:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid ContactMatchStatusBlockedReason value, got: %v", c))
+	}
+}
+
+type ContactMatchStatusClassification string
+
+const (
+	Ambiguous ContactMatchStatusClassification = "ambiguous"
+	Bind      ContactMatchStatusClassification = "bind"
+	Linked    ContactMatchStatusClassification = "linked"
+	Merge     ContactMatchStatusClassification = "merge"
+)
+
+// Validate checks if the ContactMatchStatusClassification value is valid
+func (c ContactMatchStatusClassification) Validate() error {
+	switch c {
+	case Ambiguous, Bind, Linked, Merge:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid ContactMatchStatusClassification value, got: %v", c))
+	}
+}
+
 type CreateAttributeDefinitionRequestCardinality string
 
 const (

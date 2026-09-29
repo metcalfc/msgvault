@@ -182,7 +182,7 @@ profile is removed and re-imported.
   `person_merge_required` flow and merge dialog let the user pick the
   survivor. Mark the candidate accepted before merging;
   `reconcilePersonIdentityCandidatesTx` retargets rows on the absorbed side.
-- [ ] **Task 1b.4 Reviews tab (1.5 to 2 days).** Resolve both endpoints to
+- [x] **Task 1b.4 Reviews tab (1.5 to 2 days).** Resolve both endpoints to
   names and addresses (cards show raw kind and id today) and add a "Contacts
   that match your archive" filter. Accept, reject, and the merge dialog are
   reused.

@@ -54,6 +54,40 @@ test('review cards expose the complete server-supplied synthetic evidence', asyn
     .toContainText('Both synthetic endpoints expose the same provider identifier.');
 });
 
+test('contacts that match the archive are named, explained, and linked from their own filter', async ({ page }) => {
+  await installDirectoryReviewArchive(page);
+  await page.goto(reviewURL());
+  await expect(page.getByRole('article', { name: 'Identity match 17' })).toBeVisible();
+
+  const listRequest = page.waitForRequest((request) =>
+    request.method() === 'GET' &&
+    new URL(request.url()).pathname.endsWith('/identity/match-candidates') &&
+    new URL(request.url()).searchParams.get('origin') === 'contact_match');
+  await page.getByRole('radio', { name: 'Contacts that match your archive' }).click();
+  await listRequest;
+  await expect(page).toHaveURL(/identityOrigin%22%3A%22contact_match/);
+  await expect(page.getByRole('article', { name: 'Identity match 17' })).toHaveCount(0);
+
+  const card = page.getByRole('article', { name: 'Identity match 25' });
+  const endpoints = card.getByRole('region', { name: 'Candidate endpoints for identity match 25' });
+  await expect(endpoints).toContainText('Archive identity');
+  await expect(endpoints).toContainText('Ada Sender');
+  await expect(endpoints).toContainText('Person profile');
+  await expect(endpoints).toContainText('Ada Contact');
+  await expect(endpoints).toContainText('+15550100100');
+  await expect(card).toContainText('Accepting links this archive identity to the profile.');
+
+  await card.getByRole('button', { name: 'Link identities' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Link identities' });
+  await expect(dialog).toContainText('Ada Sender');
+  await expect(dialog).toContainText('Ada Contact');
+  const accepted = page.waitForRequest((request) =>
+    request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/25/accept'));
+  await dialog.getByRole('button', { name: 'Link identities' }).click();
+  await accepted;
+  await expect(card).toBeHidden();
+});
+
 test('ordinary accept and reject keep keyboard focus connected as rows leave the queue', async ({ page }) => {
   await installDirectoryReviewArchive(page);
   await page.goto(reviewURL());

@@ -125,6 +125,8 @@ export type OperationLane = GeneratedOperationLane;
 export type OperationState = GeneratedOperationState;
 export type DirectoryReviewKind = 'identity' | 'fact' | 'relationship';
 export type IdentityReviewState = 'candidate' | 'conflict' | 'accepted' | 'rejected';
+/** Which identity candidates the Reviews queue lists: all, or only contact profiles that match archive participants. */
+export type IdentityReviewOrigin = 'all' | 'contact_match';
 export type RelationshipReviewState = 'pending' | 'accepted' | 'rejected';
 export type RelationshipFacet = 'people' | 'domains';
 export type ExploreColumn = 'kind' | 'people' | 'title' | 'excerpt' | 'time' | 'attachments' | 'size';
@@ -168,6 +170,7 @@ export interface ExploreURLState {
   personTab: PersonTab;
   reviewKind: DirectoryReviewKind;
   identityState: IdentityReviewState;
+  identityOrigin: IdentityReviewOrigin;
   relationshipReviewState: RelationshipReviewState;
   query: string;
   searchMode: ExploreSearchMode;
