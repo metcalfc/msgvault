@@ -6,6 +6,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"go.kenn.io/msgvault/internal/identityindex"
@@ -136,6 +137,10 @@ func (e *DuckDBEngine) Explore(ctx context.Context, request ExploreRequest) (*Ex
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate analytical entries: %w", err)
 	}
+	_ = rows.Close()
+	if err := e.labelExploreCounterparts(ctx, response.Rows); err != nil {
+		return nil, err
+	}
 	if len(response.Rows) == 0 && request.Page.Offset > 0 {
 		countSQL := buildExploreCountSQL(conditions, candidateRankExpression)
 		if fastPath {
@@ -146,6 +151,79 @@ func (e *DuckDBEngine) Explore(ctx context.Context, request ExploreRequest) (*Ex
 		}
 	}
 	return response, nil
+}
+
+// labelExploreCounterparts names each page row's counterpart so a list can
+// lead with the other side of the entry instead of an alphabetical label
+// list that includes the archive owner. A chat counterpart is often a
+// phone-only participant, so the label prefers, in order: the participant's
+// own display name, the identity index's person label for its cluster, any
+// named member of its identity cluster, then the phone number or address.
+// The lookup covers only the page's counterpart IDs.
+func (e *DuckDBEngine) labelExploreCounterparts(ctx context.Context, rows []EntryRow) error {
+	seen := make(map[int64]bool)
+	ids := make([]any, 0)
+	for _, row := range rows {
+		if row.CounterpartParticipantID == nil || seen[*row.CounterpartParticipantID] {
+			continue
+		}
+		seen[*row.CounterpartParticipantID] = true
+		ids = append(ids, *row.CounterpartParticipantID)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	peopleLabel := "NULL::VARCHAR"
+	peopleGlob := e.parquetPath(identityindex.DatasetPeople)
+	if matches, _ := filepath.Glob(peopleGlob); len(matches) > 0 {
+		peopleLabel = "(SELECT NULLIF(dp.display_label, '') FROM read_parquet('" +
+			quoteIdentitySQLPath(peopleGlob) + "') dp WHERE dp.canonical_id = w.canonical_id LIMIT 1)"
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(ids)), ", ")
+	queryText := `
+	WITH clusters AS (
+		SELECT participant_id, canonical_id FROM read_parquet('` + quoteIdentitySQLPath(e.parquetPath(datasetParticipantClusters)) + `')
+	), canon AS (
+		SELECT p.id AS participant_id, COALESCE(c.canonical_id, p.id) AS canonical_id
+		FROM participants p LEFT JOIN clusters c ON c.participant_id = p.id
+	), wanted AS (
+		SELECT participant_id, canonical_id FROM canon WHERE participant_id IN (` + placeholders + `)
+	), named AS (
+		SELECT cn.canonical_id, arg_min(pt.display_name, pt.id) AS display_name
+		FROM canon cn JOIN participants pt ON pt.id = cn.participant_id
+		WHERE COALESCE(pt.display_name, '') <> ''
+		  AND cn.canonical_id IN (SELECT canonical_id FROM wanted)
+		GROUP BY cn.canonical_id
+	)
+	SELECT w.participant_id,
+		COALESCE(NULLIF(own.display_name, ''), ` + peopleLabel + `, named.display_name,
+			NULLIF(own.phone_number, ''), NULLIF(own.email_address, ''), '')
+	FROM wanted w
+	JOIN participants own ON own.id = w.participant_id
+	LEFT JOIN named ON named.canonical_id = w.canonical_id`
+	labelRows, err := e.db.QueryContext(ctx, queryText, ids...)
+	if err != nil {
+		return fmt.Errorf("label explore counterparts: %w", err)
+	}
+	defer func() { _ = labelRows.Close() }()
+	labels := make(map[int64]string, len(ids))
+	for labelRows.Next() {
+		var id int64
+		var label string
+		if err := labelRows.Scan(&id, &label); err != nil {
+			return fmt.Errorf("scan explore counterpart label: %w", err)
+		}
+		labels[id] = label
+	}
+	if err := labelRows.Err(); err != nil {
+		return fmt.Errorf("iterate explore counterpart labels: %w", err)
+	}
+	for i := range rows {
+		if rows[i].CounterpartParticipantID != nil {
+			rows[i].CounterpartLabel = labels[*rows[i].CounterpartParticipantID]
+		}
+	}
+	return nil
 }
 
 const (

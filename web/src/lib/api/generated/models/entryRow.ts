@@ -9,6 +9,7 @@ export interface EntryRow {
   attachment_size: number;
   conversation_id?: number;
   conversation_type: string;
+  counterpart_label?: string;
   counterpart_participant_id?: number;
   deleted_from_source: boolean;
   has_attachments: boolean;

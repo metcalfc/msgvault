@@ -3920,6 +3920,8 @@ components:
           type: integer
         conversation_type:
           type: string
+        counterpart_label:
+          type: string
         counterpart_participant_id:
           format: int64
           type: integer

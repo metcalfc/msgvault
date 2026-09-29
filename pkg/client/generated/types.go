@@ -3529,6 +3529,7 @@ type EntryRow struct {
 	AttachmentSize             int64        `json:"attachment_size"`
 	ConversationID             *int64       `json:"conversation_id,omitempty"`
 	ConversationType           string       `json:"conversation_type" validate:"required"`
+	CounterpartLabel           *string      `json:"counterpart_label,omitzero"`
 	CounterpartParticipantID   *int64       `json:"counterpart_participant_id,omitempty"`
 	DeletedFromSource          bool         `json:"deleted_from_source"`
 	HasAttachments             bool         `json:"has_attachments"`

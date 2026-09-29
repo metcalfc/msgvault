@@ -1298,6 +1298,45 @@ func TestExploreCounterpartSkipsOwnerIdentityFromAnotherSource(t *testing.T) {
 		"cross-account self-mail has no counterpart")
 }
 
+// TestExploreCounterpartLabelResolvesPhoneOnlyChatParticipants pins the
+// list label for a row's counterpart: a named participant keeps its own
+// name, a phone-only chat participant takes a named member of its identity
+// cluster, and an unnamed phone number stays the number.
+func TestExploreCounterpartLabelResolvesPhoneOnlyChatParticipants(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	b := NewTestDataBuilder(t)
+	srcID := b.AddSource("owner@example.com")
+	ownerID := b.AddParticipant("owner@example.com", "example.com", "Owner")
+	b.AddOwnerParticipant(srcID, ownerID)
+	named := b.AddParticipant("avery@example.com", "example.com", "Avery Example")
+	linkedPhone := b.AddPhoneParticipant("+15555550101", "")
+	b.LinkCluster(named, linkedPhone)
+	unnamedPhone := b.AddPhoneParticipant("+15555550102", "")
+
+	when := time.Date(2026, 7, 12, 9, 0, 0, 0, time.UTC)
+	email := b.AddMessage(MessageOpt{SourceID: srcID, Subject: "Named", SentAt: when, IsFromMe: true})
+	b.AddFrom(email, ownerID, "Owner")
+	b.AddTo(email, named, "Avery Example")
+	linkedChat := b.AddMessage(MessageOpt{SourceID: srcID, Subject: "Linked phone", MessageType: "imessage", SentAt: when.Add(time.Hour), IsFromMe: true})
+	b.AddFrom(linkedChat, ownerID, "Owner")
+	b.AddTo(linkedChat, linkedPhone, "")
+	unnamedChat := b.AddMessage(MessageOpt{SourceID: srcID, Subject: "Unnamed phone", MessageType: "imessage", SentAt: when.Add(2 * time.Hour), IsFromMe: true})
+	b.AddFrom(unnamedChat, ownerID, "Owner")
+	b.AddTo(unnamedChat, unnamedPhone, "")
+
+	response, err := b.BuildEngine().Explore(context.Background(), ExploreRequest{})
+	require.NoError(err)
+	labels := make(map[int64]string, len(response.Rows))
+	for _, row := range response.Rows {
+		require.NotNil(row.CounterpartParticipantID)
+		labels[*row.CounterpartParticipantID] = row.CounterpartLabel
+	}
+	assert.Equal("Avery Example", labels[named])
+	assert.Equal("Avery Example", labels[linkedPhone])
+	assert.Equal("+15555550102", labels[unnamedPhone])
+}
+
 // TestExploreCounterpartParticipantIDNilWhenOwnerUnknown verifies that when
 // no owner_participants rows exist at all (the owner set is unknown), the
 // column is nil rather than guessing the smallest participant ID overall —

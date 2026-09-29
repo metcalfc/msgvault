@@ -195,6 +195,10 @@ type EntryRow struct {
 	// owner can be identified or every participant on the entry is the owner:
 	// never guessed from participant_ids[0] alone.
 	CounterpartParticipantID *int64 `json:"counterpart_participant_id,omitzero" nullable:"false"`
+	// CounterpartLabel names CounterpartParticipantID for list display,
+	// resolving a phone-only chat participant to a person name where the
+	// participant, its identity cluster, or the identity index has one.
+	CounterpartLabel string `json:"counterpart_label,omitempty"`
 }
 
 type ExploreResponse struct {
