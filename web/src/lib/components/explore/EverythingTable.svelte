@@ -484,9 +484,6 @@
                    the focused grid opens the same row via handleKeydown. -->
               <div
                 class="data-row"
-                class:data-row--active={index === activeIndex}
-                class:data-row--selected={selection.isSelected(row.key)}
-                class:data-row--inspected={inspectedKey === row.key}
                 id={rowId(row)}
                 data-list-row
                 data-active={index === activeIndex}
@@ -672,11 +669,11 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .table-grid:focus-visible .data-row--active:not(.data-row--selected):not(.data-row--inspected) {
+  .table-grid:focus-visible .data-row[data-active='true']:not([aria-selected='true']):not([aria-current='true']) {
     background: color-mix(in srgb, var(--accent-blue) 8%, var(--bg-surface));
   }
 
-  .data-row--selected {
+  .data-row[aria-selected='true'] {
     background: color-mix(in srgb, var(--accent-teal) 12%, var(--bg-surface));
     box-shadow: inset 2px 0 0 var(--accent-blue);
   }
