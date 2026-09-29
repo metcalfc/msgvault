@@ -92,9 +92,12 @@ func TestAskAllSiblingCancellationDoesNotCountTowardTheBreaker(t *testing.T) {
 		}
 		_, err := client.AskAll(context.Background(), requests)
 		require.ErrorContains(err, "HTTP 503")
-		assert.Equal(int32(8), calls.Load())
+		// Siblings that had already dispatched are cancelled by the group;
+		// siblings that had not are never sent at all. Neither counts.
+		assert.GreaterOrEqual(calls.Load(), int32(1))
+		assert.LessOrEqual(calls.Load(), int32(8))
 		state := budget.State()
-		assert.Equal(1, state.ConsecutiveFailures, "one real failure; seven cancelled siblings do not count")
+		assert.Equal(1, state.ConsecutiveFailures, "one real failure; cancelled or unsent siblings do not count")
 		assert.True(state.OpenUntil.IsZero(), "the breaker stays closed")
 	})
 }
