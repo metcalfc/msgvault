@@ -31,6 +31,24 @@ describe('ContextBar presentation control', () => {
   });
 });
 
+describe('ContextBar column picker', () => {
+  it('renders only for the table presentation and never empties the column set', async () => {
+    const onColumnsChange = vi.fn();
+    const rendered = render(ContextBar, baseProps({ columns: ['title'], onColumnsChange }));
+
+    await fireEvent.click(screen.getByText('Columns'));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Size' }));
+    expect(onColumnsChange).toHaveBeenLastCalledWith(['title', 'size']);
+
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Subject / title' }));
+    expect(onColumnsChange).toHaveBeenLastCalledWith(['title']);
+
+    // A presentation without columns (timeline, files) passes neither prop.
+    await rendered.rerender(baseProps({ presentation: 'timeline', columns: undefined, onColumnsChange: undefined }));
+    expect(screen.queryByText('Columns')).toBeNull();
+  });
+});
+
 describe('ContextBar date range', () => {
   it('writes presets as after/before filter dimensions and marks the active one', async () => {
     const onFiltersChange = vi.fn();

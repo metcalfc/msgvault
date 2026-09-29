@@ -118,6 +118,11 @@
   let resultsWidth = $state(0);
   const canPreviewRight = $derived(resultsWidth >= 960);
   const previewRight = $derived(canPreviewRight && previewPosition === 'right');
+  // Only the ungrouped table has columns to pick; the ContextBar shows the
+  // picker for that presentation alone.
+  const tablePresentation = $derived(
+    exploreState.current.presentation === 'table' && exploreState.current.groupingChain.length === 0
+  );
 
   function setPreviewPosition(value: string): void {
     previewPosition = value === 'right' ? 'right' : 'below';
@@ -683,6 +688,10 @@
         scrollAnchor: null,
       })}
     onSort={fixedSortNotice}
+    columns={tablePresentation ? exploreState.current.columns : undefined}
+    onColumnsChange={tablePresentation
+      ? (columns: ExploreColumn[]) => exploreState.replaceTransient({ columns })
+      : undefined}
   />
   <span class="kit-sr-only" role="status" aria-label="Sort status" aria-live="polite">{sortNotice}</span>
 
@@ -808,7 +817,6 @@
                 error={loader.error}
                 pageError={loader.pageError}
                 onOpen={openRow}
-                onColumnsChange={(columns: ExploreColumn[]) => exploreState.replaceTransient({ columns })}
                 onScrollAnchor={(key, offset) => exploreState.replaceTransient({ scrollAnchor: { key, offset } })}
                 onLoadMore={loader.loadMore}
                 onLoadThroughEnd={loader.loadThroughEnd}
@@ -929,8 +937,7 @@
     justify-content: space-between;
     gap: var(--space-4);
     padding: var(--space-2) var(--space-3);
-    background: var(--bg-inset);
-    border: var(--border-width) solid var(--border-muted);
+    background: var(--surface-well);
     border-radius: var(--radius-md);
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
@@ -963,12 +970,11 @@
     flex-direction: column;
   }
 
-  /* The reading pane provides its own surface; the split's secondary pane
-   * only frames it with the hairline above the drag handle. */
+  /* The reading pane provides its own panel surface; the split only rules
+   * it from the results with one hairline on the shared edge — no sides,
+   * no bottom, no radius. */
   .results-split :global([data-pane='secondary']) {
-    border: 1px solid var(--border-default);
-    border-top: 0;
-    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    border-top: 1px solid var(--hairline);
   }
 
   .results-split--right :global([data-pane]) {
@@ -976,9 +982,8 @@
   }
 
   .results-split--right :global([data-pane='secondary']) {
-    border-top: 1px solid var(--border-default);
-    border-left: 0;
-    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    border-top: 0;
+    border-left: 1px solid var(--hairline);
   }
 
   .keyboard-help {

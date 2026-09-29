@@ -1,11 +1,14 @@
 <script lang="ts">
   import XIcon from '@lucide/svelte/icons/x';
   import {
-    Button, DateRangePicker, IconButton, SegmentedControl, SelectDropdown, resolveRange, type RangeSelection
+    Button, Checkbox, DateRangePicker, IconButton, SegmentedControl, SelectDropdown, resolveRange, type RangeSelection
   } from '@kenn-io/kit-ui';
 
   import type { APIClient } from '../../api/client';
-  import type { ExploreFilter, ExploreGroupDimension, ExploreSearchMode, ExploreURLState } from '../../explore/models';
+  import type {
+    ExploreColumn, ExploreFilter, ExploreGroupDimension, ExploreSearchMode, ExploreURLState
+  } from '../../explore/models';
+  import { EXPLORE_COLUMN_LABELS } from '../../explore/models';
   import {
     DATE_RANGE_PRESETS, activeDateRangePreset, dateBound, dateInputBound, dateInputValue, isDateDimension,
     withDateBound, withDateRange, withoutDateRange, type DateRangePreset
@@ -32,7 +35,9 @@
     onClearFilters,
     onFiltersChange,
     onSort = undefined,
-    onPresentationChange = undefined
+    onPresentationChange = undefined,
+    columns = undefined,
+    onColumnsChange = undefined
   }: {
     client: APIClient;
     query: string;
@@ -47,9 +52,24 @@
     onFiltersChange: (filters: ExploreFilter[]) => void;
     onSort?: () => void;
     onPresentationChange?: (presentation: ExploreURLState['presentation']) => void;
+    /** The table's visible columns; the Columns picker renders only when
+     * both this and onColumnsChange are supplied (the table presentation). */
+    columns?: ExploreColumn[];
+    onColumnsChange?: (columns: ExploreColumn[]) => void;
   } = $props();
 
   let filtersOpen = $state(false);
+  const ALL_COLUMNS = Object.keys(EXPLORE_COLUMN_LABELS) as ExploreColumn[];
+
+  /** Hiding the last visible column would leave the grid empty, so the
+   * title column stays when everything else is turned off. */
+  function toggleColumn(column: ExploreColumn): void {
+    const visible = columns ?? [];
+    const next = visible.includes(column)
+      ? visible.filter((item) => item !== column)
+      : ALL_COLUMNS.filter((id) => visible.includes(id) || id === column);
+    onColumnsChange?.(next.length > 0 ? next : ['title']);
+  }
   const options = $derived(groupingOptions({ excluded: groupingChain, includeUnavailable: true }));
   const firstRequestable = $derived(options.find((option) => !option.disabled)?.value ?? '');
   const presentationOptions = [
@@ -195,6 +215,21 @@
 
   <span class="context-count" data-mono>{totalCount === undefined ? 'Count pending' : `${totalCount.toLocaleString()} results`}</span>
 
+  {#if columns && onColumnsChange}
+    <details class="column-picker-disclosure">
+      <summary>Columns</summary>
+      <div class="column-picker kit-popover-card">
+        {#each ALL_COLUMNS as column (column)}
+          <Checkbox
+            checked={columns.includes(column)}
+            label={EXPLORE_COLUMN_LABELS[column]}
+            onchange={() => toggleColumn(column)}
+          />
+        {/each}
+      </div>
+    </details>
+  {/if}
+
   {#if filtersOpen}
     <div class="filter-panel">
       <div class="filter-summary">
@@ -223,18 +258,44 @@
 </section>
 
 <style>
+  /* A borderless 32px toolbar row on the canvas; spacing, not a box,
+   * separates it from the search bar above and the table below. */
   .context-bar {
     position: relative;
     display: flex;
     min-width: 0;
-    min-height: 34px;
+    min-height: 32px;
     align-items: center;
     gap: var(--space-4);
-    padding: var(--space-2) var(--space-3);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-md);
-    background: var(--bg-surface);
     font-size: var(--font-size-xs);
+  }
+
+  .column-picker-disclosure {
+    position: relative;
+    flex: none;
+    color: var(--text-secondary);
+  }
+
+  .column-picker-disclosure summary {
+    cursor: pointer;
+  }
+
+  .column-picker {
+    position: absolute;
+    z-index: var(--z-popover);
+    top: 24px;
+    right: 0;
+    display: grid;
+    width: 176px;
+    gap: var(--space-3);
+    padding: var(--space-4);
+  }
+
+  .column-picker :global(.kit-checkbox) {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    white-space: nowrap;
   }
 
   .context-controls,

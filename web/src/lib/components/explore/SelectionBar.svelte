@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Card, KbdBadge } from '@kenn-io/kit-ui';
+  import { Button, KbdBadge } from '@kenn-io/kit-ui';
 
   import type { APIClient } from '../../api/client';
   import type {
@@ -59,8 +59,7 @@
   });
 </script>
 
-<Card padding="none" selected={selection.mode === 'all_matching' || selection.count > 0}>
-  <div class="selection-bar">
+<div class="selection-bar" class:selection-bar--active={selection.mode === 'all_matching' || selection.count > 0}>
     <span role="status" aria-live="polite">{message}</span>
     <span class="shortcut"><KbdBadge keys={['Space']} /> toggle</span>
     <span class="shortcut"><KbdBadge keys={['A']} /> visible</span>
@@ -100,10 +99,12 @@
       disabled={selection.mode === 'explicit' && selection.count === 0}
       onclick={() => selection.clear()}
     />
-  </div>
-</Card>
+</div>
 
 <style>
+  /* A borderless 32px toolbar row on the canvas. An active selection is
+   * announced by the app-wide selection language — the 2px accent bar —
+   * rather than by boxing the row. */
   .selection-bar {
     display: flex;
     min-height: 32px;
@@ -112,6 +113,14 @@
     padding: 0 var(--space-4);
     color: var(--text-muted);
     font-size: var(--font-size-xs);
+  }
+
+  .selection-bar--active {
+    box-shadow: inset 2px 0 0 var(--accent-blue);
+  }
+
+  .selection-bar--active [role='status'] {
+    color: var(--text-primary);
   }
 
   [role='status'] {

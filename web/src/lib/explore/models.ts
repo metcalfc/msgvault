@@ -119,6 +119,17 @@ export type ExploreColumn = 'kind' | 'people' | 'title' | 'excerpt' | 'time' | '
 
 export const DEFAULT_EXPLORE_COLUMNS: ExploreColumn[] = ['kind', 'people', 'title', 'excerpt', 'time', 'attachments'];
 
+/** Column headers and picker labels, in the table's column order. */
+export const EXPLORE_COLUMN_LABELS: Record<ExploreColumn, string> = {
+  kind: 'Kind',
+  people: 'People / source',
+  title: 'Subject / title',
+  excerpt: 'Excerpt',
+  time: 'Time',
+  attachments: 'Attachments',
+  size: 'Size'
+};
+
 export interface ExploreScrollAnchor {
   key: string;
   offset: number;
