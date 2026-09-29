@@ -84,9 +84,17 @@ export function normalizeReachValue(kind: ReachKind, value: string): string {
   return trimmed.toLowerCase();
 }
 
-function keyFor(kind: ReachKind, value: string, service?: string): string {
+/** The service part of a chat/handle key, spelled the same way whichever
+ * source supplied it: a trimmed, lowercased slug, or the source's own kind
+ * word (the address kind for a contact point, the identifier type for an
+ * archive identifier) when no slug is stored. */
+export function serviceKey(slug: string | undefined, fallback: string): string {
+  return slug?.trim().toLowerCase() || fallback.trim().toLowerCase();
+}
+
+function keyFor(kind: ReachKind, value: string, service = ''): string {
   const normalized = normalizeReachValue(kind, value);
-  return kind === 'chat' || kind === 'handle' ? `${kind}:${service?.toLowerCase() ?? ''}:${normalized}` : `${kind}:${normalized}`;
+  return kind === 'chat' || kind === 'handle' ? `${kind}:${service}:${normalized}` : `${kind}:${normalized}`;
 }
 
 export function reachEntriesFromContactPoints(points: readonly PersonContactPoint[] | undefined): ReachEntry[] {
@@ -98,7 +106,7 @@ export function reachEntriesFromContactPoints(points: readonly PersonContactPoin
     if (!value) continue;
     const service = serviceLabelForSlug(point.service_slug);
     entries.push({
-      key: keyFor(kind, point.normalized_value || value, point.service_slug),
+      key: keyFor(kind, point.normalized_value || value, serviceKey(point.service_slug, point.address_kind)),
       kind, value, display: value, label: value, service,
       title: point.envelope.type_label || undefined,
       observed: point.envelope.source === 'archive_observation',
@@ -147,7 +155,7 @@ export function reachEntriesFromIdentifiers({ identifiers, ownID, members = [], 
       ? `${text.title} identifier for ${memberName ? `${memberName} (profile ${identifier.participant_id})` : `profile ${identifier.participant_id}`}`
       : identifier.value;
     entries.push({
-      key: keyFor(kind, identifier.value, identifier.service_slug ?? identifier.type),
+      key: keyFor(kind, identifier.value, serviceKey(identifier.service_slug, identifier.type)),
       kind,
       value: identifier.value,
       display: opaque ? text.title : identifier.value,

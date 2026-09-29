@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { PersonContactPoint, PersonIdentifier } from '../api/generated/models';
 import {
   mergeReachEntries, normalizeReachValue, reachEntriesFromContactPoints, reachEntriesFromIdentifiers,
-  reachEntriesFromMembers, reachKindForAddressKind, serviceLabelForSlug
+  reachEntriesFromMembers, reachKindForAddressKind, serviceKey, serviceLabelForSlug
 } from './reach';
 
 const when = '2026-01-01T00:00:00Z';
@@ -105,6 +105,24 @@ describe('reach entries', () => {
     ]);
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({ kind: 'email', value: 'bare@example.test', name: 'Bare Example', note: 'linked', participantIDs: [78] });
+  });
+
+  it('keys the same chat handle identically whichever source spelled the service', () => {
+    const merged = mergeReachEntries(
+      reachEntriesFromContactPoints([contactPoint({
+        address_kind: 'username', original_value: 'alice', normalized_value: 'alice', service_slug: ' Slack '
+      })]),
+      reachEntriesFromIdentifiers({ identifiers: [
+        identifier({ type: 'slack', value: 'alice', service_slug: 'slack', participant_id: 12 }),
+        identifier({ type: 'slack', value: 'ALICE', participant_id: 34 })
+      ] })
+    );
+    // The contact point is a handle and the identifiers are chat keys, so
+    // they stay separate rows; within a kind the service spelling never splits them.
+    expect(merged.map((entry) => [entry.kind, entry.participantIDs])).toEqual([['chat', [12, 34]], ['handle', []]]);
+    expect(serviceKey(' Slack ', 'username')).toBe('slack');
+    expect(serviceKey(undefined, 'impp')).toBe('impp');
+    expect(serviceKey('', 'beeper')).toBe('beeper');
   });
 
   it('keeps every member that shares a value on the one visible row', () => {

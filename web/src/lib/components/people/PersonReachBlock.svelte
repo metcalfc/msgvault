@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { onDestroy, type Snippet } from 'svelte';
   import AtSignIcon from '@lucide/svelte/icons/at-sign';
   import LinkIcon from '@lucide/svelte/icons/link';
   import MailIcon from '@lucide/svelte/icons/mail';
@@ -25,6 +25,7 @@
 
   let copiedKey = $state<string | null>(null);
   let resetTimer: ReturnType<typeof setTimeout> | undefined;
+  onDestroy(() => { if (resetTimer !== undefined) clearTimeout(resetTimer); });
 
   async function copy(entry: ReachEntry): Promise<void> {
     const copied = await copyToClipboard(entry.value);
