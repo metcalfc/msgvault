@@ -8,7 +8,7 @@ function entries(): ReachEntry[] {
   return [
     { key: 'email:person@example.test', kind: 'email', value: 'person@example.test', display: 'person@example.test', label: 'person@example.test', observed: false, participantIDs: [] },
     { key: 'phone:15550100001', kind: 'phone', value: '+1 555 010 0001', display: '+1 555 010 0001', label: '+1 555 010 0001', observed: true, name: 'Person', participantIDs: [3] },
-    { key: 'chat:whatsapp:key', kind: 'chat', value: 'beeper:opaque-key', display: 'WhatsApp', label: 'WhatsApp identifier for profile 3', observed: true, opaque: true, title: 'beeper:opaque-key', participantIDs: [3] }
+    { key: 'chat:whatsapp:key', kind: 'chat', value: 'beeper:opaque-key', display: 'WhatsApp', label: 'WhatsApp identifier for Avery Example', observed: true, opaque: true, title: 'beeper:opaque-key', participantIDs: [3] }
   ];
 }
 
@@ -36,10 +36,10 @@ describe('PersonReachBlock', () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     try {
       render(PersonReachBlock, { entries: entries(), onAnnounce });
-      await fireEvent.click(screen.getByRole('button', { name: 'Copy WhatsApp identifier for profile 3' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Copy WhatsApp identifier for Avery Example' }));
       await waitFor(() => expect(writeText).toHaveBeenCalledWith('beeper:opaque-key'));
       expect(onAnnounce).toHaveBeenCalledWith('Contact method copied');
-      expect(await screen.findByRole('button', { name: 'Copied WhatsApp identifier for profile 3' })).toBeDefined();
+      expect(await screen.findByRole('button', { name: 'Copied WhatsApp identifier for Avery Example' })).toBeDefined();
     } finally {
       Object.defineProperty(navigator, 'clipboard', { configurable: true, value: original });
     }

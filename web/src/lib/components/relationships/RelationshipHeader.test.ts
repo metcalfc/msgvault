@@ -3,6 +3,7 @@ import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
+import { withEntityLabels } from '../../../test/entity-labels';
 import type { PersonAttributeGroup, PersonContactPoint } from '../../api/generated/models';
 import type { DomainSummary, PersonSummary } from '../../explore/models';
 import type { LinkOutcome } from '../../relationships/controller.svelte';
@@ -87,7 +88,7 @@ function searchClient(): ReturnType<typeof createAPIClient> {
     }
     throw new Error(`unexpected fetch to ${request.url}`);
   });
-  return createAPIClient(fetchFn);
+  return createAPIClient(withEntityLabels(fetchFn, { participant: { 78: 'Dana Example' } }));
 }
 
 function baseProps(overrides: Record<string, unknown> = {}) {
@@ -506,9 +507,9 @@ describe('RelationshipHeader', () => {
     expect(screen.queryByLabelText(/^Linked profile/)).toBeNull();
     // ...but each linked member still has its own Unlink in the row's menu.
     await fireEvent.click(screen.getByRole('button', { name: 'Actions for alice@example.com' }));
-    expect(await screen.findByRole('menuitem', { name: 'Unlink profile 34' })).toBeDefined();
-    await fireEvent.click(screen.getByRole('menuitem', { name: 'Unlink Alias Example (78)' }));
-    expect(screen.getByRole('group', { name: 'Confirm unlinking Alias Example (78)' })).toBeDefined();
+    expect(await screen.findByRole('menuitem', { name: 'Unlink ALICE@example.com' })).toBeDefined();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Unlink Alias Example (alice@example.com)' }));
+    expect(screen.getByRole('group', { name: 'Confirm unlinking Alias Example (alice@example.com)' })).toBeDefined();
     await fireEvent.click(screen.getByRole('button', { name: 'Unlink' }));
     await waitFor(() => expect(onUnlinkParticipants).toHaveBeenCalledWith(12, 78));
     expect(onUnlinkParticipants).not.toHaveBeenCalledWith(12, 34);
@@ -523,8 +524,8 @@ describe('RelationshipHeader', () => {
     const onUnlinkParticipants = vi.fn(async (): Promise<LinkOutcome> => ({ ok: true, identityRevision: 4, cacheState: 'ready' }));
     render(RelationshipHeader, baseProps({ detail: clusteredPersonWithBareMember(), onUnlinkParticipants }));
 
-    expect(screen.getByLabelText('Linked profile 78').textContent).toContain('no stored address');
-    await startUnlinkFor('profile 78');
+    expect((await screen.findByLabelText('Linked Dana Example')).textContent).toContain('no stored address');
+    await startUnlinkFor('Dana Example');
     await fireEvent.click(screen.getByRole('button', { name: 'Unlink' }));
 
     await waitFor(() => expect(onUnlinkParticipants).toHaveBeenCalledWith(12, 78));
@@ -554,14 +555,17 @@ describe('RelationshipHeader', () => {
       ] }
     } }));
 
-    expect(screen.getByRole('button', { name: 'Actions for profile Shared Example (56)' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Actions for profile Shared Example (78)' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Actions for Shared Example (1 of 2)' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Actions for Shared Example (2 of 2)' })).toBeDefined();
   });
 
-  it('falls back to the member ID for a chip whose member has no stored name or address', () => {
+  it('names a chip whose member has no stored name or address through the label lookup, never its ID', async () => {
     render(RelationshipHeader, baseProps({ detail: clusteredPersonWithBareMember() }));
 
-    expect(screen.getByLabelText('Linked profile 78').textContent).toContain('no stored address');
+    const chip = await screen.findByLabelText('Linked Dana Example');
+    expect(chip.textContent).toContain('no stored address');
+    expect(chip.getAttribute('aria-label')).not.toContain('78');
+    expect(screen.getByRole('button', { name: 'Actions for Dana Example' })).toBeDefined();
   });
 
   it('hides an opaque key on the chip and copies the full value', async () => {
@@ -585,7 +589,7 @@ describe('RelationshipHeader', () => {
         }]
       } }));
 
-      const copy = screen.getByRole('button', { name: 'Copy WhatsApp identifier for Alias Example (profile 12)' });
+      const copy = screen.getByRole('button', { name: 'Copy WhatsApp identifier for Alias Example' });
       const row = copy.closest('li');
       expect(row?.textContent).toContain('WhatsApp');
       expect(row?.textContent).toContain('Alias Example');
@@ -643,11 +647,11 @@ describe('RelationshipHeader', () => {
       }))
     } }));
 
-    expect(screen.getByRole('button', { name: 'Copy WhatsApp identifier for Alias Example (profile 34)' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Copy WhatsApp identifier for Alias Example (profile 56)' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Actions for WhatsApp identifier for Alias Example (profile 34)' })).toBeDefined();
-    await startUnlinkFor('WhatsApp identifier for Alias Example (profile 56)');
-    expect(screen.getByRole('group', { name: 'Confirm unlinking WhatsApp identifier for Alias Example (profile 56)' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Copy WhatsApp identifier for Alias Example (1 of 2)' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Copy WhatsApp identifier for Alias Example (2 of 2)' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Actions for WhatsApp identifier for Alias Example (1 of 2)' })).toBeDefined();
+    await startUnlinkFor('WhatsApp identifier for Alias Example (2 of 2)');
+    expect(screen.getByRole('group', { name: 'Confirm unlinking WhatsApp identifier for Alias Example (2 of 2)' })).toBeDefined();
   });
 
   it('confirming a cut-vertex member\'s unlink removes every edge incident to it, not just one', async () => {

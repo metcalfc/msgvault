@@ -10,6 +10,7 @@
   import RecentActivity from '../people/RecentActivity.svelte';
   import MeetingPanel from '../meetings/MeetingPanel.svelte';
   import type { APIClient } from '../../api/client';
+  import { entityNames } from '../../names/entity-names.svelte';
   import { resolveBoundClusters, type BoundClusterResolution } from '../../people/clusters';
   import { mergeReachEntries, reachEntriesFromContactPoints, reachEntriesFromIdentifiers } from '../../people/reach';
   import { humanizeDate, shortDate } from '../../util/dates';
@@ -150,7 +151,8 @@
       .map((part) => part?.trim()).filter(Boolean).join(' · ');
   });
 
-  const displayName = $derived(bundle.person?.display_name ?? profile?.person?.display_name ?? `Person ${personID}`);
+  const names = $derived(entityNames(client));
+  const displayName = $derived(names.name('person', personID, bundle.person?.display_name || profile?.person?.display_name));
 
   /** `message:<id>` refs open the message and `meeting:<id>` refs the
    * meeting's page; other kinds render as plain text. */

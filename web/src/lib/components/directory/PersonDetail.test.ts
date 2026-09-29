@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { meetingFixtureResponse } from '../../meetings/fixtures.test-support';
 import { createAPIClient } from '../../api/client';
+import { entityLabelsResponse } from '../../../test/entity-labels';
 import type { AttributeDefinition as GeneratedAttributeDefinition } from '../../api/generated/models';
 import { DirectoryEntityController } from '../../directory/entity-controller.svelte';
 import { DirectoryProfileController } from '../../directory/profile-controller.svelte';
@@ -71,6 +72,8 @@ describe('PersonDetail', () => {
       requestPaths.push(path);
       const overview = overviewCardResponse(request);
       if (overview) return overview;
+      const labels = entityLabelsResponse(request, { person: { 10: 'Synthetic Parent' } });
+      if (labels) return labels;
       if (path.endsWith('/merges')) return Response.json({ merges: [], limit: 100, offset: 0 });
       if (path === '/api/v1/people/7/employments') return Response.json({ employments: [{ id: 3, person_id: 7, organization_id: 2, is_current: true, is_primary: true, source: 'user', revision: 1, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', title: 'Engineer' }], projection: { employment_id: 3, organization_id: 2, organization_name: 'Example Org', vcard: {} } });
       if (path === '/api/v1/people/7/relationships') return Response.json({ relationships: [

@@ -10,6 +10,8 @@
   import type { LinkOutcome, RelationshipsMergeContext } from '../../relationships/controller.svelte';
   import type { RelationshipSiblingCluster } from '../../relationships/models';
   import { identityChipText } from '../../relationships/identity-chip';
+  import { entityNames } from '../../names/entity-names.svelte';
+  import { distinctLabels } from '../../names/distinct';
   import type { PersonMergeSuccess, ValidatedPersonMergeRequired } from '../../directory/person-merge';
   import type { DirectoryPromotionResult } from '../../directory/models';
   import {
@@ -89,6 +91,8 @@
     tabs = undefined,
     showBody = true
   }: Props = $props();
+
+  const names = $derived(entityNames(client));
 
   type LinkMutation = { kind: 'link' | 'unlink'; a: number; b: number };
 
@@ -193,9 +197,32 @@
     return entry.participantIDs.filter(isOtherMember);
   }
 
-  function memberLabel(participantID: number): string {
+  /** A member's name and address, else an address it was seen with, else the server's label. */
+  function baseMemberLabel(participantID: number): string {
     const member = memberFor(participantID);
-    return member?.display_name ? `${member.display_name} (${participantID})` : `profile ${participantID}`;
+    const name = member?.display_name?.trim();
+    const address = member?.email?.trim() || member?.phone?.trim() || (detail && isPersonDetail(detail)
+      ? detail.identifiers?.find((identifier) => identifier.participant_id === participantID &&
+        (identifier.type === 'email' || identifier.type === 'phone'))?.value?.trim()
+      : undefined);
+    if (name && address && address !== name) return `${name} (${address})`;
+    return name || address || names.label('participant', participantID);
+  }
+
+  /** Every cluster member's label, with repeats numbered so no two controls share a name. */
+  const memberLabels = $derived.by((): Map<number, string> => {
+    if (!detail || !isPersonDetail(detail)) return new Map();
+    const ids = [...new Set([
+      ...(detail.cluster?.member_ids ?? []),
+      ...(detail.cluster?.members ?? []).map((member) => member.participant_id),
+      ...(detail.identifiers ?? []).map((identifier) => identifier.participant_id)
+    ])].sort((left, right) => left - right);
+    const labels = distinctLabels(ids.map(baseMemberLabel));
+    return new Map(ids.map((id, index) => [id, labels[index]!]));
+  });
+
+  function memberLabel(participantID: number): string {
+    return memberLabels.get(participantID) ?? baseMemberLabel(participantID);
   }
 
   function memberFor(participantID: number) {
@@ -352,8 +379,9 @@
     if (activeDialog?.kind !== 'merge') return;
     const context = activeDialog.context;
     activeDialog = undefined;
-    const name = success.survivor.display_name?.trim() || `Person ${success.survivor.id}`;
-    onAnnounce?.(`People merged into ${name}. Identity cache ${success.result.cache_state}.`);
+    const known = success.survivor.display_name?.trim();
+    void (known ? Promise.resolve(known) : names.settledLabel('person', success.survivor.id, 'the surviving person'))
+      .then((name) => onAnnounce?.(`People merged into ${name}. Identity cache ${success.result.cache_state}.`));
     if (context && onReconcilePersonMerge) void onReconcilePersonMerge(context);
     onOpenDirectoryPerson?.(success.survivor.id);
   }
@@ -618,7 +646,7 @@
         {#each bareMembers as memberID (memberID)}
           {@const member = memberFor(memberID)}
           {@const text = identityChipText(undefined, member, edgesFor(memberID))}
-          {@const label = `profile ${member?.display_name ? `${text.title} (${memberID})` : memberID}`}
+          {@const label = memberLabel(memberID)}
           <div class="linked-profile" aria-label={`Linked ${label}`}>
             <span class="linked-profile-text"><strong>{text.title}</strong> <small>{text.subtitle}</small></span>
             {@render memberActions([memberID], label)}

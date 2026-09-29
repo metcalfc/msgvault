@@ -3,6 +3,7 @@
   import { onDestroy, onMount } from 'svelte';
 
   import type { APIClient } from '../../api/client';
+  import { entityNames } from '../../names/entity-names.svelte';
   import type { DirectoryEntityController } from '../../directory/entity-controller.svelte';
   import type { PersonRelationship, PersonRelationshipView, RelationshipType } from '../../directory/models';
   import PersonRelationshipEditor from './PersonRelationshipEditor.svelte';
@@ -15,6 +16,7 @@
   }
 
   let { client, controller, personID }: Props = $props();
+  const names = $derived(entityNames(client));
   let relationshipEditor = $state<PersonRelationshipView | null | undefined>(undefined);
   let relationshipTypeEditor = $state<RelationshipType | null | undefined>(undefined);
   let deletingRelationship = $state<PersonRelationshipView>();
@@ -29,7 +31,7 @@
   onDestroy(() => releaseScope?.());
 
   function counterpart(view: PersonRelationshipView): string {
-    return view.counterpart_display_name?.trim() || view.counterpart_vcard_uid || `Person ${view.counterpart_person_id}`;
+    return names.name('person', view.counterpart_person_id, view.counterpart_display_name);
   }
 
   function dateText(value: { year?: number; month?: number; day?: number } | undefined): string {

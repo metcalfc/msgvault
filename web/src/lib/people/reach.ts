@@ -3,6 +3,7 @@
  * kind, deduplicated by normalized value across the address book (Directory
  * contact points) and the archive (participant identifiers and cluster
  * members). Presentation-only — nothing here is serialized back to an API. */
+import { distinctLabels } from '../names/distinct';
 import type {
   PersonClusterEdge, PersonClusterMember, PersonContactPoint, PersonIdentifier
 } from '../api/generated/models';
@@ -208,7 +209,7 @@ export function reachEntriesFromIdentifiers({ identifiers, ownID, members = [], 
     const scope = identifier.scope_kind && identifier.scope_value && identifier.scope_kind !== 'account'
       ? `${identifier.scope_kind}: ${identifier.scope_value}` : '';
     const label = opaque
-      ? `${text.title} identifier for ${memberName ? `${memberName} (profile ${identifier.participant_id})` : `profile ${identifier.participant_id}`}`
+      ? `${text.title} identifier${memberName ? ` for ${memberName}` : ''}`
       : identifier.value;
     entries.push({
       key: keyFor(kind, identifier.value, serviceKey(identifier.service_slug, identifier.type)),
@@ -229,7 +230,10 @@ export function reachEntriesFromIdentifiers({ identifiers, ownID, members = [], 
       profileURLTemplate: identifier.profile_url_template || undefined
     });
   }
-  return entries;
+  // Opaque identifiers of one service and member would share a label; number
+  // the repeats rather than naming a participant by its ID.
+  const labels = distinctLabels(entries.map((entry) => entry.label));
+  return entries.map((entry, index) => entry.opaque ? { ...entry, label: labels[index]! } : entry);
 }
 
 /** Cluster members with no identifier row but a stored email or phone. */

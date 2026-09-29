@@ -72,7 +72,7 @@ describe('reach entries', () => {
     expect(entry?.display).toBe('WhatsApp');
     expect(entry?.value).toBe(key);
     expect(entry?.name).toBe('Alias Example');
-    expect(entry?.label).toBe('WhatsApp identifier for Alias Example (profile 12)');
+    expect(entry?.label).toBe('WhatsApp identifier for Alias Example');
     expect(entry?.title).toContain(key);
     expect(entry?.title).toContain('account: local-whatsapp_ba_example');
     expect(entry?.note ?? '').not.toContain('local-whatsapp_ba_example');

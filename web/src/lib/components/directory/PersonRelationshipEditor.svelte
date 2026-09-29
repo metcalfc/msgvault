@@ -12,6 +12,7 @@
   } from '@kenn-io/kit-ui';
   import { onDestroy, onMount, untrack } from 'svelte';
   import type { APIClient } from '../../api/client';
+  import { entityNames } from '../../names/entity-names.svelte';
   import type { DirectoryEntityController } from '../../directory/entity-controller.svelte';
   import type {
     CreatePersonRelationshipRequest,
@@ -38,6 +39,7 @@
     onDone = () => undefined,
     onClose = () => undefined,
   }: Props = $props();
+  const names = $derived(entityNames(client));
   const initialView = untrack(() => relationship);
   const initialRelationship = initialView?.relationship;
   let counterpartID = $state<number | null>(initialView?.counterpart_person_id ?? null);
@@ -61,7 +63,7 @@
     people.map(
       (person): TypeaheadOption => ({
         name: String(person.id),
-        label: person.display_name?.trim() || `Person ${person.id}`,
+        label: names.name('person', person.id, person.display_name),
         meta: person.organizations.length > 0 ? person.organizations.join(', ') : 'Directory person',
       }),
     ),
@@ -242,9 +244,7 @@
     {#if initialRelationship}
       <p>
         <strong
-          >{initialView?.counterpart_display_name?.trim() ||
-            initialView?.counterpart_vcard_uid ||
-            `Person ${initialView?.counterpart_person_id}`}</strong
+          >{names.name('person', initialView?.counterpart_person_id, initialView?.counterpart_display_name)}</strong
         >
         · {initialView?.counterpart_label}
       </p>
