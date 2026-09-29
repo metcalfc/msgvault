@@ -75,6 +75,11 @@
     counterpartLabel?: string;
     onSelect?: (id: number) => void;
     onOpenAttachment?: (file: FileViewerTarget) => void;
+    /** Messages whose omitted body is being fetched, and fetch failures. */
+    loadingBodies?: ReadonlySet<number>;
+    bodyErrors?: Record<number, string>;
+    /** Fetches a body the window response omitted (only a snippet came). */
+    onLoadBody?: (id: number) => void;
   }
 
   let {
@@ -83,7 +88,10 @@
     conversationId,
     counterpartLabel = '',
     onSelect = undefined,
-    onOpenAttachment = undefined
+    onOpenAttachment = undefined,
+    loadingBodies = new Set<number>(),
+    bodyErrors = {},
+    onLoadBody = undefined
   }: Props = $props();
 
   const speaker = $derived(speakerNames(messages, counterpartLabel));
@@ -120,7 +128,22 @@
           tabindex="0"
           onclick={() => onSelect?.(message.id)}
         >
-          <p class="bubble__text">{message.body || message.snippet}</p>
+          <p class="bubble__text">{message.body_omitted ? message.snippet : message.body || message.snippet}</p>
+          {#if bodyErrors[message.id]}
+            <p class="bubble__state" role="alert">{bodyErrors[message.id]}</p>
+          {/if}
+          {#if message.body_omitted && onLoadBody}
+            <!-- The window sent only a snippet; say so and fetch the rest on request. -->
+            <button
+              type="button"
+              class="bubble__more kit-control-states"
+              disabled={loadingBodies.has(message.id)}
+              onclick={(event) => {
+                event.stopPropagation();
+                onLoadBody?.(message.id);
+              }}
+            >{loadingBodies.has(message.id) ? 'Loading full message…' : bodyErrors[message.id] ? 'Retry full message' : 'Show full message'}</button>
+          {/if}
           {#if (message.attachments ?? []).length > 0}
             <MessageAttachments
               attachments={(message.attachments ?? []).map((attachment) => ({
@@ -220,6 +243,24 @@
     line-height: var(--leading-reading);
     overflow-wrap: anywhere;
     white-space: pre-wrap;
+  }
+
+  .bubble__state {
+    margin: var(--space-1) 0 0;
+    color: var(--text-danger);
+    font-size: var(--font-size-xs);
+  }
+
+  .bubble__more {
+    margin-top: var(--space-1);
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--link-ink);
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--font-size-xs);
+    text-decoration: underline;
   }
 
   .bubble :global(.message-attachments) {

@@ -533,3 +533,29 @@ describe('ConversationView thread stepping', () => {
     await waitFor(() => expect(onFilterPerson).toHaveBeenCalledWith(55, 'bob@example.com'));
   });
 });
+
+describe('ConversationView chat bodies', () => {
+  it('offers the full text of an omitted chat message and shows a failed fetch inline', async () => {
+    let attempts = 0;
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
+      if (path === '/api/v1/messages/1') {
+        attempts += 1;
+        if (attempts === 1) return Response.json({ error: 'internal_error', message: 'Body unavailable' }, { status: 500 });
+        return Response.json({ ...message(1, 'imessage'), body: 'The whole first message' });
+      }
+      return Response.json({
+        id: 7, anchor_id: 2, has_before: false, has_after: false, total: 2,
+        messages: [{ ...omittedMessage(1), message_type: 'imessage', snippet: 'The whole fi' }, message(2, 'imessage')]
+      });
+    });
+    render(ConversationView, { props: { client: createAPIClient(fetchFn), conversationId: 7, anchorId: 2, chat: true } });
+
+    expect(await screen.findByText('The whole fi')).toBeDefined();
+    await fireEvent.click(screen.getByRole('button', { name: 'Show full message' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Body unavailable');
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry full message' }));
+    expect(await screen.findByText('The whole first message')).toBeDefined();
+    expect(screen.queryByRole('button', { name: /full message/ })).toBeNull();
+  });
+});
