@@ -193,3 +193,26 @@ func TestCompletePersonProfilesLabelsUnnamedPeopleByPerson(t *testing.T) {
 		assert.Equal(t, test.want, rows, test.query)
 	}
 }
+
+func TestCompletePersonProfilesLabelsUnnamedPersonByPersonName(t *testing.T) {
+	require := require.New(t)
+	ctx := context.Background()
+	st := storetest.New(t).Store
+	participantID, err := st.EnsureParticipant("rob@example.test", "", "example.test")
+	require.NoError(err)
+	person, _, err := st.CreatePersonFromParticipantContext(ctx, participantID)
+	require.NoError(err)
+	_, err = st.AddPersonNameContext(ctx, person.ID, store.PersonNameInput{
+		NameKind: store.PersonNameStructured, GivenName: new("Robert"), FamilyName: new("Example"),
+		Envelope: completionEnvelope(),
+	})
+	require.NoError(err)
+	current, err := st.GetPersonContext(ctx, person.ID)
+	require.NoError(err)
+	require.Nil(current.DisplayName)
+
+	rows, err := st.CompletePersonProfilesContext(ctx, store.PersonCompletionQuery{Query: "robert"})
+	require.NoError(err)
+	require.Len(rows, 1)
+	assert.Equal(t, "Robert Example", rows[0].DisplayLabel)
+}

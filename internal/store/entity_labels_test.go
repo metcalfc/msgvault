@@ -207,3 +207,62 @@ func TestEntityLabelsParticipantPrefersBoundPersonName(t *testing.T) {
 		blankPersonParticipant: "Observed Blank",
 	}, labels.Participants)
 }
+
+// TestEntityLabelsPersonPrefersCurrentPersonName pins that a person with no
+// display name is named by its current formatted or structured person name
+// before any bound participant, and that superseded names are ignored.
+func TestEntityLabelsPersonPrefersCurrentPersonName(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := context.Background()
+	st := testutil.NewTestStore(t)
+	envelope := store.ValueEnvelopeInput{Source: store.ProvenanceUser}
+	unnamedPerson := func(email string) *store.Person {
+		participantID, err := st.EnsureParticipant(email, "", "example.com")
+		require.NoError(err)
+		person, _, err := st.CreatePersonFromParticipant(participantID)
+		require.NoError(err)
+		return person
+	}
+
+	structured := unnamedPerson("rob@example.com")
+	_, err := st.AddPersonNameContext(ctx, structured.ID, store.PersonNameInput{
+		NameKind: store.PersonNameStructured, GivenName: new("Robert"), FamilyName: new("Example"),
+		Envelope: envelope,
+	})
+	require.NoError(err)
+
+	formatted := unnamedPerson("fmt@example.com")
+	_, err = st.AddPersonNameContext(ctx, formatted.ID, store.PersonNameInput{
+		NameKind: store.PersonNameStructured, GivenName: new("Structured"), FamilyName: new("Only"),
+		Envelope: envelope,
+	})
+	require.NoError(err)
+	_, err = st.AddPersonNameContext(ctx, formatted.ID, store.PersonNameInput{
+		NameKind: store.PersonNameFormatted, Formatted: new("Formatted Name"), Envelope: envelope,
+	})
+	require.NoError(err)
+
+	superseded := unnamedPerson("old@example.com")
+	oldName, err := st.AddPersonNameContext(ctx, superseded.ID, store.PersonNameInput{
+		NameKind: store.PersonNameFormatted, Formatted: new("Retired Name"), Envelope: envelope,
+	})
+	require.NoError(err)
+	require.NoError(st.SupersedePersonNameContext(ctx, superseded.ID, oldName.Envelope.ID, nil))
+
+	for _, person := range []*store.Person{structured, formatted, superseded} {
+		current, err := st.GetPersonContext(ctx, person.ID)
+		require.NoError(err)
+		require.Nil(current.DisplayName, "the fixture needs a person without a display name")
+	}
+
+	labels, err := st.EntityLabelsContext(ctx, store.EntityLabelRequest{
+		PersonIDs: []int64{structured.ID, formatted.ID, superseded.ID},
+	})
+	require.NoError(err)
+	assert.Equal(map[int64]string{
+		structured.ID: "Robert Example",
+		formatted.ID:  "Formatted Name",
+		superseded.ID: "old@example.com",
+	}, labels.People)
+}

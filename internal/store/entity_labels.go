@@ -64,13 +64,33 @@ func sqlParticipantLabelExpr(alias string) string {
 		NULLIF(TRIM(` + alias + `.display_name), ''), ` + sqlParticipantIdentifierLabelExpr(alias) + `)`
 }
 
+// sqlPersonNameValueExpr renders one person_names row's (alias) name: its
+// trimmed formatted value, else its given and family names. NULL when both
+// are blank.
+func sqlPersonNameValueExpr(alias string) string {
+	return `COALESCE(NULLIF(TRIM(` + alias + `.formatted), ''),
+		NULLIF(TRIM(TRIM(COALESCE(` + alias + `.given_name, '')) || ' ' || TRIM(COALESCE(` + alias + `.family_name, ''))), ''))`
+}
+
 // sqlDurablePersonLabelExpr renders the label of one durable persons row
-// (alias): its trimmed display name, then the display name of its
-// smallest-ID named bound participant, then the identifier chain of its
+// (alias): its trimmed display name; then its best current formatted or
+// structured person name (formatted kind first, then vCard pref, ordinal,
+// and ID, as ListPersonNamesContext orders them); then the display name of
+// its smallest-ID named bound participant; then the identifier chain of its
 // smallest-ID bound participant that has one. NULL when nothing names the
 // person; it never falls back to the person ID or vCard UID.
 func sqlDurablePersonLabelExpr(alias string) string {
 	return `COALESCE(NULLIF(TRIM(` + alias + `.display_name), ''),
+		(SELECT ` + sqlPersonNameValueExpr("dpl_name") + `
+		 FROM person_names dpl_name
+		 WHERE dpl_name.person_id = ` + alias + `.id
+		   AND dpl_name.name_kind IN ('formatted', 'structured')
+		   AND dpl_name.active_until IS NULL AND dpl_name.superseded_at IS NULL
+		   AND ` + sqlPersonNameValueExpr("dpl_name") + ` IS NOT NULL
+		 ORDER BY CASE WHEN dpl_name.name_kind = 'formatted' THEN 0 ELSE 1 END,
+		          CASE WHEN dpl_name.pref IS NULL THEN 1 ELSE 0 END, dpl_name.pref,
+		          dpl_name.ordinal, dpl_name.id
+		 LIMIT 1),
 		(SELECT NULLIF(TRIM(dpl_named.display_name), '')
 		 FROM person_participants dpl_named_binding
 		 JOIN participants dpl_named ON dpl_named.id = dpl_named_binding.participant_id
