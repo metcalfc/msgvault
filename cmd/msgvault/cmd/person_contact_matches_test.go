@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -94,7 +95,7 @@ func TestPersonContactMatchesCLIReviewsThroughTheDaemon(t *testing.T) {
 	}
 
 	bind := byPerson[adaContact]
-	output, err = runContactMatchesCLI(ctx, "accept", fmt.Sprint(bind.ID), "--notes", "Same address")
+	output, err = runContactMatchesCLI(ctx, "accept", strconv.FormatInt(bind.ID, 10), "--notes", "Same address")
 	require.NoError(err, output)
 	assert.Contains(output, fmt.Sprintf("Contact match %d: accepted", bind.ID))
 	person, err := st.GetPersonContext(t.Context(), adaContact)
@@ -108,13 +109,13 @@ func TestPersonContactMatchesCLIReviewsThroughTheDaemon(t *testing.T) {
 		}
 	}
 	require.NotZero(merge.ID)
-	output, err = runContactMatchesCLI(ctx, "accept", fmt.Sprint(merge.ID))
+	output, err = runContactMatchesCLI(ctx, "accept", strconv.FormatInt(merge.ID, 10))
 	require.Error(err, output)
 	assert.Contains(err.Error(), "needs an explicit person merge")
 	assert.Contains(err.Error(), "msgvault person merge")
 	assert.Contains(err.Error(), fmt.Sprintf("msgvault person contact-matches accept %d", merge.ID))
 
-	output, err = runContactMatchesCLI(ctx, "reject", fmt.Sprint(merge.ID))
+	output, err = runContactMatchesCLI(ctx, "reject", strconv.FormatInt(merge.ID, 10))
 	require.NoError(err, output)
 	assert.Contains(output, fmt.Sprintf("Contact match %d: rejected", merge.ID))
 

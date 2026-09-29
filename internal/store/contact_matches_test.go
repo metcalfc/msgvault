@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -50,17 +51,18 @@ func (f *contactMatchFixture) importCards(cards ...store.CardDAVRemoteResource) 
 }
 
 func (f *contactMatchFixture) card(uid, name string, emails, phones []string) store.CardDAVRemoteResource {
-	body := "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:" + uid + "\r\nFN:" + name + "\r\n"
+	var body strings.Builder
+	body.WriteString("BEGIN:VCARD\r\nVERSION:4.0\r\nUID:" + uid + "\r\nFN:" + name + "\r\n")
 	for _, email := range emails {
-		body += "EMAIL:" + email + "\r\n"
+		body.WriteString("EMAIL:" + email + "\r\n")
 	}
 	for _, phone := range phones {
-		body += "TEL:" + phone + "\r\n"
+		body.WriteString("TEL:" + phone + "\r\n")
 	}
-	body += "END:VCARD\r\n"
+	body.WriteString("END:VCARD\r\n")
 	return store.CardDAVRemoteResource{
 		Href: f.book.CanonicalURL + uid + ".vcf", RemoteUID: uid, RemoteETag: `"` + uid + `"`,
-		RemoteBody: []byte(body), SemanticHash: "semantic-" + uid, DisplayName: name,
+		RemoteBody: []byte(body.String()), SemanticHash: "semantic-" + uid, DisplayName: name,
 		Emails: emails, Phones: phones,
 	}
 }

@@ -343,6 +343,8 @@ func contactMatchIdentifiersTx(
 				continue
 			}
 			phones[value] = append(phones[value], point.id)
+		default:
+			// The loader selects only email and phone contact points.
 		}
 	}
 	found := []ContactMatchIdentifier{}
