@@ -37,6 +37,36 @@ export function startOfLocalDay(now: Date): Date {
   return start;
 }
 
+/**
+ * How a date bound reads on its chip, so a typed operator and a picked day
+ * never look alike while meaning different things:
+ * - a picked end of day (23:59:59.999 local) includes that day: "Through Jun 30";
+ * - a before: at UTC midnight (the before:YYYY-MM-DD operator) excludes the
+ *   day: "Before Jun 30", named in UTC as the operator was written;
+ * - an after at the start of a day (a picked local day, or the after:
+ *   operator's UTC midnight) includes that day: "From Jun 30"; any other
+ *   after (a drilled instant) is "After <local date>".
+ */
+export function dateBoundLabel(dimension: DateDimension, value: string, now: Date = new Date()): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return `${dimension === 'after' ? 'After' : 'Before'} ${value}`;
+  const utcMidnight = date.getUTCHours() === 0 && date.getUTCMinutes() === 0 && date.getUTCSeconds() === 0 &&
+    date.getUTCMilliseconds() === 0;
+  const day = (timeZone: string | undefined) => new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: 'numeric', timeZone,
+    ...(date.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' })
+  }).format(date);
+  if (dimension === 'before') {
+    const endOfDay = date.getHours() === 23 && date.getMinutes() === 59 && date.getSeconds() === 59;
+    if (endOfDay) return `Through ${day(undefined)}`;
+    return `Before ${day(utcMidnight ? 'UTC' : undefined)}`;
+  }
+  if (utcMidnight) return `From ${day('UTC')}`;
+  const localMidnight = date.getHours() === 0 && date.getMinutes() === 0 && date.getSeconds() === 0 &&
+    date.getMilliseconds() === 0;
+  return `${localMidnight ? 'From' : 'After'} ${day(undefined)}`;
+}
+
 export function dateBound(filters: readonly ExploreFilter[], dimension: DateDimension): string | undefined {
   return filters.find((filter) => filter.dimension === dimension)?.values[0];
 }

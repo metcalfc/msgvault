@@ -11,7 +11,7 @@
   } from '../../explore/models';
   import { EXPLORE_COLUMN_LABELS } from '../../explore/models';
   import {
-    DATE_RANGE_PRESETS, activeDateRangePreset, dateBound, dateInputValue, isDateDimension,
+    DATE_RANGE_PRESETS, activeDateRangePreset, dateBound, dateBoundLabel, dateInputValue, isDateDimension,
     withDateRange, type DateRangePreset
   } from '../../explore/date-range';
   import { withRangeSelection } from '../../explore/date-range-selection';
@@ -20,7 +20,6 @@
     groupingOptions,
     isGroupingDimension
   } from '../../grouping/catalog';
-  import { shortDate } from '../../util/dates';
   import { messageTypeLabel } from '../../util/labels';
   import { FilterLabels } from '../../explore/filter-labels.svelte';
   import { withPersonFilter } from '../../explore/group-context';
@@ -214,7 +213,7 @@
    * (see chipValues). */
   function crumbText(filter: ExploreFilter): string {
     if (isDateDimension(filter.dimension)) {
-      return `${filter.dimension === 'after' ? 'After' : 'Before'} ${shortDate(filter.values[0] ?? '')}`;
+      return dateBoundLabel(filter.dimension, filter.values[0] ?? '');
     }
     if (filter.dimension === 'message_type') return `Type: ${filter.values.map(messageTypeLabel).join(', ')}`;
     if (filter.dimension === 'mailing_list') return `List: ${filter.values.join(', ')}`;

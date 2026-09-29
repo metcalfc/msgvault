@@ -104,12 +104,13 @@ describe('ContextBar date range', () => {
       onFiltersChange
     }));
 
-    expect(screen.getByText(/^After Mar [456], 2020$/)).toBeDefined();
+    // A UTC-midnight after bound is the after: operator's inclusive day.
+    expect(screen.getByText('From Mar 5, 2020')).toBeDefined();
     expect(screen.getByText('Type: Text (iMessage)')).toBeDefined();
     expect(document.querySelector('.crumb--query')).toBeNull();
     expect(screen.getByRole('radio', { name: 'Custom range' }).getAttribute('aria-checked')).toBe('true');
 
-    await fireEvent.click(screen.getByRole('button', { name: /^Remove After Mar/ }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove From Mar 5, 2020' }));
     expect(onFiltersChange).toHaveBeenCalledWith([{ dimension: 'message_type', values: ['imessage'] }]);
     await fireEvent.click(screen.getByRole('button', { name: 'Remove Type: Text (iMessage)' }));
     expect(onFiltersChange).toHaveBeenLastCalledWith([{ dimension: 'after', values: ['2020-03-05T00:00:00Z'] }]);

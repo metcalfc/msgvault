@@ -1,5 +1,4 @@
 import type { ExploreFilter, ExploreSearchMode } from '../explore/models';
-import { dateInputBound } from '../explore/date-range';
 
 /**
  * Client-side mirror of the daemon's Gmail-style query tokenizer
@@ -128,18 +127,19 @@ export function searchModeFellBack(query: string, mode: ExploreSearchMode): bool
 
 /** after:/before: take a day; the daemon also reads RFC3339 and US-style
  * dates, which stay text operators rather than guessing a local day.
- * Both bounds are the start of that day: the daemon's before:2025-06-30
- * excludes the 30th, and the explore before filter is exclusive, so the
- * chip keeps the operator's meaning. */
+ * The bound is the day's UTC midnight, exactly as the daemon parses the
+ * operator: after: includes that instant and before: excludes it, and the
+ * explore filters compare the same way, so the chip keeps the operator's
+ * meaning. */
 function operatorDateBound(value: string): string | undefined {
   const match = /^(\d{4})[-/](\d{2})[-/](\d{2})$/.exec(value);
   if (!match) return undefined;
   // An impossible date (2025-02-30, 2025-13-01) would roll over into the
   // next month; it stays query text so the daemon reports the error.
   const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
-  const date = new Date(year, month - 1, day);
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return undefined;
-  return dateInputBound(`${match[1]}-${match[2]}-${match[3]}`, 'after');
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return undefined;
+  return new Date(Date.UTC(year, month - 1, day)).toISOString();
 }
 
 function withFilterValue(filters: ExploreFilter[], dimension: ExploreFilter['dimension'], value: string): ExploreFilter[] {

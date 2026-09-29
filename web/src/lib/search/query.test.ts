@@ -16,9 +16,9 @@ describe('extractQueryFilters', () => {
     expect(extracted.moved).toBe(true);
     expect(extracted.query).toBe('budget from:alice@example.com subject:"q3 plan"');
     expect(extracted.filters).toEqual([
-      { dimension: 'after', values: [new Date(2025, 0, 1).toISOString()] },
-      // before: excludes its day, so the bound is that day's first instant.
-      { dimension: 'before', values: [new Date(2025, 5, 30).toISOString()] },
+      // The daemon reads a day as UTC midnight: after: includes it, before: excludes it.
+      { dimension: 'after', values: ['2025-01-01T00:00:00.000Z'] },
+      { dimension: 'before', values: ['2025-06-30T00:00:00.000Z'] },
       { dimension: 'message_type', values: ['imessage'] },
     ]);
   });
@@ -46,7 +46,7 @@ describe('extractQueryFilters', () => {
 
   it('accepts a real leap day', () => {
     expect(extractQueryFilters('after:2024-02-29', []).filters).toEqual([
-      { dimension: 'after', values: [new Date(2024, 1, 29).toISOString()] }
+      { dimension: 'after', values: ['2024-02-29T00:00:00.000Z'] }
     ]);
   });
 

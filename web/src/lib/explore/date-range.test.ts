@@ -4,7 +4,7 @@ import { resolveRange } from '@kenn-io/kit-ui';
 
 import {
   activeDateRangePreset, dateInputBound, dateInputValue, dateRangeFilters, defaultEverythingFilters,
-  endOfLocalDay, presetStart, startOfLocalDay, withDateBound, withDateRange, withPickedDays
+  endOfLocalDay, presetStart, startOfLocalDay, withDateBound, withDateRange, withPickedDays, dateBoundLabel
 } from './date-range';
 import { withRangeSelection } from './date-range-selection';
 
@@ -121,5 +121,21 @@ describe('date range presets', () => {
     expect(dateInputBound('nope', 'after')).toBeUndefined();
     expect(dateInputValue(undefined)).toBe('');
     expect(dateInputValue('nope')).toBe('');
+  });
+});
+
+describe('dateBoundLabel', () => {
+  const now = new Date(2026, 8, 29, 12, 0, 0);
+  it('tells a typed exclusive before: from a picked inclusive end of day', () => {
+    // before:2026-06-30 as the daemon reads it: UTC midnight, excluding the 30th.
+    expect(dateBoundLabel('before', '2026-06-30T00:00:00.000Z', now)).toBe('Before Jun 30');
+    // The picker's bound for the 30th: the end of that local day, including it.
+    expect(dateBoundLabel('before', dateInputBound('2026-06-30', 'before')!, now)).toBe('Through Jun 30');
+  });
+
+  it('names a typed after: as the inclusive day and other after bounds by local date', () => {
+    expect(dateBoundLabel('after', '2026-06-30T00:00:00.000Z', now)).toBe('From Jun 30');
+    expect(dateBoundLabel('after', dateInputBound('2026-06-30', 'after')!, now)).toBe('From Jun 30');
+    expect(dateBoundLabel('after', new Date(2026, 5, 30, 10, 30).toISOString(), now)).toBe('After Jun 30');
   });
 });
