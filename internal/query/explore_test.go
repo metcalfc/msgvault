@@ -1341,6 +1341,41 @@ func TestExploreCounterpartLabelResolvesPhoneOnlyChatParticipants(t *testing.T) 
 	assert.Equal("+15555550102", labels[unnamedPhone])
 }
 
+// TestExploreOtherParticipantCountExcludesCounterpartAndOwner pins the "+N"
+// count: participants other than the counterpart, and other than the owner
+// only when the owner is on the entry.
+func TestExploreOtherParticipantCountExcludesCounterpartAndOwner(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	b := NewTestDataBuilder(t)
+	srcID := b.AddSource("owner@example.com")
+	ownerID := b.AddParticipant("owner@example.com", "example.com", "Owner")
+	b.AddOwnerParticipant(srcID, ownerID)
+	alice := b.AddParticipant("alice@example.com", "example.com", "Alice")
+	bob := b.AddParticipant("bob@example.com", "example.com", "Bob")
+	carol := b.AddParticipant("carol@example.com", "example.com", "Carol")
+
+	when := time.Date(2026, 7, 12, 9, 0, 0, 0, time.UTC)
+	withOwner := b.AddMessage(MessageOpt{SourceID: srcID, Subject: "With owner", SentAt: when, IsFromMe: true})
+	b.AddFrom(withOwner, ownerID, "Owner")
+	b.AddTo(withOwner, alice, "Alice")
+	b.AddTo(withOwner, bob, "Bob")
+	withoutOwner := b.AddMessage(MessageOpt{SourceID: srcID, Subject: "Without owner", SentAt: when.Add(time.Hour)})
+	b.AddFrom(withoutOwner, alice, "Alice")
+	b.AddTo(withoutOwner, bob, "Bob")
+	b.AddTo(withoutOwner, carol, "Carol")
+
+	response, err := b.BuildEngine().Explore(context.Background(), ExploreRequest{})
+	require.NoError(err)
+	counts := make(map[string]int64, len(response.Rows))
+	for _, row := range response.Rows {
+		require.NotNil(row.CounterpartParticipantID)
+		counts[row.Title] = row.OtherParticipantCount
+	}
+	assert.Equal(int64(1), counts["With owner"])
+	assert.Equal(int64(2), counts["Without owner"])
+}
+
 // TestExploreCounterpartLabelSkipsFallbackIndexLabel pins that an identity
 // index label marked partial_label (a fallback such as "Unknown person #N")
 // never outranks a named member of the counterpart's cluster.

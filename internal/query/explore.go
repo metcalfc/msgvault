@@ -222,12 +222,61 @@ func (e *DuckDBEngine) labelExploreCounterparts(ctx context.Context, rows []Entr
 	if err := labelRows.Err(); err != nil {
 		return fmt.Errorf("iterate explore counterpart labels: %w", err)
 	}
+	_ = labelRows.Close()
+	owners, err := e.exploreOwnerParticipantIDs(ctx)
+	if err != nil {
+		return err
+	}
 	for i := range rows {
-		if rows[i].CounterpartParticipantID != nil {
-			rows[i].CounterpartLabel = labels[*rows[i].CounterpartParticipantID]
+		if rows[i].CounterpartParticipantID == nil {
+			continue
 		}
+		counterpart := *rows[i].CounterpartParticipantID
+		rows[i].CounterpartLabel = labels[counterpart]
+		// Everyone else on the entry: not the counterpart, and not the
+		// owner when the owner is a participant.
+		others := make(map[int64]bool)
+		for _, id := range rows[i].ParticipantIDs {
+			if id != counterpart && !owners[id] {
+				others[id] = true
+			}
+		}
+		rows[i].OtherParticipantCount = int64(len(others))
 	}
 	return nil
+}
+
+// exploreOwnerParticipantIDs returns every participant ID in an owner's
+// identity cluster, matching the owner set the counterpart column excludes.
+func (e *DuckDBEngine) exploreOwnerParticipantIDs(ctx context.Context) (map[int64]bool, error) {
+	ownerRows, err := e.db.QueryContext(ctx, `
+	WITH clusters AS (
+		SELECT participant_id, canonical_id FROM read_parquet('`+quoteIdentitySQLPath(e.parquetPath(datasetParticipantClusters))+`')
+	), canon AS (
+		SELECT p.id AS participant_id, COALESCE(c.canonical_id, p.id) AS canonical_id
+		FROM participants p LEFT JOIN clusters c ON c.participant_id = p.id
+	), owner_canon AS (
+		SELECT cn.canonical_id FROM canon cn
+		WHERE EXISTS (SELECT 1 FROM read_parquet('`+quoteIdentitySQLPath(e.parquetPath(datasetOwnerParticipants))+`') o
+			WHERE o.participant_id = cn.participant_id)
+	)
+	SELECT participant_id FROM canon WHERE canonical_id IN (SELECT canonical_id FROM owner_canon)`)
+	if err != nil {
+		return nil, fmt.Errorf("list explore owner participants: %w", err)
+	}
+	defer func() { _ = ownerRows.Close() }()
+	owners := make(map[int64]bool)
+	for ownerRows.Next() {
+		var id int64
+		if err := ownerRows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan explore owner participant: %w", err)
+		}
+		owners[id] = true
+	}
+	if err := ownerRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate explore owner participants: %w", err)
+	}
+	return owners, nil
 }
 
 const (

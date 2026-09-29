@@ -3541,6 +3541,7 @@ type EntryRow struct {
 	MessageCount               int64        `json:"message_count"`
 	MessageType                string       `json:"message_type" validate:"required"`
 	OccurredAt                 time.Time    `json:"occurred_at" validate:"required"`
+	OtherParticipantCount      *int64       `json:"other_participant_count,omitempty"`
 	ParticipantIds             []int64      `json:"participant_ids,omitempty"`
 	ParticipantLabels          []string     `json:"participant_labels,omitempty"`
 	Preview                    string       `json:"preview" validate:"required"`

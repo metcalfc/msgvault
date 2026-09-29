@@ -10,10 +10,9 @@ export function rowPeople(row: EntryRow): { primary: string; others: number; tit
   const title = labels.join(', ');
   const counterpart = typeof row.counterpart_label === 'string' ? row.counterpart_label.trim() : '';
   if (counterpart) {
-    // participant_ids includes the owner, so everyone else past the
-    // counterpart is "others".
-    const ids = row.participant_ids?.length ?? labels.length;
-    return { primary: counterpart, others: Math.max(0, ids - 2), title: title || counterpart };
+    // The daemon counts everyone but the counterpart and, when present on
+    // the entry, the owner.
+    return { primary: counterpart, others: row.other_participant_count ?? 0, title: title || counterpart };
   }
   if (labels.length === 0) return { primary: row.source_identifier, others: 0, title: row.source_identifier };
   return { primary: labels.join(', '), others: 0, title };

@@ -483,7 +483,7 @@ describe('EverythingTable result row', () => {
       rows: [
         row(1, {
           counterpart_label: 'Blake Example', participant_labels: ['Alice Owner', 'Blake Example', 'Casey Example'],
-          participant_ids: [1, 2, 3], preview: 'Budget review <b>notes</b> for the budget',
+          participant_ids: [1, 2, 3], other_participant_count: 1, preview: 'Budget review <b>notes</b> for the budget',
           has_attachments: true, attachment_count: 3
         }),
         row(2, { message_type: 'calendar_event', kind: 'event', title: 'Planning', source_id: 1, source_identifier: 'work@example.com' }),

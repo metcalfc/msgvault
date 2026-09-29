@@ -4032,6 +4032,9 @@ components:
         occurred_at:
           format: date-time
           type: string
+        other_participant_count:
+          format: int64
+          type: integer
         participant_ids:
           items:
             format: int64

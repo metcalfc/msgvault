@@ -21,6 +21,7 @@ export interface EntryRow {
   message_count: number;
   message_type: string;
   occurred_at: string;
+  other_participant_count?: number;
   participant_ids?: number[];
   participant_labels?: string[];
   preview: string;

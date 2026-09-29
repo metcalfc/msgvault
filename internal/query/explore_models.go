@@ -199,6 +199,9 @@ type EntryRow struct {
 	// resolving a phone-only chat participant to a person name where the
 	// participant, its identity cluster, or the identity index has one.
 	CounterpartLabel string `json:"counterpart_label,omitempty"`
+	// OtherParticipantCount counts the entry's participants other than the
+	// counterpart and the archive owner; set only with a counterpart.
+	OtherParticipantCount int64 `json:"other_participant_count,omitempty"`
 }
 
 type ExploreResponse struct {
