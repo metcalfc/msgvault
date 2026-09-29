@@ -56,6 +56,9 @@ type Budget struct {
 	openUntil    time.Time
 	probing      bool
 	inFlight     int
+	// epoch counts breaker openings. A reservation carries the epoch it was
+	// admitted in; one from before the latest opening is stale.
+	epoch uint64
 }
 
 // Budget invariants. Every method below preserves them; tests pin each one.
@@ -69,11 +72,16 @@ type Budget struct {
 //     the in-process attempt. The client pairs it with releasing the day.
 //  4. Caller cancellation never counts toward the breaker.
 //  5. Prices are read under the lock.
+//  6. Only the probe, or a request admitted since the breaker last opened,
+//     changes breaker state on an answer. A stale answer that was in flight
+//     when the breaker opened still counts its usage, but it cannot close
+//     the breaker or reset its failures.
 
 // reservation is one admitted request. probe marks the reservation that
 // holds the half-open breaker's single probe slot.
 type reservation struct {
 	probe bool
+	epoch uint64
 }
 
 // BudgetState is a snapshot for status output and logs. It carries no
@@ -198,7 +206,7 @@ func (b *Budget) reserve() (reservation, error) {
 	if b.attempts >= b.MaxRequests {
 		return reservation{}, ErrRequestLimit
 	}
-	var admitted reservation
+	admitted := reservation{epoch: b.epoch}
 	if !b.openUntil.IsZero() {
 		// Half-open: exactly one probe may run until it reports back.
 		b.probing = true
@@ -240,14 +248,17 @@ func (b *Budget) release(admitted reservation) {
 	b.settle(admitted)
 }
 
-// record settles a request that got an answer. Any answer closes the
-// breaker; a probe still in flight clears its own slot when it settles.
+// record settles a request that got an answer and counts its usage. The
+// probe's answer, or one admitted since the breaker last opened, closes the
+// breaker; a stale answer leaves breaker state alone (invariant 6).
 func (b *Budget) record(admitted reservation, usage Usage) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.settle(admitted)
-	b.failures = 0
-	b.openUntil = time.Time{}
+	if admitted.probe || admitted.epoch == b.epoch {
+		b.failures = 0
+		b.openUntil = time.Time{}
+	}
 	if !b.usageStoppedForRun() {
 		// A measured answer ends a day budget's cool-down pause. A per-run
 		// stop is permanent: a sibling that was already in flight cannot
@@ -275,8 +286,9 @@ func (b *Budget) record(admitted reservation, usage Usage) {
 // sibling's failure cancelled through the shared group context, or that ran
 // out of a caller deadline shorter than the client's own timeout says nothing
 // about the provider and does not count toward the breaker; it only settles
-// the reservation, which ends the half-open probe if it was one. The client's per-request timeout does count: the
-// provider did not answer in the time the operator allowed it.
+// the reservation, which ends the half-open probe if it was one. The client's
+// per-request timeout does count: the provider did not answer in the time the
+// operator allowed it.
 func (b *Budget) outcome(ctx context.Context, admitted reservation, err error, callerBound bool) {
 	cancelled := errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 	if cancelled && (ctx.Err() != nil || callerBound) {
@@ -299,6 +311,7 @@ func (b *Budget) fail(admitted reservation) {
 	}
 	if b.failures >= b.threshold() {
 		b.openUntil = b.now().Add(b.cooldown())
+		b.epoch++
 	}
 }
 

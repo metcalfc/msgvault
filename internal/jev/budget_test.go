@@ -876,3 +876,56 @@ func TestPerRunUnknownUsageStopSurvivesAConcurrentMeasuredResponse(t *testing.T)
 	assert.Equal(stickyUntil, budget.State().UsageUnknownUntil)
 	assert.Zero(budget.State().InFlight)
 }
+
+// TestBudgetStaleSuccessDoesNotCloseTheBreakerUnderAProbe: a request admitted
+// before the breaker opened that answers while the probe is in flight says
+// nothing about the provider's health now. Its usage counts, but only the
+// probe may close the breaker, so no request is admitted before it reports.
+func TestBudgetStaleSuccessDoesNotCloseTheBreakerUnderAProbe(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	budget := &Budget{MaxRequests: 100, StopUSD: 10, InputUSDPerM: 1, OutputUSDPerM: 1, FailureThreshold: 1,
+		Cooldown: time.Second, Now: func() time.Time { return now }}
+	slow, err := budget.reserve()
+	require.NoError(err)
+	opener, err := budget.reserve()
+	require.NoError(err)
+	budget.fail(opener)
+	now = now.Add(2 * time.Second)
+	probe, err := budget.reserve()
+	require.NoError(err)
+	require.True(probe.probe)
+
+	budget.record(slow, Usage{InputTokens: new(int64(1_000_000)), OutputTokens: new(int64(0)), Complete: true})
+	assert.InDelta(1.0, budget.State().CostUSD, 1e-9, "the stale answer's spend is still counted")
+	_, err = budget.reserve()
+	require.ErrorIs(err, ErrBreakerOpen, "a stale success does not close the breaker under a probe")
+	assert.False(budget.halfOpen())
+	assert.Equal(1, budget.State().ConsecutiveFailures)
+
+	budget.record(probe, Usage{InputTokens: new(int64(1)), OutputTokens: new(int64(1)), Complete: true})
+	after, err := budget.reserve()
+	require.NoError(err, "the probe's own answer closes it")
+	budget.release(after)
+	assert.Zero(budget.State().ConsecutiveFailures)
+	assert.Zero(budget.State().InFlight)
+}
+
+// TestBudgetStaleSuccessDoesNotResetFailuresOfANewerOpening covers the same
+// rule without a probe in flight: a stale answer after the breaker reopened
+// leaves the open breaker and its failure count alone.
+func TestBudgetStaleSuccessDoesNotResetFailuresOfANewerOpening(t *testing.T) {
+	require := require.New(t)
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	budget := &Budget{MaxRequests: 100, FailureThreshold: 1, Cooldown: time.Minute, Now: func() time.Time { return now }}
+	slow, err := budget.reserve()
+	require.NoError(err)
+	opener, err := budget.reserve()
+	require.NoError(err)
+	budget.fail(opener)
+	budget.record(slow, Usage{})
+	_, err = budget.reserve()
+	require.ErrorIs(err, ErrBreakerOpen, "the breaker stays open for its cool-down")
+	require.Equal(1, budget.State().ConsecutiveFailures)
+}
