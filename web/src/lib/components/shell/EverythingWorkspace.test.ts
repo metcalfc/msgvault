@@ -195,31 +195,71 @@ describe('EverythingWorkspace', () => {
     state.destroy();
   });
 
-  it('offers semantic matches when a multi-word full-text query finds almost nothing', async () => {
-    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
-    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+  function sparseSearchFetch(coverageStatus: string, semanticRequests: unknown[]) {
+    return vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const path = new URL(request.url).pathname;
+      if (path.endsWith('/coverage')) return Response.json({
+        status: coverageStatus, eligible_count: 3, embedded_count: 3, percentage: 100,
+        cache_revision: 'cache-1', actions: []
+      });
       if (path.endsWith('/explore')) {
         const body = await request.clone().json();
         if (body.search_mode === 'semantic') {
+          semanticRequests.push(body);
           return Response.json(exploreResponse({ rows: [entry(1), entry(2), entry(3)], total_count: 3 }));
         }
       }
       return Response.json(exploreResponse());
     });
+  }
+
+  it('asks before sending a sparse full-text query to a remote embedding provider', async () => {
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
+    const semanticRequests: unknown[] = [];
     const state = new ExploreState(window);
     state.replaceSearchDraft('weekend hiking plans', 'full_text');
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(sparseSearchFetch('ready', semanticRequests)), state });
 
-    const show = await screen.findByRole('button', { name: 'Show 3 similar messages with semantic search' });
-    expect(show.closest('p')?.textContent).toContain('3 similar messages');
+    const offer = await screen.findByRole('button', { name: 'Try semantic search for similar messages' });
+    expect(semanticRequests).toHaveLength(0);
     expect(screen.getByRole('button', { name: 'Try semantic' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Try hybrid' })).toBeDefined();
     expect(screen.getByText('has:attachment')).toBeDefined();
+    await fireEvent.click(offer);
+
+    const show = await screen.findByRole('button', { name: 'Show 3 similar messages with semantic search' });
+    expect(semanticRequests).toHaveLength(1);
+    expect(show.closest('p')?.textContent).toContain('3 similar messages');
     await fireEvent.click(show);
     expect(state.current.searchMode).toBe('semantic');
     expect(state.current.query).toBe('weekend hiking plans');
+    rendered.unmount();
+    state.destroy();
+  });
+
+  it.each([
+    ['ready', 1],
+    ['initializing', 0],
+    ['disabled', 0],
+  ] as const)('probes on its own with a local embedding provider only when the index is %s', async (status, requests) => {
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
+    const semanticRequests: unknown[] = [];
+    const fetchFn = sparseSearchFetch(status, semanticRequests);
+    const state = new ExploreState(window);
+    state.replaceSearchDraft('weekend hiking plans', 'full_text');
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, embeddingsLocal: true });
+
+    await screen.findByRole('button', { name: 'Try semantic' });
+    await waitFor(() => expect(fetchFn.mock.calls.some(([input]) =>
+      new URL(input instanceof Request ? input.url : String(input)).pathname.endsWith('/coverage'))).toBe(true));
+    if (requests > 0) {
+      expect(await screen.findByRole('button', { name: 'Show 3 similar messages with semantic search' })).toBeDefined();
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(screen.queryByRole('button', { name: /similar messages/ })).toBeNull();
+    }
+    expect(semanticRequests).toHaveLength(requests);
     rendered.unmount();
     state.destroy();
   });

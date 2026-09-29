@@ -99,6 +99,8 @@
     ]>;
     appearanceDefaults?: AppearanceDefaults;
     searchModeDefault?: ExploreSearchMode;
+    /** The embedding endpoint is local (loopback); see EverythingWorkspace. */
+    embeddingsLocal?: boolean;
     archiveContextKey?: string;
   }
   let {
@@ -108,6 +110,7 @@
     settings = undefined,
     appearanceDefaults = { theme: 'system', density: 'compact' },
     searchModeDefault = undefined,
+    embeddingsLocal = false,
     archiveContextKey = '',
   }: Props = $props();
   const ownsState = untrack(() => providedState === undefined);
@@ -1555,6 +1558,7 @@
       closeReadingPane={() => void closeReadingPane()}
       {openRelationship}
       openAttachment={openAttachmentTarget}
+      {embeddingsLocal}
       {followRow}
       {changeConversationAnchor}
       onOpenMeeting={(meeting) => void openArchivedMeeting(meeting)}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isLoopbackURL } from './lib/settings/loopback';
   import { getSettings as generatedGetSettings } from './lib/api/generated/api/api';
   import { Button } from '@kenn-io/kit-ui';
   import { onMount } from 'svelte';
@@ -22,6 +23,7 @@
   let appearanceDefaults = $state<AppearanceDefaults>({ theme: 'system', density: 'compact' });
   let shellMounted = $derived(session.status !== undefined && session.authMode !== 'required');
   let searchModeDefault = $state<ExploreSearchMode | undefined>();
+  let embeddingsLocal = $state(false);
   let authenticated = false;
   let browserDefaultsRequestGeneration = 0;
   onMount(() => {
@@ -60,6 +62,9 @@
       searchModeDefault = parseSearchMode(
         settingString(data?.settings.find(({ key }) => key === 'web.default_search_mode')),
       );
+      embeddingsLocal = isLoopbackURL(
+        settingString(data?.settings.find(({ key }) => key === 'vector.embeddings.endpoint')),
+      );
     } catch {
       // Keep the safe fallback when settings authority is temporarily unavailable.
     }
@@ -92,7 +97,7 @@
   {#if messageID !== undefined}
     <MessagePage client={session.client} {messageID} />
   {:else}
-  <AppShell client={session.client} {appearanceDefaults} {searchModeDefault}>
+  <AppShell client={session.client} {appearanceDefaults} {searchModeDefault} {embeddingsLocal}>
     {#snippet settings(cardDAVRequest, onCardDAVRequestConsumed, navigationTarget)}
       <SettingsWorkspace
         client={session.client}

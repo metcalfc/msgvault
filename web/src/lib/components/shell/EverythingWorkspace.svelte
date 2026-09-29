@@ -79,6 +79,9 @@
     followRow: (row: EntryRow) => void;
     changeConversationAnchor: (anchorId: number) => void;
     onOpenMeeting?: (meeting: MeetingRef) => void;
+    /** The embedding endpoint is on this machine, so a background semantic
+     * probe keeps the query local. */
+    embeddingsLocal?: boolean;
   }
 
   let {
@@ -111,6 +114,7 @@
     followRow,
     changeConversationAnchor,
     onOpenMeeting = undefined,
+    embeddingsLocal = false,
   }: Props = $props();
 
   const api = createExploreAPI(untrack(() => client));
@@ -612,17 +616,16 @@
   let semanticProbeController: AbortController | undefined;
   let semanticProbeKey = '';
   const currentFingerprint = $derived(predicateFingerprint(exploreState.predicate()));
-  $effect(() => {
+  // The fingerprint of a sparse multi-word full-text result, or ''.
+  const sparseFingerprint = $derived.by((): string => {
     const predicate = exploreState.predicate();
-    const fingerprint = currentFingerprint;
-    const result = loader.result;
     const sparse = Boolean(
       enabled &&
-        result &&
+        loader.result &&
         !loader.loading &&
         !loader.error &&
         !loader.nextCursor &&
-        loader.resultFingerprint === fingerprint &&
+        loader.resultFingerprint === currentFingerprint &&
         predicate.query &&
         predicate.search_mode === 'full_text' &&
         exploreState.current.searchMode === 'full_text' &&
@@ -631,7 +634,42 @@
         freeTextTerms(predicate.query).length >= 2 &&
         loader.rows.length < SPARSE_RESULT_LIMIT
     );
-    if (!sparse) {
+    return sparse ? currentFingerprint : '';
+  });
+
+  /** Runs the same predicate as semantic search. `requireReady` checks the
+   * index first so an automatic probe never runs against a disabled or
+   * initializing index. */
+  function runSemanticProbe(fingerprint: string, requireReady: boolean): void {
+    semanticProbeController?.abort();
+    const controller = new AbortController();
+    semanticProbeController = controller;
+    const predicate = exploreState.predicate();
+    void (async () => {
+      if (requireReady) {
+        const coverage = await api.coverage(predicate.filters ?? [], controller.signal);
+        if (controller.signal.aborted || coverage.status !== 'ready') return;
+      }
+      const loaded = await api.explore({
+        ...predicate, search_mode: 'semantic', cursor: undefined, candidate_snapshot_id: undefined,
+        grouping: [], presentation: 'table', limit: 50
+      }, controller.signal);
+      if (controller.signal.aborted || loaded.status !== 'ready') return;
+      const count = loaded.result.totalCount ?? loaded.result.rows.length;
+      if (count > 0) semanticSuggestion = { fingerprint, count };
+    })().catch(() => {
+      // The probe is a hint; a failed probe leaves the full-text results alone.
+    });
+  }
+
+  // Probing sends the query text to the embedding provider, which the user
+  // did not ask for in full-text mode. It runs on its own only when that
+  // provider is local and the index is ready; otherwise a sparse result
+  // offers "Try semantic" and the probe runs when the user asks.
+  const autoSemanticProbe = $derived(embeddingsLocal);
+  $effect(() => {
+    const fingerprint = sparseFingerprint;
+    if (!fingerprint) {
       if (semanticProbeKey !== '') {
         semanticProbeController?.abort();
         semanticProbeController = undefined;
@@ -640,21 +678,14 @@
       return;
     }
     if (semanticProbeKey === fingerprint) return;
-    semanticProbeController?.abort();
     semanticProbeKey = fingerprint;
-    const controller = new AbortController();
-    semanticProbeController = controller;
-    void api
-      .explore({ ...predicate, search_mode: 'semantic', cursor: undefined, candidate_snapshot_id: undefined, grouping: [], presentation: 'table', limit: 50 }, controller.signal)
-      .then((loaded) => {
-        if (controller.signal.aborted || loaded.status !== 'ready') return;
-        const count = loaded.result.totalCount ?? loaded.result.rows.length;
-        if (count > 0) semanticSuggestion = { fingerprint, count };
-      })
-      .catch(() => {
-        // The probe is a hint; a failed probe leaves the full-text results alone.
-      });
+    semanticProbeController?.abort();
+    if (untrack(() => autoSemanticProbe)) runSemanticProbe(fingerprint, true);
   });
+  const offerManualProbe = $derived(
+    Boolean(sparseFingerprint) && !autoSemanticProbe &&
+      !(semanticSuggestion && semanticSuggestion.fingerprint === sparseFingerprint)
+  );
   const visibleSemanticSuggestion = $derived(
     semanticSuggestion && semanticSuggestion.fingerprint === currentFingerprint ? semanticSuggestion : undefined
   );
@@ -721,6 +752,16 @@
 
   {#if modeFellBack}
     <p class="search-note" role="status">Searched full text because this query has only filters.</p>
+  {:else if offerManualProbe}
+    <p class="search-note" role="status">
+      Few exact matches ·
+      <button
+        type="button"
+        class="search-note__action kit-control-states"
+        aria-label="Try semantic search for similar messages"
+        onclick={() => runSemanticProbe(sparseFingerprint, false)}
+      >Try semantic</button>
+    </p>
   {:else if visibleSemanticSuggestion}
     <p class="search-note" role="status">
       {visibleSemanticSuggestion.count.toLocaleString()} similar {visibleSemanticSuggestion.count === 1 ? 'message' : 'messages'}
