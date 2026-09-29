@@ -1869,6 +1869,27 @@ msgvault stats [flags]
 
 ---
 
+## jev
+
+Manage consent and limits for [Jev judgments](/docs/usage/jev-judgments/):
+narrow typed questions sent to TypeSafe's System One model behind an explicit,
+per-feature consent.
+
+| Command | Purpose |
+|---|---|
+| `jev status` | Show `[jev]` configuration, credential state, and each feature's fingerprint, consent, and today's request and cost counters |
+| `jev consent <feature>` | Print the feature's disclosure: destination, model, every field that leaves the machine, and the questions exactly as sent |
+| `jev consent <feature> --yes` | Record consent for the feature's current policy fingerprint; an older grant for the same feature is superseded |
+| `jev revoke <feature>` | Revoke the feature's active consent; the next request is refused |
+| `jev revoke --all` | Revoke every feature's consent |
+
+All three accept `--json`. Feature names are lowercase identifiers; the only
+feature today is `enrichment_identity`. Consent binds to a fingerprint of the
+feature name, question wording, disclosed fields, model, and endpoint, so a
+change to any of them shows as "consent required (policy changed)" in status
+until you consent again. The commands run through the daemon like the other
+consent commands.
+
 ## People command guide
 
 Use the [people guide](/docs/usage/people/) for the workflow. Observed contacts
@@ -1959,7 +1980,7 @@ consented Exa or Sixtyfour policies:
 | Command | Purpose |
 |---|---|
 | `person enrichment profiles` | List saved policy fingerprints |
-| `person enrichment status [--limit 20]` | Inspect policies, consent, and bounded suppression history |
+| `person enrichment status [--limit 20]` | Inspect policies, consent, bounded suppression history, and `identity_uncertain` attempts awaiting review |
 | `person enrichment consent <fingerprint>` | Grant consent for that exact enrichment policy |
 | `person enrichment revoke [fingerprint]` | Revoke an exact policy; `--all` revokes all enrichment policies |
 | `person enrichment run --person <id> --provider <name> --idempotency-key <key>` | Request a lookup for one person |

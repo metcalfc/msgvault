@@ -37,6 +37,7 @@ the [archive lifecycle](/guide/) or the [project's origin](introduction.md).
 |---|---|
 | Who sent this, and when? | [Keyword search and filters](usage/searching.md) |
 | How do I search by meaning? | [Semantic and hybrid search](usage/vector-search.md) |
+| How do I let a model judge a narrow question with consent? | [Jev judgments](usage/jev-judgments.md) |
 | How do I search inside attachments? | [Document indexing](usage/document-indexing.md) |
 | Which model settings should I use? | [Recommended configuration](usage/recommended-configuration.md) |
 | What does my archive contain? | [Analytics](usage/analytics.md) and [SQL queries](usage/querying.md) |

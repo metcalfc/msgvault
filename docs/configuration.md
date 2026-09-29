@@ -1301,6 +1301,36 @@ keys as `[vector.embed.scope]`; `[vector.multimodal.schedule]` accepts the
 same `cron` and `run_after_sync` keys as `[vector.embed.schedule]`. Consent is
 recorded per generation by `msgvault multimodal build --yes`.
 
+### `[jev]`
+
+Consent-gated judgments from TypeSafe's System One model (Jev). Everything is
+off by default; a feature sends nothing until `[jev] enabled`, its own
+section's `enabled`, a resolvable API key, and `msgvault jev consent
+<feature> --yes` all hold. See [Jev judgments](/docs/usage/jev-judgments/) for
+what each feature sends, thresholds, and budgets.
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Master switch for every Jev-backed feature. |
+| `endpoint` | `https://api.typesafe.ai/v1/systemone` | System One evaluation URL. Must be HTTPS without credentials, query, or fragment. Changing it changes every feature's policy fingerprint and requires new consent. |
+| `model` | `jev-1.13.0` | Pinned model. Responses from any other model are rejected. Changing it requires new consent. |
+| `api_key_env` | `TYPESAFE_API_KEY` | Environment variable read when no stored credential exists. A key pasted in Settings is stored as `jev/api_key`, bound to the endpoint origin, and takes precedence. |
+| `request_timeout` | `10s` | Longest wait for one request. |
+| `max_requests_per_day` | `500` | Requests each feature may send per UTC day. `0` means no cap. Counters are persisted in the archive. |
+| `max_cost_usd_per_day` | `1.0` | Spend each feature may reach per UTC day. Applies only when a price below is set. |
+| `input_usd_per_million_tokens` | `0` | Price used for cost accounting. `0` on both prices means requests are counted and no cost is reported or assumed. |
+| `output_usd_per_million_tokens` | `0` | See above. |
+
+#### `[jev.identity_verification]`
+
+The enrichment identity check (feature `enrichment_identity`). See
+[the feature description](/docs/usage/jev-judgments/#feature-enrichment-identity-check).
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Ask Jev whether a partially matching enrichment result is the requested person. `person enrichment run` may send once consent is active. |
+| `automatic` | `false` | Also let the daemon's scheduled enrichment runs send. |
+
 ### `[activity]`
 
 Dated activity projection and per-person contact state (first and last

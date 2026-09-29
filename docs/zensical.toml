@@ -47,6 +47,7 @@ nav = [
     {"Conversation Briefs" = "usage/people-briefs.md"},
     {"Profile Automation" = "usage/people-automation.md"},
     {"External Enrichment" = "usage/people-enrichment.md"},
+    {"Jev Judgments" = "usage/jev-judgments.md"},
     {"CardDAV Contacts" = "usage/people-carddav.md"},
     {"Accounts and Collections" = "usage/multi-account.md"},
   ]},

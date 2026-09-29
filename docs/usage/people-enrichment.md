@@ -154,3 +154,13 @@ msgvault person enrichment status --json
 Revocation stops future authorized lookups. It does not erase previously
 returned facts or ask an external provider to delete information. Review saved
 results through `person facts evidence`, `claims`, and `decisions`.
+
+## Identity checks beyond exact matching
+
+A returned person is accepted only when both the name and the current company
+match the request exactly. Two optional steps widen that safely: a
+deterministic retry with a code-built name variant when a provider returns
+nothing, and a consent-gated semantic check that asks Jev whether a partial
+match is the same person. Attempts the check cannot decide are recorded as
+`identity_uncertain` with no claim applied and appear in
+`person enrichment status`. See [Jev judgments](jev-judgments.md).

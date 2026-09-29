@@ -86,7 +86,7 @@ do not invent field names.
   requires new consent. CLI: `msgvault jev status`, `msgvault jev consent
   <feature> [--yes]`, `msgvault jev revoke <feature>|--all`. Print a
   disclosure per feature listing exactly which fields leave the machine.
-- [ ] **Task 0.5 Docs.** `docs/usage/jev-judgments.md` (what each feature
+- [x] **Task 0.5 Docs.** `docs/usage/jev-judgments.md` (what each feature
   sends, thresholds, consent, budget, how to turn off) and configuration
   reference rows. Add the plan to `docs/internal/README.md`.
 
@@ -98,7 +98,7 @@ Site: `internal/personenrichment/exa.go` (`exaTypedIdentityMatches`,
 `internal/store/person_enrichment_results.go`
 (`validateEnrichmentHostIdentityAssessment`).
 
-- [ ] **Task 1.1 Deterministic retries first.** When a lookup returns no
+- [x] **Task 1.1 Deterministic retries first.** When a lookup returns no
   entity, retry once with name variants built in code (drop middle
   initial/name, drop suffixes like Jr., collapse "Last, First"). No Jev.
 - [ ] **Task 1.2 Semantic identity check.** When exactly one of name or
@@ -112,13 +112,95 @@ Site: `internal/personenrichment/exa.go` (`exaTypedIdentityMatches`,
   Between 0.50 and 0.90: new result state `identity_uncertain`, stored with
   the probabilities, surfaced in `enrichment status` and the Facts view, no
   claims committed. Below 0.50: reject as today.
-- [ ] **Task 1.3 Wire the gate and fallback.** No consent or budget means the
+  > Done except the Facts view: `identity_uncertain` attempts are listed by
+  > `person enrichment status` (CLI/JSON) and their claims appear as
+  > identity-rejected decisions; a per-person API field for the web Facts view
+  > needs an API contract decision and is left open.
+- [x] **Task 1.3 Wire the gate and fallback.** No consent or budget means the
   exact rule alone, exactly as today. Add the feature to `jev status`.
-- [ ] **Task 1.4 Tests.** Fake Exa result "Susie S." at "Heavybit" for a
+- [x] **Task 1.4 Tests.** Fake Exa result "Susie S." at "Heavybit" for a
   request "Susie Singh"/"Heavybit" accepts with fake Jev {0.95, 0.99, 0.02};
   "Dataherald (YC W21)" vs "Dataherald" accepts; wrong person with matching
   common name rejects; Jev unavailable falls back to rejection; consent
   revoked never sends.
+
+## Phase 1b: identifier-based bind and merge candidates (no Jev)
+
+Motivation: a Google Contacts CardDAV import on 2026-09-28 created 1,985
+contact-only profiles. Matching their contact points against observed
+participants by exact email or phone shows 257 that duplicate a profile that
+already owns the matching participant, and 242 whose matching participant is
+unbound. The sync matches cards against existing profiles' contact points
+only; nothing matches cards against observed participants. This phase closes
+that gap deterministically and gives the later Jev dedup (Phase 8.3) a much
+smaller, cleaner candidate pool. Exact identifiers are evidence; names are
+not, so nothing in this phase looks at display names.
+
+Sites: `internal/store/identity_match_candidates.go` (candidate table with
+`display_name` basis and `Confidence` already defined, nothing writes them),
+`internal/store/person_merge_review_candidates`, `person merge-candidate`
+CLI, the Reviews tab, `internal/store/person_contact_points.go`,
+`participants.email_address` / `participants.phone_number`, and
+`participant_identifiers` (imessage, phone, username, email for chat
+sources).
+
+Scoping notes (verified against main @ 63690d36): the identity-match table
+already has `email` and `phone` bases, so no new basis; `confidence` must be
+NULL for `carddav_import` sources, so candidates use source `system`;
+`AcceptIdentityMatchCandidateContext` today links participants or maps a
+card to a person and never merges profiles, so a new participant-to-person
+branch is required; there is no public bind API, so a bind is promote-then-
+merge with the contact profile as survivor, which keeps its vCard UID and is
+reversible through split; system auto-accept is refused for every basis
+except `stable_provider_id`, so auto-apply is deferred; `person
+merge-candidate` decides post-merge attribute conflicts and is the wrong CLI.
+Merge is refused while either side is published or has an unresolved CardDAV
+conflict, so those candidates show as blocked. A rejected candidate row is
+already the negative for a pair, but it is deleted if an untouched imported
+profile is removed and re-imported.
+
+- [ ] **Task 1b.1 Candidate query (1 to 1.5 days).** Contact-only profiles
+  are persons with no `person_participants` rows. Join their active email
+  and phone contact points to `LOWER(participants.email_address)`, to
+  `participants.phone_number` normalized in Go with
+  `textimport.NormalizePhone` (values are mostly E.164 but not enforced), and
+  to email or phone `participant_identifiers`. Classify at cluster level via
+  `sortedComponentMembers` and `personIDsForParticipantsTx`: `bind` when the
+  cluster has no person, `merge` when exactly one other person, `ambiguous`
+  otherwise. Exclude owner participants using the rule at
+  `cmd/msgvault/cmd/build_cache.go:603` widened to their clusters, exclude
+  rejected rows, and mark published or conflicted sides as blocked.
+- [ ] **Task 1b.2 Candidate rows (0.5 to 1 day).** Endpoints
+  participant-to-person, basis `email` or `phone`, source `system`,
+  confidence 1.0, `normalized_value` set. Record the contact point id and
+  matched identifier in `identity_match_evidence`. The unique index gives
+  idempotency.
+- [ ] **Task 1b.3 Accept path (1.5 to 2 days).** New branch in
+  `AcceptIdentityMatchCandidateContext`: `bind` promotes the participant
+  cluster then merges the new profile into the contact profile as survivor;
+  `merge` returns `PersonBindingConflictError` so the existing 409
+  `person_merge_required` flow and merge dialog let the user pick the
+  survivor. Mark the candidate accepted before merging;
+  `reconcilePersonIdentityCandidatesTx` retargets rows on the absorbed side.
+- [ ] **Task 1b.4 Reviews tab (1.5 to 2 days).** Resolve both endpoints to
+  names and addresses (cards show raw kind and id today) and add a "Contacts
+  that match your archive" filter. Accept, reject, and the merge dialog are
+  reused.
+- [ ] **Task 1b.5 CLI (0.5 to 1 day).** New `person contact-matches
+  list|accept|reject|build` through the daemon.
+- [ ] **Task 1b.6 Scheduling (0.5 day).** Refresh candidates at the end of a
+  successful `carddav.Service.Sync`, and add a small dedicated daily job
+  modeled on the SQLite maintenance job, not the people sweep, since mail
+  and chat syncs also create participants.
+- [ ] **Task 1b.7 Tests (1.5 to 2 days).** Cluster-level bind and merge,
+  ambiguity, owner exclusion by email and by phone identifier, a
+  Beeper-style non-canonical phone, rejected pair suppressed across reruns
+  plus the re-import gap, published and conflict blocking, remote card update
+  and deletion after absorption, split restoring the card mapping, idempotent
+  reruns.
+- [ ] **Deferred: auto-apply.** Needs an explicit exception to the
+  system-accept rule; if added later, limit to `bind` with one contact
+  profile, one cluster, not blocked, no rejection. Auto-merge stays out.
 
 ## Phase 2: correspondent kind
 
