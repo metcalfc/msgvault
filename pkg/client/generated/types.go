@@ -3708,8 +3708,9 @@ func (e EndEmploymentBody) Validate() error {
 }
 
 type EntityLabel struct {
-	ID    int64  `json:"id"`
-	Label string `json:"label" validate:"required"`
+	ID       int64   `json:"id"`
+	Identity *string `json:"identity,omitzero"`
+	Label    string  `json:"label" validate:"required"`
 }
 
 func (e EntityLabel) Validate() error {

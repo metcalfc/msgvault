@@ -31,6 +31,28 @@ type EntityLabels struct {
 	People        map[int64]string
 	Participants  map[int64]string
 	Organizations map[int64]string
+	// ParticipantIdentities describes each participant by its own name and
+	// address ("Jane D · jane@example.com"), not by the person it is bound
+	// to, so several identities of one person read apart. A participant with
+	// neither its own name nor an identifier is absent.
+	ParticipantIdentities map[int64]string
+}
+
+// participantIdentitySeparator joins a participant's own name and address.
+const participantIdentitySeparator = " · "
+
+// participantIdentity composes a participant's identity text from its own
+// trimmed display name and identifier label; empty when both are blank.
+func participantIdentity(name, identifier string) string {
+	name, identifier = strings.TrimSpace(name), strings.TrimSpace(identifier)
+	switch {
+	case name == "":
+		return identifier
+	case identifier == "" || strings.EqualFold(name, identifier):
+		return name
+	default:
+		return name + participantIdentitySeparator + identifier
+	}
 }
 
 // sqlParticipantIdentifierLabelExpr renders the identifier chain for one
@@ -123,7 +145,7 @@ func (s *Store) EntityLabelsContext(ctx context.Context, request EntityLabelRequ
 	}
 	labels := EntityLabels{}
 	var err error
-	if labels.Participants, err = s.participantLabels(ctx, participantIDs); err != nil {
+	if labels.Participants, labels.ParticipantIdentities, err = s.participantLabels(ctx, participantIDs); err != nil {
 		return EntityLabels{}, err
 	}
 	if labels.People, err = s.durablePersonLabels(ctx, personIDs); err != nil {
@@ -140,9 +162,40 @@ func (s *Store) EntityLabelsContext(ctx context.Context, request EntityLabelRequ
 	return labels, nil
 }
 
-func (s *Store) participantLabels(ctx context.Context, ids []int64) (map[int64]string, error) {
-	return s.queryEntityLabels(ctx, "participant", ids,
-		`SELECT p.id, `+sqlParticipantLabelExpr("p")+` FROM participants p WHERE p.id IN (`+placeholders(len(ids))+`)`)
+// participantLabels returns each participant's label (who it is: its bound
+// person's name first) and its identity (its own name and address).
+func (s *Store) participantLabels(ctx context.Context, ids []int64) (map[int64]string, map[int64]string, error) {
+	labels := make(map[int64]string, len(ids))
+	identities := make(map[int64]string, len(ids))
+	if len(ids) == 0 {
+		return labels, identities, nil
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT p.id, COALESCE(`+sqlParticipantLabelExpr("p")+`, ''),
+		        COALESCE(NULLIF(TRIM(p.display_name), ''), ''),
+		        COALESCE(`+sqlParticipantIdentifierLabelExpr("p")+`, '')
+		 FROM participants p WHERE p.id IN (`+placeholders(len(ids))+`)`, int64Args(ids)...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list participant labels: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id int64
+		var label, name, identifier string
+		if err := rows.Scan(&id, &label, &name, &identifier); err != nil {
+			return nil, nil, fmt.Errorf("scan participant label: %w", err)
+		}
+		if label != "" {
+			labels[id] = label
+		}
+		if identity := participantIdentity(name, identifier); identity != "" {
+			identities[id] = identity
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("list participant labels: %w", err)
+	}
+	return labels, identities, nil
 }
 
 func (s *Store) durablePersonLabels(ctx context.Context, ids []int64) (map[int64]string, error) {

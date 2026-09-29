@@ -1635,7 +1635,7 @@ export const setPrimaryEmployment = (
   );
 };
 /**
- * Returns the label for each requested ID. An ID with no label is omitted; clients must not render the ID in its place. A person absorbed by a merge keeps the name recorded at the merge. Each kind accepts at most 500 distinct IDs.
+ * Returns the label for each requested ID. An ID with no label is omitted; clients must not render the ID in its place. A person absorbed by a merge keeps the name recorded at the merge. A participant's label leads with its bound person's name; its identity is its own name and address, which tells several identities of one person apart. Each kind accepts at most 500 distinct IDs.
  * @summary Resolve human labels for people, participants, and organizations
  */
 export const getEntityLabels = (

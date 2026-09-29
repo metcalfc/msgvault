@@ -52,14 +52,15 @@ func TestGetEntityLabels(t *testing.T) {
 	}
 	assert.Equal(wantPeople, body.People, "a merged-away person keeps its snapshot name")
 	wantParticipants := []EntityLabel{
-		{ID: survivor.ParticipantIDs[0], Label: "Survivor Name"},
-		{ID: unnamedParticipant, Label: "unnamed@example.com"},
+		{ID: survivor.ParticipantIDs[0], Label: "Survivor Name", Identity: "Survivor Name · survivor@example.com"},
+		{ID: unnamedParticipant, Label: "unnamed@example.com", Identity: "unnamed@example.com"},
 	}
 	if unnamedParticipant < survivor.ParticipantIDs[0] {
 		wantParticipants[0], wantParticipants[1] = wantParticipants[1], wantParticipants[0]
 	}
 	assert.Equal(wantParticipants, body.Participants)
 	assert.Equal([]EntityLabel{{ID: organization.ID, Label: "Example Org"}}, body.Organizations)
+	assert.NotContains(response.Body.String(), `"identity":""`, "only participants carry an identity")
 }
 
 func TestGetEntityLabelsEmptyRequest(t *testing.T) {

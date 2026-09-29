@@ -43,6 +43,12 @@ func TestEntityLabelsParticipants(t *testing.T) {
 		phoneOnly:      "+15550100001",
 		identifierOnly: "Handle@Example.net",
 	}, labels.Participants, "an unnamed or missing participant is absent, never its ID")
+	assert.Equal(map[int64]string{
+		named:          "Named Person · named@example.com",
+		emailOnly:      "email.only@example.com",
+		phoneOnly:      "+15550100001",
+		identifierOnly: "Handle@Example.net",
+	}, labels.ParticipantIdentities, "an identity is the participant's own name and address")
 	assert.Empty(labels.People)
 	assert.Empty(labels.Organizations)
 }
@@ -265,4 +271,39 @@ func TestEntityLabelsPersonPrefersCurrentPersonName(t *testing.T) {
 		formatted.ID:  "Formatted Name",
 		superseded.ID: "old@example.com",
 	}, labels.People)
+}
+
+// TestEntityLabelsParticipantIdentitiesTellOnePersonsIdentitiesApart pins
+// that participants bound to one person share its name as their label but
+// keep distinct identities built from their own names and addresses.
+func TestEntityLabelsParticipantIdentitiesTellOnePersonsIdentitiesApart(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := context.Background()
+	st := testutil.NewTestStore(t)
+
+	work, err := st.EnsureParticipant("jane@example.com", "Jane D", "example.com")
+	require.NoError(err)
+	person, _, err := st.CreatePersonFromParticipant(work)
+	require.NoError(err)
+	_, err = st.UpdatePersonDisplayNameContext(ctx, person.ID, person.Revision, new("Jane Doe"))
+	require.NoError(err)
+	home, err := st.EnsureParticipant("jane.home@example.org", "", "example.org")
+	require.NoError(err)
+	phone, err := st.EnsureParticipantByPhone("+15550100002", "Jane Mobile", "phone")
+	require.NoError(err)
+	for _, participantID := range []int64{home, phone} {
+		_, err = st.DB().ExecContext(ctx, st.Rebind(
+			`INSERT INTO person_participants (person_id, participant_id) VALUES (?, ?)`), person.ID, participantID)
+		require.NoError(err)
+	}
+
+	labels, err := st.EntityLabelsContext(ctx, store.EntityLabelRequest{ParticipantIDs: []int64{work, home, phone}})
+	require.NoError(err)
+	assert.Equal(map[int64]string{work: "Jane Doe", home: "Jane Doe", phone: "Jane Doe"}, labels.Participants)
+	assert.Equal(map[int64]string{
+		work:  "Jane D · jane@example.com",
+		home:  "jane.home@example.org",
+		phone: "Jane Mobile · +15550100002",
+	}, labels.ParticipantIdentities)
 }

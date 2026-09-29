@@ -19,9 +19,13 @@ type EntityLabelStore interface {
 }
 
 // EntityLabel names one entity. Clients render Label, never the ID.
+// Identity is set only for participants: the participant's own name and
+// address, which tells several identities of one person apart where Label
+// (led by the bound person's name) would repeat.
 type EntityLabel struct {
-	ID    int64  `json:"id"`
-	Label string `json:"label"`
+	ID       int64  `json:"id"`
+	Label    string `json:"label"`
+	Identity string `json:"identity,omitempty"`
 }
 
 // EntityLabelsResponse lists the labels found for each requested kind, in
@@ -38,7 +42,9 @@ func (s *Server) registerEntityLabelRoutes(api huma.API) {
 	op.Description = fmt.Sprintf(
 		"Returns the label for each requested ID. An ID with no label is omitted; "+
 			"clients must not render the ID in its place. A person absorbed by a merge "+
-			"keeps the name recorded at the merge. Each kind accepts at most %d distinct IDs.",
+			"keeps the name recorded at the merge. A participant's label leads with its bound "+
+			"person's name; its identity is its own name and address, which tells several "+
+			"identities of one person apart. Each kind accepts at most %d distinct IDs.",
 		store.MaxEntityLabelIDs)
 	op.Parameters = append(op.Parameters,
 		queryIntegerArrayParam("person", "Durable person IDs; repeat or comma-separate values"),
@@ -89,7 +95,7 @@ func (s *Server) handleGetEntityLabels(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, EntityLabelsResponse{
 		People:        sortedEntityLabels(result.People),
-		Participants:  sortedEntityLabels(result.Participants),
+		Participants:  withIdentities(sortedEntityLabels(result.Participants), result.ParticipantIdentities),
 		Organizations: sortedEntityLabels(result.Organizations),
 	})
 }
@@ -106,6 +112,16 @@ func positiveQueryInt64s(r *http.Request, name string) ([]int64, error) {
 		}
 	}
 	return ids, nil
+}
+
+// withIdentities attaches each participant's identity text. Every
+// participant with an identity also has a label, since its label falls back
+// to its own name and identifiers.
+func withIdentities(labels []EntityLabel, identities map[int64]string) []EntityLabel {
+	for i := range labels {
+		labels[i].Identity = identities[labels[i].ID]
+	}
+	return labels
 }
 
 func sortedEntityLabels(labels map[int64]string) []EntityLabel {

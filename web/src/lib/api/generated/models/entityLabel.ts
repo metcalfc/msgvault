@@ -4,6 +4,7 @@
 
 export interface EntityLabel {
   id: number;
+  identity?: string;
   label: string;
   [key: string]: unknown;
 }
