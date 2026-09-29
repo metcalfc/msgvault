@@ -87,8 +87,10 @@
   let participantIdentifiers = $state<PersonIdentifier[]>([]);
   let participantResolution = $state<BoundClusterResolution>();
   const participantKey = $derived(JSON.stringify([...(bundle.person?.participant_ids ?? [])].sort((a, b) => a - b)));
+  let resolutionAttempt = $state(0);
   $effect(() => {
     const ids: number[] = JSON.parse(participantKey);
+    void resolutionAttempt;
     participantIdentifiers = [];
     participantResolution = undefined;
     if (ids.length === 0) return;
@@ -100,6 +102,10 @@
     });
     return () => abort.abort();
   });
+  // Every lookup failed: say so instead of claiming nothing is linked,
+  // which would invite linking the same identities again.
+  const identitiesUnavailable = $derived(Boolean(
+    participantResolution && participantResolution.clusters.length === 0 && participantResolution.failedIDs.length > 0));
   const reachEntries = $derived(mergeReachEntries(
     reachEntriesFromContactPoints(profile?.contact_points),
     reachEntriesFromIdentifiers({ identifiers: participantIdentifiers })
@@ -197,6 +203,13 @@
   }
 </script>
 
+{#snippet identitiesFailed()}
+  <div class="identities-failed" role="alert">
+    <span>Could not load this person's archive identities. They may still be linked.</span>
+    <Button size="sm" surface="soft" label="Retry" onclick={() => (resolutionAttempt += 1)} />
+  </div>
+{/snippet}
+
 <section class="person-detail" aria-label="Person detail">
   {#if bundle.person || profile}
     <header class="person-header">
@@ -232,7 +245,9 @@
         />
       {/if}
     {:else if activeTab === 'timeline'}
-      {#if participantResolution || !(bundle.person?.participant_ids?.length)}
+      {#if identitiesUnavailable}
+        {@render identitiesFailed()}
+      {:else if participantResolution || !(bundle.person?.participant_ids?.length)}
         <PersonClusterPanel {client} clusters={participantResolution?.clusters ?? []} mode="timeline" {onOpenMeeting} />
       {:else}
         <p class="state" role="status">Loading timeline…</p>
@@ -294,7 +309,9 @@
         <PersonMergeHistory {client} {personID} {onOpenPerson} {onSplitCommitted} />
         <section class="profile-group" aria-label="Identities">
           <h3 data-section-title>Identities</h3>
-          {#if participantResolution || !(bundle.person?.participant_ids?.length)}
+          {#if identitiesUnavailable}
+            {@render identitiesFailed()}
+          {:else if participantResolution || !(bundle.person?.participant_ids?.length)}
             <PersonClusterPanel {client} clusters={participantResolution?.clusters ?? []} mode="identities" {onAnnounce}
               onIdentitiesChanged={onReload} />
           {:else}
@@ -360,4 +377,5 @@
   .maintenance-body { display: grid; gap: var(--space-6); }
   .profile-group { display: grid; gap: var(--space-3); padding-top: var(--space-4); border-top: 1px solid var(--hairline); }
   .state { color: var(--text-muted); font-size: var(--font-size-sm); }
+  .identities-failed { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); color: var(--text-secondary); font-size: var(--font-size-sm); }
 </style>

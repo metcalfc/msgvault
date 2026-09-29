@@ -583,6 +583,29 @@ describe('PersonDetail', () => {
       new URL(input instanceof Request ? input.url : String(input)).pathname === '/api/v1/relationships/9/timeline')).toBe(true));
   });
 
+  it('says identities failed to load, with Retry, instead of reporting nothing linked', async () => {
+    let lookups = 0;
+    const fetchFn = quietOverviewFetch().mockImplementation(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      const overview = overviewCardResponse(request);
+      if (overview) return overview;
+      if (path === '/api/v1/participants/9') {
+        lookups += 1;
+        return Response.json({ error: 'unavailable', message: 'down' }, { status: 503 });
+      }
+      return Response.json({ merges: [], limit: 100, offset: 0 });
+    });
+    const person = { id: 7, revision: 2, display_name: 'Synthetic Person', participant_ids: [9], vcard_uid: '', created_at: when, updated_at: when };
+    render(PersonDetail, { client: createAPIClient(fetchFn), personID: 7, bundle: { person, etags: {}, errors: {} }, tab: 'timeline' });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Could not load this person');
+    expect(screen.queryByText(/No archive activity is linked/)).toBeNull();
+    await fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(lookups).toBe(2));
+  });
+
   it('moves focus to the attributes section when Edit attributes is pressed', async () => {
     const definition = nicknameDefinition();
     const client = createAPIClient(quietOverviewFetch());
