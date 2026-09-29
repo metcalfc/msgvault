@@ -97,3 +97,43 @@ func (s *Store) rebuildSQLiteTable(ctx context.Context, rebuild sqliteTableRebui
 	committed = true
 	return nil
 }
+
+// countSQLiteTableForeignKeyViolations checks references from the rebuilt
+// table and from every table whose foreign keys name it. It is scoped on
+// purpose: an archive may already hold an unrelated dangling reference, and
+// that must not block an upgrade that never touched it.
+func countSQLiteTableForeignKeyViolations(ctx context.Context, tx *sql.Tx, table string) (int, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT m.name FROM sqlite_master AS m,
+		pragma_foreign_key_list(m.name) AS f
+		WHERE m.type = 'table' AND f."table" = ? AND m.name <> ?`, table, table)
+	if err != nil {
+		return 0, fmt.Errorf("list tables referencing %s: %w", table, err)
+	}
+	var referencing []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			_ = rows.Close()
+			return 0, fmt.Errorf("list tables referencing %s: %w", table, err)
+		}
+		referencing = append(referencing, name)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("list tables referencing %s: %w", table, err)
+	}
+	var violations int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_foreign_key_check(?)`, table).
+		Scan(&violations); err != nil {
+		return 0, fmt.Errorf("check references from %s: %w", table, err)
+	}
+	for _, child := range referencing {
+		var count int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_foreign_key_check(?)
+			WHERE parent = ?`, child, table).Scan(&count); err != nil {
+			return 0, fmt.Errorf("check references from %s to %s: %w", child, table, err)
+		}
+		violations += count
+	}
+	return violations, nil
+}

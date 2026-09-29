@@ -239,3 +239,72 @@ func TestPersonEnrichmentIdentityUncertainMigrationPreservesAttemptsAndAdmitsThe
 	checks.Equal(personenrichment.ClaimIdentityUncertain, outcome.Status)
 	requirements.NoError(f.store.InitSchema(), "the migration must be idempotent")
 }
+
+// execWithForeignKeysOff runs statements on one connection with foreign keys
+// suspended, the only way to plant a dangling reference for a test.
+func execWithForeignKeysOff(t *testing.T, st *Store, statements ...string) {
+	t.Helper()
+	requirements := require.New(t)
+	conn, err := st.DB().Conn(t.Context())
+	requirements.NoError(err)
+	defer func() { _ = conn.Close() }()
+	_, err = conn.ExecContext(t.Context(), `PRAGMA foreign_keys = OFF`)
+	requirements.NoError(err)
+	for _, statement := range statements {
+		_, err = conn.ExecContext(t.Context(), statement)
+		requirements.NoError(err, statement)
+	}
+	_, err = conn.ExecContext(t.Context(), `PRAGMA foreign_keys = ON`)
+	requirements.NoError(err)
+}
+
+func rerunIdentityUncertainMigration(t *testing.T, st *Store) error {
+	t.Helper()
+	_, err := st.DB().ExecContext(t.Context(), st.Rebind(
+		`DELETE FROM applied_migrations WHERE name = ?`), migrationPersonEnrichmentIdentityUncertain)
+	require.NoError(t, err)
+	return st.InitSchema()
+}
+
+func TestPersonEnrichmentIdentityUncertainMigrationIgnoresUnrelatedDanglingReferences(t *testing.T) {
+	f := newEnrichmentResultFixture(t)
+	if f.store.IsPostgreSQL() {
+		t.Skip("the rebuild and its foreign key check are SQLite-only")
+	}
+	installLegacyPersonEnrichmentAttemptStates(t, f.store)
+	execWithForeignKeysOff(t, f.store,
+		`INSERT INTO labels (source_id, name) VALUES (987654321, 'orphaned label')`)
+
+	require.NoError(t, rerunIdentityUncertainMigration(t, f.store),
+		"a legacy orphan in an unrelated table must not block the upgrade")
+	var definition string
+	require.NoError(t, f.store.DB().QueryRowContext(t.Context(), `SELECT sql FROM sqlite_master
+		WHERE type = 'table' AND name = 'person_enrichment_attempts'`).Scan(&definition))
+	assert.Contains(t, definition, "'identity_uncertain'")
+}
+
+func TestPersonEnrichmentIdentityUncertainMigrationRefusesDanglingAttemptReferences(t *testing.T) {
+	cases := map[string]string{
+		"from the rebuilt table": `UPDATE person_enrichment_attempts SET person_id = 987654321`,
+		"into the rebuilt table": `UPDATE person_enrichment_work SET active_attempt_id = 987654321
+			WHERE active_attempt_id IS NOT NULL`,
+	}
+	for name, plant := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newEnrichmentResultFixture(t)
+			if f.store.IsPostgreSQL() {
+				t.Skip("the rebuild and its foreign key check are SQLite-only")
+			}
+			installLegacyPersonEnrichmentAttemptStates(t, f.store)
+			execWithForeignKeysOff(t, f.store, plant)
+
+			err := rerunIdentityUncertainMigration(t, f.store)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "dangling references")
+			var definition string
+			require.NoError(t, f.store.DB().QueryRowContext(t.Context(), `SELECT sql FROM sqlite_master
+				WHERE type = 'table' AND name = 'person_enrichment_attempts'`).Scan(&definition))
+			assert.NotContains(t, definition, "'identity_uncertain'", "the failed rebuild rolls back")
+		})
+	}
+}

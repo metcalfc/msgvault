@@ -46,33 +46,23 @@ func (s *Store) migratePersonEnrichmentIdentityUncertain(ctx context.Context) er
 // person_enrichment_attempts with the widened state check. The identifiers,
 // citations, sources, identity judgments, and work rows reference the table
 // with ON DELETE CASCADE, which is why the rebuild runs with foreign keys
-// suspended. The whole-database foreign key check covers every one of them.
+// suspended. The post-rebuild check covers the attempts table and every
+// table that references it; unrelated legacy dangling references elsewhere
+// in the archive do not block the upgrade.
 func (s *Store) migratePersonEnrichmentIdentityUncertainSQLite(ctx context.Context) error {
 	return s.rebuildSQLiteTable(ctx, sqliteTableRebuild{
 		Table: "person_enrichment_attempts", AppliedMarker: "'identity_uncertain'",
 		Label:           "widen person enrichment attempt states",
 		Validate:        validatePersonEnrichmentAttemptStateRows,
 		Statements:      personEnrichmentAttemptStateRebuildStatements(),
-		CountViolations: countForeignKeyViolations,
+		CountViolations: countPersonEnrichmentAttemptForeignKeyViolations,
 	})
 }
 
-// countForeignKeyViolations runs SQLite's whole-database foreign key check
-// and returns how many rows it reported.
-func countForeignKeyViolations(ctx context.Context, tx *sql.Tx) (int, error) {
-	rows, err := tx.QueryContext(ctx, `PRAGMA foreign_key_check`)
-	if err != nil {
-		return 0, fmt.Errorf("check foreign keys after person enrichment attempt rebuild: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	violations := 0
-	for rows.Next() {
-		violations++
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("read foreign key check after person enrichment attempt rebuild: %w", err)
-	}
-	return violations, nil
+// countPersonEnrichmentAttemptForeignKeyViolations checks the rebuilt
+// attempts table and the tables that reference it, and nothing else.
+func countPersonEnrichmentAttemptForeignKeyViolations(ctx context.Context, tx *sql.Tx) (int, error) {
+	return countSQLiteTableForeignKeyViolations(ctx, tx, "person_enrichment_attempts")
 }
 
 const personEnrichmentAttemptColumnList = `id, run_id, person_id, profile_fingerprint, trigger_kind,
