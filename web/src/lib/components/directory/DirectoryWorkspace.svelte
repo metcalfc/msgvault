@@ -6,6 +6,7 @@
   import type { APIClient } from '../../api/client';
   import type { DirectoryURLState } from '../../directory/models';
   import { DirectoryController } from '../../directory/controller.svelte';
+  import type { BoundClusterResolution } from '../../people/clusters';
   import { bufferedCallback } from '../../util/buffered-callback';
   import DirectoryList from './DirectoryList.svelte';
   import PersonDetail from './PersonDetail.svelte';
@@ -18,7 +19,7 @@
     onOpenCardDAVSettings?: () => void;
     onAnnounce?: (message: string) => void;
     onOpenMeeting?: (meeting: MeetingRef) => void;
-    onOpenTimeline?: (participantIDs: number[]) => void;
+    onOpenTimeline?: (participantIDs: number[], resolution?: BoundClusterResolution) => void;
     onOpenMessage?: (messageID: number) => void;
   }
 

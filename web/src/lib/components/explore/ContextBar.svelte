@@ -10,8 +10,8 @@
   } from '../../explore/models';
   import { EXPLORE_COLUMN_LABELS } from '../../explore/models';
   import {
-    DATE_RANGE_PRESETS, activeDateRangePreset, dateBound, dateInputBound, dateInputValue, isDateDimension,
-    withDateBound, withDateRange, withoutDateRange, type DateRangePreset
+    DATE_RANGE_PRESETS, activeDateRangePreset, dateBound, dateInputValue, isDateDimension,
+    withDateRange, withPickedDays, withoutDateRange, type DateRangePreset
   } from '../../explore/date-range';
   import {
     groupingDimensionLabel,
@@ -81,13 +81,18 @@
   // shown as "Multiple" and left exactly as it is until the user picks a
   // value; the control never narrows a filter merely by rendering it.
   const MULTIPLE_MESSAGE_TYPES = '\u0000multiple';
+  const OFFERED_MESSAGE_TYPES = ['email', 'chat', 'imessage', 'sms', 'calendar_event', 'meeting_transcript'];
   const messageTypeValues = $derived(filters.find((filter) => filter.dimension === 'message_type')?.values ?? []);
   const messageType = $derived(messageTypeValues.length > 1 ? MULTIPLE_MESSAGE_TYPES : (messageTypeValues[0] ?? ''));
   const messageTypeOptions = $derived([
     { value: '', label: 'Any type' },
     ...(messageTypeValues.length > 1 ? [{ value: MULTIPLE_MESSAGE_TYPES, label: 'Multiple', disabled: true }] : []),
-    ...['email', 'chat', 'imessage', 'sms', 'calendar_event', 'meeting_transcript']
-      .map((value) => ({ value, label: messageTypeLabel(value) }))
+    // A single value outside the offered types (from a URL or a drilled
+    // group) is named by its own label rather than read back as "Any type".
+    ...(messageTypeValues.length === 1 && !OFFERED_MESSAGE_TYPES.includes(messageType)
+      ? [{ value: messageType, label: messageTypeLabel(messageType) || messageType }]
+      : []),
+    ...OFFERED_MESSAGE_TYPES.map((value) => ({ value, label: messageTypeLabel(value) }))
   ]);
 
   const datePreset = $derived(activeDateRangePreset(filters));
@@ -118,14 +123,14 @@
     onFiltersChange(filters.filter((_, position) => position !== index));
   }
 
+  /** Only the bound the user changed is rewritten; the other keeps its
+   * exact instant instead of being re-derived from its local day. */
   function selectDateBounds(selection: RangeSelection): void {
     if (selection.mode === 'relative' && selection.days <= 0) {
       onFiltersChange(withoutDateRange(filters));
       return;
     }
-    const range = resolveRange(selection);
-    const bounded = withDateBound(filters, 'after', dateInputBound(range.from, 'after'));
-    onFiltersChange(withDateBound(bounded, 'before', dateInputBound(range.to, 'before')));
+    onFiltersChange(withPickedDays(filters, resolveRange(selection)));
   }
 
   function selectMessageType(value: string): void {

@@ -35,7 +35,7 @@ describe('PersonAgenda', () => {
 
     render(PersonAgenda, { client, personID: 7 });
 
-    expect(screen.getByRole('heading', { name: 'Agenda' })).toBeDefined();
+    expect(await screen.findByRole('heading', { name: 'Agenda' })).toBeDefined();
     expect(await screen.findByRole('heading', { name: 'Gift Ideas' })).toBeDefined();
     expect(screen.getByRole('link', { name: 'Open in Kata' }).getAttribute('href')).toBe('https://tasks.example.test/one');
 
@@ -172,7 +172,7 @@ describe('PersonAgenda', () => {
     expect(posts[1].headers.get('Idempotency-Key')).not.toBe(posts[0].headers.get('Idempotency-Key'));
   });
 
-  it('renders nothing until the integration is ready, then enables mutations', async () => {
+  it('renders one quiet line until the integration is ready, then enables mutations', async () => {
     let ready = false;
     const client = createAPIClient(vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -185,11 +185,14 @@ describe('PersonAgenda', () => {
     }));
 
     const { rerender } = render(PersonAgenda, { client, personID: 7 });
-    // A person page is not where Kata connection problems are surfaced: the
-    // gated agenda renders nothing at all, and never requests the
-    // 503-prone list route, so no item rows or Unlink controls render.
-    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Agenda' })).toBeNull());
-    expect(screen.queryByText(/Kata integration/)).toBeNull();
+    // While the status is pending nothing renders (no disabled form flashes
+    // by); once the integration reports not ready, one quiet line says why
+    // and the 503-prone list route is never requested, so no item rows or
+    // Unlink controls render. Settings owns the connection problem itself.
+    expect(screen.queryByRole('heading', { name: 'Agenda' })).toBeNull();
+    expect(screen.queryByLabelText('New agenda item')).toBeNull();
+    expect(await screen.findByText('Agenda unavailable: Reconnect Kata to manage agenda items')).toBeDefined();
+    expect(screen.queryByRole('heading', { name: 'Agenda' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Unlink Ask' })).toBeNull();
     expect(screen.queryByText('Task service is unavailable')).toBeNull();
     expect(screen.queryByLabelText('New agenda item')).toBeNull();
@@ -207,7 +210,7 @@ describe('PersonAgenda', () => {
     expect((screen.getByRole('button', { name: 'Unlink Ask' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('renders nothing while the Kata API is incompatible, then enables mutations', async () => {
+  it('renders one quiet line while the Kata API is incompatible, then enables mutations', async () => {
     let compatible = false;
     const client = createAPIClient(vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -220,8 +223,8 @@ describe('PersonAgenda', () => {
     }));
 
     const { rerender } = render(PersonAgenda, { client, personID: 7 });
-    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Agenda' })).toBeNull());
-    expect(screen.queryByText(/Kata integration/)).toBeNull();
+    expect(await screen.findByText('Agenda unavailable: Kata API is incompatible.')).toBeDefined();
+    expect(screen.queryByRole('heading', { name: 'Agenda' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Unlink Ask' })).toBeNull();
     expect(screen.queryByText('Task service is unavailable')).toBeNull();
     expect(screen.queryByLabelText('New agenda item')).toBeNull();
@@ -329,12 +332,13 @@ describe('PersonAgenda', () => {
     await rerender({ client, personID: 8 });
 
     // Person A's rows and readiness must not survive into the transition:
-    // nothing from A stays clickable while B's status and list are pending.
+    // nothing from A stays clickable, and no form (not even a disabled one)
+    // renders while B's status is pending.
     expect(screen.queryByText('Ask about launch')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Unlink Ask about launch' })).toBeNull();
-    expect((screen.getByLabelText('New agenda item') as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByLabelText('List') as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: 'Add item' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByLabelText('New agenda item')).toBeNull();
+    expect(screen.queryByLabelText('List')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add item' })).toBeNull();
 
     // A click that slips through must never pair A's ref with B's person id.
     await fireEvent.click(staleUnlink);

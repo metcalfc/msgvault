@@ -120,3 +120,17 @@ export function dateInputBound(value: string, dimension: DateDimension): string 
   if (Number.isNaN(date.valueOf())) return undefined;
   return (dimension === 'after' ? startOfLocalDay(date) : endOfLocalDay(date)).toISOString();
 }
+
+/** Applies the days a range picker shows for both bounds, rewriting only
+ * the bound whose day changed. A bound the picker still shows on its own
+ * day keeps its exact instant: re-deriving it from the local day would
+ * shift a non-midnight bound (an "after 10:30" from a drilled row) to the
+ * edge of the day. An empty day removes that bound. */
+export function withPickedDays(filters: readonly ExploreFilter[], days: { from: string; to: string }): ExploreFilter[] {
+  let next: ExploreFilter[] = [...filters];
+  for (const [dimension, day] of [['after', days.from], ['before', days.to]] as const) {
+    if (day === dateInputValue(dateBound(filters, dimension))) continue;
+    next = withDateBound(next, dimension, dateInputBound(day, dimension));
+  }
+  return next;
+}

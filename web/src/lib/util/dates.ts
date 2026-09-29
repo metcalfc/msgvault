@@ -32,7 +32,12 @@ export function compactDate(value: string, now: Date = new Date()): string {
 /** Sentence-friendly timestamp for summaries and detail rows: "just now",
  * "25m ago", "3h ago", "2d ago", "in 3d" for the near future, then a short
  * date ("Jun 29") that carries the year once it differs from now's ("Jun 29,
- * 2024"). Empty input reads as "—"; unparseable input passes through. */
+ * 2024"). Empty input reads as "—"; unparseable input passes through.
+ *
+ * A thin wrapper: the age is compactDate's (mirrored for the near future)
+ * and the calendar fallback is shortDate's. Kit's formatRelativeTime is not
+ * used because it reads Date.now() and has no future tense, and callers
+ * and tests inject `now`. */
 export function humanizeDate(value: string | null | undefined, now: Date = new Date()): string {
   if (!value) return '—';
   const date = new Date(value);
@@ -40,17 +45,12 @@ export function humanizeDate(value: string | null | undefined, now: Date = new D
 
   const elapsedMs = now.getTime() - date.getTime();
   const minuteMs = 60_000;
-  const hourMs = 60 * minuteMs;
-  const dayMs = 24 * hourMs;
-  const magnitude = Math.abs(elapsedMs);
-  const future = elapsedMs < 0;
-
-  if (magnitude < minuteMs) return 'just now';
-  const phrase = (amount: number, unit: string) => (future ? `in ${amount}${unit}` : `${amount}${unit} ago`);
-  if (magnitude < hourMs) return phrase(Math.floor(magnitude / minuteMs), 'm');
-  if (magnitude < dayMs) return phrase(Math.floor(magnitude / hourMs), 'h');
-  if (magnitude < 7 * dayMs) return phrase(Math.floor(magnitude / dayMs), 'd');
-  return shortDate(value, now);
+  const weekMs = 7 * 24 * 60 * minuteMs;
+  if (Math.abs(elapsedMs) < minuteMs) return 'just now';
+  if (Math.abs(elapsedMs) >= weekMs) return shortDate(value, now);
+  return elapsedMs > 0
+    ? `${compactDate(value, now)} ago`
+    : `in ${compactDate(now.toISOString(), date)}`;
 }
 
 /** Kit's readable timestamp ("Aug 29, 01:00") for a stored ISO instant on a

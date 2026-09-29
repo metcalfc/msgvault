@@ -958,6 +958,7 @@ describe('AppShell', () => {
     // Let the person page's own identifier lookups settle before measuring the handoff.
     const handoff = await screen.findByRole('button', { name: 'Open timeline for Synthetic Person' });
     await waitFor(() => expect(requests).toContain('/api/v1/participants/3'));
+    await waitFor(() => expect(requests).toContain('/api/v1/participants/9'));
     await new Promise((resolve) => setTimeout(resolve, 0));
     const requestsBeforeHandoff = requests.length;
     await fireEvent.click(handoff);
@@ -965,9 +966,11 @@ describe('AppShell', () => {
       workspace: 'relationships', relationshipFacet: 'people', relationshipTarget: 'cluster:3', relationshipFiles: false
     }));
     expect(await screen.findByRole('main', { name: 'Relationships' })).toBeDefined();
-    // Both bindings are looked up (in parallel) and dedupe to the one cluster: no note.
+    // The handoff reuses the person page's resolution (both bindings dedupe
+    // to the one cluster: no note) instead of looking the bindings up again;
+    // the hub's own fetch of the opened cluster (3) is not a binding lookup.
     const handoffLookups = requests.slice(requestsBeforeHandoff).filter((path) => /^\/api\/v1\/participants\/\d+$/.test(path));
-    expect(handoffLookups.filter((path) => path === '/api/v1/participants/9')).toHaveLength(1);
+    expect(handoffLookups.filter((path) => path === '/api/v1/participants/9')).toHaveLength(0);
     expect(screen.queryByRole('note')).toBeNull();
 
     rendered.unmount();

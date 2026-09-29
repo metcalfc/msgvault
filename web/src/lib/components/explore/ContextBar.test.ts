@@ -31,6 +31,22 @@ describe('ContextBar presentation control', () => {
   });
 });
 
+describe('ContextBar message type', () => {
+  it('names a single value outside the offered types instead of reading it back as Any type', async () => {
+    const onFiltersChange = vi.fn();
+    render(ContextBar, baseProps({ filters: [{ dimension: 'message_type', values: ['voice_note'] }], onFiltersChange }));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const control = screen.getByRole('combobox', { name: 'Message type: Voice note' });
+    await fireEvent.click(control);
+    expect(screen.getAllByRole('option').map((option) => option.textContent?.trim()))
+      .toEqual(['Any type', 'Voice note', 'Email', 'Chat', 'Text (iMessage)', 'Text (SMS)', 'Event', 'Meeting']);
+    // Re-picking the current value is not a change.
+    await fireEvent.click(screen.getByRole('option', { name: 'Voice note' }));
+    expect(onFiltersChange).not.toHaveBeenCalled();
+  });
+});
+
 describe('ContextBar column picker', () => {
   it('renders only for the table presentation and never empties the column set', async () => {
     const onColumnsChange = vi.fn();

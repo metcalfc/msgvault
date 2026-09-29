@@ -78,7 +78,9 @@
   import type { MessageDetail } from '../../api/generated/models';
   import { createExploreAPI } from '../../explore/api';
   import type { RelationshipSiblingCluster } from '../../relationships/models';
-  import { resolveBoundClusters, validParticipantIDs, type BoundCluster } from '../../people/clusters';
+  import {
+    resolveBoundClusters, validParticipantIDs, type BoundCluster, type BoundClusterResolution
+  } from '../../people/clusters';
   import { messageRowFilters, resolveMessageRowKey } from '../../explore/entry-key';
   import { ARCHIVE_MEETING_HISTORY_KEY, parseArchiveMeetingHistory } from '../../meetings/archive-selection';
   import EverythingWorkspace from './EverythingWorkspace.svelte';
@@ -220,22 +222,30 @@
   /** The inverse of openDirectoryPerson. Person–participant bindings are
    * independent of participant identity links, so the bound ids can sit in
    * one cluster or several, and a non-canonical id would not match the
-   * hub's cluster:<canonical_id> targets. Each binding is resolved to its
-   * cluster (skipping ids a fetched cluster already lists as members); the
-   * hub opens on the cluster with the most activity and, when there are
-   * others, names them so the rest of the person's history is one click
+   * hub's cluster:<canonical_id> targets. Every bound id is looked up and
+   * grouped by its canonical cluster — reusing the resolution the person
+   * page already made for its reach block when it has settled — and the
+   * hub opens on the cluster with the most activity; when there are
+   * others, it names them so the rest of the person's history is one click
    * away. */
-  async function openDirectoryPersonTimeline(participantIDs: number[]): Promise<void> {
+  async function openDirectoryPersonTimeline(
+    participantIDs: number[],
+    resolved: BoundClusterResolution | undefined = undefined
+  ): Promise<void> {
     const ids = validParticipantIDs(participantIDs);
     if (ids.length === 0) return;
     const origin = canonicalFingerprint(exploreState.current);
     let clusters: BoundCluster[] = [];
     let failedIDs: number[] = ids;
-    try {
-      ({ clusters, failedIDs } = await resolveBoundClusters(ids, client));
-    } catch {
-      // resolveBoundClusters absorbs per-lookup failures; anything else
-      // (a client-level fault) falls through to the same fallback below.
+    if (resolved) {
+      ({ clusters, failedIDs } = resolved);
+    } else {
+      try {
+        ({ clusters, failedIDs } = await resolveBoundClusters(ids, client));
+      } catch {
+        // resolveBoundClusters absorbs per-lookup failures; anything else
+        // (a client-level fault) falls through to the same fallback below.
+      }
     }
     if (origin !== canonicalFingerprint(exploreState.current)) return;
     const first = clusters[0];
@@ -1364,7 +1374,7 @@
       onOpenCardDAVConflict={openCardDAVConflict}
       onOpenCardDAVSettings={openCardDAVSettings}
       onAnnounce={announceOperation}
-      onOpenTimeline={(participantIDs) => void openDirectoryPersonTimeline(participantIDs)}
+      onOpenTimeline={(participantIDs, resolution) => void openDirectoryPersonTimeline(participantIDs, resolution)}
       onOpenMessage={(messageID) => void openMessageByID(messageID)}
     />
   {:else if exploreState.current.workspace === 'directory_review'}

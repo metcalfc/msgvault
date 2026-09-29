@@ -1443,17 +1443,48 @@ describe('Everything date default', () => {
     expect(explicit.current.filters).toEqual([]);
     explicit.destroy();
 
-    // The shorthand parameters are explicit state too: a shared
-    // /?workspace=everything&mode=hybrid link opens exactly as shared.
+    // The shorthand parameters alone are the app's own emission, not the
+    // user's bounds: a shared /?workspace=everything&mode=hybrid link keeps
+    // its mode and opens on the seven-day default like a bare landing.
     window.history.replaceState(null, '', '/?workspace=everything&mode=hybrid');
     const shared = new ExploreState(window);
-    expect(shared.current).toMatchObject({ workspace: 'everything', searchMode: 'hybrid', filters: [] });
+    expect(shared.current).toMatchObject({ workspace: 'everything', searchMode: 'hybrid' });
+    expect(shared.current.filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
     shared.destroy();
 
     window.history.replaceState(null, '', '/?workspace=everything');
     const landing = new ExploreState(window);
-    expect(landing.current.filters).toEqual([]);
+    expect(landing.current.filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
     landing.destroy();
+  });
+});
+
+describe('Everything date default after a reload', () => {
+  it('still applies after the app\'s own workspace and mode shorthand, but not to an explore payload', () => {
+    // The shell always emits ?workspace=&mode=; a reload or a shared
+    // workspace link must not read as the user's own bounds.
+    window.history.replaceState(null, '', '/?workspace=directory&mode=full_text');
+    const fromDirectory = new ExploreState(window);
+    expect(fromDirectory.current.filters).toEqual([]);
+    fromDirectory.commitWorkspace('everything');
+    expect(fromDirectory.current.filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
+    fromDirectory.destroy();
+
+    window.history.replaceState(null, '', '/?workspace=everything&mode=full_text');
+    const onEverything = new ExploreState(window);
+    expect(onEverything.current.filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
+    onEverything.destroy();
+
+    // An explore payload is the user's view — its filters list stays as
+    // shared, even when empty.
+    window.history.replaceState(null, '', `/?workspace=everything&mode=full_text&explore=${
+      encodeURIComponent(JSON.stringify({ workspace: 'everything', filters: [] }))}`);
+    const allTime = new ExploreState(window);
+    expect(allTime.current.filters).toEqual([]);
+    allTime.commitWorkspace('directory');
+    allTime.commitWorkspace('everything');
+    expect(allTime.current.filters).toEqual([]);
+    allTime.destroy();
   });
 });
 

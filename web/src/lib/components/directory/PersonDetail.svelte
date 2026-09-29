@@ -4,7 +4,7 @@
   import type { MeetingRef, PersonIdentifier } from '../../api/generated/models';
   import MeetingPanel from '../meetings/MeetingPanel.svelte';
   import type { APIClient } from '../../api/client';
-  import { resolveBoundClusters } from '../../people/clusters';
+  import { resolveBoundClusters, type BoundClusterResolution } from '../../people/clusters';
   import { mergeReachEntries, reachEntriesFromContactPoints, reachEntriesFromIdentifiers } from '../../people/reach';
   import { humanizeDate } from '../../util/dates';
   import { channelLabel } from '../../util/labels';
@@ -39,8 +39,10 @@
     onAnnounce?: (message: string) => void;
     onOpenMeeting?: (meeting: MeetingRef) => void;
     /** Opens the Relationships hub for this person's archive participants —
-     * the inverse of the hub's "Contact record" action. */
-    onOpenTimeline?: (participantIDs: number[]) => void;
+     * the inverse of the hub's "Contact record" action. The cluster
+     * resolution this page already made for the reach block rides along
+     * (once it has settled) so the shell need not repeat the lookups. */
+    onOpenTimeline?: (participantIDs: number[], resolution?: BoundClusterResolution) => void;
     /** Opens the last-contact message in the Everything reading pane. */
     onOpenMessage?: (messageID: number) => void;
   }
@@ -75,14 +77,18 @@
   // best-effort: the address book rows render without them. Bindings resolve
   // in parallel and collapse to one identifier set per cluster.
   let participantIdentifiers = $state<PersonIdentifier[]>([]);
+  let participantResolution = $state<BoundClusterResolution>();
   const participantKey = $derived(JSON.stringify([...(bundle.person?.participant_ids ?? [])].sort((a, b) => a - b)));
   $effect(() => {
     const ids: number[] = JSON.parse(participantKey);
     participantIdentifiers = [];
+    participantResolution = undefined;
     if (ids.length === 0) return;
     const abort = new AbortController();
     void untrack(() => resolveBoundClusters(ids, client, abort.signal)).then((resolution) => {
-      if (!abort.signal.aborted) participantIdentifiers = resolution.clusters.flatMap((cluster) => cluster.identifiers);
+      if (abort.signal.aborted) return;
+      participantResolution = resolution;
+      participantIdentifiers = resolution.clusters.flatMap((cluster) => cluster.identifiers);
     });
     return () => abort.abort();
   });
@@ -251,7 +257,7 @@
                 ariaLabel={`Open timeline for ${displayName}`}
                 surface="outline"
                 size="sm"
-                onclick={() => onOpenTimeline([...(bundle.person?.participant_ids ?? [])])}
+                onclick={() => onOpenTimeline([...(bundle.person?.participant_ids ?? [])], participantResolution)}
               />
             {/if}
           </div>

@@ -2,11 +2,38 @@ import { describe, expect, it } from 'vitest';
 
 import {
   activeDateRangePreset, dateInputBound, dateInputValue, dateRangeFilters, defaultEverythingFilters,
-  endOfLocalDay, presetStart, startOfLocalDay, withDateBound, withDateRange
+  endOfLocalDay, presetStart, startOfLocalDay, withDateBound, withDateRange, withPickedDays
 } from './date-range';
 
 // Local noon: an hour either way stays on the same local day in every zone.
 const now = new Date(2026, 8, 29, 12, 0, 0);
+
+describe('withPickedDays', () => {
+  // Non-midnight instants, as a drilled row or a shared link would carry.
+  const after = new Date(2026, 8, 20, 10, 30).toISOString();
+  const before = new Date(2026, 8, 27, 15, 45).toISOString();
+  const filters = [
+    { dimension: 'source' as const, values: ['2'] },
+    { dimension: 'after' as const, values: [after] },
+    { dimension: 'before' as const, values: [before] }
+  ];
+
+  it('rewrites only the bound whose day changed and keeps the other instant exact', () => {
+    const picked = withPickedDays(filters, { from: dateInputValue(after), to: '2026-09-29' });
+    expect(picked.find((filter) => filter.dimension === 'after')?.values).toEqual([after]);
+    expect(picked.find((filter) => filter.dimension === 'before')?.values).toEqual([dateInputBound('2026-09-29', 'before')]);
+    expect(picked.find((filter) => filter.dimension === 'source')?.values).toEqual(['2']);
+  });
+
+  it('leaves both bounds untouched when the picker shows their own days', () => {
+    expect(withPickedDays(filters, { from: dateInputValue(after), to: dateInputValue(before) })).toEqual(filters);
+  });
+
+  it('removes a bound the picker cleared', () => {
+    const picked = withPickedDays(filters, { from: '', to: dateInputValue(before) });
+    expect(picked.map((filter) => filter.dimension)).toEqual(['source', 'before']);
+  });
+});
 
 describe('date range presets', () => {
   it('writes start-of-local-day windows as RFC3339 after/before filter dimensions', () => {

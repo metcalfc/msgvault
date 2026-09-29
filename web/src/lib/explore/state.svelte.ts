@@ -640,15 +640,19 @@ export class ExploreState {
     browser.addEventListener('popstate', this.handlePopState);
   }
 
-  /** A URL that names any recognized state (the detail payload, or the
-   * shorthand workspace/mode parameters parseExploreURLState honours) or a
-   * history entry is the user's view: no default bounds are added to it. */
+  /** The user's own view, to which no default bounds are added: a restored
+   * history entry, or a URL carrying an explore payload (a deep link, a
+   * drilled group, or a filters list — an empty one is a deliberate "All
+   * time"). The app's always-emitted ?workspace= and ?mode= shorthand on
+   * its own is not explicit, so the seven-day default still applies on the
+   * first bare entry into Everything after a reload or a shared workspace
+   * link. */
   private hasExplicitState(): boolean {
+    const history = this.browser.history.state;
+    if (isRecord(history) && isRecord(history.exploreState)) return true;
     const search = this.browser.location.search;
     const parameters = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-    const history = this.browser.history.state;
-    return parameters.has(STATE_PARAMETER) || parameters.has('workspace') || parameters.has('mode') ||
-      (isRecord(history) && isRecord(history.exploreState));
+    return parameters.has(STATE_PARAMETER);
   }
 
   private filtersWithEverythingDefault(filters: ExploreFilter[]): ExploreFilter[] {

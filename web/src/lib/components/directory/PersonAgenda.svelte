@@ -39,13 +39,6 @@
   });
 
   const mutationReady = $derived(integrationState === 'ready');
-  const stateMessage = $derived.by(() => {
-    if (integrationState === 'loading') return '';
-    if (integrationState !== 'ready') {
-      return `Kata integration ${integrationState}: ${integrationMessage || 'No status detail was provided.'}`;
-    }
-    return '';
-  });
   const titleFieldID = $derived(`person-${personID}-agenda-title`);
   const listFieldID = $derived(`person-${personID}-agenda-list`);
 
@@ -201,10 +194,11 @@
   }
 </script>
 
-<!-- A person page is not the place to surface Kata connection problems:
-     until the integration reports ready there is nothing here to act on, so
-     the section renders nothing at all (Settings owns the integration state). -->
-{#if integrationState === 'loading' || integrationState === 'ready'}
+<!-- Nothing renders until the integration status resolves, so the section
+     never flashes a disabled form. When the integration is not ready there
+     is nothing here to act on: one quiet line says why, and Settings owns
+     the integration state itself. -->
+{#if integrationState === 'ready'}
 <section class="person-agenda" data-section aria-labelledby={`person-${personID}-agenda-heading`}>
   <header data-section-header>
     <div>
@@ -216,9 +210,7 @@
 
   {#if error}<p class="notice" role="status">{error}</p>{/if}
 
-  {#if stateMessage}<p class="notice" role="alert">{stateMessage}</p>{/if}
-
-  {#if !loading && !error && !stateMessage && items.length === 0}
+  {#if !loading && !error && items.length === 0}
     <p class="notice">No linked Kata items.</p>
   {/if}
 
@@ -262,6 +254,8 @@
     <Button type="submit" size="sm" tone="info" surface="soft" label="Add item" disabled={mutating || !mutationReady || !title.trim()} />
   </form>
 </section>
+{:else if integrationState !== 'loading'}
+<p class="agenda-blocked" data-meta role="status">Agenda unavailable: {integrationMessage}</p>
 {/if}
 
 <style>
@@ -273,4 +267,5 @@
   form { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
   label { color: var(--text-secondary); font-size: var(--font-size-sm); }
   .notice { color: var(--text-secondary); font-size: var(--font-size-sm); }
+  .agenda-blocked { margin: 0; }
 </style>

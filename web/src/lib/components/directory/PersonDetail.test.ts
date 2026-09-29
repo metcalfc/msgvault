@@ -563,7 +563,8 @@ describe('PersonDetail', () => {
     const { rerender } = render(PersonDetail, { client, personID: 7, onOpenTimeline, bundle: { person, etags: {}, errors: {} } });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Open timeline for Synthetic Person' }));
-    expect(onOpenTimeline).toHaveBeenCalledWith([9, 3]);
+    expect(onOpenTimeline).toHaveBeenCalledOnce();
+    expect(onOpenTimeline.mock.calls[0]?.[0]).toEqual([9, 3]);
 
     await rerender({ client, personID: 7, onOpenTimeline, bundle: { person: { ...person, participant_ids: [] }, etags: {}, errors: {} } });
     expect(screen.queryByRole('button', { name: /^Open timeline/ })).toBeNull();

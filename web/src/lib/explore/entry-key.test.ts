@@ -50,6 +50,16 @@ describe('resolveMessageRowKey', () => {
     expect(await resolveMessageRowKey(message, async () => ({ rows: anchored }))).toBe('source:3:message:42');
   });
 
+  it('asks for the largest page so the row is not missed past the first hundred', async () => {
+    const predicates: Array<{ limit?: number }> = [];
+    await resolveMessageRowKey(message, async (predicate) => {
+      predicates.push(predicate);
+      return { rows: [] };
+    });
+    expect(predicates).toHaveLength(1);
+    expect(predicates[0]!.limit).toBe(500);
+  });
+
   it('falls back to the locally derived key when the query fails or finds nothing', async () => {
     expect(await resolveMessageRowKey(message, async () => ({ rows: [] }))).toBe('source:3:message:42');
     expect(await resolveMessageRowKey(message, async () => { throw new Error('down'); })).toBe('source:3:message:42');
