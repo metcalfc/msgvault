@@ -1388,8 +1388,11 @@ func (s *Store) MarkTerminal(
 			}
 			return fmt.Errorf("load terminal person enrichment attempt revision: %w", err)
 		}
+		// A terminal attempt records what its calls actually cost, so an
+		// empty lookup plus a failed retry charge the counters like any
+		// other outcome. An unobserved cost stays missing.
 		if _, err := reconcilePersonEnrichmentCostTx(ctx, tx, s.dialect, token.AttemptID,
-			personenrichment.Cost{}, true, s.personEnrichmentTime()); err != nil {
+			failure.Cost, failure.Cost == (personenrichment.Cost{}), s.personEnrichmentTime()); err != nil {
 			return err
 		}
 		result, err := tx.ExecContext(ctx, `UPDATE person_enrichment_attempts
@@ -1966,6 +1969,9 @@ func validateSafeFailure(failure personenrichment.SafeFailure) error {
 	if !validPersonEnrichmentFailureClass(failure.Class) || failure.HTTPStatus < 0 || failure.HTTPStatus > 999 ||
 		len(strings.TrimSpace(failure.Message)) > 512 || len(strings.TrimSpace(failure.ProviderRequestID)) > 512 {
 		return errors.New("person enrichment safe failure is invalid")
+	}
+	if err := failure.Cost.Validate(); err != nil {
+		return fmt.Errorf("person enrichment safe failure cost: %w", err)
 	}
 	return nil
 }

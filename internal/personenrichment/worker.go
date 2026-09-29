@@ -568,12 +568,30 @@ func (w *Worker) retryWithNameVariant(
 	started, err := provider.Start(callCtx, retryRequest)
 	cancel()
 	if err != nil {
-		return Attempt{}, err
+		// The empty lookup was paid for whatever the retry did; carry its
+		// charge on the failure so the attempt's outcome records both.
+		return Attempt{}, withPriorCost(err, noEntity.Cost)
 	}
 	if started.Result != nil {
 		started.Result.Cost = combinedCost(noEntity.Cost, started.Result.Cost)
 	}
 	return started, nil
+}
+
+// withPriorCost adds an earlier call's charge to a failed retry's error. A
+// provider error keeps its class and gains the combined cost; any other
+// error becomes the uncertain-start failure it would have been classified
+// as, now carrying the charge.
+func withPriorCost(err error, prior Cost) error {
+	if prior.AmountMicros == 0 {
+		return err
+	}
+	if providerErr, ok := errors.AsType[*ProviderError](err); ok {
+		combined := *providerErr
+		combined.Cost = combinedCost(prior, providerErr.Cost)
+		return &combined
+	}
+	return &ProviderError{Class: FailureUncertainStart, Cost: prior}
 }
 
 // combinedCost sums two observed charges; a zero charge contributes nothing.
@@ -844,7 +862,9 @@ func classifyProviderFailure(err error) (SafeFailure, string) {
 		if class == FailureUncertainStart {
 			message = "provider start outcome is uncertain"
 		}
-		return safeFailure(class, providerErr.Status, providerErr.RequestID, message), providerErr.RetryAfter
+		failure := safeFailure(class, providerErr.Status, providerErr.RequestID, message)
+		failure.Cost = providerErr.Cost
+		return failure, providerErr.RetryAfter
 	}
 	return safeFailure(FailureUncertainStart, 0, "", "provider start outcome is uncertain"), ""
 }

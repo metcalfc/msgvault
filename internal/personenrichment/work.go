@@ -158,6 +158,10 @@ type SafeFailure struct {
 	HTTPStatus        int
 	ProviderRequestID string
 	Message           string
+	// Cost is what the provider charged for the calls this attempt made
+	// before failing, so a failed attempt still reaches the run and day
+	// counters. A zero cost means no charge was observed.
+	Cost Cost
 }
 
 type RetryUpdate struct {

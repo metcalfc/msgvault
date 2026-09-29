@@ -60,6 +60,9 @@ type ProviderError struct {
 	Status     int
 	Class      FailureClass
 	RetryAfter string
+	// Cost is the charge the provider reported for the failed call, when it
+	// reported one.
+	Cost Cost
 }
 
 func (e *ProviderError) Error() string {

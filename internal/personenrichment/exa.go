@@ -160,9 +160,11 @@ func (p *exaProvider) Start(ctx context.Context, request Request) (Attempt, erro
 		if costErr != nil {
 			cost = Cost{}
 		}
-		return Attempt{}, &NoEntityError{
-			Provider: exaFailure(status, FailureInvalidOutput, wire.RequestID, ""), Cost: cost,
+		provider := exaFailure(status, FailureInvalidOutput, wire.RequestID, "")
+		if providerErr, ok := errors.AsType[*ProviderError](provider); ok {
+			providerErr.Cost = cost
 		}
+		return Attempt{}, &NoEntityError{Provider: provider, Cost: cost}
 	}
 	if err != nil {
 		return Attempt{}, exaFailure(status, FailureInvalidOutput, wire.RequestID, "")

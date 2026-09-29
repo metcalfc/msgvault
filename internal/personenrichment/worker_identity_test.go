@@ -342,6 +342,85 @@ func runRequestsStarted(t *testing.T, f *workerFixture) int64 {
 	return started
 }
 
+func runCostCharged(t *testing.T, f *workerFixture) int64 {
+	t.Helper()
+	var charged int64
+	require.NoError(t, f.store.DB().QueryRowContext(t.Context(), f.store.Rebind(`
+		SELECT cost_charged_usd_micros FROM person_enrichment_run_counters WHERE run_id = ?`), f.run.ID).Scan(&charged))
+	return charged
+}
+
+func TestWorkerChargesBothCallsWhenTheNameVariantRetryFails(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	f := newWorkerFixture(t, "exa-retry-fails", func(cfg *personenrichment.ProviderConfig) {
+		cfg.Mode = "people"
+		cfg.AllowedIdentifiers = []personenrichment.IdentifierClass{
+			personenrichment.IdentifierName, personenrichment.IdentifierCurrentCompany,
+		}
+	})
+	seedNameAndCompany(t, f, "Test Q. User", "Example Labs")
+	names := make([]string, 0, 2)
+	factories := map[string]personenrichment.ProviderFactory{
+		f.config.Name: func(personenrichment.ProviderConfig, string) (personenrichment.Provider, error) {
+			return &functionProvider{
+				start: func(_ context.Context, request personenrichment.Request) (personenrichment.Attempt, error) {
+					names = append(names, request.Identity.Name)
+					if len(names) == 1 {
+						return personenrichment.Attempt{}, &personenrichment.NoEntityError{
+							Provider: &personenrichment.ProviderError{Class: personenrichment.FailureInvalidOutput, RequestID: "empty-1",
+								Cost: personenrichment.Cost{Currency: "USD", AmountMicros: 2000}},
+							Cost: personenrichment.Cost{Currency: "USD", AmountMicros: 2000},
+						}
+					}
+					return personenrichment.Attempt{}, &personenrichment.ProviderError{
+						Class: personenrichment.FailureInvalidOutput, RequestID: "variant-1",
+						Cost: personenrichment.Cost{Currency: "USD", AmountMicros: 3000},
+					}
+				},
+				poll: func(context.Context, personenrichment.Attempt) (personenrichment.Result, error) {
+					return personenrichment.Result{}, errors.New("unexpected poll")
+				},
+			}, nil
+		},
+	}
+	attempt := runPartialIdentityCase(t, f, factories, map[string]personenrichment.ProviderConfig{f.config.Name: f.config}, nil)
+	assert.Equal([]string{"test q. user", "test user"}, names)
+	assert.Equal("terminal", attempt.State)
+	require.NotNil(attempt.ActualCostUSDMicros)
+	assert.Equal(int64(5000), *attempt.ActualCostUSDMicros, "the attempt records both calls' charges")
+	assert.Equal(int64(5000), runCostCharged(t, f), "and both reach the run counters")
+	assert.Equal(int64(2), runRequestsStarted(t, f))
+
+	capped := newWorkerFixture(t, "exa-retry-capped-charge", func(cfg *personenrichment.ProviderConfig) {
+		cfg.Mode = "people"
+		cfg.AllowedIdentifiers = []personenrichment.IdentifierClass{
+			personenrichment.IdentifierName, personenrichment.IdentifierCurrentCompany,
+		}
+		cfg.MaxRequestsPerRun = 1
+	})
+	seedNameAndCompany(t, capped, "Test Q. User", "Example Labs")
+	cappedFactories := map[string]personenrichment.ProviderFactory{
+		capped.config.Name: func(personenrichment.ProviderConfig, string) (personenrichment.Provider, error) {
+			return &functionProvider{
+				start: func(context.Context, personenrichment.Request) (personenrichment.Attempt, error) {
+					return personenrichment.Attempt{}, &personenrichment.NoEntityError{
+						Provider: &personenrichment.ProviderError{Class: personenrichment.FailureInvalidOutput, RequestID: "empty-2",
+							Cost: personenrichment.Cost{Currency: "USD", AmountMicros: 2000}},
+						Cost: personenrichment.Cost{Currency: "USD", AmountMicros: 2000},
+					}
+				},
+				poll: func(context.Context, personenrichment.Attempt) (personenrichment.Result, error) {
+					return personenrichment.Result{}, errors.New("unexpected poll")
+				},
+			}, nil
+		},
+	}
+	cappedAttempt := runPartialIdentityCase(t, capped, cappedFactories, map[string]personenrichment.ProviderConfig{capped.config.Name: capped.config}, nil)
+	assert.Equal("terminal", cappedAttempt.State)
+	assert.Equal(int64(2000), runCostCharged(t, capped), "a skipped retry still charges the empty lookup")
+}
+
 func TestWorkerRetriesAnEmptyLookupOnceWithANameVariantUnderBudget(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
