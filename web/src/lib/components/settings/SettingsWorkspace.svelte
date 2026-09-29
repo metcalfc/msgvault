@@ -626,7 +626,7 @@
           {/if}
           {#if error}<Notice tone="error" message={error} />{/if}
           {#if pendingRestart}
-            <Notice tone="info" toneLabel="Saved" message="Saved. Restart the daemon to apply these changes." />
+            <Notice tone="info" toneLabel="Saved" message="Restart the daemon to apply these changes." />
           {/if}
         </div>
 

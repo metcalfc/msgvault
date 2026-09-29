@@ -300,7 +300,10 @@ describe('SettingsWorkspace', () => {
     await expect(request.clone().json()).resolves.toEqual({
       updates: [{ key: 'web.theme', value: { string: 'dark' } }]
     });
-    expect((await screen.findByText('Restart the daemon to apply these changes.', { exact: false })).textContent).toContain('Saved.');
+    // The Notice's tone label says "Saved" once; the message does not repeat it.
+    const pending = (await screen.findByText('Restart the daemon to apply these changes.')).closest('.kit-notice');
+    expect(pending?.textContent).toContain('Saved');
+    expect(pending?.textContent).not.toContain('Saved.');
     expect(screen.getByText('No unsaved changes')).toBeDefined();
   });
 
