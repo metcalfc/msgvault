@@ -54,11 +54,17 @@ export function humanizeDate(value: string | null | undefined, now: Date = new D
 }
 
 /** Kit's readable timestamp ("Aug 29, 01:00") for a stored ISO instant on a
- * detail row. Empty input reads as "—"; unparseable input passes through so
- * a raw value stays visible instead of throwing on an invalid date. */
-export function stampText(value: string | null | undefined): string {
+ * detail row, carrying the year once it differs from now's ("Aug 29, 2024,
+ * 01:00"). Empty input reads as "—"; unparseable input passes through so a
+ * raw value stays visible instead of throwing on an invalid date. */
+export function stampText(value: string | null | undefined, now: Date = new Date()): string {
   if (!value) return '—';
-  return Number.isNaN(new Date(value).valueOf()) ? value : formatTimestamp(value);
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return value;
+  if (date.getFullYear() === now.getFullYear()) return formatTimestamp(value);
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  }).format(date);
 }
 
 /** Short calendar date for crumbs and bounds: "Sep 22", or "Sep 22, 2024"

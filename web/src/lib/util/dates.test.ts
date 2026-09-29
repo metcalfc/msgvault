@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { compactDate, humanizeDate, shortDate } from './dates';
+import { compactDate, humanizeDate, shortDate, stampText } from './dates';
 
 const now = new Date('2026-07-19T12:00:00Z');
 
@@ -63,6 +63,21 @@ describe('humanizeDate', () => {
     expect(humanizeDate(undefined, now)).toBe('—');
     expect(humanizeDate('', now)).toBe('—');
     expect(humanizeDate('not a date', now)).toBe('not a date');
+  });
+});
+
+describe('stampText', () => {
+  // Stamps render in the runner's zone, so these assert the shape and the
+  // presence or absence of the year rather than one exact clock time.
+  it('carries the year only when it differs from now', () => {
+    expect(stampText('2026-06-15T12:00:00Z', now)).toMatch(/^Jun 1[456], \d{2}:\d{2}/);
+    expect(stampText('2026-06-15T12:00:00Z', now)).not.toContain('2026');
+    expect(stampText('2024-01-15T12:00:00Z', now)).toMatch(/^Jan 1[456], 2024, \d{2}:\d{2}/);
+  });
+
+  it('renders empty input as a dash and keeps unparseable input visible', () => {
+    expect(stampText(undefined, now)).toBe('—');
+    expect(stampText('not a date', now)).toBe('not a date');
   });
 });
 
