@@ -635,6 +635,7 @@ func textConversationRowsFromGenerated(rows []generated.TextConversationRow) []q
 			ParticipantCount: row.ParticipantCount,
 			LastMessageAt:    lastMessageAt,
 			LastPreview:      row.LastPreview,
+			ParticipantLabel: stringValue(row.ParticipantLabel),
 		}
 	}
 	return out

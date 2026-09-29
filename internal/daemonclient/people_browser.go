@@ -253,6 +253,12 @@ func (b *PeopleBrowser) listAttributes(
 			Current:    current,
 		}
 	}
+	// Record references are named in one lookup; a daemon without the
+	// entity-labels endpoint leaves them unnamed rather than failing.
+	if ids := attributes.RecordReferencePersonIDs(); len(ids) > 0 {
+		labels, _ := b.engine.store.EntityLabels(ctx, store.EntityLabelRequest{PersonIDs: ids})
+		attributes.RecordLabels = labels.People
+	}
 	return attributes, nil
 }
 

@@ -76,6 +76,25 @@ type SearchPage struct {
 type Attributes struct {
 	PersonID int64
 	Groups   []AttributeGroup
+	// RecordLabels names the people that record-reference values point
+	// at, keyed by person ID. A missing entry means no name was available;
+	// callers must not show the ID in its place.
+	RecordLabels map[int64]string
+}
+
+// RecordReferencePersonIDs returns the person IDs referenced by the current
+// record-reference values, for one label lookup.
+func (a *Attributes) RecordReferencePersonIDs() []int64 {
+	var ids []int64
+	for _, group := range a.Groups {
+		for _, value := range group.Current {
+			if value.Value.RecordType != nil && *value.Value.RecordType == string(store.AttributeObjectPerson) &&
+				value.Value.RecordID != nil {
+				ids = append(ids, *value.Value.RecordID)
+			}
+		}
+	}
+	return ids
 }
 
 type AttributeGroup struct {

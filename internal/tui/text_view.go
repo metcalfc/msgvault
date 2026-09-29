@@ -260,10 +260,7 @@ func (m Model) textConversationsView() string {
 			indicator = m.styles.cursorRow.Render("\u25b6  ")
 		}
 
-		title := textutil.SanitizeTerminal(conv.Title)
-		if title == "" {
-			title = fmt.Sprintf("(conv %d)", conv.ConversationID)
-		}
+		title := conversationDisplayTitle(conv)
 		title = truncateRunes(title, nameWidth)
 		title = fmt.Sprintf("%-*s", nameWidth, title)
 

@@ -784,13 +784,9 @@ func (m Model) peopleInboxLines() []string {
 			if i == m.peopleState.cursor {
 				indicator = " ▶ "
 			}
-			title := conversation.Title
-			if strings.TrimSpace(title) == "" {
-				title = fmt.Sprintf("Conversation %d", conversation.ConversationID)
-			}
 			lines = append(lines, fmt.Sprintf(
 				"%s%s  %d messages  %s", indicator,
-				textutil.SanitizeTerminal(title), conversation.MessageCount,
+				conversationDisplayTitle(conversation), conversation.MessageCount,
 				formatPeopleTime(conversation.LastMessageAt),
 			))
 		}

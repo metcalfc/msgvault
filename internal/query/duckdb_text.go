@@ -288,7 +288,19 @@ func (e *DuckDBEngine) listConversations(
 		}
 		results = append(results, row)
 	}
-	return results, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	_ = rows.Close()
+	// Untitled conversations are named from the live identity tables, the
+	// same lookup the SQLite engine uses; without a SQLite handle they stay
+	// unlabelled rather than falling back to an ID.
+	if e.sqliteEngine != nil {
+		if err := e.sqliteEngine.fillConversationParticipantLabels(ctx, results); err != nil {
+			return nil, err
+		}
+	}
+	return results, nil
 }
 
 // textAggViewDef returns the aggregate query definition for a text view type.

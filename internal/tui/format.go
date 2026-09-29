@@ -10,6 +10,7 @@ import (
 	"github.com/mattn/go-runewidth"
 	"go.kenn.io/msgvault/internal/query"
 	"go.kenn.io/msgvault/internal/search"
+	"go.kenn.io/msgvault/internal/textutil"
 )
 
 // highlightTerms applies highlight styling to all occurrences of search terms in text.
@@ -308,4 +309,20 @@ func truncateToWidth(s string, maxWidth int) string {
 func skipToWidth(s string, skipWidth int) string {
 	// Cut from skipWidth to a large number (beyond any reasonable line width)
 	return ansi.Cut(s, skipWidth, 10000)
+}
+
+// untitledConversationLabel is shown for a conversation with neither a title
+// nor a named participant. A conversation ID is never a label.
+const untitledConversationLabel = "Untitled conversation"
+
+// conversationDisplayTitle returns a terminal-safe title for a conversation
+// row: its title, else the names of its other participants, else a neutral
+// placeholder.
+func conversationDisplayTitle(row query.ConversationRow) string {
+	for _, candidate := range []string{row.Title, row.ParticipantLabel} {
+		if title := strings.TrimSpace(textutil.SanitizeTerminal(candidate)); title != "" {
+			return title
+		}
+	}
+	return untitledConversationLabel
 }

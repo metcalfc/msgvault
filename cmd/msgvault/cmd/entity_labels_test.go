@@ -3,18 +3,22 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/api"
 	"go.kenn.io/msgvault/internal/config"
+	"go.kenn.io/msgvault/internal/daemonclient"
+	"go.kenn.io/msgvault/internal/query"
 	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/testutil"
 )
@@ -30,13 +34,15 @@ type entityLabelTestDaemon struct {
 func newEntityLabelTestDaemon(t *testing.T) entityLabelTestDaemon {
 	t.Helper()
 	st := testutil.NewTestStore(t)
+	engine := query.NewEngine(st.DB(), st.IsPostgreSQL())
+	t.Cleanup(func() { _ = engine.Close() })
 	dataDir := t.TempDir()
 	configured := config.NewDefaultConfig()
 	configured.HomeDir = dataDir
 	configured.Data.DataDir = dataDir
 	configured.Server.APIKey = "synthetic-entity-label-key"
 	server := api.NewServerWithOptions(api.ServerOptions{
-		Config: configured, Store: &storeAPIAdapter{store: st},
+		Config: configured, Store: &storeAPIAdapter{store: st}, Engine: engine,
 		Logger: slog.New(slog.DiscardHandler),
 	})
 	httpServer := httptest.NewServer(server.Router())
@@ -249,4 +255,55 @@ func TestDaemonEntityLabelsBatchesPastTheServerCap(t *testing.T) {
 	require.NoError(t, err, "a request over the per-kind cap is split, not rejected")
 	assert.Len(t, labels.Participants, total)
 	assert.Equal(t, "Batch Person "+strconv.Itoa(total-1), labels.Participants[ids[total-1]])
+}
+
+// The TUI reads through the daemon client in daemon mode, so these cover the
+// labels it shows arriving over the production API.
+func TestDaemonClientCarriesLabelsTheTUIShows(t *testing.T) {
+	daemon := newEntityLabelTestDaemon(t)
+	owner, _ := daemon.person(t, "kai@example.com", "Kai Example")
+	referenced, _ := daemon.person(t, "lane@example.com", "Lane Example")
+	_, err := daemon.store.CreateAttributeDefinitionContext(t.Context(), store.AttributeDefinitionInput{
+		UniversalID: "test-mentor", ObjectType: store.AttributeObjectPerson, Slug: "mentor",
+		Label: "Mentor", ValueType: store.AttributeValueRecordReference,
+		FieldType: store.AttributeFieldPerson, RecordTarget: new(personValue),
+		Cardinality: store.AttributeCardinalitySingle, Ownership: store.AttributeOwnershipUser,
+		UICreatable: true, UIEditable: true, APIMutable: true, IsAudited: true, IsDeletable: true,
+	})
+	require.NoError(t, err)
+	_, err = daemon.store.SetPersonAttributeValueContext(t.Context(), store.PersonAttributeValueInput{
+		PersonID: owner.ID, DefinitionSlug: "mentor", Source: store.ProvenanceUser,
+		Value: store.AttributeValue{
+			Type: store.AttributeValueRecordReference, RecordType: new(personValue), RecordID: &referenced.ID,
+		},
+	})
+	require.NoError(t, err)
+
+	source, err := daemon.store.GetOrCreateSource("whatsapp", "+15550000000")
+	require.NoError(t, err)
+	conversationID, err := daemon.store.EnsureConversation(source.ID, "untitled-chat", "")
+	require.NoError(t, err)
+	senderID, err := daemon.store.EnsureParticipantByIdentifier("email", "morgan@example.com", "Morgan Example")
+	require.NoError(t, err)
+	_, err = daemon.store.UpsertMessage(&store.Message{
+		SourceID: source.ID, ConversationID: conversationID, SourceMessageID: "untitled-1",
+		MessageType: "whatsapp", SenderID: sql.NullInt64{Int64: senderID, Valid: true},
+		SentAt: sql.NullTime{Time: time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC), Valid: true},
+	})
+	require.NoError(t, err)
+
+	client, _, err := OpenHTTPStore(daemon.ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = client.Close() })
+	browser := daemonclient.NewPeopleBrowser(daemonclient.NewEngineAdapter(client))
+
+	attributes, err := browser.ListAttributes(t.Context(), owner.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Lane Example", attributes.RecordLabels[referenced.ID])
+
+	page, err := browser.ListConversations(t.Context(), query.TextFilter{})
+	require.NoError(t, err)
+	require.Len(t, page.Rows, 1)
+	assert.Empty(t, page.Rows[0].Title)
+	assert.Equal(t, "Morgan Example", page.Rows[0].ParticipantLabel)
 }

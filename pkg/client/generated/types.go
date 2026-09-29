@@ -12867,6 +12867,7 @@ type TextConversationRow struct {
 	LastPreview      string  `json:"last_preview" validate:"required"`
 	MessageCount     int64   `json:"message_count"`
 	ParticipantCount int64   `json:"participant_count"`
+	ParticipantLabel *string `json:"participant_label,omitzero"`
 	SourceType       string  `json:"source_type" validate:"required"`
 	Title            string  `json:"title" validate:"required"`
 }

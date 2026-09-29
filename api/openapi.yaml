@@ -13540,6 +13540,8 @@ components:
         participant_count:
           format: int64
           type: integer
+        participant_label:
+          type: string
         source_type:
           type: string
         title:

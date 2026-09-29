@@ -8,6 +8,7 @@ export interface TextConversationRow {
   last_preview: string;
   message_count: number;
   participant_count: number;
+  participant_label?: string;
   source_type: string;
   title: string;
   [key: string]: unknown;

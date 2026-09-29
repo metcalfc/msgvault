@@ -2182,6 +2182,9 @@ type TextConversationRow struct {
 	ParticipantCount int64  `json:"participant_count"`
 	LastMessageAt    string `json:"last_message_at,omitempty"`
 	LastPreview      string `json:"last_preview"`
+	// ParticipantLabel names an untitled conversation by its other
+	// participants; clients show it instead of the conversation ID.
+	ParticipantLabel string `json:"participant_label,omitempty"`
 }
 
 type TextConversationsResponse struct {
@@ -2727,6 +2730,7 @@ func toTextConversationRow(row query.ConversationRow) TextConversationRow {
 		ParticipantCount: row.ParticipantCount,
 		LastMessageAt:    lastMessageAt,
 		LastPreview:      row.LastPreview,
+		ParticipantLabel: row.ParticipantLabel,
 	}
 }
 

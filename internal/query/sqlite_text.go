@@ -44,10 +44,19 @@ func (e *SQLiteEngine) TextSnapshotRevision(
 func (e *SQLiteEngine) ListConversationsSnapshot(
 	ctx context.Context, filter TextFilter,
 ) ([]ConversationRow, string, error) {
-	return readSQLiteTextSnapshot(
+	page, revision, err := readSQLiteTextSnapshot(
 		ctx, e, TextSnapshotScope{Filter: filter}, 100, true,
 		scanTextConversationSnapshotRow,
 	)
+	if err != nil {
+		return nil, "", err
+	}
+	// The label is display-only and derived from identity tables, so it is
+	// resolved for the page after the snapshot and stays out of the revision.
+	if err := e.fillConversationParticipantLabels(ctx, page); err != nil {
+		return nil, "", err
+	}
+	return page, revision, nil
 }
 
 // ListConversationMessagesSnapshot returns one timeline page and the revision
@@ -592,7 +601,14 @@ func (e *SQLiteEngine) ListConversations(
 		}
 		results = append(results, row)
 	}
-	return results, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	_ = rows.Close()
+	if err := e.fillConversationParticipantLabels(ctx, results); err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 // textAggSQLiteDimension returns the dimension definition for a text aggregate view.

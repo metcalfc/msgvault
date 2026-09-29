@@ -558,6 +558,21 @@ func peopleAttributeDefinitionSupported(definition store.AttributeDefinition) bo
 	return false
 }
 
+// peopleAttributeDisplayValue renders a value for the attributes list. A
+// record reference shows the referenced person's name; the ID is never a
+// label.
+func peopleAttributeDisplayValue(value store.AttributeValue, recordLabels map[int64]string) string {
+	if value.Type == store.AttributeValueRecordReference {
+		if value.RecordID != nil {
+			if label := strings.TrimSpace(recordLabels[*value.RecordID]); label != "" {
+				return label
+			}
+		}
+		return "Unknown person"
+	}
+	return peopleAttributeValueString(value)
+}
+
 func peopleAttributeValueString(value store.AttributeValue) string {
 	switch value.Type {
 	case store.AttributeValueText:
@@ -664,7 +679,7 @@ func (m Model) peopleAttributesLines() []string {
 		}
 		value := group.Current[selection.valueIndex]
 		lines = append(lines, fmt.Sprintf("%s  %s", marker,
-			textutil.SanitizeTerminal(peopleAttributeValueString(value.Value))))
+			textutil.SanitizeTerminal(peopleAttributeDisplayValue(value.Value, m.peopleState.attributes.RecordLabels))))
 	}
 	return lines
 }

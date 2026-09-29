@@ -49,6 +49,10 @@ type ConversationRow struct {
 	ParticipantCount int64
 	LastMessageAt    time.Time
 	LastPreview      string
+	// ParticipantLabel names an untitled conversation by its other
+	// participants (for example "Avery, Blake +1"). It is empty when the
+	// conversation has a title or nobody in it has a name or identifier.
+	ParticipantLabel string
 }
 
 // TextSortField represents fields available for sorting in Texts mode.
