@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
+import { entityLabelsResponse } from '../../../test/entity-labels';
 import type { ExploreFilter } from '../../explore/models';
 import { parseExploreURLState } from '../../explore/state.svelte';
 import { chooseSelectOption, openTypeahead } from '../../../test/kit-ui';
@@ -173,9 +174,12 @@ describe('ContextBar operator and filter chips', () => {
 
   it('gives each person in a participant filter a chip that removes only that person', async () => {
     const onFiltersChange = vi.fn();
+    const requests: string[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
-      const id = new URL(input instanceof Request ? input.url : String(input)).pathname.split('/').pop();
-      return Response.json({ id: Number(id), display_label: id === '4' ? 'Avery Example' : 'Blake Example' });
+      const request = input instanceof Request ? input : new Request(input);
+      requests.push(request.url);
+      return entityLabelsResponse(request, { participant: { 4: 'Avery Example', 9: 'Blake Example' } })
+        ?? Response.json({}, { status: 404 });
     });
     render(ContextBar, baseProps({
       client: createAPIClient(fetchFn), onFiltersChange,
@@ -184,6 +188,8 @@ describe('ContextBar operator and filter chips', () => {
 
     expect(await screen.findByText('Person: Avery Example')).toBeDefined();
     expect(await screen.findByText('Person: Blake Example')).toBeDefined();
+    // Both chips are named by one batched lookup.
+    expect(requests.filter((url) => new URL(url).pathname === '/api/v1/entity-labels')).toHaveLength(1);
     await fireEvent.click(screen.getByRole('button', { name: 'Remove Person: Avery Example' }));
     expect(onFiltersChange).toHaveBeenLastCalledWith([{ dimension: 'participant', values: ['9'] }]);
   });

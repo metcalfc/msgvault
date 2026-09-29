@@ -66,7 +66,8 @@
 
   function select(value: string): void {
     if (!value) return;
-    onpick(value, labels.get(value) ?? `Person #${value}`);
+    // An unknown pick passes no name; the filter chip then asks the resolver.
+    onpick(value, labels.get(value) ?? '');
   }
 </script>
 

@@ -1,32 +1,35 @@
 import { SvelteMap } from 'svelte/reactivity';
 
-import { getParticipant, listSourceStatus } from '../api/generated/api/api';
+import { listSourceStatus } from '../api/generated/api/api';
 import type { APIClient } from '../api/client';
 import type { SourceStatus } from '../api/generated/models';
+import { UNKNOWN_LABELS, entityNames } from '../names/entity-names.svelte';
 import type { ExploreFilter } from './models';
 
 /**
  * Human names for the IDs that participant and source filters carry, so a
- * chip reads "Person: Avery Example" instead of "participant: 42". Lookups
- * are lazy and remembered; an unresolved ID keeps a neutral fallback.
+ * chip reads "Person: Avery Example" instead of "participant: 42". Participant
+ * names come from the shared entity-name resolver; a label never shows the ID.
  */
 export class FilterLabels {
   readonly participants = new SvelteMap<string, string>();
   readonly sources = new SvelteMap<string, string>();
   sourceOptions = $state<SourceStatus[]>([]);
-  private requestedParticipants = new Set<string>();
   private sourcesRequested = false;
 
   constructor(private readonly client: APIClient) {}
 
   /** Remembers a label the caller already knows (a typeahead pick). */
   rememberParticipant(id: string, label: string): void {
-    this.participants.set(id, label);
-    this.requestedParticipants.add(id);
+    const name = label.trim();
+    if (!name) return;
+    this.participants.set(id, name);
   }
 
   participantLabel(id: string): string {
-    return this.participants.get(id) ?? `Person #${id}`;
+    const remembered = this.participants.get(id);
+    if (remembered) return remembered;
+    return /^\d+$/.test(id) ? entityNames(this.client).label('participant', Number(id)) : UNKNOWN_LABELS.participant;
   }
 
   /** `hint` is a name the caller already has on screen (a loaded row's
@@ -39,7 +42,11 @@ export class FilterLabels {
    * panel's account list (loadSources), not per chip. */
   ensure(filters: readonly ExploreFilter[]): void {
     for (const filter of filters) {
-      if (filter.dimension === 'participant') filter.values.forEach((id) => this.loadParticipant(id));
+      if (filter.dimension !== 'participant') continue;
+      const ids = filter.values.filter((id) => /^\d+$/.test(id) && !this.participants.has(id)).map(Number);
+      entityNames(this.client).load('participant', ids).catch(() => {
+        // The chip shows the resolver's "unavailable" label until a later render retries.
+      });
     }
   }
 
@@ -56,19 +63,6 @@ export class FilterLabels {
       })
       .catch(() => {
         this.sourcesRequested = false;
-      });
-  }
-
-  private loadParticipant(id: string): void {
-    if (this.requestedParticipants.has(id) || !/^\d+$/.test(id)) return;
-    this.requestedParticipants.add(id);
-    void getParticipant({ id: Number(id) }, this.client)
-      .then(({ data }) => {
-        const label = data?.display_name?.trim() || data?.display_label?.trim();
-        if (label) this.participants.set(id, label);
-      })
-      .catch(() => {
-        // The chip keeps its neutral fallback label.
       });
   }
 }
