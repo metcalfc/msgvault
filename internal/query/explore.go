@@ -227,23 +227,79 @@ func (e *DuckDBEngine) labelExploreCounterparts(ctx context.Context, rows []Entr
 	if err != nil {
 		return err
 	}
+	anchors := make([]any, 0, len(rows))
+	for _, row := range rows {
+		if row.CounterpartParticipantID != nil && row.AnchorMessageID != nil {
+			anchors = append(anchors, *row.AnchorMessageID)
+		}
+	}
+	senders, err := e.exploreOutboundSenderParticipantIDs(ctx, anchors)
+	if err != nil {
+		return err
+	}
 	for i := range rows {
 		if rows[i].CounterpartParticipantID == nil {
 			continue
 		}
 		counterpart := *rows[i].CounterpartParticipantID
 		rows[i].CounterpartLabel = labels[counterpart]
-		// Everyone else on the entry: not the counterpart, and not the
-		// owner when the owner is a participant.
+		// Everyone else on the entry: not the counterpart, and none of the
+		// owner identities the counterpart column skips — the global owner
+		// clusters and, for an outbound message, its sender's cluster.
+		var sender map[int64]bool
+		if rows[i].AnchorMessageID != nil {
+			sender = senders[*rows[i].AnchorMessageID]
+		}
 		others := make(map[int64]bool)
 		for _, id := range rows[i].ParticipantIDs {
-			if id != counterpart && !owners[id] {
+			if id != counterpart && !owners[id] && !sender[id] {
 				others[id] = true
 			}
 		}
 		rows[i].OtherParticipantCount = int64(len(others))
 	}
 	return nil
+}
+
+// exploreOutboundSenderParticipantIDs maps each outbound anchor message to
+// the participant IDs in its owner identity's cluster: the message-relative
+// owner that the counterpart column also skips (see buildExploreSQL).
+func (e *DuckDBEngine) exploreOutboundSenderParticipantIDs(ctx context.Context, anchors []any) (map[int64]map[int64]bool, error) {
+	senders := make(map[int64]map[int64]bool)
+	if len(anchors) == 0 {
+		return senders, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(anchors)), ", ")
+	senderRows, err := e.db.QueryContext(ctx, `
+	WITH clusters AS (
+		SELECT participant_id, canonical_id FROM read_parquet('`+quoteIdentitySQLPath(e.parquetPath(datasetParticipantClusters))+`')
+	), canon AS (
+		SELECT p.id AS participant_id, COALESCE(c.canonical_id, p.id) AS canonical_id
+		FROM participants p LEFT JOIN clusters c ON c.participant_id = p.id
+	)
+	SELECT m.id, member.participant_id
+	FROM messages m
+	JOIN canon owner ON owner.participant_id = m.owner_participant_id
+	JOIN canon member ON member.canonical_id = owner.canonical_id
+	WHERE m.is_from_me AND m.id IN (`+placeholders+`)`, anchors...)
+	if err != nil {
+		return nil, fmt.Errorf("list explore outbound senders: %w", err)
+	}
+	defer func() { _ = senderRows.Close() }()
+	for senderRows.Next() {
+		var messageID, participantID int64
+		if err := senderRows.Scan(&messageID, &participantID); err != nil {
+			return nil, fmt.Errorf("scan explore outbound sender: %w", err)
+		}
+		if senders[messageID] == nil {
+			senders[messageID] = make(map[int64]bool)
+		}
+		senders[messageID][participantID] = true
+	}
+	if err := senderRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate explore outbound senders: %w", err)
+	}
+	return senders, nil
 }
 
 // exploreOwnerParticipantIDs returns every participant ID in an owner's

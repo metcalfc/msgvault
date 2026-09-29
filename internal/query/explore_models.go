@@ -200,7 +200,9 @@ type EntryRow struct {
 	// participant, its identity cluster, or the identity index has one.
 	CounterpartLabel string `json:"counterpart_label,omitempty"`
 	// OtherParticipantCount counts the entry's participants other than the
-	// counterpart and the archive owner; set only with a counterpart.
+	// counterpart and the owner identities the counterpart skips (global
+	// owner clusters and an outbound message's sender cluster); set only
+	// with a counterpart.
 	OtherParticipantCount int64 `json:"other_participant_count,omitempty"`
 }
 

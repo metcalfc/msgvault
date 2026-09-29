@@ -1376,6 +1376,36 @@ func TestExploreOtherParticipantCountExcludesCounterpartAndOwner(t *testing.T) {
 	assert.Equal(int64(2), counts["Without owner"])
 }
 
+// TestExploreOtherParticipantCountSkipsOutboundSenderAlias pins that an
+// outbound message's sender identity (the message-relative owner the
+// counterpart column skips) is not counted as another participant, even
+// when that alias is outside the global owner set.
+func TestExploreOtherParticipantCountSkipsOutboundSenderAlias(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	b := NewTestDataBuilder(t)
+	srcID := b.AddSource("owner@example.com")
+	ownerID := b.AddParticipant("owner@example.com", "example.com", "Owner")
+	b.AddOwnerParticipant(srcID, ownerID)
+	alias := b.AddParticipant("alias@example.org", "example.org", "Owner Alias")
+	bob := b.AddParticipant("bob@example.com", "example.com", "Bob")
+	carol := b.AddParticipant("carol@example.com", "example.com", "Carol")
+
+	msgID := b.AddMessage(MessageOpt{SourceID: srcID, Subject: "From the alias", IsFromMe: true, SenderID: &alias,
+		SentAt: time.Date(2026, 7, 12, 9, 0, 0, 0, time.UTC)})
+	b.AddFrom(msgID, alias, "Owner Alias")
+	b.AddTo(msgID, bob, "Bob")
+	b.AddTo(msgID, carol, "Carol")
+
+	response, err := b.BuildEngine().Explore(context.Background(), ExploreRequest{})
+	require.NoError(err)
+	require.Len(response.Rows, 1)
+	require.NotNil(response.Rows[0].CounterpartParticipantID)
+	assert.Equal(min(bob, carol), *response.Rows[0].CounterpartParticipantID)
+	assert.Equal(int64(1), response.Rows[0].OtherParticipantCount,
+		"only the other recipient counts; the outbound sender alias is the owner")
+}
+
 // TestExploreCounterpartLabelSkipsFallbackIndexLabel pins that an identity
 // index label marked partial_label (a fallback such as "Unknown person #N")
 // never outranks a named member of the counterpart's cluster.
