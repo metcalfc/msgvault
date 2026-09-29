@@ -79,7 +79,7 @@
 {#snippet body()}
   {#if controller.metricsLoading}<p role="status">Loading meeting metrics…</p>{/if}
   {#each errors as error (error.message)}<p role="alert">{error.message}</p>{/each}
-  {#if canReload}<Button label="Reload meeting activity" size="sm" surface="outline" onclick={reload} />{/if}
+  {#if canReload}<Button label="Reload meeting activity" size="sm" surface="soft" onclick={reload} />{/if}
   {#if controller.metrics}<MeetingMetrics metrics={controller.metrics} />{/if}
   {#if showActionFilters}
     <form class="action-filters" onsubmit={applyFilters}>
@@ -92,7 +92,7 @@
     <p>{controller.actions.total_count.toLocaleString()} matching action items</p>
     <MeetingActions {client} evidence={controller.actions} {onOpenMeeting} />
     {#if controller.actions.next_cursor && !controller.actionsError}
-      <Button label="Load more action items" size="sm" surface="outline" disabled={controller.actionsLoading} onclick={() => void controller.loadMore()} />
+      <Button label="Load more action items" size="sm" surface="soft" disabled={controller.actionsLoading} onclick={() => void controller.loadMore()} />
     {/if}
   {/if}
   {#if controller.actionsLoading}<p role="status">Loading action evidence…</p>{/if}

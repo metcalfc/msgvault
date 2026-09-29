@@ -71,9 +71,9 @@
       <div role="alert" class="notice page-error">
         <span>{pageError}</span>
         {#if pageRecovery === 'retry' && hasMore}
-          <Button size="sm" surface="outline" label="Retry loading more people" onclick={onLoadMore} />
+          <Button size="sm" surface="soft" label="Retry loading more people" onclick={onLoadMore} />
         {:else if pageRecovery === 'reload'}
-          <Button size="sm" surface="outline" label="Reload directory" onclick={onReload} />
+          <Button size="sm" surface="soft" label="Reload directory" onclick={onReload} />
         {/if}
       </div>
     {/if}
@@ -135,7 +135,7 @@
       </div>
     {/if}
     {#if hasMore && rows.length > 0 && pageRecovery !== 'reload'}
-      <div class="more"><Button label={loadingMore ? 'Loading more…' : 'Load more people'} disabled={loadingMore} onclick={onLoadMore} /></div>
+      <div class="more"><Button surface="soft" label={loadingMore ? 'Loading more…' : 'Load more people'} disabled={loadingMore} onclick={onLoadMore} /></div>
     {/if}
   {/if}
 </section>

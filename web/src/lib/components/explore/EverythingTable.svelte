@@ -553,9 +553,9 @@
           <div class="page-error" role="alert">
             <span>{pageError}</span>
             {#if hasMore}
-              <Button size="sm" surface="outline" label="Retry loading more" onclick={() => void onLoadMore?.()} />
+              <Button size="sm" surface="soft" label="Retry loading more" onclick={() => void onLoadMore?.()} />
             {:else}
-              <Button size="sm" surface="outline" label="Reload view" onclick={() => onRetry?.()} />
+              <Button size="sm" surface="soft" label="Reload view" onclick={() => onRetry?.()} />
             {/if}
           </div>
         </div></div>

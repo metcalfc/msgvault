@@ -25,8 +25,8 @@
   } from '../../api/generated/api/api';
   import {
     Button,
-    Card,
     Chip,
+    Notice,
     SelectDropdown,
     SettingsLayout,
     SettingsSection,
@@ -453,7 +453,7 @@
       ? 'No unsaved changes'
       : `${dirtyCount} unsaved ${dirtyCount === 1 ? 'change' : 'changes'}${incompleteDrafts > 0 ? '. Enter a number to save.' : ''}`}
   </span>
-  <Button label="Discard" disabled={saving || dirtyCount === 0} onclick={discardChanges} />
+  <Button label="Discard" surface="soft" disabled={saving || dirtyCount === 0} onclick={discardChanges} />
   <Button
     disabled={saving || dirtyCount === 0 || incompleteDrafts > 0}
     tone="success"
@@ -619,16 +619,14 @@
       {#snippet panel(activeId)}
         <div class="notices">
           {#if plainHTTPWarning}
-            <p class="notice notice--warning" role="alert">
-              This browser session uses plain HTTP, so its cookie cannot use the Secure flag. Prefer HTTPS for remote
-              access.
-            </p>
+            <Notice
+              tone="warning"
+              message="This browser session uses plain HTTP, so its cookie cannot use the Secure flag. Prefer HTTPS for remote access."
+            />
           {/if}
-          {#if error}<p class="notice notice--error" role="alert">{error}</p>{/if}
+          {#if error}<Notice tone="error" message={error} />{/if}
           {#if pendingRestart}
-            <p class="notice notice--pending" role="status">
-              <strong>Saved.</strong> Restart the daemon to apply these changes.
-            </p>
+            <Notice tone="info" toneLabel="Saved" message="Saved. Restart the daemon to apply these changes." />
           {/if}
         </div>
 
@@ -669,13 +667,11 @@
                 </SettingsSection>
               {/each}
             {:else}
-              <Card padding="md">
-                <div class="rows">
-                  {#each group.settings as setting (setting.key)}
-                    {@render row(setting, group)}
-                  {/each}
-                </div>
-              </Card>
+              <div class="rows">
+                {#each group.settings as setting (setting.key)}
+                  {@render row(setting, group)}
+                {/each}
+              </div>
             {/if}
 
             {#if group.id === 'enrichment'}
@@ -726,9 +722,21 @@
   .settings :global(.kit-settings__nav-item--active:hover) {
     color: color-mix(in srgb, var(--accent-blue) 92%, var(--text-primary));
   }
-  /* Section titles sit one step above row labels so the two levels read apart. */
-  .settings :global(.kit-settings-section__title) {
-    font-size: var(--font-size-lg);
+  /* Kit's SettingsSection is a bordered card; on the app's settings pages a
+   * section is a title ruled by a hairline over its rows, so the card chrome
+   * is removed app-side (for the setting groups and the CardDAV forms alike)
+   * and the title sits at the section-title voice. */
+  .settings :global(.kit-settings-section) {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .settings :global(.kit-settings-section__header) {
+    padding: 0 0 var(--space-2);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .settings :global(.kit-settings-section__body) {
+    padding: var(--space-5) 0 var(--space-3);
   }
   .state {
     padding: var(--space-6);
@@ -741,23 +749,6 @@
   .notices {
     display: grid;
     gap: var(--space-3);
-  }
-  .notice {
-    margin: 0;
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--status-warning-ink);
-    border-radius: var(--radius-md);
-    background: var(--status-warning-bg);
-    color: var(--status-warning-ink);
-    font-size: var(--font-size-sm);
-  }
-  .notice strong {
-    font-weight: 600;
-  }
-  .notice--error {
-    border-color: var(--status-error-ink);
-    background: var(--status-error-bg);
-    color: var(--status-error-ink);
   }
 
   .category {

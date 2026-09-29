@@ -331,9 +331,9 @@
           <div role="row"><div role="gridcell" aria-colspan="5"><div class="progress progress--error" role="alert">
             <span>{pageError}</span>
             {#if hasMore}
-              <Button size="sm" label="Retry loading more files" surface="outline" onclick={() => void onLoadMore?.()} />
+              <Button size="sm" label="Retry loading more files" surface="soft" onclick={() => void onLoadMore?.()} />
             {:else}
-              <Button size="sm" label="Reload view" surface="outline" onclick={() => onRetry?.()} />
+              <Button size="sm" label="Reload view" surface="soft" onclick={() => onRetry?.()} />
             {/if}
           </div></div></div>
         {:else if error}
@@ -341,7 +341,7 @@
         {:else if loadingMore}
           <div role="row"><div role="gridcell" aria-colspan="5"><div class="progress" role="status">Loading more… {files.length.toLocaleString()} loaded</div></div></div>
         {:else if hasMore}
-          <div role="row"><div role="gridcell" aria-colspan="5"><div class="progress"><Button label="Load more files" surface="outline" onclick={() => onLoadMore?.()} /></div></div></div>
+          <div role="row"><div role="gridcell" aria-colspan="5"><div class="progress"><Button label="Load more files" surface="soft" onclick={() => onLoadMore?.()} /></div></div></div>
         {/if}
       {/if}
     </div>

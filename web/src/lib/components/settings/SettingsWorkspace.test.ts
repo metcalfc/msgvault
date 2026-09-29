@@ -268,7 +268,8 @@ describe('SettingsWorkspace', () => {
     expect(screen.getByText('None')).toBeDefined();
     expect(screen.queryByRole('button', { name: 'Clear task integration API key' })).toBeNull();
     expect(screen.getByText('Changes take effect after the daemon restarts.')).toBeDefined();
-    expect(screen.getByRole('alert').textContent).toContain('plain HTTP');
+    // The plain-HTTP warning is a toned kit Notice (a polite status, not an alert).
+    expect(screen.getByText(/plain HTTP/).closest('[role="status"]')).not.toBeNull();
   });
 
   it('patches only changed values with If-Match and shows pending restart', async () => {

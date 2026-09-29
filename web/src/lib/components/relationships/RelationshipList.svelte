@@ -217,7 +217,7 @@
       <div class="list-error" role="alert">
         <span>{error}</span>
         {#if hasMore}
-          <Button size="sm" surface="outline" label="Retry loading more" onclick={() => onLoadMore?.()} />
+          <Button size="sm" surface="soft" label="Retry loading more" onclick={() => onLoadMore?.()} />
         {/if}
       </div>
     {/if}

@@ -107,7 +107,7 @@
     {#if request}
       <p class="coverage" role="status">Showing {displayedPage.rows.length.toLocaleString()} of {displayedPage.total_count.toLocaleString()} action items</p>
       {#if displayedPage.next_cursor && !controller.error}
-        <Button label="Load more action items" size="sm" surface="outline" disabled={controller.loading} onclick={() => void controller.loadMore()} />
+        <Button label="Load more action items" size="sm" surface="soft" disabled={controller.loading} onclick={() => void controller.loadMore()} />
       {/if}
     {/if}
   {/if}

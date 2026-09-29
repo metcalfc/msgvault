@@ -177,7 +177,7 @@
     </div>
     <Button
       size="sm"
-      surface="outline"
+      surface="soft"
       label="Newest first"
       ariaLabel="Sort: newest first"
       onclick={() => onSort?.()}
@@ -237,7 +237,7 @@
           <span>No active filters</span>
         {:else}
           <span>{filters.length} active {filters.length === 1 ? 'filter' : 'filters'}</span>
-          <Button size="sm" surface="outline" label="Clear filters" onclick={onClearFilters} />
+          <Button size="sm" surface="soft" label="Clear filters" onclick={onClearFilters} />
         {/if}
       </div>
       <div class="filter-fields">

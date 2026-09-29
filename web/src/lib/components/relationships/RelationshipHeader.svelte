@@ -427,7 +427,7 @@
           <Button
             label="Same person…"
             ariaLabel="Same person…"
-            surface="outline"
+            surface="soft"
             onclick={openLinkDialog}
           />
         {/if}
@@ -436,7 +436,7 @@
     {#if staleBanner === 'identity_cache_stale'}
       <section class="named-state" role="alert">
         <span>{STALE_CACHE_MESSAGE}</span>
-        <Button label="Retry" surface="outline" size="sm" disabled={retrying} onclick={() => void retryRefresh()} />
+        <Button label="Retry" surface="soft" size="sm" disabled={retrying} onclick={() => void retryRefresh()} />
       </section>
     {/if}
     {#if promotionFailure}
