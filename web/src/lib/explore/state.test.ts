@@ -1502,6 +1502,17 @@ describe('Everything date default after a reload', () => {
     allTime.destroy();
   });
 
+  it('still applies after a reload of "/" whose address the app canonicalized', () => {
+    window.history.replaceState(null, '', '/');
+    const first = new ExploreState(window);
+    first.destroy();
+    // A reload keeps the history entry the first load wrote.
+    const reloaded = new ExploreState(window);
+    reloaded.commitWorkspace('everything');
+    expect(reloaded.current.filters.map((filter) => filter.dimension)).toEqual(['after', 'before']);
+    reloaded.destroy();
+  });
+
   it('keeps an All-time bookmark on All time and a shared URL with bounds on its bounds', () => {
     // Choosing "All time" clears the filters; the serializer would omit an
     // empty list, so the dateBoundsChosen marker carries the choice.

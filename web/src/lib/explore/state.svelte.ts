@@ -673,6 +673,9 @@ export function serializeExploreURLState(state: ExploreURLState, baseSearch = ''
 }
 
 const HISTORY_DEPTH_KEY = 'exploreDepth';
+/** Marks a history entry the app wrote while canonicalizing the address on
+ * load, which records the address rather than a view the user chose. */
+const HISTORY_CANONICAL_KEY = 'exploreCanonical';
 
 function historyEntry(url: string, state: ExploreURLState, depth: number):
   { exploreSearch: string; exploreState: unknown; [HISTORY_DEPTH_KEY]: number } {
@@ -784,7 +787,11 @@ export class ExploreState {
     const url = serializeExploreURLState(this.current, location.search);
     if (url === `${location.pathname}${location.search}`) return;
     const state = isRecord(this.browser.history.state) ? this.browser.history.state : {};
-    this.browser.history.replaceState({ ...state, ...historyEntry(url, this.current, this.historyDepth()) }, '', `${url}${location.hash}`);
+    this.browser.history.replaceState(
+      { ...state, ...historyEntry(url, this.current, this.historyDepth()), [HISTORY_CANONICAL_KEY]: true },
+      '',
+      `${url}${location.hash}`
+    );
   }
 
   /** How many in-app entries precede the current one: 0 on a page opened
@@ -802,7 +809,8 @@ export class ExploreState {
   }
 
   /** The user's own Everything view, to which no default bounds are added:
-   * a restored history entry, date bounds in the filters, or the
+   * a restored history entry the user produced (not one the app wrote while
+   * canonicalizing the address), date bounds in the filters, or the
    * dateBoundsChosen marker (which every app-generated Everything link
    * without bounds carries, see serializeExploreURLState). A Directory or
    * Operations deep link is not an Everything view, and the app's
@@ -811,7 +819,7 @@ export class ExploreState {
    * entry into Everything from those. */
   private hasExplicitState(): boolean {
     const history = this.browser.history.state;
-    if (isRecord(history) && isRecord(history.exploreState)) return true;
+    if (isRecord(history) && isRecord(history.exploreState) && history[HISTORY_CANONICAL_KEY] !== true) return true;
     return this.current.dateBoundsChosen || this.current.filters.some((filter) => isDateDimension(filter.dimension));
   }
 
