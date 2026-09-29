@@ -20,6 +20,7 @@
     ExploreSearchMode,
     ExploreURLState,
     ExploreWorkspace,
+    FileViewerTarget,
   } from '../../explore/models';
   import { createExploreAPI } from '../../explore/api';
   import { filtersForGroup, parseGroupSelection } from '../../explore/group-context';
@@ -72,6 +73,10 @@
     openContextualFile: (file: ExploreFileFact) => void;
     closeReadingPane: () => void;
     openRelationship: (participantID: number) => void;
+    /** Opens a message attachment in the file viewer. */
+    openAttachment: (file: FileViewerTarget) => void;
+    /** Moves the open reading pane to a row without a new history entry. */
+    followRow: (row: EntryRow) => void;
     changeConversationAnchor: (anchorId: number) => void;
     onOpenMeeting?: (meeting: MeetingRef) => void;
   }
@@ -102,6 +107,8 @@
     openContextualFile,
     closeReadingPane,
     openRelationship,
+    openAttachment,
+    followRow,
     changeConversationAnchor,
     onOpenMeeting = undefined,
   }: Props = $props();
@@ -110,9 +117,10 @@
 
   function storedPreviewPosition(): 'below' | 'right' {
     try {
-      return localStorage.getItem('msgvault.reading-pane.position') === 'right' ? 'right' : 'below';
+      // Right is the default: the reader keeps the result list in view.
+      return localStorage.getItem('msgvault.reading-pane.position') === 'below' ? 'below' : 'right';
     } catch {
-      return 'below';
+      return 'right';
     }
   }
 
@@ -563,6 +571,26 @@
     commitSearch(query.trim(), exploreState.current.searchMode);
   }
 
+  // j/k with an entry open in the reading pane move the pane with the
+  // selection; a group or file selection keeps its own pane.
+  const readingPaneFollows = $derived(
+    Boolean(readingTargetKey) && loader.rows.some((row) => row.key === readingTargetKey)
+  );
+
+  function filterByPerson(participantID: number): void {
+    const id = String(participantID);
+    const current = exploreState.current.filters;
+    const existing = current.find((filter) => filter.dimension === 'participant');
+    if (existing?.values.includes(id)) return;
+    commitNavigation({
+      filters: existing
+        ? current.map((filter) => (filter === existing ? { ...filter, values: [...filter.values, id] } : filter))
+        : [...current, { dimension: 'participant', values: [id] }],
+      activeRow: null,
+      scrollAnchor: null,
+    });
+  }
+
   function trySearchMode(mode: ExploreSearchMode): void {
     commitSearch(exploreState.current.query.trim(), mode);
     focusGrid();
@@ -878,6 +906,10 @@
                 query={exploreState.current.query}
                 searchMode={exploreState.predicate().search_mode ?? exploreState.current.searchMode}
                 onTrySearchMode={trySearchMode}
+                readerOpen={readingPaneFollows}
+                onKeyboardMove={(row) => {
+                  if (readingPaneFollows) followRow(row);
+                }}
                 onOpen={openRow}
                 onScrollAnchor={(key, offset) => exploreState.replaceTransient({ scrollAnchor: { key, offset } })}
                 onLoadMore={loader.loadMore}
@@ -907,6 +939,9 @@
             onReloadMeetings={reloadGroupMeetings}
             onOpenSettings={() => commitWorkspace('settings')}
             onOpenRelationship={openRelationship}
+            onOpenPerson={openRelationship}
+            onFilterPerson={filterByPerson}
+            onOpenAttachment={openAttachment}
             {conversationAnchorId}
             onConversationAnchorChange={changeConversationAnchor}
           />
@@ -917,6 +952,7 @@
 
   <footer class="keyboard-help" aria-label="Keyboard shortcuts">
     <span><KbdBadge keys={['J']} />/<KbdBadge keys={['K']} /> move</span>
+    <span><KbdBadge keys={['H']} />/<KbdBadge keys={['L']} /> thread</span>
     <span><KbdBadge keys={['Enter']} /> open</span>
     <span><KbdBadge keys={['Space']} /> select</span>
     <span><KbdBadge keys={['Shift', 'Space']} /> range</span>

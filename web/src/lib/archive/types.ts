@@ -47,6 +47,8 @@ export interface ArchiveMessageSummary {
 }
 
 export interface ArchiveAttachment {
+  /** Attachment ID for the file viewer, when the daemon supplied one. */
+  id?: number;
   filename: string;
   mimeType: string;
   sizeBytes: number;
@@ -58,6 +60,12 @@ export interface ArchiveMessageDetail extends ArchiveMessageSummary {
   /** Archive message type ("email", "calendar_event", …) when known. */
   messageType?: string;
   attachments: ArchiveAttachment[];
+  /** The sender as "Name <address>" (or the bare address or phone). */
+  from?: string;
+  cc?: string[];
+  isFromMe?: boolean;
+  /** The provider's own message ID (a Gmail message's hex ID). */
+  sourceMessageId?: string;
 }
 
 export type MessageViewMode = 'html' | 'text';

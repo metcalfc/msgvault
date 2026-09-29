@@ -51,6 +51,12 @@
     query?: string;
     searchMode?: ExploreSearchMode;
     onTrySearchMode?: (mode: ExploreSearchMode) => void;
+    /** Called after a keyboard move (j/k, arrows, paging) lands on a row,
+     * so an open reading pane can follow the selection. */
+    onKeyboardMove?: (row: EntryRow) => void;
+    /** With the reading pane open, ←/→ step within its thread instead of
+     * expanding and collapsing grouped threads here. */
+    readerOpen?: boolean;
   }
 
   let {
@@ -79,7 +85,9 @@
     onRetry = undefined,
     query = '',
     searchMode = 'full_text',
-    onTrySearchMode = undefined
+    onTrySearchMode = undefined,
+    onKeyboardMove = undefined,
+    readerOpen = false
   }: Props = $props();
 
   // Email hits from one thread collapse into their newest match; the
@@ -377,6 +385,8 @@
     scrollActiveIntoView(nextIndex);
     activeKey = nextKey;
     if (activeKey) onActiveKey?.(activeKey);
+    const landed = rows[nextIndex];
+    if (landed) onKeyboardMove?.(landed);
     await tick();
   }
 
@@ -393,7 +403,7 @@
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.key === 'j' || event.key === 'ArrowDown') await moveTo(activeIndex + 1);
     else if (event.key === 'k' || event.key === 'ArrowUp') await moveTo(activeIndex - 1);
-    else if ((event.key === 'ArrowRight' || event.key === 'ArrowLeft') && activeRow && threaded.roles.has(activeRow.key)) {
+    else if (!readerOpen && (event.key === 'ArrowRight' || event.key === 'ArrowLeft') && activeRow && threaded.roles.has(activeRow.key)) {
       const role = threaded.roles.get(activeRow.key)!;
       if (event.key === 'ArrowRight') setThreadOpen(role.threadKey, true);
       else {

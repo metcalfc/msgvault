@@ -33,7 +33,7 @@
   import type { MeetingActionsRequest, MeetingContextRequest, MeetingRef } from '../../api/generated/models';
   import { createExploreAPI } from '../../explore/api';
   import { filtersForGroup } from '../../explore/group-context';
-  import type { ExploreCacheUnavailable, ExploreFileFact, ExploreFilter } from '../../explore/models';
+  import type { ExploreCacheUnavailable, ExploreFileFact, ExploreFilter, FileViewerTarget } from '../../explore/models';
   import { isEmailMessageType } from '../../explore/models';
   import IdentityBadge from '../explore/IdentityBadge.svelte';
   import TaskLinks from '../tasks/TaskLinks.svelte';
@@ -59,7 +59,10 @@
     onOpenSettings = undefined,
     onOpenRelationship = undefined,
     onOpenMeeting = undefined,
-    onReloadMeetings = undefined
+    onReloadMeetings = undefined,
+    onOpenPerson = undefined,
+    onFilterPerson = undefined,
+    onOpenAttachment = undefined
   }: {
     client: APIClient;
     selection?: ReadingPaneSelection;
@@ -88,6 +91,12 @@
     /** Opens the exact generated archive reference carried by meeting action evidence. */
     onOpenMeeting?: (meeting: MeetingRef) => void;
     onReloadMeetings?: () => void;
+    /** Participant pills in the thread: open the person, or narrow the
+     * current view to messages with them. */
+    onOpenPerson?: (participantID: number) => void;
+    onFilterPerson?: (participantID: number, label: string) => void;
+    /** Opens a message attachment in the file viewer. */
+    onOpenAttachment?: (file: FileViewerTarget) => void;
   } = $props();
 
   const api = createExploreAPI(untrack(() => client));
@@ -300,6 +309,10 @@
         start={conversationStart}
         end={conversationEnd}
         onAnchorChange={(anchorId) => onConversationAnchorChange?.(anchorId)}
+        sourceType={selection?.kind === 'entry' ? selection.row.source_type : undefined}
+        {onOpenAttachment}
+        {onOpenPerson}
+        {onFilterPerson}
       />
     {:else if !selection}
       <section class="pane-status" aria-label="Reading pane status">

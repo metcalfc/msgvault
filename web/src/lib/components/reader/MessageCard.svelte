@@ -6,6 +6,10 @@
   import { looksLikeHTML } from '../../util/html-text';
   import IdentityAvatar from '../common/IdentityAvatar.svelte';
   import ContentFrame from './ContentFrame.svelte';
+  import ParticipantPill from './ParticipantPill.svelte';
+  import MessageAttachments from './MessageAttachments.svelte';
+  import type { FileViewerTarget } from '../../explore/models';
+  import { gmailMessageURL } from '../../reader/address';
 
   interface Props {
     message: ArchiveMessageDetail;
@@ -22,6 +26,11 @@
     onToggle?: (id: number) => void;
     onViewModeChange?: (id: number, mode: MessageViewMode) => void;
     client?: APIClient;
+    /** The message's source type; a Gmail message offers "Open in Gmail". */
+    sourceType?: string;
+    onOpenAttachment?: (file: FileViewerTarget) => void;
+    onOpenPerson?: (participantID: number) => void;
+    onFilterPerson?: (participantID: number, label: string) => void;
   }
 
   let {
@@ -34,8 +43,15 @@
     bodyError = '',
     onToggle,
     onViewModeChange,
-    client = undefined
+    client = undefined,
+    sourceType = undefined,
+    onOpenAttachment = undefined,
+    onOpenPerson = undefined,
+    onFilterPerson = undefined
   }: Props = $props();
+
+  const gmailURL = $derived(sourceType === 'gmail' ? gmailMessageURL(message.sourceMessageId) : undefined);
+  const fromAddress = $derived(message.isFromMe ? '' : (message.from ?? ''));
 
   let menuOpen = $state(false);
 
@@ -84,9 +100,6 @@
           <strong class="sender">{message.sender || 'Unknown sender'}</strong>
           <time datetime={message.sentAt} data-mono>{formatDate(message.sentAt)}</time>
         </span>
-        {#if message.recipients.length > 0}
-          <span class="recipients" data-mono>to {message.recipients.join(', ')}</span>
-        {/if}
         {#if message.subject}
           <span class="subject">{message.subject}</span>
         {/if}
@@ -104,6 +117,30 @@
         </details>
       {/if}
     </div>
+
+    {#if fromAddress || message.recipients.length > 0 || (message.cc?.length ?? 0) > 0 || gmailURL}
+      <div class="people-line">
+        {#if fromAddress}
+          <span class="people-role">from</span>
+          <ParticipantPill value={fromAddress} {client} {onOpenPerson} {onFilterPerson} />
+        {/if}
+        {#if message.recipients.length > 0}
+          <span class="people-role">to</span>
+          {#each message.recipients as recipient, index (`${index}:${recipient}`)}
+            <ParticipantPill value={recipient} {client} {onOpenPerson} {onFilterPerson} />
+          {/each}
+        {/if}
+        {#if (message.cc?.length ?? 0) > 0}
+          <span class="people-role">cc</span>
+          {#each message.cc ?? [] as recipient, index (`${index}:${recipient}`)}
+            <ParticipantPill value={recipient} {client} {onOpenPerson} {onFilterPerson} />
+          {/each}
+        {/if}
+        {#if gmailURL}
+          <a class="source-link" href={gmailURL} target="_blank" rel="noopener noreferrer">Open in Gmail</a>
+        {/if}
+      </div>
+    {/if}
 
     {#if sanitizationFailed}
       <p class="sanitize-notice" role="alert">Could not render HTML formatting. Showing plain text.</p>
@@ -134,6 +171,15 @@
         {/if}
       </section>
     </div>
+
+    {#if message.attachments.length > 0}
+      <MessageAttachments
+        attachments={message.attachments}
+        messageId={message.id}
+        conversationId={message.conversationId}
+        onOpen={onOpenAttachment}
+      />
+    {/if}
   </article>
 {:else}
   <button
@@ -275,7 +321,25 @@
     white-space: nowrap;
   }
 
-  .recipients,
+  .people-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4) 0 calc(var(--space-4) + 24px + var(--space-3));
+  }
+
+  .people-role {
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  .source-link {
+    margin-left: auto;
+    color: var(--link-ink);
+    font-size: var(--font-size-xs);
+  }
+
   .subject {
     overflow: hidden;
     color: var(--text-muted);

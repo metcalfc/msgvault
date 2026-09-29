@@ -3,8 +3,8 @@ export type CommandHandler = (event?: KeyboardEvent) => void;
 export const COMMAND_DEFINITIONS = [
   command('move-next', 'Move to next row', ['J', '↓'], ['j', 'arrowdown'], 'Navigate'),
   command('move-previous', 'Move to previous row', ['K', '↑'], ['k', 'arrowup'], 'Navigate'),
-  command('reader-previous', 'Previous item in reader', ['H'], ['h'], 'Navigate'),
-  command('reader-next', 'Next item in reader', ['L'], ['l'], 'Navigate'),
+  command('reader-previous', 'Previous message in the open thread', ['H', '←'], ['h', 'arrowleft'], 'Navigate'),
+  command('reader-next', 'Next message in the open thread', ['L', '→'], ['l', 'arrowright'], 'Navigate'),
   command('page-up', 'Move up one page', ['PgUp'], ['pageup'], 'Navigate'),
   command('page-down', 'Move down one page', ['PgDn'], ['pagedown'], 'Navigate'),
   command('first-row', 'Move to first row', ['Home'], ['home'], 'Navigate'),

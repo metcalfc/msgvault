@@ -85,6 +85,7 @@
   import { messageRowFilters, resolveMessageRowKey } from '../../explore/entry-key';
   import { ARCHIVE_MEETING_HISTORY_KEY, parseArchiveMeetingHistory } from '../../meetings/archive-selection';
   import EverythingWorkspace from './EverythingWorkspace.svelte';
+  import { stepThread } from '../../reader/thread-stepper';
   import { EverythingSessionState } from './EverythingSessionState.svelte';
   import { bufferedCallback } from '../../util/buffered-callback';
   interface Props {
@@ -868,8 +869,12 @@
     });
   }
   function openContextualFile(file: ExploreFileFact): void {
+    openAttachmentTarget(viewerTargetFromFact(file));
+  }
+  function openAttachmentTarget(target: FileViewerTarget): void {
+    const file = target;
     contextualViewerReturnFocus = currentGrid() ?? undefined;
-    contextualViewerFile = viewerTargetFromFact(file);
+    contextualViewerFile = target;
     commitNavigation({
       selectedRow: attachmentSelection(file.id),
       conversationAnchor: null,
@@ -936,7 +941,15 @@
       : 'Everything remains newest first; reverse order is not supported by the canonical entry API.';
     document.querySelector<HTMLButtonElement>('button[aria-label^="Sort: "]')?.focus();
   }
+  function followRow(row: EntryRow): void {
+    if (exploreState.current.selectedRow === row.key) return;
+    // Keyboard moves with the pane open replace the entry rather than
+    // pushing one history step per keypress.
+    replaceCommittedNavigation({ selectedRow: row.key, conversationAnchor: null });
+  }
   function navigateReader(delta: number): void {
+    // h/l and ←/→ step within the open thread first.
+    if (stepThread(delta)) return;
     if (!exploreState.current.selectedRow || loader.rows.length === 0) return;
     const index = loader.rows.findIndex((row) => row.key === exploreState.current.selectedRow);
     if (index < 0) return;
@@ -1527,6 +1540,8 @@
       {openContextualFile}
       closeReadingPane={() => void closeReadingPane()}
       {openRelationship}
+      openAttachment={openAttachmentTarget}
+      {followRow}
       {changeConversationAnchor}
       onOpenMeeting={(meeting) => void openArchivedMeeting(meeting)}
     />

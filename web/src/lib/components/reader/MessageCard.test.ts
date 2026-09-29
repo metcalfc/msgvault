@@ -238,3 +238,47 @@ describe('MessageCard', () => {
     expect(screen.queryByText('⋯')).toBeNull();
   });
 });
+
+describe('MessageCard reader chrome', () => {
+  it('lists attachments under the body and opens one in the file viewer', async () => {
+    const onOpenAttachment = vi.fn();
+    render(MessageCard, {
+      props: {
+        message: detail({ attachments: [{ id: 91, filename: 'plan.pdf', mimeType: 'application/pdf', sizeBytes: 2048 }] }),
+        expanded: true,
+        onOpenAttachment
+      }
+    });
+
+    const button = screen.getByRole('button', { name: /plan\.pdf/ });
+    expect(button.textContent).toContain('2 KB');
+    await fireEvent.click(button);
+    expect(onOpenAttachment).toHaveBeenCalledWith({
+      id: 91, message_id: 42, conversation_id: 7, filename: 'plan.pdf', mime_type: 'application/pdf', size_bytes: 2048
+    });
+  });
+
+  it('shows participants as pills and links a Gmail message to Gmail', async () => {
+    render(MessageCard, {
+      props: {
+        message: detail({
+          from: 'Alice Example <alice@example.com>', cc: ['Casey Example <casey@example.com>'],
+          sourceMessageId: '18c2f0a1b2c3d4e5'
+        }),
+        expanded: true,
+        sourceType: 'gmail'
+      }
+    });
+
+    expect(screen.getByRole('button', { name: 'Alice Example (alice@example.com): person actions' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'bob@example.com: person actions' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Casey Example (casey@example.com): person actions' })).toBeDefined();
+    expect(screen.getByRole('link', { name: 'Open in Gmail' }).getAttribute('href'))
+      .toBe('https://mail.google.com/mail/u/0/#all/18c2f0a1b2c3d4e5');
+  });
+
+  it('offers no Gmail link for other sources', () => {
+    render(MessageCard, { props: { message: detail({ sourceMessageId: '18c2f0a1b2c3d4e5' }), expanded: true, sourceType: 'imap' } });
+    expect(screen.queryByRole('link', { name: 'Open in Gmail' })).toBeNull();
+  });
+});

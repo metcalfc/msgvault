@@ -122,6 +122,25 @@ describe('EverythingWorkspace', () => {
     state.destroy();
   });
 
+  it('moves the open reading pane with j/k without a history step per key', async () => {
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
+    const fetchFn = vi.fn<typeof fetch>(async () => Response.json(exploreResponse({ rows: [entry(1), entry(2)], total_count: 2 })));
+    const state = new ExploreState(window);
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+
+    const grid = await screen.findByRole('grid', { name: 'Everything results' });
+    await screen.findByText('Synthetic subject 1');
+    state.commitNavigation({ selectedRow: 'message:1' });
+    const historyLength = window.history.length;
+    grid.focus();
+    await fireEvent.keyDown(grid, { key: 'j' });
+    await waitFor(() => expect(state.current.selectedRow).toBe('message:2'));
+    expect(window.history.length).toBe(historyLength);
+    expect(screen.getByText(/thread/, { selector: 'footer span' })).toBeDefined();
+    rendered.unmount();
+    state.destroy();
+  });
+
   it('moves dimensioned operators into removable chips on submit and keeps the rest as text', async () => {
     window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async () => Response.json(exploreResponse({ rows: [entry(1)], total_count: 1 })));

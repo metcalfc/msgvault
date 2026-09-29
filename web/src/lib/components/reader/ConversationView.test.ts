@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
 import ConversationView from './ConversationView.svelte';
+import { stepThread } from '../../reader/thread-stepper';
 
 function message(id: number, type = 'email') {
   return {
@@ -489,5 +490,46 @@ describe('ConversationView', () => {
     await screen.findByRole('article', { name: 'Message 2' });
     expect(screen.getByText(/Earlier messages are outside this view — showing 1 of 40./)).toBeTruthy();
     expect(screen.getByText(/Later messages are outside this view./)).toBeTruthy();
+  });
+});
+
+describe('ConversationView thread stepping', () => {
+  it('steps to the previous and next message for h/l and stops at the ends', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({
+      id: 7, anchor_id: 2, messages: [message(1), message(2), message(3)],
+      has_before: false, has_after: false, total: 3
+    }));
+    const onAnchorChange = vi.fn();
+    render(ConversationView, { props: { client: createAPIClient(fetchFn), conversationId: 7, anchorId: 2, onAnchorChange } });
+    await screen.findByRole('article', { name: 'Message 2' });
+
+    expect(stepThread(1)).toBe(true);
+    expect(onAnchorChange).toHaveBeenLastCalledWith(3);
+    expect((await screen.findByRole('article', { name: 'Message 3' })).getAttribute('aria-current')).toBe('true');
+    expect(stepThread(1)).toBe(false);
+    expect(stepThread(-1)).toBe(true);
+    expect(onAnchorChange).toHaveBeenLastCalledWith(2);
+  });
+
+  it('turns participant pills into person actions that resolve the address', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      if (new URL(request.url).pathname.endsWith('/participants/completions')) {
+        return Response.json({ cache_revision: 'c', rows: [
+          { participant_id: 55, display_label: 'Bob Example', kind: 'email', source: 'observed', value: 'bob@example.com' }
+        ] });
+      }
+      return Response.json({ id: 7, anchor_id: 2, messages: [message(2)], has_before: false, has_after: false, total: 1 });
+    });
+    const onOpenPerson = vi.fn();
+    const onFilterPerson = vi.fn();
+    render(ConversationView, { props: { client: createAPIClient(fetchFn), conversationId: 7, anchorId: 2, onOpenPerson, onFilterPerson } });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'bob@example.com: person actions' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Open person' }));
+    await waitFor(() => expect(onOpenPerson).toHaveBeenCalledWith(55));
+    await fireEvent.click(screen.getByRole('button', { name: 'bob@example.com: person actions' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Filter by person' }));
+    await waitFor(() => expect(onFilterPerson).toHaveBeenCalledWith(55, 'bob@example.com'));
   });
 });
