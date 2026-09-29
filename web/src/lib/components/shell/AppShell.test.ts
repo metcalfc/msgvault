@@ -1000,6 +1000,38 @@ describe('AppShell', () => {
     return { fetchFn, requests };
   }
 
+  it('leaves a person page for the People list from the tab, the palette, and the person finder', async () => {
+    window.history.replaceState(null, '', '/people/7');
+    const { fetchFn } = directoryPersonFetch([], {});
+    const state = new ExploreState(window);
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    expect(await screen.findByRole('main', { name: 'Person' })).toBeDefined();
+    const nav = screen.getByRole('navigation', { name: 'Primary' });
+    const lengthBefore = window.history.length;
+
+    await fireEvent.click(within(nav).getByRole('button', { name: 'People' }));
+    expect(state.current).toMatchObject({ workspace: 'directory', directoryPersonID: null });
+    expect(await screen.findByRole('main', { name: 'People' })).toBeDefined();
+    expect(window.history.length).toBe(lengthBefore + 1);
+    // Already on the list: no duplicate history entry.
+    await fireEvent.click(within(nav).getByRole('button', { name: 'People' }));
+    expect(window.history.length).toBe(lengthBefore + 1);
+
+    state.commitNavigation({ directoryPersonID: 7 });
+    expect(await screen.findByRole('main', { name: 'Person' })).toBeDefined();
+    await fireEvent.click(within(await openCommandPalette()).getByRole('option', { name: 'Go to People' }));
+    expect(state.current.directoryPersonID).toBeNull();
+
+    state.commitNavigation({ directoryPersonID: 7 });
+    expect(await screen.findByRole('main', { name: 'Person' })).toBeDefined();
+    await fireEvent.click(within(await openCommandPalette()).getByRole('option', { name: 'Go to person…' }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Search people' })));
+    expect(state.current.directoryPersonID).toBeNull();
+
+    rendered.unmount();
+    state.destroy();
+  });
+
   it('shows a saved person\'s timeline on the Timeline tab from their busiest identity', async () => {
     window.history.replaceState(null, '', '/people/7/timeline');
     const { fetchFn, requests } = directoryPersonFetch([3, 9], {

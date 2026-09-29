@@ -246,9 +246,13 @@
     exploreState.commitNavigation({ workspace: 'directory', directoryPersonID: personID, personTab: 'overview' });
   }
   /** Opens the People list, keeping its filters. */
+  /** Opens the People list, keeping its filters. From a person page this
+   * leaves the person (like Meetings leaves a meeting); on the list itself
+   * it adds no history entry. */
   function openPeopleList(): void {
     beforeCommit();
-    exploreState.commitNavigation({ workspace: 'directory', directoryPersonID: null, relationshipTarget: null, personTab: 'overview' });
+    if (exploreState.current.workspace === 'directory' && exploreState.current.directoryPersonID === null) return;
+    exploreState.commitWorkspace('directory', { directoryPersonID: null, relationshipTarget: null, personTab: 'overview' });
   }
   function openPeopleRow(row: PeopleRow): void {
     if (row.kind === 'saved') openDirectoryPerson(row.id);
@@ -432,7 +436,7 @@
   }
   const activeNavigation = $derived(navigationFor(exploreState.current.workspace));
   function openNavigation(id: NavigationID): void {
-    if (id === 'people') openWorkspaceTab('directory');
+    if (id === 'people') openPeopleList();
     else if (id === 'inbox') openInbox();
     else if (id === 'files') openWorkspaceTab('files');
     else if (id === 'meetings') openMeetings();
@@ -1159,7 +1163,7 @@
     return { id, label, section: 'Go to', keywords: `Go to ${label} ${keywords}`, keys: [], combos: [], destructive: false, review: false, run };
   }
   const goToCommands: AppCommand[] = [
-    navigationCommand('go:people', 'Go to People', 'contacts directory relationships', () => openWorkspaceTab('directory')),
+    navigationCommand('go:people', 'Go to People', 'contacts directory relationships', openPeopleList),
     navigationCommand('go:person', 'Go to person…', 'find person contact', () => void openPersonFinder()),
     navigationCommand('go:inbox', 'Go to Inbox', 'everything browse messages', openInbox),
     navigationCommand('go:files', 'Go to Files', 'attachments documents', () => openWorkspaceTab('files')),
@@ -1178,7 +1182,7 @@
   ];
   /** People opens with its search focused, so a name is one keystroke away. */
   async function openPersonFinder(): Promise<void> {
-    openWorkspaceTab('directory');
+    openPeopleList();
     await tick();
     document.querySelector<HTMLInputElement>('input[aria-label="Search people"]')?.focus();
   }
