@@ -5,6 +5,7 @@ import { createRawSnippet } from 'svelte';
 
 import { meetingFixtureResponse } from '../../meetings/fixtures.test-support';
 import { createAPIClient } from '../../api/client';
+import { withEntityLabels } from '../../../test/entity-labels';
 import { LOAD_THROUGH_END_MAX_PAGES } from '../../explore/paging';
 import { ExploreState, parseExploreURLState, serializeExploreURLState } from '../../explore/state.svelte';
 import { chooseSelectOption } from '../../../test/kit-ui';
@@ -66,6 +67,8 @@ function operationAuthorityResponse(path: string): Response | undefined {
   return undefined;
 }
 
+
+const syntheticNames = { person: { 42: 'Avery Example' }, participant: { 171: 'blair@example.org' } };
 describe('AppShell', () => {
   function entry(index: number) {
     return {
@@ -385,7 +388,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
     await openFromGear('Saved Views');
     expect(await screen.findByRole('main', { name: 'Saved Views' })).toBeDefined();
@@ -452,7 +455,7 @@ describe('AppShell', () => {
     });
     const state = new ExploreState(window);
     const rendered = render(AppShell, {
-      client: createAPIClient(fetchFn), state, enabled: false, archiveContextKey: 'archive-a'
+      client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false, archiveContextKey: 'archive-a'
     });
 
     expect(await screen.findByRole('main', { name: 'Operations' })).toBeDefined();
@@ -503,7 +506,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
     await fireEvent.click(await screen.findByRole('button', { name: 'View source operations' }));
 
@@ -544,7 +547,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
     await fireEvent.click(await screen.findByRole('button', { name: linkName }));
     expect(await screen.findByRole('region', { name: statusName })).toBeDefined();
@@ -581,7 +584,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Open Document index status' }));
     await fireEvent.click(await screen.findByRole('button', { name: 'Open document index settings' }));
@@ -639,7 +642,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     let state = new ExploreState(window);
-    let rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    let rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Open Document index status' }));
     expect(await screen.findByText('4 of 5 owners ready')).toBeDefined();
@@ -664,7 +667,7 @@ describe('AppShell', () => {
     rendered.unmount();
     state.destroy();
     state = new ExploreState(window);
-    rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
     expect(await screen.findByText('7 of 9 chunks ready')).toBeDefined();
 
     const restoredNav = screen.getByRole('navigation', { name: 'Primary' });
@@ -703,7 +706,7 @@ describe('AppShell', () => {
     });
     const state = new ExploreState(window);
     const rendered = render(AppShell, {
-      client: createAPIClient(fetchFn), state, settings: settings as never
+      client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, settings: settings as never
     });
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Open Document index status' }));
@@ -739,7 +742,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
     expect(await screen.findByRole('main', { name: 'Reviews' })).toBeDefined();
     expect(screen.getByRole('heading', { name: 'Reviews' })).toBeDefined();
@@ -781,7 +784,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
     expect(await screen.findByRole('heading', { name: 'Imported relationships' })).toBeDefined();
     await waitFor(() => expect(calls).toEqual([
@@ -823,9 +826,9 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
-    expect(await screen.findByText('Person ID 42')).toBeDefined();
+    expect(await screen.findByText('Avery Example')).toBeDefined();
     await vi.waitFor(() => expect(requests.filter((request) => new URL(request.url).pathname.includes('fact'))).toHaveLength(5));
     window.dispatchEvent(new PopStateEvent('popstate'));
     await vi.waitFor(() => expect(requests.filter((request) => new URL(request.url).pathname.includes('fact'))).toHaveLength(10));
@@ -891,12 +894,12 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Link identities' }));
     await fireEvent.click(screen.getByRole('dialog', { name: 'Link identities' }).querySelector('button.kit-button--solid')!);
     await fireEvent.click(await screen.findByRole('button', { name: 'Resolve merge' }));
-    await fireEvent.click(screen.getByRole('radio', { name: 'Synthetic One (Person 7)' }));
+    await fireEvent.click(screen.getByRole('radio', { name: 'Synthetic One' }));
     await fireEvent.click(screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i }));
     await fireEvent.click(screen.getByRole('button', { name: 'Merge into selected survivor' }));
 
@@ -935,7 +938,7 @@ describe('AppShell', () => {
       return restored.promise;
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
     expect(await screen.findByRole('heading', { name: 'Identity match 17' })).toBeDefined();
     window.history.replaceState(null, '', serializeExploreURLState(state.current));
@@ -966,7 +969,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
     expect(await screen.findByRole('heading', { name: 'People' })).toBeDefined();
     expect(await screen.findByText('Synthetic Person')).toBeDefined();
@@ -1030,7 +1033,7 @@ describe('AppShell', () => {
     window.history.replaceState(null, '', '/people/7');
     const { fetchFn } = directoryPersonFetch([], {});
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
     expect(await screen.findByRole('main', { name: 'Person' })).toBeDefined();
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     const lengthBefore = window.history.length;
@@ -1065,7 +1068,7 @@ describe('AppShell', () => {
       9: { canonical: 9, members: [9], label: 'Synthetic Alias', activity: 20 }
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
     expect(await screen.findByRole('region', { name: 'Timeline' })).toBeDefined();
     await waitFor(() => expect(requests).toContain('/api/v1/relationships/9/timeline'));
@@ -1137,7 +1140,7 @@ describe('AppShell', () => {
     const exploreFilters: string[][] = [];
     const state = new ExploreState(window);
     // The explore loader must run: it is what resolves the selected key into a row.
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
 
     await fireEvent.click(await screen.findByRole('button', { name: /^Last contact / }));
     await waitFor(() => expect(state.current.selectedRow).toBe('source:3:message:source-42'));
@@ -1181,7 +1184,7 @@ describe('AppShell', () => {
       return base(input);
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
 
     await fireEvent.click(await screen.findByRole('button', { name: /^Last contact / }));
     // Without conversation_type the '' message type would key as source:3:message:42 and never find a row.
@@ -1212,7 +1215,7 @@ describe('AppShell', () => {
       return base(input);
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
     await fireEvent.click(await screen.findByRole('button', { name: /^Last contact / }));
     await waitFor(() => expect(screen.getByRole('status', { name: 'Operation status' }).textContent).toMatch(new RegExp(`Couldn't open that message: .*${reason}`)));
@@ -1274,7 +1277,7 @@ describe('AppShell', () => {
     }));
     const state = new ExploreState(window);
     const rendered = render(AppShell, {
-      client: createAPIClient(fetchFn), state, enabled: false, settings: settings as never
+      client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false, settings: settings as never
     });
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Review CardDAV conflict 41' }));
@@ -1325,7 +1328,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
     await screen.findByText('Synthetic Person');
     await fireEvent.click(screen.getByRole('link', { name: /Synthetic Person/ }));
@@ -1364,7 +1367,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
     await screen.findByText('First Page');
     await fireEvent.click(screen.getByRole('button', { name: 'Load more people' }));
@@ -1396,7 +1399,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
     await waitFor(() => expect(resolveDirectory).toBeDefined());
     await fireEvent.click(screen.getByRole('button', { name: 'Inbox' }));
@@ -1422,7 +1425,7 @@ describe('AppShell', () => {
       return new Promise<Response>(() => undefined);
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
     await waitFor(() => expect(request).toBeDefined());
     rendered.unmount();
@@ -1459,7 +1462,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
 
     expect(await screen.findByRole('main', { name: 'People' })).toBeDefined();
     expect(window.location.pathname).toBe('/people');
@@ -1501,7 +1504,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
 
     expect(await screen.findByRole('heading', { name: 'Alice Example' })).toBeDefined();
     expect(screen.queryByRole('grid', { name: 'Relationship results' })).toBeNull();
@@ -1540,7 +1543,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
 
     expect(await screen.findByRole('main', { name: 'Contact' })).toBeDefined();
     expect(state.current.workspace).toBe('relationships');
@@ -1567,7 +1570,7 @@ describe('AppShell', () => {
       }, { status: 503 });
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
 
     // The old ranked-contacts link is the People list's Not saved filter.
     expect(await screen.findByRole('main', { name: 'People' })).toBeDefined();
@@ -1600,7 +1603,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
 
     expect(await screen.findByRole('heading', { name: 'Alice Example' })).toBeDefined();
 
@@ -1666,7 +1669,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
 
     expect(await screen.findByRole('heading', { name: 'Synthetic Candidate' })).toBeDefined();
     expect(screen.queryByRole('button', { name: /^Open contact record for / })).toBeNull();
@@ -1771,7 +1774,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
 
     expect(await screen.findByRole('heading', { name: 'Synthetic Candidate' })).toBeDefined();
     await fireEvent.click(screen.getByRole('button', { name: 'Save to Directory' }));
@@ -1810,7 +1813,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
 
     await waitFor(() => expect(timelineBodies).toHaveLength(1));
     expect((timelineBodies[0] as { filters?: unknown[] }).filters).toEqual([]);
@@ -1860,7 +1863,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
 
     const row = (await screen.findByText('report.pdf')).closest('[role="row"]')!;
     await fireEvent.click(row);
@@ -1882,7 +1885,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
 
     await screen.findByRole('main', { name: 'Relationships' });
     expect(state.current.workspace).toBe('relationships');
@@ -1919,7 +1922,7 @@ describe('AppShell', () => {
     });
     const state = new ExploreState(window);
     state.replaceTransient({ workspace: 'files' });
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
     try {
       const input = await screen.findByLabelText('Filter filename');
       await screen.findByRole('grid', { name: 'Files results' });
@@ -1955,7 +1958,7 @@ describe('AppShell', () => {
     });
     const state = new ExploreState(window);
     state.replaceTransient({ workspace: 'files' });
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
     try {
       const input = await screen.findByLabelText('Filter filename');
       const pdfCheckbox = await screen.findByRole('checkbox', { name: 'pdf' });
@@ -2001,7 +2004,7 @@ describe('AppShell', () => {
     });
     const state = new ExploreState(window);
     state.commitNavigation({ workspace: 'files' });
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
     try {
       const input = await screen.findByLabelText('Filter filename');
       await screen.findByRole('grid', { name: 'Files results' });
@@ -2044,7 +2047,7 @@ describe('AppShell', () => {
     state.replaceTransient({
       workspace: 'files', groupingChain: ['source'], fileFilenameQuery: 'invoice', fileMIMEFamilies: ['pdf']
     });
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
 
     await screen.findByRole('grid', { name: 'Files grouped by source' });
     await screen.findByText('Example source');
@@ -2076,7 +2079,7 @@ describe('AppShell', () => {
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
     await screen.findByRole('grid', { name: 'Message results' });
 
     await fireEvent.keyDown(window, { key: 'r' });
@@ -2107,7 +2110,7 @@ describe('AppShell', () => {
     });
     const state = new ExploreState(window);
     state.replaceTransient({ workspace: 'files', groupingChain: ['source'] });
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
     const grid = await screen.findByRole('grid', { name: 'Files grouped by source' });
     await screen.findByText('Source 1');
 
@@ -2144,7 +2147,7 @@ describe('AppShell', () => {
     });
     const state = new ExploreState(window);
     state.replaceTransient({ workspace: 'files', groupingChain: ['source'] });
-    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state });
     const grid = await screen.findByRole('grid', { name: 'Files grouped by source' });
     await screen.findByText('Source 1a');
 
