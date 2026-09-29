@@ -263,7 +263,7 @@
   </form>
 </section>
 {:else if integrationState !== 'loading'}
-<p class="agenda-blocked" data-meta role="status">Agenda unavailable: {integrationMessage}</p>
+<p class="agenda-blocked" data-meta role="status">Agenda unavailable: {integrationMessage || 'No status detail was provided.'}</p>
 {/if}
 
 <style>
