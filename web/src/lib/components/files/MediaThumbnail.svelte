@@ -106,7 +106,7 @@
 
 <div class="thumbnail" bind:this={host}>
   {#if thumbnailState === 'image'}
-    <img src={imageURL} alt={`Thumbnail ${file.filename || `attachment ${file.id}`}`} onerror={imageFailed} />
+    <img src={imageURL} alt={`Thumbnail ${file.filename || 'attachment'}`} onerror={imageFailed} />
   {:else if thumbnailState === 'video'}
     <span class="placeholder" data-kind="video"><strong>Video</strong><small>{file.mime_type}</small></span>
   {:else if thumbnailState === 'loading'}
