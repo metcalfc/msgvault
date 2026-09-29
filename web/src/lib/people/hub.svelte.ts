@@ -117,6 +117,12 @@ export class ObservedContacts {
     try {
       const page = await this.fetchPage(this.cursor, controller.signal);
       if (generation !== this.generation) return;
+      if (page.restart) {
+        // Someone was saved between pages: start over rather than skip one.
+        this.loadingMore = false;
+        void this.load(this.query);
+        return;
+      }
       const seen = new Set(this.rows.map((row) => row.key));
       this.rows = [...this.rows, ...page.rows.filter((row) => !seen.has(row.key))];
       this.cursor = page.cursor;
@@ -131,7 +137,7 @@ export class ObservedContacts {
   }
 
   private async fetchPage(cursor: string | undefined, signal: AbortSignal):
-    Promise<{ rows: PeopleRow[]; cursor: string | null; error: string | null }> {
+    Promise<{ rows: PeopleRow[]; cursor: string | null; error: string | null; restart?: boolean }> {
     try {
       if (this.query) {
         const { data, error, response } = await searchParticipants({
@@ -156,7 +162,11 @@ export class ObservedContacts {
       const { data, error, response } = await listRelationships({
         unsaved_only: true, sort: 'last_contact', limit: OBSERVED_PAGE_LIMIT, ...(cursor ? { cursor } : {}),
       }, { ...this.client, signal });
-      if (!data) return { rows: [], cursor: null, error: errorMessage(error, response.status) };
+      if (!data) {
+        const restart = response.status === 409 && typeof error === 'object' && error !== null &&
+          (error as { error?: unknown }).error === 'saved_people_changed';
+        return { rows: [], cursor: null, error: restart ? null : errorMessage(error, response.status), restart };
+      }
       return {
         rows: data.rows.filter((row) => !row.profile?.id).map((row) => ({
           kind: 'observed', key: `contact:${row.canonical_id}`, id: row.canonical_id,

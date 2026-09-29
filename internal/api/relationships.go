@@ -2,6 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -164,6 +167,7 @@ func (s *Server) handleRelationships(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var exclude map[int64]struct{}
+	savedPeople := ""
 	if request.UnsavedOnly {
 		bound, ok := s.store.(BoundParticipantStore)
 		if !ok {
@@ -180,6 +184,12 @@ func (s *Server) handleRelationships(w http.ResponseWriter, r *http.Request) {
 		exclude = make(map[int64]struct{}, len(ids))
 		for _, id := range ids {
 			exclude[id] = struct{}{}
+		}
+		savedPeople = boundParticipantsFingerprint(ids)
+		if request.Cursor != "" && cursor.SavedPeople != savedPeople {
+			writeError(w, http.StatusConflict, "saved_people_changed",
+				"Saved people changed; restart pagination")
+			return
 		}
 	}
 	result, err := analyzer.Relationships(r.Context(), query.RelationshipsRequest{
@@ -214,7 +224,7 @@ func (s *Server) handleRelationships(w http.ResponseWriter, r *http.Request) {
 	if next := offset + len(result.Rows); next < int(result.TotalCount) {
 		response.NextCursor = s.encodeExploreCursor(exploreCursor{
 			Offset: next, Request: requestHash, Revision: result.CacheRevision, IdentityRevision: result.IdentityRevision,
-			DecayDate: decayDate.Format(time.DateOnly),
+			DecayDate: decayDate.Format(time.DateOnly), SavedPeople: savedPeople,
 		})
 	}
 	writeJSON(w, http.StatusOK, response)
@@ -397,4 +407,17 @@ func (s *Server) attachRelationshipRowProfiles(ctx context.Context, rows []query
 		}
 		rows[i].Profile = &query.PersonProfile{ID: person.ID, DisplayName: person.DisplayName, Revision: person.Revision}
 	}
+}
+
+// boundParticipantsFingerprint summarizes the set of saved-person bindings
+// an unsaved-only listing excluded. The IDs arrive sorted, so equal sets
+// produce equal fingerprints.
+func boundParticipantsFingerprint(ids []int64) string {
+	hash := sha256.New()
+	buffer := make([]byte, 8)
+	for _, id := range ids {
+		binary.BigEndian.PutUint64(buffer, uint64(id))
+		hash.Write(buffer)
+	}
+	return hex.EncodeToString(hash.Sum(nil)[:16])
 }

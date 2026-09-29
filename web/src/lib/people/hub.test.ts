@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { looksUnnamed, mergePeople, savedRow, type PeopleRow } from './hub.svelte';
+import { createAPIClient } from '../api/client';
+
+import { looksUnnamed, mergePeople, ObservedContacts, savedRow, type PeopleRow } from './hub.svelte';
 
 function row(kind: PeopleRow['kind'], id: number, lastContactAt?: string, name = `Person ${id}`): PeopleRow {
   return { kind, key: `${kind}:${id}`, id, name, lastContactAt, meta: [] };
@@ -53,5 +55,29 @@ describe('People list merge', () => {
     expect(looksUnnamed('ada@example.test')).toBe(true);
     expect(looksUnnamed('+1 555 555 0100')).toBe(true);
     expect(looksUnnamed('Ada', { kind: 'email', value: 'ada@example.test' })).toBe(false);
+  });
+});
+
+describe('ObservedContacts', () => {
+  it('starts over when saved people changed between pages instead of skipping a contact', async () => {
+    const cursors: Array<string | undefined> = [];
+    const client = createAPIClient(vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const body = await request.clone().json() as { cursor?: string };
+      cursors.push(body.cursor);
+      if (body.cursor) return Response.json({ error: 'saved_people_changed', message: 'restart' }, { status: 409 });
+      return Response.json({ rows: [{
+        canonical_id: 3, display_label: 'Bo Example', last_at: '2026-07-01T00:00:00Z', member_ids: [3], score: 1,
+        signals: { last_interaction_at: '2026-07-01T00:00:00Z', meeting_count: 0, meetings_together: 0, modalities: 1,
+          received_from_them: 0, sent_count: 1, sent_to_them: 1 },
+      }], total_count: 2, cache_revision: 'c', identity_revision: 1, ...(cursors.length === 1 ? { next_cursor: 'page-2' } : {}) });
+    }));
+    const contacts = new ObservedContacts(client);
+    await contacts.load('');
+    await contacts.loadMore();
+    await vi.waitFor(() => expect(cursors).toEqual([undefined, 'page-2', undefined]));
+    await vi.waitFor(() => expect(contacts.loading).toBe(false));
+    expect(contacts.error).toBeNull();
+    expect(contacts.rows.map((row) => row.name)).toEqual(['Bo Example']);
   });
 });

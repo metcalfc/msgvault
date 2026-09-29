@@ -223,6 +223,11 @@ type exploreCursor struct {
 	// duplicate or skip rows without any cursor revision changing.
 	DecayDate string `json:"decay_date,omitempty"`
 
+	// SavedPeople fingerprints the saved-person bindings an unsaved-only
+	// relationship listing excluded, so saving or unbinding someone between
+	// pages invalidates the offset instead of silently skipping a contact.
+	SavedPeople string `json:"saved_people,omitempty"`
+
 	// Timezone and CanonicalID pin a relationship timeline cursor (see
 	// handleRelationshipTimeline) to the request that produced it. Unlike
 	// every other explore-style cursor, a mismatch on any field here —

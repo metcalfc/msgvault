@@ -613,3 +613,36 @@ func TestRelationshipsMarksSavedPeopleAndListsOnlyUnsaved(t *testing.T) {
 	invalid := postExploreJSON(t, srv, "/api/v1/relationships", `{"sort":"alphabetical"}`)
 	assert.Equal(http.StatusBadRequest, invalid.Code)
 }
+
+func TestRelationshipsUnsavedCursorRestartsWhenSavedPeopleChange(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	now := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+	srv, identityStore, _ := newRelationshipIdentityAPIServer(t, newRelationshipsDuckDBFixture(t, now), []string{
+		"owner@example.test", "alice@example.test", "alice@chat.example", "newsletter@example.test",
+	})
+	page := func(cursor string) string {
+		if cursor == "" {
+			return `{"show_all":true,"unsaved_only":true,"sort":"last_contact","limit":1}`
+		}
+		return fmt.Sprintf(`{"show_all":true,"unsaved_only":true,"sort":"last_contact","limit":1,"cursor":%q}`, cursor)
+	}
+	first := relationshipsPage(t, srv, page(""))
+	require.Len(first.Rows, 1)
+	require.NotEmpty(first.NextCursor)
+
+	// Unchanged bindings: the next page continues.
+	next := relationshipsPage(t, srv, page(first.NextCursor))
+	require.Len(next.Rows, 1)
+	assert.NotEqual(first.Rows[0].CanonicalID, next.Rows[0].CanonicalID)
+
+	// Saving the first contact shifts every later offset: the cursor must
+	// restart rather than skip the contact that moved up.
+	_, _, err := identityStore.CreatePersonFromParticipant(first.Rows[0].CanonicalID)
+	require.NoError(err)
+	stale := postExploreJSON(t, srv, "/api/v1/relationships", page(first.NextCursor))
+	assert.Equal(http.StatusConflict, stale.Code)
+	assert.Contains(stale.Body.String(), "saved_people_changed")
+}
