@@ -338,9 +338,10 @@ test('CardDAV account, operations, conflicts, modal, and publication are accessi
     }))}`);
     await openMaintenance(page);
     const publication = page.getByRole('region', { name: 'CardDAV publication' });
+    // The publication state renders as label / value detail rows.
     await expect(publication).toContainText('Not published');
-    await expect(publication).toContainText('Desired publication: Unpublished');
-    await expect(publication).toContainText('Publication address book: Synthetic contacts.');
+    await expect(publication).toContainText(/Desired publication\s+Unpublished/);
+    await expect(publication).toContainText(/Address book\s+Synthetic contacts/);
     await expect(publication.getByRole('switch', { name: 'Publish person to CardDAV' })).toBeEnabled();
     await assertNoViolations(page, `CardDAV publication ${viewport.label}`);
     await assertCardDAVForbiddenMarkersAbsent(page);
