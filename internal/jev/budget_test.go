@@ -281,6 +281,44 @@ func TestClientLedgerReservesBeforeEgressAndRecordsMeasuredUsage(t *testing.T) {
 	assert.Equal(int32(1), calls.Load())
 }
 
+func TestClientReservesTheProcessBudgetBeforeTheDay(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	ledger := &fakeLedger{}
+	budget := &Budget{MaxRequests: 100, FailureThreshold: 1, Cooldown: time.Hour, Now: func() time.Time { return now }}
+	var calls atomic.Int32
+	client, err := NewClient(Options{
+		APIKey: "k", Budget: budget, Ledger: ledger, Now: func() time.Time { return now },
+		Transport: testTransport(func(*http.Request) (*http.Response, error) {
+			calls.Add(1)
+			return nil, errors.New("connection refused")
+		}),
+	})
+	require.NoError(err)
+	request := noulRequest("matches")
+	request.Feature = "enrichment_identity"
+	_, err = client.Ask(context.Background(), request)
+	require.Error(err, "the first failure opens the breaker")
+	require.Len(ledger.reservations, 1)
+
+	_, err = client.Ask(context.Background(), request)
+	require.ErrorIs(err, ErrBreakerOpen)
+	_, err = client.AskAll(context.Background(), []Request{request, request})
+	require.ErrorIs(err, ErrBreakerOpen)
+	assert.Len(ledger.reservations, 1, "an open breaker never touches the day counters")
+	assert.Len(ledger.usage, 1)
+	assert.Equal(int32(1), calls.Load())
+
+	now = now.Add(2 * time.Hour)
+	ledger.reserveErr = ErrDayRequestLimit
+	_, err = client.Ask(context.Background(), request)
+	require.ErrorIs(err, ErrDayRequestLimit)
+	assert.Equal(1, budget.Attempts(), "a refused day reservation releases the in-process slot")
+	assert.Equal(1, budget.State().ConsecutiveFailures, "a refused day reservation is not a provider failure")
+	assert.Len(ledger.usage, 1, "nothing is recorded for a request that never left")
+}
+
 func TestClientLedgerRecordsFailedRequestsWithoutUsage(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

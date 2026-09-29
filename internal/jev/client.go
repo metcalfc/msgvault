@@ -343,11 +343,15 @@ func (c *Client) Ask(ctx context.Context, request Request) (Response, error) {
 	if err := c.budget.preflight(1); err != nil {
 		return emptyResponse(), err
 	}
-	day, err := c.reserveDay(ctx, request.Feature)
-	if err != nil {
+	// The in-process budget is reserved first: a breaker or cost stop must
+	// never touch the persisted day counters. A refused day reservation
+	// releases the in-process slot so neither count drifts.
+	if err := c.budget.reserve(); err != nil {
 		return emptyResponse(), err
 	}
-	if err := c.budget.reserve(); err != nil {
+	day, err := c.reserveDay(ctx, request.Feature)
+	if err != nil {
+		c.budget.release()
 		return emptyResponse(), err
 	}
 	response, err := c.send(ctx, request.Deadline, body, request.Questions)
@@ -385,11 +389,12 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 	group.SetLimit(MaxConcurrentRequests)
 	for i, body := range bodies {
 		group.Go(func() error {
-			day, err := c.reserveDay(groupCtx, requests[i].Feature)
-			if err != nil {
+			if err := c.budget.reserve(); err != nil {
 				return err
 			}
-			if err := c.budget.reserve(); err != nil {
+			day, err := c.reserveDay(groupCtx, requests[i].Feature)
+			if err != nil {
+				c.budget.release()
 				return err
 			}
 			mu.Lock()
