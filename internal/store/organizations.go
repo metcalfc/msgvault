@@ -296,6 +296,38 @@ func (s *Store) GetOrganizationContext(ctx context.Context, id int64) (*Organiza
 	return organization, nil
 }
 
+// OrganizationNamesContext returns the display names of the given
+// organizations, keyed by ID. IDs with no organization are absent.
+func (s *Store) OrganizationNamesContext(ctx context.Context, ids []int64) (map[int64]string, error) {
+	ids = sortedUniqueInt64s(ids...)
+	names := make(map[int64]string, len(ids))
+	if len(ids) == 0 {
+		return names, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name FROM organizations WHERE id IN (`+placeholders(len(ids))+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list organization names: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("scan organization name: %w", err)
+		}
+		names[id] = name
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list organization names: %w", err)
+	}
+	return names, nil
+}
+
 // ListOrganizationsContext returns a bounded, stable organization page.
 func (s *Store) ListOrganizationsContext(
 	ctx context.Context, filter OrganizationFilter,

@@ -138,10 +138,6 @@
     return name.formatted ?? ([name.given_name, name.family_name].filter(Boolean).join(' ') || name.original_value);
   }
 
-  function employmentOrganization(employmentID: number): string | undefined {
-    const projection = entityController?.employmentProjection;
-    return projection?.employment_id === employmentID ? projection.organization_name : undefined;
-  }
 
   /** "Title · Organization · Location" for the current (primary first)
    * employment, when the employments projection has loaded one. */
@@ -150,7 +146,7 @@
     const current = employments.find((employment) => employment.is_current && employment.is_primary)
       ?? employments.find((employment) => employment.is_current);
     if (!current) return '';
-    return [current.title ?? current.role, employmentOrganization(current.id), current.location]
+    return [current.title ?? current.role, entityController?.organizationName(current.organization_id), current.location]
       .map((part) => part?.trim()).filter(Boolean).join(' · ');
   });
 
@@ -231,7 +227,7 @@
     const start = current.start_date?.year
       ? `since ${current.start_date.month ? `${MONTHS[current.start_date.month - 1]} ` : ''}${current.start_date.year}`
       : '';
-    const organization = employmentOrganization(current.id) ?? `Organization ${current.organization_id}`;
+    const organization = entityController?.organizationName(current.organization_id);
     return [organization, current.title ?? current.role, start].map((part) => part?.trim()).filter(Boolean).join(', ');
   });
   const locationFact = $derived.by((): { value: string; source: string } | undefined => {

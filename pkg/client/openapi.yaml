@@ -4021,6 +4021,17 @@ components:
         - organization_id
         - source
       type: object
+    EmploymentOrganization:
+      properties:
+        id:
+          format: int64
+          type: integer
+        name:
+          type: string
+      required:
+        - id
+        - name
+      type: object
     EmploymentProjectionResponse:
       properties:
         department:
@@ -4061,6 +4072,10 @@ components:
         employments:
           items:
             $ref: "#/components/schemas/Employment"
+          type: array
+        organizations:
+          items:
+            $ref: "#/components/schemas/EmploymentOrganization"
           type: array
         projection:
           $ref: "#/components/schemas/EmploymentProjectionResponse"

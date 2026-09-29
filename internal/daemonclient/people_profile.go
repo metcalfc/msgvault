@@ -131,9 +131,10 @@ func (b *PeopleBrowser) GetPersonProfile(
 	return profile, nil
 }
 
-// currentEmployments lists current employments and resolves organization
-// names: the primary projection carries its own, and a bounded number of the
-// remaining organizations are fetched individually.
+// currentEmployments lists current employments with the organization names
+// the listing carries. A daemon that predates those names still names the
+// primary projection, and a bounded number of the remaining organizations
+// are fetched individually.
 func (b *PeopleBrowser) currentEmployments(
 	ctx context.Context, personID int64,
 ) ([]peoplebrowser.PersonEmployment, error) {
@@ -153,6 +154,9 @@ func (b *PeopleBrowser) currentEmployments(
 		return nil, err
 	}
 	names := map[int64]string{}
+	for _, organization := range resp.JSON200.Organizations {
+		names[organization.ID] = organization.Name
+	}
 	if projection := resp.JSON200.Projection; projection != nil {
 		names[projection.OrganizationID] = projection.OrganizationName
 	}

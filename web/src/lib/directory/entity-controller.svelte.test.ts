@@ -112,6 +112,29 @@ describe('DirectoryEntityController', () => {
     expect(new URL(organizationRequest.url).searchParams.get('q')).toBe('synthetic');
   });
 
+  it('names every listed employment organization and prefers a newer organization record', async () => {
+    const client = createAPIClient(vi.fn<typeof fetch>(async (input) => {
+      const request = requestOf(input);
+      if (pathOf(request) === '/api/v1/people/7/employments') {
+        return Response.json({
+          employments: [employment(11, 1, { organization_id: 123 }), employment(12, 1, { is_primary: true })],
+          organizations: [{ id: 21, name: 'Synthetic Org' }, { id: 123, name: 'Synthetic Former Employer' }],
+          projection: { employment_id: 12, organization_id: 21, organization_name: 'Synthetic Org', vcard: {} }
+        });
+      }
+      return defaultResponse(request);
+    }));
+    const controller = new DirectoryEntityController(client, 7);
+
+    await controller.refreshEmployments();
+
+    expect(controller.organizationName(123)).toBe('Synthetic Former Employer');
+    expect(controller.organizationName(21)).toBe('Synthetic Org');
+    expect(controller.organizationName(404)).toBe('Unknown organization');
+    controller.organizationRecords.set(123, { ...organizationProfile(2), organization: { ...organization(2), id: 123, name: 'Renamed Employer' } });
+    expect(controller.organizationName(123)).toBe('Renamed Employer');
+  });
+
   it('builds an employment write from the same fresh record that supplied its ETag', async () => {
     const requests: Request[] = [];
     const directoryChanged = vi.fn();

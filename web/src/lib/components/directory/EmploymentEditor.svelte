@@ -75,7 +75,7 @@
         selectedOrganization = controller.organizations.find((item) => item.id === current.organization_id) ?? {
           id: current.organization_id,
           revision: 0,
-          name: `Organization ${current.organization_id}`,
+          name: controller.organizationName(current.organization_id),
           kind: 'other',
           created_at: current.created_at,
           updated_at: current.updated_at
@@ -195,7 +195,7 @@
       <div role="alert">
         <p>{message}</p>
         {#if conflictCurrent}
-          <EmploymentCurrentData employment={conflictCurrent} organization={conflictOrganization} />
+          <EmploymentCurrentData employment={conflictCurrent} organizationName={conflictOrganization?.id === conflictCurrent.organization_id ? conflictOrganization.name : controller.organizationName(conflictCurrent.organization_id)} />
         {/if}
       </div>
     {/if}

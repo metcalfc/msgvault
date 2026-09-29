@@ -1,10 +1,12 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -26,6 +28,7 @@ type EmploymentStore interface {
 	DeleteEmploymentContext(ctx context.Context, id, expectedRevision int64) error
 	ListEmploymentsContext(ctx context.Context, filter store.EmploymentFilter) ([]store.Employment, error)
 	PrimaryCurrentEmploymentContext(ctx context.Context, personID int64) (store.EmploymentProjection, bool, error)
+	OrganizationNamesContext(ctx context.Context, ids []int64) (map[int64]string, error)
 }
 
 // EmploymentBody is the full mutable field set. Partial dates are inbound
@@ -70,11 +73,20 @@ type EmploymentProjectionResponse struct {
 	VCard            EmploymentVCard `json:"vcard"`
 }
 
-// EmploymentsResponse carries a listing and, only for people, their derived
-// primary-current employment projection.
+// EmploymentOrganization names one organization an employment listing
+// references, so clients never label an employment by its organization ID.
+type EmploymentOrganization struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// EmploymentsResponse carries a listing, the organizations its rows
+// reference, and, only for people, their derived primary-current employment
+// projection.
 type EmploymentsResponse struct {
-	Employments []store.Employment            `json:"employments"`
-	Projection  *EmploymentProjectionResponse `json:"projection,omitzero" nullable:"false"`
+	Employments   []store.Employment            `json:"employments"`
+	Organizations []EmploymentOrganization      `json:"organizations,omitzero" nullable:"false"`
+	Projection    *EmploymentProjectionResponse `json:"projection,omitzero" nullable:"false"`
 }
 
 func (s *Server) registerEmploymentRoutes(api huma.API) {
@@ -322,7 +334,12 @@ func (s *Server) handleListPersonEmployments(w http.ResponseWriter, r *http.Requ
 		s.writeEmploymentError(w, err)
 		return
 	}
-	response := EmploymentsResponse{Employments: rows}
+	organizationNames, err := employmentOrganizations(r.Context(), employments, rows)
+	if err != nil {
+		s.writeEmploymentError(w, err)
+		return
+	}
+	response := EmploymentsResponse{Employments: rows, Organizations: organizationNames}
 	if found {
 		response.Projection = employmentProjectionResponse(projection)
 	}
@@ -355,7 +372,33 @@ func (s *Server) handleListOrganizationEmployments(w http.ResponseWriter, r *htt
 		s.writeEmploymentError(w, err)
 		return
 	}
-	writeEmployments(w, EmploymentsResponse{Employments: rows})
+	organizationNames, err := employmentOrganizations(r.Context(), employments, rows)
+	if err != nil {
+		s.writeEmploymentError(w, err)
+		return
+	}
+	writeEmployments(w, EmploymentsResponse{Employments: rows, Organizations: organizationNames})
+}
+
+// employmentOrganizations names every organization the rows reference, in
+// ID order.
+func employmentOrganizations(
+	ctx context.Context, employments EmploymentStore, rows []store.Employment,
+) ([]EmploymentOrganization, error) {
+	ids := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.OrganizationID)
+	}
+	names, err := employments.OrganizationNamesContext(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	organizations := make([]EmploymentOrganization, 0, len(names))
+	for id, name := range names {
+		organizations = append(organizations, EmploymentOrganization{ID: id, Name: name})
+	}
+	slices.SortFunc(organizations, func(a, b EmploymentOrganization) int { return cmp.Compare(a.ID, b.ID) })
+	return organizations, nil
 }
 
 func (s *Server) employmentFilter(w http.ResponseWriter, r *http.Request, filter store.EmploymentFilter) (store.EmploymentFilter, bool) {

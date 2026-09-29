@@ -229,8 +229,9 @@ describe('OrganizationEmploymentTab', () => {
     expect(alert.textContent).toContain('Changed title');
     expect(alert.textContent).toContain('Concurrent research');
     expect(alert.textContent).toContain('Concurrent campus');
-    expect(alert.textContent).toContain('Concurrent Employment Org (23)');
-    expect(alert.textContent).not.toContain('Exact Employment Org (23)');
+    expect(alert.textContent).toContain('Concurrent Employment Org');
+    expect(alert.textContent).not.toContain('Exact Employment Org');
+    expect(alert.textContent).not.toContain('(23)');
     expect(alert.textContent).toContain('Address ID 33');
     expect(alert.textContent).toContain('0.33');
     expect(title.value).toBe('Draft title');
@@ -329,14 +330,16 @@ describe('OrganizationEmploymentTab', () => {
     }));
     controller.organizations = [organization()];
     controller.employments = [employment()];
+    controller.employmentOrganizationNames.set(22, 'Concurrent Primary Org');
     render(OrganizationEmploymentTab, { controller, personID: 7 });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Make primary employment' }));
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('primary changed elsewhere');
-    expect(alert.textContent).toContain('Organization 22');
-    expect(alert.textContent).not.toContain('Synthetic Org (22)');
+    expect(alert.textContent).toContain('Concurrent Primary Org');
+    expect(alert.textContent).not.toContain('Synthetic Org');
+    expect(alert.textContent).not.toContain('Organization 22');
     expect(alert.textContent).toContain('Concurrent role');
     expect(alert.textContent).toContain('Concurrent primary department');
     expect(alert.textContent).toContain('Address ID 66');

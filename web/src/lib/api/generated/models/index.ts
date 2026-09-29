@@ -236,6 +236,7 @@ export * from "./durationTotals";
 export * from "./employment";
 export * from "./employmentBody";
 export * from "./employmentBodySource";
+export * from "./employmentOrganization";
 export * from "./employmentProjectionResponse";
 export * from "./employmentsResponse";
 export * from "./employmentVCard";

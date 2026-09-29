@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -449,16 +450,26 @@ func writeCLIEmploymentList(
 
 	// A person-scoped listing distinguishes rows by employer; an
 	// organization-scoped listing distinguishes them by employee.
+	// Organizations are named alongside their IDs when the daemon sends them.
+	organizationNames := make(map[int64]string, len(response.Organizations))
+	for _, organization := range response.Organizations {
+		organizationNames[organization.ID] = organization.Name
+	}
 	counterpartHeader := "ORGANIZATION"
-	counterpartID := func(employment generated.Employment) int64 { return employment.OrganizationID }
+	counterpart := func(employment generated.Employment) string {
+		if name := organizationNames[employment.OrganizationID]; name != "" {
+			return fmt.Sprintf("%s (%d)", name, employment.OrganizationID)
+		}
+		return strconv.FormatInt(employment.OrganizationID, 10)
+	}
 	if !personScoped {
 		counterpartHeader = "PERSON"
-		counterpartID = func(employment generated.Employment) int64 { return employment.PersonID }
+		counterpart = func(employment generated.Employment) string { return strconv.FormatInt(employment.PersonID, 10) }
 	}
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "ID\t"+counterpartHeader+"\tTITLE\tSTART\tEND\tCURRENT\tPRIMARY")
 	for _, employment := range response.Employments {
-		_, _ = fmt.Fprintf(w, "%d\t%d\t%s\t%s\t%s\t%t\t%t\n", employment.ID, counterpartID(employment), cliString(employment.Title), formatCLIPartialDate(employment.StartDate), formatCLIPartialDate(employment.EndDate), employment.IsCurrent, employment.IsPrimary)
+		_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%t\t%t\n", employment.ID, counterpart(employment), cliString(employment.Title), formatCLIPartialDate(employment.StartDate), formatCLIPartialDate(employment.EndDate), employment.IsCurrent, employment.IsPrimary)
 	}
 	if err := w.Flush(); err != nil {
 		return fmt.Errorf("flush employment table: %w", err)

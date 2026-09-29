@@ -40,13 +40,7 @@
   });
 
   function organizationName(id: number): string {
-    return controller.organizations.find((item) => item.id === id)?.name
-      ?? (controller.employmentProjection?.organization_id === id ? controller.employmentProjection.organization_name : undefined)
-      ?? `Organization ${id}`;
-  }
-
-  function organizationRecord(id: number): Organization | undefined {
-    return controller.organizations.find((item) => item.id === id);
+    return controller.organizationName(id);
   }
 
   function employmentLabel(employment: Employment): string {
@@ -173,7 +167,7 @@
       <div role="alert">
         <p>{actionMessage}</p>
         {#if actionConflictCurrent}
-          <EmploymentCurrentData employment={actionConflictCurrent} organization={organizationRecord(actionConflictCurrent.organization_id)} />
+          <EmploymentCurrentData employment={actionConflictCurrent} organizationName={organizationName(actionConflictCurrent.organization_id)} />
         {/if}
       </div>
     {/if}
@@ -209,7 +203,7 @@
       <div role="alert">
         <p>{deleteMessage}</p>
         {#if deleteConflictCurrent}
-          <EmploymentCurrentData employment={deleteConflictCurrent} organization={organizationRecord(deleteConflictCurrent.organization_id)} />
+          <EmploymentCurrentData employment={deleteConflictCurrent} organizationName={organizationName(deleteConflictCurrent.organization_id)} />
         {/if}
       </div>
     {/if}

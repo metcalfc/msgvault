@@ -73,6 +73,8 @@ export class DirectoryEntityController {
   relationshipTypes = $state<RelationshipType[]>([]);
   network = $state<PersonNetwork | null>(null);
   organizationRecords = new SvelteMap<number, OrganizationProfile>();
+  /** Names of the organizations the last employment listing referenced. */
+  employmentOrganizationNames = new SvelteMap<number, string>();
   employmentRecords = new SvelteMap<number, Employment>();
   relationshipRecords = new SvelteMap<number, PersonRelationship>();
   relationshipTypeRecords = new SvelteMap<number, RelationshipType>();
@@ -131,6 +133,16 @@ export class DirectoryEntityController {
   get networkLoading(): boolean {
     return this.loading.network;
   }
+  /** The organization's name from the freshest source this controller holds.
+   * Employment rows carry only an ID, so the listing's own names back the
+   * organization records and search results an edit may have renamed. */
+  organizationName(id: number): string {
+    return this.organizationRecords.get(id)?.organization.name
+      ?? this.organizations.find((item) => item.id === id)?.name
+      ?? this.employmentOrganizationNames.get(id)
+      ?? (this.employmentProjection?.organization_id === id ? this.employmentProjection.organization_name : undefined)
+      ?? 'Unknown organization';
+  }
   /** The network stays lazy: PersonNetwork requests it when its tab opens. */
   async load(): Promise<void> {
     await Promise.all([this.refreshEmployments(), this.refreshRelationships(), this.refreshRelationshipTypes()]);
@@ -173,6 +185,10 @@ export class DirectoryEntityController {
       if (response.data) {
         this.employments = response.data.employments ?? [];
         this.employmentProjection = response.data.projection;
+        this.employmentOrganizationNames.clear();
+        for (const organization of response.data.organizations ?? []) {
+          this.employmentOrganizationNames.set(organization.id, organization.name);
+        }
         if (clearCreateBlock) this.createBlocked.employments = false;
         delete this.errors.employments;
         return true;

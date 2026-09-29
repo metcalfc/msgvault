@@ -178,7 +178,7 @@ describe('PersonDetail', () => {
     expect(participantRequests.sort()).toEqual(['/api/v1/participants/3', '/api/v1/participants/9']);
   });
 
-  it('does not claim an organization name for an employment outside the primary projection', async () => {
+  it('names an employment outside the primary projection from the listing, not the projection', async () => {
     const client = createAPIClient(vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const overview = overviewCardResponse(request);
@@ -186,6 +186,7 @@ describe('PersonDetail', () => {
       const path = new URL(request.url).pathname;
       if (path === '/api/v1/people/7/employments') return Response.json({
         employments: [{ id: 4, person_id: 7, organization_id: 9, is_current: true, is_primary: false, source: 'user', revision: 1, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', role: 'Contributor' }],
+        organizations: [{ id: 2, name: 'Incorrect organization' }, { id: 9, name: 'Synthetic Employer' }],
         projection: { employment_id: 3, organization_id: 2, organization_name: 'Incorrect organization', vcard: {} }
       });
       if (path === '/api/v1/people/7/relationships') return Response.json({ relationships: [] });
@@ -198,8 +199,9 @@ describe('PersonDetail', () => {
     render(PersonDetail, { client, bundle: { etags: {}, errors: {} }, personID: 7, entityController });
 
     expect(await screen.findByText(/Contributor/)).toBeDefined();
-    expect(screen.queryByText('Incorrect organization')).toBeNull();
-    expect(screen.getByText(/Organization 9/)).toBeDefined();
+    expect(screen.queryByText(/Incorrect organization/)).toBeNull();
+    expect(screen.getByText(/Synthetic Employer, Contributor/)).toBeDefined();
+    expect(screen.queryByText(/Organization 9/)).toBeNull();
   });
 
   it('shows the exact failed section without inventing missing data', () => {

@@ -3461,6 +3461,12 @@ func (a *storeAPIAdapter) PrimaryCurrentEmploymentContext(
 	return a.store.PrimaryCurrentEmploymentContext(ctx, personID)
 }
 
+func (a *storeAPIAdapter) OrganizationNamesContext(
+	ctx context.Context, ids []int64,
+) (map[int64]string, error) {
+	return a.store.OrganizationNamesContext(ctx, ids)
+}
+
 func (a *storeAPIAdapter) ClusterMembers(id int64) ([]int64, error) {
 	return a.store.ClusterMembers(id)
 }

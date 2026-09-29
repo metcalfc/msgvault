@@ -1,18 +1,12 @@
 <script lang="ts">
-  import type { Employment, Organization } from '../../directory/models';
+  import type { Employment } from '../../directory/models';
 
   interface Props {
     employment: Employment;
-    organization?: Organization;
+    organizationName: string;
   }
 
-  let { employment, organization = undefined }: Props = $props();
-
-  function organizationText(): string {
-    return organization?.id === employment.organization_id
-      ? `${organization.name} (${employment.organization_id})`
-      : `Organization ${employment.organization_id}`;
-  }
+  let { employment, organizationName }: Props = $props();
 
   function partialDate(value: { year?: number; month?: number; day?: number } | undefined): string {
     if (!value) return '';
@@ -25,7 +19,7 @@
 </script>
 
 <dl aria-label="Current saved employment">
-  <div><dt>Organization</dt><dd>{organizationText()}</dd></div>
+  <div><dt>Organization</dt><dd>{organizationName}</dd></div>
   <div><dt>Person</dt><dd>{employment.person_id}</dd></div>
   <div><dt>Title</dt><dd>{employment.title || 'None'}</dd></div>
   <div><dt>Role</dt><dd>{employment.role || 'None'}</dd></div>

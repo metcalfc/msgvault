@@ -127,6 +127,47 @@ func TestPersonEmploymentsProjectionIsAbsentWithoutAPrimaryCurrentRow(t *testing
 	assert.Nil(listed.Projection, "no primary current employment means no projection")
 }
 
+func TestPersonEmploymentsNameEveryReferencedOrganization(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, st := newOrganizationTestServerWithStore(t)
+	person := mustAPIPerson(t, st, "bob@example.com", "bob")
+	current := mustAPIOrganization(t, st, "Current Org")
+	former := mustAPIOrganization(t, st, "Former Org")
+
+	for _, body := range []string{
+		fmt.Sprintf(`{"person_id":%d,"organization_id":%d,"title":"Engineer","is_primary":true,"source":"user"}`,
+			person.ID, current.ID),
+		fmt.Sprintf(`{"person_id":%d,"organization_id":%d,"title":"Analyst","is_current":false,"end_date":"2020","source":"user"}`,
+			person.ID, former.ID),
+	} {
+		response := organizationRequest(t, srv, http.MethodPost, employmentsPath, []byte(body), "")
+		require.Equal(http.StatusCreated, response.Code, response.Body.String())
+	}
+
+	response := organizationRequest(t, srv, http.MethodGet,
+		fmt.Sprintf("/api/v1/people/%d/employments", person.ID), nil, "")
+	require.Equal(http.StatusOK, response.Code)
+	var listed EmploymentsResponse
+	require.NoError(json.Unmarshal(response.Body.Bytes(), &listed))
+	require.Len(listed.Employments, 2)
+	require.NotNil(listed.Projection)
+	assert.Equal(current.ID, listed.Projection.OrganizationID)
+	assert.ElementsMatch([]EmploymentOrganization{
+		{ID: current.ID, Name: "Current Org"},
+		{ID: former.ID, Name: "Former Org"},
+	}, listed.Organizations,
+		"an employment outside the projection is named by the listing, not left to its ID")
+
+	byOrganization := organizationRequest(t, srv, http.MethodGet,
+		fmt.Sprintf("%s/%d/employments", organizationsPath, former.ID), nil, "")
+	require.Equal(http.StatusOK, byOrganization.Code)
+	var organizationListing EmploymentsResponse
+	require.NoError(json.Unmarshal(byOrganization.Body.Bytes(), &organizationListing))
+	assert.Equal([]EmploymentOrganization{{ID: former.ID, Name: "Former Org"}}, organizationListing.Organizations)
+}
+
 func TestEmploymentHTTPValidationAndConflictMapping(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

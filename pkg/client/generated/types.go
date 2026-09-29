@@ -3623,6 +3623,15 @@ func (e EmploymentBody) Validate() error {
 	return errors
 }
 
+type EmploymentOrganization struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name" validate:"required"`
+}
+
+func (e EmploymentOrganization) Validate() error {
+	return runtime.ConvertValidatorError(typesValidator.Struct(e))
+}
+
 type EmploymentProjectionResponse struct {
 	Department       *string         `json:"department,omitzero"`
 	EmploymentID     int64           `json:"employment_id"`
@@ -3656,8 +3665,9 @@ type EmploymentVCard struct {
 }
 
 type EmploymentsResponse struct {
-	Employments []Employment                  `json:"employments" validate:"required"`
-	Projection  *EmploymentProjectionResponse `json:"projection,omitempty"`
+	Employments   []Employment                  `json:"employments" validate:"required"`
+	Organizations []EmploymentOrganization      `json:"organizations,omitempty"`
+	Projection    *EmploymentProjectionResponse `json:"projection,omitempty"`
 }
 
 func (e EmploymentsResponse) Validate() error {
@@ -3666,6 +3676,13 @@ func (e EmploymentsResponse) Validate() error {
 		if v, ok := any(item).(runtime.Validator); ok {
 			if err := v.Validate(); err != nil {
 				errors = errors.Append(fmt.Sprintf("Employments[%d]", i), err)
+			}
+		}
+	}
+	for i, item := range e.Organizations {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("Organizations[%d]", i), err)
 			}
 		}
 	}
