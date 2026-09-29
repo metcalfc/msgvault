@@ -79,7 +79,7 @@ do not invent field names.
   `jev/api_key` in `internal/providercredentials` bound to the endpoint
   origin, so the key can be pasted in Settings like the Exa key. Expose the
   `[jev]` keys and the credential slot through the settings API metadata.
-- [ ] **Task 0.4 Consent.** Add `jev_feature_consents(feature,
+- [x] **Task 0.4 Consent.** Add `jev_feature_consents(feature,
   policy_fingerprint, granted_at, revoked_at)` and a `jev.Gate` modeled on
   `SemanticPersonEmbeddingGate`: the fingerprint hashes feature name,
   question wording, state field list, model, and endpoint. Any change

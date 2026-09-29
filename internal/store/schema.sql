@@ -4410,3 +4410,21 @@ CREATE TABLE IF NOT EXISTS jev_day_counters (
     cost_usd_micros INTEGER NOT NULL DEFAULT 0 CHECK (cost_usd_micros >= 0),
     PRIMARY KEY (feature, utc_day)
 );
+
+-- Consent for one Jev feature's exact outbound policy. The fingerprint hashes
+-- the feature name, question wording, disclosed state fields, model, and
+-- endpoint; any change needs a new grant. At most one grant per feature and
+-- fingerprint is active.
+CREATE TABLE IF NOT EXISTS jev_feature_consents (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    feature            TEXT NOT NULL,
+    policy_fingerprint TEXT NOT NULL,
+    granted_by         TEXT NOT NULL,
+    granted_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    revoked_by         TEXT,
+    revoked_at         DATETIME,
+    CHECK ((revoked_by IS NULL) = (revoked_at IS NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jev_feature_consents_active
+    ON jev_feature_consents(feature, policy_fingerprint)
+    WHERE revoked_at IS NULL;

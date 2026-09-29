@@ -1,0 +1,252 @@
+package jev
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func testSpec() FeatureSpec {
+	return FeatureSpec{
+		Name: FeatureEnrichmentIdentity, Title: "Test identity", Purpose: "Decide whether two names match.",
+		Questions: []Question{{
+			ID: "same", Type: QuestionNoul,
+			Instructions: "Is `left` the same person as `right`?",
+			Criteria:     NoulCriteria{True: "Same person.", False: "Different people."},
+		}},
+		StateFields: []string{"left", "right"},
+	}
+}
+
+type fakeConsents struct {
+	mu     sync.Mutex
+	active map[string]string
+	err    error
+}
+
+func (c *fakeConsents) HasActiveJevFeatureConsent(_ context.Context, feature, fingerprint string) (bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.err != nil {
+		return false, c.err
+	}
+	return c.active[feature] == fingerprint, nil
+}
+
+type recordedRequest struct {
+	Authorization string
+	Body          map[string]any
+}
+
+func newFakeJev(t *testing.T, response string) (*httptest.Server, *[]recordedRequest) {
+	t.Helper()
+	var mu sync.Mutex
+	recorded := make([]recordedRequest, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(body, &decoded); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		recorded = append(recorded, recordedRequest{Authorization: r.Header.Get("Authorization"), Body: decoded})
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, response)
+	}))
+	t.Cleanup(server.Close)
+	return server, &recorded
+}
+
+func serviceConfig(endpoint string) Config {
+	var cfg Config
+	cfg.ApplyDefaults()
+	cfg.Enabled = true
+	cfg.Endpoint = endpoint
+	cfg.IdentityVerification = FeatureConfig{Enabled: true}
+	return cfg
+}
+
+func TestPolicyFingerprintTracksWordingFieldsModelAndEndpoint(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	cfg := serviceConfig("https://api.typesafe.ai/v1/systemone")
+	base, err := testSpec().Policy(cfg)
+	require.NoError(err)
+	assert.Len(base.Fingerprint, 64)
+	same, err := testSpec().Policy(cfg)
+	require.NoError(err)
+	assert.Equal(base.Fingerprint, same.Fingerprint, "the fingerprint is deterministic")
+
+	reordered := testSpec()
+	reordered.StateFields = []string{"right", "left"}
+	policy, err := reordered.Policy(cfg)
+	require.NoError(err)
+	assert.Equal(base.Fingerprint, policy.Fingerprint, "field order does not matter")
+
+	worded := testSpec()
+	worded.Questions[0].Instructions = "Could `left` be `right`?"
+	policy, err = worded.Policy(cfg)
+	require.NoError(err)
+	assert.NotEqual(base.Fingerprint, policy.Fingerprint, "wording changes the policy")
+
+	fields := testSpec()
+	fields.StateFields = append(fields.StateFields, "email")
+	policy, err = fields.Policy(cfg)
+	require.NoError(err)
+	assert.NotEqual(base.Fingerprint, policy.Fingerprint, "a new disclosed field changes the policy")
+
+	model := cfg
+	model.Model = "jev-2.0.0"
+	policy, err = testSpec().Policy(model)
+	require.NoError(err)
+	assert.NotEqual(base.Fingerprint, policy.Fingerprint, "the model changes the policy")
+
+	endpoint := cfg
+	endpoint.Endpoint = "https://proxy.example.test/v1/systemone"
+	policy, err = testSpec().Policy(endpoint)
+	require.NoError(err)
+	assert.NotEqual(base.Fingerprint, policy.Fingerprint, "the destination changes the policy")
+
+	_, err = FeatureSpec{Name: "x"}.Policy(cfg)
+	require.Error(err)
+}
+
+func TestServiceJudgeSendsExactPolicyOnlyWhenEveryGatePasses(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	server, recorded := newFakeJev(t, `{"model":"jev-1.13.0","answers":{"same":{"type":"noul","noul":0.93}},"usage":{"input_tokens":50,"output_tokens":5}}`)
+	cfg := serviceConfig(server.URL)
+	consents := &fakeConsents{active: map[string]string{}}
+	credential := "secret-key"
+	service, err := NewService(ServiceOptions{
+		Config:   func() (Config, error) { return cfg, nil },
+		Consents: consents,
+		Credential: func(endpoint, apiKeyEnv string) (string, bool, error) {
+			assert.Equal(server.URL, endpoint)
+			assert.Equal(DefaultAPIKeyEnv, apiKeyEnv)
+			return credential, credential != "", nil
+		},
+	})
+	require.NoError(err)
+	state := map[string]any{"left": "Susie Singh", "right": "Susie S."}
+
+	_, err = service.Judge(context.Background(), testSpec(), false, state, time.Time{})
+	require.ErrorIs(err, ErrConsentRequired)
+	assert.Equal("consent_required", Skipped(err))
+	assert.True(Inactive(err))
+	assert.Empty(*recorded, "no consent means nothing is sent")
+
+	policy, err := service.Policy(testSpec())
+	require.NoError(err)
+	consents.active[FeatureEnrichmentIdentity] = policy.Fingerprint
+
+	_, err = service.Judge(context.Background(), testSpec(), true, state, time.Time{})
+	require.ErrorIs(err, ErrAutomaticDisabled)
+	assert.Equal("manual_only", Skipped(err))
+	assert.Empty(*recorded, "automatic callers need automatic = true")
+
+	response, err := service.Judge(context.Background(), testSpec(), false, state, time.Time{})
+	require.NoError(err)
+	assert.InDelta(0.93, response.Answers["same"].Noul, 1e-9)
+	require.Len(*recorded, 1)
+	sent := (*recorded)[0]
+	assert.Equal("Bearer secret-key", sent.Authorization)
+	assert.Equal(map[string]any{"left": "Susie Singh", "right": "Susie S."}, sent.Body["state"])
+	assert.Equal(DefaultModel, sent.Body["model"])
+	assert.Equal(map[string]any{"same": map[string]any{
+		"type": "noul", "instructions": "Is `left` the same person as `right`?",
+		"criteria": map[string]any{"true": "Same person.", "false": "Different people."},
+	}}, sent.Body["questions"], "the consented wording is what goes out")
+
+	cfg.IdentityVerification.Automatic = true
+	_, err = service.Judge(context.Background(), testSpec(), true, state, time.Time{})
+	require.NoError(err)
+	assert.Len(*recorded, 2)
+
+	credential = ""
+	_, err = service.Judge(context.Background(), testSpec(), false, state, time.Time{})
+	require.ErrorIs(err, ErrCredentialMissing)
+	assert.Equal("credential_missing", Skipped(err))
+	credential = "secret-key"
+
+	cfg.IdentityVerification.Enabled = false
+	_, err = service.Judge(context.Background(), testSpec(), false, state, time.Time{})
+	require.ErrorIs(err, ErrFeatureDisabled)
+	cfg.IdentityVerification.Enabled = true
+
+	cfg.Enabled = false
+	_, err = service.Judge(context.Background(), testSpec(), false, state, time.Time{})
+	require.ErrorIs(err, ErrDisabled)
+	cfg.Enabled = true
+
+	cfg.Model = "jev-2.0.0"
+	_, err = service.Judge(context.Background(), testSpec(), false, state, time.Time{})
+	require.ErrorIs(err, ErrConsentRequired, "a model change invalidates the consent")
+	cfg.Model = DefaultModel
+
+	consents.err = errors.New("database locked")
+	_, err = service.Judge(context.Background(), testSpec(), false, state, time.Time{})
+	require.ErrorIs(err, ErrPolicyUnavailable)
+	assert.Equal("policy_unavailable", Skipped(err))
+	assert.False(Inactive(err), "an unreadable policy is a fault, not an administrative state")
+	assert.Len(*recorded, 2, "gate failures never reach the provider")
+}
+
+func TestServiceJudgeReportsProviderFailuresAsCategories(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "private provider body", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+	cfg := serviceConfig(server.URL)
+	spec := testSpec()
+	policy, err := spec.Policy(cfg)
+	require.NoError(err)
+	budget := &Budget{MaxRequests: 100, FailureThreshold: 2, Cooldown: time.Hour}
+	service, err := NewService(ServiceOptions{
+		Config:     func() (Config, error) { return cfg, nil },
+		Consents:   &fakeConsents{active: map[string]string{FeatureEnrichmentIdentity: policy.Fingerprint}},
+		Credential: func(string, string) (string, bool, error) { return "k", true, nil },
+		Budget:     budget,
+	})
+	require.NoError(err)
+	for range 2 {
+		_, err = service.Judge(context.Background(), spec, false, map[string]any{"left": "a", "right": "b"}, time.Time{})
+		require.Error(err)
+		assert.Equal("provider_error", Skipped(err))
+		assert.NotContains(err.Error(), "private provider body")
+	}
+	_, err = service.Judge(context.Background(), spec, false, map[string]any{"left": "a", "right": "b"}, time.Time{})
+	require.ErrorIs(err, ErrBreakerOpen)
+	assert.Equal("breaker_open", Skipped(err))
+	assert.Equal(2, service.BudgetState().ConsecutiveFailures)
+}
+
+func TestSafeAnswersAndQuestionText(t *testing.T) {
+	assert := assert.New(t)
+	answers := SafeAnswers(map[string]Answer{
+		"b": {Type: QuestionChoice, Choice: "x", Probabilities: map[string]float64{"x": 0.9, "y": 0.1}, Confidence: 0.8},
+		"a": {Type: QuestionNoul, Noul: 0.4},
+	})
+	assert.Equal("a", answers[0].ID)
+	assert.Equal("b", answers[1].ID)
+	assert.Equal("x", answers[1].Choice)
+	assert.Equal("plain text", QuestionText("plain text"))
+	assert.JSONEq(`{"focus":"names","question":"Same?"}`, QuestionText(map[string]any{"question": "Same?", "focus": "names"}))
+}

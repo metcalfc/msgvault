@@ -28,6 +28,7 @@ import (
 	"go.kenn.io/msgvault/internal/deletion"
 	msgexport "go.kenn.io/msgvault/internal/export"
 	"go.kenn.io/msgvault/internal/identityops"
+	"go.kenn.io/msgvault/internal/jev"
 	"go.kenn.io/msgvault/internal/opserr"
 	"go.kenn.io/msgvault/internal/peoplesweep"
 	"go.kenn.io/msgvault/internal/provideridentity"
@@ -1615,7 +1616,12 @@ func validateCLIDeletionManifest(manifest *deletion.Manifest) *apiHTTPError {
 	return nil
 }
 
-const cliRunPersonCommand = "person"
+const (
+	cliRunPersonCommand    = "person"
+	cliRunStatusOperation  = "status"
+	cliRunConsentOperation = "consent"
+	cliRunRevokeOperation  = "revoke"
+)
 
 // cliRunCommandAllowed reports whether a proxied CLI command may run through
 // the daemon CLI runner. Most commands are admitted by their leading word
@@ -1665,6 +1671,9 @@ func cliRunCommandAllowed(args []string) bool {
 		default:
 			return false
 		}
+	}
+	if args[0] == "jev" {
+		return cliRunJevAllowed(args[1:])
 	}
 	if args[0] == cliRunPersonCommand {
 		if len(args) < 3 {
@@ -1863,6 +1872,51 @@ func validPersonProviderFingerprint(fingerprint string) bool {
 		}
 	}
 	return true
+}
+
+// cliRunJevAllowed admits the Jev consent boundary: status, consent for one
+// named feature, and revoke for one feature or --all. Feature names are
+// lowercase identifiers, never free text.
+func cliRunJevAllowed(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	operation := args[0]
+	values, positionals, ok := cliRunStrictFlagValues(args[1:])
+	if !ok {
+		return false
+	}
+	allowed := func(names ...string) bool {
+		set := make(map[string]struct{}, len(names)+4)
+		for _, name := range names {
+			set[name] = struct{}{}
+		}
+		for _, name := range []string{"log-level", "verbose", "log-sql", "log-sql-slow-ms"} {
+			set[name] = struct{}{}
+		}
+		for name := range values {
+			if _, exists := set[name]; !exists {
+				return false
+			}
+		}
+		return true
+	}
+	switch operation {
+	case cliRunStatusOperation:
+		return len(positionals) == 0 && allowed("json")
+	case cliRunConsentOperation:
+		return len(positionals) == 1 && jev.ValidFeatureName(positionals[0]) && allowed("yes", "json")
+	case cliRunRevokeOperation:
+		if !allowed("all", "json") {
+			return false
+		}
+		if len(positionals) == 1 {
+			return jev.ValidFeatureName(positionals[0]) && values["all"] == ""
+		}
+		return len(positionals) == 0 && values["all"] == "true"
+	default:
+		return false
+	}
 }
 
 func cliRunPersonEnrichmentAllowed(args []string) bool {
