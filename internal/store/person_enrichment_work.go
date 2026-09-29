@@ -1388,9 +1388,10 @@ func (s *Store) MarkTerminal(
 			}
 			return fmt.Errorf("load terminal person enrichment attempt revision: %w", err)
 		}
-		// A terminal attempt records what its calls actually cost, so an
+		// A terminal attempt records what its calls reported costing, so an
 		// empty lookup plus a failed retry charge the counters like any
-		// other outcome. An unobserved cost stays missing.
+		// other outcome, including an estimated charge on a profile without
+		// a hard cap. An unobserved cost stays missing.
 		if _, err := reconcilePersonEnrichmentCostTx(ctx, tx, s.dialect, token.AttemptID,
 			failure.Cost, failure.Cost == (personenrichment.Cost{}), s.personEnrichmentTime()); err != nil {
 			return err
@@ -2060,6 +2061,17 @@ func lockPersonEnrichmentCountersTx(
 	return run, person, daily, nil
 }
 
+// reconcilePersonEnrichmentCostTx settles one attempt's cost reservation
+// against what the provider reported. The two accounting modes differ:
+//
+//   - A hard-cap attempt reserved a guaranteed maximum. Only a firm USD
+//     charge replaces that reservation; an estimated or missing charge keeps
+//     the reservation as the charge, and a firm charge above it disables new
+//     starts for the profile.
+//   - A profile without a hard cap (Exa, whose request limits govern spend)
+//     reserved nothing. Any reported USD charge, estimated or firm, is added to
+//     the charged counters and recorded on the attempt so run and day totals
+//     reflect what the provider billed. A missing charge adds nothing.
 func reconcilePersonEnrichmentCostTx(
 	ctx context.Context, tx *loggedTx, dialect Dialect, attemptID int64,
 	actual personenrichment.Cost, missing bool, now time.Time,
@@ -2106,7 +2118,7 @@ func reconcilePersonEnrichmentCostTx(
 				}
 			}
 		}
-	} else if !missing && actual.Currency == "USD" && !actual.Estimated {
+	} else if !missing && actual.Currency == "USD" && actual.Validate() == nil {
 		charged = actual.AmountMicros
 		actualValue = actual.AmountMicros
 	}
