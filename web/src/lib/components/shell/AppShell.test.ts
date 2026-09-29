@@ -974,6 +974,28 @@ describe('AppShell', () => {
     state.destroy();
   });
 
+  it('falls back to the lowest bound participant and says so when identity lookups fail', async () => {
+    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
+      workspace: 'directory', directoryPersonID: 7
+    }))}`);
+    const { fetchFn } = directoryPersonFetch([9, 3], {});
+    fetchFn.mockImplementation(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      if (/^\/api\/v1\/participants\/\d+$/.test(path)) throw new TypeError('network down');
+      return directoryPersonFetch([9, 3], {}).fetchFn(input);
+    });
+    const state = new ExploreState(window);
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Open timeline for Synthetic Person' }));
+    await waitFor(() => expect(state.current).toMatchObject({ workspace: 'relationships', relationshipTarget: 'cluster:3' }));
+    expect(screen.getByRole('status', { name: 'Operation status' }).textContent).toContain('Could not resolve this person');
+
+    rendered.unmount();
+    state.destroy();
+  });
+
   it('opens the busiest cluster when bound participants span several and names the others', async () => {
     window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
       workspace: 'directory', directoryPersonID: 7

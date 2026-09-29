@@ -77,7 +77,7 @@
   import { getMessage } from '../../api/generated/api/api';
   import { dayWindowFilters } from '../../explore/date-range';
   import type { RelationshipSiblingCluster } from '../../relationships/models';
-  import { resolveBoundClusters, validParticipantIDs } from '../../people/clusters';
+  import { resolveBoundClusters, validParticipantIDs, type BoundCluster } from '../../people/clusters';
   import { messageEntryKey } from '../../explore/entry-key';
   import { ARCHIVE_MEETING_HISTORY_KEY, parseArchiveMeetingHistory } from '../../meetings/archive-selection';
   import EverythingWorkspace from './EverythingWorkspace.svelte';
@@ -228,10 +228,26 @@
     const ids = validParticipantIDs(participantIDs);
     if (ids.length === 0) return;
     const origin = canonicalFingerprint(exploreState.current);
-    const { clusters } = await resolveBoundClusters(ids, client);
+    let clusters: BoundCluster[] = [];
+    let failedIDs: number[] = ids;
+    try {
+      ({ clusters, failedIDs } = await resolveBoundClusters(ids, client));
+    } catch {
+      // resolveBoundClusters absorbs per-lookup failures; anything else
+      // (a client-level fault) falls through to the same fallback below.
+    }
     if (origin !== canonicalFingerprint(exploreState.current)) return;
     const first = clusters[0];
-    if (!first) return;
+    if (!first) {
+      // Every lookup failed: still open something useful — the lowest
+      // bound id, which the hub resolves on its own — and say why.
+      announceOperation('Could not resolve this person\'s identities; opening the timeline for the first bound participant.');
+      openRelationship(ids[0]!);
+      return;
+    }
+    if (failedIDs.length > 0) {
+      announceOperation(`Could not resolve ${failedIDs.length === 1 ? 'one bound identity' : `${failedIDs.length} bound identities`}; opening the rest.`);
+    }
     openRelationship(first.canonicalID);
     relationshipSiblings = clusters.length > 1
       ? clusters.map((cluster) => ({ target: `cluster:${cluster.canonicalID}`, label: cluster.label, activityCount: cluster.activityCount }))
@@ -1327,7 +1343,7 @@
       onOpenCardDAVConflict={openCardDAVConflict}
       onOpenCardDAVSettings={openCardDAVSettings}
       onAnnounce={announceOperation}
-      onOpenTimeline={openDirectoryPersonTimeline}
+      onOpenTimeline={(participantIDs) => void openDirectoryPersonTimeline(participantIDs)}
       onOpenMessage={(messageID) => void openMessageByID(messageID)}
     />
   {:else if exploreState.current.workspace === 'directory_review'}
