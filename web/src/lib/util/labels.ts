@@ -27,7 +27,7 @@ const messageTypeLabels: Record<string, string> = {
 
 /** True for archive message types with a curated label. */
 export function isKnownMessageType(type: string | null | undefined): boolean {
-  return Boolean(type) && (type!.trim().toLowerCase() in messageTypeLabels);
+  return Boolean(type) && Object.hasOwn(messageTypeLabels, type!.trim().toLowerCase());
 }
 
 /** "imessage" → "Text (iMessage)", "calendar_event" → "Event"; unknown
@@ -36,8 +36,7 @@ export function isKnownMessageType(type: string | null | undefined): boolean {
 export function messageTypeLabel(type: string | null | undefined): string {
   const normalized = type?.trim().toLowerCase() ?? '';
   if (!normalized) return '';
-  const known = messageTypeLabels[normalized];
-  if (known) return known;
+  if (Object.hasOwn(messageTypeLabels, normalized)) return messageTypeLabels[normalized]!;
   const words = normalized.replaceAll('_', ' ');
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
@@ -51,6 +50,6 @@ const channelLabels: Record<string, string> = {
 export function channelLabel(channel: string | null | undefined): string {
   const normalized = channel?.trim().toLowerCase() ?? '';
   if (!normalized) return '';
-  if (normalized in channelLabels) return channelLabels[normalized]!;
+  if (Object.hasOwn(channelLabels, normalized)) return channelLabels[normalized]!;
   return messageTypeLabel(normalized).toLowerCase();
 }
