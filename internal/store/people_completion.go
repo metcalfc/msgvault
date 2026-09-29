@@ -45,7 +45,7 @@ func (s *Store) CompletePersonProfilesContext(
 			SELECT person_id, MIN(participant_id) AS participant_id
 			FROM person_participants GROUP BY person_id
 		), raw_primitives AS (
-			SELECT b.participant_id, p.display_name AS profile_label,
+			SELECT b.participant_id, b.person_id,
 			       'name' AS kind,
 			       COALESCE(
 			           NULLIF(TRIM(n.formatted), ''),
@@ -64,7 +64,7 @@ func (s *Store) CompletePersonProfilesContext(
 			WHERE n.active_until IS NULL AND n.superseded_at IS NULL
 			  AND n.name_kind IN ('formatted', 'structured', 'nickname', 'phonetic')
 			UNION ALL
-			SELECT b.participant_id, p.display_name,
+			SELECT b.participant_id, b.person_id,
 			       CAST(cp.address_kind AS TEXT), cp.original_value,
 			       LOWER(cp.normalized_value), COALESCE(cs.slug, 'profile')
 			FROM person_contact_points cp
@@ -74,7 +74,7 @@ func (s *Store) CompletePersonProfilesContext(
 			WHERE cp.active_until IS NULL AND cp.superseded_at IS NULL
 			  AND cp.address_kind IN ('email', 'phone', 'username', 'impp')
 			UNION ALL
-			SELECT b.participant_id, p.display_name, 'organization', o.name,
+			SELECT b.participant_id, b.person_id, 'organization', o.name,
 			       LOWER(o.name_normalized), 'profile'
 			FROM employments e
 			JOIN persons p ON p.id = e.person_id
@@ -83,7 +83,7 @@ func (s *Store) CompletePersonProfilesContext(
 			WHERE `+currentEmployment+`
 			  AND o.merged_into_id IS NULL AND o.retired_at IS NULL
 			UNION ALL
-			SELECT b.participant_id, p.display_name, 'title', e.title,
+			SELECT b.participant_id, b.person_id, 'title', e.title,
 			       LOWER(e.title_normalized), 'profile'
 			FROM employments e
 			JOIN persons p ON p.id = e.person_id
@@ -93,7 +93,7 @@ func (s *Store) CompletePersonProfilesContext(
 			  AND TRIM(e.title) != ''
 			  AND o.merged_into_id IS NULL AND o.retired_at IS NULL
 			UNION ALL
-			SELECT b.participant_id, p.display_name, 'role', e.role,
+			SELECT b.participant_id, b.person_id, 'role', e.role,
 			       LOWER(TRIM(e.role)), 'profile'
 			FROM employments e
 			JOIN persons p ON p.id = e.person_id
@@ -108,7 +108,11 @@ func (s *Store) CompletePersonProfilesContext(
 			       ? AS query_digits
 		), candidates AS (
 			SELECT participant_id,
-			       COALESCE(NULLIF(TRIM(profile_label), ''), value) AS display_label,
+			       COALESCE(
+			           (SELECT `+sqlDurablePersonLabelExpr("labelled")+`
+			            FROM persons labelled WHERE labelled.id = raw.person_id),
+			           CASE WHEN kind IN ('name', 'email', 'phone', 'username', 'impp')
+			                THEN value ELSE '`+unnamedPersonLabel+`' END) AS display_label,
 			       kind, value, match_value, source,
 			       CASE
 			           WHEN kind = 'phone' THEN
@@ -127,7 +131,7 @@ func (s *Store) CompletePersonProfilesContext(
 			                 WHEN 'phone' THEN 1 WHEN 'email' THEN 1
 			                 WHEN 'username' THEN 1 WHEN 'impp' THEN 1
 			                 ELSE 2 END AS kind_rank
-			FROM raw_primitives, params
+			FROM raw_primitives raw, params
 			WHERE value IS NOT NULL AND TRIM(value) != '' AND (
 				(kind = 'phone' AND query_digits != ''
 				 AND REPLACE(match_value, '+', '') LIKE '%' || query_digits || '%')

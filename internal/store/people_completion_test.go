@@ -134,24 +134,62 @@ func completionEnvelope() store.ValueEnvelopeInput {
 	return store.ValueEnvelopeInput{Source: store.ProvenanceUser}
 }
 
-func TestCompletePersonProfilesLabelsUnnamedPersonByMatchedValue(t *testing.T) {
+// TestCompletePersonProfilesLabelsUnnamedPeopleByPerson pins that an unnamed
+// person's completion row is labelled by the durable person label, and that
+// an employer, title, or role match never becomes the person's label.
+func TestCompletePersonProfilesLabelsUnnamedPeopleByPerson(t *testing.T) {
 	require := require.New(t)
 	ctx := context.Background()
 	st := storetest.New(t).Store
-	participantID, err := st.EnsureParticipant("unnamed@example.test", "", "example.test")
+
+	addressParticipant, err := st.EnsureParticipant("unnamed@example.test", "", "example.test")
 	require.NoError(err)
-	person, _, err := st.CreatePersonFromParticipantContext(ctx, participantID)
+	addressed, _, err := st.CreatePersonFromParticipantContext(ctx, addressParticipant)
 	require.NoError(err)
-	require.Nil(person.DisplayName)
-	_, err = st.AddPersonNameContext(ctx, person.ID, store.PersonNameInput{
+	require.Nil(addressed.DisplayName)
+
+	var bareParticipant int64
+	require.NoError(st.DB().QueryRowContext(ctx, st.Rebind(
+		`INSERT INTO participants (display_name) VALUES (NULL) RETURNING id`)).Scan(&bareParticipant))
+	bare, _, err := st.CreatePersonFromParticipantContext(ctx, bareParticipant)
+	require.NoError(err)
+	require.Nil(bare.DisplayName)
+	_, err = st.AddPersonNameContext(ctx, bare.ID, store.PersonNameInput{
 		NameKind: store.PersonNameNickname, Formatted: new("Quill"), Envelope: completionEnvelope(),
 	})
 	require.NoError(err)
 
-	rows, err := st.CompletePersonProfilesContext(ctx, store.PersonCompletionQuery{Query: "quill"})
+	organization, err := st.CreateOrganizationContext(ctx, store.OrganizationInput{
+		Name: "Acme Corp", Kind: store.OrganizationKindCompany,
+	})
 	require.NoError(err)
-	assert.Equal(t, []store.PersonCompletion{{
-		ParticipantID: participantID, DisplayLabel: "Quill", Kind: "name",
-		Value: "Quill", MatchValue: "quill", Source: "nickname",
-	}}, rows)
+	for _, personID := range []int64{addressed.ID, bare.ID} {
+		_, err = st.AddEmploymentContext(ctx, store.EmploymentInput{
+			PersonID: personID, OrganizationID: organization.ID,
+			Title: new("Chief Widget Officer"), Source: store.ProvenanceUser,
+		})
+		require.NoError(err)
+	}
+
+	tests := []struct {
+		query string
+		want  []store.PersonCompletion
+	}{
+		{"acme", []store.PersonCompletion{
+			{ParticipantID: bareParticipant, DisplayLabel: "Unknown person", Kind: "organization", Value: "Acme Corp", MatchValue: "acme corp", Source: "profile"},
+			{ParticipantID: addressParticipant, DisplayLabel: "unnamed@example.test", Kind: "organization", Value: "Acme Corp", MatchValue: "acme corp", Source: "profile"},
+		}},
+		{"widget", []store.PersonCompletion{
+			{ParticipantID: bareParticipant, DisplayLabel: "Unknown person", Kind: "title", Value: "Chief Widget Officer", MatchValue: "chief widget officer", Source: "profile"},
+			{ParticipantID: addressParticipant, DisplayLabel: "unnamed@example.test", Kind: "title", Value: "Chief Widget Officer", MatchValue: "chief widget officer", Source: "profile"},
+		}},
+		{"quill", []store.PersonCompletion{
+			{ParticipantID: bareParticipant, DisplayLabel: "Quill", Kind: "name", Value: "Quill", MatchValue: "quill", Source: "nickname"},
+		}},
+	}
+	for _, test := range tests {
+		rows, err := st.CompletePersonProfilesContext(ctx, store.PersonCompletionQuery{Query: test.query})
+		require.NoError(err)
+		assert.Equal(t, test.want, rows, test.query)
+	}
 }
