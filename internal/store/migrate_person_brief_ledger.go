@@ -3,9 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
-	"strings"
 )
 
 // personFactClaimOriginCheck is the widened claim-origin vocabulary. The person
@@ -44,75 +42,19 @@ func (s *Store) migratePersonFactClaimOriginBrief(ctx context.Context) error {
 	return s.migratePersonFactClaimOriginBriefSQLite(ctx)
 }
 
-// migratePersonFactClaimOriginBriefSQLite follows SQLite's documented procedure
-// for an arbitrary schema change: rebuild the table inside a transaction on a
-// connection whose foreign keys are disabled. Foreign keys must be off because
-// person_fact_claim_evidence, person_fact_resolutions, and
-// person_fact_decisions reference person_fact_claims with ON DELETE CASCADE and
-// ON DELETE SET NULL, and DROP TABLE performs an implicit delete that would
-// otherwise fire those actions and destroy the ledger. The pragma is
-// connection-scoped and cannot change inside a transaction, so this runs on a
-// dedicated pooled connection rather than through runMaintenance.
-func (s *Store) migratePersonFactClaimOriginBriefSQLite(ctx context.Context) (err error) {
-	conn, err := s.db.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("acquire connection to widen person fact claim origins: %w", err)
-	}
-	defer func() { _ = conn.Close() }()
-
-	var definition string
-	if err := conn.QueryRowContext(ctx, `SELECT sql FROM sqlite_master
-		WHERE type = 'table' AND name = 'person_fact_claims'`).Scan(&definition); err != nil {
-		return fmt.Errorf("inspect person fact claim origins: %w", err)
-	}
-	if strings.Contains(definition, "'brief'") {
-		return nil
-	}
-	if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
-		return fmt.Errorf("suspend foreign keys to widen person fact claim origins: %w", err)
-	}
-	// Restore enforcement before the connection returns to the pool, whatever
-	// happens below. A pooled connection is reused, so a leaked pragma would
-	// silently disable foreign keys for unrelated later work; failing to
-	// restore it is reported rather than swallowed.
-	defer func() {
-		if _, restoreErr := conn.ExecContext(context.WithoutCancel(ctx),
-			`PRAGMA foreign_keys = ON`); restoreErr != nil {
-			err = errors.Join(err, fmt.Errorf(
-				"restore foreign keys after person fact claim rebuild: %w", restoreErr))
-		}
-	}()
-
-	tx, err := conn.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin person fact claim origin rebuild: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
-	if err := validatePersonFactClaimOriginRows(ctx, &loggedTx{Tx: tx, rebind: s.Rebind}); err != nil {
-		return err
-	}
-	for _, statement := range personFactClaimOriginRebuildStatements() {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("rebuild person fact claim origins: %w", err)
-		}
-	}
-	violations, err := countPersonFactClaimForeignKeyViolations(ctx, tx)
-	if err != nil {
-		return err
-	}
-	if violations != 0 {
-		return fmt.Errorf("person fact claim rebuild left %d dangling references", violations)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit person fact claim origin rebuild: %w", err)
-	}
-	committed = true
-	return nil
+// migratePersonFactClaimOriginBriefSQLite rebuilds person_fact_claims with
+// the widened origin check. person_fact_claim_evidence,
+// person_fact_resolutions, and person_fact_decisions reference the table
+// with ON DELETE CASCADE and ON DELETE SET NULL, which is why the rebuild
+// runs with foreign keys suspended.
+func (s *Store) migratePersonFactClaimOriginBriefSQLite(ctx context.Context) error {
+	return s.rebuildSQLiteTable(ctx, sqliteTableRebuild{
+		Table: "person_fact_claims", AppliedMarker: "'brief'",
+		Label:           "widen person fact claim origins",
+		Validate:        validatePersonFactClaimOriginRows,
+		Statements:      personFactClaimOriginRebuildStatements(),
+		CountViolations: countPersonFactClaimForeignKeyViolations,
+	})
 }
 
 func personFactClaimOriginRebuildStatements() []string {

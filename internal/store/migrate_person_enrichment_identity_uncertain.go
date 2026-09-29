@@ -3,9 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
-	"strings"
 )
 
 // personEnrichmentAttemptStateCheck is the attempt state vocabulary including
@@ -44,75 +42,19 @@ func (s *Store) migratePersonEnrichmentIdentityUncertain(ctx context.Context) er
 	return s.migratePersonEnrichmentIdentityUncertainSQLite(ctx)
 }
 
-// migratePersonEnrichmentIdentityUncertainSQLite follows SQLite's documented
-// procedure for an arbitrary schema change: rebuild the table inside a
-// transaction on a connection whose foreign keys are disabled. Foreign keys
-// must be off because person_enrichment_attempt_identifiers, citations,
-// sources, identity judgments, and the work table reference the attempt with
-// ON DELETE CASCADE, and DROP TABLE performs an implicit delete that would
-// otherwise fire those actions and destroy the ledger. The pragma is
-// connection-scoped and cannot change inside a transaction, so this runs on a
-// dedicated pooled connection rather than through runMaintenance.
-func (s *Store) migratePersonEnrichmentIdentityUncertainSQLite(ctx context.Context) (err error) {
-	conn, err := s.db.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("acquire connection to widen person enrichment attempt states: %w", err)
-	}
-	defer func() { _ = conn.Close() }()
-
-	var definition string
-	if err := conn.QueryRowContext(ctx, `SELECT sql FROM sqlite_master
-		WHERE type = 'table' AND name = 'person_enrichment_attempts'`).Scan(&definition); err != nil {
-		return fmt.Errorf("inspect person enrichment attempt states: %w", err)
-	}
-	if strings.Contains(definition, "'identity_uncertain'") {
-		return nil
-	}
-	if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
-		return fmt.Errorf("suspend foreign keys to widen person enrichment attempt states: %w", err)
-	}
-	// Restore enforcement before the connection returns to the pool, whatever
-	// happens below. A pooled connection is reused, so a leaked pragma would
-	// silently disable foreign keys for unrelated later work; failing to
-	// restore it is reported rather than swallowed.
-	defer func() {
-		if _, restoreErr := conn.ExecContext(context.WithoutCancel(ctx),
-			`PRAGMA foreign_keys = ON`); restoreErr != nil {
-			err = errors.Join(err, fmt.Errorf(
-				"restore foreign keys after person enrichment attempt rebuild: %w", restoreErr))
-		}
-	}()
-
-	tx, err := conn.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin person enrichment attempt state rebuild: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
-	if err := validatePersonEnrichmentAttemptStateRows(ctx, &loggedTx{Tx: tx, rebind: s.Rebind}); err != nil {
-		return err
-	}
-	for _, statement := range personEnrichmentAttemptStateRebuildStatements() {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("rebuild person enrichment attempt states: %w", err)
-		}
-	}
-	violations, err := countForeignKeyViolations(ctx, tx)
-	if err != nil {
-		return err
-	}
-	if violations != 0 {
-		return fmt.Errorf("person enrichment attempt rebuild left %d dangling references", violations)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit person enrichment attempt state rebuild: %w", err)
-	}
-	committed = true
-	return nil
+// migratePersonEnrichmentIdentityUncertainSQLite rebuilds
+// person_enrichment_attempts with the widened state check. The identifiers,
+// citations, sources, identity judgments, and work rows reference the table
+// with ON DELETE CASCADE, which is why the rebuild runs with foreign keys
+// suspended. The whole-database foreign key check covers every one of them.
+func (s *Store) migratePersonEnrichmentIdentityUncertainSQLite(ctx context.Context) error {
+	return s.rebuildSQLiteTable(ctx, sqliteTableRebuild{
+		Table: "person_enrichment_attempts", AppliedMarker: "'identity_uncertain'",
+		Label:           "widen person enrichment attempt states",
+		Validate:        validatePersonEnrichmentAttemptStateRows,
+		Statements:      personEnrichmentAttemptStateRebuildStatements(),
+		CountViolations: countForeignKeyViolations,
+	})
 }
 
 // countForeignKeyViolations runs SQLite's whole-database foreign key check
