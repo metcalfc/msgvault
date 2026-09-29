@@ -225,8 +225,11 @@ for (const theme of ['light', 'dark'] as const) {
     const settings = page.getByRole('main', { name: 'Settings' });
     await expect(settings).toBeVisible();
     await expectRenderedContrast(settings.locator('.row__hint').first(), 4.5);
-    await expectRenderedContrast(settings.locator('.notice--pending'), 4.5);
-    await expectRenderedBoundary(settings.locator('.notice--pending'), 'borderLeftColor', 3);
+    // The pending-restart notice is a kit Notice: its message text and its
+    // toned mark are what make it perceivable, not a 3:1 border.
+    const pending = settings.locator('.kit-notice[data-tone="info"]');
+    await expectRenderedContrast(pending.locator('.kit-notice__message'), 4.5);
+    await expectRenderedBoundary(pending.locator('.kit-notice__mark'), 'backgroundColor', 3);
   });
 }
 
@@ -250,7 +253,7 @@ async function expectRenderedContrast(locator: import('@playwright/test').Locato
 
 async function expectRenderedBoundary(
   locator: import('@playwright/test').Locator,
-  property: 'borderTopColor' | 'borderLeftColor',
+  property: 'borderTopColor' | 'borderLeftColor' | 'backgroundColor',
   minimum: number
 ) {
   const ratio = await locator.evaluate(measureRenderedContrast, { property });
@@ -259,9 +262,11 @@ async function expectRenderedBoundary(
 
 function measureRenderedContrast(
   element: Element,
-  { property }: { property: 'color' | 'borderTopColor' | 'borderLeftColor' | 'boxShadow' }
+  { property }: { property: 'color' | 'borderTopColor' | 'borderLeftColor' | 'boxShadow' | 'backgroundColor' }
 ): number {
-  let current: Element | null = element;
+  // A filled boundary (a mark, a bar) is measured against what lies behind
+  // the element, so the walk for the background starts at its parent.
+  let current: Element | null = property === 'backgroundColor' ? element.parentElement : element;
   let background = getComputedStyle(document.documentElement).backgroundColor;
   while (current) {
     const candidate = getComputedStyle(current).backgroundColor;
