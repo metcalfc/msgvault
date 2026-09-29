@@ -159,7 +159,7 @@ conflict, so those candidates show as blocked. A rejected candidate row is
 already the negative for a pair, but it is deleted if an untouched imported
 profile is removed and re-imported.
 
-- [ ] **Task 1b.1 Candidate query (1 to 1.5 days).** Contact-only profiles
+- [x] **Task 1b.1 Candidate query (1 to 1.5 days).** Contact-only profiles
   are persons with no `person_participants` rows. Join their active email
   and phone contact points to `LOWER(participants.email_address)`, to
   `participants.phone_number` normalized in Go with
