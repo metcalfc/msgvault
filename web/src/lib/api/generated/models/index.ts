@@ -152,6 +152,7 @@ export * from "./communicationService";
 export * from "./communicationServicesResponse";
 export * from "./confidenceInputs";
 export * from "./consentSettingsPeopleInferenceProviderPathParameters";
+export * from "./contactMatchBuildResult";
 export * from "./contactMatchStatus";
 export * from "./contactMatchStatusBlockedReason";
 export * from "./contactMatchStatusClassification";

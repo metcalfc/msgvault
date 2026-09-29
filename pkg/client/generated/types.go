@@ -2247,6 +2247,17 @@ type ConfidenceInputs struct {
 	ReportedScore int64 `json:"reported_score"`
 }
 
+type ContactMatchBuildResult struct {
+	Ambiguous     int64 `json:"ambiguous"`
+	Bind          int64 `json:"bind"`
+	Blocked       int64 `json:"blocked"`
+	Created       int64 `json:"created"`
+	EvidenceAdded int64 `json:"evidence_added"`
+	Existing      int64 `json:"existing"`
+	Matches       int64 `json:"matches"`
+	Merge         int64 `json:"merge"`
+}
+
 type ContactMatchStatus struct {
 	BlockedReason    *ContactMatchStatusBlockedReason `json:"blocked_reason,omitempty"`
 	CandidateID      int64                            `json:"candidate_id"`

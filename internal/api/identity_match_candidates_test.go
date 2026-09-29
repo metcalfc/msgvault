@@ -250,6 +250,34 @@ func TestListIdentityMatchCandidatesResolvesEndpointsAndFiltersContactMatches(t 
 	assert.Equal(http.StatusBadRequest, invalid.Code, invalid.Body.String())
 }
 
+func TestBuildContactMatchCandidatesReportsCounts(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, st := newIdentityLinkTestServer(t)
+	st.mustParticipant(t, "contact@example.com", "Contact", "example.com")
+	var personID int64
+	require.NoError(st.DB().QueryRow(
+		`INSERT INTO persons (vcard_uid) VALUES ('contact-build') RETURNING id`).Scan(&personID))
+	_, err := st.AddPersonContactPointContext(context.Background(), personID, store.PersonContactPointInput{
+		AddressKind: store.ContactAddressEmail, OriginalValue: "Contact@Example.com",
+		Envelope: store.ValueEnvelopeInput{Source: store.ProvenanceCardDAVImport},
+	})
+	require.NoError(err)
+
+	response := personRequest(t, srv, http.MethodPost, "/api/v1/identity/contact-matches/build", nil, "")
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	assert.Equal("no-store", response.Header().Get("Cache-Control"))
+	var result store.ContactMatchBuildResult
+	require.NoError(json.Unmarshal(response.Body.Bytes(), &result), response.Body.String())
+	assert.Equal(store.ContactMatchBuildResult{Matches: 1, Created: 1, EvidenceAdded: 1, Bind: 1}, result)
+
+	again := personRequest(t, srv, http.MethodPost, "/api/v1/identity/contact-matches/build", nil, "")
+	require.Equal(http.StatusOK, again.Code, again.Body.String())
+	require.NoError(json.Unmarshal(again.Body.Bytes(), &result), again.Body.String())
+	assert.Equal(store.ContactMatchBuildResult{Matches: 1, Existing: 1, Bind: 1}, result)
+}
+
 func TestRejectIdentityMatchCandidateRetainsTheRow(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

@@ -77,6 +77,7 @@ import type {
   CommunicationService,
   CommunicationServicesResponse,
   ConsentSettingsPeopleInferenceProviderPathParameters,
+  ContactMatchBuildResult,
   ContactState,
   ConversationResponse,
   CreateAttributeDefinitionRequest,
@@ -1654,6 +1655,18 @@ export const getHealth = (
 ) => {
   return orvalFetch<HealthResponse>(
     { url: `/api/v1/health`, method: "GET" },
+    options,
+  );
+};
+/**
+ * Matches the exact email and phone contact points of profiles with no archive identity (for example, imported contacts) against archive participants and writes one reviewable candidate per matched identity cluster. Refreshing is idempotent and never accepts a match.
+ * @summary Refresh contact-match candidates
+ */
+export const buildContactMatchCandidates = (
+  options?: SecondParameter<typeof orvalFetch<ContactMatchBuildResult>>,
+) => {
+  return orvalFetch<ContactMatchBuildResult>(
+    { url: `/api/v1/identity/contact-matches/build`, method: "POST" },
     options,
   );
 };

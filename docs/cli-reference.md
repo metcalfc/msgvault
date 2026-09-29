@@ -2204,6 +2204,36 @@ shipped definitions and complete workflow.
 
 ---
 
+## person contact-matches
+
+Review contact profiles that have no archive identity yet, such as imported
+address-book cards, whose exact email or phone matches an archive participant.
+Display names are never compared. Every subcommand goes through the daemon.
+
+```bash
+msgvault person contact-matches list [--state candidate] [--limit <n>] [--offset <n>] [--json]
+msgvault person contact-matches accept <candidate-id> [--notes <text>] [--json]
+msgvault person contact-matches reject <candidate-id> [--notes <text>] [--json]
+msgvault person contact-matches build [--json]
+```
+
+`list` names both sides and shows what accepting does now:
+
+| Action | Meaning |
+|---|---|
+| `bind` | The archive identity has no profile. Accepting links it to the contact profile, which keeps its ID, vCard UID, and CardDAV mapping. The link is a reversible merge; undo it with `person split`. |
+| `merge` | The archive identity already belongs to another profile. `accept` stops and prints the `person merge` command; choose the survivor, merge, then accept again. |
+| `ambiguous` | The archive identity spans several profiles. Resolve them before linking. |
+| `linked` | Already linked; accepting only records the decision. |
+
+`(blocked: published)` or `(blocked: carddav_conflict)` means a profile is
+published to CardDAV or has an unresolved CardDAV conflict, so the merge would
+be refused. The owner's own identities are never proposed. `reject` keeps the
+decision, so the same pair is not proposed again. `build` refreshes matches now.
+Nothing is accepted automatically.
+
+---
+
 ## person agenda
 
 Read and organize a person's live Kata tasks. Configure

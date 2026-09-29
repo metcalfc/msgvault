@@ -1299,6 +1299,10 @@ type GetHealthResponse = HealthResponse
 
 type GetHealthErrorResponse = ErrorResponse
 
+type BuildContactMatchCandidatesResponse = ContactMatchBuildResult
+
+type BuildContactMatchCandidatesErrorResponse = ErrorResponse
+
 type LinkIdentityParticipantsResponse = IdentityLinkResponse
 
 type LinkIdentityParticipantsErrorResponse struct {
@@ -4412,6 +4416,14 @@ type GetHealthResp struct {
 	Body         []byte
 	StatusCode   int
 	JSON200      *GetHealthResponse
+}
+
+type BuildContactMatchCandidatesResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *BuildContactMatchCandidatesResponse
+	JSON503      *BuildContactMatchCandidatesErrorResponse
 }
 
 type LinkIdentityParticipantsResp struct {

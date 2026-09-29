@@ -987,6 +987,11 @@ func TestOpenAPIIdentityMatchReviewContract(t *testing.T) {
 			path+" decision notes are optional and the runtime accepts an empty request body")
 	}
 
+	build := doc.Paths["/api/v1/identity/contact-matches/build"]
+	requirements.NotNil(build, "contact match build path")
+	requirements.NotNil(build.Post, "contact match build operation")
+	assertions.Equal("buildContactMatchCandidates", build.Post.OperationID)
+
 	// The release is additive. Keep the source-identity route that shipped
 	// before identity match review.
 	sourceIdentities := doc.Paths["/api/v1/sources/{source_id}/identities"]

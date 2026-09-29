@@ -186,7 +186,7 @@ profile is removed and re-imported.
   names and addresses (cards show raw kind and id today) and add a "Contacts
   that match your archive" filter. Accept, reject, and the merge dialog are
   reused.
-- [ ] **Task 1b.5 CLI (0.5 to 1 day).** New `person contact-matches
+- [x] **Task 1b.5 CLI (0.5 to 1 day).** New `person contact-matches
   list|accept|reject|build` through the daemon.
 - [ ] **Task 1b.6 Scheduling (0.5 day).** Refresh candidates at the end of a
   successful `carddav.Service.Sync`, and add a small dedicated daily job

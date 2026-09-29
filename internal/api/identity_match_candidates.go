@@ -49,6 +49,11 @@ type IdentityMatchStore interface {
 	IdentityRevision() (int64, error)
 }
 
+// ContactMatchBuilder refreshes contact-match candidates on demand.
+type ContactMatchBuilder interface {
+	BuildContactMatchCandidatesContext(ctx context.Context) (*store.ContactMatchBuildResult, error)
+}
+
 // IdentityMatchCandidatesResponse is a bounded page of candidates with their
 // evidence. Endpoints resolves every candidate endpoint on the page to a name
 // and addresses; ContactMatches carries the live bind/merge verdict of each
@@ -127,6 +132,32 @@ func (s *Server) registerIdentityMatchRoutes(api huma.API) {
 	addErrorResponses(api, reject.Responses, http.StatusConflict, http.StatusNotFound,
 		http.StatusServiceUnavailable)
 	registerRawHumaRoute(api, reject, s.handleRejectIdentityMatchCandidate)
+
+	build := rawAPIV1Operation("buildContactMatchCandidates", http.MethodPost,
+		"/identity/contact-matches/build", "Refresh contact-match candidates")
+	build.Description = "Matches the exact email and phone contact points of profiles with no " +
+		"archive identity (for example, imported contacts) against archive participants and " +
+		"writes one reviewable candidate per matched identity cluster. Refreshing is " +
+		"idempotent and never accepts a match."
+	build.Responses = jsonResponsesFor[store.ContactMatchBuildResult](api)
+	addErrorResponses(api, build.Responses, http.StatusServiceUnavailable)
+	registerRawHumaRoute(api, build, s.handleBuildContactMatchCandidates)
+}
+
+func (s *Server) handleBuildContactMatchCandidates(w http.ResponseWriter, r *http.Request) {
+	builder, ok := s.store.(ContactMatchBuilder)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "identity_matches_unavailable",
+			"Identity match review is unavailable")
+		return
+	}
+	result, err := builder.BuildContactMatchCandidatesContext(r.Context())
+	if err != nil {
+		s.writeIdentityMatchError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleListIdentityMatchCandidates(w http.ResponseWriter, r *http.Request) {
