@@ -6,8 +6,10 @@
     EntryRow,
     ExploreCacheUnavailable,
     ExploreColumn,
-    ExploreScrollAnchor
+    ExploreScrollAnchor,
+    ExploreSearchMode
   } from '../../explore/models';
+  import { hasFreeText } from '../../search/query';
   import { DEFAULT_EXPLORE_COLUMNS, EXPLORE_COLUMN_LABELS, isEmailMessageType } from '../../explore/models';
   import type { ExploreSelectionState } from '../../explore/state.svelte';
   import { rebaseVirtualScroll, RowGeometry, tableViewportHeight } from '../../theme/preferences.svelte';
@@ -39,6 +41,11 @@
     onActiveKey?: (key: string) => void;
     onVisibleRows?: (rowKeys: string[]) => void;
     onRetry?: () => void;
+    /** The committed query and mode, so an empty result can offer the
+     * other search modes and the operator syntax. */
+    query?: string;
+    searchMode?: ExploreSearchMode;
+    onTrySearchMode?: (mode: ExploreSearchMode) => void;
   }
 
   let {
@@ -64,8 +71,28 @@
     onLoadThroughEnd = undefined,
     onActiveKey = undefined,
     onVisibleRows = undefined,
-    onRetry = undefined
+    onRetry = undefined,
+    query = '',
+    searchMode = 'full_text',
+    onTrySearchMode = undefined
   }: Props = $props();
+
+  // Semantic and hybrid need free text to embed, so they are offered only
+  // for a query that has some.
+  const alternativeModes = $derived(
+    onTrySearchMode && hasFreeText(query)
+      ? (['semantic', 'hybrid'] as const).filter((mode) => mode !== searchMode)
+      : []
+  );
+  const OPERATOR_HINTS: ReadonlyArray<{ syntax: string; meaning: string }> = [
+    { syntax: 'from:alice@example.com', meaning: 'sent by' },
+    { syntax: 'to:bob@example.com', meaning: 'sent to' },
+    { syntax: 'subject:invoice', meaning: 'subject contains' },
+    { syntax: 'has:attachment', meaning: 'has files' },
+    { syntax: 'after:2025-01-01', meaning: 'on or after a date' },
+    { syntax: 'before:2025-06-30', meaning: 'before a date' },
+    { syntax: 'message_type:imessage', meaning: 'one kind of item' }
+  ];
 
   const geometry = new RowGeometry();
   const rowHeight = $derived(geometry.height);
@@ -471,7 +498,26 @@
         </div>
       {:else if rows.length === 0}
         <div role="row"><div class="empty" role="gridcell" aria-colspan={visibleColumns.length}>
-          <EmptyState title="No items match this view" description="Adjust the search or clear filters to widen the view." />
+          <EmptyState title="No items match this view" description="Adjust the search or clear filters to widen the view.">
+            {#if alternativeModes.length > 0}
+              <div class="empty-actions">
+                {#each alternativeModes as mode (mode)}
+                  <Button
+                    size="sm"
+                    surface="outline"
+                    tone="info"
+                    label={mode === 'semantic' ? 'Try semantic' : 'Try hybrid'}
+                    onclick={() => onTrySearchMode?.(mode)}
+                  />
+                {/each}
+              </div>
+            {/if}
+            <dl class="operator-hints" aria-label="Search operators">
+              {#each OPERATOR_HINTS as hint (hint.syntax)}
+                <div><dt><code>{hint.syntax}</code></dt><dd>{hint.meaning}</dd></div>
+              {/each}
+            </dl>
+          </EmptyState>
         </div></div>
       {:else if !slice || rowHeight === undefined}
         <div role="row"><div role="gridcell" aria-colspan={visibleColumns.length}><p class="empty" role="status">Preparing table layout…</p></div></div>
@@ -727,6 +773,33 @@
 
   .skeletons {
     min-height: 200px;
+  }
+
+  .empty-actions {
+    display: flex;
+    justify-content: center;
+    gap: var(--space-3);
+  }
+
+  .operator-hints {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--space-2) var(--space-5);
+    max-width: 720px;
+    margin: var(--space-4) auto 0;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    text-align: left;
+  }
+
+  .operator-hints div {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+  }
+
+  .operator-hints dd {
+    margin: 0;
   }
 
   .skeleton-cell {

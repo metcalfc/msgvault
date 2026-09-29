@@ -93,6 +93,63 @@ describe('EverythingWorkspace', () => {
     state.destroy();
   });
 
+  it('runs a filter-only Hybrid query as full text and says so instead of failing', async () => {
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
+    const exploreBodies: Array<Record<string, unknown>> = [];
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      if (path.endsWith('/coverage')) return Response.json({
+        status: 'ready', eligible_count: 2, embedded_count: 2, percentage: 100,
+        cache_revision: 'cache-1', actions: []
+      });
+      if (path.endsWith('/explore')) exploreBodies.push(await request.clone().json());
+      return Response.json(exploreResponse({ rows: [entry(1)], total_count: 1 }));
+    });
+    const state = new ExploreState(window);
+    state.replaceSearchDraft('subject:invoice', 'hybrid');
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+
+    expect(await screen.findByText('Searched full text because this query has only filters.')).toBeDefined();
+    await waitFor(() => expect(exploreBodies.some((body) => body.query === 'subject:invoice')).toBe(true));
+    for (const body of exploreBodies.filter((candidate) => candidate.query === 'subject:invoice')) {
+      expect(body.search_mode).toBe('full_text');
+    }
+    expect(screen.getByRole('radio', { name: 'Hybrid' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.queryByRole('button', { name: /Retry/ })).toBeNull();
+    rendered.unmount();
+    state.destroy();
+  });
+
+  it('offers semantic matches when a multi-word full-text query finds almost nothing', async () => {
+    window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      if (path.endsWith('/explore')) {
+        const body = await request.clone().json();
+        if (body.search_mode === 'semantic') {
+          return Response.json(exploreResponse({ rows: [entry(1), entry(2), entry(3)], total_count: 3 }));
+        }
+      }
+      return Response.json(exploreResponse());
+    });
+    const state = new ExploreState(window);
+    state.replaceSearchDraft('weekend hiking plans', 'full_text');
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state });
+
+    const show = await screen.findByRole('button', { name: 'Show 3 similar messages with semantic search' });
+    expect(show.closest('p')?.textContent).toContain('3 similar messages');
+    expect(screen.getByRole('button', { name: 'Try semantic' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Try hybrid' })).toBeDefined();
+    expect(screen.getByText('has:attachment')).toBeDefined();
+    await fireEvent.click(show);
+    expect(state.current.searchMode).toBe('semantic');
+    expect(state.current.query).toBe('weekend hiking plans');
+    rendered.unmount();
+    state.destroy();
+  });
+
   it('keeps requested Semantic mode selected while showing incomplete coverage and a search error', async () => {
     window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const fetchFn = vi.fn<typeof fetch>(async (input) => {

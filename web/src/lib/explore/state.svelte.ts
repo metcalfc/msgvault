@@ -37,6 +37,7 @@ import {
   resolveInitialSearchMode,
   type SearchModeStorage
 } from '../search/modes';
+import { effectiveSearchMode } from '../search/query';
 
 import { defaultEverythingFilters, isDateDimension } from './date-range';
 
@@ -805,7 +806,9 @@ export class ExploreState {
   predicate(): ExplorePredicate {
     const query = this.current.query.trim();
     return {
-      ...(query ? { query, search_mode: this.current.searchMode } : {}),
+      // A filter-only query cannot be embedded, so it runs as full text
+      // while the chosen mode stays selected for the next query.
+      ...(query ? { query, search_mode: effectiveSearchMode(query, this.current.searchMode) } : {}),
       filters: this.current.filters,
       grouping: this.current.groupingChain,
       presentation: this.current.presentation,

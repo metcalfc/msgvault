@@ -38,6 +38,7 @@
   import SearchModeControl from '../search/SearchModeControl.svelte';
   import ReadingPane, { type ReadingPaneSelection, type ReadingPaneStatus } from '../reader/ReadingPane.svelte';
   import type { SearchCoverageAction } from '../../search/modes';
+  import { freeTextTerms, hasFreeText, searchModeFellBack } from '../../search/query';
   import MeetingPanel from '../meetings/MeetingPanel.svelte';
   import { exploreMeetingScope } from '../../meetings/scopes';
   import type { EverythingSessionState } from './EverythingSessionState.svelte';
@@ -570,6 +571,73 @@
     focusGrid();
   }
 
+  function trySearchMode(mode: ExploreSearchMode): void {
+    commitSearch(exploreState.current.query.trim(), mode);
+    focusGrid();
+  }
+
+  // Semantic and hybrid need free text to embed; a filter-only query ran as
+  // full text instead (see ExploreState.predicate).
+  const modeFellBack = $derived(
+    searchModeFellBack(exploreState.current.query, exploreState.current.searchMode)
+  );
+  const queryHasFreeText = $derived(hasFreeText(exploreState.current.query));
+
+  // A multi-word full-text query that finds almost nothing often means the
+  // words are right but the phrasing is not. A background semantic probe of
+  // the same predicate offers those matches without switching modes.
+  const SPARSE_RESULT_LIMIT = 3;
+  let semanticSuggestion = $state<{ fingerprint: string; count: number }>();
+  let semanticProbeController: AbortController | undefined;
+  let semanticProbeKey = '';
+  const currentFingerprint = $derived(predicateFingerprint(exploreState.predicate()));
+  $effect(() => {
+    const predicate = exploreState.predicate();
+    const fingerprint = currentFingerprint;
+    const result = loader.result;
+    const sparse = Boolean(
+      enabled &&
+        result &&
+        !loader.loading &&
+        !loader.error &&
+        !loader.nextCursor &&
+        loader.resultFingerprint === fingerprint &&
+        predicate.query &&
+        predicate.search_mode === 'full_text' &&
+        exploreState.current.searchMode === 'full_text' &&
+        exploreState.current.presentation !== 'files' &&
+        exploreState.current.groupingChain.length === 0 &&
+        freeTextTerms(predicate.query).length >= 2 &&
+        loader.rows.length < SPARSE_RESULT_LIMIT
+    );
+    if (!sparse) {
+      if (semanticProbeKey !== '') {
+        semanticProbeController?.abort();
+        semanticProbeController = undefined;
+        semanticProbeKey = '';
+      }
+      return;
+    }
+    if (semanticProbeKey === fingerprint) return;
+    semanticProbeController?.abort();
+    semanticProbeKey = fingerprint;
+    const controller = new AbortController();
+    semanticProbeController = controller;
+    void api
+      .explore({ ...predicate, search_mode: 'semantic', cursor: undefined, candidate_snapshot_id: undefined, grouping: [], presentation: 'table', limit: 50 }, controller.signal)
+      .then((loaded) => {
+        if (controller.signal.aborted || loaded.status !== 'ready') return;
+        const count = loaded.result.totalCount ?? loaded.result.rows.length;
+        if (count > 0) semanticSuggestion = { fingerprint, count };
+      })
+      .catch(() => {
+        // The probe is a hint; a failed probe leaves the full-text results alone.
+      });
+  });
+  const visibleSemanticSuggestion = $derived(
+    semanticSuggestion && semanticSuggestion.fingerprint === currentFingerprint ? semanticSuggestion : undefined
+  );
+
   function inspectGroup(row: ExploreGroupRow): void {
     const dimension = exploreState.current.groupingChain[0];
     if (dimension && groupingByDimension(dimension).drillable) {
@@ -584,6 +652,7 @@
     if (coveragePollTimer !== undefined) clearTimeout(coveragePollTimer);
     if (lexicalCountTimer !== undefined) clearTimeout(lexicalCountTimer);
     lexicalCountController?.abort();
+    semanticProbeController?.abort();
     session.readingDetailGeneration += 1;
     readingDetailController?.abort();
   });
@@ -633,11 +702,25 @@
     <SearchModeControl
       requestedMode={exploreState.current.searchMode}
       status={session.coverage?.status}
-      error={loader.error}
       onchange={(mode: ExploreSearchMode) => exploreState.replaceSearchDraft(exploreState.current.query, mode)}
     />
     <Button type="submit" label="Search" tone="info" surface="solid" />
   </form>
+
+  {#if modeFellBack}
+    <p class="search-note" role="status">Searched full text because this query has only filters.</p>
+  {:else if visibleSemanticSuggestion}
+    <p class="search-note" role="status">
+      {visibleSemanticSuggestion.count.toLocaleString()} similar {visibleSemanticSuggestion.count === 1 ? 'message' : 'messages'}
+      ·
+      <button
+        type="button"
+        class="search-note__action kit-control-states"
+        aria-label={`Show ${visibleSemanticSuggestion.count.toLocaleString()} similar messages with semantic search`}
+        onclick={() => trySearchMode('semantic')}
+      >Show</button>
+    </p>
+  {/if}
 
   {#if loader.result?.candidatePoolSaturated}
     <div class="search-limit" role="status">
@@ -817,6 +900,9 @@
                 unavailable={loader.unavailable}
                 error={loader.error}
                 pageError={loader.pageError}
+                query={exploreState.current.query}
+                searchMode={exploreState.predicate().search_mode ?? exploreState.current.searchMode}
+                onTrySearchMode={trySearchMode}
                 onOpen={openRow}
                 onScrollAnchor={(key, offset) => exploreState.replaceTransient({ scrollAnchor: { key, offset } })}
                 onLoadMore={loader.loadMore}
@@ -914,6 +1000,27 @@
   .query-control {
     min-width: 240px;
     flex: 1;
+  }
+
+  .search-note {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  .search-note__action {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--link-ink);
+    cursor: pointer;
+    font: inherit;
+    text-decoration: underline;
+  }
+
+  .search-note__action:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: 2px;
   }
 
   .scope-note {
