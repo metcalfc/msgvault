@@ -103,11 +103,13 @@ func validSHA256() string {
 	return hex.EncodeToString(digest)
 }
 
-// processorFunc proves the Processor contract is satisfiable by a closure.
-type processorFunc func(context.Context, Source) (Result, error)
-
-func (f processorFunc) Process(ctx context.Context, source Source) (Result, error) {
-	return f(ctx, source)
+// stubProcessor proves the Processor contract is satisfiable by a test fake.
+type stubProcessor struct {
+	fingerprint string
 }
 
-var _ Processor = processorFunc(nil)
+func (stubProcessor) Process(context.Context, Source) (Result, error) { return Result{}, nil }
+
+func (s stubProcessor) PolicyFingerprint() string { return s.fingerprint }
+
+var _ Processor = stubProcessor{}

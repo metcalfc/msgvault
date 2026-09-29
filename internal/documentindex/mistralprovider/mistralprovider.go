@@ -39,6 +39,9 @@ func New() Provider { return Provider{} }
 // Name implements provider.Provider.
 func (Provider) Name() string { return Name }
 
+// DisplayName implements provider.Provider.
+func (Provider) DisplayName() string { return "Mistral" }
+
 // Defaults implements provider.Provider.
 func (Provider) Defaults() provider.Defaults {
 	return provider.Defaults{
@@ -87,14 +90,16 @@ func (Provider) DecodeManifest(reader io.Reader) (provider.Manifest, error) {
 
 // EncodeManifest implements provider.Provider.
 func (Provider) EncodeManifest(writer io.Writer, manifest provider.Manifest) error {
-	vendor, err := VendorManifest(manifest)
+	vendor, err := vendorManifestRef(manifest)
 	if err != nil {
 		return err
 	}
 	return mistral.EncodeCapabilityManifest(writer, vendor) //nolint:wrapcheck // callers add the write context
 }
 
-// NewProcessor implements provider.Provider.
+// NewProcessor implements provider.Provider. Policy and manifest are
+// immutable, so every format's upload authority is derived once here rather
+// than per document.
 func (Provider) NewProcessor(
 	policy provider.Policy,
 	manifest provider.Manifest,
@@ -105,22 +110,31 @@ func (Provider) NewProcessor(
 	if err != nil {
 		return nil, err
 	}
-	vendorManifest, err := VendorManifest(manifest)
+	vendorManifest, err := vendorManifestRef(manifest)
 	if err != nil {
 		return nil, err
 	}
 	if staging.Directory == "" || staging.MaxBytes < vendorPolicy.Values().MaxDocumentBytes || staging.MinFreeBytes <= 0 {
 		return nil, errors.New("mistral document staging bounds are invalid")
 	}
-	if _, err := vendorPolicy.Fingerprint(vendorManifest); err != nil {
+	fingerprint, err := vendorPolicy.Fingerprint(vendorManifest)
+	if err != nil {
 		return nil, fmt.Errorf("validate Mistral capability policy: %w", err)
+	}
+	authorizations := make(map[string]mistral.FormatAuthorization)
+	for _, format := range mistral.CandidateFormats() {
+		authorization, authorizeErr := vendorPolicy.Authorize(vendorManifest, format.ID)
+		if authorizeErr == nil {
+			authorizations[format.ID] = authorization
+		}
 	}
 	vendorClient, err := newClient(vendorPolicy, client)
 	if err != nil {
 		return nil, err
 	}
 	return &Processor{
-		client: vendorClient, policy: vendorPolicy, manifest: vendorManifest, staging: staging,
+		client: vendorClient, policy: vendorPolicy, staging: staging,
+		authorizations: authorizations, policyFingerprint: fingerprint,
 	}, nil
 }
 
@@ -207,16 +221,10 @@ func VendorPolicy(policy provider.Policy) (mistral.Policy, error) {
 	return wrapped.policy, nil
 }
 
-// Values implements provider.Policy.
+// Values implements provider.Policy. The neutral and vendor value structs
+// share one field set, so the conversion fails to compile if either drifts.
 func (p Policy) Values() provider.PolicyValues {
-	values := p.policy.Values()
-	return provider.PolicyValues{
-		Provider: values.Provider, Endpoint: values.Endpoint, Region: values.Region, Model: values.Model,
-		Retention: values.Retention, Training: values.Training,
-		MaxDocumentBytes: values.MaxDocumentBytes, MaxResponseBytes: values.MaxResponseBytes,
-		MaxUnits: values.MaxUnits, ExtractHeader: values.ExtractHeader, ExtractFooter: values.ExtractFooter,
-		Normalization: values.Normalization,
-	}
+	return provider.PolicyValues(p.policy.Values())
 }
 
 // NormalizePolicy implements provider.Policy.
@@ -236,7 +244,7 @@ func (Policy) FormatByID(id string) (provider.Format, bool) {
 
 // Authorize implements provider.Policy.
 func (p Policy) Authorize(manifest provider.Manifest, formatID string) error {
-	vendorManifest, err := VendorManifest(manifest)
+	vendorManifest, err := vendorManifestRef(manifest)
 	if err != nil {
 		return err
 	}
@@ -246,7 +254,7 @@ func (p Policy) Authorize(manifest provider.Manifest, formatID string) error {
 
 // Fingerprint implements provider.Policy.
 func (p Policy) Fingerprint(manifest provider.Manifest) (string, error) {
-	vendorManifest, err := VendorManifest(manifest)
+	vendorManifest, err := vendorManifestRef(manifest)
 	if err != nil {
 		return "", err
 	}
@@ -266,15 +274,25 @@ func NewManifest(manifest mistral.CapabilityManifest) Manifest {
 	return Manifest{manifest: cloneManifest(manifest)}
 }
 
-// VendorManifest unwraps evidence produced by this adapter.
+// VendorManifest unwraps evidence produced by this adapter. The copy is
+// independent, so callers may mutate it.
 func VendorManifest(manifest provider.Manifest) (mistral.CapabilityManifest, error) {
+	vendor, err := vendorManifestRef(manifest)
+	if err != nil {
+		return mistral.CapabilityManifest{}, err
+	}
+	return cloneManifest(vendor), nil
+}
+
+// vendorManifestRef unwraps evidence without copying, for read-only use.
+func vendorManifestRef(manifest provider.Manifest) (mistral.CapabilityManifest, error) {
 	wrapped, ok := manifest.(Manifest)
 	if !ok {
 		return mistral.CapabilityManifest{}, fmt.Errorf(
 			"document capability manifest %T does not belong to the %s provider", manifest, Name,
 		)
 	}
-	return cloneManifest(wrapped.manifest), nil
+	return wrapped.manifest, nil
 }
 
 // MaxUnits implements provider.Manifest.
@@ -305,16 +323,26 @@ func neutralFormat(format mistral.CandidateFormat) provider.Format {
 	return provider.Format{ID: format.ID, Family: format.Family, MediaType: format.MediaType, UnitKind: format.UnitKind}
 }
 
-// Processor stages one source in a private spool, authorizes its detected
-// format against the manifest, sends it, and removes the spool.
+// Processor stages one source in a private spool, checks its detected format
+// against the authority derived at construction, sends it, and removes the
+// spool.
 type Processor struct {
-	client   *mistral.Client
-	policy   mistral.Policy
-	manifest mistral.CapabilityManifest
-	staging  provider.Staging
+	client            *mistral.Client
+	policy            mistral.Policy
+	staging           provider.Staging
+	authorizations    map[string]mistral.FormatAuthorization
+	policyFingerprint string
 }
 
 var _ provider.Processor = (*Processor)(nil)
+
+// PolicyFingerprint implements provider.Processor.
+func (p *Processor) PolicyFingerprint() string {
+	if p == nil {
+		return ""
+	}
+	return p.policyFingerprint
+}
 
 // Process implements provider.Processor. Raw provider JSON is never persisted.
 func (p *Processor) Process(ctx context.Context, source provider.Source) (result provider.Result, err error) {
@@ -336,15 +364,24 @@ func (p *Processor) Process(ctx context.Context, source provider.Source) (result
 	}
 	defer func() {
 		cleanupErr := prepared.Release()
+		if cleanupErr == nil {
+			return
+		}
+		// A failed request keeps its *provider.Error at the head of the chain
+		// unless cleanup also failed; then both are reported.
 		if err != nil {
 			err = errors.Join(err, cleanupErr)
 			return
 		}
 		result.CleanupError = cleanupErr
 	}()
-	authorization, err := p.policy.Authorize(p.manifest, prepared.Format().ID)
-	if err != nil {
-		return provider.Result{}, &provider.Error{Kind: provider.ErrorCapabilityChanged, Cause: err}
+	formatID := prepared.Format().ID
+	authorization, authorized := p.authorizations[formatID]
+	if !authorized {
+		return provider.Result{}, &provider.Error{
+			Kind:  provider.ErrorCapabilityChanged,
+			Cause: fmt.Errorf("format %q has no upload authority under the capability manifest", formatID),
+		}
 	}
 	response, err := p.client.Process(ctx, prepared, authorization)
 	if err != nil {
@@ -353,7 +390,7 @@ func (p *Processor) Process(ctx context.Context, source provider.Source) (result
 	return provider.Result{
 		Document: response.Document, ReturnedModel: response.ReturnedModel,
 		UnitsProcessed: response.UnitsProcessed, ProviderBytes: response.ProviderBytes,
-		Metrics: neutralMetrics(response.Metrics),
+		Metrics: provider.RequestMetrics(response.Metrics),
 	}, nil
 }
 
@@ -391,13 +428,11 @@ func translateRequestError(err error) error {
 	case errors.Is(err, mistral.ErrCapabilityContract):
 		kind = provider.ErrorCapabilityChanged
 	}
-	return &provider.Error{Kind: kind, Metrics: neutralMetrics(mistral.MetricsFromError(err)), Cause: err}
+	// The neutral and vendor metrics structs share one field set, so the
+	// conversion fails to compile if either drifts.
+	return &provider.Error{Kind: kind, Metrics: provider.RequestMetrics(mistral.MetricsFromError(err)), Cause: err}
 }
 
 func isInterruption(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
-}
-
-func neutralMetrics(metrics mistral.RequestMetrics) provider.RequestMetrics {
-	return provider.RequestMetrics{Requests: metrics.Requests, Retries: metrics.Retries, Latency: metrics.Latency}
 }

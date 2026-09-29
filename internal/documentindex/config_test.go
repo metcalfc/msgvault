@@ -87,6 +87,76 @@ func TestDocumentsConfigRejectsUnknownEmbeddingProfile(t *testing.T) {
 	require.ErrorContains(t, config.Validate(), "profile must be \"vector.embeddings\"")
 }
 
+// tightProvider is a fake backend whose limits sit below the default
+// provider's defaults, so seeding numeric defaults before the provider is
+// known would make an untouched configuration fail validation.
+type tightProvider struct {
+	provider.Provider
+}
+
+func (tightProvider) Name() string { return "tight" }
+
+func (p tightProvider) Defaults() provider.Defaults {
+	defaults := p.Provider.Defaults()
+	defaults.RequestTimeout = 30 * time.Second
+	defaults.MaxRetries = 1
+	defaults.APIKeyEnv = "TIGHT_API_KEY"
+	return defaults
+}
+
+func (p tightProvider) Limits() provider.Limits {
+	limits := p.Provider.Limits()
+	limits.MaxRequestTimeout = time.Minute
+	limits.MaxRetries = 2
+	return limits
+}
+
+func withTightProvider(t *testing.T) {
+	t.Helper()
+	previous := providers
+	providers = provider.MustRegistry(mistralprovider.New(), tightProvider{Provider: mistralprovider.New()})
+	t.Cleanup(func() { providers = previous })
+}
+
+func TestApplyDefaultsResolvesNumericDefaultsForTheDecodedProvider(t *testing.T) {
+	withTightProvider(t)
+	require := require.New(t)
+	assert := assert.New(t)
+
+	decoded := DocumentsConfigDecodeTarget()
+	decoded.Provider = "tight"
+	decoded.ApplyDefaults()
+	require.NoError(decoded.Validate())
+	assert.Equal(30*time.Second, decoded.RequestTimeout)
+	assert.Equal(1, decoded.MaxRetries)
+	assert.Equal("TIGHT_API_KEY", decoded.APIKeyEnv)
+
+	mistralDefaults := DefaultDocumentsConfig()
+	mistralDefaults.Provider = "tight"
+	require.ErrorContains(mistralDefaults.Validate(), "request_timeout: exceeds hard safety limit",
+		"the default provider's timeout is above the tight limit, so it must not be seeded before the provider is known")
+
+	explicitZero := DocumentsConfigDecodeTarget()
+	explicitZero.Provider = "tight"
+	explicitZero.RequestTimeout = 0
+	explicitZero.ApplyDefaults()
+	require.ErrorContains(explicitZero.Validate(), "request_timeout: must be positive")
+
+	explicit := DocumentsConfigDecodeTarget()
+	explicit.Provider = "tight"
+	explicit.MaxRetries = 2
+	explicit.ApplyDefaults()
+	explicit.ApplyDefaults()
+	require.NoError(explicit.Validate())
+	assert.Equal(2, explicit.MaxRetries, "an explicit value survives repeated ApplyDefaults")
+
+	unresolved := DocumentsConfigDecodeTarget()
+	require.Error(unresolved.Validate(), "a decode target never validates before ApplyDefaults")
+	unresolved.Provider, unresolved.Model, unresolved.Region, unresolved.APIKeyEnv = "tight", ModelMistralOCR, RegionMistralEU, "TIGHT_API_KEY"
+	unresolved.RetentionPosture, unresolved.TrainingPosture = RetentionUnknown, TrainingUnknown
+	require.ErrorContains(unresolved.Validate(), "request_timeout: must be positive", "numeric sentinels never validate")
+}
+
 func TestDocumentsConfigRejectsUnsafePolicy(t *testing.T) {
 	tests := []struct {
 		name   string

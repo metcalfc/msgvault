@@ -147,7 +147,8 @@ func TestDocumentsConsentBuildAndStatusUseExactAuthenticatedProfile(t *testing.T
 	processor := &commandBuildProcessor{}
 	attachmentOpened := false
 	deps := documentsCommandDeps{
-		newDocumentProcessor: func(*documentindex.DocumentsConfig, docprovider.Manifest, docprovider.Staging) (docprovider.Processor, error) {
+		newDocumentProcessor: func(documentsConfig *documentindex.DocumentsConfig, manifest docprovider.Manifest, _ docprovider.Staging) (docprovider.Processor, error) {
+			processor.fingerprint = commandPolicyFingerprint(t, documentsConfig, manifest)
 			return processor, nil
 		},
 		openStore: func(context.Context) (*store.Store, func(), error) {
@@ -355,10 +356,15 @@ func TestDocumentBuildPreflightNamesCSVSourceBytesSeparately(t *testing.T) {
 func TestDocumentConsentDisclosureListsResolvedUploadRoutes(t *testing.T) {
 	require := require.New(t)
 	config := documentindex.DefaultDocumentsConfig()
+	config.RetentionPosture = documentindex.RetentionStandard
+	config.TrainingPosture = documentindex.TrainingOptedOut
 	config.Conversion.CSV.Enabled = true
 	csvPolicy, err := config.CSVPolicy()
 	require.NoError(err)
-	pdf := docprovider.Format{ID: "pdf", Family: "pdf", MediaType: "application/pdf", UnitKind: "page"}
+	policy, err := config.ExtractionPolicy()
+	require.NoError(err)
+	pdf, found := policy.FormatByID("pdf")
+	require.True(found)
 	inputPolicy := documentindex.ResolvedInputPolicy{
 		AllowedMediaTypes: []string{pdf.MediaType, "text/csv"},
 		Routes: map[string]documentindex.InputRoute{
@@ -676,7 +682,8 @@ func TestDocumentFullRebuildResumesDurableTargetSnapshot(t *testing.T) {
 	manifestPath := writeCommandCapabilityManifest(t, cfg.Attachments.Documents.MaxPagesPerDocument)
 	processor := &commandBuildProcessor{}
 	deps := documentsCommandDeps{
-		newDocumentProcessor: func(*documentindex.DocumentsConfig, docprovider.Manifest, docprovider.Staging) (docprovider.Processor, error) {
+		newDocumentProcessor: func(documentsConfig *documentindex.DocumentsConfig, manifest docprovider.Manifest, _ docprovider.Staging) (docprovider.Processor, error) {
+			processor.fingerprint = commandPolicyFingerprint(t, documentsConfig, manifest)
 			return processor, nil
 		},
 		openStore: func(context.Context) (*store.Store, func(), error) { return fixture.Store, func() {}, nil },
@@ -779,8 +786,9 @@ func TestDocumentBuildRecordsOversizedCandidateAndContinues(t *testing.T) {
 	result, err := executeDocumentBuild(
 		t.Context(), fixture.Store, testOperationPassScope("document:oversized"),
 		fixture.Store, commandAttachmentMapOpener{contents: contents},
-		&commandBuildProcessor{}, &documentsConfig, manifest, inputPolicy.AllowedMediaTypes, profile, 2,
-		"documents-isolation-test", t.TempDir(), documentBuildIncremental, nil,
+		&commandBuildProcessor{fingerprint: commandPolicyFingerprint(t, &documentsConfig, manifest)},
+		&documentsConfig, manifest, inputPolicy.AllowedMediaTypes, profile, 2,
+		"documents-isolation-test", testDocumentStaging(t), documentBuildIncremental, nil,
 	)
 	require.ErrorContains(err, "1 extraction failure")
 	assert.Equal(1, result.Processed)
@@ -802,7 +810,7 @@ func TestDocumentBuildRequiresRecorderBeforeWork(t *testing.T) {
 	result, err := executeDocumentBuild(
 		t.Context(), nil, testOperationPassScope("document:missing-recorder"),
 		nil, nil, nil, nil, nil, nil, store.DocumentExtractionProfile{}, 1,
-		"documents-recorder-test", t.TempDir(), documentBuildIncremental, nil,
+		"documents-recorder-test", testDocumentStaging(t), documentBuildIncremental, nil,
 	)
 
 	require.ErrorContains(t, err, "operation recorder is required")
@@ -899,8 +907,9 @@ func TestDocumentBuildStopsOnCancellation(t *testing.T) {
 	result, err := executeDocumentBuild(
 		ctx, fixture.Store, testOperationPassScope("document:cancelled"),
 		fixture.Store, commandAttachmentMapOpener{contents: map[string][]byte{digest: content}},
-		commandCancelingProcessor{cancel: cancel}, &documentsConfig, manifest, inputPolicy.AllowedMediaTypes, profile, 1,
-		"documents-cancellation-test", t.TempDir(), documentBuildIncremental, nil,
+		commandCancelingProcessor{cancel: cancel, fingerprint: commandPolicyFingerprint(t, &documentsConfig, manifest)},
+		&documentsConfig, manifest, inputPolicy.AllowedMediaTypes, profile, 1,
+		"documents-cancellation-test", testDocumentStaging(t), documentBuildIncremental, nil,
 	)
 	require.ErrorIs(err, context.Canceled)
 	assert.Zero(result.Failed)
@@ -955,9 +964,9 @@ func TestDocumentBuildContinuesAfterProviderTimeout(t *testing.T) {
 	result, err := executeDocumentBuild(
 		t.Context(), fixture.Store, testOperationPassScope("document:timeout"),
 		fixture.Store, commandAttachmentMapOpener{contents: contents},
-		&commandBuildProcessor{firstErr: context.DeadlineExceeded},
+		&commandBuildProcessor{firstErr: context.DeadlineExceeded, fingerprint: commandPolicyFingerprint(t, &documentsConfig, manifest)},
 		&documentsConfig, manifest, inputPolicy.AllowedMediaTypes, profile, 2,
-		"documents-timeout-test", t.TempDir(), documentBuildIncremental, nil,
+		"documents-timeout-test", testDocumentStaging(t), documentBuildIncremental, nil,
 	)
 	require.ErrorContains(err, "1 extraction failure")
 	require.ErrorContains(err, failedDigest)
@@ -1145,12 +1154,29 @@ func (c commandDocumentReadClient) GetDocumentIndexStatus(
 }
 
 type commandBuildProcessor struct {
-	calls    int
-	firstErr error
+	calls       int
+	firstErr    error
+	fingerprint string
 }
 
+func (p *commandBuildProcessor) PolicyFingerprint() string { return p.fingerprint }
+
 type commandCancelingProcessor struct {
-	cancel context.CancelFunc
+	cancel      context.CancelFunc
+	fingerprint string
+}
+
+func (p commandCancelingProcessor) PolicyFingerprint() string { return p.fingerprint }
+
+// commandPolicyFingerprint binds a fake processor to the policy and manifest a
+// build resolves, as the real processor factory does.
+func commandPolicyFingerprint(t *testing.T, documentsConfig *documentindex.DocumentsConfig, manifest docprovider.Manifest) string {
+	t.Helper()
+	policy, err := documentsConfig.ExtractionPolicy()
+	require.NoError(t, err)
+	fingerprint, err := policy.Fingerprint(manifest)
+	require.NoError(t, err)
+	return fingerprint
 }
 
 func (p commandCancelingProcessor) Process(
@@ -1226,6 +1252,11 @@ func commandDocumentOccurrenceCount(t *testing.T, st *store.Store) int {
 	var count int
 	require.NoError(t, st.DB().QueryRow(`SELECT COUNT(*) FROM document_occurrences`).Scan(&count))
 	return count
+}
+
+func testDocumentStaging(t *testing.T) docprovider.Staging {
+	t.Helper()
+	return docprovider.Staging{Directory: filepath.Join(t.TempDir(), "document-index"), MaxBytes: 512 << 20, MinFreeBytes: 1}
 }
 
 func testOperationPassScope(key string) operations.PassScope {

@@ -30,6 +30,7 @@ func TestDefaultsAndLimitsMirrorVendorConstants(t *testing.T) {
 	assert := assert.New(t)
 	adapter := New()
 	assert.Equal("mistral", adapter.Name())
+	assert.Equal("Mistral", adapter.DisplayName())
 	assert.Equal(provider.Defaults{
 		Region: mistral.RegionEU, Model: mistral.DefaultModel, APIKeyEnv: "MISTRAL_API_KEY",
 		RequestTimeout: mistral.DefaultTimeout, MaxRetries: mistral.DefaultMaxRetries,
@@ -230,9 +231,26 @@ func TestProcessorTranslatesProviderRejection(t *testing.T) {
 	source, _ := pdfSource(t, content)
 	_, err := processor.Process(t.Context(), source)
 	require.Error(err)
-	assert.Equal(provider.ErrorRejected, provider.ErrorKindOf(err))
-	assert.Equal(1, provider.MetricsFromError(err).Requests)
+	// A clean spool release must not wrap the failure in a join: the
+	// documented contract is a *provider.Error at the head of the chain.
+	providerErr, ok := err.(*provider.Error) //nolint:errorlint // the unwrapped head of the chain is the contract under test
+	require.True(ok, "expected *provider.Error, got %T", err)
+	assert.Equal(provider.ErrorRejected, providerErr.Kind)
+	assert.Equal(1, providerErr.Metrics.Requests)
 	assert.False(provider.IsRetryable(err))
+}
+
+func TestProcessorFingerprintBindsPolicyAndManifest(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	policy := testPolicy(t)
+	manifest := testManifest(t, policy)
+	processor, _ := testProcessor(t, &syntheticTransport{})
+	want, err := policy.Fingerprint(manifest)
+	require.NoError(err)
+	assert.Equal(want, processor.PolicyFingerprint())
+	var nilProcessor *Processor
+	assert.Empty(nilProcessor.PolicyFingerprint())
 }
 
 func TestProcessorRefusesFormatsWithoutAuthority(t *testing.T) {

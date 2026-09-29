@@ -953,6 +953,10 @@ func decodeConfig(cfg *Config, path string, explicit, homeOverride bool, content
 	// an empty section so ApplyDefaults only fills it when the file defines
 	// no profiles of its own.
 	cfg.People.Sweep = peoplesweep.Config{}
+	// Document provider defaults (region, model, key variable, timeout,
+	// retries) depend on the decoded provider name. Decode over the sentinel
+	// target so ApplyDefaults resolves them for the selected provider.
+	cfg.Attachments.Documents = documentindex.DocumentsConfigDecodeTarget()
 	metadata, err := toml.Decode(string(content), cfg)
 	if err != nil {
 		if strings.Contains(err.Error(), "invalid escape") ||

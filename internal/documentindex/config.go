@@ -45,29 +45,40 @@ const (
 	hardMaxFreeSpaceBytes      int64 = 1 << 40
 	hardMaxPagesPerRun               = 1_000_000
 	hardMaxEstimatedCostUSD          = 1_000_000.0
+
+	// Sentinels mark provider-dependent numeric fields the file omitted. They
+	// are far outside any accepted range, so a value a file could plausibly
+	// set (including an explicit zero) is never mistaken for "omitted".
+	omittedRequestTimeout = time.Duration(math.MinInt64)
+	omittedMaxRetries     = math.MinInt
 )
 
 var envNamePattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 
-// DefaultDocumentsConfig returns the complete safe policy used as the decode
-// target. Decoding over populated defaults distinguishes an omitted numeric
-// field from an explicit zero, which Validate must reject. Numeric provider
-// defaults come from the default provider because the provider name is not
-// known until after decoding.
-func DefaultDocumentsConfig() DocumentsConfig {
-	defaults := defaultProvider().Defaults()
-	config := DocumentsConfig{
+// DocumentsConfigDecodeTarget returns the value a configuration file is
+// decoded over. Provider-independent limits are populated so an explicit
+// zero remains distinguishable from an omitted field (Validate rejects the
+// zero). Provider-dependent fields hold omission sentinels because the
+// provider is not known until after decoding; ApplyDefaults resolves them.
+func DocumentsConfigDecodeTarget() DocumentsConfig {
+	return DocumentsConfig{
 		MaxFileBytes:              defaultMaxFileBytes,
 		MaxPagesPerDocument:       defaultMaxPages,
 		MaxResponseBytes:          defaultMaxResponseBytes,
 		MaxNormalizedChars:        defaultMaxNormalizedChars,
 		MaxSpoolBytes:             defaultMaxSpoolBytes,
 		MinFreeSpaceBytes:         defaultMinFreeSpaceBytes,
-		RequestTimeout:            defaults.RequestTimeout,
-		MaxRetries:                defaults.MaxRetries,
+		RequestTimeout:            omittedRequestTimeout,
+		MaxRetries:                omittedMaxRetries,
 		MaxPagesPerRun:            defaultMaxPagesPerRun,
 		MaxEstimatedCostUSDPerRun: defaultMaxEstimatedCostUSD,
 	}
+}
+
+// DefaultDocumentsConfig returns the complete safe policy for the default
+// provider, ready to validate or use.
+func DefaultDocumentsConfig() DocumentsConfig {
+	config := DocumentsConfigDecodeTarget()
 	config.ApplyDefaults()
 	return config
 }
@@ -104,7 +115,6 @@ type DocumentsConfig struct {
 	Scope                     ScopeConfig      `toml:"scope"`
 	Index                     IndexConfig      `toml:"index"`
 	Conversion                ConversionConfig `toml:"conversion"`
-	defaultsApplied           bool
 }
 
 type ConversionConfig struct {
@@ -150,42 +160,47 @@ type DocumentEmbeddingsConfig struct {
 	Profile string `toml:"profile"`
 }
 
-// ApplyDefaults restores safe v1 settings after TOML decoding. Pointer
-// booleans preserve an explicit false. Region, model, and API key variable
-// defaults come from the selected provider.
+// ApplyDefaults restores safe v1 settings after TOML decoding. It is
+// idempotent. Pointer booleans preserve an explicit false. Region, model, API
+// key variable, request timeout, and retry defaults come from the selected
+// provider, so they are resolved here where Provider is known rather than in
+// the decode target.
 func (c *DocumentsConfig) ApplyDefaults() {
-	if !c.defaultsApplied {
-		if c.Provider == "" {
-			c.Provider = defaultProviderName
-		}
-		defaults := providerDefaults(c.Provider)
-		if c.Region == "" {
-			c.Region = defaults.Region
-		}
-		if c.APIKeyEnv == "" {
-			c.APIKeyEnv = defaults.APIKeyEnv
-		}
-		if c.Model == "" {
-			c.Model = defaults.Model
-		}
-		if c.RetentionPosture == "" {
-			c.RetentionPosture = RetentionUnknown
-		}
-		if c.TrainingPosture == "" {
-			c.TrainingPosture = TrainingUnknown
-		}
-		if c.Index.Lexical == nil {
-			value := true
-			c.Index.Lexical = &value
-		}
-		if c.Index.StoreChunkText == nil {
-			value := true
-			c.Index.StoreChunkText = &value
-		}
-		if c.Index.Embeddings.Profile == "" {
-			c.Index.Embeddings.Profile = "vector.embeddings"
-		}
-		c.defaultsApplied = true
+	if c.Provider == "" {
+		c.Provider = defaultProviderName
+	}
+	defaults := providerDefaults(c.Provider)
+	if c.Region == "" {
+		c.Region = defaults.Region
+	}
+	if c.APIKeyEnv == "" {
+		c.APIKeyEnv = defaults.APIKeyEnv
+	}
+	if c.Model == "" {
+		c.Model = defaults.Model
+	}
+	if c.RequestTimeout == omittedRequestTimeout {
+		c.RequestTimeout = defaults.RequestTimeout
+	}
+	if c.MaxRetries == omittedMaxRetries {
+		c.MaxRetries = defaults.MaxRetries
+	}
+	if c.RetentionPosture == "" {
+		c.RetentionPosture = RetentionUnknown
+	}
+	if c.TrainingPosture == "" {
+		c.TrainingPosture = TrainingUnknown
+	}
+	if c.Index.Lexical == nil {
+		value := true
+		c.Index.Lexical = &value
+	}
+	if c.Index.StoreChunkText == nil {
+		value := true
+		c.Index.StoreChunkText = &value
+	}
+	if c.Index.Embeddings.Profile == "" {
+		c.Index.Embeddings.Profile = "vector.embeddings"
 	}
 	for i := range c.Scope.MessageTypes {
 		c.Scope.MessageTypes[i] = strings.ToLower(strings.TrimSpace(c.Scope.MessageTypes[i]))

@@ -564,8 +564,8 @@ func runProbeMistral(
 			return err
 		}
 		_, _ = fmt.Fprintf(command.OutOrStdout(),
-			"Validated %d private Mistral fixture(s) locally; no provider requests were made.\n",
-			len(policy.Formats()))
+			"Validated %d private %s fixture(s) locally; no provider requests were made.\n",
+			len(policy.Formats()), documentProvider.DisplayName())
 		return nil
 	}
 	manifest, err := deps.runCapabilityProbe(command.Context(), documentsConfig, policy, docprovider.ProbeConfig{
@@ -575,7 +575,7 @@ func runProbeMistral(
 		return err
 	}
 	if err := documentProvider.EncodeManifest(command.OutOrStdout(), manifest); err != nil {
-		return fmt.Errorf("write Mistral capability manifest: %w", err)
+		return fmt.Errorf("write %s capability manifest: %w", documentProvider.DisplayName(), err)
 	}
 	return nil
 }
@@ -766,9 +766,10 @@ func runBuildDocuments(
 		return err
 	}
 	defer func() { runErr = errors.Join(runErr, closeAttachments()) }()
-	processor, err := deps.newDocumentProcessor(
-		documentsConfig, manifest, documentStaging(documentsConfig, documentBuildSpoolDirectory(cfg.Data.DataDir)),
-	)
+	// One staging value feeds both the processor and the build so the
+	// directory that is created and scavenged is the one bytes are staged in.
+	staging := documentStaging(documentsConfig, documentBuildSpoolDirectory(cfg.Data.DataDir))
+	processor, err := deps.newDocumentProcessor(documentsConfig, manifest, staging)
 	if err != nil {
 		return err
 	}
@@ -776,7 +777,7 @@ func runBuildDocuments(
 		command.Context(), st,
 		newOperationPassScope("cli:document-extraction", operations.TriggerManual),
 		st, attachments, processor, documentsConfig, manifest,
-		inputPolicy.AllowedMediaTypes, profile, limit, "documents-cli", cfg.Data.DataDir, mode, &reconcileResult,
+		inputPolicy.AllowedMediaTypes, profile, limit, "documents-cli", staging, mode, &reconcileResult,
 	)
 	_, _ = fmt.Fprintf(command.OutOrStdout(),
 		"Reconciled %d attachment(s), consumed %d change(s); indexed %d document(s), %d unit(s), skipped %d, failed %d.\n",
@@ -845,7 +846,7 @@ func executeDocumentBuild(
 	profile store.DocumentExtractionProfile,
 	limit int,
 	leaseOwner string,
-	dataDirectory string,
+	staging docprovider.Staging,
 	mode documentBuildMode,
 	preReconciled *documentindex.ReconcileResult,
 ) (result documentBuildResult, runErr error) {
@@ -903,11 +904,10 @@ func executeDocumentBuild(
 	default:
 		return result, errors.New("document build mode is invalid")
 	}
-	if dataDirectory == "" {
-		return result, errors.New("document build requires a data directory")
+	if staging.Directory == "" {
+		return result, errors.New("document build requires a staging directory")
 	}
-	spoolDirectory := documentBuildSpoolDirectory(dataDirectory)
-	if err := fileutil.SecureMkdirAll(spoolDirectory, 0o700); err != nil {
+	if err := fileutil.SecureMkdirAll(staging.Directory, 0o700); err != nil {
 		return result, fmt.Errorf("create private document spool directory: %w", err)
 	}
 	documentProvider, err := documentsConfig.ResolveProvider()
@@ -915,9 +915,9 @@ func executeDocumentBuild(
 		return result, err
 	}
 	if _, err := documentProvider.ScavengeStaging(
-		spoolDirectory, time.Now().UTC().Add(-2*time.Hour),
+		staging.Directory, time.Now().UTC().Add(-2*time.Hour),
 	); err != nil {
-		return result, fmt.Errorf("scavenge Mistral document spool: %w", err)
+		return result, fmt.Errorf("scavenge %s document spool: %w", documentProvider.DisplayName(), err)
 	}
 	policy, err := documentsConfig.ExtractionPolicy()
 	if err != nil {
@@ -1407,7 +1407,7 @@ func loadDocumentCapabilityManifest(
 	}
 	file, err := os.Open(capabilityPath)
 	if err != nil {
-		return nil, errors.New("open configured Mistral capability manifest")
+		return nil, fmt.Errorf("open configured %s capability manifest", documentProvider.DisplayName())
 	}
 	manifest, decodeErr := documentProvider.DecodeManifest(file)
 	closeErr := file.Close()

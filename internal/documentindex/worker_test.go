@@ -141,6 +141,23 @@ type workerProcessor struct {
 	preparedMediaType string
 	preparedSHA256    string
 	preparedSize      int64
+	fingerprint       string
+}
+
+func (p *workerProcessor) PolicyFingerprint() string { return p.fingerprint }
+
+// bindFakeProcessor gives a fake processor the fingerprint the worker demands,
+// as the real processor factory does for the policy and manifest it is built
+// from. Real adapter processors already carry their own.
+func bindFakeProcessor(t *testing.T, processor provider.Processor, policy provider.Policy, manifest provider.Manifest) {
+	t.Helper()
+	fake, ok := processor.(*workerProcessor)
+	if !ok {
+		return
+	}
+	fingerprint, err := policy.Fingerprint(manifest)
+	require.NoError(t, err)
+	fake.fingerprint = fingerprint
 }
 
 // Process takes ownership of the source like a real provider and records the
@@ -372,6 +389,7 @@ func newCSVTestWorker(
 	require.NoError(t, policy.Authorize(manifest, pdfFormat.ID))
 	csvPolicy, err := csvpdf.NewPolicy(csvpdf.DefaultLimits())
 	require.NoError(t, err)
+	bindFakeProcessor(t, processor, policy, manifest)
 	worker, err := NewWorker(catalog, opener, processor, WorkerConfig{
 		ProfileID: "profile-test", LeaseOwner: "worker-test", LeaseDuration: 30 * time.Minute,
 		RetryDelay: 5 * time.Minute, Policy: policy, CapabilityPolicy: manifest,
@@ -615,6 +633,36 @@ func TestWorkerRecordsOversizedCandidateBeforeReadingBytes(t *testing.T) {
 	assert.Equal("invalid_local_source", catalog.failure.ReasonCode)
 }
 
+func TestNewWorkerRejectsProcessorBuiltFromDifferentManifest(t *testing.T) {
+	require := require.New(t)
+	policy := testPolicy(t)
+	routed := testCapabilityManifest(t, policy)
+	other, err := mistralprovidertest.Manifest(policy, mistralprovidertest.WithLocalExactPPTX())
+	require.NoError(err)
+	spoolDirectory := filepath.Join(t.TempDir(), "spool")
+	require.NoError(fileutil.SecureMkdirAll(spoolDirectory, 0o700))
+	processor, err := mistralprovider.New().NewProcessor(policy, other, provider.ClientConfig{
+		APIKey: "synthetic-key", MaxRetries: 1,
+	}, provider.Staging{Directory: spoolDirectory, MaxBytes: 2 << 20, MinFreeBytes: 1})
+	require.NoError(err)
+	config := WorkerConfig{
+		ProfileID: "profile-test", LeaseOwner: "worker-test", LeaseDuration: 30 * time.Minute,
+		RetryDelay: 5 * time.Minute, Policy: policy, CapabilityPolicy: routed,
+		InputPolicy: testPDFInputPolicy(t, policy, routed),
+	}
+
+	_, err = NewWorker(&workerCatalog{}, &workerOpener{}, processor, config)
+	require.ErrorContains(err, "different policy or capability manifest")
+
+	_, err = NewWorker(&workerCatalog{}, &workerOpener{}, &workerProcessor{}, config)
+	require.ErrorContains(err, "different policy or capability manifest", "an unbound fake fails closed")
+
+	config.CapabilityPolicy = other
+	config.InputPolicy = testPDFInputPolicy(t, policy, other)
+	_, err = NewWorker(&workerCatalog{}, &workerOpener{}, processor, config)
+	require.NoError(err)
+}
+
 func TestWorkerClaimsBeforeOpeningBytesOrCallingProvider(t *testing.T) {
 	content := mistralprovidertest.MinimalPDF("worker test")
 	hash := sha256.Sum256(content)
@@ -678,6 +726,7 @@ func newTestWorkerWithConfig(
 	inputPolicy ResolvedInputPolicy,
 ) *Worker {
 	t.Helper()
+	bindFakeProcessor(t, processor, policy, manifest)
 	worker, err := NewWorker(catalog, opener, processor, WorkerConfig{
 		ProfileID: "profile-test", LeaseOwner: "worker-test", LeaseDuration: 30 * time.Minute,
 		RetryDelay: 5 * time.Minute,
@@ -879,7 +928,7 @@ func testPPTXWorkerFailure(t *testing.T, content []byte, processed, maxUnits int
 		Size: int64(len(content)), MessageType: "email", SourceSequence: 11,
 	})
 	if reason == "invalid_local_source" {
-		require.ErrorContains(err, "document extraction preparation failed")
+		require.Equal(provider.ErrorInvalidInput, provider.ErrorKindOf(err))
 	} else {
 		require.Equal(provider.ErrorCapabilityChanged, provider.ErrorKindOf(err))
 	}
@@ -997,6 +1046,7 @@ func TestWorkerRejectsUnqualifiedFormatsBeforeOpeningBytes(t *testing.T) {
 					require.NoError(err)
 					workerConfig := worker.config
 					workerConfig.Policy, workerConfig.CapabilityPolicy, workerConfig.InputPolicy = policy, manifest, input
+					bindFakeProcessor(t, processor, policy, manifest)
 					worker, err = NewWorker(catalog, opener, processor, workerConfig)
 					require.NoError(err)
 				}

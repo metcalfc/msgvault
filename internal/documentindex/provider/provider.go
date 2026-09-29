@@ -96,6 +96,10 @@ type Result struct {
 // retry and reason-code classification.
 type Processor interface {
 	Process(ctx context.Context, source Source) (Result, error)
+	// PolicyFingerprint is Policy.Fingerprint(manifest) for the exact policy
+	// and capability evidence the processor was built from. A worker refuses
+	// a processor whose fingerprint differs from its own.
+	PolicyFingerprint() string
 }
 
 // Defaults are the configuration values a provider supplies for omitted
@@ -210,7 +214,10 @@ type ProbeConfig struct {
 
 // Provider is one document extraction backend.
 type Provider interface {
+	// Name is the configuration value that selects the provider.
 	Name() string
+	// DisplayName is the vendor name as shown in user-facing messages.
+	DisplayName() string
 	Defaults() Defaults
 	Limits() Limits
 	NewPolicy(config PolicyConfig) (Policy, error)

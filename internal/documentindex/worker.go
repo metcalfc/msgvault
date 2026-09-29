@@ -113,8 +113,15 @@ func NewWorker(
 	if config.Policy == nil || config.CapabilityPolicy == nil {
 		return nil, errors.New("document worker requires a policy and its capability manifest")
 	}
-	if _, err := config.Policy.Fingerprint(config.CapabilityPolicy); err != nil {
+	fingerprint, err := config.Policy.Fingerprint(config.CapabilityPolicy)
+	if err != nil {
 		return nil, fmt.Errorf("validate document capability policy: %w", err)
+	}
+	// Fail closed: the processor must have been built from the same policy and
+	// capability evidence that resolved the input routes, or a route could
+	// send bytes under authority the processor never validated.
+	if processor.PolicyFingerprint() != fingerprint {
+		return nil, errors.New("document processor was built from a different policy or capability manifest")
 	}
 	if config.InputPolicy.Routes == nil {
 		return nil, errors.New("document worker requires a resolved input policy")
@@ -260,9 +267,6 @@ func (w *Worker) ProcessCandidate(
 	providerMetrics := providerResult.Metrics
 	if err != nil {
 		providerMetrics = provider.MetricsFromError(err)
-		if provider.ErrorKindOf(err) == provider.ErrorInvalidInput {
-			err = fmt.Errorf("%w: %w", errDocumentPreparation, err)
-		}
 		if renewErr := readRenewalError(renewalErr); renewErr != nil {
 			err = errors.Join(err, renewErr)
 		}
