@@ -56,6 +56,11 @@
   }
 
   const merged = $derived(hub.merged);
+  // "Has name" can hide a whole page of archive contacts; keep loading
+  // until a named one shows or the pages end.
+  $effect(() => {
+    if (hub.needsMoreObserved) void hub.observed.loadMore();
+  });
   const observedError = $derived(hub.includesObserved ? hub.observed.error : null);
   const hasFilters = $derived(Boolean(filters.query.trim() || filters.saved || filters.hasName ||
     filters.category.trim() || filters.organization.trim()));
@@ -143,7 +148,7 @@
         {/each}
       </ul>
     {/if}
-    {#if hub.hasMore && merged.rows.length > 0}
+    {#if hub.hasMore && !hub.loading}
       <div class="more">
         <Button surface="soft" label={hub.loadingMore ? 'Loading more…' : 'Load more people'} disabled={hub.loadingMore}
           onclick={() => void hub.loadMore()} />

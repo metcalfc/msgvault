@@ -183,9 +183,18 @@ function byLastContact(left: PeopleRow, right: PeopleRow): number {
   return left.name.localeCompare(right.name) || left.key.localeCompare(right.key);
 }
 
+export interface PeopleSource {
+  /** Rows to show, after any client-side filter. */
+  rows: PeopleRow[];
+  hasMore: boolean;
+  /** The last contact time of the last row loaded before filtering: how
+   * far this source has loaded even when the filter hid every row. */
+  loadedThrough?: string;
+}
+
 export interface PeopleSources {
-  saved?: { rows: PeopleRow[]; hasMore: boolean };
-  observed?: { rows: PeopleRow[]; hasMore: boolean };
+  saved?: PeopleSource;
+  observed?: PeopleSource;
   /** A text query orders each source by relevance; the list then shows
    * saved matches before archive matches instead of interleaving by date. */
   ranked?: boolean;
@@ -206,7 +215,9 @@ export function mergePeople(sources: PeopleSources): { rows: PeopleRow[]; limite
   for (const [name, source] of [['saved', sources.saved], ['observed', sources.observed]] as const) {
     if (!source?.hasMore) continue;
     const last = source.rows.at(-1);
-    const time = last ? contactTime(last) : Number.POSITIVE_INFINITY;
+    const time = source.loadedThrough !== undefined
+      ? contactTime({ lastContactAt: source.loadedThrough } as PeopleRow)
+      : last ? contactTime(last) : Number.POSITIVE_INFINITY;
     if (time > cutoff) {
       cutoff = time;
       limitedBy.splice(0, limitedBy.length, name);
@@ -266,7 +277,10 @@ export class PeopleHub {
       saved: this.includesSaved
         ? { rows: this.directory.rows.map(savedRow), hasMore: this.directory.cursor !== null }
         : undefined,
-      observed: this.includesObserved ? { rows: observed, hasMore: this.observed.cursor !== null } : undefined,
+      observed: this.includesObserved ? {
+        rows: observed, hasMore: this.observed.cursor !== null,
+        loadedThrough: this.observed.rows.length > 0 ? this.observed.rows.at(-1)!.lastContactAt ?? '' : undefined,
+      } : undefined,
       ranked: Boolean(this.filters.query.trim()) || this.directory.sort !== 'last_contact_desc',
     });
   }
@@ -282,6 +296,14 @@ export class PeopleHub {
 
   get loadingMore(): boolean {
     return this.directory.loadingMore || this.observed.loadingMore;
+  }
+
+  /** True when "Has name" hid every loaded archive contact but more pages
+   * remain: the list loads on until something shows or pages run out. */
+  get needsMoreObserved(): boolean {
+    return this.includesObserved && this.filters.hasName && this.observed.cursor !== null &&
+      !this.observed.loading && !this.observed.loadingMore && this.observed.rows.length > 0 &&
+      this.observed.rows.every((row) => looksUnnamed(row.name, row.identifier));
   }
 
   async loadMore(): Promise<void> {

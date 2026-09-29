@@ -25,6 +25,16 @@ describe('People list merge', () => {
     expect(merged.limitedBy).toEqual(['saved']);
   });
 
+  it('keeps saved people and paging when a filter hides every loaded contact', () => {
+    const merged = mergePeople({
+      saved: { rows: [row('saved', 1, '2026-07-20T00:00:00Z'), row('saved', 2, '2026-07-01T00:00:00Z')], hasMore: false },
+      // "Has name" hid the whole loaded page, which reached back to Jul 10.
+      observed: { rows: [], hasMore: true, loadedThrough: '2026-07-10T00:00:00Z' },
+    });
+    expect(merged.rows.map((item) => item.key)).toEqual(['saved:1']);
+    expect(merged.limitedBy).toEqual(['observed']);
+  });
+
   it('keeps each source in its own relevance order while searching', () => {
     const { rows } = mergePeople({
       saved: { rows: [row('saved', 1, '2020-01-01T00:00:00Z')], hasMore: true },
