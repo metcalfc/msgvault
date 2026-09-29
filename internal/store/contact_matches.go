@@ -867,7 +867,7 @@ func (s *Store) retireStaleContactMatchCandidatesTx(ctx context.Context, tx *log
 			members = append(members, id)
 		}
 		slices.Sort(members)
-		guardErr := contactMatchAcceptGuardsTx(ctx, tx, members)
+		guardErr := contactMatchAcceptGuardsTx(ctx, tx, row, members)
 		if guardErr == nil {
 			continue
 		}
@@ -887,5 +887,6 @@ func (s *Store) retireStaleContactMatchCandidatesTx(ctx context.Context, tx *log
 // isContactMatchRetirement reports whether an accept guard failure means the
 // candidate no longer qualifies, as opposed to an operational error.
 func isContactMatchRetirement(err error) bool {
-	return errors.Is(err, ErrContactMatchOwnerIdentity)
+	return errors.Is(err, ErrContactMatchOwnerIdentity) ||
+		errors.Is(err, ErrContactMatchStale)
 }

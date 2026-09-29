@@ -2,9 +2,13 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
+
+	"go.kenn.io/msgvault/internal/textimport"
 )
 
 // ErrContactMatchOwnerIdentity reports that the matched participant cluster
@@ -12,6 +16,11 @@ import (
 // contact profile.
 var ErrContactMatchOwnerIdentity = errors.New(
 	"the matched archive identity belongs to the archive owner")
+
+// ErrContactMatchStale reports that the profile's current email and phone
+// addresses no longer exactly match any identity in the cluster.
+var ErrContactMatchStale = errors.New(
+	"the profile's addresses no longer match this archive identity")
 
 // contactMatchMergeActor records who performed the merge half of an accepted
 // bind. Only an explicit user decision reaches it.
@@ -96,7 +105,7 @@ func (s *Store) acceptParticipantPersonMatchTx(
 		return nil, err
 	}
 	members := sortedComponentMembers(candidate.LeftID, edges)
-	if err := contactMatchAcceptGuardsTx(ctx, tx, members); err != nil {
+	if err := contactMatchAcceptGuardsTx(ctx, tx, *candidate, members); err != nil {
 		return nil, err
 	}
 	persons, err := personIDsForParticipantsTx(ctx, tx, members)
@@ -134,8 +143,11 @@ func (s *Store) acceptParticipantPersonMatchTx(
 
 // contactMatchAcceptGuardsTx re-checks, under the identity lock, the rules
 // that decided the candidate when it was built, because the archive may have
-// changed since: the cluster must not contain an owner identity.
-func contactMatchAcceptGuardsTx(ctx context.Context, tx *loggedTx, members []int64) error {
+// changed since: the cluster must not contain an owner identity, and one of
+// the person's current addresses must still exactly match a cluster member.
+func contactMatchAcceptGuardsTx(
+	ctx context.Context, tx *loggedTx, candidate IdentityMatchCandidate, members []int64,
+) error {
 	owners, err := ownerParticipantIDsTx(ctx, tx)
 	if err != nil {
 		return err
@@ -145,7 +157,104 @@ func contactMatchAcceptGuardsTx(ctx context.Context, tx *loggedTx, members []int
 			return ErrContactMatchOwnerIdentity
 		}
 	}
+	matched, err := clusterMatchesPersonAddressesTx(ctx, tx, candidate.RightID, members)
+	if err != nil {
+		return err
+	}
+	if !matched {
+		return ErrContactMatchStale
+	}
 	return nil
+}
+
+// clusterMatchesPersonAddressesTx reports whether any active email or phone
+// contact point of the person exactly equals an email or phone of a cluster
+// member, with the same normalization the finder uses.
+func clusterMatchesPersonAddressesTx(
+	ctx context.Context, tx *loggedTx, personID int64, members []int64,
+) (bool, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT address_kind, normalized_value
+		FROM person_contact_points
+		WHERE person_id = ? AND address_kind IN (?, ?)
+		  AND active_until IS NULL AND superseded_at IS NULL`,
+		personID, ContactAddressEmail, ContactAddressPhone)
+	if err != nil {
+		return false, fmt.Errorf("load contact match person addresses: %w", err)
+	}
+	want := map[string]struct{}{}
+	for rows.Next() {
+		var kind ContactAddressKind
+		var value string
+		if err := rows.Scan(&kind, &value); err != nil {
+			_ = rows.Close()
+			return false, fmt.Errorf("scan contact match person address: %w", err)
+		}
+		if key, ok := contactMatchAddressKey(string(kind), value); ok {
+			want[key] = struct{}{}
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return false, fmt.Errorf("close contact match person addresses: %w", err)
+	}
+	if len(want) == 0 {
+		return false, nil
+	}
+	found := false
+	check := func(kind, value string) {
+		if key, ok := contactMatchAddressKey(kind, value); ok {
+			if _, hit := want[key]; hit {
+				found = true
+			}
+		}
+	}
+	if err := queryInChunksContext(ctx, tx, members, nil, `
+		SELECT email_address, phone_number FROM participants WHERE id IN (%s)`,
+		func(rows *loggedRows) error {
+			var email, phone sql.NullString
+			if err := rows.Scan(&email, &phone); err != nil {
+				return fmt.Errorf("scan contact match cluster member: %w", err)
+			}
+			check(string(ContactAddressEmail), email.String)
+			check(string(ContactAddressPhone), phone.String)
+			return nil
+		}); err != nil {
+		return false, err
+	}
+	if err := queryInChunksContext(ctx, tx, members, nil, `
+		SELECT identifier_type, identifier_value FROM participant_identifiers
+		WHERE identifier_type IN ('email', 'phone') AND participant_id IN (%s)`,
+		func(rows *loggedRows) error {
+			var kind, value string
+			if err := rows.Scan(&kind, &value); err != nil {
+				return fmt.Errorf("scan contact match cluster identifier: %w", err)
+			}
+			check(kind, value)
+			return nil
+		}); err != nil {
+		return false, err
+	}
+	return found, nil
+}
+
+// contactMatchAddressKey normalizes an email or phone the way the finder
+// compares them.
+func contactMatchAddressKey(kind, value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", false
+	}
+	switch kind {
+	case string(ContactAddressEmail):
+		return "email:" + strings.ToLower(value), true
+	case string(ContactAddressPhone):
+		normalized, err := textimport.NormalizePhone(value)
+		if err != nil {
+			return "", false
+		}
+		return "phone:" + normalized, true
+	default:
+		return "", false
+	}
 }
 
 // bindClusterIntoPersonTx promotes the participant's unbound cluster and

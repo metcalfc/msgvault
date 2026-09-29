@@ -141,6 +141,11 @@ func seedContactProfileCandidate(
 		`INSERT INTO persons (vcard_uid, display_name) VALUES (?, ?) RETURNING id`,
 		fmt.Sprintf("contact-%d", participantID), "Contact Example",
 	).Scan(&personID))
+	_, err := st.AddPersonContactPointContext(context.Background(), personID, store.PersonContactPointInput{
+		AddressKind: store.ContactAddressEmail, OriginalValue: "contact@example.com",
+		Envelope: store.ValueEnvelopeInput{Source: store.ProvenanceCardDAVImport},
+	})
+	require.NoError(t, err)
 	value := "contact@example.com"
 	candidate, _, err := st.UpsertIdentityMatchCandidateContext(
 		context.Background(), store.IdentityMatchCandidateInput{
