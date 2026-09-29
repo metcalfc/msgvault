@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { compactDate } from './dates';
+import { compactDate, humanizeDate } from './dates';
 
 const now = new Date('2026-07-19T12:00:00Z');
 
@@ -40,5 +40,28 @@ describe('compactDate', () => {
 
   it('renders slightly-future timestamps (clock skew) as a short date, never a negative age', () => {
     expect(compactDate('2026-07-19T12:05:00Z', now)).toMatch(/^Jul (18|19|20)$/);
+  });
+});
+
+describe('humanizeDate', () => {
+  it('reads recent past as an age and the near future as a countdown', () => {
+    expect(humanizeDate('2026-07-19T11:59:30Z', now)).toBe('just now');
+    expect(humanizeDate('2026-07-19T11:35:00Z', now)).toBe('25m ago');
+    expect(humanizeDate('2026-07-19T09:00:00Z', now)).toBe('3h ago');
+    expect(humanizeDate('2026-07-17T12:00:00Z', now)).toBe('2d ago');
+    expect(humanizeDate('2026-07-19T15:00:00Z', now)).toBe('in 3h');
+    expect(humanizeDate('2026-07-22T12:00:00Z', now)).toBe('in 3d');
+  });
+
+  it('falls back to a short date, adding the year only when it differs', () => {
+    expect(humanizeDate('2026-06-15T12:00:00Z', now)).toMatch(/^Jun 1[456]$/);
+    expect(humanizeDate('2027-05-11T00:00:00Z', now)).toMatch(/^May 1[012], 2027$/);
+    expect(humanizeDate('2024-01-15T12:00:00Z', now)).toMatch(/^Jan 1[456], 2024$/);
+  });
+
+  it('renders empty input as a dash and keeps unparseable input visible', () => {
+    expect(humanizeDate(undefined, now)).toBe('—');
+    expect(humanizeDate('', now)).toBe('—');
+    expect(humanizeDate('not a date', now)).toBe('not a date');
   });
 });

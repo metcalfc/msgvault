@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 
 import { meetingFixtureResponse } from '../../meetings/fixtures.test-support';
@@ -109,7 +109,12 @@ describe('PersonDetail', () => {
     expect(screen.getByText('person@example.test')).toBeDefined();
     expect(document.querySelector('.attribute-summary .sensitive')?.textContent).toBe('concealed');
     expect(document.body.innerHTML).not.toContain('Synthetic value');
-    expect(await screen.findByText(/Example Org/)).toBeDefined();
+    // The current employment reads as the subtitle under the name and in
+    // the employment list, with a space before the Current flag.
+    const mentions = await screen.findAllByText('Engineer · Example Org');
+    expect(mentions.map((element) => element.classList.contains('person-subtitle'))).toEqual([true, false]);
+    expect(screen.getByText('Current').closest('li')?.textContent).toBe('Engineer · Example OrgCurrent');
+    expect(screen.getByText('Current').tagName).toBe('SMALL');
     expect(screen.getByText('Synthetic Child · child')).toBeDefined();
     expect(screen.getByText('urn:uuid:parent · parent')).toBeDefined();
     expect(screen.queryByText(/outgoing: parent/)).toBeNull();
@@ -420,7 +425,7 @@ describe('PersonDetail', () => {
     });
 
     const brief = await screen.findByRole('heading', { name: 'Last time we talked' });
-    const contactState = screen.getByText('Contact state');
+    const contactState = screen.getByText(/^Last contact /);
     expect(contactState.compareDocumentPosition(brief) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(await screen.findByRole('button', {
       name: 'Last time you talked (Aug 29, chat): they were preparing for a role change.'
@@ -477,6 +482,58 @@ describe('PersonDetail', () => {
     expect(screen.getAllByText('Nickname')).toHaveLength(1);
     expect(screen.getAllByText('Synthetic nickname')).toHaveLength(1);
     expect(screen.queryByRole('heading', { name: 'Attributes' })).toBeNull();
+  });
+
+  it('leads with the person, contact methods, and last contact, and keeps maintenance behind a closed disclosure', async () => {
+    const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000).toISOString();
+    const fiveDaysAgo = new Date(Date.now() - 5 * 86_400_000).toISOString();
+    const client = createAPIClient(quietOverviewFetch().mockImplementation(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      const overview = overviewCardResponse(request);
+      if (overview) return overview;
+      if (path === '/api/v1/people/7/employments') return Response.json({
+        employments: [{ id: 3, person_id: 7, organization_id: 2, is_current: true, is_primary: true, source: 'user', revision: 1, created_at: when, updated_at: when, title: 'Engineer', location: 'Lisbon' }],
+        projection: { employment_id: 3, organization_id: 2, organization_name: 'Example Org', vcard: {} }
+      });
+      if (path === '/api/v1/people/7/relationships') return Response.json({ relationships: [] });
+      if (path === '/api/v1/carddav/publications/7') return Response.json({ error: 'carddav_unavailable', message: 'not rendered' }, { status: 503 });
+      return Response.json({ merges: [], limit: 100, offset: 0 });
+    }));
+    const entityController = new DirectoryEntityController(client, 7);
+    void entityController.load();
+    render(PersonDetail, { client, personID: 7, entityController, bundle: {
+      person: { id: 7, revision: 2, display_name: 'Synthetic Person', participant_ids: [], vcard_uid: '', created_at: when, updated_at: when },
+      contactState: {
+        person_id: 7, cadence_status: 'unknown', computed_at: when, interaction_count: 4, stale: false,
+        last_contact_at: twoDaysAgo, last_contact_channel: 'email', last_contact_ref: 'message:42',
+        last_outbound_at: twoDaysAgo, last_inbound_at: fiveDaysAgo
+      },
+      etags: {}, errors: { files: 'Person has no resolved identities' }
+    } });
+
+    expect(await screen.findByText('Engineer · Example Org · Lisbon')).toBeDefined();
+    const lead = screen.getByRole('link', { name: 'Last contact 2d ago via email' });
+    expect(lead.getAttribute('href')).toBe('/messages/42');
+    const line = lead.closest('p')!;
+    expect(line.textContent).toContain('you wrote 2d ago');
+    expect(line.textContent).toContain('they wrote 5d ago');
+    expect(line.textContent).toContain('4 interactions');
+    expect(line.textContent).not.toContain('cadence');
+    expect(screen.getByRole('heading', { name: 'Synthetic Person' }).compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // The Files error is not an Overview alert; it is the Media & Files empty state.
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    const maintenance = screen.getByText('Maintenance').closest('details')!;
+    expect(maintenance.open).toBe(false);
+    expect(await within(maintenance).findByRole('heading', { name: 'Profile maintenance' })).toBeDefined();
+    expect(await within(maintenance).findByRole('heading', { name: 'Merge history' })).toBeDefined();
+    expect(line.compareDocumentPosition(maintenance) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText('What can be maintained?').closest('details')?.open).toBe(false);
+
+    await fireEvent.click(screen.getByRole('tab', { name: 'Media & Files' }));
+    expect(screen.getByText('Person has no resolved identities')).toBeDefined();
   });
 
   it('moves focus to the attributes section when Edit attributes is pressed', async () => {

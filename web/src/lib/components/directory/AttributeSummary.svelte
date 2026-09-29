@@ -31,7 +31,8 @@
 {/if}
 
 <style>
-  .attribute-summary { display: grid; gap: var(--space-2); }
+  .attribute-summary { display: grid; gap: var(--space-2); justify-items: start; }
+  dl { width: 100%; }
   dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3); margin: 0; }
   .row { display: contents; }
   dt { color: var(--text-muted); font-size: var(--font-size-sm); }

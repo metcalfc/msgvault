@@ -117,6 +117,8 @@
         </p>
       {/if}
 
+      <details class="catalog-disclosure">
+        <summary>What can be maintained?</summary>
       <div class="catalog" aria-labelledby={`person-${personID}-eligible-fields-heading`}>
         <div class="catalog-heading">
           <div>
@@ -164,6 +166,7 @@
           />
         {/if}
       </div>
+      </details>
     </div>
   </Card>
 </section>
@@ -175,6 +178,8 @@
   h3, h4, p, ul { margin: 0; }
   .heading-row p, .catalog-heading p, .target-list span, .tracked-time, .disclosure { color: var(--text-muted); font-size: var(--font-size-sm); }
   .working, .tracked-time { display: flex; align-items: center; gap: var(--space-2); }
+  .catalog-disclosure summary { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-sm); }
+  .catalog-disclosure[open] summary { margin-bottom: var(--space-3); }
   .notice { align-items: center; padding: var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); }
   .notice--error { border-color: var(--status-error-ink); background: var(--status-error-bg); color: var(--status-error-ink); }
   .target-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); padding: 0; list-style: none; }

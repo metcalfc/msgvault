@@ -1,10 +1,13 @@
 <script lang="ts">
   import { untrack } from 'svelte';
+  import { EmptyState } from '@kenn-io/kit-ui';
   import type { MeetingRef, PersonIdentifier } from '../../api/generated/models';
   import { getParticipant } from '../../api/generated/api/api';
   import MeetingPanel from '../meetings/MeetingPanel.svelte';
   import type { APIClient } from '../../api/client';
   import { mergeReachEntries, reachEntriesFromContactPoints, reachEntriesFromIdentifiers } from '../../people/reach';
+  import { humanizeDate } from '../../util/dates';
+  import { channelLabel } from '../../util/labels';
   import PersonReachBlock from '../people/PersonReachBlock.svelte';
   import type { DirectoryReadBundle, DirectoryReadSection } from '../../directory/models';
   import type { DirectoryProfileController } from '../../directory/profile-controller.svelte';
@@ -114,6 +117,42 @@
     return projection?.employment_id === employmentID ? projection.organization_name : undefined;
   }
 
+  /** "Title · Organization · Location" for the current (primary first)
+   * employment, when the employments projection has loaded one. */
+  const subtitle = $derived.by((): string => {
+    const employments = entityController?.employments ?? [];
+    const current = employments.find((employment) => employment.is_current && employment.is_primary)
+      ?? employments.find((employment) => employment.is_current);
+    if (!current) return '';
+    return [current.title ?? current.role, employmentOrganization(current.id), current.location]
+      .map((part) => part?.trim()).filter(Boolean).join(' · ');
+  });
+
+  const displayName = $derived(bundle.person?.display_name ?? profile?.person?.display_name ?? `Person ${personID}`);
+
+  /** `message:<id>` refs open the archived message; other kinds have no page. */
+  function contactRefHref(ref: string | undefined): string | undefined {
+    const match = /^message:([1-9]\d*)$/.exec(ref ?? '');
+    return match ? `/messages/${match[1]}` : undefined;
+  }
+
+  const lastContact = $derived.by(() => {
+    const state = bundle.contactState;
+    if (!state) return undefined;
+    const channel = channelLabel(state.last_contact_channel);
+    const parts: string[] = [];
+    if (state.last_outbound_at) parts.push(`you wrote ${humanizeDate(state.last_outbound_at)}`);
+    if (state.last_inbound_at) parts.push(`they wrote ${humanizeDate(state.last_inbound_at)}`);
+    if (typeof state.interaction_count === 'number') parts.push(`${state.interaction_count.toLocaleString()} interactions`);
+    const cadence = state.cadence_status && state.cadence_status !== 'unknown' ? state.cadence_status.replaceAll('_', ' ') : '';
+    if (cadence) parts.push(`cadence ${cadence}`);
+    return {
+      lead: state.last_contact_at ? `Last contact ${humanizeDate(state.last_contact_at)}${channel ? ` via ${channel}` : ''}` : 'No recorded contact',
+      href: state.last_contact_at ? contactRefHref(state.last_contact_ref) : undefined,
+      rest: parts
+    };
+  });
+
   async function selectTab(tab: DetailTab, focus = false): Promise<void> {
     activeTab = tab;
     if (!focus) return;
@@ -163,20 +202,24 @@
       onclick={() => void selectTab('media')}>Media &amp; Files</button>
   </div>
 
-  {#each Object.entries(bundle.errors) as [section, message]}
+  {#each Object.entries(bundle.errors).filter(([section]) => section !== 'files') as [section, message]}
     <p class="section-error" role="alert">{sectionNames[section as DirectoryReadSection]}: {message}</p>
   {/each}
 
   {#if activeTab === 'media'}
     <div id={mediaPanelID} role="tabpanel" aria-labelledby={mediaTabID} tabindex="0">
-      <!-- Durable Directory IDs use the People API, never the analytical participant route. -->
-      <FilesWorkspace
-        {client}
-        identityScope={{ kind: 'durable-person', id: personID }}
-        predicate={{ filters: [], presentation: 'files' }}
-        sort={{ field: 'occurred_at', direction: 'desc' }}
-        embedded
-      />
+      {#if bundle.errors.files}
+        <EmptyState title="No files to show" description={bundle.errors.files} />
+      {:else}
+        <!-- Durable Directory IDs use the People API, never the analytical participant route. -->
+        <FilesWorkspace
+          {client}
+          identityScope={{ kind: 'durable-person', id: personID }}
+          predicate={{ filters: [], presentation: 'files' }}
+          sort={{ field: 'occurred_at', direction: 'desc' }}
+          embedded
+        />
+      {/if}
     </div>
   {:else if activeTab === 'network'}
     <div id={networkPanelID} role="tabpanel" aria-labelledby={networkTabID} tabindex="0">
@@ -196,9 +239,18 @@
   {:else}
     <div id={overviewPanelID} role="tabpanel" aria-labelledby={overviewTabID} tabindex="0">
       {#if bundle.person || profile}
-        <header><h2>{bundle.person?.display_name ?? profile?.person?.display_name ?? `Person ${personID}`}</h2></header>
+        <header class="person-header">
+          <h2>{displayName}</h2>
+          {#if subtitle}<p class="person-subtitle">{subtitle}</p>{/if}
+        </header>
       {/if}
       <PersonReachBlock entries={reachEntries} {onAnnounce} />
+      {#if lastContact}
+        <p class="last-contact">
+          {#if lastContact.href}<a href={lastContact.href}>{lastContact.lead}</a>{:else}<span>{lastContact.lead}</span>{/if}
+          {#each lastContact.rest as part}<span class="separator" aria-hidden="true">·</span><span>{part}</span>{/each}
+        </p>
+      {/if}
       <AttributeSummary
         groups={profileController?.attributes?.attributes ?? bundle.attributes?.attributes ?? []}
         onEdit={profileController ? () => {
@@ -206,15 +258,6 @@
           section?.scrollIntoView({ block: 'start', behavior: 'smooth' });
           section?.focus({ preventScroll: true });
         } : undefined}
-      />
-      <PersonAgenda {client} {personID} {onAnnounce} />
-      <PersonTrackingControl {client} {personID} {onAnnounce} />
-      <CardDAVPublicationControl
-        {client}
-        {personID}
-        onOpenConflict={onOpenCardDAVConflict}
-        onOpenSettings={onOpenCardDAVSettings}
-        {onAnnounce}
       />
       {#if profileController}
         <StructuredProfileSection {client} controller={profileController} {personID} />
@@ -234,24 +277,35 @@
         <AttributeSection controller={profileController} />
       {/if}
       {#if entityController?.employments.length}
-        <section><h3>Organizations and employment</h3><ul>{#each entityController.employments as employment}<li>{employment.title ?? employment.role ?? 'Employment'} · {employmentOrganization(employment.id) ?? `Organization ${employment.organization_id}`}{#if employment.is_current} <small>Current</small>{/if}</li>{/each}</ul></section>
+        <section><h3>Organizations and employment</h3><ul>{#each entityController.employments as employment}<li><span>{employment.title ?? employment.role ?? 'Employment'} · {employmentOrganization(employment.id) ?? `Organization ${employment.organization_id}`}</span>{#if employment.is_current}<small class="employment-flag">Current</small>{/if}</li>{/each}</ul></section>
       {/if}
       {#if entityController?.relationships.length}
         <section><h3>Relationships</h3><ul>{#each entityController.relationships as view}<li>{view.counterpart_display_name?.trim() || view.counterpart_vcard_uid || `Person ${view.counterpart_person_id}`} · {view.counterpart_label}</li>{/each}</ul></section>
-      {/if}
-      {#if bundle.contactState}
-        <section><h3>Contact state</h3><p>{bundle.contactState.cadence_status} · {bundle.contactState.interaction_count} interactions{#if bundle.contactState.last_contact_at} · last contact {bundle.contactState.last_contact_at}{/if}</p></section>
       {/if}
       {#if bundle.person?.id === personID}
         <MeetingPanel {client} collapsible scope={{ kind: 'direct', scope: { person_id: personID } }}
           refreshKey={JSON.stringify([bundle.person.revision, [...bundle.person.participant_ids].sort((a, b) => a - b)])}
           {onOpenMeeting} />
       {/if}
-      <PersonBriefCard {client} {personID} {onAnnounce} />
       {#if bundle.activity}
         <section><h3>Activity</h3><p>{bundle.activity.total_count} recorded days</p></section>
       {/if}
-      <PersonMergeHistory {client} {personID} {onOpenPerson} {onSplitCommitted} />
+      <details class="maintenance">
+        <summary>Maintenance</summary>
+        <div class="maintenance-body">
+          <PersonAgenda {client} {personID} {onAnnounce} />
+          <PersonTrackingControl {client} {personID} {onAnnounce} />
+          <CardDAVPublicationControl
+            {client}
+            {personID}
+            onOpenConflict={onOpenCardDAVConflict}
+            onOpenSettings={onOpenCardDAVSettings}
+            {onAnnounce}
+          />
+          <PersonBriefCard {client} {personID} {onAnnounce} />
+          <PersonMergeHistory {client} {personID} {onOpenPerson} {onSplitCommitted} />
+        </div>
+      </details>
     </div>
   {/if}
 </section>
@@ -267,4 +321,12 @@
   h3 { font-size: var(--font-size-md); } small { color: var(--text-muted); font-size: var(--font-size-sm); }
   ul { padding-left: var(--space-5); }
   .section-error { margin: 0; padding: var(--space-2); background: var(--bg-inset); color: var(--text-secondary); }
+  .person-header { display: grid; gap: var(--space-1); }
+  .person-subtitle { color: var(--text-secondary); font-size: var(--font-size-sm); }
+  .last-contact { display: flex; flex-wrap: wrap; gap: var(--space-2); color: var(--text-secondary); font-size: var(--font-size-sm); }
+  .last-contact a { color: inherit; }
+  .separator { color: var(--text-muted); }
+  .employment-flag { margin-left: var(--space-2); }
+  .maintenance summary { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-sm); }
+  .maintenance-body { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
 </style>

@@ -197,6 +197,10 @@
   }
 </script>
 
+<!-- A person page is not the place to surface Kata connection problems:
+     until the integration reports ready there is nothing here to act on, so
+     the section renders nothing at all (Settings owns the integration state). -->
+{#if integrationState === 'loading' || integrationState === 'ready'}
 <section class="person-agenda" aria-labelledby={`person-${personID}-agenda-heading`}>
   <div class="heading">
     <div>
@@ -241,6 +245,7 @@
     <button type="submit" disabled={mutating || !mutationReady || !title.trim()}>Add item</button>
   </form>
 </section>
+{/if}
 
 <style>
   .person-agenda { display: grid; gap: var(--space-3); }

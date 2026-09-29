@@ -172,7 +172,7 @@ describe('PersonAgenda', () => {
     expect(posts[1].headers.get('Idempotency-Key')).not.toBe(posts[0].headers.get('Idempotency-Key'));
   });
 
-  it('gates agenda mutations on a ready integration status', async () => {
+  it('renders nothing until the integration is ready, then enables mutations', async () => {
     let ready = false;
     const client = createAPIClient(vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -185,19 +185,19 @@ describe('PersonAgenda', () => {
     }));
 
     const { rerender } = render(PersonAgenda, { client, personID: 7 });
-    expect(await screen.findByText('Kata integration authentication_required: Reconnect Kata to manage agenda items')).toBeDefined();
-    // The gated agenda never requests the 503-prone list route, so no item
-    // rows or Unlink controls render; the status message is the only notice.
+    // A person page is not where Kata connection problems are surfaced: the
+    // gated agenda renders nothing at all, and never requests the
+    // 503-prone list route, so no item rows or Unlink controls render.
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Agenda' })).toBeNull());
+    expect(screen.queryByText(/Kata integration/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Unlink Ask' })).toBeNull();
     expect(screen.queryByText('Task service is unavailable')).toBeNull();
-    expect((screen.getByLabelText('New agenda item') as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByLabelText('List') as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: 'Add item' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByLabelText('New agenda item')).toBeNull();
 
     ready = true;
     await rerender({ client, personID: 8 });
     await waitFor(() => expect((screen.getByLabelText('New agenda item') as HTMLInputElement).disabled).toBe(false));
-    expect(screen.queryByText('Kata integration authentication_required: Reconnect Kata to manage agenda items')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Agenda' })).toBeDefined();
     // The switch cleared person A's rows; person 8's list serves the same
     // item, so wait for it to render before asserting the Unlink gate.
     await screen.findByRole('button', { name: 'Unlink Ask' });
@@ -207,7 +207,7 @@ describe('PersonAgenda', () => {
     expect((screen.getByRole('button', { name: 'Unlink Ask' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('gates agenda mutations when the Kata API is incompatible', async () => {
+  it('renders nothing while the Kata API is incompatible, then enables mutations', async () => {
     let compatible = false;
     const client = createAPIClient(vi.fn<typeof fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
@@ -220,17 +220,16 @@ describe('PersonAgenda', () => {
     }));
 
     const { rerender } = render(PersonAgenda, { client, personID: 7 });
-    expect(await screen.findByText('Kata integration incompatible: Kata API is incompatible.')).toBeDefined();
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Agenda' })).toBeNull());
+    expect(screen.queryByText(/Kata integration/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Unlink Ask' })).toBeNull();
     expect(screen.queryByText('Task service is unavailable')).toBeNull();
-    expect((screen.getByLabelText('New agenda item') as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByLabelText('List') as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: 'Add item' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByLabelText('New agenda item')).toBeNull();
 
     compatible = true;
     await rerender({ client, personID: 8 });
     await waitFor(() => expect((screen.getByLabelText('New agenda item') as HTMLInputElement).disabled).toBe(false));
-    expect(screen.queryByText('Kata integration incompatible: Kata API is incompatible.')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Agenda' })).toBeDefined();
     // The switch cleared person A's rows; person 8's list serves the same
     // item, so wait for it to render before asserting the Unlink gate.
     await screen.findByRole('button', { name: 'Unlink Ask' });
@@ -253,11 +252,10 @@ describe('PersonAgenda', () => {
 
     render(PersonAgenda, { client, personID: 7 });
 
-    expect(await screen.findByText('Kata integration authentication_required: Reconnect Kata to manage agenda items')).toBeDefined();
-    await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
-    // The status message is the single explanation: the list route 503s for
-    // a gated integration, so calling it would only add a redundant error
-    // next to the notice and claim an emptiness it never checked.
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Agenda' })).toBeNull());
+    expect(screen.queryByText('Loading…')).toBeNull();
+    // The list route 503s for a gated integration, so calling it would only
+    // produce an error for a section that renders nothing.
     expect(screen.queryByText('Task service is unavailable')).toBeNull();
     expect(requests.some((request) => new URL(request.url).pathname === '/api/v1/people/7/agenda')).toBe(false);
     expect(screen.queryByText('No linked Kata items.')).toBeNull();
@@ -276,8 +274,8 @@ describe('PersonAgenda', () => {
 
     render(PersonAgenda, { client, personID: 7 });
 
-    expect(await screen.findByText('Kata integration incompatible: Kata API is incompatible.')).toBeDefined();
-    await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Agenda' })).toBeNull());
+    expect(screen.queryByText('Loading…')).toBeNull();
     expect(screen.queryByText('Task service is unavailable')).toBeNull();
     expect(requests.some((request) => new URL(request.url).pathname === '/api/v1/people/7/agenda')).toBe(false);
     expect(screen.queryByText('No linked Kata items.')).toBeNull();
