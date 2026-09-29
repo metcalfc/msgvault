@@ -376,6 +376,10 @@ func TestSafeFailureCategories(t *testing.T) {
 		{httpStatusError(503), "provider returned HTTP 503"},
 		{ErrInvalidResponse, "invalid provider response"},
 		{ErrRequestBounds, "request bounds exceeded"},
+		{ErrBreakerOpen, "provider circuit breaker open"},
+		{ErrRunHalted, "provider failed; no further requests will start"},
+		{ErrDayRequestLimit, "daily request limit reached"},
+		{ErrDayCostStop, "daily cost limit reached"},
 		{errors.New("request limit reached: secret"), "provider request failed"},
 		{errors.New("provider returned HTTP 503 secret"), "provider request failed"},
 	}

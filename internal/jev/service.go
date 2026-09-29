@@ -80,6 +80,8 @@ func Skipped(err error) string {
 		return "policy_unavailable"
 	case errors.Is(err, ErrBreakerOpen):
 		return "breaker_open"
+	case errors.Is(err, ErrRunHalted):
+		return "run_halted"
 	case errors.Is(err, ErrDayRequestLimit), errors.Is(err, ErrRequestLimit):
 		return "request_limit"
 	case errors.Is(err, ErrDayCostStop), errors.Is(err, ErrCostStop), errors.Is(err, ErrUsageUnknown):

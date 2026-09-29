@@ -525,7 +525,7 @@ func emptyBatch() BatchResult {
 func SafeFailure(err error) string {
 	for _, category := range []error{
 		ErrRequestLimit, ErrCostStop, ErrUsageUnknown, ErrRequestBounds, ErrInvalidResponse,
-		ErrBreakerOpen, ErrDayRequestLimit, ErrDayCostStop,
+		ErrBreakerOpen, ErrRunHalted, ErrDayRequestLimit, ErrDayCostStop,
 	} {
 		if errors.Is(err, category) {
 			return category.Error()

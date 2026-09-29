@@ -518,7 +518,8 @@ func TestPerRunBudgetStaysCappedAcrossMidnightAndStopsForGood(t *testing.T) {
 	now = now.Add(time.Hour)
 	_, err = stickyClient.Ask(context.Background(), noulRequest("matches"))
 	require.ErrorIs(err, ErrRunHalted, "one failure stops a run for good")
-	assert.Equal("provider request failed", SafeFailure(err))
+	assert.Equal("provider failed; no further requests will start", SafeFailure(err))
+	assert.Equal("run_halted", Skipped(err))
 
 	unknown := &Budget{MaxRequests: 100, StopUSD: 1, InputUSDPerM: 1, PerRun: true, Cooldown: time.Second, Now: func() time.Time { return now }}
 	unknownClient := newTestClient(t, unknown, func(*http.Request) (*http.Response, error) {

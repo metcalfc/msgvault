@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -338,5 +339,36 @@ func TestServiceRebindingPricesDoesNotRaceInFlightLedgerWrites(t *testing.T) {
 	require.Len(ledger.usage, 64)
 	for _, usage := range ledger.usage {
 		assert.Contains([]int64{110, 240}, usage.CostUSDMicros, "each request is priced by exactly one binding")
+	}
+}
+
+func TestSkippedClassifiesEveryGateAndBudgetOutcome(t *testing.T) {
+	cases := []struct {
+		err  error
+		want string
+	}{
+		{ErrDisabled, "disabled"},
+		{ErrFeatureDisabled, "feature_disabled"},
+		{ErrUnknownFeature, "feature_disabled"},
+		{ErrAutomaticDisabled, "manual_only"},
+		{ErrConsentRequired, "consent_required"},
+		{ErrCredentialMissing, "credential_missing"},
+		{ErrPolicyUnavailable, "policy_unavailable"},
+		{ErrBreakerOpen, "breaker_open"},
+		{ErrRunHalted, "run_halted"},
+		{ErrRequestLimit, "request_limit"},
+		{ErrDayRequestLimit, "request_limit"},
+		{ErrCostStop, "cost_limit"},
+		{ErrDayCostStop, "cost_limit"},
+		{ErrUsageUnknown, "cost_limit"},
+		{context.DeadlineExceeded, "timeout"},
+		{ErrRequestBounds, "request_bounds"},
+		{ErrInvalidResponse, "invalid_response"},
+		{httpStatusError(503), "provider_error"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.err.Error(), func(t *testing.T) {
+			assert.Equal(t, tc.want, Skipped(fmt.Errorf("jev requests failed: %w", tc.err)))
+		})
 	}
 }
