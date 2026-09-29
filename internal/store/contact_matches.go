@@ -888,5 +888,6 @@ func (s *Store) retireStaleContactMatchCandidatesTx(ctx context.Context, tx *log
 // candidate no longer qualifies, as opposed to an operational error.
 func isContactMatchRetirement(err error) bool {
 	return errors.Is(err, ErrContactMatchOwnerIdentity) ||
-		errors.Is(err, ErrContactMatchStale)
+		errors.Is(err, ErrContactMatchStale) ||
+		errors.Is(err, ErrContactMatchRejectedInCluster)
 }

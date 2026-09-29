@@ -22,6 +22,12 @@ var ErrContactMatchOwnerIdentity = errors.New(
 var ErrContactMatchStale = errors.New(
 	"the profile's addresses no longer match this archive identity")
 
+// ErrContactMatchRejectedInCluster reports that the user already rejected
+// another identity in the same cluster for this person, so binding the
+// cluster would bind the rejected identity too.
+var ErrContactMatchRejectedInCluster = errors.New(
+	"another identity in this cluster was rejected for this profile")
+
 // contactMatchMergeActor records who performed the merge half of an accepted
 // bind. Only an explicit user decision reaches it.
 const contactMatchMergeActor = "user"
@@ -143,8 +149,9 @@ func (s *Store) acceptParticipantPersonMatchTx(
 
 // contactMatchAcceptGuardsTx re-checks, under the identity lock, the rules
 // that decided the candidate when it was built, because the archive may have
-// changed since: the cluster must not contain an owner identity, and one of
-// the person's current addresses must still exactly match a cluster member.
+// changed since: the cluster must not contain an owner identity, no member
+// may have a rejected match with the person, and one of the person's current
+// addresses must still exactly match a cluster member.
 func contactMatchAcceptGuardsTx(
 	ctx context.Context, tx *loggedTx, candidate IdentityMatchCandidate, members []int64,
 ) error {
@@ -157,6 +164,13 @@ func contactMatchAcceptGuardsTx(
 			return ErrContactMatchOwnerIdentity
 		}
 	}
+	rejected, err := clusterHasRejectedPersonMatchTx(ctx, tx, candidate, members)
+	if err != nil {
+		return err
+	}
+	if rejected {
+		return ErrContactMatchRejectedInCluster
+	}
 	matched, err := clusterMatchesPersonAddressesTx(ctx, tx, candidate.RightID, members)
 	if err != nil {
 		return err
@@ -165,6 +179,31 @@ func contactMatchAcceptGuardsTx(
 		return ErrContactMatchStale
 	}
 	return nil
+}
+
+// clusterHasRejectedPersonMatchTx reports whether any other
+// participant-to-person candidate between a cluster member and the person
+// was rejected.
+func clusterHasRejectedPersonMatchTx(
+	ctx context.Context, tx *loggedTx, candidate IdentityMatchCandidate, members []int64,
+) (bool, error) {
+	found := false
+	if err := queryInChunksContext(ctx, tx, members,
+		[]any{candidate.ID, IdentityMatchStateRejected, IdentityMatchParticipant,
+			IdentityMatchPerson, candidate.RightID}, `
+		SELECT id FROM identity_match_candidates
+		WHERE id <> ? AND state = ? AND left_kind = ? AND right_kind = ? AND right_id = ?
+		  AND left_id IN (%s)`, func(rows *loggedRows) error {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				return fmt.Errorf("scan rejected cluster match: %w", err)
+			}
+			found = true
+			return nil
+		}); err != nil {
+		return false, fmt.Errorf("check rejected cluster matches: %w", err)
+	}
+	return found, nil
 }
 
 // clusterMatchesPersonAddressesTx reports whether any active email or phone
