@@ -15,6 +15,17 @@ async function expectNoAxeViolations(page: Page, label: string): Promise<void> {
     .toEqual([]);
 }
 
+/** The person Overview keeps its maintenance cards behind a closed
+ * "Maintenance" disclosure, and the tracking card keeps its eligible-fields
+ * catalogue behind "What can be maintained?". */
+async function openProfileMaintenance(root: Page | ReturnType<Page['getByRole']>) {
+  await root.getByText('Maintenance', { exact: true }).click();
+  const maintenance = root.getByRole('region', { name: 'Profile maintenance' });
+  await expect(maintenance).toBeVisible();
+  await maintenance.getByText('What can be maintained?').click();
+  return maintenance;
+}
+
 async function installTallDirectory(page: Page): Promise<void> {
   await page.unroute('**/api/v1/people/directory*');
   await page.route('**/api/v1/people/directory*', (route) => route.fulfill({
@@ -69,6 +80,8 @@ test('Directory person detail scrolls independently at desktop width', async ({ 
   await page.goto(directoryURL(42));
   const pane = page.getByRole('complementary', { name: 'Person detail' });
   await expect(pane.getByRole('heading', { name: 'Archive Person' })).toBeVisible();
+  // Open the maintenance cards so the pane's last section is rendered content.
+  await pane.getByText('Maintenance', { exact: true }).click();
   const metrics = await pane.evaluate((el) => ({
     scroll: el.scrollHeight,
     client: el.clientHeight,
@@ -115,8 +128,7 @@ test('Directory profile maintenance uses exact safe requests and GET-only ambigu
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(directoryURL(42));
 
-  const maintenance = page.getByRole('region', { name: 'Profile maintenance' });
-  await expect(maintenance).toBeVisible();
+  const maintenance = await openProfileMaintenance(page);
   await expect(maintenance).toContainText('Time zone');
   await expectNoAxeViolations(page, 'Directory profile maintenance desktop');
   const forbidden = /forbidden-/i;
@@ -158,7 +170,8 @@ test('Directory profile maintenance uses exact safe requests and GET-only ambigu
   ]);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  const drawerMaintenance = page.getByRole('dialog', { name: 'Person detail' }).getByRole('region', { name: 'Profile maintenance' });
+  // The narrow drawer mounts its own PersonDetail, so its disclosures start closed again.
+  const drawerMaintenance = await openProfileMaintenance(page.getByRole('dialog', { name: 'Person detail' }));
   await expect(drawerMaintenance.getByText('Time zone')).toBeVisible();
   const drawerReveal = drawerMaintenance.getByRole('button', { name: 'Show sensitive eligible fields' });
   await expect(drawerReveal).toBeEnabled();
@@ -215,12 +228,12 @@ test('Relationships promotes its selected participant and opens the returned per
   const relationshipList = page.getByRole('grid', { name: 'Relationship results' });
   await relationshipList.getByText('Archive Person').click();
   await expect(page.getByRole('heading', { name: 'Archive Person' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Open in Directory' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Open contact record for / })).toHaveCount(0);
 
   const promotionRequest = page.waitForRequest((request) =>
     new URL(request.url()).pathname === '/api/v1/people' && request.method() === 'POST'
   );
-  await page.getByRole('button', { name: 'Promote to person' }).click();
+  await page.getByRole('button', { name: 'Save to Directory' }).click();
   expect((await promotionRequest).postDataJSON()).toEqual({ participant_id: 12 });
   await expect(page).toHaveURL(/directoryPersonID/);
   await expect(page.getByRole('main', { name: 'Directory' })).toBeVisible();
@@ -237,7 +250,7 @@ test('Relationships keeps a promotion conflict beside the person instead of open
     status: 409,
     json: { error: 'person_binding_conflict', message: 'Synthetic promotion conflict.' }
   }));
-  await page.getByRole('button', { name: 'Promote to person' }).click();
+  await page.getByRole('button', { name: 'Save to Directory' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'Synthetic promotion conflict.' })).toBeVisible();
   await expect(page.getByRole('main', { name: 'Directory' })).toHaveCount(0);
   await expect(page).not.toHaveURL(/directoryPersonID/);

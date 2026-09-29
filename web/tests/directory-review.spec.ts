@@ -186,6 +186,8 @@ for (const profile of [
 
     await expect(page).toHaveURL(new RegExp(`directoryPersonID%22%3A${profile.id}`));
     await expect(page.getByRole('heading', { name: profile.name })).toBeVisible();
+    // Merge history sits behind the Overview's closed "Maintenance" disclosure.
+    await page.getByText('Maintenance', { exact: true }).click();
     await expect(page.getByText('No merge history on this page.')).toBeVisible();
     await expect(page.getByRole('table', { name: 'Person merge history' })).toHaveCount(0);
     expect(fixture.requests.filter((request) => request.path.endsWith('/merge'))).toHaveLength(0);
@@ -229,6 +231,7 @@ for (const completionTarget of [
     .toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   expect(fixture.requests.filter((request) => request.path.endsWith('/19/accept'))).toHaveLength(1);
 
+  await page.getByText('Maintenance', { exact: true }).click();
   const history = page.getByRole('table', { name: 'Person merge history' });
   await expect(history).toBeVisible();
   expect(fixture.requests.filter((request) => request.path.endsWith('/snapshot'))).toHaveLength(0);
@@ -285,6 +288,8 @@ for (const completionTarget of [
   await expect(page.getByRole('heading', { name: completionTarget.heading })).toBeVisible();
 
   if (completionTarget.id === 7) {
+    // The completion handoff reloads the person page, closing its Maintenance disclosure.
+    await page.getByText('Maintenance', { exact: true }).click();
     const updatedHistory = page.getByRole('table', { name: 'Person merge history' });
     await expect(updatedHistory).toBeVisible();
     await updatedHistory.getByRole('button', { name: 'Inspect merge 41' }).focus();
