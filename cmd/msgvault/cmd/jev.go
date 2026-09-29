@@ -28,20 +28,22 @@ var jevFeatureSpecs = func() []jev.FeatureSpec {
 }
 
 // jevCredentialState reports whether a key resolves and from where, without
-// the value.
-func jevCredentialState(cfg *config.Config) providercredentials.State {
+// the value. A store that cannot be read or a stored key bound to another
+// endpoint origin is reported as the error text, not as "not configured".
+func jevCredentialState(cfg *config.Config) (providercredentials.State, error) {
+	none := providercredentials.State{Source: providercredentials.SourceNone}
 	if cfg == nil {
-		return providercredentials.State{Source: providercredentials.SourceNone}
+		return none, errors.New("configuration is unavailable")
 	}
 	snapshot, err := providercredentials.Read(cfg.TokensDir())
 	if err != nil {
-		return providercredentials.State{Source: providercredentials.SourceNone}
+		return none, err
 	}
 	_, state, err := snapshot.Resolve(providercredentials.JevID, cfg.Jev.Endpoint, cfg.Jev.APIKeyEnv, os.LookupEnv)
 	if err != nil {
-		return providercredentials.State{Source: providercredentials.SourceNone}
+		return none, err
 	}
-	return state
+	return state, nil
 }
 
 type jevStore interface {
@@ -58,7 +60,7 @@ type jevCommandDeps struct {
 	config             func() *config.Config
 	openStore          func() (jevStore, func(), error)
 	features           func() []jev.FeatureSpec
-	credentialState    func(*config.Config) providercredentials.State
+	credentialState    func(*config.Config) (providercredentials.State, error)
 	isDaemonSubprocess func() bool
 	proxyArgs          func(*cobra.Command, []string, map[string]string) error
 	now                func() time.Time
@@ -146,16 +148,20 @@ type jevFeatureStatusOutput struct {
 }
 
 type jevStatusOutput struct {
-	Enabled           bool                      `json:"enabled"`
-	Endpoint          string                    `json:"endpoint"`
-	Model             string                    `json:"model"`
-	APIKeyEnv         string                    `json:"api_key_env"`
-	Credential        providercredentials.State `json:"credential"`
-	RequestTimeout    string                    `json:"request_timeout"`
-	MaxRequestsPerDay int64                     `json:"max_requests_per_day"`
-	MaxCostUSDPerDay  float64                   `json:"max_cost_usd_per_day"`
-	Priced            bool                      `json:"priced"`
-	Features          []jevFeatureStatusOutput  `json:"features"`
+	Enabled    bool                      `json:"enabled"`
+	Endpoint   string                    `json:"endpoint"`
+	Model      string                    `json:"model"`
+	APIKeyEnv  string                    `json:"api_key_env"`
+	Credential providercredentials.State `json:"credential"`
+	// CredentialError explains why no key resolves when the cause is not a
+	// missing key: an unreadable credential store or a stored key bound to a
+	// different endpoint origin.
+	CredentialError   string                   `json:"credential_error,omitempty"`
+	RequestTimeout    string                   `json:"request_timeout"`
+	MaxRequestsPerDay int64                    `json:"max_requests_per_day"`
+	MaxCostUSDPerDay  float64                  `json:"max_cost_usd_per_day"`
+	Priced            bool                     `json:"priced"`
+	Features          []jevFeatureStatusOutput `json:"features"`
 }
 
 func newJevStatusCommand(deps jevCommandDeps) *cobra.Command {
@@ -185,12 +191,16 @@ func runJevStatus(command *cobra.Command, deps jevCommandDeps, jsonOutput bool) 
 		return err
 	}
 	defer cleanup()
+	credential, credentialErr := deps.credentialState(cfg)
 	output := jevStatusOutput{
 		Enabled: cfg.Jev.Enabled, Endpoint: cfg.Jev.Endpoint, Model: cfg.Jev.Model,
-		APIKeyEnv: cfg.Jev.APIKeyEnv, Credential: deps.credentialState(cfg),
+		APIKeyEnv: cfg.Jev.APIKeyEnv, Credential: credential,
 		RequestTimeout: cfg.Jev.RequestTimeout.String(), MaxRequestsPerDay: cfg.Jev.MaxRequestsPerDay,
 		MaxCostUSDPerDay: cfg.Jev.MaxCostUSDPerDay, Priced: cfg.Jev.Priced(),
 		Features: make([]jevFeatureStatusOutput, 0),
+	}
+	if credentialErr != nil {
+		output.CredentialError = credentialErr.Error()
 	}
 	day := jev.UTCDay(deps.now())
 	for _, spec := range deps.features() {
@@ -218,7 +228,7 @@ func runJevStatus(command *cobra.Command, deps jevCommandDeps, jsonOutput bool) 
 	w := command.OutOrStdout()
 	_, _ = fmt.Fprintf(w, "Jev: %s\n", onOff(output.Enabled))
 	_, _ = fmt.Fprintf(w, "Destination: %s (model %s)\n", output.Endpoint, output.Model)
-	_, _ = fmt.Fprintf(w, "Credential: %s\n", jevCredentialDescription(output.Credential, output.APIKeyEnv))
+	_, _ = fmt.Fprintf(w, "Credential: %s\n", jevCredentialDescription(output.Credential, output.APIKeyEnv, output.CredentialError))
 	cost := "not priced (requests counted only)"
 	if output.Priced {
 		cost = fmt.Sprintf("max %.4f USD per day", output.MaxCostUSDPerDay)
@@ -255,7 +265,10 @@ func onOff(value bool) string {
 	return "off"
 }
 
-func jevCredentialDescription(state providercredentials.State, apiKeyEnv string) string {
+func jevCredentialDescription(state providercredentials.State, apiKeyEnv, failure string) string {
+	if failure != "" {
+		return "unavailable: " + failure
+	}
 	switch state.Source {
 	case providercredentials.SourceStored:
 		return "stored (Settings)"

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -39,8 +41,8 @@ func jevTestDeps(t *testing.T, cfg *config.Config, subprocess bool) (jevCommandD
 			return st, func() {}, nil
 		},
 		features: func() []jev.FeatureSpec { return []jev.FeatureSpec{jevTestSpec()} },
-		credentialState: func(*config.Config) providercredentials.State {
-			return providercredentials.State{Configured: true, Source: providercredentials.SourceEnvironment}
+		credentialState: func(*config.Config) (providercredentials.State, error) {
+			return providercredentials.State{Configured: true, Source: providercredentials.SourceEnvironment}, nil
 		},
 		isDaemonSubprocess: func() bool { return subprocess },
 		proxyArgs: func(_ *cobra.Command, args []string, _ map[string]string) error {
@@ -142,6 +144,51 @@ func TestJevConsentDisclosesPolicyAndRequiresYes(t *testing.T) {
 	require.ErrorContains(err, "exactly one feature name or --all")
 	_, err = executeJevCommand(t, deps, "revoke", "enrichment_identity", "--all")
 	require.ErrorContains(err, "exactly one feature name or --all")
+}
+
+func TestJevStatusSurfacesCredentialStoreErrors(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	cfg := jevTestConfig(t)
+	deps, _ := jevTestDeps(t, cfg, true)
+	deps.credentialState = func(*config.Config) (providercredentials.State, error) {
+		return providercredentials.State{Source: providercredentials.SourceNone}, providercredentials.ErrOriginMismatch
+	}
+	out, err := executeJevCommand(t, deps, "status")
+	require.NoError(err)
+	assert.Contains(out, "Credential: unavailable: "+providercredentials.ErrOriginMismatch.Error())
+	out, err = executeJevCommand(t, deps, "status", "--json")
+	require.NoError(err)
+	var status jevStatusOutput
+	require.NoError(json.Unmarshal([]byte(out), &status))
+	assert.Equal(providercredentials.ErrOriginMismatch.Error(), status.CredentialError)
+	assert.False(status.Credential.Configured)
+}
+
+func TestJevCredentialStateReportsOriginMismatchAndUnreadableStores(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	cfg := jevTestConfig(t)
+	state, err := jevCredentialState(cfg)
+	require.NoError(err, "an absent store is simply not configured")
+	assert.Equal(providercredentials.SourceNone, state.Source)
+
+	_, err = providercredentials.Put(cfg.TokensDir(), mustJevCredentialETag(t, cfg), providercredentials.JevID,
+		"https://other.example.test/v1/systemone", "stored-key")
+	require.NoError(err)
+	_, err = jevCredentialState(cfg)
+	require.ErrorIs(err, providercredentials.ErrOriginMismatch, "a key bound elsewhere is reported, not hidden")
+
+	require.NoError(os.WriteFile(filepath.Join(cfg.TokensDir(), providercredentials.Filename), []byte("{not json"), 0o600))
+	_, err = jevCredentialState(cfg)
+	require.ErrorIs(err, providercredentials.ErrUnavailable)
+}
+
+func mustJevCredentialETag(t *testing.T, cfg *config.Config) string {
+	t.Helper()
+	snapshot, err := providercredentials.Read(cfg.TokensDir())
+	require.NoError(t, err)
+	return snapshot.ETag
 }
 
 func TestJevCommandsProxyToTheDaemonOutsideASubprocess(t *testing.T) {
