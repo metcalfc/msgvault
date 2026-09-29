@@ -318,9 +318,12 @@ export function entityNames(client: APIClient): EntityNames {
 
 /**
  * Marks every person and participant name out of date after a change that
- * can rename them or move identities between people: a person rename, merge,
- * split, or identity link. Participant labels lead with the bound person's
- * name, and an unnamed person is named by its participants.
+ * can rename a person or rebind identities: a person rename or profile save,
+ * a merge or split, an accepted identity match, promoting a participant
+ * (which binds its whole linked cluster), or linking or unlinking
+ * participants (which rebinds members of a cluster a person owns).
+ * Participant labels lead with the bound person's name, and an unnamed
+ * person is named by its participants.
  */
 export function invalidatePeopleNames(client: APIClient): void {
   const names = entityNames(client);

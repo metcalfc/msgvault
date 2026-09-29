@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../api/client';
+import { entityNames } from '../names/entity-names.svelte';
+import { type SyntheticEntityNames, withEntityLabels } from '../../test/entity-labels';
 import { DirectoryController } from './controller.svelte';
 
 function pathOf(request: Request): string {
@@ -1075,6 +1077,29 @@ describe('DirectoryController', () => {
     const directoryRequests = requests.filter((request) => pathOf(request) === '/api/v1/people/directory');
     expect(directoryRequests).toHaveLength(3);
     expect(new URL(directoryRequests[2]!.url).searchParams.get('cursor')).toBeNull();
+  });
+
+  it('refreshes the names of the promoted participant\'s whole linked cluster', async () => {
+    const labels: SyntheticEntityNames = { participant: { 11: 'avery@example.com', 12: 'avery.home@example.org' } };
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      if (pathOf(request) === '/api/v1/people') return Response.json({ id: 42, revision: 1 }, { status: 201 });
+      if (pathOf(request) === '/api/v1/people/directory') return Response.json({ people: [directoryPerson(42)] });
+      if (pathOf(request) === '/api/v1/people/42/files/search') return Response.json({ files: [], total_count: 0, cache_revision: 'cache', search_provenance: {} });
+      return detailResponse(pathOf(request), 42);
+    });
+    const client = createAPIClient(withEntityLabels(fetchFn, labels));
+    const names = entityNames(client);
+    await names.load('participant', [11, 12]);
+    const controller = new DirectoryController(client, () => undefined);
+
+    labels.participant = { 11: 'Avery Promoted', 12: 'Avery Promoted' };
+    await expect(controller.promote(11)).resolves.toEqual({ ok: true, personID: 42 });
+
+    names.label('participant', 11);
+    names.label('participant', 12);
+    await vi.waitFor(() => expect(names.known('participant', 12)).toBe('Avery Promoted'));
+    expect(names.known('participant', 11)).toBe('Avery Promoted');
   });
 
   it.each([200, 201])('treats %i promotion as successful and refreshes page one', async (status) => {

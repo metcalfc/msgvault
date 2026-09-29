@@ -9,7 +9,7 @@ import {
 } from '../api/generated/api/api';
 import { searchPersonFiles as generatedSearchPersonFiles } from '../api/generated/exploration/exploration';
 import type { APIClient } from '../api/client';
-import { entityNames } from '../names/entity-names.svelte';
+import { entityNames, invalidatePeopleNames } from '../names/entity-names.svelte';
 import type {
   DirectoryPerson,
   DirectoryPersonSummaryUpdate,
@@ -250,8 +250,9 @@ export class DirectoryController {
       if (!this.isCurrentPromotion(generation, controller)) return stalePromotionResult();
       if (response.data && (response.response.status === 200 || response.response.status === 201)) {
         const personID = response.data.id;
-        // The participant is now bound to a person, which leads its label.
-        entityNames(this.client).invalidate('participant', [participantID]);
+        // The participant's whole linked cluster is now bound to a new person,
+        // whose name leads their labels.
+        invalidatePeopleNames(this.client);
         await Promise.all([this.selectPerson(personID), this.loadFirstPage()]);
         if (!this.isCurrentPromotion(generation, controller)) return stalePromotionResult();
         const result = { ok: true, personID } satisfies DirectoryPromotionResult;

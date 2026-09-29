@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../api/client';
+import { entityNames } from '../names/entity-names.svelte';
+import { type SyntheticEntityNames, withEntityLabels } from '../../test/entity-labels';
 import type { DomainSummary, ExplorePredicate, PersonSummary } from '../explore/models';
 import { RelationshipsController } from './controller.svelte';
 import type { RelationshipRow, RelationshipTimelineRow } from './models';
@@ -1566,6 +1568,32 @@ describe('RelationshipsController.linkParticipants / unlinkParticipants', () => 
     expect(outcome).toEqual({ ok: true, identityRevision: 2, cacheState: 'ready' });
     expect(personCalls).toBe(2);
     expect(controller.identityRevision).toBe(2);
+  });
+
+  it.each([
+    ['link', '/api/v1/identity/links'],
+    ['unlink', '/api/v1/identity/unlinks'],
+  ] as const)('refreshes cached people names after a successful %s', async (action, path) => {
+    const labels: SyntheticEntityNames = { person: { 9: 'Owner Before' }, participant: { 2: 'Owner Before' } };
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      if (pathOf(request) === path) return Response.json({ identity_revision: 2, cache_state: 'ready' });
+      throw new Error(`unexpected path ${pathOf(request)}`);
+    });
+    const client = createAPIClient(withEntityLabels(fetchFn, labels));
+    const names = entityNames(client);
+    await Promise.all([names.load('person', [9]), names.load('participant', [2])]);
+    const controller = new RelationshipsController(client, () => 'UTC');
+
+    labels.person = { 9: 'Owner After' };
+    labels.participant = { 2: 'Owner After' };
+    const outcome = action === 'link' ? await controller.linkParticipants(1, 2) : await controller.unlinkParticipants(1, 2);
+
+    expect(outcome).toMatchObject({ ok: true });
+    names.label('person', 9);
+    names.label('participant', 2);
+    await vi.waitFor(() => expect(names.known('participant', 2)).toBe('Owner After'));
+    expect(names.known('person', 9)).toBe('Owner After');
   });
 
   it('does not re-open the target when identityRevision is unchanged', async () => {

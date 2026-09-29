@@ -15,6 +15,7 @@ import {
   searchParticipants as generatedSearchParticipants,
 } from '../api/generated/exploration/exploration';
 import type { APIClient } from '../api/client';
+import { invalidatePeopleNames } from '../names/entity-names.svelte';
 import type {
   DomainSummary,
   ExploreCacheUnavailable,
@@ -794,6 +795,9 @@ export class RelationshipsController {
   }): Promise<LinkOutcome> {
     const { data, error, response: res } = response;
     if (data) {
+      // Linking into (or unlinking from) a cluster a durable person owns
+      // rebinds its other members, and participant labels lead with that person.
+      invalidatePeopleNames(this.client);
       // A null identityRevision means the prior timeline load failed, so
       // there is nothing to compare against — treat that as "changed" and
       // refresh anyway rather than silently skipping the reopen. The ranked
