@@ -14369,7 +14369,7 @@ components:
       type: apiKey
 info:
   title: msgvault API
-  version: 2.43.0
+  version: 2.44.0
 openapi: 3.1.0
 paths:
   /api/ping:
@@ -20137,7 +20137,7 @@ paths:
           name: state
           schema:
             type: string
-        - description: "Candidate origin filter: contact_match lists only contact profiles that match archive participants"
+        - description: "Candidate origin filter: contact_match lists only contact profiles that match archive participants; person_duplicate lists only participant pairs the duplicate people judgment proposed as possibly one person"
           in: query
           name: origin
           schema:

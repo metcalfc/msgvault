@@ -125,8 +125,11 @@ export type OperationLane = GeneratedOperationLane;
 export type OperationState = GeneratedOperationState;
 export type DirectoryReviewKind = 'identity' | 'enrichment' | 'organization' | 'correspondent' | 'fact' | 'relationship';
 export type IdentityReviewState = 'candidate' | 'conflict' | 'accepted' | 'rejected';
-/** Which identity candidates the Reviews queue lists: all, or only contact profiles that match archive participants. */
-export type IdentityReviewOrigin = 'all' | 'contact_match';
+/**
+ * Which identity candidates the Reviews queue lists: all, only contact profiles that match archive participants,
+ * or only identities the duplicate people judgment proposed as possibly one person.
+ */
+export type IdentityReviewOrigin = 'all' | 'contact_match' | 'person_duplicate';
 export type RelationshipReviewState = 'pending' | 'accepted' | 'rejected';
 export type RelationshipFacet = 'people' | 'domains';
 export type ExploreColumn = 'kind' | 'people' | 'title' | 'excerpt' | 'time' | 'attachments' | 'size';

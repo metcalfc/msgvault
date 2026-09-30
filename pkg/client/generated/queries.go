@@ -500,7 +500,7 @@ type ListIdentityMatchCandidatesQuery struct {
 	// State Candidate state filter (candidate, accepted, rejected, conflict); repeat or comma-separate for multiple values
 	State *string `json:"state,omitempty"`
 
-	// Origin Candidate origin filter: contact_match lists only contact profiles that match archive participants
+	// Origin Candidate origin filter: contact_match lists only contact profiles that match archive participants; person_duplicate lists only participant pairs the duplicate people judgment proposed as possibly one person
 	Origin *string `json:"origin,omitempty"`
 
 	// Limit Maximum candidates to return (default 100, max 500)

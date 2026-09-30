@@ -867,7 +867,8 @@ func rawRouteParameters(operationID string) []*huma.Param {
 					"repeat or comma-separate for multiple values", false),
 			queryStringParam("origin",
 				"Candidate origin filter: contact_match lists only contact profiles that "+
-					"match archive participants", false),
+					"match archive participants; person_duplicate lists only participant pairs "+
+					"the duplicate people judgment proposed as possibly one person", false),
 			queryIntegerParam(limitParam, "Maximum candidates to return (default 100, max 500)"),
 			queryIntegerParam("offset", "Zero-based candidate offset"),
 		}

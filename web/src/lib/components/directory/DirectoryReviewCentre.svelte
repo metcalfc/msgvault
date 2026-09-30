@@ -84,8 +84,17 @@
 
   const identityOriginOptions = [
     { value: 'all', label: 'All matches' },
-    { value: 'contact_match', label: 'Contacts that match your archive' }
+    { value: 'contact_match', label: 'Contacts that match your archive' },
+    { value: 'person_duplicate', label: 'Possible duplicate people' }
   ];
+
+  const identityEmptyDescriptions: Record<IdentityReviewOrigin, string> = {
+    all: 'Choose another review state or return when new evidence is available.',
+    contact_match:
+      'No contact profiles match archive identities in this state. Matches refresh after each contact sync and daily.',
+    person_duplicate:
+      'No possible duplicate people in this state. Run msgvault person judge with the duplicate people Jev judgment on to look for them.'
+  };
 
   function selectIdentityState(value: string): void {
     controller.setIdentityState(value as IdentityReviewState);
@@ -237,9 +246,7 @@
         {#if controller.rows.length === 0}
           <EmptyState
             title="No identity matches in this queue."
-            description={controller.identityOrigin === 'contact_match'
-              ? 'No contact profiles match archive identities in this state. Matches refresh after each contact sync and daily.'
-              : 'Choose another review state or return when new evidence is available.'}
+            description={identityEmptyDescriptions[controller.identityOrigin]}
           />
         {:else}
           <div class="queue" aria-busy={controller.loading}>

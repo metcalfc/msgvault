@@ -468,7 +468,10 @@ function normalize(value: unknown): ExploreURLState {
     value.identityState === 'conflict' || value.identityState === 'accepted' || value.identityState === 'rejected'
       ? value.identityState
       : 'candidate';
-  const identityOrigin: IdentityReviewOrigin = value.identityOrigin === 'contact_match' ? 'contact_match' : 'all';
+  const identityOrigin: IdentityReviewOrigin =
+    value.identityOrigin === 'contact_match' || value.identityOrigin === 'person_duplicate'
+      ? value.identityOrigin
+      : 'all';
   const relationshipReviewState: RelationshipReviewState =
     value.relationshipReviewState === 'accepted' || value.relationshipReviewState === 'rejected'
       ? value.relationshipReviewState

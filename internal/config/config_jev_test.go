@@ -36,6 +36,7 @@ func TestLoadJevSectionDefaultsAndOverrides(t *testing.T) {
 	assert.False(cfg.Jev.MeetingActionAssignee.Enabled)
 	assert.False(cfg.Jev.SweepEvidenceRerank.Enabled)
 	assert.False(cfg.Jev.SweepClaimGrounding.Enabled)
+	assert.False(cfg.Jev.PersonDuplicates.Enabled)
 
 	require.NoError(os.WriteFile(configPath, []byte(`
 [jev]
@@ -75,6 +76,10 @@ automatic = true
 
 [jev.sweep_claim_grounding]
 enabled = true
+
+[jev.person_duplicates]
+enabled = true
+automatic = true
 `), 0o644))
 	cfg, err = Load(configPath, "")
 	require.NoError(err)
@@ -100,6 +105,8 @@ enabled = true
 	assert.True(cfg.Jev.SweepEvidenceRerank.Automatic)
 	assert.True(cfg.Jev.SweepClaimGrounding.Enabled)
 	assert.False(cfg.Jev.SweepClaimGrounding.Automatic)
+	assert.True(cfg.Jev.PersonDuplicates.Enabled)
+	assert.True(cfg.Jev.PersonDuplicates.Automatic)
 
 	require.NoError(os.WriteFile(configPath, []byte(`
 [jev]

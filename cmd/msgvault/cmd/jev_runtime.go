@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/msgvault/internal/meetingjudge"
 	"go.kenn.io/msgvault/internal/orgresolution"
 	"go.kenn.io/msgvault/internal/peoplesweep"
+	"go.kenn.io/msgvault/internal/persondedup"
 	"go.kenn.io/msgvault/internal/personenrichment"
 	"go.kenn.io/msgvault/internal/personfacts"
 	"go.kenn.io/msgvault/internal/providercredentials"
@@ -225,4 +226,19 @@ func newJevSweepGrounder(
 		return nil, err
 	}
 	return sweepjudge.NewGrounder(service, automatic, nil), nil
+}
+
+// newJevDuplicatePeopleJudge wires the duplicate people judgment, or returns
+// nil when Jev or the feature is off so no duplicate is proposed. Consent,
+// the credential, and the automatic switch are rechecked by the service on
+// every request.
+func newJevDuplicatePeopleJudge(cfg *config.Config, st jevRuntimeStore) (persondedup.Judge, error) {
+	if cfg == nil || !cfg.Jev.Enabled || !cfg.Jev.PersonDuplicates.Enabled {
+		return nil, nil //nolint:nilnil // nil means "no Jev".
+	}
+	service, err := newJevService(cfg, st)
+	if err != nil || service == nil {
+		return nil, err
+	}
+	return service, nil
 }

@@ -2718,6 +2718,12 @@ func (a *storeAPIAdapter) ListContactMatchCandidatesContext(
 	return a.store.ListContactMatchCandidatesContext(ctx, states, limit, offset)
 }
 
+func (a *storeAPIAdapter) ListPersonDuplicateCandidatesContext(
+	ctx context.Context, states []store.IdentityMatchState, limit, offset int,
+) ([]store.IdentityMatchCandidate, error) {
+	return a.store.ListPersonDuplicateCandidatesContext(ctx, states, limit, offset)
+}
+
 func (a *storeAPIAdapter) ListOrganizationMatchReviewsContext(
 	ctx context.Context, limit int,
 ) ([]store.OrganizationMatchReview, error) {

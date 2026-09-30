@@ -94,6 +94,14 @@ describe('Explore URL state', () => {
     }));
     expect(restored).toMatchObject({ workspace: 'directory_review', identityOrigin: 'contact_match' });
 
+    const duplicates = parseExploreURLState(serializeExploreURLState({
+      ...defaultExploreURLState,
+      workspace: 'directory_review',
+      reviewKind: 'identity',
+      identityOrigin: 'person_duplicate'
+    }));
+    expect(duplicates).toMatchObject({ workspace: 'directory_review', identityOrigin: 'person_duplicate' });
+
     const invalid = parseExploreURLState(serializeExploreURLState({
       ...defaultExploreURLState,
       workspace: 'directory_review',

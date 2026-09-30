@@ -1685,6 +1685,9 @@ func cliRunCommandAllowed(args []string) bool {
 		return cliRunMeetingsJudgeAllowed(args[1:])
 	}
 	if args[0] == cliRunPersonCommand {
+		if len(args) >= 2 && args[1] == "judge" {
+			return cliRunPersonJudgeAllowed(args[2:])
+		}
 		if len(args) < 3 {
 			return false
 		}
@@ -2013,6 +2016,30 @@ func cliRunMeetingsJudgeAllowed(args []string) bool {
 		return false
 	}
 	values, positionals, ok := cliRunStrictFlagValues(args[1:])
+	if !ok || len(positionals) != 0 {
+		return false
+	}
+	for name, value := range values {
+		switch name {
+		case "limit":
+			if parsed, err := strconv.ParseInt(value, 10, 64); err != nil || parsed < 0 {
+				return false
+			}
+		case "json":
+			if _, err := strconv.ParseBool(value); err != nil {
+				return false
+			}
+		case "log-level", "verbose", "log-sql", "log-sql-slow-ms":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// cliRunPersonJudgeAllowed admits `person judge` with its bounded flags.
+func cliRunPersonJudgeAllowed(args []string) bool {
+	values, positionals, ok := cliRunStrictFlagValues(args)
 	if !ok || len(positionals) != 0 {
 		return false
 	}

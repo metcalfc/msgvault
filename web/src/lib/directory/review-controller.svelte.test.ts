@@ -661,6 +661,10 @@ describe('DirectoryReviewController', () => {
     controller.applyURLState({ reviewKind: 'identity', identityState: 'candidate', identityOrigin: 'all' });
     await vi.waitFor(() => expect(requests).toHaveLength(2));
     expect(new URL(requests[1]!.url).searchParams.has('origin')).toBe(false);
+
+    controller.setIdentityOrigin('person_duplicate');
+    await vi.waitFor(() => expect(requests).toHaveLength(3));
+    expect(new URL(requests[2]!.url).searchParams.get('origin')).toBe('person_duplicate');
   });
 
   it('accepts a contact match after the user resolves its merge', async () => {

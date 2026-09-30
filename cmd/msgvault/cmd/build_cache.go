@@ -486,6 +486,8 @@ func runBuildCacheLocalMode(mode buildCacheMode, state *invocation) error {
 	classifyKindsForCacheBuild(context.Background(), cfg, dbPath, state.logger)
 	// New calendar series are judged first so this build exports their weights.
 	judgeMeetingsForCacheBuild(context.Background(), cfg, dbPath, state.logger)
+	// Possible duplicate people are proposed for review; nothing is applied.
+	judgePeopleForCacheBuild(context.Background(), cfg, dbPath, state.logger)
 
 	var result *buildResult
 	switch mode {

@@ -193,6 +193,8 @@ var settingsMetadata = map[string]settingMetadata{
 	"jev.sweep_evidence_rerank.automatic":   {"Automatic evidence relevance", "Also judge evidence during the daemon's scheduled people sweeps, not only manual runs.", sectionJevFeatures},
 	"jev.sweep_claim_grounding.enabled":     {"People sweep claim grounding", "Ask Jev whether the messages a proposed fact cites state it and whether it is still current, and use that as the fact's confidence. Sends excerpts of messages the person wrote and the proposed value.", sectionJevFeatures},
 	"jev.sweep_claim_grounding.automatic":   {"Automatic claim grounding", "Also ground claims during the daemon's scheduled people sweeps, not only manual runs.", sectionJevFeatures},
+	"jev.person_duplicates.enabled":         {"Duplicate people", "Ask Jev whether two correspondents who share a display name or address name are one person, sending their display names and email addresses, and list likely pairs in Reviews. Nothing is linked unless you accept it.", sectionJevFeatures},
+	"jev.person_duplicates.automatic":       {"Automatic duplicate people", "Judge new pairs when the analytics cache is built, without running msgvault person judge.", sectionJevFeatures},
 	"vector.people.enabled":                 {"Embed person fields", "Send the consented fields of each person to the text embedding provider. Semantic search must be on.", "people"},
 	"vector.people.retention_posture":       {"Provider retention statement", "Your statement of how long the provider keeps person data.", "people"},
 	"vector.people.training_posture":        {"Provider training statement", "Your statement of whether the provider trains on person data.", "people"},

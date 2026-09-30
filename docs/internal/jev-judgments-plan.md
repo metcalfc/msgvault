@@ -549,11 +549,36 @@ bar.
   > an address or phone number, and every claim after a failure keep the
   > model's score; claims are never added, dropped, or reordered, and the
   > resolver arithmetic is unchanged.
-- [ ] **Task 8.3 Duplicate-person candidates.** Code proposes pairs (same
+- [x] **Task 8.3 Duplicate-person candidates.** Code proposes pairs (same
   display name across addresses, same local part across domains, person
   embedding neighbors); Noul `same_person` batched 20 per request; write
   `IdentityMatchCandidate` with basis `display_name` and confidence; never
   auto-accept; drop < 0.30.
+  > Feature `person_duplicates` (`internal/persondedup`), run by
+  > `msgvault person judge` (daemon-run) and, with `automatic = true`, at
+  > each cache build (200 pairs). `Store.PersonDuplicateProposalsContext`
+  > groups email-bearing identity clusters by normalized display name (two
+  > or more words, order-insensitive, no team or service words) and by
+  > distinctive local part at different domains; groups larger than five
+  > clusters propose nothing. Owner clusters, clusters with any non-person
+  > effective kind, shared-mailbox signals, pairs bound to one person, pairs
+  > with any participant-to-participant candidate, and rejected
+  > participant-to-person decisions across the pair are excluded.
+  > `person_duplicate_judgments` remembers every judgment by the pair's
+  > cluster roots and an inputs fingerprint. A probability ≥ 0.30 writes a
+  > participant-to-participant candidate (basis `display_name`, source
+  > `system`, source_ref `person_duplicate`, the probability as confidence,
+  > signals as evidence); the system never accepts it, a user accept links
+  > the participants, and two bound people return the 409 merge flow.
+  > Reviews gains the **Possible duplicate people** origin
+  > (`origin=person_duplicate`, API 2.44.0). State is display names (names
+  > carrying an address or phone are dropped) and full email addresses;
+  > phones are never sent.
+- [ ] **Deferred: person embedding neighbors** as a third proposal source.
+  Needs a way to read a person's own published vector (neither vector
+  backend exposes one) and to open the active person generation from the
+  judge command; add it as another proposal source feeding the same
+  judgment when that exists.
 - [ ] **Task 8.4 Small ones.** Primary current role Choice when two or more
   current roles are system-set; display-name Choice at promotion when two
   or more distinct names; merge attribute conflict Noul at ≥ 0.95.

@@ -400,7 +400,13 @@ import (
 // Jev within 800 ms when [jev.query_understanding] is enabled and
 // consented, with offer_hybrid for an empty full-text search. Settings gain
 // jev.query_understanding.enabled. Additive (minor bump).
-const APISchemaVersion = "2.43.0"
+// 2.44.0 adds the person_duplicate origin to GET /identity/match-candidates,
+// listing participant pairs the duplicate people judgment proposed as
+// possibly one person (basis display_name, source system, the judged
+// probability as confidence). Settings gain jev.sweep_evidence_rerank,
+// jev.sweep_claim_grounding, and jev.person_duplicates enabled and
+// automatic. Additive (minor bump).
+const APISchemaVersion = "2.44.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

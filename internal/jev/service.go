@@ -46,6 +46,10 @@ const FeatureSweepEvidenceRerank = "sweep_evidence_rerank"
 // sends message excerpts, so its consent disclosure says so.
 const FeatureSweepClaimGrounding = "sweep_claim_grounding"
 
+// FeatureDuplicatePeople is the duplicate-person candidate feature. It sends
+// display names and email addresses, so its consent disclosure says so.
+const FeatureDuplicatePeople = "person_duplicates"
+
 // Gate outcomes. Each is an expected administrative state, not a fault: the
 // caller falls back to its pre-Jev decision and reports the category.
 var (
@@ -85,6 +89,8 @@ func (c Config) FeatureConfigFor(name string) (FeatureConfig, bool) {
 		return c.SweepEvidenceRerank, true
 	case FeatureSweepClaimGrounding:
 		return c.SweepClaimGrounding, true
+	case FeatureDuplicatePeople:
+		return c.PersonDuplicates, true
 	default:
 		return FeatureConfig{}, false
 	}

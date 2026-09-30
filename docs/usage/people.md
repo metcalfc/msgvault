@@ -304,6 +304,12 @@ separate setup for looking up public information.
 
 ## Merge duplicate profiles and reverse a merge
 
+To find likely duplicates, the optional
+[duplicate people](jev-judgments.md#feature-duplicate-people) Jev judgment
+lists identities that share a display name or address name under **Reviews →
+Possible duplicate people**. Accepting one links the identities, or offers the
+merge below when both already belong to saved people.
+
 Merge two durable profiles only after reviewing both people. The first person
 survives with the same ID and vCard UID; the second person's participants and
 profile data move to it, and the retired UID becomes an alias. Both current

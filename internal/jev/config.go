@@ -66,6 +66,11 @@ type Config struct {
 	// still current, as the claim's confidence. Automatic covers the
 	// daemon's scheduled sweeps.
 	SweepClaimGrounding FeatureConfig `toml:"sweep_claim_grounding"`
+	// PersonDuplicates is [jev.person_duplicates]: asking whether two
+	// identity clusters that share a display name or address name are one
+	// person, to propose reviewable duplicate candidates. Automatic covers
+	// the analytics cache build.
+	PersonDuplicates FeatureConfig `toml:"person_duplicates"`
 	// CleanupSuggestions is [jev.cleanup_suggestions]: judging junk and
 	// phishing candidates for `msgvault suggest-cleanup`. It only ever runs
 	// on request, so its automatic switch has no effect.

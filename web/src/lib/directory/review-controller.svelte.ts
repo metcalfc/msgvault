@@ -225,7 +225,7 @@ export class DirectoryReviewController {
           state,
           limit: IDENTITY_REVIEW_PAGE_LIMIT,
           offset: targetOffset,
-          ...(this.identityOrigin === 'contact_match' ? { origin: 'contact_match' } : {}),
+          ...(this.identityOrigin === 'all' ? {} : { origin: this.identityOrigin }),
         },
         {
           ...this.client,

@@ -8,7 +8,7 @@ export type ListIdentityMatchCandidatesParams = {
    */
   state?: string;
   /**
-   * Candidate origin filter: contact_match lists only contact profiles that match archive participants
+   * Candidate origin filter: contact_match lists only contact profiles that match archive participants; person_duplicate lists only participant pairs the duplicate people judgment proposed as possibly one person
    */
   origin?: string;
   /**

@@ -255,6 +255,38 @@ func TestListIdentityMatchCandidatesResolvesEndpointsAndFiltersContactMatches(t 
 	assert.Equal(http.StatusBadRequest, invalid.Code, invalid.Body.String())
 }
 
+func TestListIdentityMatchCandidatesFiltersPersonDuplicates(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, st := newIdentityLinkTestServer(t)
+	pair, _, _ := seedMatchCandidate(t, st, store.IdentityMatchServiceScopeUsername)
+	jane := st.mustParticipant(t, "jane@example.net", "Jane Doe", "example.net")
+	janeWork := st.mustParticipant(t, "jdoe@example.org", "Jane Doe", "example.org")
+	proposals, err := st.PersonDuplicateProposalsContext(context.Background(), 0)
+	require.NoError(err)
+	require.Len(proposals, 1)
+	_, err = st.RecordPersonDuplicateJudgmentsContext(context.Background(), []store.PersonDuplicateJudgment{{
+		Proposal: proposals[0], Probability: 0.7, Model: "jev-test", Propose: true,
+	}})
+	require.NoError(err)
+
+	response := personRequest(t, srv, http.MethodGet,
+		"/api/v1/identity/match-candidates?origin=person_duplicate", nil, "")
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	var listed IdentityMatchCandidatesResponse
+	require.NoError(json.Unmarshal(response.Body.Bytes(), &listed), response.Body.String())
+	require.Len(listed.Candidates, 1)
+	assert.NotEqual(pair.ID, listed.Candidates[0].ID)
+	assert.Equal(jane, listed.Candidates[0].LeftID)
+	assert.Equal(janeWork, listed.Candidates[0].RightID)
+	assert.Equal(store.IdentityMatchDisplayName, listed.Candidates[0].Basis)
+	require.NotNil(listed.Candidates[0].Confidence)
+	assert.InDelta(0.7, *listed.Candidates[0].Confidence, 1e-9)
+	assert.Len(listed.Endpoints, 2)
+	assert.Empty(listed.ContactMatches)
+}
+
 func TestBuildContactMatchCandidatesReportsCounts(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

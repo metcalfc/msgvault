@@ -1428,6 +1428,16 @@ People sweep claim grounding (feature `sweep_claim_grounding`). See
 | `enabled` | `false` | Let manual people sweep runs ask Jev whether the messages each proposed fact cites state it and whether it is still current, and use that as the fact's confidence. Sends message excerpts the person wrote and the proposed value. Without it, the chat model's own confidence is used. |
 | `automatic` | `false` | Also ground claims during the daemon's scheduled people sweeps. |
 
+#### `[jev.person_duplicates]`
+
+Duplicate people (feature `person_duplicates`). See
+[the feature description](/docs/usage/jev-judgments/#feature-duplicate-people).
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Let `msgvault person judge` ask Jev whether correspondents who share a display name or address name are one person, sending their display names and email addresses. Likely pairs appear in Reviews. Without it, no duplicate is proposed. |
+| `automatic` | `false` | Also judge up to 200 new pairs at each analytics cache build. |
+
 ### `[activity]`
 
 Dated activity projection and per-person contact state (first and last

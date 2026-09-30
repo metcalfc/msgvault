@@ -2323,6 +2323,36 @@ saved profile: when one describes only this identity, `set` prints the
 
 ---
 
+## person judge
+
+Runs the person judgments inside the daemon. Each one runs only when its own
+feature is enabled, an API key resolves, and its consent is active.
+
+- **Duplicate people.** Proposes pairs of identity clusters with an email
+  address that share a display name (in any word order) on different
+  addresses, or a distinctive local part at different domains, leaving out
+  your own identities, non-people, shared mailboxes, pairs already bound to
+  one person, and pairs with an existing identity match candidate or
+  rejection. With [`[jev.person_duplicates]`](configuration.md#jevperson_duplicates)
+  and `msgvault jev consent person_duplicates`, the pairs are sent twenty per
+  request with their display names and email addresses. A pair at 0.30 or
+  more becomes a candidate under **Reviews → Possible duplicate people**;
+  nothing is linked or merged until you accept it.
+
+```bash
+msgvault person judge [--limit N] [--json]
+```
+
+| Flag | Contract |
+|---|---|
+| `--limit` | Judge at most this many pairs; `0` (default) means all |
+| `--json` | Structured report: proposals, Jev requests, judgments, new candidates, and the skip category |
+
+Each pair is asked once until either side changes. See
+[duplicate people](usage/jev-judgments.md#feature-duplicate-people).
+
+---
+
 ## person agenda
 
 Read and organize a person's live Kata tasks. Configure

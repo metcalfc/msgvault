@@ -4657,3 +4657,24 @@ CREATE TABLE IF NOT EXISTS meeting_action_assignees (
 );
 CREATE INDEX IF NOT EXISTS idx_meeting_action_assignees_participant
     ON meeting_action_assignees(assignee_participant_id);
+
+-- One person_duplicates Jev judgment of a pair of identity clusters code
+-- proposed as possibly one person (same display name on different addresses,
+-- or the same distinctive local part at different domains), keyed by the two
+-- clusters' representative participants (left < right). inputs_fingerprint
+-- hashes both clusters' members, names, addresses, and the signals; the pair
+-- is judged again only when it changes. A probability of at least 0.30 also
+-- wrote a reviewable participant-to-participant identity match candidate
+-- (source_ref 'person_duplicate'); this row only prevents asking again.
+CREATE TABLE IF NOT EXISTS person_duplicate_judgments (
+    left_participant_id  INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+    right_participant_id INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+    inputs_fingerprint   TEXT NOT NULL,
+    probability          REAL NOT NULL CHECK (probability >= 0 AND probability <= 1),
+    model                TEXT NOT NULL,
+    judged_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (left_participant_id, right_participant_id),
+    CHECK (left_participant_id < right_participant_id)
+);
+CREATE INDEX IF NOT EXISTS idx_person_duplicate_judgments_right
+    ON person_duplicate_judgments(right_participant_id);

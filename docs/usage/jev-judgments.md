@@ -82,6 +82,10 @@ new `msgvault jev consent`.
    [jev.sweep_claim_grounding]   # sends message excerpts the person wrote
    enabled = true
    # automatic = true   # also ground claims during scheduled people sweeps
+
+   [jev.person_duplicates]   # sends display names and email addresses
+   enabled = true
+   # automatic = true   # also judge new pairs at each cache build
    ```
 
 2. Provide an API key. Either paste it in Settings under **Jev judgments**
@@ -99,8 +103,8 @@ new `msgvault jev consent`.
 Consent is per feature: run the same two `consent` commands with
 `organization_resolution`, `correspondent_kind`, `cleanup_suggestions`,
 `search_rerank`, `meeting_event_kind`, `meeting_action_assignee`,
-`query_understanding`, `sweep_evidence_rerank`, or `sweep_claim_grounding`
-for those features. `msgvault jev revoke enrichment_identity`
+`query_understanding`, `sweep_evidence_rerank`, `sweep_claim_grounding`, or
+`person_duplicates` for those features. `msgvault jev revoke enrichment_identity`
 or `msgvault jev revoke --all` stops the next request immediately.
 
 ## Budgets and safety
@@ -972,6 +976,70 @@ For each claim `N` (1 to 8) in the request:
 A request with fewer than eight claims sends only their questions.
 `msgvault jev consent sweep_claim_grounding` prints the same disclosure.
 
+## Feature: duplicate people
+
+Feature name: `person_duplicates`. Setting: `[jev.person_duplicates]`.
+Command: [`msgvault person judge`](../cli-reference.md#person-judge).
+
+The same person often writes from a personal and a work address, and each
+address becomes its own identity. This feature finds likely pairs and puts
+them in front of you; it never links or merges anything by itself.
+
+1. **Pairs, in code.** Two identity clusters with an email address are
+   proposed when they use the same display name (at least two words and five
+   letters, compared ignoring case, punctuation, and word order) on different
+   addresses, or share a distinctive local part (the part before `@`, at
+   least five characters, not a role, list, or no-reply address) at different
+   domains. A name or local part shared by more than five clusters is too
+   common and proposes nothing, and so does a name with a team or service
+   word such as "Support" or "via".
+2. **Left out.** Your own identities; clusters classified as anything but a
+   person (by you, a rule, or Jev); clusters that look like a shared mailbox;
+   pairs already bound to one person; pairs with any existing identity match
+   candidate, including one you rejected; and a pair where one side was
+   rejected for the other side's person.
+3. **Jev, only with consent.** Twenty pairs per request, one Noul each.
+4. **Code decides what you see.** A pair judged 0.30 or more likely to be one
+   person becomes a reviewable identity match candidate: basis
+   `display_name`, source `system`, the probability as confidence, listed
+   under **Reviews → Possible duplicate people** (API
+   `GET /identity/match-candidates?origin=person_duplicate`). Below 0.30 the
+   judgment is only remembered. Either way the pair is not asked again until
+   one side's identities, names, or addresses change.
+
+Accepting a candidate links the two identities through the normal identity
+link path. When both already belong to different saved people, accepting
+offers the usual merge, where you choose the survivor. Rejecting keeps the
+decision, so the pair is never proposed again. The system never accepts a
+display-name match. `person judge` runs by hand; with `automatic = true`, each
+analytics cache build judges up to 200 new pairs first.
+
+### What leaves the machine
+
+Per pair, under `pairs.pair_N`:
+
+- `first.names[]` and `second.names[]`: up to three display names each side
+  uses, cut to 120 characters. A name containing an email address or phone
+  number is not sent.
+- `first.addresses[]` and `second.addresses[]`: **up to five email addresses
+  each side uses, in full**.
+- `signals[]`: `same_display_name`, `same_local_part`, or both.
+
+No phone numbers, messages, subjects, or profile data. Your own identities
+are never proposed, so they are never sent.
+
+### The question, exactly as sent
+
+`same_person_1` through `same_person_20` (Noul): "Are `pairs.pair_N.first`
+and `pairs.pair_N.second` the same human being? `pairs.pair_N.signals` says
+what they share." Yes means "The names and addresses belong to one person,
+for example the same full name at a personal and a work address, or the same
+distinctive address name at two domains." No means "Different people who
+share a common name or address name, a person and a team, company, or
+service address, or not enough to tell." A request with fewer than twenty
+pairs sends only their questions.
+`msgvault jev consent person_duplicates` prints the same disclosure.
+
 ## Turn it off
 
 - `msgvault jev revoke --all` stops every feature at the next request without
@@ -990,8 +1058,8 @@ probabilities and outcomes, not the compared values.
 - Only the enrichment identity check, organization resolution,
   correspondent kind, cleanup suggestions, hybrid search reranking, meeting
   event kind, meeting action assignee, Explore query understanding, people
-  sweep evidence relevance, and people sweep claim grounding exist today.
-  The other features in
+  sweep evidence relevance, people sweep claim grounding, and duplicate
+  people exist today. The other features in
   the engineering record `docs/internal/jev-judgments-plan.md` are proposals.
 - Hybrid search reranking has not passed its evaluation gate. Its cached
   orders live in the daemon's memory, so a restart judges the next page of a
@@ -1011,5 +1079,8 @@ probabilities and outcomes, not the compared values.
 - Attempts decided before provider person IDs were kept can only be refused
   by profile URL; a provider that returns the same person under a new URL is
   not caught by that negative.
+- Duplicate people compares only identities with an email address; chat
+  identities without one, and person embedding neighbors, are not proposed
+  yet.
 - Budgets count requests per UTC day. A process restart resets the in-memory
   breaker but not the daily counters.
