@@ -191,6 +191,18 @@ func (SQLiteQueryDialect) BuildFTSTerm(terms []string) (expr string, arg string)
 	return "messages_fts MATCH ?", strings.Join(ftsTerms, " ")
 }
 
+// BuildFTSAnyTerm is BuildFTSTerm with the terms OR-ed: a row matches
+// when any one term prefix-matches.
+func (SQLiteQueryDialect) BuildFTSAnyTerm(terms []string) (expr string, arg string) {
+	ftsTerms := make([]string, len(terms))
+	for i, term := range terms {
+		term = strings.ReplaceAll(term, "\"", "\"\"")
+		term = strings.ReplaceAll(term, "*", "")
+		ftsTerms[i] = fmt.Sprintf("\"%s\"*", term)
+	}
+	return "messages_fts MATCH ?", strings.Join(ftsTerms, " OR ")
+}
+
 func (d SQLiteQueryDialect) BuildFTSBodyTerm(terms []string) (expr string, arg string) {
 	expr, arg = d.BuildFTSTerm(terms)
 	if arg == "" {
@@ -309,6 +321,27 @@ func (PostgreSQLQueryDialect) BuildFTSTerm(terms []string) (expr string, arg str
 		return "FALSE", ""
 	}
 	return "m.search_fts @@ to_tsquery('simple', ?)", strings.Join(tsTerms, " & ")
+}
+
+// BuildFTSAnyTerm is BuildFTSTerm with the terms OR-ed. The lexemes of one
+// term stay AND-ed, so a term split at punctuation still matches as one.
+func (PostgreSQLQueryDialect) BuildFTSAnyTerm(terms []string) (expr string, arg string) {
+	groups := make([]string, 0, len(terms))
+	for _, term := range terms {
+		lexemes := sqldialect.EscapeTSQueryTerm(term)
+		if len(lexemes) == 0 {
+			continue
+		}
+		parts := make([]string, len(lexemes))
+		for i, lexeme := range lexemes {
+			parts[i] = lexeme + ":*"
+		}
+		groups = append(groups, "("+strings.Join(parts, " & ")+")")
+	}
+	if len(groups) == 0 {
+		return "FALSE", ""
+	}
+	return "m.search_fts @@ to_tsquery('simple', ?)", strings.Join(groups, " | ")
 }
 
 func (PostgreSQLQueryDialect) BuildFTSBodyTerm(terms []string) (expr string, arg string) {

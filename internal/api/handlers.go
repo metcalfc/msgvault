@@ -1107,10 +1107,7 @@ func (s *Server) handleHybridSearch(
 		return
 	}
 
-	subjectTerms := make([]string, 0, len(parsed.TextTerms))
-	for _, t := range parsed.TextTerms {
-		subjectTerms = append(subjectTerms, strings.ToLower(t))
-	}
+	subjectTerms := vector.SubjectBoostTerms(parsed.TextTerms)
 
 	filter, err := hybridEngine.BuildFilter(ctx, parsed, structuredFilter)
 	if err != nil {

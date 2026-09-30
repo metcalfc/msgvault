@@ -528,3 +528,22 @@ func TestMCPPersonNotesStdioRetainsTrustedWrites(t *testing.T) {
 	assert.NotEqual(t, true, response.Result["isError"], "result: %#v", response.Result)
 	assert.Equal(t, int64(11), backend.promoteParticipantID)
 }
+
+func TestProfileMatchesPeopleQueryMatchesEveryWordInAnyOrder(t *testing.T) {
+	name := "Jane Q. Example"
+	profile := store.Person{DisplayName: &name, VCardUID: "urn:uuid:profile-one"}
+	tests := []struct {
+		query string
+		want  bool
+	}{
+		{"", true},
+		{"jane example", true},
+		{"Example Jane", true},
+		{"  jane   q.  ", true},
+		{"jane other", false},
+		{"profile-one jane", true},
+	}
+	for _, tt := range tests {
+		assert.Equalf(t, tt.want, profileMatchesPeopleQuery(profile, "", tt.query), "query %q", tt.query)
+	}
+}

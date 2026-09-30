@@ -62,6 +62,9 @@ type ResultMeta struct {
 	Rerank *RerankInfo
 	// RerankDuration is the time spent in the rerank stage.
 	RerankDuration time.Duration
+	// LexicalMatchAny reports that the BM25 leg matched any content word
+	// because requiring every term found nothing.
+	LexicalMatchAny bool
 }
 
 // EmbeddingClient embeds free-text queries. The engine uses it once per
@@ -294,7 +297,21 @@ func (e *Engine) Search(ctx context.Context, req SearchRequest) ([]vector.FusedH
 	if err != nil {
 		return nil, ResultMeta{}, fmt.Errorf("fused search: %w", err)
 	}
+	lexicalAny := false
+	if anyTerms := lexicalFallbackTerms(terms, hits, limit); anyTerms != nil {
+		// Every term must match for the BM25 leg, so a long natural
+		// query often finds nothing lexically. Ask again for messages
+		// matching any content word; the vector leg is unchanged.
+		fReq.FTSTerms = anyTerms
+		fReq.FTSMatchAny = true
+		fallbackHits, fallbackMeta, fallbackErr := fb.FusedSearch(ctx, fReq)
+		if fallbackErr != nil {
+			return nil, ResultMeta{}, fmt.Errorf("fused search (any term): %w", fallbackErr)
+		}
+		hits, searchMeta, lexicalAny = fallbackHits, fallbackMeta, true
+	}
 	meta := ResultMeta{
+		LexicalMatchAny:        lexicalAny,
 		Generation:             active,
 		PoolSaturated:          searchMeta.PoolSaturated,
 		Accelerator:            searchMeta.Accelerator,
@@ -385,6 +402,29 @@ func ftsTerms(freeText string) []string {
 		return nil
 	}
 	return kept
+}
+
+// lexicalFallbackTerms returns the terms for an any-term BM25 retry, or nil
+// when none is warranted: the query has one term, some hit already came
+// from the BM25 leg, or no content word (non-stopword) remains. A limit of
+// one cannot tell an empty BM25 leg from a vector hit that outranked it,
+// so it never retries. With two or more slots, reciprocal rank fusion
+// places the BM25 leg's first hit in the top two, so no BM25 score among
+// the hits means the leg was empty.
+func lexicalFallbackTerms(terms []string, hits []vector.FusedHit, limit int) []string {
+	if len(terms) < 2 || limit == 1 {
+		return nil
+	}
+	for _, hit := range hits {
+		if !math.IsNaN(hit.BM25Score) {
+			return nil
+		}
+	}
+	content := vector.ContentTerms(terms)
+	if len(content) == 0 {
+		return nil
+	}
+	return content
 }
 
 // hasFTSToken reports whether s contains a rune the default FTS5

@@ -311,6 +311,36 @@ func TestEngine_Hybrid_PunctuationQuery(t *testing.T) {
 	assert.Equal(int64(1), results[0].MessageID, "top hit")
 }
 
+// TestEngine_Hybrid_AnyTermFallback: when requiring every term finds no
+// lexical match, the BM25 leg retries with any content word, so a natural
+// query still ranks the messages that share its key words.
+func TestEngine_Hybrid_AnyTermFallback(t *testing.T) {
+	ctx := context.Background()
+	f := newEngineFixture(t)
+
+	// No message holds both "tacos" and "itinerary"; each holds one.
+	results, meta, err := f.Engine.Search(ctx, SearchRequest{
+		Mode: ModeHybrid, FreeText: "the tacos and itinerary", Limit: 5,
+	})
+	require.NoError(t, err)
+	assert.True(t, meta.LexicalMatchAny, "an empty AND-ed leg falls back to any term")
+	lexical := map[int64]bool{}
+	for _, hit := range results {
+		if !math.IsNaN(hit.BM25Score) {
+			lexical[hit.MessageID] = true
+		}
+	}
+	assert.Equal(t, map[int64]bool{2: true, 3: true}, lexical,
+		"the any-term leg matches each content word; stopwords match nothing on their own")
+
+	// A query whose terms all match one message keeps the AND-ed leg.
+	_, meta, err = f.Engine.Search(ctx, SearchRequest{
+		Mode: ModeHybrid, FreeText: "meeting tomorrow", Limit: 5,
+	})
+	require.NoError(t, err)
+	assert.False(t, meta.LexicalMatchAny)
+}
+
 func TestEngine_Vector_HappyPath(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

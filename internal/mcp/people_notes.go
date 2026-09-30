@@ -394,13 +394,18 @@ func profileDisplayLabel(profile store.Person, durableLabel string) string {
 	return strings.TrimSpace(durableLabel)
 }
 
+// profileMatchesPeopleQuery reports whether every word of the query appears
+// in the profile's label or vCard UID, in any order: "Doe Jane" finds
+// "Jane Q. Doe".
 func profileMatchesPeopleQuery(profile store.Person, durableLabel, queryText string) bool {
-	queryText = strings.ToLower(strings.TrimSpace(queryText))
-	if queryText == "" {
-		return true
+	label := strings.ToLower(profileDisplayLabel(profile, durableLabel))
+	uid := strings.ToLower(profile.VCardUID)
+	for _, token := range strings.Fields(strings.ToLower(queryText)) {
+		if !strings.Contains(label, token) && !strings.Contains(uid, token) {
+			return false
+		}
 	}
-	return strings.Contains(strings.ToLower(profileDisplayLabel(profile, durableLabel)), queryText) ||
-		strings.Contains(strings.ToLower(profile.VCardUID), queryText)
+	return true
 }
 
 func personSummaryMatchesPeopleQuery(summary query.PersonSummary, queryText string) bool {

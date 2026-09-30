@@ -431,6 +431,9 @@ SELECT message_id, rrf_score, bm25_score, vector_score,
 		// (quoted, prefix-* terms). nil ftsArg → the CTE's
 		// `:fts_query IS NOT NULL` guard skips the BM25 leg.
 		_, arg := query.SQLiteQueryDialect{}.BuildFTSTerm(req.FTSTerms)
+		if req.FTSMatchAny {
+			_, arg = query.SQLiteQueryDialect{}.BuildFTSAnyTerm(req.FTSTerms)
+		}
 		ftsArg = arg
 	}
 
@@ -896,7 +899,7 @@ func labelGroupClauses(groups [][]int64) (string, []any, error) {
 
 // applySubjectBoost multiplies the RRF score of each hit whose
 // subject contains any of the supplied (already-lowercased) terms as
-// a case-insensitive substring, then re-sorts hits by RRF score so
+// whole words (vector.SubjectHasTerm), then re-sorts hits by RRF score so
 // the boosted entries float to the top. Sets SubjectBoosted=true on
 // the hits that received the multiplier so callers (the API explain
 // surface, MCP responses) can report it back to the user.
@@ -930,7 +933,7 @@ func (b *Backend) applySubjectBoost(ctx context.Context, hits []vector.FusedHit,
 			if term == "" {
 				continue
 			}
-			if strings.Contains(lower, term) {
+			if vector.SubjectHasTerm(lower, term) {
 				hits[i].RRFScore *= boost
 				hits[i].SubjectBoosted = true
 				break

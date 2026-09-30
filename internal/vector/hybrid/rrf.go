@@ -14,7 +14,7 @@ import (
 //
 //   - rrfK:        standard RRF constant (60 is typical).
 //   - boost:       >=1.0 multiplier applied to any message whose subject
-//     contains any term in subjectTerms (case-insensitive).
+//     contains any term in subjectTerms as whole words (case-insensitive).
 //     Pass 1.0 to disable.
 //   - subjectTerms: lowercased query terms used for subject matching.
 //   - subjects:     map[message_id]subject_text, used ONLY for boost
@@ -51,7 +51,7 @@ func Fuse(
 			if subj, ok := subjects[h.MessageID]; ok {
 				lc := strings.ToLower(subj)
 				for _, t := range lowerTerms {
-					if strings.Contains(lc, t) {
+					if vector.SubjectHasTerm(lc, t) {
 						h.RRFScore *= boost
 						h.SubjectBoosted = true
 						break

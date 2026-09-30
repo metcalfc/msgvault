@@ -103,3 +103,16 @@ func TestBuildFTSBodyTermScopesExactBodyField(t *testing.T) {
 		assert.Equal(t, `body : ("foo"* "bar"*)`, arg)
 	})
 }
+
+func TestBuildFTSAnyTermOrsTerms(t *testing.T) {
+	t.Run("SQLite", func(t *testing.T) {
+		expr, arg := (SQLiteQueryDialect{}).BuildFTSAnyTerm([]string{"budget", `q"3`})
+		assert.Equal(t, "messages_fts MATCH ?", expr)
+		assert.Equal(t, `"budget"* OR "q""3"*`, arg)
+	})
+	t.Run("PostgreSQL keeps one term's lexemes together", func(t *testing.T) {
+		expr, arg := (PostgreSQLQueryDialect{}).BuildFTSAnyTerm([]string{"foo-bar", "baz", "--"})
+		assert.Equal(t, "m.search_fts @@ to_tsquery('simple', ?)", expr)
+		assert.Equal(t, "(foo:* & bar:*) | (baz:*)", arg)
+	})
+}

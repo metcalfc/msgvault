@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -639,9 +640,12 @@ func translateVectorErr(err error) *toolResult {
 	return nil
 }
 
-// getAccountID looks up a source ID by email address.
-// Returns nil if account is empty (no filter), or an error if not found.
+// getAccountID looks up a source ID by account identifier (usually an email
+// address), ignoring case and surrounding space. Returns nil if account is
+// empty (no filter). An unknown account's error lists the valid ones so the
+// caller can retry with one of them.
 func (h *handlers) getAccountID(ctx context.Context, account string) (*int64, error) {
+	account = strings.TrimSpace(account)
 	if account == "" {
 		return nil, nil //nolint:nilnil // empty input -> no filter, not an error
 	}
@@ -651,7 +655,7 @@ func (h *handlers) getAccountID(ctx context.Context, account string) (*int64, er
 	}
 	var matched *int64
 	for _, acc := range accounts {
-		if acc.Identifier == account {
+		if strings.EqualFold(strings.TrimSpace(acc.Identifier), account) {
 			if matched != nil {
 				return nil, &expectedHandlerError{message: "account matches multiple sources: " + account}
 			}
@@ -662,7 +666,38 @@ func (h *handlers) getAccountID(ctx context.Context, account string) (*int64, er
 	if matched != nil {
 		return matched, nil
 	}
-	return nil, &expectedHandlerError{message: "account not found: " + account}
+	return nil, &expectedHandlerError{message: "account not found: " + account + "; " + validAccountsHint(accounts)}
+}
+
+// maxAccountsInHint bounds how many identifiers an unknown-account error
+// lists.
+const maxAccountsInHint = 20
+
+// validAccountsHint names the accounts an account argument may use.
+func validAccountsHint(accounts []query.AccountInfo) string {
+	identifiers := make([]string, 0, len(accounts))
+	seen := make(map[string]struct{}, len(accounts))
+	for _, acc := range accounts {
+		identifier := strings.TrimSpace(acc.Identifier)
+		key := strings.ToLower(identifier)
+		if identifier == "" {
+			continue
+		}
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		identifiers = append(identifiers, identifier)
+	}
+	if len(identifiers) == 0 {
+		return "no accounts are archived"
+	}
+	slices.Sort(identifiers)
+	hint := "valid accounts: " + strings.Join(identifiers[:min(len(identifiers), maxAccountsInHint)], ", ")
+	if len(identifiers) > maxAccountsInHint {
+		hint += fmt.Sprintf(" (and %d more)", len(identifiers)-maxAccountsInHint)
+	}
+	return hint
 }
 
 // getIDArg extracts a required positive integer ID from the arguments map.
@@ -1085,10 +1120,7 @@ func (h *handlers) searchMessageBodiesHybrid(
 		), nil
 	}
 
-	subjectTerms := make([]string, 0, len(parsed.TextTerms))
-	for _, t := range parsed.TextTerms {
-		subjectTerms = append(subjectTerms, strings.ToLower(t))
-	}
+	subjectTerms := vector.SubjectBoostTerms(parsed.TextTerms)
 
 	filter, err := h.hybridEngine.BuildFilter(ctx, parsed)
 	if err != nil {

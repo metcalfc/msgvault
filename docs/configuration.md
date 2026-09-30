@@ -1202,7 +1202,7 @@ Hybrid ranking parameters applied at query time.
 |---|---|---|
 | `rrf_k` | `60` | Reciprocal Rank Fusion constant. Higher values flatten score differences between signals. |
 | `k_per_signal` | `100` | Candidate pool size drawn from each signal (BM25 or vector) before fusion. |
-| `subject_boost` | `2.0` | Multiplier applied when a query term matches a message's subject line. |
+| `subject_boost` | `2.0` | Multiplier applied when a query term matches a whole word of a message's subject line. Stopwords such as "the" and "for" never earn the boost. |
 | `max_page_size_hybrid` | `50` | Hard cap on `page_size` for vector/hybrid responses. Set to `0` to disable clamping. |
 | `sqlite_accelerator` | `auto` | Use a ready SQLite approximate index. Set to `exact` to keep exhaustive vector search. PostgreSQL ignores this setting. |
 | `ann_nprobe` | `8` | SQLite index partitions searched per query. Higher values trade latency for recall. |

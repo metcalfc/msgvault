@@ -465,7 +465,11 @@ type FusedRequest struct {
 	// PostgreSQL to_tsquery with :* prefix lexemes), so both backends
 	// prefix-match the SAME term set rather than diverging on a
 	// pre-built dialect-specific expression.
-	FTSTerms     []string
+	FTSTerms []string
+	// FTSMatchAny ORs FTSTerms instead of AND-ing them. The hybrid
+	// engine sets it only for its fallback after the AND-ed leg found
+	// nothing.
+	FTSMatchAny  bool
 	QueryVec     []float32 // query embedding; nil skips ANN
 	Generation   GenerationID
 	KPerSignal   int

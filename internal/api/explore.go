@@ -1627,13 +1627,9 @@ func (s *Server) resolveExploreVectorSearch(ctx context.Context, w http.Response
 	if request.SearchMode == exploreSearchModeHybrid {
 		mode = hybrid.ModeHybrid
 	}
-	// Vector backends compare subject terms against lowercased subjects,
-	// so mixed-case terms must be lowercased or subject boosting silently
-	// misses (same treatment as the search handlers).
-	subjectTerms := make([]string, 0, len(parsed.TextTerms))
-	for _, t := range parsed.TextTerms {
-		subjectTerms = append(subjectTerms, strings.ToLower(t))
-	}
+	// Vector backends compare lowercased subject terms as whole words;
+	// stopwords never earn a boost (same treatment as the search handlers).
+	subjectTerms := vector.SubjectBoostTerms(parsed.TextTerms)
 	hits, meta, err := hybridEngine.Search(ctx, hybrid.SearchRequest{
 		Mode: mode, FreeText: freeText, Filter: filter, Limit: exploreMaxLimit,
 		SubjectTerms: subjectTerms,

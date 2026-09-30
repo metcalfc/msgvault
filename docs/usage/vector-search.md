@@ -18,7 +18,10 @@ database as the message archive.
 When vector search is enabled, the `search` command and HTTP
 `/api/v1/search` endpoint accept `mode=vector` (pure semantic) and
 `mode=hybrid` (BM25 + vector fused with Reciprocal Rank Fusion). The MCP
-equivalent is `semantic_search_messages`. A separate MCP tool,
+equivalent is `semantic_search_messages`. Hybrid's BM25 signal requires
+every query word; when that finds no message, it matches any word other than
+stopwords instead, so a question phrased in full sentences still ranks the
+messages that share its key words. A separate MCP tool,
 `find_similar_messages`, returns nearest-neighbor messages for a
 given seed. The vectors and archive stay local, but embedding work is
 performed by the endpoint in your config. If that endpoint is hosted

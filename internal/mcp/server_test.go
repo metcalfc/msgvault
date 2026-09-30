@@ -2975,6 +2975,14 @@ func TestAccountFilter(t *testing.T) {
 		})
 		txt := resultText(t, r)
 		assert.Contains(t, txt, "account not found", "expected 'account not found' error, got: %s")
+		assert.Contains(t, txt, "valid accounts: alice@gmail.com, bob@gmail.com", "the error names the valid accounts")
+	})
+
+	t.Run("account matches ignoring case and surrounding space", func(t *testing.T) {
+		resp := runTool[paginatedListMessages](t, "list_messages", h.listMessages, map[string]any{
+			"account": "  Bob@Gmail.COM ",
+		})
+		assert.Len(t, resp.Data, 1, "data")
 	})
 
 	t.Run("aggregate with valid account", func(t *testing.T) {

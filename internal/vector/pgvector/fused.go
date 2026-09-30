@@ -143,7 +143,7 @@ func (b *Backend) FusedSearch(ctx context.Context, req vector.FusedRequest) ([]v
 			// pre-formatted argument (operators &, prefix :*) and ERRORS on
 			// raw text — this is safe ONLY because we always feed it
 			// PostgreSQLQueryDialect.BuildFTSTerm's output, never raw text.
-			_, tsArg := query.PostgreSQLQueryDialect{}.BuildFTSTerm(req.FTSTerms)
+			_, tsArg := buildPGFTSTerm(req)
 			ftsArg := bind(tsArg)
 			ftsRank := postgresFTSRankExpression("m.search_fts", ftsArg)
 			kp1Arg := bind(kPlus1)
@@ -430,8 +430,8 @@ func applyFilterClauses(f vector.Filter, bind func(any) string) string {
 }
 
 // applySubjectBoost re-ranks hits whose subject contains any of the
-// supplied (already-lowercased) terms as a case-insensitive
-// substring. Mirrors sqlitevec.applySubjectBoost; a failed subject
+// supplied (already-lowercased) terms as whole words
+// (vector.SubjectHasTerm). Mirrors sqlitevec.applySubjectBoost; a failed subject
 // lookup degrades gracefully to "unboosted ordering" rather than
 // failing the search.
 func (b *Backend) applySubjectBoost(ctx context.Context, hits []vector.FusedHit, subjectTerms []string, boost float64) {
@@ -457,7 +457,7 @@ func (b *Backend) applySubjectBoost(ctx context.Context, hits []vector.FusedHit,
 			if term == "" {
 				continue
 			}
-			if strings.Contains(lower, term) {
+			if vector.SubjectHasTerm(lower, term) {
 				hits[i].RRFScore *= boost
 				hits[i].SubjectBoosted = true
 				break
@@ -501,4 +501,13 @@ func (b *Backend) batchGetSubjects(ctx context.Context, ids []int64) (map[int64]
 		return nil, fmt.Errorf("iterate subjects: %w", err)
 	}
 	return out, nil
+}
+
+// buildPGFTSTerm renders the BM25 leg's terms: all of them (AND) normally,
+// any of them (OR) for the hybrid engine's any-term fallback.
+func buildPGFTSTerm(req vector.FusedRequest) (string, string) {
+	if req.FTSMatchAny {
+		return query.PostgreSQLQueryDialect{}.BuildFTSAnyTerm(req.FTSTerms)
+	}
+	return query.PostgreSQLQueryDialect{}.BuildFTSTerm(req.FTSTerms)
 }

@@ -515,9 +515,9 @@ bar.
 
 ## Plain-code fixes to land alongside (no Jev)
 
-- [ ] Strip stopwords and use word boundaries for the subject boost; fall
+- [x] Strip stopwords and use word boundaries for the subject boost; fall
   back to OR when the AND-ed BM25 leg returns zero hits.
-- [ ] `getAccountID` case-insensitive with valid accounts in the error;
+- [x] `getAccountID` case-insensitive with valid accounts in the error;
   document the `message_type:` operator in the MCP catalog; tokenised AND
   matching in `profileMatchesPeopleQuery`.
 - [ ] Keep signature blocks in the employment evidence lane.
