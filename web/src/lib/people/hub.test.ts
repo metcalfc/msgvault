@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { DirectoryController } from '../directory/controller.svelte';
 import { createAPIClient } from '../api/client';
 import { withEntityLabels } from '../../test/entity-labels';
 import { entityNames, LOADING_LABEL, UNKNOWN_LABELS } from '../names/entity-names.svelte';
-import { filterNotPeople, looksUnnamed, mergePeople, ObservedContacts, savedRow, type PeopleRow } from './hub.svelte';
+import { filterNotPeople, looksUnnamed, mergePeople, ObservedContacts, PeopleHub, savedRow, type PeopleRow } from './hub.svelte';
 
 function row(kind: PeopleRow['kind'], id: number, lastContactAt?: string, name = `Person ${id}`): PeopleRow {
   return { kind, key: `${kind}:${id}`, id, name, lastContactAt, meta: [] };
@@ -69,6 +70,63 @@ describe('People list merge', () => {
 });
 
 describe('ObservedContacts', () => {
+  it.each(['', 'Example'])('retries transient pagination failures for query %j without losing rows', async (query) => {
+    for (const status of [503, 429, 408, 0]) {
+      const cursors: Array<string | undefined> = [];
+      const fetchFn = vi.fn<typeof fetch>(async (input) => {
+        const request = input instanceof Request ? input : new Request(input);
+        const body = await request.json() as { cursor?: string };
+        cursors.push(body.cursor);
+        if (cursors.length === 2) {
+          if (status === 0) throw new TypeError('network unavailable');
+          return Response.json({ message: 'Temporarily unavailable' }, { status });
+        }
+        const id = body.cursor ? 4 : 3;
+        return Response.json({ rows: [{ id, canonical_id: id, display_label: 'Example Person' }],
+          ...(body.cursor ? {} : { next_cursor: 'page-2' }) });
+      });
+      const contacts = new ObservedContacts(createAPIClient(fetchFn));
+      await contacts.load(query);
+      await contacts.loadMore();
+      expect(contacts.rows.map((row) => row.id)).toEqual([3]);
+      expect(contacts.cursor).toBe('page-2');
+      expect(contacts.error).not.toBeNull();
+      await contacts.loadMore();
+      expect(cursors).toEqual([undefined, 'page-2', 'page-2']);
+      expect(contacts.rows.map((row) => row.id)).toEqual([3, 4]);
+      expect(contacts.cursor).toBeNull();
+      expect(contacts.error).toBeNull();
+    }
+  });
+
+  it('does not automatically retry a failed page hidden by Has name', async () => {
+    let calls = 0;
+    const client = createAPIClient(vi.fn<typeof fetch>(async () => {
+      if (++calls > 1) return Response.json({ message: 'Temporarily unavailable' }, { status: 503 });
+      return Response.json({ rows: [{ canonical_id: 3, display_label: 'synthetic@example.test' }], next_cursor: 'page-2' });
+    }));
+    const hub = new PeopleHub(client, new DirectoryController(client));
+    hub.apply({ query: '', saved: 'unsaved', hasName: true, category: '', organization: '' });
+    await vi.waitFor(() => expect(hub.needsMoreObserved).toBe(true));
+    await hub.observed.loadMore();
+    expect(hub.hasMore).toBe(true);
+    expect(hub.needsMoreObserved).toBe(false);
+    hub.destroy();
+  });
+
+  it('drops a rejected cursor instead of retrying a terminal pagination error', async () => {
+    let calls = 0;
+    const contacts = new ObservedContacts(createAPIClient(vi.fn<typeof fetch>(async () => {
+      if (++calls > 1) return Response.json({ message: 'Invalid cursor' }, { status: 400 });
+      return Response.json({ rows: [], next_cursor: 'page-2' });
+    })));
+    await contacts.load('');
+    await contacts.loadMore();
+    expect(contacts.cursor).toBeNull();
+    await contacts.loadMore();
+    expect(calls).toBe(2);
+  });
+
   it('starts over when saved people changed between pages instead of skipping a contact', async () => {
     const cursors: Array<string | undefined> = [];
     const client = createAPIClient(vi.fn<typeof fetch>(async (input) => {

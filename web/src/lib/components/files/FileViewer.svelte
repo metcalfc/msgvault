@@ -283,7 +283,7 @@
         {:else if isImage(metadata)}
           {#if imageURL}
             <img src={imageURL} alt={`Preview ${displayFilename}`} onerror={imageFailed} />
-          {:else}
+          {:else if !error}
             <p role="status">Loading image preview…</p>
           {/if}
         {:else if isPDF(metadata)}

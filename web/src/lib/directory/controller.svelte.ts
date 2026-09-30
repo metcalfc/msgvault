@@ -513,6 +513,8 @@ export class DirectoryController {
     const pageCount = Math.max(1, this.seenCursors.size + 1);
     const filters = this.urlState();
     const { controller, generation } = this.beginPageSequence();
+    // Reconciliation owns the new sequence, including a superseded page-one load.
+    this.loading = false;
     this.loadingMore = true;
     const rows: DirectoryPerson[] = [];
     const consumedCursors = new Set<string>();

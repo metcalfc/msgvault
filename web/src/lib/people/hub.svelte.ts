@@ -162,7 +162,7 @@ export class ObservedContacts {
           sort: { field: 'activity_count', direction: 'desc' }, limit: OBSERVED_PAGE_LIMIT,
           ...(cursor ? { cursor } : {}),
         }, { ...this.client, signal });
-        if (!data) return { rows: [], cursor: null, error: errorMessage(error, response.status) };
+        if (!data) return { rows: [], cursor: retryCursor(cursor, response.status), error: errorMessage(error, response.status) };
         return {
           // Records marked as not a person stay out of People.
           rows: data.rows.filter((person) => !person.profile?.id && !isNotAPerson(person.correspondent_kind?.kind)).map((person) => ({
@@ -183,7 +183,7 @@ export class ObservedContacts {
       if (!data) {
         const restart = response.status === 409 && typeof error === 'object' && error !== null &&
           (error as { error?: unknown }).error === 'saved_people_changed';
-        return { rows: [], cursor: null, error: restart ? null : errorMessage(error, response.status), restart };
+        return { rows: [], cursor: retryCursor(cursor, response.status), error: restart ? null : errorMessage(error, response.status), restart };
       }
       return {
         rows: data.rows.filter((row) => !row.profile?.id && !isNotAPerson(row.correspondent_kind?.kind)).map((row) => ({
@@ -195,9 +195,14 @@ export class ObservedContacts {
       };
     } catch (cause) {
       if (signal.aborted) return { rows: [], cursor: null, error: null };
-      return { rows: [], cursor: null, error: errorMessage(cause, 0) };
+      return { rows: [], cursor: cursor ?? null, error: errorMessage(cause, 0) };
     }
   }
+}
+
+// A transient failure keeps the same page available for an explicit retry.
+function retryCursor(cursor: string | undefined, status: number): string | null {
+  return status === 408 || status === 429 || status >= 500 ? cursor ?? null : null;
 }
 
 /** The records marked as not a person, for the "Not people" view. The set
@@ -407,7 +412,7 @@ export class PeopleHub {
    * remain: the list loads on until something shows or pages run out. */
   get needsMoreObserved(): boolean {
     return this.includesObserved && this.filters.hasName && this.observed.cursor !== null &&
-      !this.observed.loading && !this.observed.loadingMore && this.observed.rows.length > 0 &&
+      !this.observed.loading && !this.observed.loadingMore && !this.observed.error && this.observed.rows.length > 0 &&
       this.observed.rows.every((row) => looksUnnamed(row.name, row.identifier));
   }
 

@@ -753,6 +753,8 @@ export class ExploreState {
   private readonly browser: ExploreWindow;
   private readonly preferenceStorage: SearchModeStorage | null;
   private configuredDefaultSearchMode: ExploreSearchMode | undefined;
+  // Keep user authority separate from modes added by URL canonicalization.
+  private explicitSearchMode: ExploreSearchMode | undefined;
   private committed: ExploreURLState;
   private pendingRestorationEpoch = $state<number | undefined>(1);
   private pendingSearchPriorFocus?: Pick<ExploreURLState, 'activeRow' | 'scrollAnchor'>;
@@ -762,6 +764,7 @@ export class ExploreState {
   private everythingDefaultApplied = false;
   private readonly handlePopState = (): void => {
     this.current = this.readURLState();
+    this.explicitSearchMode = this.current.searchMode;
     this.committed = normalize(this.current);
     this.pendingSearchPriorFocus = undefined;
     this.restorationEpoch += 1;
@@ -776,6 +779,7 @@ export class ExploreState {
   ) {
     this.browser = browser;
     this.preferenceStorage = preferenceStorage;
+    this.explicitSearchMode = explicitSearchModeFromURL(browser.location.search);
     this.arrivedAtDefault = isDefaultLanding(browser.location.pathname, browser.location.search);
     this.current = this.readURLState();
     // A shared or restored URL is the user's view, bounds and all; the
@@ -846,23 +850,27 @@ export class ExploreState {
     return { filters: bounded, dateBoundsChosen: true };
   }
 
-  // The daemon-configured web.default_search_mode arrives asynchronously
-  // (the settings fetch completes after this state is constructed), so it is
-  // applied here rather than in the constructor. Re-resolving against the
-  // live URL and saved preference keeps the precedence intact: an explicit
-  // URL mode or a saved browser preference — including one written by an
-  // in-session mode change, whose navigation also stamped the mode into the
-  // URL — still wins over the configured default.
+  // Configuration arrives after URL canonicalization, which may already
+  // have written a provisional mode. Only an incoming URL, a restored view,
+  // or a user mode choice overrides the configured default.
   setConfiguredDefaultSearchMode(mode: ExploreSearchMode | undefined): void {
     this.configuredDefaultSearchMode = mode;
     const resolved = resolveInitialSearchMode(
-      explicitSearchModeFromURL(this.browser.location.search),
+      this.explicitSearchMode,
       this.preferenceStorage,
       mode
     );
     if (resolved === this.current.searchMode) return;
     this.current.searchMode = resolved;
     this.committed = normalize({ ...this.committed, searchMode: resolved });
+    const location = this.browser.location;
+    const address = serializeExploreURLState(this.current, location.search);
+    const history = isRecord(this.browser.history.state) ? this.browser.history.state : {};
+    this.browser.history.replaceState(
+      { ...history, ...historyEntry(address, this.current, this.historyDepth()) },
+      '',
+      `${address}${location.hash}`
+    );
   }
 
   replaceTransient(patch: Partial<ExploreURLState>): void {
@@ -1012,6 +1020,7 @@ export class ExploreState {
     patch: Partial<ExploreURLState>,
     mode: 'push' | 'replace'
   ): void {
+    if (patch.searchMode !== undefined) this.explicitSearchMode = patch.searchMode;
     let effectivePatch = patch;
     // A change to Everything's date bounds (after/before added, removed, or
     // changed — including "All time") is the user's choice, so it is never

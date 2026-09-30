@@ -752,6 +752,50 @@ describe('DirectoryController', () => {
     expect(controller.profile).toBe(selectedProfile);
   });
 
+  it('transfers a pending first-page load to rename reconciliation and resumes pagination', async () => {
+    const oldPage = deferredResponse();
+    const directoryRequests: Request[] = [];
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = pathOf(request);
+      if (path === '/api/v1/people/directory') {
+        directoryRequests.push(request);
+        if (directoryRequests.length === 1) return oldPage.promise;
+        const cursor = new URL(request.url).searchParams.get('cursor');
+        return Response.json(cursor
+          ? { people: [directoryPerson(8)] }
+          : { people: [{ ...directoryPerson(7), display_name: 'Renamed Example', revision: 4 }], next_cursor: 'new-page-2' });
+      }
+      if (path === '/api/v1/people/7' && request.method === 'PATCH') {
+        return Response.json({ id: 7, revision: 4, display_name: 'Renamed Example' }, { headers: { ETag: '"person-7-r4"' } });
+      }
+      if (path.endsWith('/files/search')) return Response.json({ files: [], total_count: 0, cache_revision: 'cache', search_provenance: {} });
+      return editableDetailResponse(path, 7);
+    });
+    const controller = new DirectoryController(createAPIClient(fetchFn));
+    const firstPage = controller.loadFirstPage();
+    await controller.selectPerson(7);
+    expect(controller.loading).toBe(true);
+    await controller.profile!.rename('Renamed Example');
+    expect(directoryRequests[0]!.signal.aborted).toBe(true);
+    expect(controller.loading).toBe(false);
+    expect(controller.loadingMore).toBe(false);
+    expect(controller.rows.map((row) => row.id)).toEqual([7]);
+    expect(controller.cursor).toBe('new-page-2');
+
+    oldPage.resolve(Response.json({ people: [directoryPerson(99)], next_cursor: 'obsolete' }));
+    await firstPage;
+    expect(controller.rows.map((row) => row.id)).toEqual([7]);
+    expect(controller.cursor).toBe('new-page-2');
+    expect(controller.loading).toBe(false);
+    await controller.loadNextPage();
+    expect(directoryRequests).toHaveLength(3);
+    expect(new URL(directoryRequests[2]!.url).searchParams.get('cursor')).toBe('new-page-2');
+    expect(controller.rows.map((row) => row.id)).toEqual([7, 8]);
+    expect(controller.cursor).toBeNull();
+    controller.destroy();
+  });
+
   it('makes an abort-ignorant Load more response inert when reconciliation supersedes it', async () => {
     const commits: Array<Record<string, unknown>> = [];
     const oldPage = deferredResponse();

@@ -123,6 +123,7 @@ describe('FileViewer', () => {
     render(FileViewer, { client: createAPIClient(fetchFn), file: file({ filename: 'fake.png' }) });
 
     expect((await screen.findByRole('alert')).textContent).toMatch(/image preview was rejected/i);
+    expect(screen.queryByText('Loading image preview…')).toBeNull();
     expect(createObjectURL).not.toHaveBeenCalled();
   });
 
@@ -137,7 +138,32 @@ describe('FileViewer', () => {
     await fireEvent.error(image);
 
     expect((await screen.findByRole('alert')).textContent).toMatch(/browser could not decode/i);
+    expect(screen.queryByText('Loading image preview…')).toBeNull();
     expect(revokeObjectURL).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows loading while image bytes are pending and clears it after a network failure', async () => {
+    let rejectContent: ((cause: Error) => void) | undefined;
+    const fetchFn = vi.fn<typeof fetch>((input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      if (new URL(request.url).pathname === '/api/v1/files/7') {
+        return Promise.resolve(Response.json({
+          id: 7, message_id: 11, conversation_id: 21, filename: 'preview.png', mime_type: 'image/png',
+          size_bytes: 68, content_state: 'local_content', content_available: true
+        }));
+      }
+      return new Promise<Response>((_resolve, reject) => { rejectContent = reject; });
+    });
+    render(FileViewer, { client: createAPIClient(fetchFn), file: file() });
+
+    expect(await screen.findByText('Loading image preview…')).toBeDefined();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(rejectContent).toBeDefined();
+    rejectContent!(new TypeError('network unreachable'));
+
+    expect((await screen.findByRole('alert')).textContent).toContain('network unreachable');
+    expect(screen.queryByText('Loading image preview…')).toBeNull();
+    expect(createObjectURL).not.toHaveBeenCalled();
   });
 
   it('renders PDF bytes through the application renderer instead of a native document element', async () => {

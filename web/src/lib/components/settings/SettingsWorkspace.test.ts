@@ -322,6 +322,88 @@ describe('SettingsWorkspace', () => {
     expect(screen.getByText('No unsaved changes')).toBeDefined();
   });
 
+  it.each([
+    ['a newer value', 'http://127.0.0.1:11436'],
+    ['the original value', 'http://127.0.0.1:11434'],
+  ])('keeps %s entered while a settings save is pending', async (_label, laterValue) => {
+    let finishSave!: (response: Response) => void;
+    const pendingSave = new Promise<Response>((resolve) => { finishSave = resolve; });
+    const documentWithEndpoint = (value: string) => ({
+      ...initialSettings,
+      settings: initialSettings.settings.map((item) =>
+        item.key === 'vector.embeddings.endpoint' ? { ...item, value: { string: value } } : item,
+      ),
+    });
+    const fetchFn = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(settingsResponse(initialSettings, '"etag-a"'))
+      .mockReturnValueOnce(pendingSave)
+      .mockResolvedValueOnce(settingsResponse(documentWithEndpoint(laterValue), '"etag-c"'));
+    render(SettingsWorkspace, { client: createAPIClient(fetchFn), section: 'search' });
+    const endpoint = await screen.findByLabelText('Text embedding endpoint') as HTMLInputElement;
+    await fireEvent.input(endpoint, { target: { value: 'http://127.0.0.1:11435' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    await waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(2));
+    await expect((fetchFn.mock.calls[1]![0] as Request).clone().json()).resolves.toEqual({
+      updates: [{ key: 'vector.embeddings.endpoint', value: { string: 'http://127.0.0.1:11435' } }],
+    });
+
+    await fireEvent.input(endpoint, { target: { value: laterValue } });
+    finishSave(settingsResponse(documentWithEndpoint('http://127.0.0.1:11435'), '"etag-b"'));
+    await screen.findByRole('button', { name: 'Save settings' });
+    expect(endpoint.value).toBe(laterValue);
+    expect(screen.getByText('1 unsaved change')).toBeDefined();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    await waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(3));
+    const retry = fetchFn.mock.calls[2]![0] as Request;
+    expect(retry.headers.get('If-Match')).toBe('"etag-b"');
+    await expect(retry.clone().json()).resolves.toEqual({
+      updates: [{ key: 'vector.embeddings.endpoint', value: { string: laterValue } }],
+    });
+    expect(await screen.findByText('No unsaved changes')).toBeDefined();
+  });
+
+  it.each(['replace', 'clear'] as const)('keeps a secret %s staged during a settings save', async (action) => {
+    let finishSave!: (response: Response) => void;
+    const pendingSave = new Promise<Response>((resolve) => { finishSave = resolve; });
+    const saved = {
+      ...initialSettings,
+      settings: initialSettings.settings.map((item) => item.key === 'integrations.tasks.api_key'
+        ? { ...item, secret: { configured: true, hint: 'fir…key' } } : item),
+    };
+    const fetchFn = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(settingsResponse(initialSettings, '"etag-a"'))
+      .mockReturnValueOnce(pendingSave)
+      .mockResolvedValueOnce(settingsResponse(action === 'clear' ? initialSettings : saved, '"etag-c"'));
+    render(SettingsWorkspace, { client: createAPIClient(fetchFn), section: 'integrations' });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Add task integration API key' }));
+    await fireEvent.input(screen.getByLabelText('New task integration API key'), { target: { value: 'first-example-key' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Save task integration API key' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    await waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(2));
+
+    if (action === 'clear') {
+      await fireEvent.click(screen.getByRole('button', { name: 'Clear task integration API key' }));
+    } else {
+      await fireEvent.click(screen.getByRole('button', { name: 'Replace task integration API key' }));
+      await fireEvent.input(screen.getByLabelText('New task integration API key'), { target: { value: 'second-example-key' } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Save task integration API key' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    }
+    finishSave(settingsResponse(saved, '"etag-b"'));
+    await screen.findByRole('button', { name: 'Save settings' });
+    expect(screen.getByText('1 unsaved change')).toBeDefined();
+    expect(screen.getByLabelText('Task integration API key').textContent).toBe(action === 'clear' ? 'None' : 'sec…key');
+    await fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    await waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(3));
+    await expect((fetchFn.mock.calls[2]![0] as Request).clone().json()).resolves.toEqual({
+      updates: [{ key: 'integrations.tasks.api_key', secret: action === 'clear'
+        ? { action: 'clear' } : { action: 'set', value: 'second-example-key' } }],
+    });
+    expect(await screen.findByText('No unsaved changes')).toBeDefined();
+  });
+
   it('reloads the latest ETag after a conflict while retaining the local draft', async () => {
     const latest = {
       ...initialSettings,

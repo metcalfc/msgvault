@@ -883,6 +883,42 @@ describe('ExploreState history ownership', () => {
     state.destroy();
   });
 
+  it('applies the delayed default to a canonicalized search and preserves it across Back and reload', async () => {
+    window.history.replaceState(null, '', '/search?q=budget&since=all#results');
+    const state = new ExploreState(window, null);
+    expect(new URLSearchParams(window.location.search).get('mode')).toBe('full_text');
+
+    state.setConfiguredDefaultSearchMode('semantic');
+
+    expect(state.current.searchMode).toBe('semantic');
+    expect(new URLSearchParams(window.location.search).get('mode')).toBe('semantic');
+    expect(window.location.hash).toBe('#results');
+    expect(window.history.state.exploreState.searchMode).toBe('semantic');
+    expect(state.canGoBack()).toBe(false);
+    state.commitWorkspace('directory');
+    window.history.back();
+    await new Promise((resolve) => window.addEventListener('popstate', resolve, { once: true }));
+    expect(state.current).toMatchObject({ workspace: 'everything', query: 'budget', searchMode: 'semantic' });
+    state.destroy();
+
+    const reloaded = new ExploreState(window, null);
+    reloaded.setConfiguredDefaultSearchMode('hybrid');
+    expect(reloaded.current.searchMode).toBe('semantic');
+    reloaded.destroy();
+  });
+
+  it('keeps a user selection of the provisional mode when browser preferences cannot be saved', () => {
+    window.history.replaceState(null, '', '/search?q=budget&since=all');
+    const state = new ExploreState(window, null);
+    state.replaceSearchDraft('budget', 'full_text');
+
+    state.setConfiguredDefaultSearchMode('semantic');
+
+    expect(state.current.searchMode).toBe('full_text');
+    expect(window.history.state.exploreState.searchMode).toBe('full_text');
+    state.destroy();
+  });
+
   it('keeps a saved browser preference over the configured default', () => {
     const values = new Map([[SEARCH_MODE_PREFERENCE_KEY, 'full_text']]);
     const storage = {

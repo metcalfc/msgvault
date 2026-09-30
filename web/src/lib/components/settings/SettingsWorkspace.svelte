@@ -111,6 +111,7 @@
   let pendingRestart = $state(false);
   let loading = $state(true);
   let saving = $state(false);
+  let savingSecrets: Record<string, SecretUpdate> = {};
   let error = $state('');
   const DEFAULT_CATEGORY = 'browser';
   let activeCategory = $state(untrack(() => section) || DEFAULT_CATEGORY);
@@ -212,7 +213,9 @@
   // clean, Save stays disabled, and no no-op PATCH can mark a restart pending.
   function setDraft(key: string, value: unknown) {
     const setting = settings.find((candidate) => candidate.key === key);
-    if (setting && !isIncompleteNumber(setting, value) && sameValue(typedValue(setting, value), setting.value)) {
+    // While saving, even a return to the old persisted value is an edit:
+    // the in-flight write may replace that value before this draft is saved.
+    if (!saving && setting && !isIncompleteNumber(setting, value) && sameValue(typedValue(setting, value), setting.value)) {
       const next = { ...drafts };
       delete next[key];
       drafts = next;
@@ -257,7 +260,7 @@
     const next = { ...secretUpdates };
     delete next[key];
     const configured = settings.find((candidate) => candidate.key === key)?.secret?.configured;
-    if (configured) next[key] = { action: 'clear' };
+    if (configured || savingSecrets[key]?.action === 'set') next[key] = { action: 'clear' };
     secretUpdates = next;
   }
   function secretShown(setting: SettingState): { configured: boolean; hint: string } {
@@ -274,6 +277,8 @@
     return Object.hasOwn(drafts, key) || Object.hasOwn(secretUpdates, key);
   }
   async function saveSettings() {
+    if (saving) return;
+    const submittedSecrets = { ...secretUpdates };
     const updates: SettingUpdate[] = [
       ...Object.entries(drafts)
         .filter(([key]) => !settings.find((setting) => setting.key === key)?.read_only)
@@ -284,10 +289,11 @@
             value,
           ),
         })),
-      ...Object.entries(secretUpdates).map(([key, secret]) => ({ key, secret })),
+      ...Object.entries(submittedSecrets).map(([key, secret]) => ({ key, secret })),
     ];
     if (updates.length === 0) return;
     saving = true;
+    savingSecrets = submittedSecrets;
     error = '';
     try {
       const {
@@ -317,11 +323,19 @@
       pendingRestart = result.pending_restart;
       etag = response.headers.get('ETag') ?? etag;
       credentialETag = response.headers.get('Credential-ETag') ?? result.credential_etag ?? credentialETag;
-      discardChanges();
+      // Secret responses contain only masked hints, so acknowledge the exact
+      // submitted actions. Later replacements and clears remain unsaved.
+      const remainingSecrets = { ...secretUpdates };
+      for (const [key, submitted] of Object.entries(submittedSecrets)) {
+        if (JSON.stringify(remainingSecrets[key]) === JSON.stringify(submitted)) delete remainingSecrets[key];
+      }
+      secretUpdates = remainingSecrets;
     } catch (cause) {
       error = cause instanceof Error ? cause.message : 'Unable to save settings.';
     } finally {
       saving = false;
+      savingSecrets = {};
+      pruneSettledDrafts();
     }
   }
   function apiErrorMessage(responseError: unknown, fallback: string): string {
