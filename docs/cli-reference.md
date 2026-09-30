@@ -3048,6 +3048,16 @@ msgvault eval \
 | `--rerank-input-usd-per-million <amount>` | required when enabled | Input price supplied for this run |
 | `--rerank-output-usd-per-million <amount>` | required when enabled | Output price supplied for this run |
 
+Source IDs are unique only within the account that assigned them, and a qrels
+doc ID names no account. When the archive holds several accounts, `eval` stops
+before scoring if a doc ID named in `--qrels` is held by more than one of them.
+Scoring it would let an unjudged account's message inherit the judged
+document's relevance. The error lists up to 10 such IDs with the accounts that
+hold each. IDs that several accounts share but `--qrels` never names, such as
+calendar events synced into two accounts, do not stop the run. They score as
+non-relevant under every account, and each account's copy keeps its own rank
+instead of being merged into one entry.
+
 `eval` opens the archive selected by local configuration directly; it does not
 use `[remote]`. Vector and hybrid evaluation currently require a SQLite archive,
 an `sqlite_vec` build, enabled vector configuration, and a compatible active

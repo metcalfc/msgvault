@@ -75,10 +75,14 @@ distinct threads. Reported latency therefore includes that over-fetch.
 
 Both ids are assigned by the source and are unique only within it, while a
 qrels doc id records no source at all. A run therefore stops before scoring
-anything if the archive holds an id shared by two connected accounts: merging
-two accounts' documents under one key would let an unjudged account's message
-inherit a judged one's relevance. Accounts with disjoint id spaces (a mailbox
-and a chat archive, say) score normally.
+anything if a doc id named in --qrels is held by two connected accounts:
+merging those accounts' documents under one key would let an unjudged
+account's message inherit the judged document's relevance. The error lists up
+to 10 such ids with the accounts holding each. Ids shared across accounts that
+--qrels never names (the same calendar synced into two accounts, say) do not
+stop the run: they score as non-relevant under every account, so they cannot
+leak relevance. Each account's copy is kept as its own ranked document, as a
+search would show it, rather than collapsed into one entry.
 
 Metric depths follow -n: the standard P@10 / nDCG@10 / R@100 are reported when
 the run retrieves at least that deep, and are clamped to -n below it (a run
@@ -166,7 +170,11 @@ type evalHit struct {
 	// yet; it is carried because the judged-unit extension the registry
 	// documents (a reconstructed-thread id resolved through an external
 	// mapping) resolves from an id, not from text.
-	MessageID            int64
+	MessageID int64
+	// SourceID is the connected account that holds the message. The
+	// evaluator uses it to keep an unjudged id shared by two accounts as two
+	// documents — see evaluator.docKey.
+	SourceID             int64
 	SourceMessageID      string
 	SourceConversationID string
 }
@@ -175,6 +183,7 @@ type evalHit struct {
 func hitFromAPIMessage(m store.APIMessage) evalHit {
 	return evalHit{
 		MessageID:            m.ID,
+		SourceID:             m.SourceID,
 		SourceMessageID:      m.SourceMessageID,
 		SourceConversationID: m.SourceConversationID,
 	}
@@ -184,6 +193,7 @@ func hitFromAPIMessage(m store.APIMessage) evalHit {
 func hitFromSummary(m query.MessageSummary) evalHit {
 	return evalHit{
 		MessageID:            m.ID,
+		SourceID:             m.SourceID,
 		SourceMessageID:      m.SourceMessageID,
 		SourceConversationID: m.SourceConversationID,
 	}
@@ -435,6 +445,37 @@ type evaluator struct {
 	diag        *runDiagnostics
 	captureHits bool
 	lastHits    map[string]evalHit
+	// judged is every doc id --qrels names, set only when the archive holds
+	// more than one connected source. When set, docKey qualifies every other
+	// id with its source; nil leaves every id as extracted.
+	judged map[string]struct{}
+}
+
+// docKey is the ranking key for one hit: the doc-key's id, qualified by the
+// hit's source when the id is unjudged and the archive has several sources.
+//
+// requireDisjointSourceIDs lets a run proceed when two sources share an id
+// that no judgment names. Such an id can never score as relevant, but left
+// bare it would still move the score: DedupeRanked would fold both sources'
+// hits into one ranked entry, so every document below it would move up a rank
+// (and, under --doc-key=conversation, two threads would count as one). A search
+// shows both copies, so the ranking keeps both. Qualifying every unjudged id,
+// not just the shared ones, needs no archive-wide list of them and changes
+// nothing for an id held by one source: within a source the qualified key
+// collapses exactly as the bare one does. Judged ids stay bare, because they
+// must match --qrels and requireDisjointSourceIDs has established that each is
+// held by one source.
+func (e *evaluator) docKey(h evalHit) string {
+	id := e.key.extract(h)
+	if id == "" || e.judged == nil {
+		return id
+	}
+	if _, ok := e.judged[id]; ok {
+		return id
+	}
+	// The NUL keeps a qualified key from matching any qrels doc id, as the
+	// placeholder keys in eval.DedupeRanked do.
+	return id + "\x00source:" + strconv.FormatInt(h.SourceID, 10)
 }
 
 // fetchResult is one attempt at pulling raw hits out of a search engine.
@@ -537,7 +578,7 @@ func (e *evaluator) rankedFTS(q *search.Query) ([]string, error) {
 		hits := make([]evalHit, 0, len(res))
 		for _, m := range res {
 			hit := hitFromAPIMessage(m)
-			keys = append(keys, e.key.extract(hit))
+			keys = append(keys, e.docKey(hit))
 			hits = append(hits, hit)
 		}
 		// The store path pages a single ranked list, so a short page means
@@ -613,7 +654,7 @@ func (e *evaluator) rankedVector(mode, qstr string, q *search.Query) ([]string, 
 				continue
 			}
 			hit := hitFromSummary(m)
-			out.keys = append(out.keys, e.key.extract(hit))
+			out.keys = append(out.keys, e.docKey(hit))
 			out.hits = append(out.hits, hit)
 		}
 		return out, nil
@@ -787,7 +828,9 @@ func runEvalWithRerankerFactory(cmd *cobra.Command, _ []string, makeReranker eva
 	// chosen key: that its ids name one document each. Establish it before the
 	// vector path is opened and before the first topic is scored, so a run that
 	// cannot be trusted stops instead of printing a number.
-	if err := requireDisjointSourceIDs(ctx, s.DB(), evalDocKey, keySpec); err != nil {
+	judged := judgedDocIDs(qrels)
+	multiSource, err := requireDisjointSourceIDs(ctx, s, evalDocKey, keySpec, judged)
+	if err != nil {
 		return err
 	}
 
@@ -802,6 +845,12 @@ func runEvalWithRerankerFactory(cmd *cobra.Command, _ []string, makeReranker eva
 		limit:       evalLimit,
 		diag:        diag,
 		captureHits: len(rerankOptions.Shapes) > 0,
+	}
+	if multiSource {
+		ev.judged = make(map[string]struct{}, len(judged))
+		for _, id := range judged {
+			ev.judged[id] = struct{}{}
+		}
 	}
 
 	if needVec {
@@ -1164,47 +1213,126 @@ func (e *evaluator) collectCorpusStats(db *sql.DB) {
 		"SELECT COUNT(DISTINCT conversation_id) FROM messages WHERE "+live).Scan(&e.prov.Conversations)
 }
 
-// collidingDocKeyIDs returns doc ids that occur under more than one source in
-// the live population, at most limit of them, in id order for stable output.
-//
-// It counts distinct source_id over the same live messages every search in this
-// command draws from, so an id whose only other holder is dedup-hidden or
-// deleted from its source is correctly not a collision: neither copy can be
-// retrieved, so neither can be scored.
-func collidingDocKeyIDs(ctx context.Context, db *sql.DB, col evalIDColumn, limit int) ([]string, error) {
-	// The id may be NULL (no id assigned) or empty; eval.DedupeKeys drops both
-	// from a ranking, so neither can collide with anything and both are
-	// excluded here for the same reason.
-	expr := col.expr()
-	q := fmt.Sprintf(`
-		SELECT %s
-		FROM messages m
-		%s
-		WHERE %s AND %s IS NOT NULL AND %s <> ''
-		GROUP BY %s
-		HAVING COUNT(DISTINCT m.source_id) > 1
-		ORDER BY %s
-		LIMIT %d`,
-		expr, col.join, store.LiveMessagesWhere("m", true), expr, expr, expr, expr, limit)
+// judgedDocIDs returns every doc id --qrels names, under any topic and at any
+// grade, sorted. A grade-0 judgment counts: the id is still one the scoring
+// core looks up, so the collision check has to cover it.
+func judgedDocIDs(q eval.Qrels) []string {
+	seen := make(map[string]struct{})
+	for _, docs := range q {
+		for id := range docs {
+			seen[id] = struct{}{}
+		}
+	}
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
 
-	rows, err := db.QueryContext(ctx, q)
+// judgedIDCollision is one judged doc id held by more than one connected
+// source, with those sources in id order.
+type judgedIDCollision struct {
+	id      string
+	sources []int64
+}
+
+// evalCollisionChunk bounds each IN list below SQLite's older 999-placeholder
+// limit.
+const evalCollisionChunk = 500
+
+// collidingJudgedIDs returns the judged ids that occur under more than one
+// source in the live population, in id order.
+//
+// It looks only at the judged ids, in chunks, so its cost follows the size of
+// the qrels file rather than the archive: an archive with thousands of shared
+// unjudged ids does not have to be grouped in full. It counts sources over the
+// same live messages every search in this command draws from, so an id whose
+// only other holder is dedup-hidden or deleted from its source is correctly not
+// a collision: that copy cannot be retrieved, so it cannot be scored.
+func collidingJudgedIDs(
+	ctx context.Context, s *store.Store, col evalIDColumn, judged []string,
+) ([]judgedIDCollision, error) {
+	bySource := make(map[string][]int64)
+	expr := col.expr()
+	for start := 0; start < len(judged); start += evalCollisionChunk {
+		chunk := judged[start:min(start+evalCollisionChunk, len(judged))]
+		args := make([]any, len(chunk))
+		for i, id := range chunk {
+			args[i] = id
+		}
+		q := fmt.Sprintf(`
+			SELECT %s, m.source_id
+			FROM messages m
+			%s
+			WHERE %s AND %s IN (%s)
+			GROUP BY %s, m.source_id`,
+			expr, col.join, store.LiveMessagesWhere("m", true), expr,
+			strings.TrimSuffix(strings.Repeat("?,", len(chunk)), ","), expr)
+		if err := func() error {
+			rows, err := s.DB().QueryContext(ctx, s.Rebind(q), args...)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = rows.Close() }()
+			for rows.Next() {
+				var id string
+				var source int64
+				if err := rows.Scan(&id, &source); err != nil {
+					return err
+				}
+				bySource[id] = append(bySource[id], source)
+			}
+			return rows.Err()
+		}(); err != nil {
+			return nil, err
+		}
+	}
+	var out []judgedIDCollision
+	for id, sources := range bySource {
+		if len(sources) > 1 {
+			slices.Sort(sources)
+			out = append(out, judgedIDCollision{id: id, sources: sources})
+		}
+	}
+	slices.SortFunc(out, func(a, b judgedIDCollision) int { return strings.Compare(a.id, b.id) })
+	return out, nil
+}
+
+// describeEvalSources labels each source id as "#<id> <type> <identifier>" for
+// the collision error, falling back to the bare id if the row is missing.
+func describeEvalSources(ctx context.Context, s *store.Store, ids []int64) (map[int64]string, error) {
+	out := make(map[int64]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := s.DB().QueryContext(ctx, s.Rebind(
+		"SELECT id, source_type, identifier FROM sources WHERE id IN ("+
+			strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+")"), args...)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	var ids []string
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var id int64
+		var kind, identifier string
+		if err := rows.Scan(&id, &kind, &identifier); err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
+		out[id] = fmt.Sprintf("#%d %s %s", id, kind, identifier)
 	}
-	return ids, rows.Err()
+	return out, rows.Err()
 }
 
-// requireDisjointSourceIDs refuses a run whose archive cannot give the chosen
-// --doc-key an unambiguous doc-id space.
+// requireDisjointSourceIDs refuses a run in which a judged doc id cannot name a
+// single document. It reports whether the archive holds more than one
+// connected source, which is when the evaluator has to keep unjudged shared
+// ids apart (see evaluator.docKey).
 //
 // A qrels file is flat. "<qid> <iter> <docid> <rel>" has nowhere to record
 // which connected account <docid> belongs to, and neither a TREC-derived
@@ -1215,76 +1343,91 @@ func collidingDocKeyIDs(ctx context.Context, db *sql.DB, col evalIDColumn, limit
 // within it. msgvault is a multi-source archiver, so one archive routinely
 // holds several accounts, and two of them can issue the same id for unrelated
 // documents (two chat accounts each numbering their first conversation "1") or
-// for related ones (the same mail delivered to two mailboxes). Either way the
-// eval folds two documents into one key: a hit from an unjudged account
-// inherits a judged account's relevance, or two genuinely distinct documents
-// collapse and the ranking quietly loses a rank. Both move the score, both move
-// it upward, and neither appears anywhere in the output — which is exactly the
-// class of silent corruption this command exists to expose in other people's
-// indexes.
+// for related ones (the same calendar synced into two accounts).
 //
-// The fix is a precondition rather than a new key shape. Composing the source
-// id into the key — as query.EntryKeyFacts.EntryKey does for explore entries,
-// production's own answer to the same uniqueness problem — would make the key
-// sound, but it would also change the shape of every doc id this command
-// matches on, so every qrels file already written would stop matching. And it
-// would stop matching by scoring a flat zero rather than by failing, which is
-// the same silent corruption one level up.
+// The hazard is an unjudged account's message inheriting a judged document's
+// relevance. That requires the shared id to be judged: an id no qrels row
+// names scores as non-relevant under every account, so sharing it cannot leak
+// relevance. The check therefore covers only the judged ids, and a run stops
+// only when one of them is held by two sources. Refusing every shared id would
+// block an archive whose accounts overlap only on documents nobody judged,
+// which is common: two accounts subscribed to the same calendars share every
+// event id. The remaining effect of an unjudged shared id — two hits folding
+// into one ranked entry — is handled by evaluator.docKey, not ignored.
 //
-// The precondition is disjointness, not single-source. An archive holding a
-// Gmail account and a WhatsApp account has two sources and no overlapping ids
-// at all; refusing to score it would be a wall built for a hazard that is not
-// there. What has to hold is that the id space the qrels address is
-// unambiguous, and "no id in it names documents in two sources" is exactly
-// that. It is a property of the archive rather than of what a particular topic
-// happened to retrieve, so it is established once, up front, instead of
-// inferred from hits that may simply have got lucky — and it is established
-// before the vector path is opened, so a run that cannot be scored does not
-// first pay for an index and an embedding client.
-func requireDisjointSourceIDs(ctx context.Context, db *sql.DB, docKey string, spec docKeySpec) error {
+// Composing the source id into every key — as query.EntryKeyFacts.EntryKey
+// does for explore entries — would make judged keys sound too, but it would
+// change the shape of every doc id this command matches on, so every qrels file
+// already written would stop matching. And it would stop matching by scoring a
+// flat zero rather than by failing. So a judged collision is an error, checked
+// once, up front, before the vector path is opened.
+func requireDisjointSourceIDs(
+	ctx context.Context, s *store.Store, docKey string, spec docKeySpec, judged []string,
+) (bool, error) {
 	if spec.idColumn.column == "" {
 		// A registered key whose ids do not come from an archive column cannot
 		// be checked here, and passing it silently would put the collision
 		// straight back. Fail naming the key, so adding a doc-key forces an
 		// answer to the question rather than allowing it to be skipped.
-		return fmt.Errorf("--doc-key %q has no archive column to check for cross-source id collisions; "+
+		return false, fmt.Errorf("--doc-key %q has no archive column to check for cross-source id collisions; "+
 			"a doc-key whose ids come from elsewhere has to establish its own single-id-space guarantee", docKey)
 	}
 	// A single connected source cannot collide with itself, and that is the
 	// common archive shape, so a cheap distinct-source count (backed by
-	// idx_messages_source) skips the GROUP BY/HAVING scan — and its join, for
+	// idx_messages_source) skips the lookup — and its join, for
 	// --doc-key=conversation — entirely for the run that does not need it.
 	var sources int
-	if err := db.QueryRowContext(ctx,
+	if err := s.DB().QueryRowContext(ctx,
 		"SELECT COUNT(DISTINCT source_id) FROM messages WHERE "+store.LiveMessagesWhere("", true),
 	).Scan(&sources); err != nil {
-		return fmt.Errorf("count connected sources: %w", err)
+		return false, fmt.Errorf("count connected sources: %w", err)
 	}
 	if sources <= 1 {
-		return nil
+		return false, nil
+	}
+
+	collisions, err := collidingJudgedIDs(ctx, s, spec.idColumn, judged)
+	if err != nil {
+		return true, fmt.Errorf("check %s for cross-source id collisions: %w", spec.idColumn.column, err)
+	}
+	if len(collisions) == 0 {
+		return true, nil
 	}
 
 	// Enough ids to make the error concrete without pasting an entire
 	// re-imported mailbox into a terminal.
 	const show = 10
-	ids, err := collidingDocKeyIDs(ctx, db, spec.idColumn, show+1)
+	shown := collisions[:min(show, len(collisions))]
+	var sourceIDs []int64
+	for _, c := range shown {
+		sourceIDs = append(sourceIDs, c.sources...)
+	}
+	slices.Sort(sourceIDs)
+	labels, err := describeEvalSources(ctx, s, slices.Compact(sourceIDs))
 	if err != nil {
-		return fmt.Errorf("check %s for cross-source id collisions: %w", spec.idColumn.column, err)
+		return true, fmt.Errorf("describe colliding sources: %w", err)
 	}
-	if len(ids) == 0 {
-		return nil
+	items := make([]string, len(collisions))
+	for i, c := range collisions {
+		if i >= show {
+			items[i] = c.id
+			continue
+		}
+		names := make([]string, len(c.sources))
+		for j, src := range c.sources {
+			names[j] = labels[src]
+			if names[j] == "" {
+				names[j] = fmt.Sprintf("#%d", src)
+			}
+		}
+		items[i] = fmt.Sprintf("%s (sources: %s)", c.id, strings.Join(names, "; "))
 	}
-	count := strconv.Itoa(len(ids))
-	if len(ids) > show {
-		count = fmt.Sprintf("more than %d", show)
-	}
-	return fmt.Errorf("%s document ids in this archive (%s) belong to more than one connected source, "+
-		"so --doc-key=%s cannot name a single document: %s is unique only within the source that "+
-		"assigned it, while a qrels doc id records no source at all. Scoring this archive would fold "+
-		"those sources' hits into one key and let an unjudged account's message inherit a judged one's "+
-		"relevance. Evaluate an archive whose accounts do not share ids, or key the run on the other "+
-		"--doc-key if its id space is disjoint",
-		count, eval.FormatIDList(ids, show), docKey, spec.idColumn.column)
+	return true, fmt.Errorf("%d judged document ids in --qrels belong to more than one connected source, "+
+		"so --doc-key=%s cannot name a single document for them: %s is unique only within the source that "+
+		"assigned it, while a qrels doc id records no source at all. Scoring would let an unjudged account's "+
+		"message inherit a judged document's relevance: %s. Remove or re-judge those ids, evaluate an archive "+
+		"whose accounts do not share them, or key the run on the other --doc-key if its judged ids are disjoint",
+		len(collisions), docKey, spec.idColumn.column, eval.FormatIDList(items, show))
 }
 
 // collectVectorStats records the embedding model, fusion parameters and index
