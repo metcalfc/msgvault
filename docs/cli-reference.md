@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-29"
+last_edited: "2026-09-30"
 title: CLI Reference
 description: Complete command reference for all msgvault commands.
 ---
@@ -1884,7 +1884,9 @@ per-feature consent.
 | `jev revoke --all` | Revoke every feature's consent |
 
 All three accept `--json`. Feature names are lowercase identifiers:
-`enrichment_identity` and `correspondent_kind`. Consent binds to a fingerprint of the
+`enrichment_identity`, `organization_resolution`, `correspondent_kind`, and
+`search_rerank`. The `search_rerank` disclosure states that message body text
+leaves the machine. Consent binds to a fingerprint of the
 feature name, question wording, disclosed fields, model, and endpoint, so a
 change to any of them shows as "consent required (policy changed)" in status
 until you consent again. The commands run through the daemon like the other
@@ -2985,8 +2987,11 @@ per-invocation consent to send that archived text. The reranked arms accept
 `--doc-key=message` because TREC judgments identify messages. Conversation
 judgments remain available for the baseline run.
 
-The command prepares candidate text with the same body selection and cleanup
-used for embeddings. It sends only the query and the cleaned subject/body.
+The command builds each candidate exactly as
+[hybrid search reranking](/docs/usage/jev-judgments/#feature-hybrid-search-reranking)
+does: `Subject:`, `From:` (the sender's name, or the address when there is no
+name), `Date:`, and the body after the cleanup used for embeddings. It loads
+the candidates in one batched lookup and sends only the query and that text.
 Candidate text is capped at 2048 UTF-8 bytes, query text at 4096 bytes, each
 request at 128 KiB, and each response at 64 KiB. Per-candidate requests use at
 most eight concurrent calls. Each HTTP call has a 10-second deadline, including
@@ -3021,11 +3026,17 @@ TYPESAFE_API_KEY=replace-me msgvault eval \
 Reranked p95 includes retrieval, shared candidate preparation, and that shape's
 provider calls. A live TREC Legal 2010 study also needs a permitted matching
 message collection, topics, qrels, source-id mapping, and the enforced account
-cap. Consider a search integration only when a complete hybrid shape improves
-Hit@10 by 0.05 absolute and has end-to-end p95 at or below 2000 ms under the
-same corpus, topics, qrels, retrieval settings, and top N of 30. Report the
-paired topic denominator and changes for both shapes. The local threaded
-fixture checks wiring only.
+cap.
+
+The report ends with the rerank gate (`rerank_gate` in JSON). A shape passes
+when its complete hybrid arm gains at least 0.05 absolute Hit@10 over the fused
+hybrid ranking and its end-to-end p95 is under 2000 ms; the gate passes when
+any shape passes. It prints `not_evaluated` when the run has no hybrid mode or
+`-n` is below 10, and a shape that did not complete is not judged. The gate
+cannot tell which collection it ran on: recommend `[jev.rerank] enabled = true`
+only for a pass on the same corpus, topics, qrels, retrieval settings, and top
+N of 30 as the target study. Report the paired topic denominator and changes
+for both shapes. The local threaded fixture checks wiring only.
 
 ---
 

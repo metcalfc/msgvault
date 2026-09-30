@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-29"
+last_edited: "2026-09-30"
 title: Changelog
 description: Release history for msgvault
 ---
@@ -8,6 +8,15 @@ All notable changes to msgvault, grouped by release.
 
 ## Unreleased
 
+- Optionally rerank the leading results of your own hybrid searches with Jev.
+  With `[jev.rerank]` enabled and `search_rerank` consent recorded, up to 30
+  leading results are reordered by Jev's judgment of whether each message
+  answers the query; pages of one search share one order, and any failure
+  keeps the fused order. It sends each judged message's subject, sender,
+  date, and up to 2 KiB of cleaned body text, and never runs for full-text,
+  vector, or automatic searches. It is off by default and not recommended
+  until `msgvault eval --rerank-jev`, which now prints a pass or fail gate,
+  shows the required Hit@10 gain. Requires API schema 2.41.0.
 - Deletion staging names messages that may be worth keeping: starred mail,
   mail you sent, and mail from a sender classified as a person. The CLI and
   Web UI warn about them, and `stage-delete --protect` (or **Skip starred,

@@ -61,6 +61,9 @@ new `msgvault jev consent`.
 
    [jev.cleanup_suggestions]
    enabled = true      # msgvault suggest-cleanup only; never automatic
+
+   # [jev.rerank]       # sends message body text; not recommended until
+   # enabled = true     # the evaluation gate passes (see below)
    ```
 
 2. Provide an API key. Either paste it in Settings under **Jev judgments**
@@ -76,7 +79,8 @@ new `msgvault jev consent`.
    ```
 
 Consent is per feature: run the same two `consent` commands with
-`correspondent_kind` or `cleanup_suggestions` for those features. `msgvault jev revoke enrichment_identity`
+`organization_resolution`, `correspondent_kind`, `cleanup_suggestions`, or
+`search_rerank` for those features. `msgvault jev revoke enrichment_identity`
 or `msgvault jev revoke --all` stops the next request immediately.
 
 ## Budgets and safety
@@ -471,6 +475,89 @@ A request with fewer than four messages sends only their questions.
 `msgvault jev consent cleanup_suggestions` prints the same disclosure,
 including the criteria for every answer.
 
+## Feature: hybrid search reranking
+
+Feature name: `search_rerank`. Setting: [`[jev.rerank]`](../configuration.md#jevrerank).
+It is off by default and **not recommended until the evaluation gate below
+passes**. Unlike the other features, it sends message body text.
+
+Hybrid search fuses full-text (BM25) and vector rankings with reciprocal rank
+fusion. A message that shares words or topic with the query can outrank the
+one that actually answers it. This feature asks Jev, for each of the leading
+results, whether the message contains the information the query asks for,
+and reorders those results by that probability.
+
+1. **Only your own hybrid searches.** Hybrid searches from the Web UI, the
+   API (`mode=hybrid`), `msgvault search --mode hybrid`, the MCP
+   `search_message_bodies` tool, and Explore's hybrid search mode ask for it.
+   Full-text (`--mode fts`) and vector searches never do, and no scheduled or
+   background search ever does, so the feature has no `automatic` switch.
+2. **The leading results only.** Code takes the first `top` (at most 30)
+   fused results, loads them in one batched primary-key lookup, and leaves
+   out any whose message type is in `message_types_excluded`. Fewer than two
+   remaining means nothing is sent.
+3. **One judgment per result.** Each result gets one Noul. Code sorts the
+   judged results by probability, breaking ties by fused score, and puts them
+   back into the positions judged results held. Excluded results and
+   everything after the first `top` keep their fused positions.
+4. **Pages agree.** The order is kept for ten minutes, keyed on the query,
+   the filters, the index generation, and the IDs of the leading results, so
+   the next page of the same search reuses it without a second request. A
+   provider failure is kept the same way, so later pages keep the fused order
+   too. Gate states (disabled, no consent, no key) are not kept, so a change
+   applies to the next search.
+
+Any failure leaves the fused order and never fails the search. Hybrid
+responses carry `rerank` with `status` (`applied` or `skipped`), `reason` for
+a skip (for example `consent_required`, `timeout`, `too_few_candidates`),
+`model`, `scored`, and `cached`, and `timings.rerank_ms`. With `explain=1`
+each judged result's score breakdown carries `rerank`, its probability; the
+CLI's `--explain` table adds a `JEV` column and a `Jev rerank:` line.
+
+### What leaves the machine
+
+- `query`: the search's free text (at most 4 KiB)
+- Per judged message, one text of at most 2 KiB made of:
+  - `Subject:` the subject line (cut to 300 bytes)
+  - `From:` the sender's display name, or the address when there is no name
+    (never a phone number)
+  - `Date:` the sent date (`YYYY-MM-DD`)
+  - the message body after the same cleaning semantic search applies before
+    embedding: quoted replies, signatures, HTML, base64 blobs, and tracking
+    parameters removed per `[vector.preprocess]`, cut so the whole text fits
+    in 2 KiB
+
+**Message body text leaves the machine.** The batched shape sends up to 30
+such texts as `candidates[]` in one request; the per-candidate shape sends one
+as `candidate` per request. No attachments, recipients, labels, or
+identifiers are sent. `msgvault jev consent search_rerank` prints this
+disclosure, including a line that says message body text is sent.
+
+### The questions, exactly as sent
+
+- Batched: `candidate_0` to `candidate_29` (Noul): "Could `candidates[i]` be
+  the best answer to `query`?" Yes means "The `candidates[i]` contains the
+  specific information needed to answer the query." No means "The
+  `candidates[i]` is only topically similar or does not contain the needed
+  evidence." A request asks only as many as it has results.
+- Per candidate: `matches` (Noul): "Could `candidate` be the best answer to
+  `query`?", with the same yes and no wording for `candidate`.
+
+### Evaluation gate
+
+Reranking is recommended only after
+[`msgvault eval --rerank-jev`](../cli-reference.md#eval) shows, on the target
+collection (matched TREC Legal 2010 messages, `--doc-key message`, hybrid
+mode, `-n` of at least 10), that one complete request shape gains at least
+**0.05 absolute Hit@10** over the fused hybrid ranking with a **p95 latency
+under 2 s**. The eval builds its candidate text exactly as search does and
+prints the gate as `pass`, `fail`, or `not_evaluated` (JSON `rerank_gate`).
+
+The gate has not been run yet: it spends TypeSafe credit on archive mail and
+needs the archive owner's go-ahead. No results are recorded, so
+`enabled = false` remains the recommendation. TypeSafe's published gain was
+measured against BM25 alone, not against fused hybrid search.
+
 ## Turn it off
 
 - `msgvault jev revoke --all` stops every feature at the next request without
@@ -487,8 +574,12 @@ probabilities and outcomes, not the compared values.
 ## Limitations
 
 - Only the enrichment identity check, organization resolution,
-  correspondent kind, and cleanup suggestions exist today. The other features in the engineering
-  record `docs/internal/jev-judgments-plan.md` are proposals.
+  correspondent kind, cleanup suggestions, and hybrid search reranking exist
+  today. The other features in the engineering record
+  `docs/internal/jev-judgments-plan.md` are proposals.
+- Hybrid search reranking has not passed its evaluation gate. Its cached
+  orders live in the daemon's memory, so a restart judges the next page of a
+  search again.
 - Correspondent kind does not revisit an identity once a rule or Jev
   classified it, even after links or new messages; mark it yourself with
   `msgvault person kind set`.

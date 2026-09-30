@@ -340,21 +340,41 @@ Site: post-stage in `internal/vector/hybrid/engine.go` after `FusedSearch`;
 consumers `internal/api/handlers.go`, `internal/mcp/handlers.go`,
 `internal/api/explore.go`.
 
-- [ ] **Task 4.1 Engine stage.** Optional reranker interface on the engine:
+- [x] **Task 4.1 Engine stage.** Optional reranker interface on the engine:
   top K = min(30, n), candidate text = subject, from, date, preprocessed body
   ≤ 2 KiB, existing Noul wording. Sort by noul, tie-break RRF, tail
   unchanged. Response carries `rerank {status, model, scored}`; explain
   output carries the score.
-- [ ] **Task 4.2 Stability.** Cache reranked order keyed on (query, filter
+  > `hybrid.Reranker` runs only for `ModeHybrid` requests that set
+  > `Rerank` (API, MCP, CLI through the API, Explore). The candidate is one
+  > text (`Subject:`, `From:`, `Date:`, cleaned body) within the existing
+  > 2 KiB candidate bound, so the wire shape matches the recorded captures.
+  > Results whose type is excluded keep their slots; judged results fill
+  > the slots judged results held. The response also carries `reason`,
+  > `cached`, and `timings.rerank_ms`.
+- [x] **Task 4.2 Stability.** Cache reranked order keyed on (query, filter
   hash, generation, top-K id digest) so pages agree; Explore reorders the
   snapshot prefix before `issueSnapshot`. Batch body hydration replaces the
   per-candidate `GetMessageContext` loop.
-- [ ] **Task 4.3 Config and gate.** `[jev.rerank]` `enabled`, `shape`
+  > A reranked search fetches at least `top` fused results so every page
+  > offers the same prefix. The cache is in memory (256 entries, ten
+  > minutes) and also pins transient provider failures, not gate states.
+  > `Store.GetMessagesWithBodiesByIDsContext` loads bodies with one
+  > `message_id IN (...)` lookup, for search and `msgvault eval` alike.
+- [x] **Task 4.3 Config and gate.** `[jev.rerank]` `enabled`, `shape`
   (batched|per_candidate), `top`, `message_types_excluded`. Consent feature
   `search_rerank`. Never on for `--mode fts` or automatic searches.
+  > `FeatureSpec.BodyNotice` makes the disclosure say body text leaves the
+  > machine. `Service.JudgeAll` sends a feature's independent judgments
+  > (per-candidate shape) after one gate check.
 - [ ] **Task 4.4 Eval gate.** Run `msgvault eval` rerank against the target
   in commit 01ea4543 (≥ +0.05 Hit@10, p95 < 2 s) and record results in the
   docs before recommending `enabled = true`.
+  > The harness is ready: the eval sends the production candidate text and
+  > prints the gate (`rerank_gate`: pass, fail, or not_evaluated per shape),
+  > and a fake-provider test covers it. The run against the real archive
+  > and TypeSafe waits for the archive owner's go-ahead; until it passes,
+  > the docs keep `enabled = false` as the recommendation.
 
 ## Phase 5: cleanup suggestions and deletion protection
 

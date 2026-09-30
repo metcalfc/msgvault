@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-29"
+last_edited: "2026-09-30"
 title: Configuration
 description: Configuration file reference, environment variables, and file locations.
 ---
@@ -1364,6 +1364,19 @@ Cleanup suggestions (feature `cleanup_suggestions`). See
 | `enabled` | `false` | Let `msgvault suggest-cleanup` ask Jev about spam and promotional mail once consent is active. Without it, the command only reports the pool and lists stored suggestions. Nothing is ever staged or deleted. |
 | `automatic` | `false` | No effect: suggestions are only made on request. |
 | `trusted_authserv_ids` | `[]` | Receiving servers (authserv-ids such as `mx.example.net`) whose `Authentication-Results` headers are believed for any source. Gmail sources always trust `mx.google.com`; other sources report SPF, DKIM, and DMARC as `unknown` until their server is listed. |
+
+#### `[jev.rerank]`
+
+Hybrid search reranking (feature `search_rerank`). It sends message body
+text, and it is not recommended until the evaluation gate passes. See
+[the feature description](/docs/usage/jev-judgments/#feature-hybrid-search-reranking).
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Let your own hybrid searches (Web UI, API, CLI, MCP, Explore) ask Jev to reorder their leading results. Full-text and vector searches, and automatic searches, never use it. There is no `automatic` key. |
+| `shape` | `batched` | `batched` asks about every reranked result in one request; `per_candidate` sends one request per result. |
+| `top` | `30` | How many leading hybrid results are reranked, 2 to 30. |
+| `message_types_excluded` | `[]` | Message types (for example `whatsapp`) whose text is never sent. Such results keep their fused position. |
 
 ### `[activity]`
 
