@@ -480,3 +480,26 @@ func TestAcceptContactMatchUsesTheEffectiveClusterKind(t *testing.T) {
 	_, _, err = f.st.AcceptIdentityMatchCandidateContext(t.Context(), candidate.ID, "user", nil)
 	require.NoError(err, "the cluster's newer person override wins over the older ignored row")
 }
+
+func TestParticipantMergeCarriesOrganizationContactsTheClassificationAdded(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	absorbed := f.emailParticipant("sales@shop.example.test", "Example Shop")
+	survivor := f.emailParticipant("sales-old@shop.example.test", "")
+	result, err := f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: absorbed, Kind: correspondentkind.Organization,
+	})
+	require.NoError(err)
+	organizationID := *result.Record.OrganizationID
+	require.NoError(f.st.MergeParticipants(absorbed, survivor))
+
+	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: survivor, Kind: correspondentkind.Person,
+	})
+	require.NoError(err)
+	profile, err := f.st.GetOrganizationProfileContext(t.Context(), organizationID, false)
+	require.NoError(err)
+	assert.Empty(profile.ContactPoints, "clearing the survivor withdraws the address the absorbed classification added")
+}

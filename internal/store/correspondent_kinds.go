@@ -1134,6 +1134,15 @@ func rewriteCorrespondentKindsForMergeTx(ctx context.Context, tx *loggedTx, oldI
 		WHERE participant_id = ?`, newID, oldID); err != nil {
 		return fmt.Errorf("move correspondent kinds: %w", err)
 	}
+	// Organization contact points an organization classification added name
+	// their participant; follow it to the survivor so clearing the
+	// survivor withdraws them.
+	if _, err := tx.ExecContext(ctx, `UPDATE organization_contact_points SET source_ref = ?
+		WHERE source = ? AND source_ref = ?`,
+		correspondentKindContactSourcePrefix+strconv.FormatInt(newID, 10), ProvenanceUser,
+		correspondentKindContactSourcePrefix+strconv.FormatInt(oldID, 10)); err != nil {
+		return fmt.Errorf("move classified organization contacts: %w", err)
+	}
 	return nil
 }
 
