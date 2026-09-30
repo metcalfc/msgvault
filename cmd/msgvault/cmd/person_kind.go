@@ -151,7 +151,7 @@ func newPersonKindListCommand() *cobra.Command {
 		Long: "Lists identities whose kind is not a person. --kind unclear lists the\n" +
 			"identities Jev could not classify instead, with the probability it gave each\n" +
 			"option; decide them with 'msgvault person kind set'.",
-		Args:  cobra.NoArgs,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			query := generated.ListCorrespondentKindsQuery{}
 			if kind = strings.TrimSpace(kind); kind != "" {
