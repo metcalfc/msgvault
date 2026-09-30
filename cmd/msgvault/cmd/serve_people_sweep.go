@@ -110,12 +110,16 @@ func newProductionPersonSweepWorker(
 	if err != nil {
 		return nil, err
 	}
+	grounder, err := newJevSweepGrounder(cfg, st, automatic)
+	if err != nil {
+		return nil, err
+	}
 	sweepConfig := cfg.People.Sweep
 	return &peoplesweep.Worker{
 		Config: sweepConfig, Store: st, Source: st,
 		Context: peoplesweep.NewContextRetriever(st), Sink: st,
 		Runner: runner, Catalog: st, Brief: st, Archive: st,
-		Organizations: organizations, ContextJudge: contextJudge,
+		Organizations: organizations, ContextJudge: contextJudge, Grounder: grounder,
 		Clock: time.Now, NewID: uuid.NewString,
 		WorkerID: peopleSweepJobName + "-" + uuid.NewString(),
 	}, nil

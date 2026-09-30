@@ -16,7 +16,7 @@ func TestJevFeatureRegistryListsEveryFeature(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	specs := jevFeatureSpecs()
-	require.Len(specs, 8)
+	require.Len(specs, 9)
 	assert.Equal(jev.FeatureEnrichmentIdentity, specs[0].Name)
 	assert.Equal(jev.FeatureOrganizationResolution, specs[1].Name)
 	assert.Equal(jev.FeatureCorrespondentKind, specs[2].Name)
@@ -26,6 +26,7 @@ func TestJevFeatureRegistryListsEveryFeature(t *testing.T) {
 	assert.Equal(jev.FeatureMeetingActionAssignee, specs[6].Name)
 	assert.Equal(jev.FeatureQueryUnderstanding, specs[7].Name)
 	assert.Equal(jev.FeatureSweepEvidenceRerank, specs[7].Name)
+	assert.Equal(jev.FeatureSweepClaimGrounding, specs[8].Name)
 	cfg := config.NewDefaultConfig()
 	for _, spec := range specs {
 		require.NoError(spec.Validate())
@@ -229,4 +230,12 @@ func TestNewJevSweepJudgesAreNilUntilJevAndTheFeatureAreOn(t *testing.T) {
 	contextJudge, err = newJevSweepContextJudge(cfg, st, true)
 	require.NoError(err)
 	assert.NotNil(contextJudge)
+
+	grounder, err := newJevSweepGrounder(cfg, st, true)
+	require.NoError(err)
+	assert.Nil(grounder, "each sweep feature has its own switch")
+	cfg.Jev.SweepClaimGrounding.Enabled = true
+	grounder, err = newJevSweepGrounder(cfg, st, true)
+	require.NoError(err)
+	assert.NotNil(grounder)
 }

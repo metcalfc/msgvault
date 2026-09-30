@@ -537,8 +537,18 @@ bar.
   > least relevant context leaves first, which without judgments is the old
   > trim-from-the-end order. A per-attempt memo keeps the several
   > assemblies of one attempt to one judgment per target.
-- [ ] **Task 8.2 Claim grounding.** Nouls `stated` and `current` per claim
+- [x] **Task 8.2 Claim grounding.** Nouls `stated` and `current` per claim
   replace the chat LLM's self-reported confidence as `ReportedScore`.
+  > Feature `sweep_claim_grounding` (`internal/sweepjudge`), wired into the
+  > worker as `peoplesweep.ClaimGrounder` after every extraction batch and
+  > before organization resolution and apply. Eight claims per request, two
+  > Nouls each (`stated_N`, `current_N`) over the target description, the
+  > relation, the rendered value, and up to three cited excerpts (newest
+  > first, 1,000 characters, addresses and phones redacted). The score is
+  > `round(1000 × stated × current)`. Sensitive targets, values that carry
+  > an address or phone number, and every claim after a failure keep the
+  > model's score; claims are never added, dropped, or reordered, and the
+  > resolver arithmetic is unchanged.
 - [ ] **Task 8.3 Duplicate-person candidates.** Code proposes pairs (same
   display name across addresses, same local part across domains, person
   embedding neighbors); Noul `same_person` batched 20 per request; write

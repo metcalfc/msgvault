@@ -61,6 +61,11 @@ type Config struct {
 	// retrieved messages bear on a fact before the people sweep sends them
 	// to its chat model. Automatic covers the daemon's scheduled sweeps.
 	SweepEvidenceRerank FeatureConfig `toml:"sweep_evidence_rerank"`
+	// SweepClaimGrounding is [jev.sweep_claim_grounding]: asking whether
+	// the messages a people sweep claim cites state it and whether it is
+	// still current, as the claim's confidence. Automatic covers the
+	// daemon's scheduled sweeps.
+	SweepClaimGrounding FeatureConfig `toml:"sweep_claim_grounding"`
 	// CleanupSuggestions is [jev.cleanup_suggestions]: judging junk and
 	// phishing candidates for `msgvault suggest-cleanup`. It only ever runs
 	// on request, so its automatic switch has no effect.

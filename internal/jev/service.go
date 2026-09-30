@@ -42,6 +42,10 @@ const FeatureQueryUnderstanding = "query_understanding"
 // It sends message excerpts, so its consent disclosure says so.
 const FeatureSweepEvidenceRerank = "sweep_evidence_rerank"
 
+// FeatureSweepClaimGrounding is the people sweep claim grounding feature. It
+// sends message excerpts, so its consent disclosure says so.
+const FeatureSweepClaimGrounding = "sweep_claim_grounding"
+
 // Gate outcomes. Each is an expected administrative state, not a fault: the
 // caller falls back to its pre-Jev decision and reports the category.
 var (
@@ -79,6 +83,8 @@ func (c Config) FeatureConfigFor(name string) (FeatureConfig, bool) {
 		return FeatureConfig{Enabled: c.QueryUnderstanding.Enabled}, true
 	case FeatureSweepEvidenceRerank:
 		return c.SweepEvidenceRerank, true
+	case FeatureSweepClaimGrounding:
+		return c.SweepClaimGrounding, true
 	default:
 		return FeatureConfig{}, false
 	}

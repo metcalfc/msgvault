@@ -200,7 +200,10 @@ With the optional
 [evidence relevance](jev-judgments.md#feature-people-sweep-evidence-relevance)
 Jev judgment, the sweep leaves out retrieved older messages that do not bear
 on a fact before the chat model reads them. Newly changed messages are always
-sent.
+sent. With
+[claim grounding](jev-judgments.md#feature-people-sweep-claim-grounding),
+each proposed fact's confidence comes from whether the cited messages state
+it and whether it is still current, instead of from the chat model.
 
 Status and history are redacted operational records. Use them to inspect
 progress, failures, and usage without printing message packets. A failed

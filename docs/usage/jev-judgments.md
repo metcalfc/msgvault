@@ -78,6 +78,10 @@ new `msgvault jev consent`.
    [jev.sweep_evidence_rerank]   # sends message excerpts the person wrote
    enabled = true
    # automatic = true   # also judge during the daemon's scheduled people sweeps
+
+   [jev.sweep_claim_grounding]   # sends message excerpts the person wrote
+   enabled = true
+   # automatic = true   # also ground claims during scheduled people sweeps
    ```
 
 2. Provide an API key. Either paste it in Settings under **Jev judgments**
@@ -94,9 +98,9 @@ new `msgvault jev consent`.
 
 Consent is per feature: run the same two `consent` commands with
 `organization_resolution`, `correspondent_kind`, `cleanup_suggestions`,
-`search_rerank`, `meeting_event_kind`, `meeting_action_assignee`, or
-`query_understanding` for those features. `msgvault jev revoke enrichment_identity`
-`sweep_evidence_rerank` for those features. `msgvault jev revoke enrichment_identity`
+`search_rerank`, `meeting_event_kind`, `meeting_action_assignee`,
+`query_understanding`, `sweep_evidence_rerank`, or `sweep_claim_grounding`
+for those features. `msgvault jev revoke enrichment_identity`
 or `msgvault jev revoke --all` stops the next request immediately.
 
 ## Budgets and safety
@@ -906,6 +910,68 @@ only topically similar or does not contain the needed evidence." A request
 asks only as many as it has messages.
 `msgvault jev consent sweep_evidence_rerank` prints the same disclosure.
 
+## Feature: people sweep claim grounding
+
+Feature name: `sweep_claim_grounding`. Setting:
+`[jev.sweep_claim_grounding]`. Runs inside the
+[people sweep](people-automation.md#run-and-inspect-a-sweep).
+
+The people sweep's chat model proposes facts (claims) about a person and
+reports its own confidence in each. A model's confidence in itself is a weak
+signal. This feature asks Jev two questions per claim instead, after
+extraction and before the claims are applied:
+
+- **Stated**: do the excerpts the claim cites explicitly say what it asserts?
+- **Current**: is it still true as of the newest cited excerpt?
+
+Code sets the claim's reported score (0–1000) to `round(1000 × stated ×
+current)`, replacing the model's number. The fact resolver's rules, its
+thresholds, and your pins still decide whether anything changes; grounding
+adds, drops, and reorders nothing. Eight claims go in each request.
+
+A claim keeps the model's score when its target is sensitive, when its value
+contains an email address or phone number (it is never sent), or when Jev is
+unavailable. Any gate, budget, or provider failure keeps the model's score
+for every claim not yet grounded. A manual `msgvault person sweep run` or
+brief request may ask; the daemon's scheduled sweeps ask only with
+`automatic = true`.
+
+### What leaves the machine
+
+Per claim, under `claims.claim_N`:
+
+- `fact`: the fact's catalog description, such as "Job title"
+- `relation`: `support`, `contradict`, or `supersede`
+- `value`: the proposed value, such as a title or an employment record with
+  its organization name; a value with an address or phone number is never
+  sent
+- `evidence[]`: **up to three of the excerpts the claim cites, newest first,
+  each with its date and up to 1,000 characters of text** from a message the
+  person sent on a source that authenticates its sender. Email addresses
+  become `[email]` and phone numbers `[phone]`.
+
+Your own identities, the person's name, and their addresses are never sent
+as fields, and nothing from messages other people wrote is sent.
+
+### The questions, exactly as sent
+
+For each claim `N` (1 to 8) in the request:
+
+- `stated_N` (Noul): "Do the excerpts in `claims.claim_N.evidence`, written
+  by the person, explicitly say what `claims.claim_N` asserts: that they
+  `relation` (support, contradict, or supersede) `value` for `fact`?" Yes
+  means "An excerpt says it directly about the person who wrote it; no guess
+  or inference is needed." No means "The assertion is implied, guessed, about
+  someone else, a joke or hypothetical, or not in the excerpts."
+- `current_N` (Noul): "Is what `claims.claim_N` asserts still true as of the
+  newest excerpt date in `claims.claim_N.evidence`?" Yes means "Nothing in
+  the excerpts says it ended, changed, or was only planned." No means "The
+  excerpts say it ended, changed, was only planned, or describe a past
+  state."
+
+A request with fewer than eight claims sends only their questions.
+`msgvault jev consent sweep_claim_grounding` prints the same disclosure.
+
 ## Turn it off
 
 - `msgvault jev revoke --all` stops every feature at the next request without
@@ -923,10 +989,9 @@ probabilities and outcomes, not the compared values.
 
 - Only the enrichment identity check, organization resolution,
   correspondent kind, cleanup suggestions, hybrid search reranking, meeting
-  event kind, meeting action assignee, and Explore query understanding exist
-  today. The other features in
-  event kind, meeting action assignee, and people sweep evidence relevance
-  exist today. The other features in
+  event kind, meeting action assignee, Explore query understanding, people
+  sweep evidence relevance, and people sweep claim grounding exist today.
+  The other features in
   the engineering record `docs/internal/jev-judgments-plan.md` are proposals.
 - Hybrid search reranking has not passed its evaluation gate. Its cached
   orders live in the daemon's memory, so a restart judges the next page of a

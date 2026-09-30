@@ -429,9 +429,12 @@ type Worker struct {
 	// ContextJudge, when set, scores retrieved context before it joins the
 	// extraction packet (see Assembler.Judge). Nil keeps every item.
 	ContextJudge ContextJudge
-	Clock        func() time.Time
-	NewID        func() string
-	WorkerID     string
+	// Grounder, when set, rescores extracted claims before they are
+	// applied. Nil keeps the chat model's reported confidence.
+	Grounder ClaimGrounder
+	Clock    func() time.Time
+	NewID    func() string
+	WorkerID string
 }
 
 func personSweepAttemptEnvelopeHash(cursors []GenerationCursor) (string, error) {
@@ -923,6 +926,13 @@ func (w *Worker) runPerson(
 		Policy: personfacts.PolicyContext{AllowSensitive: profile.AllowSensitive,
 			ProviderPolicyFingerprint: profile.Fingerprint}, Claims: claims,
 		EvidenceStatusChanges: assembly.EvidenceStatusChanges}
+	if w.Grounder != nil && len(claims) > 0 {
+		grounded := w.Grounder.GroundClaims(ctx, lease.PersonID, claims)
+		if len(grounded) == len(claims) {
+			claims = grounded
+			generation.Claims = claims
+		}
+	}
 	if w.Organizations != nil && len(claims) > 0 {
 		// Organization aliases are fenced by this attempt's lease: each write
 		// checks it inside its own transaction, so none lands for a lost lease.

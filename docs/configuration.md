@@ -1418,6 +1418,16 @@ People sweep evidence relevance (feature `sweep_evidence_rerank`). See
 | `enabled` | `false` | Let manual people sweep runs ask Jev which retrieved older messages bear on each fact before the chat model reads them. Sends message excerpts the person wrote. Without it, every retrieved message is sent to the chat model. |
 | `automatic` | `false` | Also judge evidence during the daemon's scheduled people sweeps. |
 
+#### `[jev.sweep_claim_grounding]`
+
+People sweep claim grounding (feature `sweep_claim_grounding`). See
+[the feature description](/docs/usage/jev-judgments/#feature-people-sweep-claim-grounding).
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Let manual people sweep runs ask Jev whether the messages each proposed fact cites state it and whether it is still current, and use that as the fact's confidence. Sends message excerpts the person wrote and the proposed value. Without it, the chat model's own confidence is used. |
+| `automatic` | `false` | Also ground claims during the daemon's scheduled people sweeps. |
+
 ### `[activity]`
 
 Dated activity projection and per-person contact state (first and last

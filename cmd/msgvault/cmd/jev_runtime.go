@@ -210,3 +210,19 @@ func newJevSweepContextJudge(
 	}
 	return sweepjudge.NewContextJudge(service, automatic, nil), nil
 }
+
+// newJevSweepGrounder wires the people sweep's claim grounding, or returns
+// nil when Jev or the feature is off so claims keep the chat model's
+// reported confidence. automatic marks the daemon's scheduled sweeps.
+func newJevSweepGrounder(
+	cfg *config.Config, st jevRuntimeStore, automatic bool,
+) (peoplesweep.ClaimGrounder, error) {
+	if cfg == nil || !cfg.Jev.Enabled || !cfg.Jev.SweepClaimGrounding.Enabled {
+		return nil, nil //nolint:nilnil // nil means "no grounding".
+	}
+	service, err := newJevService(cfg, st)
+	if err != nil || service == nil {
+		return nil, err
+	}
+	return sweepjudge.NewGrounder(service, automatic, nil), nil
+}

@@ -65,3 +65,14 @@ func (m *memoContextJudge) JudgeContext(
 	m.mu.Unlock()
 	return scores, err
 }
+
+// ClaimGrounder rescores a generation's extracted claims before they are
+// applied, replacing the chat model's self-reported confidence with an
+// independent judgment of whether the cited evidence states each claim and
+// whether it is still current. It returns claims in the same order with
+// only Confidence changed; a claim it cannot judge keeps its reported
+// score, and any failure returns the claims unchanged. It never adds,
+// drops, or reorders claims.
+type ClaimGrounder interface {
+	GroundClaims(ctx context.Context, personID int64, claims []personfacts.ProposedClaim) []personfacts.ProposedClaim
+}
