@@ -101,7 +101,7 @@ Site: `internal/personenrichment/exa.go` (`exaTypedIdentityMatches`,
 - [x] **Task 1.1 Deterministic retries first.** When a lookup returns no
   entity, retry once with name variants built in code (drop middle
   initial/name, drop suffixes like Jr., collapse "Last, First"). No Jev.
-- [ ] **Task 1.2 Semantic identity check.** When exactly one of name or
+- [x] **Task 1.2 Semantic identity check.** When exactly one of name or
   current company matches exactly and the other does not, ask one request
   with three Nouls over `{requested:{name, company, email_domain},
   returned:{name, first_name, last_name, location, current_roles[],
@@ -112,10 +112,12 @@ Site: `internal/personenrichment/exa.go` (`exaTypedIdentityMatches`,
   Between 0.50 and 0.90: new result state `identity_uncertain`, stored with
   the probabilities, surfaced in `enrichment status` and the Facts view, no
   claims committed. Below 0.50: reject as today.
-  > Done except the Facts view: `identity_uncertain` attempts are listed by
-  > `person enrichment status` (CLI/JSON) and their claims appear as
-  > identity-rejected decisions; a per-person API field for the web Facts view
-  > needs an API contract decision and is left open.
+  > Uncertain attempts are reviewed in Reviews → Enrichment identities and
+  > `person enrichment review`: confirm re-applies the stored claims at score
+  > 1000 (reason `user_confirmed`) and attaches the provider person ID; reject
+  > records a per-person negative (reason `user_rejected`) that the commit
+  > recheck enforces. The returned identity is shown from stored claims and
+  > the evidence host, since the raw returned identity is never stored.
 - [x] **Task 1.3 Wire the gate and fallback.** No consent or budget means the
   exact rule alone, exactly as today. Add the feature to `jev status`.
 - [x] **Task 1.4 Tests.** Fake Exa result "Priya R." at "Example Capital" for a

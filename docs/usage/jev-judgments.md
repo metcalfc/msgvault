@@ -115,12 +115,38 @@ Two things change, in order:
    | Result | Condition | Outcome |
    |---|---|---|
    | Accepted | non-exact field ≥ 0.90 and `name_conflict` ≤ 0.20 | Reason `semantic_name_company`, identity score 900 (the same as an exact name-and-company match), claims flow through the resolver as usual |
-   | Uncertain | non-exact field ≥ 0.50 | Attempt state `identity_uncertain`, probabilities stored, no claim applied |
+   | Uncertain | non-exact field ≥ 0.50 | Attempt state `identity_uncertain`, probabilities stored, no claim applied until you decide |
    | Rejected | otherwise, or Jev unavailable | Exactly today's rejection |
 
-   `person enrichment status` lists `identity_uncertain` attempts with their
-   probabilities for review. `person facts decisions` shows the attempt's
-   claims as identity-rejected decisions.
+   `person facts decisions` shows an undecided attempt's claims as
+   identity-rejected decisions.
+
+### Confirm or reject an uncertain identity
+
+Only you decide an `identity_uncertain` attempt; nothing decides it
+automatically. Open **Reviews → Enrichment identities** in the Web UI, or use
+`msgvault person enrichment review list|accept|reject`.
+
+Each attempt shows the person, the three probabilities, and what the provider
+returned as far as the archive kept it: the name, current roles, and location
+from the attempt's stored claims, and the host of its profile URL. The raw
+returned identity is never stored.
+
+- **Confirm** (`accept`) means the returned identity is this person. The
+  attempt's stored claims are applied again at identity score 1000, the
+  verified level, with reason `user_confirmed`. The provider person ID is
+  attached at confidence 1000, so later lookups skip the identity check. The
+  attempt becomes `succeeded` and the profile's refresh is scheduled.
+- **Reject** means it is someone else. The attempt becomes `identity_rejected`
+  with reason `user_rejected`, and a negative is recorded for this person. A
+  later result naming that provider person ID is rejected for this person,
+  whatever its identity check says. Attempts recorded before this change kept
+  no provider person ID, so their negative uses the profile URL instead.
+
+A decision applies only while the attempt is still `identity_uncertain`; a
+second decision fails without changing anything. Confirming needs the person
+to be tracked, and fails when the provider identity already belongs to
+another person.
 
 ### What leaves the machine
 
@@ -170,7 +196,8 @@ probabilities and outcomes, not the compared values.
 
 - Only the enrichment identity check exists today. The other features in the
   engineering record `docs/internal/jev-judgments-plan.md` are proposals.
-- `identity_uncertain` attempts appear in `person enrichment status`; the web
-  Facts view shows their claims only as identity-rejected decisions.
+- Attempts decided before provider person IDs were kept can only be refused
+  by profile URL; a provider that returns the same person under a new URL is
+  not caught by that negative.
 - Budgets count requests per UTC day. A process restart resets the in-memory
   breaker but not the daily counters.

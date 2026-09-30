@@ -8,6 +8,12 @@ All notable changes to msgvault, grouped by release.
 
 ## Unreleased
 
+- Confirm or reject enrichment identities the identity check could not
+  decide. Reviews → Enrichment identities and `msgvault person enrichment
+  review` show each uncertain lookup with what the provider returned and the
+  judgment probabilities. Confirming applies its values as verified;
+  rejecting ensures that provider identity is never proposed for the person
+  again. Requires API schema 2.34.0.
 - Review contacts that match your archive. Contact profiles with no archive
   identity yet, such as cards from a Google Contacts CardDAV sync, are matched
   to archive participants by exact email or phone, never by name. The Reviews
