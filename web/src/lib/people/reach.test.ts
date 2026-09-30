@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest';
 import type { PersonContactPoint, PersonIdentifier } from '../api/generated/models';
 import {
   mergeReachEntries, normalizeReachValue, reachEntriesFromContactPoints, reachEntriesFromIdentifiers,
-  reachEntriesFromMembers, reachKindForAddressKind, serviceKey, serviceLabelForSlug
+  reachEntriesFromMembers, reachKindForAddressKind, reachLinkInput, serviceKey, serviceLabelForSlug
 } from './reach';
+import { contactLink } from '../links/contact-links';
 
 const when = '2026-01-01T00:00:00Z';
 
@@ -156,5 +157,55 @@ describe('reach entries', () => {
     ]);
     expect(merged[0]?.name).toBe('Person');
     expect(merged[2]?.service).toBe('LinkedIn');
+  });
+
+  it('carries the stored link facts of a contact point into its link', () => {
+    const [entry] = reachEntriesFromContactPoints([contactPoint({
+      address_kind: 'username', original_value: '@Example_Person', normalized_value: 'example_person',
+      service_slug: 'telegram', uri_scheme: 'tg', profile_url_template: 'https://t.me/{username}'
+    })]);
+    expect(entry?.normalized).toBe('example_person');
+    expect(entry?.serviceSlug).toBe('telegram');
+    expect(entry?.profileURLTemplate).toBe('https://t.me/{username}');
+    const input = entry ? reachLinkInput(entry) : undefined;
+    expect(input).toEqual({
+      kind: 'handle', service: 'telegram', value: '@Example_Person', normalized: 'example_person', uri: undefined,
+      services: { telegram: { profile_url_template: 'https://t.me/{username}' } }
+    });
+    expect(input && contactLink(input)?.href).toBe('https://t.me/example_person');
+  });
+
+  it('keeps a stored uri and prefers it for the link', () => {
+    const [entry] = reachEntriesFromContactPoints([contactPoint({
+      address_kind: 'social', original_value: 'example', normalized_value: 'example',
+      service_slug: 'github', uri: 'https://github.com/example-person'
+    })]);
+    expect(entry?.uri).toBe('https://github.com/example-person');
+    const input = entry ? reachLinkInput(entry) : undefined;
+    expect(input && contactLink(input)?.href).toBe('https://github.com/example-person');
+  });
+
+  it('never links an opaque provider key', () => {
+    const [entry] = reachEntriesFromIdentifiers({ identifiers: [identifier({
+      type: 'beeper', value: 'beeper:8:telegram:9:@user:x.y', service_slug: 'telegram',
+      profile_url_template: 'https://t.me/{username}'
+    })] });
+    expect(entry?.opaque).toBe(true);
+    expect(entry?.profileURLTemplate).toBe('https://t.me/{username}');
+    expect(entry ? reachLinkInput(entry) : 'missing').toBeUndefined();
+  });
+
+  it('keeps link facts from the archive when the address book row wins the merge', () => {
+    const merged = mergeReachEntries(
+      [{ key: 'handle:github:example', kind: 'handle', value: 'example', display: 'example', label: 'example',
+        observed: false, participantIDs: [] }],
+      [{ key: 'handle:github:example', kind: 'handle', value: 'example', display: 'example', label: 'example',
+        observed: true, participantIDs: [3], serviceSlug: 'github', normalized: 'example',
+        profileURLTemplate: 'https://github.com/{username}' }]
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.observed).toBe(false);
+    expect(merged[0]?.serviceSlug).toBe('github');
+    expect(merged[0]?.profileURLTemplate).toBe('https://github.com/{username}');
   });
 });

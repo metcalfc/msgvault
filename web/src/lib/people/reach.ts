@@ -6,6 +6,7 @@
 import type {
   PersonClusterEdge, PersonClusterMember, PersonContactPoint, PersonIdentifier
 } from '../api/generated/models';
+import type { ContactLinkInput } from '../links/contact-links';
 import { identityChipText, linkOriginSummary } from '../relationships/identity-chip';
 
 export type ReachKind = 'email' | 'phone' | 'chat' | 'handle' | 'url';
@@ -47,6 +48,31 @@ export interface ReachEntry {
   typeLabel?: string;
   /** Where an address-book value came from ("user", "enrichment", …). */
   source?: string;
+  /** The service-normalized value, when the source stored one. */
+  normalized?: string;
+  /** The communication service slug ("github"), when the source stored one. */
+  serviceSlug?: string;
+  /** A stored URI for the value (a contact point's `uri`). */
+  uri?: string;
+  /** The service's profile URL template ("https://github.com/{username}"). */
+  profileURLTemplate?: string;
+}
+
+/** What `contactLink` needs to link a contact row, or undefined when the
+ * visible text is an opaque provider key that must stay unlinked. */
+export function reachLinkInput(entry: ReachEntry): ContactLinkInput | undefined {
+  if (entry.opaque) return undefined;
+  const service = entry.serviceSlug?.trim().toLowerCase() || undefined;
+  return {
+    kind: entry.kind,
+    service,
+    value: entry.value,
+    normalized: entry.normalized,
+    uri: entry.uri,
+    services: service && entry.profileURLTemplate
+      ? { [service]: { profile_url_template: entry.profileURLTemplate } }
+      : undefined
+  };
 }
 
 /** The small-caps label a contact row leads with: the kind, a phone's
@@ -136,7 +162,11 @@ export function reachEntriesFromContactPoints(points: readonly PersonContactPoin
       observed: point.envelope.source === 'archive_observation',
       typeLabel: point.envelope.type_label || undefined,
       source: point.envelope.source,
-      participantIDs: []
+      participantIDs: [],
+      normalized: point.normalized_value || undefined,
+      serviceSlug: point.service_slug || undefined,
+      uri: point.uri || undefined,
+      profileURLTemplate: point.profile_url_template || undefined
     });
   }
   return entries;
@@ -194,7 +224,9 @@ export function reachEntriesFromIdentifiers({ identifiers, ownID, members = [], 
       title: opaque ? `${text.detail} · ${identifierTooltip(identifier)}` : identifierTooltip(identifier),
       observed: true,
       participantIDs: [identifier.participant_id],
-      opaque
+      opaque,
+      serviceSlug: identifier.service_slug || undefined,
+      profileURLTemplate: identifier.profile_url_template || undefined
     });
   }
   return entries;
@@ -237,6 +269,10 @@ export function mergeReachEntries(...lists: ReachEntry[][]): ReachEntry[] {
         service: keep.service ?? other.service,
         note: keep.note ?? other.note,
         title: keep.title ?? other.title,
+        normalized: keep.normalized ?? other.normalized,
+        serviceSlug: keep.serviceSlug ?? other.serviceSlug,
+        uri: keep.uri ?? other.uri,
+        profileURLTemplate: keep.profileURLTemplate ?? other.profileURLTemplate,
         participantIDs: [...new Set([...keep.participantIDs, ...other.participantIDs])],
         observed: keep.observed && other.observed
       });
