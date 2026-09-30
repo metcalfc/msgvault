@@ -353,5 +353,23 @@ describe('FileViewer header context', () => {
     });
 
     expect((await screen.findByText(/in “Quarterly plan”/)).textContent).toContain('From Blake Example');
+    expect(screen.queryByRole('link', { name: 'Blake Example' })).toBeNull();
+  });
+
+  it('links a sender address for email', async () => {
+    const fetchFn = viewerFetch({
+      id: 7, filename: 'plan.pdf', mime_type: 'application/pdf', size_bytes: 68, message_id: 11, conversation_id: 21,
+      entry_key: 'source:1:message:m-11', content_state: 'metadata_only', content_available: false
+    });
+    render(FileViewer, {
+      props: {
+        client: createAPIClient(fetchFn),
+        file: { id: 7, filename: 'plan.pdf', sender: 'Blake Example <blake@example.test>', containing_title: 'Quarterly plan' }
+      }
+    });
+
+    const link = await screen.findByRole('link', { name: 'Blake Example <blake@example.test>' });
+    expect(link.getAttribute('href')).toBe('mailto:blake@example.test');
+    expect(link.closest('.file-context')?.textContent).toContain('in “Quarterly plan”');
   });
 });

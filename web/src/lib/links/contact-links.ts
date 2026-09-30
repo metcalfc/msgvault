@@ -265,6 +265,23 @@ export function contactLink(input: ContactLinkInput): ContactLink | undefined {
   return undefined;
 }
 
+/** `contactLink` input for a bare archive address: an email address, or
+ * otherwise a phone number (linked only when E.164). */
+export function addressLinkInput(address: string): ContactLinkInput {
+  const value = clean(address);
+  return { kind: value.includes('@') ? 'email' : 'phone', value };
+}
+
+/** `contactLink` input for a labeled value whose kind is known only by its
+ * label (an enrichment claim's target): an email or phone by name, and
+ * otherwise a link only when the value spells out a web address. */
+export function labeledValueLinkInput(label: string, value: string): ContactLinkInput {
+  const name = clean(label).toLowerCase();
+  if (name.includes('email')) return { kind: 'email', value };
+  if (name.includes('phone')) return { kind: 'phone', value };
+  return { kind: 'social', value };
+}
+
 /** The stored fields of a person or organization contact point. */
 export interface ContactPointLike {
   address_kind: string;

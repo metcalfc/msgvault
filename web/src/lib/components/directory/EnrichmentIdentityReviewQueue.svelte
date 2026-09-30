@@ -7,6 +7,8 @@
     returnedIdentityLines,
     type EnrichmentReviewController
   } from '../../directory/enrichment-review-controller.svelte';
+  import { labeledValueLinkInput } from '../../links/contact-links';
+  import LinkedValue from '../common/LinkedValue.svelte';
 
   interface Props {
     controller: EnrichmentReviewController;
@@ -93,7 +95,7 @@
                 <h4>Values that would be applied</h4>
                 <ul aria-label={`Claims for attempt ${review.attempt_id}`}>
                   {#each review.claims as claim, index (index)}
-                    <li><span>{claim.target.replaceAll('_', ' ')}</span> {claim.value}</li>
+                    <li><span>{claim.target.replaceAll('_', ' ')}</span> <LinkedValue input={labeledValueLinkInput(claim.target, claim.value)} copy={false} /></li>
                   {/each}
                 </ul>
               </section>

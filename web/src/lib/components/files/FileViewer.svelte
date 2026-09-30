@@ -12,6 +12,9 @@
   import { onDestroy, onMount, tick, untrack } from 'svelte';
   import type { APIClient } from '../../api/client';
   import type { FileMetadata, FileViewerTarget } from '../../explore/models';
+  import { addressLinkInput } from '../../links/contact-links';
+  import { parseAddress } from '../../reader/address';
+  import LinkedValue from '../common/LinkedValue.svelte';
   import type { PDFRenderHandle } from './FileViewer.browser.svelte';
   import { isSupportedImageMIME, readBoundedStream, validatedImageBlob } from './preview-bytes';
   interface Props {
@@ -231,11 +234,13 @@
   }
   // Who sent it, when, and the item it came from — from the row that
   // opened the viewer; the file metadata endpoint carries none of these.
+  // The sender renders first, as a link to write or call them.
+  const sender = $derived(file.sender?.trim() ?? '');
   const fileContext = $derived.by((): string[] => {
     const parts: string[] = [];
-    const people = file.sender?.trim() || (file.participant_labels ?? []).filter((label) => label.trim()).slice(0, 3).join(', ');
-    if (people) parts.push(file.sender?.trim() ? `From ${people}` : `With ${people}`);
-    else if (file.source_identifier) parts.push(file.source_identifier);
+    const people = (file.participant_labels ?? []).filter((label) => label.trim()).slice(0, 3).join(', ');
+    if (!sender && people) parts.push(`With ${people}`);
+    else if (!sender && file.source_identifier) parts.push(file.source_identifier);
     if (file.occurred_at) {
       const date = new Date(file.occurred_at);
       if (!Number.isNaN(date.valueOf())) {
@@ -263,8 +268,10 @@
   }}
 >
   <div class="file-viewer">
-    {#if fileContext.length > 0}
-      <p class="file-context">{fileContext.join(' · ')}</p>
+    {#if sender || fileContext.length > 0}
+      <p class="file-context">{#if sender}From <LinkedValue
+            input={addressLinkInput(parseAddress(sender).address)} text={sender} copy={false}
+          />{#if fileContext.length > 0}{' · '}{/if}{/if}{fileContext.join(' · ')}</p>
     {/if}
     <!-- svelte-ignore a11y_no_noninteractive_tabindex (Scrollable preview regions need keyboard access.) -->
     <div class="preview" role="region" aria-label={`File preview ${displayFilename}`} tabindex="0">

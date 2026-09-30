@@ -23,7 +23,11 @@ const review = {
     current_roles: [{ title: 'Engineer', company: 'Example Labs' }],
     profile_url_host: 'profiles.example.test',
   },
-  claims: [{ target: 'ask_me_about', value: 'sailing' }],
+  claims: [
+    { target: 'ask_me_about', value: 'sailing' },
+    { target: 'linkedin_url', value: 'https://www.linkedin.com/in/synthetic-reviewee' },
+    { target: 'work_email', value: 'reviewee@example.test' },
+  ],
 };
 
 describe('EnrichmentIdentityReviewQueue', () => {
@@ -52,6 +56,10 @@ describe('EnrichmentIdentityReviewQueue', () => {
     expect(card.textContent).toContain('70%');
     expect(card.textContent).toContain('99%');
     expect(card.textContent).toContain('sailing');
+    const claims = within(card).getByRole('list', { name: 'Claims for attempt 7' });
+    expect(within(claims).getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([
+      'https://www.linkedin.com/in/synthetic-reviewee', 'mailto:reviewee@example.test'
+    ]);
 
     await fireEvent.click(within(card).getByRole('button', { name: 'Open Synthetic Reviewee' }));
     expect(onOpenPerson).toHaveBeenCalledWith(70);

@@ -14,7 +14,9 @@
     endpointRole,
     sharedMailboxReason
   } from '../../directory/identity-endpoints';
+  import { addressLinkInput } from '../../links/contact-links';
   import { NOT_A_PERSON_CHOICES, type NotAPersonKind } from '../../people/correspondent-kind';
+  import LinkedValue from '../common/LinkedValue.svelte';
 
   interface Props {
     candidate: IdentityMatchCandidate;
@@ -65,7 +67,7 @@
           <span>{endpointRole(endpoint.kind)}</span>
           <strong>{endpoint.label}</strong>
           {#each endpoint.summary?.addresses ?? [] as address (address)}
-            {#if address !== endpoint.label}<span class="address">{address}</span>{/if}
+            {#if address !== endpoint.label}<span class="address"><LinkedValue input={addressLinkInput(address)} text={address} /></span>{/if}
           {/each}
           {#if endpoint.kind !== 'person' && endpoint.summary?.person_id !== undefined}
             <span class="owner">Profile: {endpoint.summary.person_display_name?.trim() || `Person ${endpoint.summary.person_id}`}</span>

@@ -147,6 +147,9 @@ describe('IdentityCandidateCard', () => {
     expect(within(endpoints).getByText('Person profile')).toBeDefined();
     expect(within(endpoints).getByText('Ada Contact')).toBeDefined();
     expect(within(endpoints).getByText('+15550100100')).toBeDefined();
+    expect(within(endpoints).getByRole('link', { name: '+15550100100' }).getAttribute('href')).toBe('tel:+15550100100');
+    expect(within(endpoints).getAllByRole('link', { name: 'ada@example.test' })
+      .map((link) => link.getAttribute('href'))).toEqual(['mailto:ada@example.test', 'mailto:ada@example.test']);
     expect(card.textContent).toContain('Accepting links this archive identity to the profile.');
     expect(screen.getByRole('button', { name: 'Link identities' })).toHaveProperty('disabled', false);
   });
