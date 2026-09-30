@@ -364,6 +364,11 @@ func (s *Store) commitPreparedPersonEnrichmentResult(
 			ctx, tx, prepared.Commit, prepared.CompletionTime); err != nil {
 			return err
 		}
+		if disposition.Status == personenrichment.ClaimIdentityUncertain {
+			if err := recordUncertainAttemptProviderIDsTx(ctx, tx, prepared.Commit); err != nil {
+				return err
+			}
+		}
 		costViolation, err = s.completePersonEnrichmentClaimTx(
 			ctx, tx, prepared.Commit, disposition.Status, generationResult,
 			prepared.Profile, prepared.CompletionTime)
@@ -566,6 +571,23 @@ func (s *Store) recheckPersonEnrichmentCommitTx(
 		}
 	}
 	if ownershipConflict {
+		return enrichmentCommitDisposition{
+			Status: personenrichment.ClaimIdentityRejected, OwnershipConflict: true,
+		}, nil
+	}
+	refusedURLs := slices.Clone(result.CanonicalPublicURLs)
+	for _, citation := range result.Citations {
+		refusedURLs = append(refusedURLs, citation.URL)
+	}
+	refused, err := personEnrichmentIdentityRefusedTx(
+		ctx, tx, commit.PersonID, profile.ProviderNamespace, providerIDs, refusedURLs)
+	if err != nil {
+		return enrichmentCommitDisposition{}, err
+	}
+	if refused {
+		// The user said this provider identity is not the person. Apply the
+		// zero-score generation, as for an ownership conflict, so nothing
+		// projects whatever the identity assessment decided.
 		return enrichmentCommitDisposition{
 			Status: personenrichment.ClaimIdentityRejected, OwnershipConflict: true,
 		}, nil

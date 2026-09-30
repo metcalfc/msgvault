@@ -92,34 +92,35 @@ type Store struct {
 	// on another Store's work. As package-level variables
 	// they were also a data race between a test that installs one and any
 	// concurrent migration that reads it.
-	initSchemaWindowHook                  func()
-	beforeLargeIndexBuildHook             func()
-	attributeSeedReadHook                 func(slug string)
-	contentChangedBackfillBatchHook       func(fromID, toID int64) error
-	backfillFTSBatchErrHook               func(fromID, toID int64) error
-	attachmentRoleRepairPreparedHook      func()
-	listIDRepairBeforeApplyHook           func()
-	listIDRepairAfterScanHook             func(context.Context, *loggedTx, []listIDRepairUpdate) error
-	listIDRepairAfterFingerprintLockHook  func()
-	imapLabelRepairPerMessageHook         func(messageID int64)
-	cardDAVConflictResolveSnapshotHook    func()
-	cardDAVTombstonePrepareSnapshotHook   func()
-	cardDAVReviewPersonLockHook           func()
-	cardDAVCollisionIdentityLockHook      func()
-	cardDAVPublicationStateReadHook       func()
-	identityMatchAcceptBeforeDecisionHook func()
-	contactMatchBindAfterPromoteHook      func()
-	senderRepairMessageLockHook           func()
-	personOperationBeforeIdentityLockHook func()
-	personMergeAfterSnapshotHook          func()
-	personEnrichmentClock                 func() time.Time
-	personEnrichmentBudgetBarrier         func()
-	personEnrichmentRunBarrier            func(phase string)
-	personEnrichmentTxBarrier             func(phase string)
-	personEnrichmentOwnershipBarrier      func(phase string, tx *loggedTx)
-	personNetworkSourceReadHook           func(limit, count int)
-	operationHistoryAfterAdapterReadHook  func(kind string)
-	operationHistoryStatusAfterActiveHook func(kind string)
+	initSchemaWindowHook                   func()
+	beforeLargeIndexBuildHook              func()
+	attributeSeedReadHook                  func(slug string)
+	contentChangedBackfillBatchHook        func(fromID, toID int64) error
+	backfillFTSBatchErrHook                func(fromID, toID int64) error
+	attachmentRoleRepairPreparedHook       func()
+	listIDRepairBeforeApplyHook            func()
+	listIDRepairAfterScanHook              func(context.Context, *loggedTx, []listIDRepairUpdate) error
+	listIDRepairAfterFingerprintLockHook   func()
+	imapLabelRepairPerMessageHook          func(messageID int64)
+	cardDAVConflictResolveSnapshotHook     func()
+	cardDAVTombstonePrepareSnapshotHook    func()
+	cardDAVReviewPersonLockHook            func()
+	cardDAVCollisionIdentityLockHook       func()
+	cardDAVPublicationStateReadHook        func()
+	identityMatchAcceptBeforeDecisionHook  func()
+	contactMatchBindAfterPromoteHook       func()
+	personEnrichmentReviewBeforeUpdateHook func(*loggedTx)
+	senderRepairMessageLockHook            func()
+	personOperationBeforeIdentityLockHook  func()
+	personMergeAfterSnapshotHook           func()
+	personEnrichmentClock                  func() time.Time
+	personEnrichmentBudgetBarrier          func()
+	personEnrichmentRunBarrier             func(phase string)
+	personEnrichmentTxBarrier              func(phase string)
+	personEnrichmentOwnershipBarrier       func(phase string, tx *loggedTx)
+	personNetworkSourceReadHook            func(limit, count int)
+	operationHistoryAfterAdapterReadHook   func(kind string)
+	operationHistoryStatusAfterActiveHook  func(kind string)
 
 	// Zero means "use the production batch size"; see
 	// contentChangedBackfillBatch and rfc822IDBackfillBatch. Per-Store for
