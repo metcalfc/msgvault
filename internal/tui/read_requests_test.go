@@ -62,19 +62,24 @@ func (l cancellableScopeLister) ListCollectionScopes(ctx context.Context) ([]que
 	return nil, ctx.Err()
 }
 
-func TestModeChangeCancelsPresentationReadsButKeepsSharedScopes(t *testing.T) {
+func TestModeChangeCancelsPresentationReadsButKeepsParkedAndSharedReads(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 		started := make(chan context.Context)
 		scopeStarted := make(chan context.Context)
+		peopleStarted := make(chan context.Context)
 		engine := newMockEngine(MockConfig{})
 		engine.GetMessageFunc = func(ctx context.Context, _ int64) (*query.MessageDetail, error) {
 			started <- ctx
 			<-ctx.Done()
 			return nil, ctx.Err()
 		}
-		model := New(engine, Options{Context: t.Context(), CollectionScopeLister: cancellableScopeLister{scopeStarted}})
+		model := New(engine, Options{
+			Context:               t.Context(),
+			CollectionScopeLister: cancellableScopeLister{scopeStarted},
+			PeopleBackend:         cancellablePeopleBackend{started: peopleStarted},
+		})
 		defer model.Close()
 		result := make(chan tea.Msg, 1)
 		detail := model.loadMessageDetail(1)
@@ -84,15 +89,22 @@ func TestModeChangeCancelsPresentationReadsButKeepsSharedScopes(t *testing.T) {
 		scopeResult := make(chan tea.Msg, 1)
 		go func() { scopeResult <- scopes() }()
 		scopeContext := <-scopeStarted
+		completions := model.loadPeopleCompletions("synthetic")
+		peopleResult := make(chan tea.Msg, 1)
+		go func() { peopleResult <- completions() }()
+		peopleContext := <-peopleStarted
 
 		model, _ = sendKey(t, model, key('m'))
-		require.ErrorIs(detailContext.Err(), context.Canceled)
+		require.ErrorIs(peopleContext.Err(), context.Canceled, "People reloads on re-entry, so its read stops")
+		require.NoError(detailContext.Err(), "a parked Email read still applies when its mode returns")
 		require.NoError(scopeContext.Err(), "shared account scopes remain useful in another mode")
-		model = sendMsg(t, model, <-result)
+		model = sendMsg(t, model, <-peopleResult)
 		require.NoError(model.err)
 		assert.NotEqual(modalError, model.modal)
 		model.Close()
+		require.ErrorIs(detailContext.Err(), context.Canceled)
 		require.ErrorIs(scopeContext.Err(), context.Canceled)
+		<-result
 		<-scopeResult
 	})
 }

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
@@ -61,7 +62,15 @@ func (r *readRequests) cancelPresentation() {
 }
 
 func (m Model) readCommand(slot string, run func(context.Context) tea.Msg, onPanic func(any) tea.Msg) tea.Cmd {
-	return m.scopedReadCommand(slot, false, run, onPanic)
+	return m.scopedReadCommand(slot, survivesPresentation(slot), run, onPanic)
+}
+
+// Email and Meetings apply a read's result while their mode is parked, and
+// re-entering them does not reload, so a mode change must not cancel their
+// reads. People and Texts drop results from another mode and reload on
+// re-entry; their reads stop when the presentation changes.
+func survivesPresentation(slot string) bool {
+	return strings.HasPrefix(slot, "email.") || strings.HasPrefix(slot, "meetings.")
 }
 
 // Accounts and collections are shared by every presentation and remain useful
