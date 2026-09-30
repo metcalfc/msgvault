@@ -16,9 +16,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/config"
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/identityindex"
 	"go.kenn.io/msgvault/internal/query"
 	"go.kenn.io/msgvault/internal/query/querytest"
+	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/testutil"
 )
 
@@ -612,6 +614,36 @@ func TestRelationshipsMarksSavedPeopleAndListsOnlyUnsaved(t *testing.T) {
 
 	invalid := postExploreJSON(t, srv, "/api/v1/relationships", `{"sort":"alphabetical"}`)
 	assert.Equal(http.StatusBadRequest, invalid.Code)
+}
+
+func TestRelationshipsLeaveOutRecordsMarkedNotAPerson(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	now := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+	srv, identityStore, _ := newRelationshipIdentityAPIServer(t, newRelationshipsDuckDBFixture(t, now), []string{
+		"owner@example.test", "alice@example.test", "alice@chat.example", "newsletter@example.test",
+	})
+	first := relationshipsPage(t, srv, `{"show_all":true,"sort":"last_contact","limit":1}`)
+	require.NotEmpty(first.NextCursor)
+
+	_, err := identityStore.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: relNewsletterID, Kind: correspondentkind.Ignored,
+	})
+	require.NoError(err)
+
+	ranked := relationshipsPage(t, srv, `{"show_all":true}`)
+	require.Len(ranked.Rows, 1)
+	assert.Equal(relAliceID, ranked.Rows[0].CanonicalID)
+	included := relationshipsPage(t, srv, `{"show_all":true,"include_not_people":true}`)
+	assert.Len(included.Rows, 2)
+
+	// Classifying a record between pages restarts pagination.
+	stale := postExploreJSON(t, srv, "/api/v1/relationships",
+		fmt.Sprintf(`{"show_all":true,"sort":"last_contact","limit":1,"cursor":%q}`, first.NextCursor))
+	assert.Equal(http.StatusConflict, stale.Code)
+	assert.Contains(stale.Body.String(), "not_people_changed")
 }
 
 func TestRelationshipsUnsavedCursorRestartsWhenSavedPeopleChange(t *testing.T) {

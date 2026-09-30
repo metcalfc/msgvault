@@ -52,7 +52,17 @@ type DirectoryPeopleQuery struct {
 	// participants, the same fact ContactState "active" reports. Nil applies
 	// no activity filter.
 	HasActivity *bool `json:"has_activity,omitempty"`
+	// NotPeople controls people whose every archive identity is classified
+	// as an organization or ignored: empty hides them, "include" lists them
+	// with everyone else, and "only" lists just them.
+	NotPeople string `json:"not_people,omitempty"`
 }
+
+// Directory not-people modes.
+const (
+	DirectoryNotPeopleInclude = "include"
+	DirectoryNotPeopleOnly    = "only"
+)
 
 // DirectoryPersonSummary is the non-sensitive, directory-sized projection of
 // a durable person root. ContactState is "active" when a contact projection
@@ -91,7 +101,11 @@ type normalizedDirectoryPeopleQuery struct {
 	sort              string
 	hasName           string
 	hasActivity       string
-	fingerprint       string
+	notPeople         string
+	// notPeopleIDs is read inside the page snapshot: the people the
+	// notPeople mode hides or selects.
+	notPeopleIDs []int64
+	fingerprint  string
 }
 
 type directoryPeopleCursor struct {
@@ -163,6 +177,11 @@ func normalizeDirectoryPeopleQuery(query DirectoryPeopleQuery) (normalizedDirect
 	if normalized.contactState != "" && normalized.contactState != "active" && normalized.contactState != "inactive" {
 		return normalized, fmt.Errorf("%w: unknown contact state", ErrInvalidDirectoryQuery)
 	}
+	normalized.notPeople = strings.TrimSpace(query.NotPeople)
+	if normalized.notPeople != "" && normalized.notPeople != DirectoryNotPeopleInclude &&
+		normalized.notPeople != DirectoryNotPeopleOnly {
+		return normalized, fmt.Errorf("%w: unknown not_people mode", ErrInvalidDirectoryQuery)
+	}
 	normalized.hasName = directoryBoolFilter(query.HasName)
 	normalized.hasActivity = directoryBoolFilter(query.HasActivity)
 	normalized.terms = directoryTokens(query.Query)
@@ -187,6 +206,7 @@ func normalizeDirectoryPeopleQuery(query DirectoryPeopleQuery) (normalizedDirect
 		// their fingerprint.
 		HasName     string `json:"has_name,omitempty"`
 		HasActivity string `json:"has_activity,omitempty"`
+		NotPeople   string `json:"not_people,omitempty"`
 	}{
 		Query: normalized.query, ContactState: normalized.contactState,
 		Category: normalized.category, Organization: normalized.organization,
@@ -194,6 +214,7 @@ func normalizeDirectoryPeopleQuery(query DirectoryPeopleQuery) (normalizedDirect
 		LastContactAfter: normalized.lastContactAfter, LastContactBefore: normalized.lastContactBefore,
 		Sort:    normalized.sort,
 		HasName: normalized.hasName, HasActivity: normalized.hasActivity,
+		NotPeople: normalized.notPeople,
 	}, json.Deterministic(true))
 	if err != nil {
 		return normalized, fmt.Errorf("encode directory filters: %w", err)
@@ -228,6 +249,13 @@ func (s *Store) directoryPeoplePageContext(
 
 	var page *DirectoryPeoplePage
 	err := s.withFreshDirectorySnapshotContext(ctx, func(tx *loggedTx) error {
+		if query.notPeople != DirectoryNotPeopleInclude {
+			ids, err := s.notPeoplePersonIDsTx(ctx, tx)
+			if err != nil {
+				return err
+			}
+			query.notPeopleIDs = ids
+		}
 		if after != nil {
 			anchor, err := s.directoryCursorAnchorTx(ctx, tx, query, after.PersonID)
 			if err != nil {
@@ -342,6 +370,20 @@ func directoryCandidateProjectionSQL(query normalizedDirectoryPeopleQuery) (stri
 	}
 	if query.organization != "" {
 		where, filterArgs = append(where, `EXISTS (SELECT 1 FROM directory_person_filters filter WHERE filter.person_id = dp.person_id AND filter.filter_kind = 'organization' AND filter.value_key = ?)`), append(filterArgs, directoryKey(query.organization))
+	}
+	switch {
+	case query.notPeople == DirectoryNotPeopleOnly && len(query.notPeopleIDs) == 0:
+		where = append(where, "1 = 0")
+	case query.notPeople == DirectoryNotPeopleOnly:
+		where = append(where, "dp.person_id IN ("+placeholders(len(query.notPeopleIDs))+")")
+		for _, id := range query.notPeopleIDs {
+			filterArgs = append(filterArgs, id)
+		}
+	case query.notPeople == "" && len(query.notPeopleIDs) > 0:
+		where = append(where, "dp.person_id NOT IN ("+placeholders(len(query.notPeopleIDs))+")")
+		for _, id := range query.notPeopleIDs {
+			filterArgs = append(filterArgs, id)
+		}
 	}
 	filterSQL := "1 = 1"
 	if len(where) > 0 {

@@ -483,7 +483,8 @@ func (s *Store) ReleaseWork(
 	ctx context.Context, token personenrichment.LeaseToken, release personenrichment.WorkRelease,
 ) error {
 	if release.Outcome != "policy" && release.Outcome != "suppressed" && release.Outcome != "defer" &&
-		release.Outcome != "retry" && release.Outcome != "complete" {
+		release.Outcome != "retry" && release.Outcome != "complete" &&
+		release.Outcome != personenrichment.WorkOutcomeNotAPerson {
 		return fmt.Errorf("invalid person enrichment work release outcome %q", release.Outcome)
 	}
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
@@ -534,6 +535,10 @@ func (s *Store) ReleaseWork(
 		case "complete":
 			if token.AttemptID != 0 {
 				return errors.New("active person enrichment attempts complete only through the claim sink")
+			}
+		case personenrichment.WorkOutcomeNotAPerson:
+			if token.AttemptID != 0 {
+				return errors.New("an active person enrichment attempt cannot be skipped as not a person")
 			}
 		case "policy", "suppressed":
 			hasHashes := validLowerSHA256(release.PayloadHash) && validLowerSHA256(release.RequestHash)
@@ -2280,6 +2285,22 @@ func (s *Store) LoadRequestInput(
 			})
 		}
 	}
+	// Identities the user classified as not a person (a shared mailbox, an
+	// organization, or an ignored record) are never sent as this person's
+	// identifiers, and a profile made only of organization or ignored
+	// identities is not looked up at all.
+	notPerson, err := s.NotPersonParticipantsContext(ctx)
+	if err != nil {
+		return input, err
+	}
+	input.NotAPerson, err = s.PersonIsNotAPersonContext(ctx, person.ID)
+	if err != nil {
+		return input, err
+	}
+	excludedEmails, excludedPhones, err := s.notPersonAddressesContext(ctx, notPerson)
+	if err != nil {
+		return input, err
+	}
 	participantRows, err := s.db.QueryContext(ctx, `
 		SELECT p.id, p.display_name, p.email_address, p.phone_number, p.created_at
 		FROM person_participants pp
@@ -2299,6 +2320,9 @@ func (s *Store) LoadRequestInput(
 		activeFrom := time.Time{}
 		if created.Valid {
 			activeFrom = created.Time
+		}
+		if _, skip := notPerson[id]; skip {
+			continue
 		}
 		if displayName.Valid && strings.TrimSpace(displayName.String) != "" {
 			input.Names = append(input.Names, personenrichment.IdentityCandidate{
@@ -2331,6 +2355,14 @@ func (s *Store) LoadRequestInput(
 			StableID: point.Envelope.ID, Value: point.NormalizedValue,
 			Primary:    point.Envelope.Pref != nil && *point.Envelope.Pref == 1,
 			ActiveFrom: valueEnvelopeActiveFrom(point.Envelope),
+		}
+		if _, skip := excludedEmails[strings.ToLower(strings.TrimSpace(point.NormalizedValue))]; skip &&
+			point.AddressKind == ContactAddressEmail {
+			continue
+		}
+		if _, skip := excludedPhones[strings.TrimSpace(point.NormalizedValue)]; skip &&
+			point.AddressKind == ContactAddressPhone {
+			continue
 		}
 		switch point.AddressKind {
 		case ContactAddressEmail:

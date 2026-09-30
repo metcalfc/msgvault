@@ -406,6 +406,9 @@ func (s *Server) writeIdentityMatchError(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrContactMatchRejectedInCluster):
 		writeError(w, http.StatusConflict, "contact_match_rejected_in_cluster",
 			"Another identity in this cluster was already rejected for this profile")
+	case errors.Is(err, store.ErrContactMatchNotAPerson):
+		writeError(w, http.StatusConflict, "contact_match_not_a_person",
+			"The matched archive identity is marked as not a person")
 	case errors.Is(err, store.ErrIdentityMatchEndpointNotFound):
 		writeError(w, http.StatusNotFound, "identity_match_endpoint_not_found", err.Error())
 	case errors.Is(err, store.ErrPersonBindingConflict):

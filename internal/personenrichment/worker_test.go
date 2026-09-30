@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/personenrichment"
 	"go.kenn.io/msgvault/internal/personfacts"
 	"go.kenn.io/msgvault/internal/store"
@@ -1267,6 +1268,44 @@ func TestWorkerRetainsWorkForTransientRequestLoadFailure(t *testing.T) {
 	requirements.Len(workRows, 1)
 	checks.Nil(workRows[0].ActiveAttemptID)
 	checks.True(workRows[0].DueAt.After(time.Now().UTC().Add(-time.Second)))
+	attempts, err := f.store.ListPersonEnrichmentAttemptsContext(t.Context(), store.PersonEnrichmentAttemptFilter{
+		PersonID: f.person.ID, RunID: f.run.ID, Limit: 10,
+	})
+	requirements.NoError(err)
+	checks.Empty(attempts)
+}
+
+func TestWorkerSkipsProfilesMarkedNotAPerson(t *testing.T) {
+	checks := assert.New(t)
+	requirements := require.New(t)
+	f := newWorkerFixture(t, "not-a-person", nil)
+	requirements.NotEmpty(f.person.ParticipantIDs)
+	_, err := f.store.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: f.person.ParticipantIDs[0], Kind: correspondentkind.Organization,
+	})
+	requirements.NoError(err)
+	f.enqueue(t)
+	var credential, factory atomic.Int64
+	worker, err := personenrichment.NewWorker(
+		f.store, f.store, f.gate(t, func(string) (string, bool) {
+			credential.Add(1)
+			return "test-key", true
+		}), map[string]personenrichment.ProviderFactory{f.config.Name: func(personenrichment.ProviderConfig, string) (personenrichment.Provider, error) {
+			factory.Add(1)
+			return nil, errors.New("provider must not be constructed")
+		}}, f.options(map[string]personenrichment.ProviderConfig{f.config.Name: f.config}))
+	requirements.NoError(err)
+
+	processed, err := worker.RunOnce(t.Context(), f.run.ID)
+	requirements.NoError(err)
+	checks.True(processed)
+	checks.Zero(credential.Load(), "nothing is authorized for egress")
+	checks.Zero(factory.Load())
+	workRows, err := f.store.ListPersonEnrichmentWorkContext(t.Context(), store.PersonEnrichmentWorkFilter{
+		PersonID: f.person.ID, ProfileFingerprint: f.profile.Fingerprint, Limit: 10,
+	})
+	requirements.NoError(err)
+	checks.Empty(workRows)
 	attempts, err := f.store.ListPersonEnrichmentAttemptsContext(t.Context(), store.PersonEnrichmentAttemptFilter{
 		PersonID: f.person.ID, RunID: f.run.ID, Limit: 10,
 	})

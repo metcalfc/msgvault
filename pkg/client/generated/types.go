@@ -10793,8 +10793,11 @@ func (r RelationshipTypesResponse) Validate() error {
 type RelationshipsHTTPRequest struct {
 	Cursor  *string         `json:"cursor,omitzero"`
 	Filters []ExploreFilter `json:"filters,omitempty"`
-	Limit   *int64          `json:"limit,omitempty" validate:"omitempty,gte=0,lte=500"`
-	ShowAll *bool           `json:"show_all,omitempty"`
+
+	// IncludeNotPeople Include counterparts whose identity cluster is marked as an organization, a shared mailbox, or ignored. They are left out by default.
+	IncludeNotPeople *bool  `json:"include_not_people,omitempty"`
+	Limit            *int64 `json:"limit,omitempty" validate:"omitempty,gte=0,lte=500"`
+	ShowAll          *bool  `json:"show_all,omitempty"`
 
 	// Sort Row order: score (the reciprocity ranking, the default) or last_contact (newest last interaction first).
 	Sort *RelationshipsHTTPRequestSort `json:"sort,omitempty"`

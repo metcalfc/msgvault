@@ -28,6 +28,12 @@ var ErrContactMatchStale = errors.New(
 var ErrContactMatchRejectedInCluster = errors.New(
 	"another identity in this cluster was rejected for this profile")
 
+// ErrContactMatchNotAPerson reports that the user classified the matched
+// cluster as an organization, a shared mailbox, or ignored, so it is never
+// bound to or merged with a person.
+var ErrContactMatchNotAPerson = errors.New(
+	"the matched archive identity is not a person")
+
 // contactMatchMergeActor records who performed the merge half of an accepted
 // bind. Only an explicit user decision reaches it.
 const contactMatchMergeActor = "user"
@@ -163,6 +169,13 @@ func contactMatchAcceptGuardsTx(
 		if _, owner := owners[member]; owner {
 			return ErrContactMatchOwnerIdentity
 		}
+	}
+	notAPerson, err := participantsClassifiedNotPersonTx(ctx, tx, members)
+	if err != nil {
+		return err
+	}
+	if notAPerson {
+		return ErrContactMatchNotAPerson
 	}
 	rejected, err := clusterHasRejectedPersonMatchTx(ctx, tx, candidate, members)
 	if err != nil {

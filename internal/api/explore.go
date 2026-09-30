@@ -228,6 +228,11 @@ type exploreCursor struct {
 	// pages invalidates the offset instead of silently skipping a contact.
 	SavedPeople string `json:"saved_people,omitempty"`
 
+	// NotPeople fingerprints the clusters classified as not a person that a
+	// relationship listing excluded, so classifying or restoring a record
+	// between pages restarts pagination instead of skipping a row.
+	NotPeople string `json:"not_people,omitempty"`
+
 	// Timezone and CanonicalID pin a relationship timeline cursor (see
 	// handleRelationshipTimeline) to the request that produced it. Unlike
 	// every other explore-style cursor, a mismatch on any field here —

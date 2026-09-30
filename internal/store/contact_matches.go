@@ -167,6 +167,10 @@ func (s *Store) findContactMatchesTx(ctx context.Context, tx *loggedTx) ([]Conta
 	if err != nil {
 		return nil, err
 	}
+	notPeople, err := s.hiddenCorrespondentParticipantsTx(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
 
 	matches := make([]ContactMatch, 0, len(keys))
 	personIDs := []int64{}
@@ -181,6 +185,13 @@ func (s *Store) findContactMatchesTx(ctx context.Context, tx *loggedTx) ([]Conta
 		if slices.ContainsFunc(cluster, func(id int64) bool {
 			_, wasRejected := rejected[participantPersonPair{participantID: id, personID: key.personID}]
 			return wasRejected
+		}) {
+			continue
+		}
+		// A cluster the user said is not a person is never bound or merged.
+		if slices.ContainsFunc(cluster, func(id int64) bool {
+			_, hidden := notPeople[id]
+			return hidden
 		}) {
 			continue
 		}
@@ -889,5 +900,6 @@ func (s *Store) retireStaleContactMatchCandidatesTx(ctx context.Context, tx *log
 func isContactMatchRetirement(err error) bool {
 	return errors.Is(err, ErrContactMatchOwnerIdentity) ||
 		errors.Is(err, ErrContactMatchStale) ||
-		errors.Is(err, ErrContactMatchRejectedInCluster)
+		errors.Is(err, ErrContactMatchRejectedInCluster) ||
+		errors.Is(err, ErrContactMatchNotAPerson)
 }

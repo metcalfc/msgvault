@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.kenn.io/msgvault/internal/correspondentkind"
+	"go.kenn.io/msgvault/internal/textimport"
 )
 
 // Correspondent kinds record whether a participant identity cluster is a
@@ -1002,4 +1003,129 @@ func rewriteCorrespondentKindsForMergeTx(ctx context.Context, tx *loggedTx, oldI
 		return fmt.Errorf("move correspondent kinds: %w", err)
 	}
 	return nil
+}
+
+// hidesSavedPerson reports whether a kind removes a saved person whose every
+// identity carries it from People lists. A shared mailbox does not: the
+// people who wrote from it keep their own profiles.
+func hidesSavedPerson(kind correspondentkind.Kind) bool {
+	return kind == correspondentkind.Organization || kind == correspondentkind.Ignored
+}
+
+// notPeoplePersonIDsTx returns saved people whose every bound participant is
+// in a cluster classified as an organization or ignored. People lists hide
+// them by default.
+func (s *Store) notPeoplePersonIDsTx(ctx context.Context, tx *loggedTx) ([]int64, error) {
+	hidden, err := s.hiddenCorrespondentParticipantsTx(ctx, tx)
+	if err != nil || len(hidden) == 0 {
+		return nil, err
+	}
+	candidates := []int64{}
+	for id, row := range hidden {
+		if hidesSavedPerson(row.kind) {
+			candidates = append(candidates, id)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	slices.Sort(candidates)
+	bindings := map[int64][]int64{}
+	if err := queryInChunksContext(ctx, tx, candidates, nil, `
+		SELECT person_id FROM person_participants WHERE participant_id IN (%s)`,
+		func(rows *loggedRows) error {
+			var personID int64
+			if err := rows.Scan(&personID); err != nil {
+				return fmt.Errorf("scan classified person: %w", err)
+			}
+			bindings[personID] = nil
+			return nil
+		}); err != nil {
+		return nil, fmt.Errorf("load classified people: %w", err)
+	}
+	personIDs := make([]int64, 0, len(bindings))
+	for personID := range bindings {
+		personIDs = append(personIDs, personID)
+	}
+	slices.Sort(personIDs)
+	if err := queryInChunksContext(ctx, tx, personIDs, nil, `
+		SELECT person_id, participant_id FROM person_participants WHERE person_id IN (%s)`,
+		func(rows *loggedRows) error {
+			var personID, participantID int64
+			if err := rows.Scan(&personID, &participantID); err != nil {
+				return fmt.Errorf("scan classified person binding: %w", err)
+			}
+			bindings[personID] = append(bindings[personID], participantID)
+			return nil
+		}); err != nil {
+		return nil, fmt.Errorf("load classified person bindings: %w", err)
+	}
+	result := []int64{}
+	for _, personID := range personIDs {
+		allHidden := len(bindings[personID]) > 0
+		for _, participantID := range bindings[personID] {
+			if row, ok := hidden[participantID]; !ok || !hidesSavedPerson(row.kind) {
+				allHidden = false
+				break
+			}
+		}
+		if allHidden {
+			result = append(result, personID)
+		}
+	}
+	return result, nil
+}
+
+// notPersonAddressesContext returns the lowercased email addresses and the
+// normalized phone numbers of the given not-a-person participants, so a
+// profile's curated contact points can leave out the same addresses.
+func (s *Store) notPersonAddressesContext(
+	ctx context.Context, notPerson map[int64]correspondentkind.Kind,
+) (map[string]struct{}, map[string]struct{}, error) {
+	emails, phones := map[string]struct{}{}, map[string]struct{}{}
+	if len(notPerson) == 0 {
+		return emails, phones, nil
+	}
+	ids := make([]int64, 0, len(notPerson))
+	for id := range notPerson {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	if err := queryInChunksContext(ctx, s.db, ids, nil, `
+		SELECT email_address, phone_number FROM participants WHERE id IN (%s)`,
+		func(rows *loggedRows) error {
+			var email, phone sql.NullString
+			if err := rows.Scan(&email, &phone); err != nil {
+				return fmt.Errorf("scan not-a-person address: %w", err)
+			}
+			if value := strings.ToLower(strings.TrimSpace(email.String)); value != "" {
+				emails[value] = struct{}{}
+			}
+			if value := strings.TrimSpace(phone.String); value != "" {
+				phones[value] = struct{}{}
+				if normalized, err := textimport.NormalizePhone(value); err == nil {
+					phones[normalized] = struct{}{}
+				}
+			}
+			return nil
+		}); err != nil {
+		return nil, nil, fmt.Errorf("load not-a-person addresses: %w", err)
+	}
+	return emails, phones, nil
+}
+
+// PersonIsNotAPersonContext reports whether every archive identity bound to
+// the person is classified as an organization or ignored. People-oriented
+// consumers such as enrichment skip such a profile.
+func (s *Store) PersonIsNotAPersonContext(ctx context.Context, personID int64) (bool, error) {
+	found := false
+	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
+		ids, err := s.notPeoplePersonIDsTx(ctx, tx)
+		if err != nil {
+			return err
+		}
+		found = slices.Contains(ids, personID)
+		return nil
+	})
+	return found, err
 }

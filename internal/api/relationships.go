@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/query"
 )
 
@@ -28,6 +30,10 @@ type RelationshipsHTTPRequest struct {
 	// UnsavedOnly lists only clusters not yet saved to the Directory, so
 	// the People list can merge them with saved people without duplicates.
 	UnsavedOnly bool `json:"unsaved_only,omitzero" doc:"List only counterparts whose cluster is not bound to a saved Directory person."`
+	// IncludeNotPeople keeps clusters the user classified as an
+	// organization, a shared mailbox, or ignored; rankings leave them out
+	// by default.
+	IncludeNotPeople bool `json:"include_not_people,omitzero" doc:"Include counterparts whose identity cluster is marked as an organization, a shared mailbox, or ignored. They are left out by default."`
 }
 
 // RelationshipsHTTPResponse echoes both revisions a page was computed
@@ -192,6 +198,25 @@ func (s *Server) handleRelationships(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	notPeople := ""
+	if !request.IncludeNotPeople {
+		hidden, fingerprint, ok := s.notPersonParticipantSet(w, r.Context())
+		if !ok {
+			return
+		}
+		if len(hidden) > 0 && exclude == nil {
+			exclude = make(map[int64]struct{}, len(hidden))
+		}
+		for id := range hidden {
+			exclude[id] = struct{}{}
+		}
+		notPeople = fingerprint
+		if request.Cursor != "" && cursor.NotPeople != notPeople {
+			writeError(w, http.StatusConflict, "not_people_changed",
+				"Records marked as not a person changed; restart pagination")
+			return
+		}
+	}
 	result, err := analyzer.Relationships(r.Context(), query.RelationshipsRequest{
 		Context: analyticalContext, ShowAll: request.ShowAll, Limit: request.Limit, Offset: offset, Now: decayDate,
 		SortByLastContact: request.Sort == "last_contact", ExcludeParticipants: exclude,
@@ -224,7 +249,7 @@ func (s *Server) handleRelationships(w http.ResponseWriter, r *http.Request) {
 	if next := offset + len(result.Rows); next < int(result.TotalCount) {
 		response.NextCursor = s.encodeExploreCursor(exploreCursor{
 			Offset: next, Request: requestHash, Revision: result.CacheRevision, IdentityRevision: result.IdentityRevision,
-			DecayDate: decayDate.Format(time.DateOnly), SavedPeople: savedPeople,
+			DecayDate: decayDate.Format(time.DateOnly), SavedPeople: savedPeople, NotPeople: notPeople,
 		})
 	}
 	writeJSON(w, http.StatusOK, response)
@@ -369,6 +394,39 @@ func canonicalizeRelationshipFilters(filters []ExploreFilter) {
 // person, for listings that show only contacts not yet saved.
 type BoundParticipantStore interface {
 	BoundParticipantIDsContext(ctx context.Context) ([]int64, error)
+}
+
+// NotPersonParticipantStore reports the participants in clusters the user
+// classified as an organization, a shared mailbox, or ignored.
+type NotPersonParticipantStore interface {
+	NotPersonParticipantsContext(ctx context.Context) (map[int64]correspondentkind.Kind, error)
+}
+
+// notPersonParticipantSet returns every participant in a cluster classified
+// as not a person, with a fingerprint of the set for cursor drift checks. A
+// store without the capability classifies nothing.
+func (s *Server) notPersonParticipantSet(
+	w http.ResponseWriter, ctx context.Context,
+) (map[int64]correspondentkind.Kind, string, bool) {
+	kinds, ok := s.store.(NotPersonParticipantStore)
+	if !ok {
+		return nil, "", true
+	}
+	hidden, err := kinds.NotPersonParticipantsContext(ctx)
+	if err != nil {
+		s.logger.Error("correspondent kind lookup failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Could not read records marked as not a person")
+		return nil, "", false
+	}
+	if len(hidden) == 0 {
+		return hidden, "", true
+	}
+	ids := make([]int64, 0, len(hidden))
+	for id := range hidden {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return hidden, boundParticipantsFingerprint(ids), true
 }
 
 // attachRelationshipRowProfiles marks each ranked row whose cluster has been

@@ -11546,6 +11546,9 @@ components:
           items:
             $ref: "#/components/schemas/ExploreFilter"
           type: array
+        include_not_people:
+          description: Include counterparts whose identity cluster is marked as an organization, a shared mailbox, or ignored. They are left out by default.
+          type: boolean
         limit:
           format: int64
           maximum: 500

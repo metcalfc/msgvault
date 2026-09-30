@@ -169,6 +169,10 @@ type RetryUpdate struct {
 	NextActionAt time.Time
 }
 
+// WorkOutcomeNotAPerson releases work for a profile the user classified as
+// not a person: nothing is sent and no attempt is recorded.
+const WorkOutcomeNotAPerson = "not_a_person"
+
 type WorkRelease struct {
 	Outcome        string
 	Failure        *SafeFailure

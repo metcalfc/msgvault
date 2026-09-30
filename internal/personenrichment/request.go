@@ -25,6 +25,10 @@ type RequestInput struct {
 	PublicProfileURLs []IdentityCandidate
 	Catalog           personfacts.Catalog
 	Trigger           Trigger
+	// NotAPerson is true when the user classified every archive identity of
+	// the profile as an organization or ignored. The worker then skips the
+	// profile with outcome not_a_person instead of looking it up.
+	NotAPerson bool
 }
 
 type IdentityCandidate struct {

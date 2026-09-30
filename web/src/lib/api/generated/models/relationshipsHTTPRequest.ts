@@ -7,6 +7,8 @@ import type { RelationshipsHTTPRequestSort } from "./relationshipsHTTPRequestSor
 export interface RelationshipsHTTPRequest {
   cursor?: string;
   filters?: ExploreFilter[];
+  /** Include counterparts whose identity cluster is marked as an organization, a shared mailbox, or ignored. They are left out by default. */
+  include_not_people?: boolean;
   /**
    * @minimum 0
    * @maximum 500

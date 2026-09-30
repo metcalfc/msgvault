@@ -244,6 +244,11 @@ func (w *Worker) processLease(
 	if err != nil {
 		return w.releaseRetry(ctx, lease, nil, safeFailure(FailureTransient, 0, "", "request state unavailable"))
 	}
+	if input.NotAPerson && lease.ActiveAttempt == nil {
+		return w.work.ReleaseWork(ctx, lease.Token, WorkRelease{
+			Outcome: WorkOutcomeNotAPerson, PersonRevision: input.PersonRevision,
+		})
+	}
 	request, hashes, err := BuildRequest(input, profile)
 	if err != nil {
 		return w.terminalizePolicyDrift(ctx, lease, input, RequestHashes{})
