@@ -11,15 +11,15 @@ import (
 // routes. Unlike the older CLIStore bridge, these routes require cancellation
 // support from every implementation.
 type CLICollectionStore interface {
-	GetCollectionByNameContext(context.Context, string) (*store.CollectionWithSources, error)
-	ListCollectionsContext(context.Context) ([]*store.CollectionWithSources, error)
-	CreateCollectionContext(context.Context, string, string, []int64) (*store.Collection, error)
-	AddSourcesToCollectionContext(context.Context, string, []int64) error
-	RemoveSourcesFromCollectionContext(context.Context, string, []int64) error
-	DeleteCollectionContext(context.Context, string) error
-	GetSourceByIDContext(context.Context, int64) (*store.Source, error)
-	GetSourcesByIdentifierOrDisplayNameContext(context.Context, string) ([]*store.Source, error)
-	GetSourcesByTypeAndAccountContext(context.Context, string, string) ([]*store.Source, error)
+	GetCollectionByNameContext(ctx context.Context, name string) (*store.CollectionWithSources, error)
+	ListCollectionsContext(ctx context.Context) ([]*store.CollectionWithSources, error)
+	CreateCollectionContext(ctx context.Context, name, description string, sourceIDs []int64) (*store.Collection, error)
+	AddSourcesToCollectionContext(ctx context.Context, name string, sourceIDs []int64) error
+	RemoveSourcesFromCollectionContext(ctx context.Context, name string, sourceIDs []int64) error
+	DeleteCollectionContext(ctx context.Context, name string) error
+	GetSourceByIDContext(ctx context.Context, id int64) (*store.Source, error)
+	GetSourcesByIdentifierOrDisplayNameContext(ctx context.Context, query string) ([]*store.Source, error)
+	GetSourcesByTypeAndAccountContext(ctx context.Context, sourceType, account string) ([]*store.Source, error)
 }
 
 func (s *Server) cliCollectionStore() (CLICollectionStore, *apiHTTPError) {

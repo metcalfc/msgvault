@@ -567,6 +567,6 @@ func TestDirectWriterOwnsArchiveReportsLockInspectionError(t *testing.T) {
 	owned, err := directSQLiteWriterOwnsArchive(cfg)
 	assert.False(owned)
 	require.Error(err)
-	assert.ErrorContains(err, "acquire sqlite write-owner lock")
+	require.ErrorContains(err, "acquire sqlite write-owner lock")
 	assert.Error(daemonAutostartPreflight(cfg))
 }
