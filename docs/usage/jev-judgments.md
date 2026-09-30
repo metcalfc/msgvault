@@ -75,6 +75,7 @@ new `msgvault jev consent`.
 
    [jev.query_understanding]
    enabled = true      # searches you type in the Web UI only; never automatic
+
    [jev.sweep_evidence_rerank]   # sends message excerpts the person wrote
    enabled = true
    # automatic = true   # also judge during the daemon's scheduled people sweeps
