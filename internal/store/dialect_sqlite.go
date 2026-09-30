@@ -2056,6 +2056,11 @@ func (d *SQLiteDialect) LegacyColumnMigrations() []ColumnMigration {
 		{`ALTER TABLE person_enrichment_attempts ADD COLUMN provider_started_at DATETIME`, "person_enrichment_attempts.provider_started_at"},
 		{`ALTER TABLE person_enrichment_attempts ADD COLUMN dispatch_authorized_at DATETIME`, "person_enrichment_attempts.dispatch_authorized_at"},
 		{`ALTER TABLE person_enrichment_work ADD COLUMN has_fresh_trigger BOOLEAN NOT NULL DEFAULT FALSE`, "person_enrichment_work.has_fresh_trigger"},
+		// An archive that created meeting_action_assignees before these
+		// columns existed gets them with '' (never matching), so its rows
+		// are simply checked again once.
+		{`ALTER TABLE meeting_action_assignees ADD COLUMN input_fingerprint TEXT NOT NULL DEFAULT ''`, "meeting_action_assignees.input_fingerprint"},
+		{`ALTER TABLE meeting_action_assignees ADD COLUMN meeting_revision TEXT NOT NULL DEFAULT ''`, "meeting_action_assignees.meeting_revision"},
 	}
 }
 

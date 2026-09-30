@@ -2,9 +2,11 @@ package meetingjudge
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/text/unicode/norm"
 )
@@ -48,26 +50,55 @@ var (
 	protectedPattern = regexp.MustCompile(`\b\d{4}-\d{1,2}-\d{1,2}\b|\b\d{1,2}/\d{1,2}/\d{2,4}\b|` +
 		`\b\d{1,3}(?:\.\d{1,3}){2,}\b`)
 	percentEscape = regexp.MustCompile(`%[0-9A-Fa-f]{2}`)
+	// phonePartSeparator splits a digit run into numbers that cannot share
+	// one: a slash between two numbers.
+	phonePartSeparator = regexp.MustCompile(`\s*/\s*`)
 )
 
-// normalizeForRedaction undoes the encodings that would hide an identifier
-// from the patterns: percent-escapes, compatibility forms (NFKC), and
-// Unicode dashes and spaces, which become ASCII.
-func normalizeForRedaction(text string) string {
-	text = percentEscape.ReplaceAllStringFunc(text, func(escape string) string {
-		value, err := strconv.ParseUint(escape[1:], 16, 8)
-		if err != nil || value < 0x20 || value > 0x7e {
-			return escape
+// normalizedText is text rewritten so identifiers are easy to find, with
+// the original byte range behind every normalized byte. Matching happens on
+// the normalized text; redaction happens on the original, so characters
+// outside an identifier are sent exactly as written.
+type normalizedText struct {
+	text  string
+	start []int
+	end   []int
+}
+
+// normalizeWithSpans percent-decodes printable escapes, applies NFKC per
+// character, maps Unicode dashes and spaces to ASCII, and drops zero-width
+// characters, recording where each output byte came from.
+func normalizeWithSpans(original string) normalizedText {
+	var builder strings.Builder
+	var starts, ends []int
+	emit := func(value string, from, to int) {
+		builder.WriteString(value)
+		for range len(value) {
+			starts = append(starts, from)
+			ends = append(ends, to)
 		}
-		return string(rune(value))
-	})
-	text = norm.NFKC.String(text)
-	return strings.Map(func(r rune) rune {
-		if replacement, ok := asciiSubstitutes[r]; ok {
-			return replacement
+	}
+	for offset := 0; offset < len(original); {
+		if escape := percentEscape.FindString(original[offset:min(offset+3, len(original))]); escape != "" {
+			if value, err := strconv.ParseUint(escape[1:], 16, 8); err == nil && value >= 0x20 && value <= 0x7e {
+				emit(string(rune(value)), offset, offset+3)
+				offset += 3
+				continue
+			}
 		}
-		return r
-	}, text)
+		r, size := utf8.DecodeRuneInString(original[offset:])
+		for _, folded := range norm.NFKC.String(string(r)) {
+			if replacement, ok := asciiSubstitutes[folded]; ok {
+				if replacement < 0 {
+					continue
+				}
+				folded = replacement
+			}
+			emit(string(folded), offset, offset+size)
+		}
+		offset += size
+	}
+	return normalizedText{text: builder.String(), start: starts, end: ends}
 }
 
 // asciiSubstitutes maps Unicode dashes to '-', Unicode spaces to ' ', and
@@ -88,44 +119,136 @@ var asciiSubstitutes = func() map[rune]rune {
 	return substitutes
 }()
 
-// redactIdentifiers replaces addresses and phone numbers in normalized text
-// with the given replacements.
-func redactIdentifiers(text, email, phone string) string {
-	text = mailtoPattern.ReplaceAllString(text, email)
-	text = telPattern.ReplaceAllString(text, phone)
-	text = emailPattern.ReplaceAllString(text, email)
-	text = obfuscatedEmailPattern.ReplaceAllString(text, email)
-	return redactPhones(text, phone)
+// identifierKind says which placeholder replaces a span.
+type identifierKind int
+
+const (
+	kindEmail identifierKind = iota
+	kindPhone
+)
+
+// identifierSpan is a byte range of the normalized text holding one
+// identifier.
+type identifierSpan struct {
+	start, end int
+	kind       identifierKind
 }
 
-// redactPhones replaces 7-15 digit runs, after shielding each date and
-// dotted version string individually.
-func redactPhones(text, phone string) string {
-	var shielded []string
-	masked := protectedPattern.ReplaceAllStringFunc(text, func(match string) string {
-		shielded = append(shielded, match)
-		// A letter token keeps the shielded text out of digit runs.
-		return "\x00p" + strconv.Itoa(len(shielded)-1) + "q\x00"
-	})
-	masked = phoneCandidatePattern.ReplaceAllStringFunc(masked, func(match string) string {
-		digits := countDigits(match)
-		if digits < minPhoneDigits || digits > maxPhoneDigits {
-			return match
+// findIdentifiers returns the address and phone number spans of normalized
+// text. Each found span is blanked before the next pattern runs, so no text
+// is claimed twice.
+func findIdentifiers(text string) []identifierSpan {
+	work := []byte(text)
+	var spans []identifierSpan
+	blank := func(start, end int) {
+		for i := start; i < end; i++ {
+			work[i] = 0
 		}
-		return phone
-	})
-	for i, original := range shielded {
-		masked = strings.Replace(masked, "\x00p"+strconv.Itoa(i)+"q\x00", original, 1)
 	}
-	return masked
+	for _, pass := range []struct {
+		pattern *regexp.Regexp
+		kind    identifierKind
+	}{
+		{mailtoPattern, kindEmail}, {telPattern, kindPhone},
+		{emailPattern, kindEmail}, {obfuscatedEmailPattern, kindEmail},
+	} {
+		for _, match := range pass.pattern.FindAllIndex(work, -1) {
+			spans = append(spans, identifierSpan{start: match[0], end: match[1], kind: pass.kind})
+			blank(match[0], match[1])
+		}
+	}
+	// Dates and dotted versions are shielded one match at a time on a copy,
+	// so they never join a digit run and never hide a neighbour.
+	shielded := append([]byte(nil), work...)
+	for _, match := range protectedPattern.FindAllIndex(shielded, -1) {
+		for i := match[0]; i < match[1]; i++ {
+			shielded[i] = 0
+		}
+	}
+	for _, match := range phoneCandidatePattern.FindAllIndex(shielded, -1) {
+		spans = append(spans, phoneSpans(shielded, match[0], match[1])...)
+	}
+	return spans
+}
+
+// phoneSpans evaluates one digit run. It is split where two numbers meet (a
+// slash); each part with 7 to 15 digits is a phone number, and a part with
+// more digits is redacted too, failing closed rather than letting two
+// adjacent numbers through as one long run.
+func phoneSpans(text []byte, start, end int) []identifierSpan {
+	run := string(text[start:end])
+	var spans []identifierSpan
+	partStart := 0
+	parts := phonePartSeparator.FindAllStringIndex(run, -1)
+	bounds := make([][2]int, 0, len(parts)+1)
+	for _, separator := range parts {
+		bounds = append(bounds, [2]int{partStart, separator[0]})
+		partStart = separator[1]
+	}
+	bounds = append(bounds, [2]int{partStart, len(run)})
+	for _, bound := range bounds {
+		part := run[bound[0]:bound[1]]
+		if countDigits(part) >= minPhoneDigits {
+			spans = append(spans, identifierSpan{start: start + bound[0], end: start + bound[1], kind: kindPhone})
+		}
+	}
+	if countDigits(run) > maxPhoneDigits && len(spans) == 0 {
+		spans = append(spans, identifierSpan{start: start, end: end, kind: kindPhone})
+	}
+	return spans
+}
+
+// replaceSpans rewrites the original text, replacing the original bytes
+// behind each normalized span with its replacement and keeping every other
+// byte as written.
+func replaceSpans(original string, normalized normalizedText, spans []identifierSpan, replace func(identifierKind) string) string {
+	if len(spans) == 0 {
+		return original
+	}
+	type originalSpan struct {
+		start, end int
+		kind       identifierKind
+	}
+	mapped := make([]originalSpan, 0, len(spans))
+	for _, span := range spans {
+		if span.end <= span.start {
+			continue
+		}
+		mapped = append(mapped, originalSpan{
+			start: normalized.start[span.start], end: normalized.end[span.end-1], kind: span.kind,
+		})
+	}
+	slices.SortFunc(mapped, func(a, b originalSpan) int { return a.start - b.start })
+	var builder strings.Builder
+	cursor := 0
+	for _, span := range mapped {
+		if span.end <= cursor {
+			continue
+		}
+		if span.start < cursor {
+			span.start = cursor
+		}
+		builder.WriteString(original[cursor:span.start])
+		builder.WriteString(replace(span.kind))
+		cursor = span.end
+	}
+	builder.WriteString(original[cursor:])
+	return builder.String()
 }
 
 // RedactText replaces email addresses and phone numbers inside free text
 // (titles, action items) with placeholders, so no identifier leaves the
-// machine inside a title a person typed.
+// machine inside a title a person typed. Everything else is sent as
+// written.
 func RedactText(text string) string {
-	text = redactIdentifiers(normalizeForRedaction(text), EmailPlaceholder, PhonePlaceholder)
-	return strings.Join(strings.Fields(text), " ")
+	normalized := normalizeWithSpans(text)
+	redacted := replaceSpans(text, normalized, findIdentifiers(normalized.text), func(kind identifierKind) string {
+		if kind == kindPhone {
+			return PhonePlaceholder
+		}
+		return EmailPlaceholder
+	})
+	return strings.TrimSpace(redacted)
 }
 
 // AttendeeLabel turns a stored display label into the label sent for the
@@ -133,20 +256,24 @@ func RedactText(text string) string {
 // address becomes its local part, other addresses and phone numbers are
 // removed, and an empty result becomes "attendee N".
 func AttendeeLabel(raw string, i int) string {
-	label := normalizeForRedaction(raw)
-	label = angleAddressPattern.ReplaceAllStringFunc(label, func(match string) string {
-		inner := strings.Trim(match, "<>")
-		if redactIdentifiers(inner, "\x01", "\x01") != inner {
-			return " "
-		}
-		return match
-	})
-	label = strings.Trim(strings.Join(strings.Fields(label), " "), `"' ,;`)
-	if label != "" && emailPattern.FindString(label) == label {
-		local, _, _ := strings.Cut(label, "@")
-		label = local
+	label := raw
+	normalized := normalizeWithSpans(label)
+	trimmed := strings.TrimSpace(normalized.text)
+	if match := emailPattern.FindStringIndex(trimmed); match != nil && match[0] == 0 && match[1] == len(trimmed) {
+		// The whole label is an address: keep its local part.
+		offset := strings.Index(normalized.text, trimmed)
+		at := strings.IndexByte(trimmed, '@')
+		label = raw[normalized.start[offset]:normalized.end[offset+at-1]]
+		normalized = normalizeWithSpans(label)
 	}
-	label = redactIdentifiers(label, " ", " ")
+	var spans []identifierSpan
+	for _, match := range angleAddressPattern.FindAllStringIndex(normalized.text, -1) {
+		if len(findIdentifiers(normalized.text[match[0]+1:match[1]-1])) > 0 {
+			spans = append(spans, identifierSpan{start: match[0], end: match[1], kind: kindEmail})
+		}
+	}
+	spans = append(spans, findIdentifiers(normalized.text)...)
+	label = replaceSpans(label, normalized, spans, func(identifierKind) string { return " " })
 	label = strings.Trim(strings.Join(strings.Fields(label), " "), `"' ,;()`)
 	if !hasLetter(label) {
 		return "attendee " + strconv.Itoa(i+1)

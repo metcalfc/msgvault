@@ -53,10 +53,14 @@ func TestRedactTextRemovesAddressesAndPhoneNumbers(t *testing.T) {
 		{"2026-09-30 020 7946 0958", "2026-09-30 [phone]"},
 		{"Release 1.2.3 and 123.456.789", "Release 1.2.3 and 123.456.789"},
 		{"meeting ID 123 456 7890", "meeting ID [phone]"},
-		{"Order 1234567890123456", "Order 1234567890123456"},
-		{"Ｃａｌｌ ５５５ ０１０ ０１９９", "Call [phone]"},
+		{"Order 1234567890123456", "Order [phone]"},
+		{"Call 555-010-0199 / 555-010-0200", "Call [phone] / [phone]"},
+		{"Call 555-010-0199 555-010-0200", "Call [phone]"},
+		{"Compare x² and x2", "Compare x² and x2"},
+		{"Keep this‑dash", "Keep this‑dash"},
+		{"Ｃａｌｌ ５５５ ０１０ ０１９９", "\uff23\uff41\uff4c\uff4c [phone]"},
 		{"Q3 planning 2026-05-04 10:00", "Q3 planning 2026-05-04 10:00"},
-		{"Weekly  sync", "Weekly sync"},
+		{"Weekly  sync", "Weekly  sync"},
 	}
 	for _, test := range tests {
 		t.Run(test.text, func(t *testing.T) {

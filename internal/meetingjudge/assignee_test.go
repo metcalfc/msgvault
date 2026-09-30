@@ -215,6 +215,23 @@ func TestAssigneesInferOwnersAndFilterByPerson(t *testing.T) {
 	require.NoError(err)
 	assert.Zero(settled.Examined, "the marked meeting is not loaded again")
 	assert.Len(fake.requests(), 1)
+
+	// A new attendee changes every item's inputs: the meeting is examined
+	// and its unassigned items are asked about again.
+	riley, err := st.EnsureParticipant("riley@example.org", "Riley Example", "example.org")
+	require.NoError(err)
+	require.NoError(st.ReplaceMessageRecipients(meetingID, "to",
+		[]int64{archive.casey, archive.jordan, archive.owner, riley}, []string{"", "", "", ""}))
+	attended, err := meetingjudge.RunAssignees(t.Context(), st, meetingjudge.AssigneeOptions{Judge: service})
+	require.NoError(err)
+	assert.Equal(1, attended.Examined, "a recipient change re-examines the meeting")
+	assert.Equal(3, attended.Items)
+	require.Len(fake.requests(), 2)
+	offered := []string{}
+	for _, attendee := range asState[meetingjudge.AssigneeState](fake.requests()[1]["state"]).Attendees {
+		offered = append(offered, attendee.Label)
+	}
+	assert.Contains(offered, "Riley Example")
 }
 
 func TestAssigneesNeverReplaceAUserAssignee(t *testing.T) {

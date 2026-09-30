@@ -710,9 +710,11 @@ In the meeting title and item text, email addresses become `[email]` and
 phone numbers `[phone]`. Before matching, text is decoded (percent-escapes,
 Unicode compatibility forms, Unicode dashes and spaces), and `mailto:`,
 `tel:`, and spelled-out forms such as "name at domain dot com" count as
-addresses. Any run of 7 to 15 digits reads as a phone number, except dates
-and dotted versions such as `1.2.3`; an ambiguous number such as a meeting
-ID may be redacted too.
+addresses. Decoding is only used to find identifiers: everything else is
+sent exactly as written. Any run of 7 or more digits reads as a phone
+number, except dates and dotted versions such as `1.2.3`; numbers joined by
+a slash are judged separately, and a run longer than 15 digits is redacted
+whole. An ambiguous number such as a meeting ID may be redacted too.
 
 Your own identities are never attendees: you are the `owner` option, and
 your name and addresses are never sent. No addresses, transcripts, summaries,

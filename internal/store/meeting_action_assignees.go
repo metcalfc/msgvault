@@ -77,10 +77,15 @@ type MeetingActionAssignee struct {
 }
 
 // meetingRevisionSQL is a meeting's revision for assignee judging: its
-// projection content hash (items, source participants) and its content
-// change stamp (title and other message content). Aliases m and md.
+// projection content hash (items, source participants), its content change
+// stamp (title and other message content), and a digest of its recipient
+// rows (the attendees), which ReplaceMessageRecipients can change without
+// touching the message. Aliases m and md.
 const meetingRevisionSQL = `(COALESCE(md.content_hash, '') || '|' ||
-	COALESCE(CAST(m.content_changed_at AS TEXT), ''))`
+	COALESCE(CAST(m.content_changed_at AS TEXT), '') || '|' ||
+	(SELECT CAST(COUNT(*) AS TEXT) || ':' || CAST(COALESCE(SUM(r.participant_id), 0) AS TEXT) || ':' ||
+		CAST(COALESCE(MAX(r.participant_id), 0) AS TEXT) || ':' || CAST(COALESCE(MIN(r.participant_id), 0) AS TEXT)
+	 FROM message_recipients r WHERE r.message_id = m.id))`
 
 // MeetingActionAssigneeCandidatesContext lists meeting transcripts, newest
 // first, with unassigned action items that were never judged or whose
