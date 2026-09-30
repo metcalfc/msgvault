@@ -14,8 +14,10 @@
   } from '../../api/generated/models';
   import type { PersonProfilePatchRequest } from '../../directory/models';
   import type { DirectoryProfileController } from '../../directory/profile-controller.svelte';
+  import { contactPointLinkInput, mapLink } from '../../links/contact-links';
   import { reachKindForAddressKind, reachKindLabels, serviceLabelForSlug } from '../../people/reach';
   import { stampText } from '../../util/dates';
+  import LinkedValue from '../common/LinkedValue.svelte';
   import ProfileHistoryDialog from './ProfileHistoryDialog.svelte';
   import StructuredProfileEditor, {
     type StructuredProfileRecord,
@@ -412,7 +414,13 @@
           <li data-detail-row={label ? '' : 'plain'}>
             {#if label}<span data-detail-label>{label}</span>{/if}
             <div class="record-copy" data-detail-value>
-              <strong>{value(descriptor.section, record)}</strong>
+              <strong>{#if descriptor.section === 'contact_points'}<LinkedValue
+                    input={contactPointLinkInput(record as PersonContactPoint)}
+                    text={value(descriptor.section, record)}
+                  />{:else if descriptor.section === 'addresses'}<LinkedValue
+                    link={mapLink(record as GeneratedPersonAddress)}
+                    text={value(descriptor.section, record)}
+                  />{:else}{value(descriptor.section, record)}{/if}</strong>
               {#if descriptor.section === 'contact_points' && providerContext(record)}<small
                   >{providerContext(record)}</small
                 >{/if}

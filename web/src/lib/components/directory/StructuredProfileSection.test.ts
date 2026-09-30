@@ -210,6 +210,32 @@ describe('StructuredProfileSection', () => {
     expect(screen.getByRole('button', { name: 'Edit contact point alice — slack — workspace / workspace-b' })).toBeDefined();
   });
 
+  it('links contact points through the service template and addresses to Google Maps', async () => {
+    const envelope = (id: number) => ({ id, ordinal: 0, source: 'user', created_at: when, updated_at: when, vcard: {} });
+    renderSection(vi.fn<typeof fetch>(async () => Response.json({ observations: [] })), '"person-7-r3"', {
+      ...profile(),
+      contact_points: [
+        { person_id: 7, address_kind: 'email', original_value: 'person@example.test', normalized_value: 'person@example.test',
+          normalization: 'email', normalization_version: 1, envelope: envelope(60) },
+        { person_id: 7, address_kind: 'username', original_value: '@example_person', normalized_value: 'example_person',
+          normalization: 'strip_at_lower', normalization_version: 1, service_slug: 'telegram',
+          profile_url_template: 'https://t.me/{username}', envelope: envelope(61) },
+        { person_id: 7, address_kind: 'url', original_value: 'javascript:alert(1)', normalized_value: 'javascript:alert(1)',
+          normalization: 'none', normalization_version: 1, envelope: envelope(62) }
+      ],
+      addresses: [{ person_id: 7, address_kind: 'home', original_value: '1 Example Road, Exampletown',
+        geo_uri: 'geo:40.5,-73.25', envelope: envelope(63) }]
+    });
+
+    expect(screen.getByRole('link', { name: 'person@example.test' }).getAttribute('href')).toBe('mailto:person@example.test');
+    const profileLink = screen.getByRole('link', { name: '@example_person (opens in new tab)' });
+    expect(profileLink.getAttribute('href')).toBe('https://t.me/example_person');
+    expect(profileLink.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(screen.getByText('javascript:alert(1)').closest('a')).toBeNull();
+    expect(screen.getByRole('link', { name: '1 Example Road, Exampletown (opens in new tab)' }).getAttribute('href'))
+      .toBe('https://www.google.com/maps/search/?api=1&query=40.5%2C-73.25');
+  });
+
   it('groups contact points by service and shows the latest matching archive observation', async () => {
     const structuredProfile = {
       ...profile(),

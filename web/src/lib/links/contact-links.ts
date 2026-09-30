@@ -265,6 +265,31 @@ export function contactLink(input: ContactLinkInput): ContactLink | undefined {
   return undefined;
 }
 
+/** The stored fields of a person or organization contact point. */
+export interface ContactPointLike {
+  address_kind: string;
+  service_slug?: string;
+  original_value: string;
+  normalized_value?: string;
+  uri?: string;
+  profile_url_template?: string;
+}
+
+/** `contactLink` input for a stored contact point. */
+export function contactPointLinkInput(point: ContactPointLike): ContactLinkInput {
+  const service = clean(point.service_slug).toLowerCase() || undefined;
+  return {
+    kind: point.address_kind,
+    service,
+    value: point.original_value,
+    normalized: point.normalized_value || undefined,
+    uri: point.uri || undefined,
+    services: service && point.profile_url_template
+      ? { [service]: { profile_url_template: point.profile_url_template } }
+      : undefined
+  };
+}
+
 /** The address fields a map link can use. */
 export interface MapLinkInput {
   geo_uri?: string;

@@ -5,6 +5,8 @@
   import { getRelationshipTimeline } from '../../api/generated/exploration/exploration';
   import type { Employment, MeetingRef, PersonIdentifier, TimelineRow } from '../../api/generated/models';
   import IdentityAvatar from '../common/IdentityAvatar.svelte';
+  import LinkedValue from '../common/LinkedValue.svelte';
+  import { mapLink } from '../../links/contact-links';
   import RecentActivity from '../people/RecentActivity.svelte';
   import MeetingPanel from '../meetings/MeetingPanel.svelte';
   import type { APIClient } from '../../api/client';
@@ -440,7 +442,7 @@
         <section><h3 data-section-title>Names</h3><ul>{#each profile.names as name}<li>{nameText(name)} <small>{name.name_kind}</small></li>{/each}</ul></section>
       {/if}
       {#if !profileController && profile?.addresses?.length}
-        <section><h3 data-section-title>Addresses</h3><ul>{#each profile.addresses as address}<li>{address.original_value} <small>{address.address_kind}</small></li>{/each}</ul></section>
+        <section><h3 data-section-title>Addresses</h3><ul>{#each profile.addresses as address}<li><LinkedValue link={mapLink(address)} text={address.original_value} /> <small>{address.address_kind}</small></li>{/each}</ul></section>
       {/if}
       {#if !profileController && profile?.dates?.length}
         <section><h3 data-section-title>Dates</h3><ul>{#each profile.dates as date}<li>{date.label ?? date.date_kind}: {date.date_text ?? valueText(date.date)}</li>{/each}</ul></section>
