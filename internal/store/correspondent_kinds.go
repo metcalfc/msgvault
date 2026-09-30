@@ -271,15 +271,19 @@ const ownerIdentityActor = "system:owner_identity"
 // of clusters that now include an owner identity. A user row becomes an
 // explicit person row with actor system:owner_identity, so the change is on
 // record; derived rows are removed; organization contact points the
-// classification added are withdrawn. It runs with every identity revision
-// bump, and costs one indexed probe when nothing is classified.
+// classification added are withdrawn; and the identity match candidates the
+// classification resolved return to review exactly as an explicit clear
+// would return them.
+//
+// It runs with every identity revision bump, under the identity lock, so it
+// is bounded: one indexed probe when nothing is classified; no edge scan
+// when no classified participant is itself an owner identity and no owner
+// identity is linked to anything; otherwise one linear pass over the link
+// graph for the whole call.
 func (s *Store) dropOwnerClusterClassificationsTx(ctx context.Context, tx *loggedTx) error {
 	classified, err := s.anyNotPersonClassificationTx(ctx, tx)
-	if err != nil {
+	if err != nil || !classified {
 		return err
-	}
-	if !classified {
-		return nil
 	}
 	rows, err := loadCorrespondentKindRowsTx(ctx, tx)
 	if err != nil {
@@ -289,31 +293,57 @@ func (s *Store) dropOwnerClusterClassificationsTx(ctx context.Context, tx *logge
 	if err != nil || len(owners) == 0 {
 		return err
 	}
-	edges, err := s.loadLinkEdgesTxContext(ctx, tx)
-	if err != nil {
-		return err
-	}
-	adjacency := buildAdjacency(edges)
-	now := time.Now().UTC()
+	notPerson := make([]correspondentKindRow, 0, len(rows))
+	direct := false
 	for _, row := range rows {
 		if row.kind.IsPerson() {
 			continue
 		}
-		component := componentOfAdj(row.participantID, adjacency)
-		component[row.participantID] = struct{}{}
-		ownerCluster := false
-		for id := range component {
-			if _, owner := owners[id]; owner {
-				ownerCluster = true
-				break
-			}
+		notPerson = append(notPerson, row)
+		if _, owner := owners[row.participantID]; owner {
+			direct = true
 		}
-		if !ownerCluster {
-			continue
-		}
-		if err := s.withdrawCorrespondentOrganizationContactsTx(ctx, tx, []int64{row.participantID}); err != nil {
+	}
+	if len(notPerson) == 0 {
+		return nil
+	}
+	if !direct {
+		linked, err := ownersHaveLinksTx(ctx, tx, owners)
+		if err != nil || !linked {
 			return err
 		}
+	}
+	edges, err := s.loadLinkEdgesTxContext(ctx, tx)
+	if err != nil {
+		return err
+	}
+	roots := clustersFromEdges(edges)
+	rootOf := func(id int64) int64 {
+		if root, ok := roots[id]; ok {
+			return root
+		}
+		return id
+	}
+	ownerRoots := make(map[int64]struct{}, len(owners))
+	for id := range owners {
+		ownerRoots[rootOf(id)] = struct{}{}
+	}
+	affected := []correspondentKindRow{}
+	affectedRoots := map[int64]struct{}{}
+	for _, row := range notPerson {
+		root := rootOf(row.participantID)
+		if _, ok := ownerRoots[root]; ok {
+			affected = append(affected, row)
+			affectedRoots[root] = struct{}{}
+		}
+	}
+	if len(affected) == 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	participants := make([]int64, 0, len(affected))
+	for _, row := range affected {
+		participants = append(participants, row.participantID)
 		if row.source != correspondentkind.SourceUser {
 			if _, err := tx.ExecContext(ctx, `DELETE FROM correspondent_kinds
 				WHERE participant_id = ? AND source = ?`, row.participantID, row.source); err != nil {
@@ -328,7 +358,51 @@ func (s *Store) dropOwnerClusterClassificationsTx(ctx context.Context, tx *logge
 			return fmt.Errorf("clear owner cluster classification: %w", err)
 		}
 	}
-	return nil
+	slices.Sort(participants)
+	participants = slices.Compact(participants)
+	if err := s.withdrawCorrespondentOrganizationContactsTx(ctx, tx, participants); err != nil {
+		return err
+	}
+	// Every member of an affected cluster, so candidates resolved through a
+	// member without its own row come back too.
+	members := []int64{}
+	for id, root := range roots {
+		if _, ok := affectedRoots[root]; ok {
+			members = append(members, id)
+		}
+	}
+	for root := range affectedRoots {
+		members = append(members, root)
+	}
+	slices.Sort(members)
+	members = slices.Compact(members)
+	_, err = s.restoreNotAPersonCandidatesTx(ctx, tx, members)
+	return err
+}
+
+// ownersHaveLinksTx reports whether any owner participant appears in a
+// participant link.
+func ownersHaveLinksTx(ctx context.Context, tx *loggedTx, owners map[int64]struct{}) (bool, error) {
+	ids := make([]int64, 0, len(owners))
+	for id := range owners {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	linked := false
+	for _, side := range []string{"participant_a", "participant_b"} {
+		if err := queryInChunksContext(ctx, tx, ids, nil, `
+			SELECT 1 FROM participant_links WHERE `+side+` IN (%s) LIMIT 1`,
+			func(*loggedRows) error {
+				linked = true
+				return nil
+			}); err != nil {
+			return false, fmt.Errorf("check owner identity links: %w", err)
+		}
+		if linked {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // hiddenCorrespondentParticipantsTx maps every member of every cluster whose

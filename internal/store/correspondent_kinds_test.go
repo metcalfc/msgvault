@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"database/sql"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -620,4 +621,75 @@ func TestParticipantMergeKeepsTheSnapshotOfACollapsedResolvedCandidate(t *testin
 	state, notes = candidateState(t, f.st, kept.ID)
 	assert.Equal(store.IdentityMatchStateCandidate, state)
 	assert.Nil(notes)
+}
+
+func TestRegisteringAnOwnerIdentityRestoresItsResolvedCandidates(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+	source, err := f.st.GetOrCreateSource("gmail", "me@example.test")
+	require.NoError(err)
+
+	mine := f.emailParticipant("me-alias@example.test", "Me")
+	other := f.emailParticipant("colleague@example.test", "Me")
+	candidate := upsertDisplayNameCandidate(t, f.st, mine, other, "me")
+	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: mine, Kind: correspondentkind.Ignored,
+	})
+	require.NoError(err)
+	state, _ := candidateState(t, f.st, candidate.ID)
+	require.Equal(store.IdentityMatchStateRejected, state)
+
+	// Confirming the address as the owner's own clears the classification,
+	// and the candidate it resolved returns to review like an explicit clear.
+	require.NoError(f.st.AddAccountIdentityContext(t.Context(), source.ID, "me-alias@example.test", "manual"))
+	state, notes := candidateState(t, f.st, candidate.ID)
+	assert.Equal(store.IdentityMatchStateCandidate, state)
+	assert.Nil(notes)
+	var kind string
+	require.NoError(f.st.DB().QueryRow(f.st.Rebind(`SELECT kind FROM correspondent_kinds
+		WHERE participant_id = ? AND source = 'user'`), mine).Scan(&kind))
+	assert.Equal(string(correspondentkind.Person), kind)
+}
+
+func TestOwnerHookClearsOnlyClustersJoinedToTheOwner(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+	source, err := f.st.GetOrCreateSource("gmail", "me@example.test")
+	require.NoError(err)
+	owner := f.emailParticipant("me@example.test", "Me")
+	require.NoError(f.st.AddAccountIdentityContext(t.Context(), source.ID, "me@example.test", "manual"))
+
+	// Several classified clusters, some linked internally; only the one that
+	// gets linked to the owner may change, whatever order rows load in.
+	want := map[int64]correspondentkind.Kind{}
+	var joined int64
+	for i, kind := range []correspondentkind.Kind{
+		correspondentkind.Ignored, correspondentkind.SharedMailbox, correspondentkind.Ignored,
+		correspondentkind.Organization, correspondentkind.Ignored,
+	} {
+		first := f.emailParticipant(fmt.Sprintf("record-%d-a@example.test", i), "Record")
+		second := f.emailParticipant(fmt.Sprintf("record-%d-b@example.test", i), "Record")
+		_, err := f.st.LinkParticipants(first, second)
+		require.NoError(err)
+		_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+			ParticipantID: first, Kind: kind,
+		})
+		require.NoError(err)
+		if i == 2 {
+			joined = second
+			continue
+		}
+		want[first], want[second] = kind, kind
+	}
+	_, err = f.st.LinkParticipants(joined, owner)
+	require.NoError(err)
+
+	hidden, err := f.st.NotPersonParticipantsContext(t.Context())
+	require.NoError(err)
+	assert.Equal(want, hidden)
+	records, err := f.st.ListCorrespondentKindsContext(t.Context(), store.CorrespondentKindListFilter{})
+	require.NoError(err)
+	assert.Len(records, 4)
 }
