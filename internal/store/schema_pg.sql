@@ -2246,7 +2246,7 @@ CREATE INDEX IF NOT EXISTS idx_correspondent_kinds_kind
 CREATE TABLE IF NOT EXISTS correspondent_kind_evaluations (
     participant_id BIGINT PRIMARY KEY REFERENCES participants(id) ON DELETE CASCADE,
     activity       BIGINT NOT NULL CHECK (activity >= 0),
-    member_count   BIGINT NOT NULL CHECK (member_count >= 1),
+    membership_fingerprint TEXT NOT NULL,
     evaluated_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_correspondent_kinds_organization

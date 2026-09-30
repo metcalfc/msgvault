@@ -5,12 +5,15 @@ import (
 	"cmp"
 	"compress/zlib"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -332,16 +335,29 @@ type CorrespondentKindCandidateQuery struct {
 
 // correspondentKindEvaluation is the recorded evaluation of one cluster.
 type correspondentKindEvaluation struct {
-	activity    int64
-	memberCount int64
-	at          time.Time
+	activity   int64
+	membership string
+	at         time.Time
 }
 
 // changedMaterially reports whether a cluster moved enough since its last
-// evaluation to evaluate it again: its membership changed, or its activity
-// grew by half or by five messages, whichever is more.
-func (e correspondentKindEvaluation) changedMaterially(activity int64, memberCount int) bool {
-	return int64(memberCount) != e.memberCount || activity >= e.activity+max(5, e.activity/2)
+// evaluation to evaluate it again: its membership changed (any member set,
+// not just its size), or its activity grew by half or by five messages,
+// whichever is more.
+func (e correspondentKindEvaluation) changedMaterially(activity int64, members []int64) bool {
+	return membershipFingerprint(members) != e.membership || activity >= e.activity+max(5, e.activity/2)
+}
+
+// membershipFingerprint identifies a cluster's exact member set: a SHA-256
+// of the sorted participant IDs.
+func membershipFingerprint(members []int64) string {
+	sorted := slices.Clone(members)
+	slices.Sort(sorted)
+	digest := sha256.New()
+	for _, id := range sorted {
+		_, _ = digest.Write([]byte(strconv.FormatInt(id, 10) + ","))
+	}
+	return hex.EncodeToString(digest.Sum(nil))
 }
 
 // clusterEvaluationsTx maps each cluster root to its latest evaluation.
@@ -349,7 +365,7 @@ func (e correspondentKindEvaluation) changedMaterially(activity int64, memberCou
 func (s *Store) clusterEvaluationsTx(
 	ctx context.Context, tx *loggedTx, index clusterIndex,
 ) (map[int64]correspondentKindEvaluation, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT participant_id, activity, member_count, evaluated_at
+	rows, err := tx.QueryContext(ctx, `SELECT participant_id, activity, membership_fingerprint, evaluated_at
 		FROM correspondent_kind_evaluations`)
 	if err != nil {
 		if s.dialect.IsNoSuchTableError(err) {
@@ -363,7 +379,7 @@ func (s *Store) clusterEvaluationsTx(
 		var id int64
 		var evaluation correspondentKindEvaluation
 		var at nullableTimestamp
-		if err := rows.Scan(&id, &evaluation.activity, &evaluation.memberCount, &at); err != nil {
+		if err := rows.Scan(&id, &evaluation.activity, &evaluation.membership, &at); err != nil {
 			return nil, fmt.Errorf("scan correspondent kind evaluation: %w", err)
 		}
 		evaluation.at = at.Time
@@ -390,12 +406,14 @@ func (s *Store) RecordCorrespondentKindEvaluationsContext(
 			for _, candidate := range candidates {
 				for _, member := range candidate.MemberIDs {
 					if _, err := tx.ExecContext(ctx, `
-						INSERT INTO correspondent_kind_evaluations (participant_id, activity, member_count, evaluated_at)
+						INSERT INTO correspondent_kind_evaluations
+							(participant_id, activity, membership_fingerprint, evaluated_at)
 						SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM participants WHERE id = ?)
 						ON CONFLICT (participant_id) DO UPDATE SET
-							activity = excluded.activity, member_count = excluded.member_count,
+							activity = excluded.activity,
+							membership_fingerprint = excluded.membership_fingerprint,
 							evaluated_at = excluded.evaluated_at`,
-						member, candidate.Sent+candidate.Received, len(candidate.MemberIDs), now, member,
+						member, candidate.Sent+candidate.Received, membershipFingerprint(candidate.MemberIDs), now, member,
 					); err != nil {
 						return fmt.Errorf("record correspondent kind evaluation: %w", err)
 					}
@@ -501,7 +519,7 @@ func (s *Store) CorrespondentKindCandidatesContext(
 		}
 		for root, candidate := range byRoot {
 			if evaluation, ok := evaluations[root]; ok && !query.RevisitUnchanged &&
-				!evaluation.changedMaterially(candidate.Sent+candidate.Received, len(candidate.MemberIDs)) {
+				!evaluation.changedMaterially(candidate.Sent+candidate.Received, candidate.MemberIDs) {
 				delete(byRoot, root)
 				continue
 			}
@@ -803,26 +821,38 @@ func (s *Store) messageRawHeaderContext(ctx context.Context, messageID int64) ([
 		defer func() { _ = reader.Close() }()
 		source = reader
 	}
+	// Decoded bytes count as header evidence only when the blank line that
+	// ends the header block arrived within the cap. A corrupt stream, a
+	// header block longer than the cap, or a prefix that ends first is a
+	// failed sample with no signals.
 	header := make([]byte, 0, 8<<10)
 	chunk := make([]byte, 4<<10)
 	for len(header) < rawHeaderBytes {
 		n, err := source.Read(chunk)
 		header = append(header, chunk[:n]...)
-		if bytes.Contains(header, []byte("\r\n\r\n")) || bytes.Contains(header, []byte("\n\n")) {
-			break
+		if end := headerBlockEnd(header); end >= 0 && end <= rawHeaderBytes {
+			return header[:end], nil
 		}
 		if err != nil {
-			// The prefix ends mid-stream by design; keep what decoded.
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				break
-			}
-			if len(header) > 0 {
-				break
-			}
-			return nil, fmt.Errorf("%w: %w", ErrInvalidMessageRaw, err)
+			return nil, fmt.Errorf("%w: header block not found: %w", ErrInvalidMessageRaw, err)
 		}
 	}
-	return header, nil
+	return nil, fmt.Errorf("%w: header block exceeds %d bytes", ErrInvalidMessageRaw, rawHeaderBytes)
+}
+
+// headerBlockEnd returns the offset just past the blank line that ends a
+// MIME header block, or -1.
+func headerBlockEnd(data []byte) int {
+	crlf := bytes.Index(data, []byte("\r\n\r\n"))
+	lf := bytes.Index(data, []byte("\n\n"))
+	switch {
+	case crlf >= 0 && (lf < 0 || crlf <= lf):
+		return crlf + 4
+	case lf >= 0:
+		return lf + 2
+	default:
+		return -1
+	}
 }
 
 // maxSubjectRunes bounds each subject kept as evidence.

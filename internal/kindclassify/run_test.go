@@ -141,6 +141,35 @@ func TestRunAppliesDeterministicRulesWithoutJev(t *testing.T) {
 	assert.Equal(1, again.Candidates, "a material change brings the cluster back")
 }
 
+func TestSameSizedMembershipChangeBringsAClusterBack(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	a := newArchive(t)
+	casey := a.participant("casey@example.com", "Casey Example")
+	oldAlias := a.participant("casey-old@example.com", "")
+	newAlias := a.participant("casey-new@example.com", "")
+	_, err := a.f.Store.LinkParticipants(casey, oldAlias)
+	require.NoError(err)
+	a.sendMany(6, mail{from: casey, to: a.owner, subject: "Plans"})
+
+	first, err := kindclassify.Run(t.Context(), a.f.Store, kindclassify.Options{})
+	require.NoError(err)
+	require.Equal(1, first.Candidates)
+	unchanged, err := kindclassify.Run(t.Context(), a.f.Store, kindclassify.Options{})
+	require.NoError(err)
+	require.Zero(unchanged.Candidates)
+
+	// Split one alias off and link another: still two members, but not the
+	// same two.
+	_, err = a.f.Store.UnlinkParticipants(casey, oldAlias)
+	require.NoError(err)
+	_, err = a.f.Store.LinkParticipants(casey, newAlias)
+	require.NoError(err)
+	again, err := kindclassify.Run(t.Context(), a.f.Store, kindclassify.Options{})
+	require.NoError(err)
+	assert.Equal(1, again.Candidates)
+}
+
 func TestCappedRunsReachEveryClusterAboveTheFloor(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

@@ -1,6 +1,8 @@
 package store_test
 
 import (
+	"bytes"
+	"compress/zlib"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -152,4 +154,37 @@ func TestHeaderSamplingReadsOnlyTheHeaderBlockOfLargeMessages(t *testing.T) {
 		store.CorrespondentKindEvidenceOptions{HeaderSample: 5})
 	require.NoError(err)
 	assert.Equal(correspondentkind.HeaderCounts{Sampled: 1, ListUnsubscribe: 1, PrecedenceBulk: 1}, evidence.Headers)
+}
+
+// A sample counts as header evidence only when the header block's closing
+// blank line was decoded; anything else is a failed sample with no signals.
+func TestHeaderSamplingRejectsHeadersWithoutTheirTerminator(t *testing.T) {
+	require := require.New(t)
+	f := storetest.New(t)
+	sender := f.EnsureParticipant("alerts@example.com", "Example Alerts", "example.com")
+	headers := "From: alerts@example.com\r\nList-Unsubscribe: <mailto:leave@example.com>\r\nPrecedence: bulk\r\n"
+	save := func(sourceMessageID string, raw []byte) int64 {
+		id := f.CreateMessage(sourceMessageID)
+		_, err := f.Store.DB().ExecContext(t.Context(), f.Store.Rebind(`UPDATE messages SET sender_id = ? WHERE id = ?`), sender, id)
+		require.NoError(err)
+		require.NoError(f.Store.UpsertMessageRaw(id, raw))
+		return id
+	}
+	save("unterminated", []byte(headers))
+	corrupt := save("corrupt", append([]byte(headers+"\r\n"), make([]byte, 64<<10)...))
+	var compressed bytes.Buffer
+	writer := zlib.NewWriter(&compressed)
+	_, err := writer.Write([]byte(headers))
+	require.NoError(err)
+	require.NoError(writer.Close())
+	// Keep the decodable start of the headers and corrupt the rest.
+	damaged := append(compressed.Bytes()[:len(compressed.Bytes())/2], 0xff, 0x00, 0xff, 0x13, 0x37)
+	_, err = f.Store.DB().ExecContext(t.Context(), f.Store.Rebind(
+		`UPDATE message_raw SET raw_data = ?, compression = 'zlib' WHERE message_id = ?`), damaged, corrupt)
+	require.NoError(err)
+
+	evidence, err := f.Store.CorrespondentKindEvidenceContext(t.Context(), []int64{sender},
+		store.CorrespondentKindEvidenceOptions{HeaderSample: 5})
+	require.NoError(err)
+	assert.Equal(t, correspondentkind.HeaderCounts{Sampled: 2}, evidence.Headers)
 }
