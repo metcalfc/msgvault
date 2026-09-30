@@ -1,7 +1,10 @@
 package store
 
 import (
+	"context"
+	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -118,6 +121,45 @@ func TestPendingUnclearCorrespondentFollowsTheClusterDecision(t *testing.T) {
 	unclear, err := st.ListCorrespondentKindsContext(t.Context(), CorrespondentKindListFilter{Kind: correspondentkind.Unclear})
 	require.NoError(err)
 	assert.Empty(unclear, "the queue and the dot agree")
+}
+
+// The dot resolves only the clusters of unclear candidates: other
+// classified or linked identities in the archive are never loaded.
+func TestPendingUnclearCorrespondentResolvesOnlyCandidateClusters(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := newPendingReviewStore(t)
+	for i := range 5 {
+		other, err := st.EnsureParticipant(fmt.Sprintf("other-%d@example.test", i), "", "example.test")
+		require.NoError(err)
+		alias, err := st.EnsureParticipant(fmt.Sprintf("other-alias-%d@example.test", i), "", "example.test")
+		require.NoError(err)
+		_, err = st.LinkParticipants(other, alias)
+		require.NoError(err)
+		_, err = st.SetCorrespondentKindContext(t.Context(), SetCorrespondentKindInput{
+			ParticipantID: other, Kind: correspondentkind.Automated,
+		})
+		require.NoError(err)
+	}
+	desk, err := st.EnsureParticipant("desk@example.test", "Front Desk", "example.test")
+	require.NoError(err)
+	_, err = st.WriteDerivedCorrespondentKindsContext(t.Context(), []DerivedCorrespondentKind{{
+		ParticipantID: desk, Source: correspondentkind.SourceJev, Kind: correspondentkind.Unclear,
+	}})
+	require.NoError(err)
+
+	orig := resolveUnclearCandidateClustersTx
+	t.Cleanup(func() { resolveUnclearCandidateClustersTx = orig })
+	var seeds [][]int64
+	resolveUnclearCandidateClustersTx = func(
+		ctx context.Context, tx *loggedTx, ids []int64, notPersonOnly bool,
+	) ([]correspondentKindCluster, error) {
+		seeds = append(seeds, slices.Clone(ids))
+		return orig(ctx, tx, ids, notPersonOnly)
+	}
+
+	assert.Equal([]PendingReviewKind{PendingReviewCorrespondent}, pendingKinds(t, st))
+	assert.Equal([][]int64{{desk}}, seeds, "only the unclear candidate's cluster is resolved")
 }
 
 func TestPendingReviewKindsReportsUncertainEnrichment(t *testing.T) {

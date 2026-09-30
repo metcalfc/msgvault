@@ -77,14 +77,8 @@ func pendingReviewQueries() []pendingReviewQuery {
 			// decision outranks it. The probe rules out the same
 			// participant cheaply; confirm then applies the cluster rule
 			// the Unclear correspondents queue lists by.
-			kind: PendingReviewCorrespondent,
-			confirm: func(ctx context.Context, s *Store, tx *loggedTx) (bool, error) {
-				clusters, err := s.correspondentKindClustersTx(ctx, tx)
-				if err != nil {
-					return false, err
-				}
-				return slices.ContainsFunc(clusters, isUnclearCorrespondentCluster), nil
-			},
+			kind:    PendingReviewCorrespondent,
+			confirm: unclearCorrespondentWaitingTx,
 			query: `SELECT 1 FROM correspondent_kinds k
 				WHERE k.source = ? AND k.kind = ? AND NOT EXISTS (
 					SELECT 1 FROM correspondent_kinds d
@@ -96,6 +90,73 @@ func pendingReviewQueries() []pendingReviewQuery {
 			},
 		},
 	}
+}
+
+const (
+	// unclearPendingBatch and unclearPendingMaxBatches bound the cluster
+	// check: at most this many batches of candidate identities are resolved
+	// per call before the check answers "waiting" and leaves the rest to
+	// the queue, which is authoritative when Reviews opens.
+	unclearPendingBatch      = 50
+	unclearPendingMaxBatches = 4
+)
+
+// resolveUnclearCandidateClustersTx resolves only the clusters of the given
+// candidate identities. Tests swap it to count what is loaded.
+var resolveUnclearCandidateClustersTx = scopedCorrespondentKindClustersTx
+
+// unclearCorrespondentWaitingTx reports whether any Jev unclear judgment is
+// still the effective kind of its cluster, applying the rule the Unclear
+// correspondents queue lists by. It resolves candidate clusters in small
+// batches, never the whole link graph or every classification.
+func unclearCorrespondentWaitingTx(ctx context.Context, _ *Store, tx *loggedTx) (bool, error) {
+	after := int64(0)
+	for range unclearPendingMaxBatches {
+		ids, err := unclearCandidateBatchTx(ctx, tx, after)
+		if err != nil {
+			return false, err
+		}
+		if len(ids) == 0 {
+			return false, nil
+		}
+		clusters, err := resolveUnclearCandidateClustersTx(ctx, tx, ids, false)
+		if err != nil {
+			return false, err
+		}
+		if slices.ContainsFunc(clusters, isUnclearCorrespondentCluster) {
+			return true, nil
+		}
+		if len(ids) < unclearPendingBatch {
+			return false, nil
+		}
+		after = ids[len(ids)-1]
+	}
+	return true, nil
+}
+
+// unclearCandidateBatchTx returns the next participants, by ID, that carry
+// a Jev unclear judgment with no user or rule decision of their own.
+func unclearCandidateBatchTx(ctx context.Context, tx *loggedTx, after int64) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT k.participant_id FROM correspondent_kinds k
+		WHERE k.source = ? AND k.kind = ? AND k.participant_id > ? AND NOT EXISTS (
+			SELECT 1 FROM correspondent_kinds d
+			WHERE d.participant_id = k.participant_id AND d.source IN (?, ?))
+		ORDER BY k.participant_id LIMIT ?`,
+		correspondentkind.SourceJev, correspondentkind.Unclear, after,
+		correspondentkind.SourceUser, correspondentkind.SourceRule, unclearPendingBatch)
+	if err != nil {
+		return nil, fmt.Errorf("list unclear candidates: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	ids := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan unclear candidate: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // AllPendingReviewKinds lists every queue the pending check covers, in
@@ -112,7 +173,8 @@ func AllPendingReviewKinds() []PendingReviewKind {
 // PendingReviewKindsContext reports which Reviews queues have at least one
 // item waiting, in queue order. It answers "is anything waiting?" for a
 // navigation hint, not how many: each queue costs one indexed probe, and
-// unclear correspondents also resolve their clusters when that probe hits.
+// unclear correspondents also resolve the clusters of a bounded batch of
+// candidates when that probe hits.
 func (s *Store) PendingReviewKindsContext(ctx context.Context) ([]PendingReviewKind, error) {
 	kinds := []PendingReviewKind{}
 	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
