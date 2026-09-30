@@ -6,12 +6,23 @@
     organizationLabel,
     type OrganizationReviewController
   } from '../../directory/organization-review-controller.svelte';
+  import { focusReviewCard } from '../../directory/review-focus';
 
   interface Props {
     controller: OrganizationReviewController;
   }
 
   let { controller }: Props = $props();
+
+  let list = $state<HTMLElement>();
+  let queueHeading = $state<HTMLHeadingElement>();
+
+  // A decision removes its card; focus moves to the card that took its
+  // place, so the queue can be worked through without scrolling back.
+  async function decide(index: number, run: () => Promise<{ ok: boolean }>): Promise<void> {
+    const result = await run();
+    if (result.ok) await focusReviewCard(list, index, queueHeading);
+  }
 
   $effect(() => {
     if (!controller.loaded && !controller.loading && !controller.error) void controller.load();
@@ -20,7 +31,7 @@
 
 <section class="organization-review" aria-labelledby="organization-review-heading">
   <div class="toolbar">
-    <h2 id="organization-review-heading" tabindex="-1">Organization matches to confirm</h2>
+    <h2 bind:this={queueHeading} id="organization-review-heading" tabindex="-1">Organization matches to confirm</h2>
     <p>
       The organization check could not decide whether these names are an organization you already have.
       Confirming merges any separate organization created for the name and makes the name resolve to the
@@ -48,12 +59,12 @@
       description="Organization names the check is unsure about appear here for a decision."
     />
   {:else}
-    <div class="list">
-      {#each controller.rows as review (review.id)}
+    <div class="list" bind:this={list}>
+      {#each controller.rows as review, index (review.id)}
         {@const pending = controller.isPending(review.id)}
         {@const heading = `organization-review-${review.id}-heading`}
         <Card level="default" padding="md">
-          <article class="review" aria-labelledby={heading} aria-busy={pending}>
+          <article class="review" data-review-card tabindex="-1" aria-labelledby={heading} aria-busy={pending}>
             <h3 id={heading}>{review.proposed_name}</h3>
             <dl class="judgment" aria-label={`Organization match ${review.id}`}>
               <div><dt>Proposed name</dt><dd>{organizationLabel(review.proposed_name, review.proposed_domain)}</dd></div>
@@ -69,7 +80,7 @@
                 label="Different organization"
                 size="sm"
                 disabled={pending}
-                onclick={() => void controller.reject(review.id)}
+                onclick={() => void decide(index, () => controller.reject(review.id))}
               />
               <Button
                 label="Same organization"
@@ -77,7 +88,7 @@
                 tone="info"
                 surface="solid"
                 disabled={pending}
-                onclick={() => void controller.accept(review.id)}
+                onclick={() => void decide(index, () => controller.accept(review.id))}
               />
             </div>
           </article>

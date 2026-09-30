@@ -1,6 +1,6 @@
 <script lang="ts">
   import { appShortcuts, Button, Modal } from '@kenn-io/kit-ui';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
 
   import type {
     DirectoryReviewContextSnapshot,
@@ -10,18 +10,16 @@
   } from '../../directory/review-controller.svelte';
   import { contactMatchSummary, endpointLabel } from '../../directory/identity-endpoints';
   import { entityNames } from '../../names/entity-names.svelte';
-  import { kindLabel, type NotAPersonKind } from '../../people/correspondent-kind';
-  import NotAPersonDialog from '../people/NotAPersonDialog.svelte';
 
   interface Props {
     controller: DirectoryReviewController;
     candidate: IdentityMatchCandidate;
-    decision: 'accept' | 'reject' | 'not_a_person';
-    /** For not_a_person: the archive identity to mark and the kind picked
-     * on the card. */
-    notAPerson?: { participantID: number; kind: NotAPersonKind };
+    decision: 'accept' | 'reject';
     reviewContext: DirectoryReviewContextSnapshot;
     onClose: () => void;
+    /** Called instead of onClose once the decision is recorded, so the
+     * queue can move on to the next candidate. */
+    onDecided?: () => void;
     onContextInvalidated: () => void;
     onResolveMerge?: (conflict: PersonMergeRequiredError) => void;
   }
@@ -30,9 +28,9 @@
     controller,
     candidate,
     decision,
-    notAPerson = undefined,
     reviewContext,
     onClose,
+    onDecided = undefined,
     onContextInvalidated,
     onResolveMerge = undefined
   }: Props = $props();
@@ -43,33 +41,22 @@
   let releaseShortcutScope: (() => void) | undefined;
 
   const pending = $derived(submitting || controller.isDecisionPending(candidate.id));
-  const title = $derived(decision === 'accept' ? 'Link identities' : decision === 'reject' ? 'Keep separate' : 'Not a person');
+  const title = $derived(decision === 'accept' ? 'Link identities' : 'Keep separate');
   const draft = $derived(controller.getDecisionDraft(candidate.id));
+  // Notes are optional and only stored with the decision, so the field
+  // stays folded away unless a draft already exists.
+  let notesOpen = $state(untrack(() => controller.getDecisionDraft(candidate.id) !== ''));
+  let notesField = $state<HTMLTextAreaElement>();
   const leftLabel = $derived(endpointLabel(
     names, candidate.left_kind, candidate.left_id, controller.endpointFor(candidate.left_kind, candidate.left_id)));
   const rightLabel = $derived(endpointLabel(
     names, candidate.right_kind, candidate.right_id, controller.endpointFor(candidate.right_kind, candidate.right_id)));
   const contactMatch = $derived(controller.contactMatchFor(candidate.id));
-  const notAPersonLabel = $derived.by(() => {
-    if (!notAPerson) return '';
-    const summary = controller.endpointFor('participant', notAPerson.participantID);
-    return endpointLabel(names, 'participant', notAPerson.participantID, summary);
-  });
-  const notAPersonOrganization = $derived.by(() => {
-    if (!notAPerson) return '';
-    const summary = controller.endpointFor('participant', notAPerson.participantID);
-    const name = summary?.display_name?.trim();
-    if (name && !name.includes('@')) return name;
-    const address = summary?.addresses?.find((value) => value.includes('@')) ?? '';
-    return address ? address.slice(address.lastIndexOf('@') + 1) : '';
-  });
 
-  async function notAPersonDone(kind: string, deletedPersonID: number | undefined): Promise<void> {
-    const message = deletedPersonID !== undefined
-      ? `Marked as ${kindLabel(kind).toLowerCase()}; the saved profile was deleted.`
-      : `Marked as ${kindLabel(kind).toLowerCase()}. Its open identity matches were resolved.`;
-    await controller.completeNotAPerson(reviewContext, message);
-    onClose();
+  async function openNotes(): Promise<void> {
+    notesOpen = true;
+    await tick();
+    notesField?.focus();
   }
 
   onMount(() => {
@@ -104,7 +91,7 @@
         ? await controller.acceptIdentity(candidate.id, undefined, reviewContext)
         : await controller.rejectIdentity(candidate.id, undefined, reviewContext);
       if (result.ok) {
-        onClose();
+        (onDecided ?? onClose)();
       } else if (result.kind === 'merge_required') {
         conflict = result.conflict;
       } else {
@@ -120,17 +107,6 @@
   }
 </script>
 
-{#if decision === 'not_a_person' && notAPerson}
-  <NotAPersonDialog
-    client={controller.apiClient}
-    participantIDs={[notAPerson.participantID]}
-    label={notAPersonLabel}
-    suggestedOrganization={notAPersonOrganization}
-    initialKind={notAPerson.kind}
-    onClose={requestClose}
-    onDone={(results, deleted) => void notAPersonDone(results[0]?.record.kind ?? notAPerson.kind, deleted)}
-  />
-{:else}
 <Modal
   {title}
   ariaLabel={title}
@@ -155,16 +131,30 @@
       <p>Keep these identities separate when the supplied evidence does not establish that they belong to the same person.</p>
     {/if}
 
-    <label>
-      <span>Decision notes</span>
-      <textarea
-        aria-label="Decision notes"
-        rows="4"
-        value={draft}
-        disabled={pending || !!conflict}
-        oninput={(event) => updateDraft(event.currentTarget.value)}
-      ></textarea>
-    </label>
+    {#if notesOpen}
+      <label>
+        <span>Decision notes <small>(optional)</small></span>
+        <textarea
+          bind:this={notesField}
+          aria-label="Decision notes"
+          rows="3"
+          value={draft}
+          disabled={pending || !!conflict}
+          oninput={(event) => updateDraft(event.currentTarget.value)}
+        ></textarea>
+      </label>
+    {:else}
+      <div class="add-note">
+        <Button
+          size="sm"
+          surface="soft"
+          label="Add a note"
+          ariaExpanded={false}
+          disabled={pending || !!conflict}
+          onclick={() => void openNotes()}
+        />
+      </div>
+    {/if}
 
     {#if conflict}
       <div class="merge-required" role="alert">
@@ -208,12 +198,13 @@
     {/if}
   {/snippet}
 </Modal>
-{/if}
 
 <style>
   .decision { display: grid; gap: var(--space-4); min-width: min(28rem, calc(100vw - 64px)); }
   p, ul, dl, dd { margin: 0; }
   .candidate-context { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--text-primary); }
+  .add-note { display: flex; }
+  label small { color: var(--text-muted); font-weight: normal; }
   label { display: grid; gap: var(--space-2); color: var(--text-secondary); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium, 500); }
   textarea { box-sizing: border-box; width: 100%; resize: vertical; padding: var(--space-3); border: var(--border-width) solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-inset); color: var(--text-primary); font: inherit; line-height: 1.45; }
   textarea:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset, 2px); }

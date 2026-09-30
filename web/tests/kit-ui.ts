@@ -49,9 +49,9 @@ export async function setDensity(page: Page, density: 'compact' | 'comfortable')
   await expect(page.locator('html')).toHaveAttribute('data-density', density);
 }
 
-/** Opens Settings, Reviews, or Saved Views from the header gear menu. */
-export async function openFromGear(page: Page, label: 'Settings' | 'Reviews' | 'Saved Views'): Promise<void> {
-  await page.getByRole('button', { name: /^Settings and reviews/ }).click();
+/** Opens Settings or Saved Views from the header gear menu. */
+export async function openFromGear(page: Page, label: 'Settings' | 'Saved Views'): Promise<void> {
+  await page.getByRole('button', { name: 'Settings and saved views' }).click();
   await page.getByRole('menuitem', { name: new RegExp(`^${label}`) }).click();
 }
 

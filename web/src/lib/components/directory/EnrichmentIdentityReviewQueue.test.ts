@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
 import { EnrichmentReviewController } from '../../directory/enrichment-review-controller.svelte';
 import EnrichmentIdentityReviewQueue from './EnrichmentIdentityReviewQueue.svelte';
+import { focusAndClick } from '../../../test/kit-ui';
 
 const review = {
   attempt_id: 7,
@@ -68,5 +69,28 @@ describe('EnrichmentIdentityReviewQueue', () => {
     expect(await screen.findByText(/Identity rejected for Synthetic Reviewee/)).toBeDefined();
     expect(posts).toEqual(['/api/v1/person-enrichment/identity-reviews/7/reject']);
     expect(await screen.findByText('No enrichment identities to confirm.')).toBeDefined();
+  });
+
+  it('stays in the queue after confirming and focuses the next review', async () => {
+    const second = { ...review, attempt_id: 8, person_id: 80, person_display_name: 'Second Reviewee' };
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      if (request.method === 'POST') {
+        return Response.json({
+          attempt_id: 7, person_id: 70, decision: 'confirmed', reason: 'user_confirmed',
+          attempt_state: 'applied', projections: 3, provider_identities_attached: 1, negatives: 0,
+        });
+      }
+      return Response.json({ reviews: [review, second], limit: 50 });
+    });
+    const onOpenPerson = vi.fn();
+    render(EnrichmentIdentityReviewQueue, { controller: new EnrichmentReviewController(createAPIClient(fetchFn)), onOpenPerson });
+
+    const card = await screen.findByRole('article', { name: 'Synthetic Reviewee' });
+    await focusAndClick(within(card).getByRole('button', { name: 'Confirm identity' }));
+
+    expect(await screen.findByText(/Identity confirmed for Synthetic Reviewee/)).toBeDefined();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('article', { name: 'Second Reviewee' })));
+    expect(onOpenPerson).not.toHaveBeenCalled();
   });
 });

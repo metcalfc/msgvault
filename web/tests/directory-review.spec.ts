@@ -90,7 +90,7 @@ test('contacts that match the archive are named, explained, and linked from thei
   await expect(card).toBeHidden();
 });
 
-test('a shared mailbox is held back and marked as not a person from its review card', async ({ page }) => {
+test('a shared mailbox is marked as not a person straight from its card menu and can be undone', async ({ page }) => {
   await installDirectoryReviewArchive(page);
   await page.goto(reviewURL());
   await page.getByRole('radio', { name: 'Contacts that match your archive' }).click();
@@ -103,18 +103,23 @@ test('a shared mailbox is held back and marked as not a person from its review c
   await expect(card.getByRole('button', { name: 'Link identities' })).toBeDisabled();
 
   await card.getByRole('button', { name: 'Not a person: identity match 26' }).click();
-  await page.getByRole('menuitem', { name: 'Shared mailbox' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Not a person' });
-  await expect(dialog).toContainText('Not a person: Shop Support');
-  await expect(dialog.getByRole('radio', { name: /Shared mailbox/ })).toBeChecked();
   const marked = page.waitForRequest((request) =>
     request.method() === 'PUT' && new URL(request.url()).pathname.endsWith('/identity/correspondent-kinds/260'));
-  await dialog.getByRole('button', { name: 'Mark as shared mailbox' }).click();
+  await page.getByRole('menuitem', { name: 'Shared mailbox' }).click();
+  // The menu choice is the decision: no second dialog asks again.
   expect((await marked).postDataJSON()).toEqual({ kind: 'shared_mailbox' });
-  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(card).toBeHidden();
-  await expect(page.getByRole('article', { name: 'Identity match 25' })).toBeVisible();
-  await expect(page.getByText('Marked as shared mailbox. Its open identity matches were resolved.')).toBeVisible();
+  await expect(page).toHaveURL(/\/reviews/);
+  await expect(page.getByRole('article', { name: 'Identity match 25' })).toBeFocused();
+  await expect(page.getByRole('status').filter({ hasText: 'Marked Shop Support as shared mailbox.' })).toBeVisible();
+
+  const cleared = page.waitForRequest((request) =>
+    request.method() === 'DELETE' && new URL(request.url()).pathname.endsWith('/identity/correspondent-kinds/260'));
+  await page.getByRole('button', { name: 'Undo: Shop Support is a person' }).click();
+  await cleared;
+  await expect(page.getByRole('status').filter({ hasText: 'Undone: Shop Support is a person again.' })).toBeVisible();
+  await expect(card).toBeVisible();
 });
 
 test('enrichment identities are shown with what the provider returned and decided explicitly', async ({ page }) => {
@@ -162,6 +167,9 @@ test('ordinary accept and reject keep keyboard focus connected as rows leave the
 
   await page.keyboard.press('Enter');
   const acceptDialog = page.getByRole('dialog', { name: 'Link identities' });
+  await expect(acceptDialog.getByLabel('Decision notes')).toHaveCount(0);
+  await acceptDialog.getByRole('button', { name: 'Add a note' }).click();
+  await expect(acceptDialog.getByLabel('Decision notes')).toBeFocused();
   await acceptDialog.getByLabel('Decision notes').fill('Synthetic provider IDs match.');
   const acceptedRequest = page.waitForRequest((request) =>
     request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/17/accept'));
@@ -171,14 +179,14 @@ test('ordinary accept and reject keep keyboard focus connected as rows leave the
   await page.keyboard.press('Enter');
   expect((await acceptedRequest).postDataJSON()).toEqual({ notes: 'Synthetic provider IDs match.' });
   await expect(acceptCard).toBeHidden();
-  await expect(page.getByRole('heading', { name: 'Identity matches' })).toBeFocused();
-
   const rejectCard = page.getByRole('article', { name: 'Identity match 18' });
+  await expect(rejectCard).toBeFocused();
   const rejectTrigger = rejectCard.getByRole('button', { name: 'Keep separate' });
   await rejectTrigger.focus();
   await expect(rejectTrigger).toBeFocused();
   await page.keyboard.press('Enter');
   const rejectDialog = page.getByRole('dialog', { name: 'Keep separate' });
+  await rejectDialog.getByRole('button', { name: 'Add a note' }).click();
   await rejectDialog.getByLabel('Decision notes').fill('Synthetic endpoints belong to different people.');
   const rejectedRequest = page.waitForRequest((request) =>
     request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/18/reject'));
@@ -188,7 +196,8 @@ test('ordinary accept and reject keep keyboard focus connected as rows leave the
   await page.keyboard.press('Enter');
   expect((await rejectedRequest).postDataJSON()).toEqual({ notes: 'Synthetic endpoints belong to different people.' });
   await expect(rejectCard).toBeHidden();
-  await expect(page.getByRole('heading', { name: 'Identity matches' })).toBeFocused();
+  await expect(page.getByRole('article', { name: 'Identity match 19' })).toBeFocused();
+  await expect(page).toHaveURL(/\/reviews/);
 
   const candidateFilter = page.getByRole('radio', { name: 'Candidate' });
   await candidateFilter.focus();
@@ -237,7 +246,7 @@ test('pending decisions block Escape and global shortcuts, while failure retains
   await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toHaveCount(0);
   releaseAccept();
   await expect(acceptCard).toBeHidden();
-  await expect(page.getByRole('heading', { name: 'Identity matches' })).toBeFocused();
+  await expect(page.getByRole('article', { name: 'Identity match 18' })).toBeFocused();
 
   fixture.failNextDecision(18, 'Synthetic decision service unavailable.');
   const rejectCard = page.getByRole('article', { name: 'Identity match 18' });
@@ -246,6 +255,7 @@ test('pending decisions block Escape and global shortcuts, while failure retains
   await expect(rejectTrigger).toBeFocused();
   await page.keyboard.press('Enter');
   const rejectDialog = page.getByRole('dialog', { name: 'Keep separate' });
+  await rejectDialog.getByRole('button', { name: 'Add a note' }).click();
   const notes = rejectDialog.getByLabel('Decision notes');
   await notes.fill('Retain this synthetic review note.');
   const rejectSubmit = rejectDialog.getByRole('button', { name: 'Keep separate' });
@@ -292,25 +302,34 @@ for (const profile of [
 for (const completionTarget of [
   { id: 7, label: 'Open source profile Synthetic One', heading: 'Synthetic One' },
   { id: 19, label: 'Open restored profile Synthetic Restored', heading: 'Synthetic Restored' }
-]) test(`explicit merge and partial split open ${completionTarget.heading} with fresh server state`, async ({ page }) => {
+]) test(`merge keeps the queue, then partial split opens ${completionTarget.heading} with fresh server state`, async ({ page }) => {
   const fixture = await installDirectoryReviewArchive(page);
   await page.setViewportSize({ width: 1280, height: 1000 });
   await page.goto(reviewURL());
   const merge = await openMergeModal(page);
 
+  // The profile with more identities is preselected; no checkbox gates it.
   const mergeSubmit = merge.getByRole('button', { name: 'Merge into selected survivor' });
-  await expect(mergeSubmit).toBeDisabled();
-  await merge.getByRole('radio', { name: 'Synthetic One' }).focus();
-  await page.keyboard.press('Space');
-  await expect(mergeSubmit).toBeDisabled();
-  await merge.getByRole('checkbox', { name: /I understand this consolidates both profiles/ }).focus();
-  await page.keyboard.press('Space');
+  await expect(merge.getByRole('checkbox')).toHaveCount(0);
+  await expect(merge.getByRole('radio', { name: 'Synthetic One' })).toBeChecked();
+  await expect(merge).toContainText('Split merged profile');
+  await expect(mergeSubmit).toBeEnabled();
   await mergeSubmit.focus();
   await page.keyboard.press('Enter');
 
-  await expect(page.getByRole('heading', { name: 'Synthetic One' })).toBeVisible();
+  // The queue stays open: the merged match leaves and focus moves on.
+  await expect(merge).toHaveCount(0);
+  await expect(page).toHaveURL(/\/reviews/);
+  await expect(page.getByRole('article', { name: 'Identity match 19' })).toBeHidden();
+  await expect(page.getByRole('article', { name: 'Identity match 25' })).toBeFocused();
   await expect(page.getByRole('status', { name: 'Operation status' }))
-    .toContainText('People merged into Synthetic One. Identity cache ready.');
+    .toContainText("People merged into Synthetic One. Undo it from Synthetic One's merge history.");
+  expect(fixture.requests.filter((request) =>
+    request.method === 'GET' && request.path === '/api/v1/people/7')).toHaveLength(0);
+
+  // The kept profile opens only from its explicit link.
+  await page.getByRole('button', { name: 'Open Synthetic One profile' }).click();
+  await expect(page.getByRole('heading', { name: 'Synthetic One' })).toBeVisible();
   await expect.poll(() => fixture.requests.filter((request) =>
     request.method === 'GET' && request.path === '/api/v1/people/7').length).toBe(1);
   const mergeRequests = fixture.requests.filter((request) => request.path === '/api/v1/people/7/merge');

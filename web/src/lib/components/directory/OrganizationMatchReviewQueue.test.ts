@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
 import { OrganizationReviewController } from '../../directory/organization-review-controller.svelte';
 import OrganizationMatchReviewQueue from './OrganizationMatchReviewQueue.svelte';
+import { focusAndClick } from '../../../test/kit-ui';
 
 const review = {
   id: 4,
@@ -64,5 +65,25 @@ describe('OrganizationMatchReviewQueue', () => {
     await fireEvent.click(within(card).getByRole('button', { name: 'Different organization' }));
     expect(await screen.findByText(/stays separate from Example Labs/)).toBeDefined();
     expect(posts).toEqual(['/api/v1/organization-match-reviews/4/reject']);
+  });
+
+  it('focuses the next match after a decision, and the heading once the queue is empty', async () => {
+    const second = { ...review, id: 5, proposed_name: 'Example Labs Asia', proposed_domain: 'asia.labs.example' };
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      if (request.method === 'POST') return Response.json({ review_id: 4, decision: 'rejected', organization_id: 40 });
+      return Response.json({ reviews: [review, second], limit: 50 });
+    });
+    render(OrganizationMatchReviewQueue, { controller: new OrganizationReviewController(createAPIClient(fetchFn)) });
+
+    const first = await screen.findByRole('article', { name: 'Example Labs Europe' });
+    await focusAndClick(within(first).getByRole('button', { name: 'Different organization' }));
+    const next = await screen.findByRole('article', { name: 'Example Labs Asia' });
+    await waitFor(() => expect(document.activeElement).toBe(next));
+
+    await focusAndClick(within(next).getByRole('button', { name: 'Different organization' }));
+    expect(await screen.findByText('No organization matches to confirm.')).toBeDefined();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Organization matches to confirm' })));
   });
 });

@@ -4,6 +4,7 @@
   import { recordLabel, type CorrespondentReviewController } from '../../directory/correspondent-review-controller.svelte';
   import { percent } from '../../directory/enrichment-review-controller.svelte';
   import { JEV_OPTION_LABELS, type CorrespondentKind } from '../../people/correspondent-kind';
+  import { focusReviewCard } from '../../directory/review-focus';
 
   interface Props {
     controller: CorrespondentReviewController;
@@ -11,6 +12,16 @@
   }
 
   let { controller, onOpenPerson = () => undefined }: Props = $props();
+
+  let list = $state<HTMLElement>();
+  let queueHeading = $state<HTMLHeadingElement>();
+
+  // A decision removes its card; focus moves to the card that took its
+  // place, so the queue can be worked through without scrolling back.
+  async function decide(index: number, run: () => Promise<{ ok: boolean }>): Promise<void> {
+    const result = await run();
+    if (result.ok) await focusReviewCard(list, index, queueHeading);
+  }
 
   const decisions: readonly { kind: CorrespondentKind; label: string }[] = [
     { kind: 'shared_mailbox', label: 'Shared mailbox' },
@@ -26,7 +37,7 @@
 
 <section class="correspondent-review" aria-labelledby="correspondent-review-heading">
   <div class="toolbar">
-    <h2 id="correspondent-review-heading" tabindex="-1">Unclear correspondents</h2>
+    <h2 bind:this={queueHeading} id="correspondent-review-heading" tabindex="-1">Unclear correspondents</h2>
     <p>
       Jev could not tell whether these identities are people. They stay in People and enrichment but are left
       out of relationship rankings until you decide.
@@ -53,13 +64,13 @@
       description="Identities Jev could not classify appear here after msgvault kinds build."
     />
   {:else}
-    <div class="list">
-      {#each controller.rows as record (record.canonical_id)}
+    <div class="list" bind:this={list}>
+      {#each controller.rows as record, index (record.canonical_id)}
         {@const pending = controller.isPending(record.canonical_id)}
         {@const label = recordLabel(record)}
         {@const heading = `correspondent-review-${record.canonical_id}-heading`}
         <Card level="default" padding="md">
-          <article class="review" aria-labelledby={heading} aria-busy={pending}>
+          <article class="review" data-review-card tabindex="-1" aria-labelledby={heading} aria-busy={pending}>
             <header>
               <h3 id={heading}>{label}</h3>
               {#if record.person}
@@ -99,7 +110,7 @@
                   ariaLabel={`Mark ${label} as ${decision.label.toLowerCase()}`}
                   size="sm"
                   disabled={pending}
-                  onclick={() => void controller.decide(record, decision.kind)}
+                  onclick={() => void decide(index, () => controller.decide(record, decision.kind))}
                 />
               {/each}
               <Button
@@ -109,7 +120,7 @@
                 tone="info"
                 surface="solid"
                 disabled={pending}
-                onclick={() => void controller.decide(record, 'person')}
+                onclick={() => void decide(index, () => controller.decide(record, 'person'))}
               />
             </div>
           </article>

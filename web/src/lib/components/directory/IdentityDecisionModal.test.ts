@@ -10,6 +10,7 @@ import {
   type PersonMergeRequiredError
 } from '../../directory/review-controller.svelte';
 import IdentityDecisionModal from './IdentityDecisionModal.svelte';
+import { focusAndClick } from '../../../test/kit-ui';
 
 
 const syntheticNames = { person: { 42: 'Avery Example', 170: 'Avery Example' }, participant: { 171: 'blair@example.org' } };
@@ -72,6 +73,9 @@ describe('IdentityDecisionModal', () => {
     });
 
     expect(screen.queryByText(/merge people/i)).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Decision notes' })).toBeNull();
+    await focusAndClick(screen.getByRole('button', { name: 'Add a note' }));
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Decision notes' }));
     await fireEvent.input(screen.getByRole('textbox', { name: 'Decision notes' }), {
       target: { value: '  Synthetic review note  ' }
     });
@@ -84,6 +88,57 @@ describe('IdentityDecisionModal', () => {
     await expect(posts[0]!.clone().json()).resolves.toEqual({ notes: 'Synthetic review note' });
     expect(posts[0]!.headers.has('If-Match')).toBe(false);
     expect(posts[0]!.headers.has('Idempotency-Key')).toBe(false);
+  });
+
+  it('folds the optional notes away and sends no notes when none were added', async () => {
+    const requests: Request[] = [];
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = requestOf(input);
+      requests.push(request);
+      if (request.method === 'POST') {
+        return Response.json({ candidate: candidate('accepted'), identity_revision: 4, cache_state: 'ready' });
+      }
+      return page([]);
+    });
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
+    const onClose = vi.fn();
+    const onDecided = vi.fn();
+    render(IdentityDecisionModal, {
+      controller,
+      candidate: candidate(),
+      decision: 'accept',
+      reviewContext: controller.reviewContextSnapshot(),
+      onClose,
+      onDecided,
+      onContextInvalidated: vi.fn()
+    });
+
+    const disclosure = screen.getByRole('button', { name: 'Add a note' });
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('textbox')).toBeNull();
+    await focusAndClick(screen.getByRole('button', { name: 'Link identities' }));
+
+    await waitFor(() => expect(onDecided).toHaveBeenCalledOnce());
+    expect(onClose).not.toHaveBeenCalled();
+    const posts = requests.filter((request) => request.method === 'POST');
+    expect(posts).toHaveLength(1);
+    await expect(posts[0]!.clone().json()).resolves.toEqual({});
+  });
+
+  it('shows the notes field already open when the candidate has a saved draft', () => {
+    const controller = new DirectoryReviewController(createAPIClient(vi.fn<typeof fetch>()));
+    controller.setDecisionDraft(17, 'Earlier synthetic note');
+    render(IdentityDecisionModal, {
+      controller,
+      candidate: candidate(),
+      decision: 'reject',
+      reviewContext: controller.reviewContextSnapshot(),
+      onClose: vi.fn(),
+      onContextInvalidated: vi.fn()
+    });
+
+    expect(screen.queryByRole('button', { name: 'Add a note' })).toBeNull();
+    expect((screen.getByRole('textbox', { name: 'Decision notes' }) as HTMLTextAreaElement).value).toBe('Earlier synthetic note');
   });
 
   it('keeps the failed row and its own draft visible without automatically retrying', async () => {
@@ -106,6 +161,7 @@ describe('IdentityDecisionModal', () => {
       onContextInvalidated: vi.fn()
     });
 
+    await focusAndClick(screen.getByRole('button', { name: 'Add a note' }));
     const notes = screen.getByRole('textbox', { name: 'Decision notes' });
     await fireEvent.input(notes, { target: { value: 'Keep row 17 note' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Keep separate' }));

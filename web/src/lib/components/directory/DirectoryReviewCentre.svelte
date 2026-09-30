@@ -24,6 +24,8 @@
   import { CorrespondentReviewController } from '../../directory/correspondent-review-controller.svelte';
   import type { PersonMergeSuccess, ValidatedPersonMergeRequired } from '../../directory/person-merge';
   import type { NotAPersonKind } from '../../people/correspondent-kind';
+  import { endpointLabel } from '../../directory/identity-endpoints';
+  import { focusReviewCard, nextReviewIndex } from '../../directory/review-focus';
 
   interface Props {
     controller: DirectoryReviewController;
@@ -46,7 +48,6 @@
   }: Props = $props();
   type ActiveModal =
     | { kind: 'decision'; candidate: IdentityMatchCandidate; decision: 'accept' | 'reject'; context: DirectoryReviewContextSnapshot }
-    | { kind: 'not_a_person'; candidate: IdentityMatchCandidate; participantID: number; notAPersonKind: NotAPersonKind; context: DirectoryReviewContextSnapshot }
     | { kind: 'merge'; candidate: IdentityMatchCandidate; context: DirectoryReviewContextSnapshot; conflict: ValidatedPersonMergeRequired };
   const names = $derived(entityNames(controller.apiClient));
   let activeDecision = $state<ActiveModal>();
@@ -60,6 +61,10 @@
   const correspondentController = new CorrespondentReviewController(controller.apiClient);
   onDestroy(() => correspondentController.destroy());
   let identityReviewHeading = $state<HTMLHeadingElement>();
+  let candidateList = $state<HTMLElement>();
+  let notAPersonError = $state<string | null>(null);
+  // The profile a merge kept, offered as an explicit link beside the status.
+  let mergedSurvivor = $state<{ id: number; name: string }>();
 
   const reviewKindOptions = [
     { value: 'identity', label: 'Identity matches' },
@@ -105,11 +110,52 @@
   }
 
   function openDecision(candidate: IdentityMatchCandidate, decision: 'accept' | 'reject'): void {
+    mergedSurvivor = undefined;
     activeDecision = { kind: 'decision', candidate, decision, context: controller.reviewContextSnapshot() };
   }
 
-  function openNotAPerson(candidate: IdentityMatchCandidate, participantID: number, notAPersonKind: NotAPersonKind): void {
-    activeDecision = { kind: 'not_a_person', candidate, participantID, notAPersonKind, context: controller.reviewContextSnapshot() };
+  /** Deciding stays in the queue: focus moves to the next candidate
+   * without scrolling, and profiles open only from explicit links. */
+  async function focusAfterDecision(candidateID: number, originalIndex: number): Promise<void> {
+    const index = nextReviewIndex(controller.rows, (row) => row.id === candidateID, originalIndex);
+    await focusReviewCard(candidateList, index, identityReviewHeading);
+  }
+
+  function rowIndex(candidateID: number): number {
+    return Math.max(0, controller.rows.findIndex((row) => row.id === candidateID));
+  }
+
+  // The organization name a marked identity gets: its display name, else
+  // its email domain. The user can rename the organization later.
+  function suggestedOrganization(participantID: number): string {
+    const summary = controller.endpointFor('participant', participantID);
+    const name = summary?.display_name?.trim();
+    if (name && !name.includes('@')) return name;
+    const address = summary?.addresses?.find((value) => value.includes('@')) ?? '';
+    return address ? address.slice(address.lastIndexOf('@') + 1) : '';
+  }
+
+  // The card's menu already names the kind, so it applies at once; the
+  // status line offers Undo.
+  async function markNotAPerson(candidate: IdentityMatchCandidate, participantID: number, kind: NotAPersonKind): Promise<void> {
+    const index = rowIndex(candidate.id);
+    const label = endpointLabel(names, 'participant', participantID, controller.endpointFor('participant', participantID));
+    notAPersonError = null;
+    mergedSurvivor = undefined;
+    const failure = await controller.markNotAPerson(
+      candidate.id, participantID, kind, label, suggestedOrganization(participantID) || undefined,
+      controller.reviewContextSnapshot()
+    );
+    if (failure) {
+      notAPersonError = failure;
+      return;
+    }
+    await focusAfterDecision(candidate.id, index);
+  }
+
+  async function undoNotAPerson(): Promise<void> {
+    notAPersonError = await controller.undoNotAPerson(controller.reviewContextSnapshot());
+    if (!notAPersonError) await focusReviewCard(candidateList, 0, identityReviewHeading);
   }
 
   function resolveMerge(conflict: ValidatedPersonMergeRequired): void {
@@ -119,14 +165,26 @@
     };
   }
 
-  function completeMerge(success: PersonMergeSuccess): void {
+  async function completeMerge(success: PersonMergeSuccess): Promise<void> {
     if (!activeDecision || activeDecision.kind !== 'merge') return;
     const origin = activeDecision;
-    void controller.completePersonMerge(origin.candidate.id, origin.context, success);
+    const index = rowIndex(origin.candidate.id);
+    const completion = controller.completePersonMerge(origin.candidate.id, origin.context, success);
     activeDecision = undefined;
-    onOpenPerson(success.survivor.id);
-    void mergedName(success).then((name) =>
-      onAnnounce(`People merged into ${name}. Identity cache ${success.result.cache_state}.`));
+    void mergedName(success).then((name) => {
+      mergedSurvivor = { id: success.survivor.id, name };
+      onAnnounce(`People merged into ${name}. Undo it from ${name}'s merge history.`);
+    });
+    await completion;
+    await focusAfterDecision(origin.candidate.id, index);
+  }
+
+  async function completeDecision(): Promise<void> {
+    const decided = activeDecision;
+    if (!decided) return;
+    const index = rowIndex(decided.candidate.id);
+    activeDecision = undefined;
+    await focusAfterDecision(decided.candidate.id, index);
   }
 
   function mergedName(success: PersonMergeSuccess): Promise<string> {
@@ -162,8 +220,7 @@
     if (!closed) return;
     await tick();
     const card = document.getElementById(`identity-match-${closed.candidate.id}-card`);
-    const label = closed.kind === 'decision' && closed.decision === 'reject' ? 'Keep separate'
-      : closed.kind === 'not_a_person' ? 'Not a person' : 'Link identities';
+    const label = closed.kind === 'decision' && closed.decision === 'reject' ? 'Keep separate' : 'Link identities';
     const action = Array.from(card?.querySelectorAll<HTMLButtonElement>('button') ?? [])
       .find((button) => button.textContent?.trim() === label);
     const target = action ?? card;
@@ -223,7 +280,30 @@
       </div>
 
       {#if controller.status}
-        <p class="status" role="status" aria-live="polite">{controller.status}</p>
+        <div class="status-row">
+          <p class="status" role="status" aria-live="polite">{controller.status}</p>
+          {#if mergedSurvivor}
+            {@const survivor = mergedSurvivor}
+            <Button
+              label={`Open ${survivor.name} profile`}
+              size="sm"
+              surface="soft"
+              onclick={() => onOpenPerson(survivor.id)}
+            />
+          {/if}
+          {#if controller.lastNotAPerson}
+            <Button
+              label="Undo"
+              ariaLabel={`Undo: ${controller.lastNotAPerson.label} is a person`}
+              size="sm"
+              surface="soft"
+              onclick={() => void undoNotAPerson()}
+            />
+          {/if}
+        </div>
+      {/if}
+      {#if notAPersonError}
+        <p class="decision-error" role="alert">{notAPersonError}</p>
       {/if}
 
       {#if controller.loading && controller.rows.length === 0}
@@ -255,7 +335,7 @@
                 <Spinner size={12} label="Loading next review page" /> Loading page…
               </div>
             {/if}
-            <div class="candidate-list">
+            <div class="candidate-list" bind:this={candidateList}>
               {#each controller.rows as row (row.id)}
                 <IdentityCandidateCard
                   candidate={row}
@@ -266,8 +346,11 @@
                   pending={controller.isDecisionPending(row.id)}
                   onAccept={() => openDecision(row, 'accept')}
                   onReject={() => openDecision(row, 'reject')}
-                  onNotAPerson={(participantID, notAPersonKind) => openNotAPerson(row, participantID, notAPersonKind)}
-                  onIsPerson={(participantID) => void controller.confirmPerson(row.id, participantID, controller.reviewContextSnapshot())}
+                  onNotAPerson={(participantID, notAPersonKind) => void markNotAPerson(row, participantID, notAPersonKind)}
+                  onIsPerson={(participantID) => {
+                    mergedSurvivor = undefined;
+                    void controller.confirmPerson(row.id, participantID, controller.reviewContextSnapshot());
+                  }}
                 />
               {/each}
             </div>
@@ -315,25 +398,16 @@
     decision={activeDecision.decision}
     reviewContext={activeDecision.context}
     onClose={() => void closeDecision()}
+    onDecided={() => void completeDecision()}
     onContextInvalidated={() => void invalidateDecision()}
     onResolveMerge={resolveMerge}
-  />
-{:else if activeDecision?.kind === 'not_a_person'}
-  <IdentityDecisionModal
-    {controller}
-    candidate={activeDecision.candidate}
-    decision="not_a_person"
-    notAPerson={{ participantID: activeDecision.participantID, kind: activeDecision.notAPersonKind }}
-    reviewContext={activeDecision.context}
-    onClose={() => void closeDecision()}
-    onContextInvalidated={() => void invalidateDecision()}
   />
 {:else if activeDecision?.kind === 'merge'}
   <PersonBindingConflictModal
     client={controller.apiClient}
     conflict={activeDecision.conflict}
     onOpenProfile={onOpenPerson}
-    onSuccess={completeMerge}
+    onSuccess={(success) => void completeMerge(success)}
     onClose={() => void closeDecision()}
   />
 {/if}
@@ -349,6 +423,8 @@
   .page-header p, .review-toolbar p { color: var(--text-muted); }
   .identity-review { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
   .status { color: var(--text-secondary); }
+  .status-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+  .decision-error { color: var(--text-danger); }
   .loading { display: flex; align-items: center; gap: var(--space-2); color: var(--text-muted); }
   .message { display: grid; justify-items: start; gap: var(--space-2); padding: var(--space-3); border-left: 2px solid var(--accent-red); color: var(--text-secondary); }
   .queue { position: relative; min-width: 0; }

@@ -53,7 +53,7 @@
 </script>
 
 <Card level="default" padding="md">
-  <article id={`identity-match-${candidate.id}-card`} class="candidate" aria-labelledby={headingID} aria-busy={pending} tabindex="-1">
+  <article id={`identity-match-${candidate.id}-card`} data-review-card class="candidate" aria-labelledby={headingID} aria-busy={pending} tabindex="-1">
     <header>
       <div>
         <p class="state">{candidate.state}</p>

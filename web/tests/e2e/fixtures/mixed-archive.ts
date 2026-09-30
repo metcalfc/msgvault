@@ -1132,20 +1132,32 @@ export async function installDirectoryReviewArchive(page: Page) {
     const kind = typeof captured.body === 'object' && captured.body !== null && 'kind' in captured.body
       ? String(captured.body.kind) : 'person';
     let resolved = 0;
+    let restored = 0;
     for (const candidate of candidates) {
-      if (candidate.state === 'candidate' && candidate.left_kind === 'participant' && candidate.left_id === participantID) {
+      if (candidate.left_kind !== 'participant' || candidate.left_id !== participantID) continue;
+      if (kind !== 'person' && candidate.state === 'candidate') {
         candidate.state = 'rejected';
         candidate.notes = 'not_a_person';
         resolved += 1;
+      } else if (kind === 'person' && candidate.state === 'rejected' && candidate.notes === 'not_a_person') {
+        // Clearing the mark returns the resolved candidates to review.
+        candidate.state = 'candidate';
+        candidate.notes = undefined;
+        restored += 1;
       }
     }
+    const organizationName = kind === 'organization'
+      ? (typeof captured.body === 'object' && captured.body !== null && 'organization_name' in captured.body
+        ? String(captured.body.organization_name) : 'Shop Support')
+      : undefined;
     return route.fulfill({
       json: {
         record: {
           canonical_id: participantID, member_ids: [participantID], kind, source: 'user',
           addresses: ['support@shop.example.test'], display_name: 'Shop Support', classified_at: '2026-01-03T12:00:00Z',
+          ...(organizationName ? { organization_id: 31, organization_name: organizationName } : {}),
         },
-        organization_created: false, resolved_candidates: resolved, restored_candidates: 0,
+        organization_created: kind === 'organization', resolved_candidates: resolved, restored_candidates: restored,
       },
     });
   });

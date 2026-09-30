@@ -1,8 +1,8 @@
 import { fireEvent, screen } from '@testing-library/svelte';
 
-/** Opens Settings, Reviews, or Saved Views from the header gear menu. */
-export async function openFromGear(label: 'Settings' | 'Reviews' | 'Saved Views'): Promise<void> {
-  await fireEvent.click(await screen.findByRole('button', { name: /^Settings and reviews/ }));
+/** Opens Settings or Saved Views from the header gear menu. */
+export async function openFromGear(label: 'Settings' | 'Saved Views'): Promise<void> {
+  await fireEvent.click(await screen.findByRole('button', { name: 'Settings and saved views' }));
   await fireEvent.click(await screen.findByRole('menuitem', { name: new RegExp(`^${label}`) }));
 }
 

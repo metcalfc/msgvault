@@ -24,7 +24,7 @@ ships in.
 | What do I know about this person? | A person's page in [People](#people) |
 | Where is an attachment, image, or video? | [Files](#files-and-containing-context) |
 | Which meetings happened, and what came out of them? | [Meetings](#meetings) |
-| Which identity matches or profile facts need my decision? | [Reviews](#reviews), in the gear menu |
+| Which identity matches or profile facts need my decision? | [Reviews](#reviews) |
 | Can I return to this search later? | [Saved Views](#saved-views) |
 | Did sync, enrichment, or indexing finish? | [Activity](#activity): Sources and Operations |
 | What is staged for deletion? | [Activity](#activity): Deletions |
@@ -86,16 +86,16 @@ warns that its session cookie travels without TLS. `HttpOnly` and
 
 ## Find your way around
 
-Primary navigation has five places: **People**, **Inbox**, **Files**,
-**Meetings**, and **Activity**.
+Primary navigation has six places: **People**, **Inbox**, **Files**,
+**Meetings**, **Reviews**, and **Activity**. On a narrow window the places
+collapse into one menu.
 
 - The header search field submits to Search. It appears on every surface
   except Inbox and Search, which keep their own full search bar with modes
   and chips.
 - The bookmark button beside the header search field opens your
   [Saved Views](#saved-views).
-- The gear menu holds **Settings**, **Reviews**, and **Saved Views**. When
-  you open the menu, Reviews shows how many decisions are waiting.
+- The gear menu holds **Settings** and **Saved Views**.
 - The archive status dot stays in the header. Theme and density live in
   [Settings > Appearance](#appearance).
 
@@ -402,15 +402,28 @@ current context, including chronologically ordered related files.
 
 ### Reviews
 
-Open **Reviews** from the gear menu. It brings together identity matches,
+Open **Reviews** from primary navigation. It brings together identity matches,
 fact review, and imported relationships. Inspect the evidence before
-accepting or rejecting a candidate. A card's **Not a person** menu marks an
-archive identity as an organization, a shared mailbox, or ignored, which
-resolves its open matches. A contact match through an address that looks
-shared says **Looks like a shared mailbox** and cannot be linked until you
-choose **This is a person** on the card. Conflicts between existing profiles
-require an explicit merge decision. Merge history and reversal follow the
-boundaries documented in [People](/docs/usage/people/).
+accepting or rejecting a candidate. Decision notes are optional; choose
+**Add a note** in the decision dialog to record one.
+
+- Deciding keeps you in Reviews. Focus moves to the next card, and the status
+  line says what happened. Open a profile only from a card's **Open …** link.
+- A card's **Not a person** menu marks an archive identity as an
+  organization, a shared mailbox, an automated sender, a mailing list, or
+  ignored, and applies the choice at once. An organization is named after the
+  identity's display name or email domain; rename it later from the
+  organization. The status line offers **Undo**, which makes the identity a
+  person again and returns its matches to review.
+- A contact match through an address that looks shared says **Looks like a
+  shared mailbox** and cannot be linked until you choose **This is a person**
+  on the card.
+- Conflicts between existing profiles open **Resolve person merge**. The
+  profile with more identities, then the older one, is preselected to survive;
+  pick the other to keep it instead. Undo a merge from the kept person's
+  **Maintenance** tab: under **Merge history**, inspect the merge and choose
+  **Split merged profile**. Merge history and reversal follow the boundaries
+  documented in [People](/docs/usage/people/).
 
 ## Saved Views
 

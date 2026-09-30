@@ -89,10 +89,64 @@ function renderModal(
 
 async function selectSurvivor(label = 'Synthetic One'): Promise<void> {
   await fireEvent.click(screen.getByRole('radio', { name: label }));
-  await fireEvent.click(screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i }));
+}
+
+function renderProfiles(first: Person, second: Person) {
+  return render(PersonBindingConflictModal, {
+    client: createAPIClient(vi.fn<typeof fetch>()),
+    conflict: {
+      error: 'person_merge_required',
+      message: 'Choose a survivor',
+      profiles: [
+        { person: first, etag: `"person-${first.id}-r${first.revision}"` },
+        { person: second, etag: `"person-${second.id}-r${second.revision}"` },
+      ],
+    },
+    onOpenProfile: vi.fn(),
+    onSuccess: vi.fn(),
+    onClose: vi.fn(),
+  });
 }
 
 describe('PersonBindingConflictModal', () => {
+  it('needs no confirmation checkbox: a survivor is preselected and the merge is ready', () => {
+    renderModal(vi.fn<typeof fetch>());
+
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.getByRole('radio', { name: 'Synthetic One' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('radio', { name: 'Synthetic Two' }).getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByRole('button', { name: 'Merge into selected survivor' })).toHaveProperty('disabled', false);
+    const hint = screen.getByText(/undo a merge later/).textContent ?? '';
+    expect(hint).toContain('Maintenance tab');
+    expect(hint).toContain('Split merged profile');
+  });
+
+  it.each([
+    {
+      name: 'the profile with more identities',
+      first: person(7, 1, 'Synthetic One'),
+      second: { ...person(9, 1, 'Synthetic Two'), participant_ids: [90, 91] },
+      want: 'Synthetic Two',
+    },
+    {
+      name: 'the older profile when identity counts tie',
+      first: person(7, 1, 'Synthetic One'),
+      second: { ...person(9, 1, 'Synthetic Two'), created_at: '2026-07-01T00:00:00Z' },
+      want: 'Synthetic Two',
+    },
+    {
+      name: 'the lower id when identities and age tie',
+      first: person(9, 1, 'Synthetic Two'),
+      second: person(7, 1, 'Synthetic One'),
+      want: 'Synthetic One',
+    },
+  ])('preselects $name as the survivor', ({ first, second, want }) => {
+    renderProfiles(first, second);
+
+    const checked = screen.getAllByRole('radio').filter((radio) => radio.getAttribute('aria-checked') === 'true');
+    expect(checked.map((radio) => radio.textContent?.trim())).toEqual([want]);
+  });
+
   it('names an unnamed profile through the resolver and tells same-named profiles apart without IDs', async () => {
     const fetchFn = vi.fn<typeof fetch>(async () => Response.json({}));
     const unnamed = { ...person(7, 4, ''), created_at: '2026-07-01T00:00:00Z' };
@@ -169,7 +223,7 @@ describe('PersonBindingConflictModal', () => {
     expect(uuid).toHaveBeenCalledOnce();
   });
 
-  it('changing the survivor clears confirmation and rotates the full-snapshot key', async () => {
+  it('changing the survivor rotates the full-snapshot key', async () => {
     const requests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = requestOf(input);
@@ -185,12 +239,7 @@ describe('PersonBindingConflictModal', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Merge into selected survivor' }));
     await screen.findByRole('alert');
     await fireEvent.click(screen.getByRole('radio', { name: 'Synthetic Two' }));
-    expect(screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i })).toHaveProperty(
-      'checked',
-      false,
-    );
-    expect(screen.getByRole('button', { name: 'Merge into selected survivor' })).toHaveProperty('disabled', true);
-    await fireEvent.click(screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i }));
+    expect(screen.getByRole('button', { name: 'Merge into selected survivor' })).toHaveProperty('disabled', false);
     await fireEvent.click(screen.getByRole('button', { name: 'Merge into selected survivor' }));
 
     await waitFor(() => expect(requests).toHaveLength(2));
@@ -202,7 +251,7 @@ describe('PersonBindingConflictModal', () => {
     ]);
   });
 
-  it('reloads both exact profiles atomically and requires a fresh survivor selection and confirmation', async () => {
+  it('reloads both exact profiles atomically and needs another explicit merge click', async () => {
     const requests: Request[] = [];
     const refreshedSeven = person(7, 5, 'Synthetic One Updated');
     const refreshedNine = person(9, 3, 'Synthetic Two Updated');
@@ -242,20 +291,13 @@ describe('PersonBindingConflictModal', () => {
     expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
     const refreshedSurvivor = screen.getByRole('radio', { name: 'Synthetic One Updated' });
     const refreshedAbsorbed = screen.getByRole('radio', { name: 'Synthetic Two Updated' });
-    const confirmation = screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i });
     const submit = screen.getByRole('button', { name: 'Merge into selected survivor' });
-    expect(refreshedSurvivor.getAttribute('aria-checked')).toBe('false');
+    expect(refreshedSurvivor.getAttribute('aria-checked')).toBe('true');
     expect(refreshedAbsorbed.getAttribute('aria-checked')).toBe('false');
-    expect(confirmation).toHaveProperty('checked', false);
-    expect(confirmation).toHaveProperty('disabled', true);
-    expect(submit).toHaveProperty('disabled', true);
-
-    await fireEvent.click(confirmation);
-    await fireEvent.click(submit);
+    expect((await screen.findByRole('alert')).textContent).toContain('Profiles changed');
     expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
 
-    await fireEvent.click(refreshedSurvivor);
-    await fireEvent.click(confirmation);
+    await waitFor(() => expect(submit).toHaveProperty('disabled', false));
     await fireEvent.click(submit);
     await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
     const posts = requests.filter((request) => request.method === 'POST');
@@ -284,11 +326,6 @@ describe('PersonBindingConflictModal', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Merge into selected survivor' }));
     expect((await screen.findByRole('alert')).textContent).toContain('Application failure');
     expect(requests.filter((request) => request.method === 'GET')).toHaveLength(0);
-    expect(screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i })).toHaveProperty(
-      'checked',
-      false,
-    );
-    await fireEvent.click(screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i }));
     await fireEvent.click(screen.getByRole('button', { name: 'Merge into selected survivor' }));
 
     await waitFor(() => expect(requests).toHaveLength(2));
@@ -335,10 +372,6 @@ describe('PersonBindingConflictModal', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('could not load both current profile revisions');
     expect(screen.getByRole('radio', { name: 'Synthetic One' })).toBeDefined();
     expect(screen.getByRole('radio', { name: 'Synthetic Two' })).toBeDefined();
-    expect(screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i })).toHaveProperty(
-      'checked',
-      false,
-    );
     expect(screen.getByRole('button', { name: 'Merge into selected survivor' })).toHaveProperty('disabled', true);
     expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
   });
@@ -366,7 +399,7 @@ describe('PersonBindingConflictModal', () => {
     expect(screen.queryByRole('radio', { name: 'Synthetic One Updated' })).toBeNull();
   });
 
-  it('blocks reconfirmation and another merge POST after the stale profile reload fails', async () => {
+  it('blocks another merge POST after the stale profile reload fails', async () => {
     const requests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = requestOf(input);
@@ -387,16 +420,13 @@ describe('PersonBindingConflictModal', () => {
 
     expect((await screen.findByRole('alert')).textContent).toContain('could not load both current profile revisions');
     const survivor = screen.getByRole('radio', { name: 'Synthetic One' });
-    const confirmation = screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i });
     const submit = screen.getByRole('button', { name: 'Merge into selected survivor' });
     expect(survivor).toHaveProperty('disabled', true);
-    expect(confirmation).toHaveProperty('disabled', true);
     expect(submit).toHaveProperty('disabled', true);
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Retry profile reload' })).toHaveProperty('disabled', false),
     );
 
-    await fireEvent.click(confirmation);
     await fireEvent.click(submit);
     expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
   });
@@ -441,15 +471,12 @@ describe('PersonBindingConflictModal', () => {
     );
     expect((await screen.findByRole('alert')).textContent).toContain('could not load both current profile revisions');
     expect(screen.getByRole('radio', { name: 'Synthetic One' })).toHaveProperty('disabled', true);
-    expect(screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i })).toHaveProperty(
-      'disabled',
-      true,
-    );
+    expect(screen.getByRole('button', { name: 'Merge into selected survivor' })).toHaveProperty('disabled', true);
     expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
     expect(requests.filter((request) => request.method === 'GET')).toHaveLength(4);
   });
 
-  it('uses only fresh tags after an explicit reload, fresh survivor selection, and reconfirmation', async () => {
+  it('uses only fresh tags after an explicit reload and another merge click', async () => {
     const requests: Request[] = [];
     const refreshedSeven = person(7, 5, 'Synthetic One Updated');
     const refreshedNine = person(9, 3, 'Synthetic Two Updated');
@@ -497,18 +524,10 @@ describe('PersonBindingConflictModal', () => {
     const refreshedSurvivor = screen.getByRole('radio', { name: 'Synthetic One Updated' });
     const refreshedAbsorbed = screen.getByRole('radio', { name: 'Synthetic Two Updated' });
     await waitFor(() => expect(refreshedSurvivor).toHaveProperty('disabled', false));
-    expect(refreshedSurvivor.getAttribute('aria-checked')).toBe('false');
+    expect(refreshedSurvivor.getAttribute('aria-checked')).toBe('true');
     expect(refreshedAbsorbed.getAttribute('aria-checked')).toBe('false');
-    const confirmation = screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i });
-    expect(confirmation).toHaveProperty('checked', false);
-    expect(confirmation).toHaveProperty('disabled', true);
-
-    await fireEvent.click(confirmation);
-    await fireEvent.click(screen.getByRole('button', { name: 'Merge into selected survivor' }));
     expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
 
-    await fireEvent.click(refreshedSurvivor);
-    await fireEvent.click(confirmation);
     await fireEvent.click(screen.getByRole('button', { name: 'Merge into selected survivor' }));
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());

@@ -122,6 +122,7 @@ for (const theme of ['light', 'dark'] as const) {
       const destinations: Array<[string, () => Promise<void>]> = [
         ['People', () => selectKitTopBarTab(page, 'People')],
         ['Files', () => selectKitTopBarTab(page, 'Files')],
+        ['Reviews', () => selectKitTopBarTab(page, 'Reviews')],
         ['Saved Views', () => openFromGear(page, 'Saved Views')],
         ['Sources', () => openActivity(page, 'Sources')],
         ['Deletions', () => openActivity(page, 'Deletions')],
@@ -180,6 +181,47 @@ test('Directory profile maintenance is accessible at desktop and narrow widths',
   }
 });
 
+test('primary navigation reaches Reviews without overflowing the header at desktop and narrow widths', async ({ page }) => {
+  await installDirectoryReviewArchive(page);
+  for (const viewport of [
+    { label: 'desktop', width: 1280, height: 900 },
+    { label: 'narrow', width: 390, height: 844 }
+  ]) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto('/');
+    await expect(page.getByRole('main', { name: 'People' })).toBeVisible();
+    await selectKitTopBarTab(page, 'Reviews');
+    await expect(page).toHaveURL(/\/reviews/);
+    await expect(page.getByRole('main', { name: 'Reviews' })).toBeVisible();
+
+    const nav = page.getByRole('navigation', { name: 'Primary' });
+    if (viewport.label === 'narrow') {
+      // Six places do not fit beside the search field, so they collapse
+      // into one menu that names the current place.
+      await expect(nav.getByRole('combobox', { name: /^Primary: Reviews/ })).toBeVisible();
+    } else {
+      await expect(nav.getByRole('button', { name: 'Reviews', exact: true })).toHaveAttribute('aria-current', 'page');
+    }
+    // Visible header controls stay inside the viewport. (kit-ui's hidden
+    // tab-measurement probe is not a visible control, so the bar's
+    // scrollWidth is not the measure here.)
+    const widths = await page.evaluate(() => {
+      const right = (selector: string) =>
+        document.querySelector<HTMLElement>(selector)?.getBoundingClientRect().right ?? Number.NaN;
+      return {
+        page: document.documentElement.scrollWidth,
+        viewport: window.innerWidth,
+        nav: document.querySelector('.kit-top-bar__nav-select') ? right('.kit-top-bar__nav-select') : right('.kit-top-bar__tabs'),
+        actions: right('.kit-top-bar__right'),
+      };
+    });
+    expect(widths.page, `${viewport.label}: page scrolls sideways`).toBeLessThanOrEqual(widths.viewport);
+    expect(widths.nav, `${viewport.label}: navigation leaves the viewport`).toBeLessThanOrEqual(widths.viewport);
+    expect(widths.actions, `${viewport.label}: header actions leave the viewport`).toBeLessThanOrEqual(widths.viewport);
+    await assertNoViolations(page, `Primary navigation to Reviews ${viewport.label}`);
+  }
+});
+
 test('Directory review, merge, split, and honest Fact gate have no axe violations', async ({ page }) => {
   test.slow();
   await installDirectoryReviewArchive(page);
@@ -212,11 +254,14 @@ test('Directory review, merge, split, and honest Fact gate have no axe violation
   await assertNoViolations(page, 'Directory shared mailbox card');
   await shared.getByRole('button', { name: 'Not a person: identity match 26' }).click();
   await page.getByRole('menuitem', { name: 'Organization' }).click();
-  const notAPerson = page.getByRole('dialog', { name: 'Not a person' });
-  await expect(notAPerson.getByRole('textbox', { name: 'Organization name' })).toBeVisible();
-  await assertNoViolations(page, 'Directory not-a-person decision');
-  await notAPerson.getByRole('button', { name: 'Cancel' }).click();
-  await expect(notAPerson).toHaveCount(0);
+  // The menu choice applies at once, named after the identity; Undo stays.
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(shared).toBeHidden();
+  const undo = page.getByRole('button', { name: 'Undo: Shop Support is a person' });
+  await expect(undo).toBeVisible();
+  await assertNoViolations(page, 'Directory not-a-person status with undo');
+  await undo.click();
+  await expect(shared).toBeVisible();
   await page.getByRole('radio', { name: 'All matches' }).click();
   await expect(page.getByRole('article', { name: 'Identity match 17' })).toBeVisible();
 
@@ -228,10 +273,14 @@ test('Directory review, merge, split, and honest Fact gate have no axe violation
   const merge = page.getByRole('dialog', { name: 'Resolve person merge' });
   await expect(merge).toBeVisible();
   await assertNoViolations(page, 'Directory person merge');
-  await merge.getByRole('radio', { name: 'Synthetic One' }).check();
-  await merge.getByRole('checkbox', { name: /I understand this consolidates both profiles/ }).check();
+  await expect(merge.getByRole('radio', { name: 'Synthetic One' })).toBeChecked();
   await merge.getByRole('button', { name: 'Merge into selected survivor' }).click();
-  await expect(page.getByRole('heading', { name: 'Synthetic One' })).toBeVisible();
+  // Merging from Reviews stays in the queue and moves on to the next match.
+  await expect(merge).toHaveCount(0);
+  await expect(page).toHaveURL(/\/reviews/);
+  await expect(page.getByRole('article', { name: 'Identity match 25' })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Open Synthetic One profile' })).toBeVisible();
+  await assertNoViolations(page, 'Directory review after merge');
 
   await page.goto(`/?explore=${encodeURIComponent(JSON.stringify({
     workspace: 'directory_review', reviewKind: 'fact', identityState: 'candidate', directoryPersonID: 42

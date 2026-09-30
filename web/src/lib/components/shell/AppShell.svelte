@@ -87,7 +87,6 @@
   import MessagePage from '../reader/MessagePage.svelte';
   import HeaderSearch from './HeaderSearch.svelte';
   import SettingsIcon from '@lucide/svelte/icons/settings';
-  import { pendingReviewCount, reviewCountLabel } from '../../directory/review-count';
   import { routeTitle } from '../../routing/routes';
   import ArchivedMeetingReader from '../meetings/ArchivedMeetingReader.svelte';
   import { ArchiveMeetingNavigation, archiveMeetingSelection, parseArchiveMeetingSelection } from '../../meetings/archive-navigation.svelte';
@@ -400,14 +399,17 @@
   let operationAnnouncement = $state({ key: 0, message: '' });
   type APIExploreSelection = GeneratedExploreSelection;
   type ExplorePreflight = GeneratedExplorePreflightResponse;
-  // Primary navigation: the places people go. Settings, Reviews, and
-  // Saved Views live in the gear menu; Search is the header field.
-  type NavigationID = 'people' | 'inbox' | 'files' | 'meetings' | 'activity';
+  // Primary navigation: the places people go. Settings and Saved Views
+  // live in the gear menu; Search is the header field. Reviews carries no
+  // count: no cheap count endpoint exists, and opening the app should cost
+  // no review reads.
+  type NavigationID = 'people' | 'inbox' | 'files' | 'meetings' | 'reviews' | 'activity';
   const tabs: { id: NavigationID; label: string }[] = [
     { id: 'people', label: 'People' },
     { id: 'inbox', label: 'Inbox' },
     { id: 'files', label: 'Files' },
     { id: 'meetings', label: 'Meetings' },
+    { id: 'reviews', label: 'Reviews' },
     { id: 'activity', label: 'Activity' },
   ];
   const activitySections = [
@@ -426,6 +428,8 @@
         return 'files';
       case 'meetings':
         return 'meetings';
+      case 'directory_review':
+        return 'reviews';
       case 'sources':
       case 'operations':
       case 'deletions':
@@ -440,6 +444,7 @@
     else if (id === 'inbox') openInbox();
     else if (id === 'files') openWorkspaceTab('files');
     else if (id === 'meetings') openMeetings();
+    else if (id === 'reviews') openWorkspaceTab('directory_review');
     else openWorkspaceTab('sources');
   }
   /** The Meetings list, keeping its filters. */
@@ -467,19 +472,6 @@
     everythingSession.submitTypedQuery(query);
     void focusGridAfterUpdate();
   }
-  // Reviews wait for a decision; the gear menu says how many.
-  let reviewCount = $state<number>();
-  let reviewCountController: AbortController | undefined;
-  function refreshReviewCount(): void {
-    reviewCountController?.abort();
-    const controller = new AbortController();
-    reviewCountController = controller;
-    void pendingReviewCount(client, controller.signal).then((count) => {
-      if (!controller.signal.aborted) reviewCount = count;
-    }).catch(() => undefined);
-  }
-  // The count loads when the gear menu opens, so opening the app costs no
-  // review reads; the last count stays on the gear until it changes.
   const themeOptions: { value: ThemePreference; label: string }[] = [
     { value: 'light', label: 'Light' },
     { value: 'dark', label: 'Dark' },
@@ -1453,16 +1445,12 @@
       {/if}
     {/snippet}
     {#snippet right()}
-      <Menu align="end" onopenchange={(open) => { if (open) refreshReviewCount(); }}>
-        <MenuTrigger class="gear-trigger" ariaLabel={reviewCount ? `Settings and reviews (${reviewCountLabel(reviewCount)} to review)` : 'Settings and reviews'} title="Settings and reviews">
+      <Menu align="end">
+        <MenuTrigger class="gear-trigger" ariaLabel="Settings and saved views" title="Settings and saved views">
           <SettingsIcon size={16} aria-hidden="true" />
-          {#if reviewCount}<span class="gear-badge" aria-hidden="true">{reviewCountLabel(reviewCount)}</span>{/if}
         </MenuTrigger>
-        <MenuContent ariaLabel="Settings and reviews">
+        <MenuContent ariaLabel="Settings and saved views">
           <MenuItem onselect={() => openWorkspaceTab('settings')}>Settings</MenuItem>
-          <MenuItem textValue="Reviews" onselect={() => openWorkspaceTab('directory_review')}>
-            <span class="menu-row">Reviews{#if reviewCount}<span class="menu-count">{reviewCountLabel(reviewCount)}</span>{/if}</span>
-          </MenuItem>
           <MenuItem onselect={() => openWorkspaceTab('saved_views')}>Saved Views</MenuItem>
         </MenuContent>
       </Menu>
@@ -1924,34 +1912,6 @@
   .app-shell :global(.gear-trigger:hover) {
     background: var(--surface-well);
     color: var(--text-primary);
-  }
-
-  .gear-badge {
-    position: absolute;
-    top: -2px;
-    right: -4px;
-    min-width: 16px;
-    padding: 0 4px;
-    border-radius: 999px;
-    background: var(--accent-blue);
-    color: var(--text-on-accent, #fff);
-    font-size: 10px;
-    font-weight: 600;
-    line-height: 16px;
-    text-align: center;
-  }
-
-  .menu-row {
-    display: inline-flex;
-    width: 100%;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-  }
-
-  .menu-count {
-    color: var(--text-secondary);
-    font-variant-numeric: tabular-nums;
   }
 
   .sub-tabs__list {

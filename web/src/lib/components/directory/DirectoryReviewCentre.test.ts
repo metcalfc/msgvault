@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
@@ -11,6 +11,7 @@ import {
 } from '../../directory/review-controller.svelte';
 import DirectoryReviewCentre from './DirectoryReviewCentre.svelte';
 import { RelationshipReviewController } from '../../directory/relationship-review-controller.svelte';
+import { focusAndClick } from '../../../test/kit-ui';
 
 
 const syntheticNames = { person: { 42: 'Avery Example', 170: 'Avery Example' }, participant: { 171: 'blair@example.org' } };
@@ -46,13 +47,22 @@ function requestOf(input: RequestInfo | URL): Request {
   return input instanceof Request ? input : new Request(input);
 }
 
-function renderReview(controller: DirectoryReviewController) {
+function renderReview(controller: DirectoryReviewController, onOpenPerson = vi.fn()) {
   return render(DirectoryReviewCentre, {
     controller,
     relationshipController: new RelationshipReviewController(controller.apiClient),
     factController: new FactLedgerController(controller.apiClient),
-    directoryPersonID: null
+    directoryPersonID: null,
+    onOpenPerson
   });
+}
+
+function participantCandidate(id: number): IdentityMatchCandidate {
+  return { ...candidate(id), left_kind: 'participant', left_id: id * 10, right_kind: 'person', right_id: id * 10 + 1 };
+}
+
+function card(id: number): HTMLElement {
+  return screen.getByRole('article', { name: `Identity match ${id}` });
 }
 
 describe('DirectoryReviewCentre', () => {
@@ -297,35 +307,111 @@ describe('DirectoryReviewCentre', () => {
     expect(requests.filter((request) => request.method === 'POST')).toHaveLength(0);
   });
 
-  it('closes a successful decision and returns focus to the originating row action', async () => {
+  it.each([
+    { decision: 'Link identities', state: 'accepted', path: '/accept', status: 'Identity match accepted.' },
+    { decision: 'Keep separate', state: 'rejected', path: '/reject', status: 'Identity match rejected.' }
+  ])('stays in the queue after $decision and focuses the next candidate', async ({ decision, state, path, status }) => {
     const requests: Request[] = [];
-    const current = candidate(17);
-    const accepted = candidate(17, 'accepted');
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = requestOf(input);
       requests.push(request);
       if (request.method === 'POST') {
-        return Response.json({ candidate: accepted, identity_revision: 4, cache_state: 'stale' });
+        return Response.json({ candidate: candidate(17, state), identity_revision: 4, cache_state: 'stale' });
       }
-      return page([current]);
+      return page([candidate(18), candidate(19)]);
     });
     const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
-    controller.rows = [current];
-    renderReview(controller);
-    const trigger = screen.getByRole('button', { name: 'Link identities' });
-    trigger.focus();
+    controller.rows = [candidate(17), candidate(18), candidate(19)];
+    const onOpenPerson = vi.fn();
+    renderReview(controller, onOpenPerson);
 
-    await fireEvent.click(trigger);
+    await focusAndClick(within(card(17)).getByRole('button', { name: decision }));
+    await focusAndClick(screen.getByRole('button', { name: 'Add a note' }));
     await fireEvent.input(screen.getByRole('textbox', { name: 'Decision notes' }), {
       target: { value: 'Confirmed by synthetic fixture' }
     });
-    await fireEvent.click(screen.getByRole('dialog', { name: 'Link identities' }).querySelector('button.kit-button--solid')!);
+    await focusAndClick(screen.getByRole('dialog', { name: decision }).querySelector('button.kit-button--solid')!);
 
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Link identities' })).toBeNull());
-    const restoredAction = screen.getByRole('button', { name: 'Link identities' });
-    await waitFor(() => expect(document.activeElement).toBe(restoredAction));
-    expect(screen.getByRole('status').textContent).toContain('Identity match accepted.');
-    expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: decision })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(card(18)));
+    expect(screen.queryByRole('article', { name: 'Identity match 17' })).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain(status);
+    expect(onOpenPerson).not.toHaveBeenCalled();
+    const posts = requests.filter((request) => request.method === 'POST');
+    expect(posts).toHaveLength(1);
+    expect(new URL(posts[0]!.url).pathname.endsWith(path)).toBe(true);
+    await expect(posts[0]!.clone().json()).resolves.toEqual({ notes: 'Confirmed by synthetic fixture' });
+  });
+
+  it('applies the not-a-person kind picked from the menu without a second dialog, then offers Undo', async () => {
+    const requests: Request[] = [];
+    let marked = false;
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = requestOf(input);
+      requests.push(request);
+      const url = new URL(request.url);
+      if (url.pathname === '/api/v1/identity/correspondent-kinds/170') {
+        marked = request.method === 'PUT';
+        return Response.json({
+          organization_created: request.method === 'PUT', resolved_candidates: 1, restored_candidates: request.method === 'PUT' ? 0 : 1,
+          record: {
+            canonical_id: 170, member_ids: [170], addresses: ['desk@shop.example.test'], display_name: 'Example Shop',
+            kind: request.method === 'PUT' ? 'organization' : 'person',
+            ...(request.method === 'PUT' ? { organization_id: 5, organization_name: 'Example Shop' } : {})
+          }
+        });
+      }
+      return Response.json({
+        candidates: marked ? [participantCandidate(18)] : [participantCandidate(17), participantCandidate(18)],
+        endpoints: [
+          { kind: 'participant', id: 170, found: true, display_name: 'Example Shop', addresses: ['desk@shop.example.test'] },
+          { kind: 'participant', id: 180, found: true, display_name: 'Casey Example', addresses: ['casey@example.org'] }
+        ],
+        limit: IDENTITY_REVIEW_PAGE_LIMIT,
+        offset: 0
+      });
+    });
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
+    await controller.loadIdentityPage(0);
+    const onOpenPerson = vi.fn();
+    renderReview(controller, onOpenPerson);
+
+    await focusAndClick(within(card(17)).getByRole('button', { name: 'Not a person: identity match 17' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Organization' }));
+
+    await waitFor(() => expect(document.activeElement).toBe(card(18)));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('article', { name: 'Identity match 17' })).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe('Marked Example Shop as organization (Example Shop).');
+    const put = requests.find((request) => request.method === 'PUT')!;
+    expect(new URL(put.url).pathname).toBe('/api/v1/identity/correspondent-kinds/170');
+    await expect(put.clone().json()).resolves.toEqual({ kind: 'organization', organization_name: 'Example Shop' });
+    expect(onOpenPerson).not.toHaveBeenCalled();
+
+    await focusAndClick(screen.getByRole('button', { name: 'Undo: Example Shop is a person' }));
+
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Undone: Example Shop is a person again.'));
+    expect(requests.filter((request) => request.method === 'DELETE').map((request) => new URL(request.url).pathname))
+      .toEqual(['/api/v1/identity/correspondent-kinds/170']);
+    expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+  });
+
+  it('keeps the card and reports the failure when marking not a person fails', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = requestOf(input);
+      if (request.method === 'PUT') return Response.json({ error: 'unavailable', message: 'Kind unavailable' }, { status: 503 });
+      return page([participantCandidate(17)]);
+    });
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
+    controller.rows = [participantCandidate(17)];
+    renderReview(controller);
+
+    await focusAndClick(within(card(17)).getByRole('button', { name: 'Not a person: identity match 17' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Automated sender' }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Kind unavailable');
+    expect(card(17)).toBeDefined();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('returns focus to a stable live fallback when reconciliation removes the originating row', async () => {

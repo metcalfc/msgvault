@@ -17,7 +17,7 @@ import type {
   IdentityReviewState,
   RelationshipReviewState,
 } from '../explore/models';
-import { setKind } from '../people/correspondent-kind';
+import { clearKind, kindLabel, setKind, type NotAPersonKind } from '../people/correspondent-kind';
 import {
   validatePersonMergeRequired,
   type PersonMergeSuccess,
@@ -86,6 +86,9 @@ export class DirectoryReviewController {
     conflict: PersonMergeRequiredError;
   } | null>(null);
   lastMerge = $state<DirectoryReviewMergeCompletion | null>(null);
+  /** The identity most recently marked as not a person from this queue,
+   * which the status line offers to undo. */
+  lastNotAPerson = $state<{ participantID: number; label: string } | null>(null);
   readonly pendingDecisions = new SvelteSet<number>();
   private readonly client: APIClient;
   private readonly commit: ReviewCommit;
@@ -301,13 +304,63 @@ export class DirectoryReviewController {
       this.pendingDecisions.delete(candidateID);
     }
   }
-  /** After a record was marked as not a person from the queue: its open
-   * candidates are resolved, so the page reloads without them. */
-  async completeNotAPerson(context: DirectoryReviewContextSnapshot, message: string): Promise<void> {
-    if (this.disposed || !this.isReviewContextCurrent(context)) return;
+  /** Marks one of a candidate's archive identities as not a person with
+   * the kind picked from the card's menu. The server resolves the
+   * identity's open candidates, so the page reloads without them. An
+   * organization is named organizationName, or by the server's default
+   * (the display name, then the email domain). Returns an error message,
+   * or null on success. */
+  async markNotAPerson(
+    candidateID: number,
+    participantID: number,
+    kind: NotAPersonKind,
+    label: string,
+    organizationName: string | undefined,
+    context: DirectoryReviewContextSnapshot,
+  ): Promise<string | null> {
+    if (this.disposed || this.pendingDecisions.has(candidateID)) return 'A decision is already pending.';
+    if (!this.isReviewContextCurrent(context)) return 'The review context changed.';
+    this.pendingDecisions.add(candidateID);
     this.decisionError = null;
+    this.status = null;
+    this.lastNotAPerson = null;
+    try {
+      const outcome = await setKind(this.client, participantID, kind, kind === 'organization' ? organizationName : undefined);
+      if (!outcome.ok) {
+        if (this.ownsDecisionContext(context)) this.decisionError = outcome.message;
+        return outcome.message;
+      }
+      if (!this.ownsDecisionContext(context)) return null;
+      await this.loadIdentityPage(context.offset, context.identityState);
+      const record = outcome.result.record;
+      const organization = record.kind === 'organization' ? record.organization_name?.trim() : '';
+      const kept = record.person?.only_this_cluster && kind !== 'shared_mailbox'
+        ? ' Its saved profile was kept.'
+        : '';
+      this.status = `Marked ${label} as ${kindLabel(kind).toLowerCase()}${organization ? ` (${organization})` : ''}.${kept}`;
+      this.lastNotAPerson = { participantID, label };
+      return null;
+    } finally {
+      this.pendingDecisions.delete(candidateID);
+    }
+  }
+  /** Undoes the last not-a-person mark: the identity is a person again and
+   * the server returns its resolved candidates to review. */
+  async undoNotAPerson(context: DirectoryReviewContextSnapshot): Promise<string | null> {
+    const marked = this.lastNotAPerson;
+    if (this.disposed || !marked) return null;
+    if (!this.isReviewContextCurrent(context)) return 'The review context changed.';
+    this.decisionError = null;
+    const outcome = await clearKind(this.client, marked.participantID);
+    if (!outcome.ok) {
+      if (this.ownsDecisionContext(context)) this.decisionError = outcome.message;
+      return outcome.message;
+    }
+    if (!this.ownsDecisionContext(context)) return null;
+    this.lastNotAPerson = null;
     await this.loadIdentityPage(context.offset, context.identityState);
-    this.status = message;
+    this.status = `Undone: ${marked.label} is a person again.`;
+    return null;
   }
   async completePersonMerge(
     candidateID: number,
@@ -360,6 +413,7 @@ export class DirectoryReviewController {
     if (notes !== undefined) this.setDecisionDraft(candidateID, notes);
     this.decisionError = null;
     this.status = null;
+    this.lastNotAPerson = null;
     if (decision === 'accept' && this.mergeRequired?.candidateID === candidateID) this.mergeRequired = null;
     const abort = new AbortController();
     this.decisionRequests.set(candidateID, abort);
@@ -445,6 +499,7 @@ export class DirectoryReviewController {
     this.pageError = null;
     this.decisionError = null;
     this.status = null;
+    this.lastNotAPerson = null;
     this.mergeRequired = null;
     this.retryOffset = undefined;
   }

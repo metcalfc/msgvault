@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
 import { CorrespondentReviewController } from '../../directory/correspondent-review-controller.svelte';
 import CorrespondentKindReviewQueue from './CorrespondentKindReviewQueue.svelte';
+import { focusAndClick } from '../../../test/kit-ui';
 
 const unclear = {
   canonical_id: 41,
@@ -57,9 +58,12 @@ describe('CorrespondentKindReviewQueue', () => {
     await fireEvent.click(within(card).getByRole('button', { name: 'Open Front Desk Contact' }));
     expect(onOpenPerson).toHaveBeenCalledWith(90);
 
-    await fireEvent.click(within(card).getByRole('button', { name: 'Mark Front Desk as shared mailbox' }));
+    await focusAndClick(within(card).getByRole('button', { name: 'Mark Front Desk as shared mailbox' }));
     expect(await screen.findByText('Front Desk marked as shared mailbox.')).toBeDefined();
     expect(puts).toEqual([{ path: '/api/v1/identity/correspondent-kinds/41', body: { kind: 'shared_mailbox' } }]);
     expect(screen.queryByRole('article', { name: 'Front Desk' })).toBeNull();
+    // The queue stays put and moves on to the next record.
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('article', { name: 'desk-two@example.com' })));
+    expect(onOpenPerson).toHaveBeenCalledOnce();
   });
 });

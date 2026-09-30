@@ -8,7 +8,7 @@ import { createAPIClient } from '../../api/client';
 import { withEntityLabels } from '../../../test/entity-labels';
 import { LOAD_THROUGH_END_MAX_PAGES } from '../../explore/paging';
 import { ExploreState, parseExploreURLState, serializeExploreURLState } from '../../explore/state.svelte';
-import { chooseSelectOption } from '../../../test/kit-ui';
+import { chooseSelectOption, focusAndClick } from '../../../test/kit-ui';
 import AppShell from './AppShell.svelte';
 import { exploreLink } from '../../../test/explore-url';
 import { openCommandPalette, openFromGear } from '../../../test/navigation';
@@ -248,24 +248,31 @@ describe('AppShell', () => {
     state.destroy();
   });
 
-  it('counts waiting reviews in the gear menu and opens sections from the palette', async () => {
+  it('opens Reviews from primary navigation without reading reviews first, and sections from the palette', async () => {
     window.history.replaceState(null, '', '/files');
+    const reviewReads: string[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const url = new URL(input instanceof Request ? input.url : String(input));
       if (url.pathname === '/api/v1/identity/match-candidates') {
-        return Response.json({ candidates: [{ id: 1 }, { id: 2 }], limit: 100, offset: 0 });
+        reviewReads.push(url.pathname);
+        return Response.json({ candidates: [], limit: 100, offset: 0 });
       }
-      if (url.pathname === '/api/v1/person-relationship-reviews') return Response.json({ reviews: [{ id: 5 }] });
+      if (url.pathname === '/api/v1/person-relationship-reviews') {
+        reviewReads.push(url.pathname);
+        return Response.json({ reviews: [] });
+      }
       return Response.json(exploreResponse());
     });
     const state = new ExploreState(window);
     const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
 
-    await fireEvent.click(screen.getByRole('button', { name: /^Settings and reviews/ }));
-    expect(await screen.findByRole('menuitem', { name: /^Reviews\s*3$/ })).toBeDefined();
-    await waitFor(() => expect(screen.getByRole('button', { name: /^Settings and reviews/ }).getAttribute('aria-label'))
-      .toBe('Settings and reviews (3 to review)'));
-    await fireEvent.keyDown(window, { key: 'Escape' });
+    const nav = screen.getByRole('navigation', { name: 'Primary' });
+    expect(reviewReads).toEqual([]);
+    await focusAndClick(within(nav).getByRole('button', { name: 'Reviews' }));
+    expect(state.current.workspace).toBe('directory_review');
+    expect(window.location.pathname).toBe('/reviews');
+    expect(await screen.findByRole('main', { name: 'Reviews' })).toBeDefined();
+    expect(within(nav).getByRole('button', { name: 'Reviews' }).getAttribute('aria-current')).toBe('page');
 
     const palette = await openCommandPalette();
     await fireEvent.click(within(palette).getByRole('option', { name: 'Go to Activity' }));
@@ -325,7 +332,7 @@ describe('AppShell', () => {
     const rendered = render(AppShell, { client: createAPIClient(vi.fn()), state, enabled: false });
 
     await waitFor(() => expect(state.peekRestorationEpoch()).toBeUndefined());
-    const gear = screen.getByRole('button', { name: /^Settings and reviews/ });
+    const gear = screen.getByRole('button', { name: 'Settings and saved views' });
     gear.focus();
     await Promise.resolve();
     expect(document.activeElement).toBe(gear);
@@ -412,7 +419,7 @@ describe('AppShell', () => {
   });
 
 
-  it('presents five-place primary navigation with Search, Settings, Reviews, and Saved Views in the header', async () => {
+  it('presents six-place primary navigation with Search, Settings, and Saved Views in the header', async () => {
     window.history.replaceState(null, '', exploreLink({ workspace: 'everything' }));
     const state = new ExploreState(window);
     const rendered = render(AppShell, {
@@ -422,12 +429,12 @@ describe('AppShell', () => {
 
     const nav = screen.getByRole('navigation', { name: 'Primary' });
     expect(within(nav).getAllByRole('button').map((button) => button.textContent?.trim())).toEqual([
-      'People', 'Inbox', 'Files', 'Meetings', 'Activity'
+      'People', 'Inbox', 'Files', 'Meetings', 'Reviews', 'Activity'
     ]);
     expect(screen.queryByRole('button', { name: 'Relationships' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Domains' })).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: /^Settings and reviews/ }));
-    expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual(['Settings', 'Reviews', 'Saved Views']);
+    await fireEvent.click(screen.getByRole('button', { name: 'Settings and saved views' }));
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual(['Settings', 'Saved Views']);
 
     rendered.unmount();
     state.destroy();
@@ -839,7 +846,7 @@ describe('AppShell', () => {
     state.destroy();
   });
 
-  it('navigates a completed review merge through the durable-person route and keeps its announcement mounted', async () => {
+  it('stays in the review queue after a merge, announces it, and focuses the next candidate', async () => {
     window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
       workspace: 'directory_review', reviewKind: 'identity', identityState: 'candidate'
     }))}`);
@@ -848,6 +855,8 @@ describe('AppShell', () => {
       basis: 'stable_provider_id', source: 'synthetic', state: 'candidate', evidence: [],
       created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-01T00:00:00Z'
     };
+    const next = { ...candidate, id: 18, left_id: 180, right_id: 181 };
+    let merged = false;
     const person = (id: number, revision: number, name: string) => ({
       id, revision, display_name: name, participant_ids: [id * 10], vcard_uid: `synthetic-${id}`,
       created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-02T00:00:00Z'
@@ -865,9 +874,10 @@ describe('AppShell', () => {
       requests.push(request);
       const path = new URL(request.url).pathname;
       if (path === '/api/v1/identity/match-candidates' && request.method === 'GET') {
-        return Response.json({ candidates: [candidate], limit: 100, offset: 0 });
+        return Response.json({ candidates: merged ? [next] : [candidate, next], limit: 100, offset: 0 });
       }
       if (path.endsWith('/accept')) return Response.json(conflict, { status: 409 });
+      if (path === '/api/v1/people/7/merge' && request.method === 'POST') merged = true;
       if (path === '/api/v1/people/7/merge' && request.method === 'POST') return Response.json({
         cache_state: 'stale', identity_revision: 8, person: survivor, review_candidates: [],
         merge: {
@@ -896,18 +906,26 @@ describe('AppShell', () => {
     const state = new ExploreState(window);
     const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Link identities' }));
-    await fireEvent.click(screen.getByRole('dialog', { name: 'Link identities' }).querySelector('button.kit-button--solid')!);
-    await fireEvent.click(await screen.findByRole('button', { name: 'Resolve merge' }));
-    await fireEvent.click(screen.getByRole('radio', { name: 'Synthetic One' }));
-    await fireEvent.click(screen.getByRole('checkbox', { name: /I understand this consolidates both profiles/i }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Merge into selected survivor' }));
+    const firstCard = await screen.findByRole('article', { name: 'Identity match 17' });
+    await focusAndClick(within(firstCard).getByRole('button', { name: 'Link identities' }));
+    await focusAndClick(screen.getByRole('dialog', { name: 'Link identities' }).querySelector('button.kit-button--solid')!);
+    await focusAndClick(await screen.findByRole('button', { name: 'Resolve merge' }));
+    expect(screen.getByRole('radio', { name: 'Synthetic One' }).getAttribute('aria-checked')).toBe('true');
+    await focusAndClick(screen.getByRole('button', { name: 'Merge into selected survivor' }));
 
-    await waitFor(() => expect(state.current).toMatchObject({ workspace: 'directory', directoryPersonID: 7 }));
-    expect(screen.getByRole('status', { name: 'Operation status' }).textContent)
-      .toContain('People merged into Synthetic One. Identity cache stale.');
-    expect(requests.some((request) => request.method === 'GET' && new URL(request.url).pathname === '/api/v1/people/7')).toBe(true);
+    const nextCard = await screen.findByRole('article', { name: 'Identity match 18' });
+    await waitFor(() => expect(document.activeElement).toBe(nextCard));
+    expect(screen.queryByRole('article', { name: 'Identity match 17' })).toBeNull();
+    expect(state.current).toMatchObject({ workspace: 'directory_review', reviewKind: 'identity' });
+    expect(screen.getByRole('main', { name: 'Reviews' })).toBeDefined();
+    await waitFor(() => expect(screen.getByRole('status', { name: 'Operation status' }).textContent)
+      .toContain("People merged into Synthetic One. Undo it from Synthetic One's merge history."));
+    expect(requests.some((request) => request.method === 'GET' && new URL(request.url).pathname === '/api/v1/people/7')).toBe(false);
     expect(requests.filter((request) => new URL(request.url).pathname.endsWith('/accept'))).toHaveLength(1);
+
+    // The kept profile opens only from its explicit link.
+    await focusAndClick(await screen.findByRole('button', { name: 'Open Synthetic One profile' }));
+    await waitFor(() => expect(state.current).toMatchObject({ workspace: 'directory', directoryPersonID: 7 }));
 
     rendered.unmount();
     state.destroy();

@@ -6,7 +6,6 @@
   import {
     appShortcuts,
     Button,
-    Checkbox,
     formatTimestamp,
     Modal,
     SegmentedControl,
@@ -33,8 +32,9 @@
   let { client, conflict, onOpenProfile, onSuccess, onClose }: Props = $props();
   const names = $derived(entityNames(client));
   let profiles = $state<[Profile, Profile]>(untrack(() => [conflict.profiles[0], conflict.profiles[1]]));
-  let survivorID = $state<number | null>(null);
-  let confirmed = $state(false);
+  // The profile with more identities, then the older one, then the lower
+  // ID survives by default; the user can still pick the other.
+  let survivorID = $state<number | null>(untrack(() => defaultSurvivorID(conflict.profiles)));
   let pending = $state(false);
   let completed = $state(false);
   let error = $state<string | null>(null);
@@ -59,6 +59,19 @@
     abortController?.abort();
     releaseShortcutScope?.();
   });
+  function defaultSurvivorID(candidates: readonly Profile[]): number | null {
+    const ranked = [...candidates].sort((left, right) => {
+      const identities = (right.person.participant_ids?.length ?? 0) - (left.person.participant_ids?.length ?? 0);
+      if (identities !== 0) return identities;
+      const leftCreated = Date.parse(left.person.created_at);
+      const rightCreated = Date.parse(right.person.created_at);
+      if (Number.isFinite(leftCreated) && Number.isFinite(rightCreated) && leftCreated !== rightCreated) {
+        return leftCreated - rightCreated;
+      }
+      return left.person.id - right.person.id;
+    });
+    return ranked[0]?.person.id ?? null;
+  }
   function profileName(profile: Profile): string {
     return names.name('person', profile.person.id, profile.person.display_name);
   }
@@ -76,7 +89,6 @@
     const nextID = Number(value);
     if (nextID === survivorID) return;
     survivorID = nextID;
-    confirmed = false;
     idempotencyKey = null;
     error = null;
   }
@@ -120,11 +132,10 @@
         return;
       }
       profiles = next.profiles;
-      survivorID = null;
-      confirmed = false;
+      survivorID = defaultSurvivorID(next.profiles);
       idempotencyKey = null;
       reloadRequired = false;
-      error = 'Profiles changed while you were reviewing them. Confirm the current revisions before merging.';
+      error = 'Profiles changed while you were reviewing them. Check the current profiles, then merge again.';
     } catch (cause) {
       if (disposed || generation !== requestGeneration || signal.aborted) return;
       error = 'The merge was stale, but could not load both current profile revisions. Try again.';
@@ -143,7 +154,7 @@
     }
   }
   async function submit(): Promise<void> {
-    if (pending || completed || reloadRequired || !confirmed || survivorID === null) return;
+    if (pending || completed || reloadRequired || survivorID === null) return;
     const survivor = profiles.find((profile) => profile.person.id === survivorID);
     const absorbed = profiles.find((profile) => profile.person.id !== survivorID);
     if (!survivor || !absorbed) return;
@@ -183,7 +194,6 @@
         }
         return;
       }
-      confirmed = false;
       idempotencyKey = null;
       if (isPersonMergeRevisionConflict(response.error)) {
         reloadRequired = true;
@@ -239,14 +249,10 @@
       block
     />
 
-    <Checkbox
-      checked={confirmed}
-      label="I understand this consolidates both profiles into the selected survivor."
-      disabled={survivorID === null || pending || completed || reloadRequired}
-      onchange={(checked) => {
-        confirmed = checked;
-      }}
-    />
+    <p class="undo-hint">
+      You can undo a merge later: open the kept person's Maintenance tab, find it under Merge history, and choose
+      Split merged profile.
+    </p>
 
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     {#if completed}<p role="status">People merged.</p>{/if}
@@ -267,7 +273,7 @@
         tone="info"
         surface="solid"
         label="Merge into selected survivor"
-        disabled={pending || reloadRequired || survivorID === null || !confirmed}
+        disabled={pending || reloadRequired || survivorID === null}
         onclick={() => void submit()}
       />
     {/if}
@@ -298,6 +304,10 @@
     background: var(--bg-inset);
   }
   article span {
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+  }
+  .undo-hint {
     color: var(--text-muted);
     font-size: var(--font-size-sm);
   }

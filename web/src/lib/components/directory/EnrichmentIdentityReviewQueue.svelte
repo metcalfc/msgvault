@@ -9,6 +9,7 @@
   } from '../../directory/enrichment-review-controller.svelte';
   import { labeledValueLinkInput } from '../../links/contact-links';
   import LinkedValue from '../common/LinkedValue.svelte';
+  import { focusReviewCard } from '../../directory/review-focus';
 
   interface Props {
     controller: EnrichmentReviewController;
@@ -17,6 +18,16 @@
 
   let { controller, onOpenPerson = () => undefined }: Props = $props();
 
+  let list = $state<HTMLElement>();
+  let queueHeading = $state<HTMLHeadingElement>();
+
+  // A decision removes its card; focus moves to the card that took its
+  // place, so the queue can be worked through without scrolling back.
+  async function decide(index: number, run: () => Promise<{ ok: boolean }>): Promise<void> {
+    const result = await run();
+    if (result.ok) await focusReviewCard(list, index, queueHeading);
+  }
+
   $effect(() => {
     if (!controller.loaded && !controller.loading && !controller.error) void controller.load();
   });
@@ -24,7 +35,7 @@
 
 <section class="enrichment-review" aria-labelledby="enrichment-review-heading">
   <div class="toolbar">
-    <h2 id="enrichment-review-heading" tabindex="-1">Enrichment identities to confirm</h2>
+    <h2 bind:this={queueHeading} id="enrichment-review-heading" tabindex="-1">Enrichment identities to confirm</h2>
     <p>
       The identity check could not decide whether the provider found the right person. No claim from these
       lookups has been applied. Confirm only when the returned identity is this person.
@@ -51,12 +62,12 @@
       description="Lookups whose identity check is uncertain appear here for a decision."
     />
   {:else}
-    <div class="list">
-      {#each controller.rows as review (review.attempt_id)}
+    <div class="list" bind:this={list}>
+      {#each controller.rows as review, index (review.attempt_id)}
         {@const pending = controller.isPending(review.attempt_id)}
         {@const heading = `enrichment-review-${review.attempt_id}-heading`}
         <Card level="default" padding="md">
-          <article class="review" aria-labelledby={heading} aria-busy={pending}>
+          <article class="review" data-review-card tabindex="-1" aria-labelledby={heading} aria-busy={pending}>
             <header>
               <div>
                 <p class="provider">{review.provider_name} · attempt {review.attempt_id}</p>
@@ -106,7 +117,7 @@
                 label="Not this person"
                 size="sm"
                 disabled={pending}
-                onclick={() => void controller.reject(review.attempt_id)}
+                onclick={() => void decide(index, () => controller.reject(review.attempt_id))}
               />
               <Button
                 label="Confirm identity"
@@ -114,7 +125,7 @@
                 tone="info"
                 surface="solid"
                 disabled={pending}
-                onclick={() => void controller.confirm(review.attempt_id)}
+                onclick={() => void decide(index, () => controller.confirm(review.attempt_id))}
               />
             </div>
           </article>
