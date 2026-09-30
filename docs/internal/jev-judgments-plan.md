@@ -304,7 +304,7 @@ Site: `internal/store/person_fact_organization.go`,
   > the newest generation per organization and title, which now means a
   > later title for the same role corrects the one employment instead of
   > adding a second.
-- [ ] **Task 3.4 Tests.** "Example Labs, Inc." resolves to existing
+- [x] **Task 3.4 Tests.** "Example Labs, Inc." resolves to existing
   "Example Labs"; unrelated similar name creates new org; alias write is
   idempotent; replay with stored alias needs no Jev call.
 

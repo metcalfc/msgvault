@@ -36,6 +36,61 @@ func TestFeaturePolicyDisclosesOnlyNamesDomainsAndTitles(t *testing.T) {
 	assert.Contains(criteria, orgresolution.OptionNewOrganization)
 }
 
+func TestPreparerSendsTheConsentedWording(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fake := newFakeJev(t, map[string]float64{"candidate_1": 0.2}, 0.1)
+	f := newFixture(t, fake)
+	labs := f.organization(t, "Example Labs", "labs.example")
+	title := "Partner"
+	_, err := f.store.AddEmploymentContext(t.Context(), store.EmploymentInput{
+		PersonID: f.personID, OrganizationID: labs.ID, Title: &title,
+		IsCurrent: new(true), Source: store.ProvenanceUser,
+	})
+	require.NoError(err)
+
+	_, err = f.preparer().Prepare(t.Context(), f.personID, []personfacts.ProposedClaim{
+		f.claim(`{"name":"Example Labs, Inc.","domain":"eu.labs.example"}`, "General Partner", "wording"),
+	})
+	require.NoError(err)
+	requests := fake.requests()
+	require.Len(requests, 1)
+	assert.Equal(map[string]any{
+		"reference": map[string]any{"name": "Example Labs, Inc.", "domain": "eu.labs.example"},
+		"candidates": map[string]any{"candidate_1": map[string]any{
+			"name": "Example Labs", "domains": []any{"labs.example"},
+		}},
+		"title_pairs": map[string]any{"pair_1": map[string]any{
+			"organization": "Example Labs", "title": "General Partner", "other_title": "Partner",
+		}},
+	}, requests[0]["state"])
+	questions, ok := requests[0]["questions"].(map[string]any)
+	require.True(ok)
+	require.Len(questions, 2)
+	orgRef, ok := questions["org_ref"].(map[string]any)
+	require.True(ok)
+	assert.Equal("choice", orgRef["type"])
+	assert.Equal("Which organization in `candidates` is the same real-world organization as `reference`? "+
+		"Allow a legal suffix, an accelerator batch tag, a former name, a regional office, or a shared "+
+		"domain. An option whose key is absent from `candidates` never applies.", orgRef["instructions"])
+	criteria, ok := orgRef["criteria"].(map[string]any)
+	require.True(ok)
+	assert.Len(criteria, 9)
+	assert.Equal("`candidates.candidate_1` is the same organization as `reference`.", criteria["candidate_1"])
+	assert.Equal("No organization in `candidates` is `reference`: it is a different organization, "+
+		"a competitor, or only has a similar name.", criteria["new_organization"])
+	assert.Equal(map[string]any{
+		"type": "noul",
+		"instructions": "Do `title_pairs.pair_1.title` and `title_pairs.pair_1.other_title` name the " +
+			"same role at `title_pairs.pair_1.organization`?",
+		"criteria": map[string]any{
+			"true": "The same role for one person: a synonym, an abbreviation, a longer or shorter form, " +
+				"or a formal and an informal name for it.",
+			"false": "Different roles: a different function, a clearly different seniority, or unrelated positions.",
+		},
+	}, questions["title_same_role_1"])
+}
+
 func TestPreparerAliasesNearNamesToTheExistingOrganization(t *testing.T) {
 	for _, name := range []string{"Example Labs, Inc.", "Example Labs (YC W21)"} {
 		t.Run(name, func(t *testing.T) {
