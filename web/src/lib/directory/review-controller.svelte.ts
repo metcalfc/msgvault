@@ -273,6 +273,14 @@ export class DirectoryReviewController {
   ): Promise<IdentityDecisionResult> {
     return this.decideIdentity(candidateID, 'reject', notes, context);
   }
+  /** After a record was marked as not a person from the queue: its open
+   * candidates are resolved, so the page reloads without them. */
+  async completeNotAPerson(context: DirectoryReviewContextSnapshot, message: string): Promise<void> {
+    if (this.disposed || !this.isReviewContextCurrent(context)) return;
+    this.decisionError = null;
+    await this.loadIdentityPage(context.offset, context.identityState);
+    this.status = message;
+  }
   async completePersonMerge(
     candidateID: number,
     context: DirectoryReviewContextSnapshot,

@@ -518,7 +518,7 @@ describe('PersonDetail', () => {
     expect(screen.getByRole('button', { name: 'Edit Synthetic Person' })).toBeDefined();
     await fireEvent.click(screen.getByRole('button', { name: 'More actions for Synthetic Person' }));
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual([
-      'Rename', 'Same person…', 'Merge or split…', 'Publish to CardDAV…', 'Track for profile maintenance…', 'Delete…'
+      'Rename', 'Same person…', 'Merge or split…', 'Publish to CardDAV…', 'Track for profile maintenance…', 'Not a person…', 'Delete…'
     ]);
     await fireEvent.keyDown(window, { key: 'Escape' });
     // The message ref opens in-app through the reading pane, never an href.

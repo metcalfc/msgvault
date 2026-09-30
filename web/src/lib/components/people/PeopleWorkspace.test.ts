@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
@@ -52,6 +52,56 @@ describe('PeopleWorkspace', () => {
     expect(within(results).getByRole('link', { name: /Saved Person/ })).toBeDefined();
     expect(relationshipCursors).toEqual([undefined, 'page-2']);
     expect(screen.queryByText('unnamed@example.test')).toBeNull();
+    hub.destroy();
+    directory.destroy();
+  });
+
+  it('lists records marked as not a person by kind and restores one', async () => {
+    let records = [
+      { canonical_id: 11, member_ids: [11], kind: 'organization', source: 'user', addresses: ['orders@shop.example.test'],
+        display_name: 'Example Shop', organization_id: 5, organization_name: 'Example Shop', classified_at: '2026-09-02T00:00:00Z' },
+      { canonical_id: 12, member_ids: [12], kind: 'shared_mailbox', source: 'user', addresses: ['desk@example.test'],
+        display_name: 'Example Desk', classified_at: '2026-09-01T00:00:00Z',
+        person: { id: 7, revision: 2, only_this_cluster: false } },
+    ];
+    const cleared: string[] = [];
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      if (path === '/api/v1/people/directory') return Response.json({ people: [] });
+      if (path === '/api/v1/identity/correspondent-kinds' && request.method === 'GET') return Response.json({ records });
+      if (path === '/api/v1/identity/correspondent-kinds/11' && request.method === 'DELETE') {
+        cleared.push(path);
+        records = records.filter((record) => record.canonical_id !== 11);
+        return Response.json({ record: { canonical_id: 11, member_ids: [11], kind: 'person', addresses: [] },
+          organization_created: false, resolved_candidates: 0, restored_candidates: 0 });
+      }
+      return Response.json({}, { status: 404 });
+    });
+    const client = createAPIClient(fetchFn);
+    const directory = new DirectoryController(client);
+    const hub = new PeopleHub(client, directory);
+    const filters: PeopleFilters = { query: '', saved: 'not_people', hasName: false, category: '', organization: '' };
+    hub.apply(filters);
+    const onFiltersChange = vi.fn();
+    render(PeopleWorkspace, { hub, filters, onFiltersChange, onOpen: vi.fn() });
+
+    expect(screen.getByRole('button', { name: 'Not people' }).getAttribute('aria-pressed')).toBe('true');
+    const list = screen.getByRole('region', { name: 'Records that are not people' });
+    const organizations = await within(list).findByRole('list', { name: 'Organization' });
+    expect(within(organizations).getByRole('link', { name: /Example Shop/ }).getAttribute('href')).toBe('/people/contact-11');
+    expect(within(organizations).getByText('Organization · Example Shop')).toBeDefined();
+    const shared = within(list).getByRole('list', { name: 'Shared mailbox' });
+    // A record with a saved profile opens the person page.
+    expect(within(shared).getByRole('link', { name: /Example Desk/ }).getAttribute('href')).toBe('/people/7');
+
+    await fireEvent.click(within(organizations).getByRole('button', { name: 'Example Shop is a person' }));
+    await waitFor(() => expect(within(list).queryByRole('list', { name: 'Organization' })).toBeNull());
+    expect(cleared).toEqual(['/api/v1/identity/correspondent-kinds/11']);
+    expect(await screen.findByText('Example Shop is a person again.')).toBeDefined();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Not people' }));
+    expect(onFiltersChange).toHaveBeenCalledWith({ saved: '' }, 'push');
     hub.destroy();
     directory.destroy();
   });

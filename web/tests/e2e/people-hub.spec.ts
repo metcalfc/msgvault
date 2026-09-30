@@ -1,3 +1,4 @@
+import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { openPersonFromPeople } from '../kit-ui';
 
@@ -11,8 +12,13 @@ const message = {
   body: 'Notes for the planning session', attachments: [],
 };
 
+/** Records marked as not a person in this fixture, by participant. */
+const kinds = new Map<number, { kind: string; organization_name?: string }>();
+
 function summary(id: number, label: string, profileID?: number) {
+  const kind = kinds.get(id);
   return {
+    ...(kind ? { correspondent_kind: { source: 'user', ...kind } } : {}),
     id, display_label: label, partial_label: false, identifiers: [], activity_count: 3,
     meeting_count: 0, file_count: 0, current_relationship_temperature: 0, peak_relationship_temperature: 0,
     peak_relationship_year: 2026, source_counts: [], first_at: when, last_at: when, cache_revision: 'c',
@@ -24,6 +30,7 @@ function summary(id: number, label: string, profileID?: number) {
 /** Ada is saved (person 7, participant 21); Bo is an archive contact that
  * has not been saved (participant 31). */
 async function installPeople(page: Page): Promise<void> {
+  kinds.clear();
   await page.route('**/api/session', (route) => route.fulfill({ json: {
     auth_mode: 'loopback', https: false, plain_http_warning: false,
   } }));
@@ -77,6 +84,30 @@ async function installPeople(page: Page): Promise<void> {
       }], total_count: 1, cache_revision: 'c', search_provenance: {},
     });
     if (path === '/api/v1/messages/501') return json(message);
+    if (path === '/api/v1/identity/correspondent-kinds') {
+      return json({ records: [...kinds.entries()].map(([id, kind]) => ({
+        canonical_id: id, member_ids: [id], source: 'user', addresses: [], classified_at: when,
+        display_name: id === 31 ? 'Bo Example' : 'Ada Example', ...kind,
+        ...(id === 21 ? { person: { id: 7, revision: 1, only_this_cluster: true } } : {}),
+      })) });
+    }
+    const kindPath = /^\/api\/v1\/identity\/correspondent-kinds\/(\d+)$/.exec(path);
+    if (kindPath) {
+      const id = Number(kindPath[1]);
+      const method = route.request().method();
+      const body = method === 'PUT' ? route.request().postDataJSON() as { kind: string; organization_name?: string } : undefined;
+      if (body && body.kind !== 'person') kinds.set(id, body);
+      else kinds.delete(id);
+      const kind = kinds.get(id);
+      return json({
+        record: {
+          canonical_id: id, member_ids: [id], kind: kind?.kind ?? 'person', source: 'user', addresses: [],
+          ...(kind?.organization_name ? { organization_name: kind.organization_name } : {}),
+          ...(id === 21 ? { person: { id: 7, revision: 1, only_this_cluster: true, display_name: 'Ada Example' } } : {}),
+        },
+        organization_created: false, resolved_candidates: 0, restored_candidates: 0,
+      });
+    }
     if (path === '/api/v1/conversations/71') {
       return json({ id: 71, anchor_id: 501, messages: [message], has_before: false, has_after: false, total: 1 });
     }
@@ -138,4 +169,52 @@ test('search from the header opens results, and a result opens the person', asyn
   await expect(page).toHaveURL(/\/search\?q=planning/);
   await page.goForward();
   await expect(page.getByRole('heading', { name: 'Ada Example' })).toBeVisible();
+});
+
+test('a contact marked as not a person is labelled, listed under Not people, and restored', async ({ page }) => {
+  await page.goto('/people/contact-31');
+  await page.getByRole('button', { name: 'More actions for Bo Example' }).click();
+  await page.getByRole('menuitem', { name: 'Not a person…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Not a person' });
+  await expect(dialog).toContainText('A record you do not need as a contact');
+  await dialog.getByRole('radio', { name: /Ignored/ }).check();
+  const marked = page.waitForRequest((request) => request.method() === 'PUT' &&
+    new URL(request.url()).pathname === '/api/v1/identity/correspondent-kinds/31');
+  await dialog.getByRole('button', { name: 'Mark as ignored' }).click();
+  expect((await marked).postDataJSON()).toEqual({ kind: 'ignored' });
+  await expect(dialog).toHaveCount(0);
+  const banner = page.getByRole('region', { name: 'Not a person' });
+  await expect(banner).toContainText('Not a person · Ignored');
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+  await page.goto('/people');
+  await page.getByRole('button', { name: 'Not people' }).click();
+  const records = page.getByRole('region', { name: 'Records that are not people' });
+  await expect(records.getByRole('list', { name: 'Ignored' })).toContainText('Bo Example');
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await records.getByRole('button', { name: 'Bo Example is a person' }).click();
+  await expect(records.getByText('Bo Example is a person again.')).toBeVisible();
+  await expect(records.getByRole('list', { name: 'Ignored' })).toHaveCount(0);
+});
+
+test('a saved person marked as an organization keeps the profile unless deleting it is confirmed', async ({ page }) => {
+  await page.goto('/people/7');
+  await expect(page.getByRole('heading', { name: 'Ada Example' })).toBeVisible();
+  await page.getByRole('button', { name: 'More actions for Ada Example' }).click();
+  await page.getByRole('menuitem', { name: 'Not a person…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Not a person' });
+  await dialog.getByRole('radio', { name: /Organization/ }).check();
+  await dialog.getByRole('textbox', { name: 'Organization name' }).fill('Example Co');
+  const marked = page.waitForRequest((request) => request.method() === 'PUT' &&
+    new URL(request.url()).pathname === '/api/v1/identity/correspondent-kinds/21');
+  await dialog.getByRole('button', { name: 'Mark as organization' }).click();
+  expect((await marked).postDataJSON()).toEqual({ kind: 'organization', organization_name: 'Example Co' });
+
+  await expect(dialog).toContainText('is a saved profile made only of this record');
+  let deleted = false;
+  page.on('request', (request) => { if (request.method() === 'DELETE') deleted = true; });
+  await dialog.getByRole('button', { name: 'Keep profile' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Not a person' })).toContainText('Not a person · Organization · Example Co');
+  expect(deleted).toBe(false);
 });

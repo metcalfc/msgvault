@@ -805,4 +805,38 @@ describe('RelationshipHeader', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByRole('alert'), 'stale outcome must not raise the banner for person 200').toBeNull();
   });
+
+  it('offers "Not a person…" on a contact page and restores a marked contact', async () => {
+    const requests: string[] = [];
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      requests.push(`${request.method} ${new URL(request.url).pathname}`);
+      return Response.json({ record: { canonical_id: 12, member_ids: [12], kind: 'person', addresses: [] },
+        organization_created: false, resolved_candidates: 0, restored_candidates: 0 });
+    });
+    const onReconcilePersonMerge = vi.fn(async () => undefined);
+    const onAnnounce = vi.fn();
+    render(RelationshipHeader, baseProps({
+      detail: { ...person(), correspondent_kind: { kind: 'shared_mailbox', source: 'user' } },
+      client: createAPIClient(fetchFn),
+      personPage: true,
+      capturePersonMergeContext: () => ({}),
+      onReconcilePersonMerge,
+      onAnnounce
+    }));
+
+    const banner = screen.getByRole('region', { name: 'Not a person' });
+    expect(banner.textContent).toContain('Not a person · Shared mailbox');
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions for Alice Example' }));
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual(['Same person…', 'Not a person…']);
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Not a person…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Not a person' });
+    expect((dialog.querySelector('input[value="shared_mailbox"]') as HTMLInputElement).checked).toBe(true);
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'This is a person' }));
+    await waitFor(() => expect(onReconcilePersonMerge).toHaveBeenCalledOnce());
+    expect(requests).toEqual(['DELETE /api/v1/identity/correspondent-kinds/12']);
+    expect(onAnnounce).toHaveBeenCalledWith('Marked as a person.');
+  });
 });

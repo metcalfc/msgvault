@@ -88,6 +88,33 @@ test('contacts that match the archive are named, explained, and linked from thei
   await expect(card).toBeHidden();
 });
 
+test('a shared mailbox is held back and marked as not a person from its review card', async ({ page }) => {
+  await installDirectoryReviewArchive(page);
+  await page.goto(reviewURL());
+  await page.getByRole('radio', { name: 'Contacts that match your archive' }).click();
+
+  const card = page.getByRole('article', { name: 'Identity match 26' });
+  const hint = card.getByRole('note');
+  await expect(hint).toContainText('Looks like a shared mailbox');
+  await expect(hint).toContainText('support@shop.example.test is a role address');
+  await expect(hint).toContainText('Avery Stone, Blake Rivera');
+  await expect(card.getByRole('button', { name: 'Link identities' })).toBeDisabled();
+
+  await card.getByRole('button', { name: 'Not a person: identity match 26' }).click();
+  await page.getByRole('menuitem', { name: 'Shared mailbox' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Not a person' });
+  await expect(dialog).toContainText('Not a person: Shop Support');
+  await expect(dialog.getByRole('radio', { name: /Shared mailbox/ })).toBeChecked();
+  const marked = page.waitForRequest((request) =>
+    request.method() === 'PUT' && new URL(request.url()).pathname.endsWith('/identity/correspondent-kinds/260'));
+  await dialog.getByRole('button', { name: 'Mark as shared mailbox' }).click();
+  expect((await marked).postDataJSON()).toEqual({ kind: 'shared_mailbox' });
+  await expect(dialog).toHaveCount(0);
+  await expect(card).toBeHidden();
+  await expect(page.getByRole('article', { name: 'Identity match 25' })).toBeVisible();
+  await expect(page.getByText('Marked as shared mailbox. Its open identity matches were resolved.')).toBeVisible();
+});
+
 test('enrichment identities are shown with what the provider returned and decided explicitly', async ({ page }) => {
   await installDirectoryReviewArchive(page);
   await page.goto(reviewURL());

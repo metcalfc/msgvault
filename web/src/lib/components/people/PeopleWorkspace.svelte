@@ -2,7 +2,9 @@
   import { Button, EmptyState, Notice, SearchInput, TextInput } from '@kenn-io/kit-ui';
   import { onDestroy, untrack } from 'svelte';
 
-  import type { PeopleFilters, PeopleHub, PeopleRow, PeopleSavedFilter } from '../../people/hub.svelte';
+  import type { CorrespondentKindRecord } from '../../api/generated/models';
+  import { filterNotPeople, type PeopleFilters, type PeopleHub, type PeopleRow, type PeopleSavedFilter } from '../../people/hub.svelte';
+  import { NOT_A_PERSON_CHOICES, assignmentLabel } from '../../people/correspondent-kind';
   import { bufferedCallback } from '../../util/buffered-callback';
   import { humanizeDate } from '../../util/dates';
 
@@ -56,6 +58,34 @@
   }
 
   const merged = $derived(hub.merged);
+  const notPeople = $derived(filterNotPeople(hub.notPeople.records, filters.query));
+  let restoring = $state<number>();
+  let restoreMessage = $state<{ tone: 'success' | 'error'; text: string }>();
+
+  function recordName(record: CorrespondentKindRecord): string {
+    return record.display_name?.trim() || record.addresses[0] || `Participant ${record.canonical_id}`;
+  }
+
+  /** A saved profile opens its person page; anything else its contact page. */
+  function recordRow(record: CorrespondentKindRecord): PeopleRow {
+    return record.person
+      ? { kind: 'saved', key: `person:${record.person.id}`, id: record.person.id, name: recordName(record), meta: [] }
+      : { kind: 'observed', key: `contact:${record.canonical_id}`, id: record.canonical_id, name: recordName(record), meta: [] };
+  }
+
+  async function restore(record: CorrespondentKindRecord): Promise<void> {
+    if (restoring !== undefined) return;
+    restoring = record.canonical_id;
+    restoreMessage = undefined;
+    try {
+      const error = await hub.notPeople.restore(record.canonical_id);
+      restoreMessage = error
+        ? { tone: 'error', text: error }
+        : { tone: 'success', text: `${recordName(record)} is a person again.` };
+    } finally {
+      restoring = undefined;
+    }
+  }
   // "Has name" can hide a whole page of archive contacts; keep loading
   // until a named one shows or the pages end.
   $effect(() => {
@@ -99,6 +129,7 @@
     <div class="chips" role="group" aria-label="People filters">
       <button type="button" class="filter-chip" aria-pressed={filters.saved === 'saved'} onclick={() => toggleSaved('saved')}>Saved</button>
       <button type="button" class="filter-chip" aria-pressed={filters.saved === 'unsaved'} onclick={() => toggleSaved('unsaved')}>Not saved</button>
+      <button type="button" class="filter-chip" aria-pressed={filters.saved === 'not_people'} onclick={() => toggleSaved('not_people')}>Not people</button>
       <button type="button" class="filter-chip" aria-pressed={filters.hasName} onclick={toggleHasName}>Has name</button>
       <TextInput size="sm" value={text.category} ariaLabel="Category filter" placeholder="Category"
         oninput={(value) => editText('category', value)} />
@@ -120,6 +151,46 @@
   {/if}
   {#if observedError}<Notice tone="warning" message={`Archive contacts are unavailable: ${observedError}`} />{/if}
 
+  {#if hub.showsNotPeople}
+  <section class="people-list" aria-label="Records that are not people" aria-busy={hub.notPeople.loading}>
+    <p class="state">Organizations, shared mailboxes, and ignored records stay out of People, Reviews, and rankings. Their messages stay searchable.</p>
+    {#if hub.notPeople.error}<Notice tone="error" message={hub.notPeople.error} />{/if}
+    {#if restoreMessage}<Notice tone={restoreMessage.tone} message={restoreMessage.text} />{/if}
+    {#if notPeople.length === 0}
+      {#if hub.notPeople.loading}
+        <p class="state" role="status">Loading records…</p>
+      {:else}
+        <EmptyState title="No records marked as not a person"
+          description={filters.query.trim() ? 'Try a different search.' : 'Use “Not a person…” on a person or contact page, or on a review card.'} />
+      {/if}
+    {:else}
+      {#each NOT_A_PERSON_CHOICES as choice (choice.kind)}
+        {@const group = notPeople.filter((record) => record.kind === choice.kind)}
+        {#if group.length > 0}
+          <h2 class="group-heading">{choice.label} <span data-mono>{group.length}</span></h2>
+          <ul aria-label={choice.label}>
+            {#each group as record (record.canonical_id)}
+              {@const row = recordRow(record)}
+              <li class="not-person-row">
+                <a class="person-row" data-list-row href={href(row)} onclick={(event) => open(event, row)}>
+                  <span class="row-main">
+                    <span class="name" data-row-title>{recordName(record)}</span>
+                    <span class="not-saved">{assignmentLabel(record)}</span>
+                  </span>
+                  <span class="row-meta" data-meta>
+                    {[...record.addresses.slice(0, 2), record.person ? 'Saved profile' : ''].filter(Boolean).join(' · ') || ' '}
+                  </span>
+                </a>
+                <Button size="sm" surface="soft" label="This is a person" ariaLabel={`${recordName(record)} is a person`}
+                  disabled={restoring !== undefined} onclick={() => void restore(record)} />
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      {/each}
+    {/if}
+  </section>
+  {:else}
   <section class="people-list" aria-label="People results" aria-busy={hub.loading || hub.loadingMore}>
     {#if merged.rows.length === 0}
       {#if hub.loading}
@@ -155,6 +226,7 @@
       </div>
     {/if}
   </section>
+  {/if}
 </main>
 
 <style>
@@ -254,6 +326,23 @@
     color: var(--text-secondary);
   }
   .more { display: flex; justify-content: center; padding: var(--space-3); }
+  .group-heading {
+    display: flex;
+    gap: var(--space-2);
+    align-items: baseline;
+    margin: var(--space-3) 0 var(--space-1);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold, 600);
+  }
+  .group-heading span { color: var(--text-muted); font-weight: 400; }
+  .not-person-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .not-person-row .person-row { flex: 1; min-width: 0; border-bottom: 0; }
 
   @media (max-width: 760px) {
     .people-workspace { padding: var(--space-4) var(--space-3); }

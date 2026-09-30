@@ -164,8 +164,9 @@ export interface ExploreURLState {
   directoryPersonID: number | null;
   /** Only people with a display name in the People list. */
   directoryHasName: boolean;
-  /** The People list's saved filter: everyone, saved, or not saved. */
-  peopleSaved: '' | 'saved' | 'unsaved';
+  /** The People list's saved filter: everyone, saved, not saved, or the
+   * records marked as not a person. */
+  peopleSaved: '' | 'saved' | 'unsaved' | 'not_people';
   /** Which tab of a person page is open (`/people/:id/<tab>`). */
   personTab: PersonTab;
   reviewKind: DirectoryReviewKind;

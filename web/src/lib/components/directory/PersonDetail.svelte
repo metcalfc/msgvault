@@ -31,6 +31,9 @@
   import type { PersonSplitCommittedContext } from '../../directory/person-merge-history-controller.svelte';
   import { PERSON_TABS, type PersonTab } from '../../routing/routes';
   import PersonClusterPanel from '../people/PersonClusterPanel.svelte';
+  import CorrespondentKindBanner from '../people/CorrespondentKindBanner.svelte';
+  import NotAPersonDialog from '../people/NotAPersonDialog.svelte';
+  import { clearKind, isNotAPerson, kindLabel, type NotAPersonKind } from '../../people/correspondent-kind';
 
   interface Props {
     client: APIClient;
@@ -54,6 +57,8 @@
     onTabChange?: (tab: PersonTab) => void;
     /** Identity edits under Maintenance can change the person's bindings. */
     onReload?: () => void;
+    /** The profile was deleted (after an explicit confirm) from here. */
+    onDeleted?: () => void;
   }
 
   type DetailTab = PersonTab;
@@ -77,7 +82,8 @@
     onOpenMeetingPage = undefined,
     tab = undefined,
     onTabChange = undefined,
-    onReload = undefined
+    onReload = undefined,
+    onDeleted = undefined
   }: Props = $props();
   let ownTab = $state<DetailTab>('overview');
   const activeTab = $derived(tab ?? ownTab);
@@ -236,6 +242,55 @@
     return location ? { value: location, source: 'employment' } : undefined;
   });
 
+  // "Not a person": every archive identity of this profile carries the same
+  // kind, or none does. A partly classified profile shows no banner.
+  const notAPerson = $derived.by(() => {
+    const clusters = participantResolution?.clusters ?? [];
+    const first = clusters[0]?.correspondentKind;
+    if (!first || !isNotAPerson(first.kind)) return undefined;
+    return clusters.every((cluster) => cluster.correspondentKind?.kind === first.kind) ? first : undefined;
+  });
+  let kindDialog = $state<{ initial?: NotAPersonKind }>();
+  let kindPending = $state(false);
+  let kindError = $state<string | null>(null);
+  const clusterIDs = $derived((participantResolution?.clusters ?? []).map((cluster) => cluster.canonicalID));
+  const suggestedOrganization = $derived.by((): string => {
+    const email = participantIdentifiers.find((identifier) => identifier.type === 'email')?.value ?? '';
+    return displayName.includes('@') && email.includes('@') ? email.slice(email.lastIndexOf('@') + 1) : displayName;
+  });
+
+  function kindDone(kind: string, deletedPersonID: number | undefined): void {
+    kindDialog = undefined;
+    if (deletedPersonID !== undefined) {
+      onAnnounce(`Marked as ${kindLabel(kind).toLowerCase()} and deleted the saved profile.`);
+      onDeleted?.();
+      return;
+    }
+    onAnnounce(`Marked as ${kindLabel(kind).toLowerCase()}.`);
+    resolutionAttempt += 1;
+    onReload?.();
+  }
+
+  async function restorePerson(): Promise<void> {
+    if (kindPending) return;
+    kindPending = true;
+    kindError = null;
+    try {
+      for (const id of clusterIDs) {
+        const outcome = await clearKind(client, id);
+        if (!outcome.ok) {
+          kindError = outcome.message;
+          return;
+        }
+      }
+      onAnnounce('Marked as a person.');
+      resolutionAttempt += 1;
+      onReload?.();
+    } finally {
+      kindPending = false;
+    }
+  }
+
   // The header's overflow actions open the tab that holds each tool.
   let renameRequest = $state(0);
   let deleteRequest = $state(0);
@@ -310,11 +365,30 @@
             <MenuItem onselect={() => void openTool('maintenance')}>Merge or split…</MenuItem>
             <MenuItem onselect={() => void openTool('maintenance')}>Publish to CardDAV…</MenuItem>
             <MenuItem onselect={() => void openTool('maintenance')}>Track for profile maintenance…</MenuItem>
+            <MenuItem disabled={clusterIDs.length === 0}
+              onselect={() => (kindDialog = { initial: notAPerson?.kind as NotAPersonKind | undefined })}>Not a person…</MenuItem>
             <MenuItem tone="danger" onselect={() => void openTool('profile', 'delete')}>Delete…</MenuItem>
           </MenuContent>
         </Menu>
       </div>
     </header>
+  {/if}
+  {#if notAPerson}
+    <CorrespondentKindBanner kind={notAPerson.kind as NotAPersonKind} organizationName={notAPerson.organization_name}
+      pending={kindPending} error={kindError}
+      onChange={() => (kindDialog = { initial: notAPerson?.kind as NotAPersonKind | undefined })}
+      onRestore={() => void restorePerson()} />
+  {/if}
+  {#if kindDialog && clusterIDs.length > 0}
+    <NotAPersonDialog
+      {client}
+      participantIDs={clusterIDs}
+      label={displayName}
+      suggestedOrganization={notAPerson?.organization_name ?? suggestedOrganization}
+      initialKind={kindDialog.initial}
+      onClose={() => (kindDialog = undefined)}
+      onDone={(results, deleted) => kindDone(results[0]?.record.kind ?? 'ignored', deleted)}
+    />
   {/if}
   <div class="detail-tabs" role="tablist" aria-label="Person detail sections">
     {#each tabOrder as value (value)}

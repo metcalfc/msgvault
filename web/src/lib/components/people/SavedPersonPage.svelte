@@ -52,6 +52,7 @@
       {onOpenPerson}
       onSplitCommitted={(context) => controller.reconcilePersonSplit(context)}
       onReload={() => void controller.reloadSelection()}
+      onDeleted={onBack}
       {onOpenCardDAVConflict}
       {onOpenCardDAVSettings}
       {onAnnounce}

@@ -9,11 +9,16 @@
     PersonMergeRequiredError
   } from '../../directory/review-controller.svelte';
   import { contactMatchSummary, endpointLabel } from '../../directory/identity-endpoints';
+  import { kindLabel, type NotAPersonKind } from '../../people/correspondent-kind';
+  import NotAPersonDialog from '../people/NotAPersonDialog.svelte';
 
   interface Props {
     controller: DirectoryReviewController;
     candidate: IdentityMatchCandidate;
-    decision: 'accept' | 'reject';
+    decision: 'accept' | 'reject' | 'not_a_person';
+    /** For not_a_person: the archive identity to mark and the kind picked
+     * on the card. */
+    notAPerson?: { participantID: number; kind: NotAPersonKind };
     reviewContext: DirectoryReviewContextSnapshot;
     onClose: () => void;
     onContextInvalidated: () => void;
@@ -24,6 +29,7 @@
     controller,
     candidate,
     decision,
+    notAPerson = undefined,
     reviewContext,
     onClose,
     onContextInvalidated,
@@ -35,13 +41,34 @@
   let releaseShortcutScope: (() => void) | undefined;
 
   const pending = $derived(submitting || controller.isDecisionPending(candidate.id));
-  const title = $derived(decision === 'accept' ? 'Link identities' : 'Keep separate');
+  const title = $derived(decision === 'accept' ? 'Link identities' : decision === 'reject' ? 'Keep separate' : 'Not a person');
   const draft = $derived(controller.getDecisionDraft(candidate.id));
   const leftLabel = $derived(endpointLabel(
     candidate.left_kind, candidate.left_id, controller.endpointFor(candidate.left_kind, candidate.left_id)));
   const rightLabel = $derived(endpointLabel(
     candidate.right_kind, candidate.right_id, controller.endpointFor(candidate.right_kind, candidate.right_id)));
   const contactMatch = $derived(controller.contactMatchFor(candidate.id));
+  const notAPersonLabel = $derived.by(() => {
+    if (!notAPerson) return '';
+    const summary = controller.endpointFor('participant', notAPerson.participantID);
+    return endpointLabel('participant', notAPerson.participantID, summary);
+  });
+  const notAPersonOrganization = $derived.by(() => {
+    if (!notAPerson) return '';
+    const summary = controller.endpointFor('participant', notAPerson.participantID);
+    const name = summary?.display_name?.trim();
+    if (name && !name.includes('@')) return name;
+    const address = summary?.addresses?.find((value) => value.includes('@')) ?? '';
+    return address ? address.slice(address.lastIndexOf('@') + 1) : '';
+  });
+
+  async function notAPersonDone(kind: string, deletedPersonID: number | undefined): Promise<void> {
+    const message = deletedPersonID !== undefined
+      ? `Marked as ${kindLabel(kind).toLowerCase()}; the saved profile was deleted.`
+      : `Marked as ${kindLabel(kind).toLowerCase()}. Its open identity matches were resolved.`;
+    await controller.completeNotAPerson(reviewContext, message);
+    onClose();
+  }
 
   onMount(() => {
     releaseShortcutScope = appShortcuts.pushScope('identity-decision-modal');
@@ -91,6 +118,17 @@
   }
 </script>
 
+{#if decision === 'not_a_person' && notAPerson}
+  <NotAPersonDialog
+    client={controller.apiClient}
+    participantIDs={[notAPerson.participantID]}
+    label={notAPersonLabel}
+    suggestedOrganization={notAPersonOrganization}
+    initialKind={notAPerson.kind}
+    onClose={requestClose}
+    onDone={(results, deleted) => void notAPersonDone(results[0]?.record.kind ?? notAPerson.kind, deleted)}
+  />
+{:else}
 <Modal
   {title}
   ariaLabel={title}
@@ -168,6 +206,7 @@
     {/if}
   {/snippet}
 </Modal>
+{/if}
 
 <style>
   .decision { display: grid; gap: var(--space-4); min-width: min(28rem, calc(100vw - 64px)); }

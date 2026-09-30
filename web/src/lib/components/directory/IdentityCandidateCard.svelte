@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Button, Card } from '@kenn-io/kit-ui';
+  import { Button, Card, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@kenn-io/kit-ui';
+  import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 
   import type {
     ContactMatchStatus,
@@ -10,8 +11,10 @@
     contactMatchBlockedMessage,
     contactMatchSummary,
     endpointLabel,
-    endpointRole
+    endpointRole,
+    sharedMailboxReason
   } from '../../directory/identity-endpoints';
+  import { NOT_A_PERSON_CHOICES, type NotAPersonKind } from '../../people/correspondent-kind';
 
   interface Props {
     candidate: IdentityMatchCandidate;
@@ -21,9 +24,14 @@
     contactMatch?: ContactMatchStatus;
     onAccept: () => void;
     onReject: () => void;
+    /** Marks one of the candidate's archive identities as not a person. */
+    onNotAPerson?: (participantID: number, kind: NotAPersonKind) => void;
   }
 
-  let { candidate, pending, left = undefined, right = undefined, contactMatch = undefined, onAccept, onReject }: Props = $props();
+  let {
+    candidate, pending, left = undefined, right = undefined, contactMatch = undefined, onAccept, onReject,
+    onNotAPerson = undefined
+  }: Props = $props();
   const headingID = $derived(`identity-match-${candidate.id}-heading`);
   const evidence = $derived(candidate.evidence ?? []);
   const leftLabel = $derived(endpointLabel(candidate.left_kind, candidate.left_id, left));
@@ -33,6 +41,9 @@
     { side: 'left', kind: candidate.left_kind, id: candidate.left_id, label: leftLabel, summary: left },
     { side: 'right', kind: candidate.right_kind, id: candidate.right_id, label: rightLabel, summary: right }
   ]);
+  const participants = $derived(endpoints.filter((endpoint) => endpoint.kind === 'participant'));
+  const sharedMailbox = $derived(contactMatch?.classification === 'shared_mailbox' ? contactMatch.shared_mailbox : undefined);
+  const open = $derived(candidate.state === 'candidate' || candidate.state === 'conflict');
 </script>
 
 <Card level="default" padding="md">
@@ -62,7 +73,12 @@
       {/each}
     </section>
 
-    {#if contactMatch}
+    {#if sharedMailbox}
+      <div class="shared-hint" role="note">
+        <strong>Looks like a shared mailbox</strong>
+        <span>{sharedMailboxReason(sharedMailbox)} Nothing is linked through it. Mark it as not a person below, or open it and choose “This is a person”.</span>
+      </div>
+    {:else if contactMatch}
       <p class="match-summary" class:blocked={!!blockedMessage}>
         {blockedMessage ?? contactMatchSummary(contactMatch)}
       </p>
@@ -108,10 +124,32 @@
       {/if}
     </section>
 
-    {#if candidate.state === 'candidate'}
+    {#if open && (candidate.state === 'candidate' || (onNotAPerson && participants.length > 0))}
       <div class="actions">
-        <Button label="Keep separate" size="sm" disabled={pending} onclick={onReject} />
-        <Button label="Link identities" size="sm" tone="info" surface="solid" disabled={pending || !!blockedMessage} onclick={onAccept} />
+        {#if onNotAPerson && participants.length > 0}
+          <Menu align="end">
+            <MenuTrigger class={sharedMailbox ? 'not-a-person-trigger prominent' : 'not-a-person-trigger'}
+              ariaLabel={`Not a person: identity match ${candidate.id}`} disabled={pending}>
+              Not a person <ChevronDownIcon size={14} aria-hidden="true" />
+            </MenuTrigger>
+            <MenuContent ariaLabel="Not a person">
+              {#each participants as participant, index (participant.id)}
+                {#if index > 0}<MenuSeparator />{/if}
+                {#each NOT_A_PERSON_CHOICES as choice (choice.kind)}
+                  <MenuItem onselect={() => onNotAPerson?.(participant.id, choice.kind)}
+                    textValue={choice.action}>
+                    {participants.length > 1 ? `${choice.action}: ${participant.label}` : choice.action}
+                  </MenuItem>
+                {/each}
+              {/each}
+            </MenuContent>
+          </Menu>
+        {/if}
+        {#if candidate.state === 'candidate'}
+          <Button label="Keep separate" size="sm" disabled={pending} onclick={onReject} />
+          <Button label="Link identities" size="sm" tone="info" surface="solid"
+            disabled={pending || !!blockedMessage || !!sharedMailbox} onclick={onAccept} />
+        {/if}
       </div>
     {/if}
   </article>
@@ -142,5 +180,33 @@
   li { display: grid; gap: var(--space-2); padding: var(--space-3); border-left: 2px solid var(--border-default); background: var(--bg-inset); }
   li dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-2) var(--space-4); }
   .empty-evidence { color: var(--text-muted); font-size: var(--font-size-sm); }
-  .actions { display: flex; justify-content: flex-end; gap: var(--space-2); width: 100%; }
+  .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); width: 100%; }
+  .shared-hint {
+    display: grid;
+    gap: var(--space-1);
+    padding: var(--space-3);
+    border-left: 2px solid var(--accent-amber);
+    border-radius: var(--radius-sm);
+    background: var(--bg-inset);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .shared-hint strong { color: var(--text-primary); font-size: var(--font-size-md); }
+  .actions :global(.not-a-person-trigger) {
+    gap: var(--space-1);
+    min-height: 24px;
+    padding: 0 var(--space-3);
+    border: var(--border-width) solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+  }
+  .actions :global(.not-a-person-trigger:hover) { color: var(--text-primary); }
+  .actions :global(.not-a-person-trigger.prominent) {
+    border-color: var(--accent-amber);
+    color: var(--text-primary);
+    font-weight: var(--font-weight-medium, 500);
+  }
 </style>

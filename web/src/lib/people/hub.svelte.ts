@@ -3,9 +3,12 @@ import type { APIClient } from '../api/client';
 import type { PrimaryIdentifier } from '../api/generated/models';
 import type { DirectoryController } from '../directory/controller.svelte';
 import type { DirectoryPerson } from '../directory/models';
+import type { CorrespondentKindRecord } from '../api/generated/models';
+import { clearKind, isNotAPerson, listNotPeople } from './correspondent-kind';
 
-/** Which people the list shows: everyone, only saved, or only not saved. */
-export type PeopleSavedFilter = '' | 'saved' | 'unsaved';
+/** Which people the list shows: everyone, only saved, only not saved, or
+ * the records marked as not a person (hidden everywhere else). */
+export type PeopleSavedFilter = '' | 'saved' | 'unsaved' | 'not_people';
 
 export interface PeopleFilters {
   query: string;
@@ -147,7 +150,8 @@ export class ObservedContacts {
         }, { ...this.client, signal });
         if (!data) return { rows: [], cursor: null, error: errorMessage(error, response.status) };
         return {
-          rows: data.rows.filter((person) => !person.profile?.id).map((person) => ({
+          // Records marked as not a person stay out of People.
+          rows: data.rows.filter((person) => !person.profile?.id && !isNotAPerson(person.correspondent_kind?.kind)).map((person) => ({
             kind: 'observed', key: `contact:${person.id}`, id: person.id,
             name: person.display_label, lastContactAt: person.last_at,
             identifier: person.identifiers?.[0]
@@ -168,7 +172,7 @@ export class ObservedContacts {
         return { rows: [], cursor: null, error: restart ? null : errorMessage(error, response.status), restart };
       }
       return {
-        rows: data.rows.filter((row) => !row.profile?.id).map((row) => ({
+        rows: data.rows.filter((row) => !row.profile?.id && !isNotAPerson(row.correspondent_kind?.kind)).map((row) => ({
           kind: 'observed', key: `contact:${row.canonical_id}`, id: row.canonical_id,
           name: row.display_label, identifier: row.primary_identifier, lastContactAt: row.last_at, meta: [],
         } satisfies PeopleRow)),
@@ -180,6 +184,68 @@ export class ObservedContacts {
       return { rows: [], cursor: null, error: errorMessage(cause, 0) };
     }
   }
+}
+
+/** The records marked as not a person, for the "Not people" view. The set
+ * is small and user-made, so it loads whole. */
+export class NotPeopleRecords {
+  records = $state<CorrespondentKindRecord[]>([]);
+  loading = $state(false);
+  error = $state<string | null>(null);
+  private readonly client: APIClient;
+  private abort: AbortController | undefined;
+
+  constructor(client: APIClient) {
+    this.client = client;
+  }
+
+  async load(): Promise<void> {
+    this.abort?.abort();
+    const controller = new AbortController();
+    this.abort = controller;
+    this.loading = true;
+    try {
+      const page = await listNotPeople(this.client, controller.signal);
+      if (controller.signal.aborted) return;
+      if ('error' in page) {
+        this.error = page.error;
+        return;
+      }
+      this.records = page.records;
+      this.error = null;
+    } finally {
+      if (this.abort === controller) this.loading = false;
+    }
+  }
+
+  /** "This is a person": clears the record's kind and reloads the list.
+   * Returns an error message, or null on success. */
+  async restore(participantID: number): Promise<string | null> {
+    const outcome = await clearKind(this.client, participantID);
+    if (!outcome.ok) return outcome.message;
+    await this.load();
+    return null;
+  }
+
+  reset(): void {
+    this.abort?.abort();
+    this.abort = undefined;
+    this.records = [];
+    this.loading = false;
+    this.error = null;
+  }
+
+  destroy(): void {
+    this.abort?.abort();
+  }
+}
+
+/** Records matching a text query by name, address, or organization. */
+export function filterNotPeople(records: CorrespondentKindRecord[], query: string): CorrespondentKindRecord[] {
+  const text = query.trim().toLowerCase();
+  if (!text) return records;
+  return records.filter((record) => [record.display_name, record.organization_name, ...record.addresses]
+    .some((value) => value?.toLowerCase().includes(text)));
 }
 
 function contactTime(row: PeopleRow): number {
@@ -246,26 +312,37 @@ export function mergePeople(sources: PeopleSources): { rows: PeopleRow[]; limite
  */
 export class PeopleHub {
   readonly observed: ObservedContacts;
+  readonly notPeople: NotPeopleRecords;
   filters = $state<PeopleFilters>({ query: '', saved: '', hasName: false, category: '', organization: '' });
   private readonly directory: DirectoryController;
   private observedKey: string | undefined;
 
   constructor(client: APIClient, directory: DirectoryController) {
     this.observed = new ObservedContacts(client);
+    this.notPeople = new NotPeopleRecords(client);
     this.directory = directory;
   }
 
   /** Category and organization belong to saved people only. */
   get includesObserved(): boolean {
-    return this.filters.saved !== 'saved' && !this.filters.category.trim() && !this.filters.organization.trim();
+    return this.filters.saved !== 'saved' && this.filters.saved !== 'not_people' &&
+      !this.filters.category.trim() && !this.filters.organization.trim();
   }
 
   get includesSaved(): boolean {
-    return this.filters.saved !== 'unsaved';
+    return this.filters.saved !== 'unsaved' && this.filters.saved !== 'not_people';
+  }
+
+  /** The "Not people" view replaces both sources. */
+  get showsNotPeople(): boolean {
+    return this.filters.saved === 'not_people';
   }
 
   apply(filters: PeopleFilters): void {
+    const wasNotPeople = this.showsNotPeople;
     this.filters = filters;
+    if (this.showsNotPeople && !wasNotPeople) void this.notPeople.load();
+    else if (!this.showsNotPeople && wasNotPeople) this.notPeople.reset();
     const key = this.includesObserved ? `observed|${filters.query.trim()}` : 'none';
     if (key === this.observedKey) return;
     this.observedKey = key;
@@ -277,6 +354,7 @@ export class PeopleHub {
   refresh(): void {
     this.observedKey = undefined;
     this.apply(this.filters);
+    if (this.showsNotPeople) void this.notPeople.load();
   }
 
   get merged(): { rows: PeopleRow[]; limitedBy: Array<'saved' | 'observed'> } {
@@ -328,5 +406,6 @@ export class PeopleHub {
 
   destroy(): void {
     this.observed.destroy();
+    this.notPeople.destroy();
   }
 }

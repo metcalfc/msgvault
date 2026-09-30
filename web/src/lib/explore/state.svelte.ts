@@ -519,7 +519,8 @@ function normalize(value: unknown): ExploreURLState {
     directoryPersonID: peopleList ? null : directoryPersonID(value.directoryPersonID),
     directoryHasName: value.directoryHasName === true,
     peopleSaved: peopleList ? 'unsaved'
-      : value.peopleSaved === 'saved' || value.peopleSaved === 'unsaved' ? value.peopleSaved : '',
+      : value.peopleSaved === 'saved' || value.peopleSaved === 'unsaved' || value.peopleSaved === 'not_people'
+        ? value.peopleSaved : '',
     // A contact opened with its files pane (before person tabs) opens on Files.
     personTab: personTab(value.personTab) === 'overview' && value.relationshipFiles === true &&
       relationshipTarget?.startsWith('cluster:') ? 'files' : personTab(value.personTab),

@@ -716,7 +716,35 @@ function contactMatchCandidate(): IdentityMatchCandidate {
   });
 }
 
+// A support desk that two synthetic agents replied from: the contact matcher
+// holds it back as a shared mailbox instead of offering to bind it.
+function sharedMailboxCandidate(): IdentityMatchCandidate {
+  return reviewCandidate(26, {
+    left_kind: 'participant',
+    left_id: 260,
+    right_kind: 'person',
+    right_id: 261,
+    basis: 'email',
+    normalized_value: 'support@shop.example.test',
+    service_slug: undefined,
+    scope_kind: undefined,
+    scope_value: undefined,
+    confidence: 1,
+    source: 'system',
+    source_ref: 'contact_match',
+    evidence: [],
+  });
+}
+
+const sharedMailboxSignal = {
+  address: 'support@shop.example.test',
+  reasons: ['role_address', 'several_names'],
+  names: ['Avery Stone', 'Blake Rivera'],
+};
+
 const reviewEndpointSummaries = [
+  { kind: 'participant', id: 260, found: true, display_name: 'Shop Support', addresses: ['support@shop.example.test'] },
+  { kind: 'person', id: 261, found: true, display_name: 'Avery Stone', addresses: ['support@shop.example.test'] },
   { kind: 'participant', id: 250, found: true, display_name: 'Ada Sender', addresses: ['ada@example.test'] },
   {
     kind: 'person', id: 251, found: true, display_name: 'Ada Contact',
@@ -731,7 +759,9 @@ const reviewEndpointSummaries = [
  */
 export async function installDirectoryReviewArchive(page: Page) {
   const archive = await installMixedArchive(page);
-  const candidates = [reviewCandidate(17), reviewCandidate(18), reviewCandidate(19), contactMatchCandidate()];
+  const candidates = [
+    reviewCandidate(17), reviewCandidate(18), reviewCandidate(19), contactMatchCandidate(), sharedMailboxCandidate(),
+  ];
   const people = new Map([
     [7, reviewPerson(7, 4, 'Synthetic One')],
     [9, reviewPerson(9, 2, 'Synthetic Two')],
@@ -1000,7 +1030,9 @@ export async function installDirectoryReviewArchive(page: Page) {
             (candidate.right_kind === endpoint.kind && candidate.right_id === endpoint.id))),
         contact_matches: listed
           .filter((candidate) => candidate.left_kind === 'participant' && candidate.right_kind === 'person')
-          .map((candidate) => ({ candidate_id: candidate.id, classification: 'bind', cluster_person_ids: [] })),
+          .map((candidate) => candidate.id === 26
+            ? { candidate_id: candidate.id, classification: 'shared_mailbox', cluster_person_ids: [], shared_mailbox: sharedMailboxSignal }
+            : { candidate_id: candidate.id, classification: 'bind', cluster_person_ids: [] }),
         limit: 100,
         offset,
       },
@@ -1049,6 +1081,32 @@ export async function installDirectoryReviewArchive(page: Page) {
         decision: confirm ? 'confirmed' : 'rejected', reason: confirm ? 'user_confirmed' : 'user_rejected',
         attempt_state: confirm ? 'succeeded' : 'identity_rejected',
         projections: confirm ? 1 : 0, provider_identities_attached: confirm ? 1 : 0, negatives: confirm ? 0 : 1,
+      },
+    });
+  });
+
+  // Marking an identity as not a person resolves its open candidates.
+  await page.route(/\/api\/v1\/identity\/correspondent-kinds\/\d+$/, (route) => {
+    const captured = capture(route.request());
+    requests.push(captured);
+    const participantID = Number(captured.path.split('/').at(-1));
+    const kind = typeof captured.body === 'object' && captured.body !== null && 'kind' in captured.body
+      ? String(captured.body.kind) : 'person';
+    let resolved = 0;
+    for (const candidate of candidates) {
+      if (candidate.state === 'candidate' && candidate.left_kind === 'participant' && candidate.left_id === participantID) {
+        candidate.state = 'rejected';
+        candidate.notes = 'not_a_person';
+        resolved += 1;
+      }
+    }
+    return route.fulfill({
+      json: {
+        record: {
+          canonical_id: participantID, member_ids: [participantID], kind, source: 'user',
+          addresses: ['support@shop.example.test'], display_name: 'Shop Support', classified_at: '2026-01-03T12:00:00Z',
+        },
+        organization_created: false, resolved_candidates: resolved, restored_candidates: 0,
       },
     });
   });

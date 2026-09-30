@@ -18,6 +18,7 @@
   import EnrichmentIdentityReviewQueue from './EnrichmentIdentityReviewQueue.svelte';
   import { EnrichmentReviewController } from '../../directory/enrichment-review-controller.svelte';
   import type { PersonMergeSuccess, ValidatedPersonMergeRequired } from '../../directory/person-merge';
+  import type { NotAPersonKind } from '../../people/correspondent-kind';
 
   interface Props {
     controller: DirectoryReviewController;
@@ -40,6 +41,7 @@
   }: Props = $props();
   type ActiveModal =
     | { kind: 'decision'; candidate: IdentityMatchCandidate; decision: 'accept' | 'reject'; context: DirectoryReviewContextSnapshot }
+    | { kind: 'not_a_person'; candidate: IdentityMatchCandidate; participantID: number; notAPersonKind: NotAPersonKind; context: DirectoryReviewContextSnapshot }
     | { kind: 'merge'; candidate: IdentityMatchCandidate; context: DirectoryReviewContextSnapshot; conflict: ValidatedPersonMergeRequired };
   let activeDecision = $state<ActiveModal>();
   // svelte-ignore state_referenced_locally
@@ -83,6 +85,10 @@
     activeDecision = { kind: 'decision', candidate, decision, context: controller.reviewContextSnapshot() };
   }
 
+  function openNotAPerson(candidate: IdentityMatchCandidate, participantID: number, notAPersonKind: NotAPersonKind): void {
+    activeDecision = { kind: 'not_a_person', candidate, participantID, notAPersonKind, context: controller.reviewContextSnapshot() };
+  }
+
   function resolveMerge(conflict: ValidatedPersonMergeRequired): void {
     if (!activeDecision || activeDecision.kind !== 'decision') return;
     activeDecision = {
@@ -124,7 +130,8 @@
     if (!closed) return;
     await tick();
     const card = document.getElementById(`identity-match-${closed.candidate.id}-card`);
-    const label = closed.kind === 'decision' && closed.decision === 'reject' ? 'Keep separate' : 'Link identities';
+    const label = closed.kind === 'decision' && closed.decision === 'reject' ? 'Keep separate'
+      : closed.kind === 'not_a_person' ? 'Not a person' : 'Link identities';
     const action = Array.from(card?.querySelectorAll<HTMLButtonElement>('button') ?? [])
       .find((button) => button.textContent?.trim() === label);
     const target = action ?? card;
@@ -228,6 +235,7 @@
                   pending={controller.isDecisionPending(row.id)}
                   onAccept={() => openDecision(row, 'accept')}
                   onReject={() => openDecision(row, 'reject')}
+                  onNotAPerson={(participantID, notAPersonKind) => openNotAPerson(row, participantID, notAPersonKind)}
                 />
               {/each}
             </div>
@@ -273,6 +281,16 @@
     onClose={() => void closeDecision()}
     onContextInvalidated={() => void invalidateDecision()}
     onResolveMerge={resolveMerge}
+  />
+{:else if activeDecision?.kind === 'not_a_person'}
+  <IdentityDecisionModal
+    {controller}
+    candidate={activeDecision.candidate}
+    decision="not_a_person"
+    notAPerson={{ participantID: activeDecision.participantID, kind: activeDecision.notAPersonKind }}
+    reviewContext={activeDecision.context}
+    onClose={() => void closeDecision()}
+    onContextInvalidated={() => void invalidateDecision()}
   />
 {:else if activeDecision?.kind === 'merge'}
   <PersonBindingConflictModal

@@ -166,4 +166,51 @@ describe('IdentityCandidateCard', () => {
     expect(screen.getByRole('button', { name: 'Link identities' })).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: 'Keep separate' })).toHaveProperty('disabled', false);
   });
+
+  it('holds back a shared mailbox and offers the not-a-person actions', async () => {
+    const onNotAPerson = vi.fn();
+    render(IdentityCandidateCard, {
+      candidate: { ...completeCandidate(), left_kind: 'participant', left_id: 40, right_kind: 'person', right_id: 41 },
+      pending: false,
+      left: { kind: 'participant', id: 40, found: true, display_name: 'Support', addresses: ['support@shop.example.test'] },
+      right: { kind: 'person', id: 41, found: true, display_name: 'Avery Stone', addresses: [] },
+      contactMatch: {
+        candidate_id: 17, classification: 'shared_mailbox', cluster_person_ids: [],
+        shared_mailbox: { address: 'support@shop.example.test', reasons: ['role_address', 'several_names'], names: ['Avery Stone', 'Blake Rivera'] }
+      },
+      onAccept: vi.fn(),
+      onReject: vi.fn(),
+      onNotAPerson
+    });
+
+    const hint = screen.getByRole('note');
+    expect(hint.textContent).toContain('Looks like a shared mailbox');
+    expect(hint.textContent).toContain('support@shop.example.test is a role address');
+    expect(hint.textContent).toContain('Avery Stone, Blake Rivera');
+    expect(screen.getByRole('button', { name: 'Link identities' })).toHaveProperty('disabled', true);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Not a person: identity match 17' }));
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim()))
+      .toEqual(['Organization', 'Shared mailbox', 'Ignore']);
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Shared mailbox' }));
+    expect(onNotAPerson).toHaveBeenCalledWith(40, 'shared_mailbox');
+  });
+
+  it('names each archive identity when both sides are identities', async () => {
+    render(IdentityCandidateCard, {
+      candidate: { ...completeCandidate(), left_kind: 'participant', left_id: 40, right_kind: 'participant', right_id: 42 },
+      pending: false,
+      left: { kind: 'participant', id: 40, found: true, display_name: 'Desk', addresses: [] },
+      right: { kind: 'participant', id: 42, found: true, display_name: 'Casey', addresses: [] },
+      onAccept: vi.fn(),
+      onReject: vi.fn(),
+      onNotAPerson: vi.fn()
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Not a person: identity match 17' }));
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual([
+      'Organization: Desk', 'Shared mailbox: Desk', 'Ignore: Desk',
+      'Organization: Casey', 'Shared mailbox: Casey', 'Ignore: Casey'
+    ]);
+  });
 });

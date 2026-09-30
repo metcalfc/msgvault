@@ -6,7 +6,7 @@
  * person page's contact block and the Directory → timeline handoff. */
 import { getParticipant } from '../api/generated/api/api';
 import type { APIClient } from '../api/client';
-import type { PersonIdentifier, PersonSummary } from '../api/generated/models';
+import type { CorrespondentKindAssignment, PersonIdentifier, PersonSummary } from '../api/generated/models';
 
 export interface BoundCluster {
   canonicalID: number;
@@ -16,6 +16,8 @@ export interface BoundCluster {
   label: string;
   activityCount: number;
   identifiers: PersonIdentifier[];
+  /** Set when the cluster is marked as not a person. */
+  correspondentKind?: CorrespondentKindAssignment;
 }
 
 export interface BoundClusterResolution {
@@ -65,7 +67,8 @@ export async function resolveBoundClusters(
       boundIDs: [id],
       label: summary.display_label,
       activityCount: summary.activity_count,
-      identifiers: summary.identifiers ?? []
+      identifiers: summary.identifiers ?? [],
+      ...(summary.correspondent_kind ? { correspondentKind: summary.correspondent_kind } : {})
     });
   }
   return {

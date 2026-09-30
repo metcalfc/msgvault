@@ -1,4 +1,4 @@
-import type { ContactMatchStatus, IdentityMatchEndpointSummary } from '../api/generated/models';
+import type { ContactMatchStatus, IdentityMatchEndpointSummary, SharedMailboxSignal } from '../api/generated/models';
 
 const ENDPOINT_ROLES: Record<string, string> = {
   participant: 'Archive identity',
@@ -39,9 +39,24 @@ export function contactMatchSummary(status: ContactMatchStatus): string {
       return 'This archive identity spans several profiles. Separate or merge them before linking.';
     case 'linked':
       return 'This archive identity is already linked to the profile.';
+    case 'shared_mailbox':
+      return 'This address looks like a shared mailbox, so nothing is linked through it.';
     default:
       return '';
   }
+}
+
+/** Why an address looks like a shared mailbox, in plain words. */
+export function sharedMailboxReason(signal: SharedMailboxSignal): string {
+  const reasons: string[] = [];
+  if (signal.reasons.includes('role_address')) reasons.push(`${signal.address} is a role address, not a person's.`);
+  if (signal.reasons.includes('several_names')) {
+    const names = signal.names ?? [];
+    reasons.push(names.length > 0
+      ? `Different people wrote from ${signal.address}: ${names.join(', ')}.`
+      : `Different people wrote from ${signal.address}.`);
+  }
+  return reasons.join(' ');
 }
 
 /** Why a merge this match needs would be refused, if it would be. */

@@ -5,6 +5,7 @@
   import type { RelationshipFacet, RelationshipRow } from '../../relationships/models';
   import { compactDate } from '../../util/dates';
   import IdentityAvatar from '../common/IdentityAvatar.svelte';
+  import { assignmentLabel, isNotAPerson } from '../../people/correspondent-kind';
 
   interface Props {
     rows: RelationshipRow[] | PersonSummary[] | DomainSummary[];
@@ -36,6 +37,9 @@
     /** The primary email or phone when the row carries identifiers and it
      * differs from the label — so two "J. Example" rows can be told apart. */
     identifier?: string;
+    /** "Shared mailbox", "Organization · Example", or "Ignored" for a
+     * record marked as not a person. */
+    kind?: string;
   }
 
   function primaryIdentifier(row: PersonSummary): string | undefined {
@@ -112,7 +116,8 @@
         target: `cluster:${row.canonical_id}`,
         label: row.display_label,
         lastAt: row.signals.last_interaction_at,
-        summary: signalSummary(row)
+        summary: signalSummary(row),
+        ...(isNotAPerson(row.correspondent_kind?.kind) ? { kind: assignmentLabel(row.correspondent_kind) } : {})
       };
     }
     if (isDomainSummary(row)) {
@@ -130,7 +135,8 @@
       label: row.display_label,
       lastAt: row.last_at,
       summary: `${row.activity_count.toLocaleString()} items`,
-      identifier: primaryIdentifier(row)
+      identifier: primaryIdentifier(row),
+      ...(isNotAPerson(row.correspondent_kind?.kind) ? { kind: assignmentLabel(row.correspondent_kind) } : {})
     };
   }
 
@@ -276,6 +282,7 @@
               <div class="row-body">
                 <div class="row-main">
                   <span class="label" data-row-title>{view.label}</span>
+                  {#if view.kind}<span class="kind-tag">{view.kind}</span>{/if}
                   <span class="last-at" data-mono>{compactDate(view.lastAt)}</span>
                 </div>
                 <span class="row-meta" data-meta>
@@ -420,6 +427,14 @@
     gap: var(--space-4);
   }
 
+  .kind-tag {
+    flex: none;
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-sm);
+    padding: 0 var(--space-1);
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+  }
   .last-at {
     flex: none;
     color: var(--text-muted);

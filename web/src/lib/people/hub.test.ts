@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../api/client';
 
-import { looksUnnamed, mergePeople, ObservedContacts, savedRow, type PeopleRow } from './hub.svelte';
+import { filterNotPeople, looksUnnamed, mergePeople, ObservedContacts, savedRow, type PeopleRow } from './hub.svelte';
 
 function row(kind: PeopleRow['kind'], id: number, lastContactAt?: string, name = `Person ${id}`): PeopleRow {
   return { kind, key: `${kind}:${id}`, id, name, lastContactAt, meta: [] };
@@ -79,5 +79,18 @@ describe('ObservedContacts', () => {
     await vi.waitFor(() => expect(contacts.loading).toBe(false));
     expect(contacts.error).toBeNull();
     expect(contacts.rows.map((row) => row.name)).toEqual(['Bo Example']);
+  });
+});
+
+describe('Not people search', () => {
+  it('matches a record by name, address, or organization', () => {
+    const records = [
+      { canonical_id: 1, member_ids: [1], kind: 'organization' as const, addresses: ['orders@shop.example.test'], display_name: 'Orders', organization_name: 'Example Shop' },
+      { canonical_id: 2, member_ids: [2], kind: 'ignored' as const, addresses: ['news@example.test'], display_name: 'Weekly News' },
+    ];
+    expect(filterNotPeople(records, '').map((record) => record.canonical_id)).toEqual([1, 2]);
+    expect(filterNotPeople(records, 'shop').map((record) => record.canonical_id)).toEqual([1]);
+    expect(filterNotPeople(records, 'NEWS@').map((record) => record.canonical_id)).toEqual([2]);
+    expect(filterNotPeople(records, 'weekly').map((record) => record.canonical_id)).toEqual([2]);
   });
 });

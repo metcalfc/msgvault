@@ -5,6 +5,7 @@ import {
   contactMatchSummary,
   endpointLabel,
   endpointRole,
+  sharedMailboxReason,
 } from './identity-endpoints';
 
 describe('identity endpoint labels', () => {
@@ -36,5 +37,14 @@ describe('identity endpoint labels', () => {
       .toContain('unresolved CardDAV conflict');
     expect(contactMatchBlockedMessage({ ...base, classification: 'bind' })).toBeNull();
     expect(contactMatchBlockedMessage(undefined)).toBeNull();
+  });
+
+  it('explains a shared mailbox signal', () => {
+    expect(contactMatchSummary({ candidate_id: 1, cluster_person_ids: [], classification: 'shared_mailbox' }))
+      .toContain('looks like a shared mailbox');
+    expect(sharedMailboxReason({ address: 'billing@example.test', reasons: ['role_address'] }))
+      .toBe("billing@example.test is a role address, not a person's.");
+    expect(sharedMailboxReason({ address: 'desk@example.test', reasons: ['several_names'], names: ['Kai Mercer', 'Lena Ortiz'] }))
+      .toBe('Different people wrote from desk@example.test: Kai Mercer, Lena Ortiz.');
   });
 });

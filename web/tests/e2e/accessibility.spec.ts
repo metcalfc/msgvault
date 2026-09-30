@@ -203,6 +203,20 @@ test('Directory review, merge, split, and honest Fact gate have no axe violation
   await assertNoViolations(page, 'Directory identity decision');
   await page.keyboard.press('Escape');
 
+  await page.getByRole('radio', { name: 'Contacts that match your archive' }).click();
+  const shared = page.getByRole('article', { name: 'Identity match 26' });
+  await expect(shared.getByRole('note')).toContainText('Looks like a shared mailbox');
+  await assertNoViolations(page, 'Directory shared mailbox card');
+  await shared.getByRole('button', { name: 'Not a person: identity match 26' }).click();
+  await page.getByRole('menuitem', { name: 'Organization' }).click();
+  const notAPerson = page.getByRole('dialog', { name: 'Not a person' });
+  await expect(notAPerson.getByRole('textbox', { name: 'Organization name' })).toBeVisible();
+  await assertNoViolations(page, 'Directory not-a-person decision');
+  await notAPerson.getByRole('button', { name: 'Cancel' }).click();
+  await expect(notAPerson).toHaveCount(0);
+  await page.getByRole('radio', { name: 'All matches' }).click();
+  await expect(page.getByRole('article', { name: 'Identity match 17' })).toBeVisible();
+
   await page.getByRole('article', { name: 'Identity match 19' })
     .getByRole('button', { name: 'Link identities' }).click();
   const conflict = page.getByRole('dialog', { name: 'Link identities' });

@@ -20,6 +20,9 @@
   import AttributeSummary from '../directory/AttributeSummary.svelte';
   import PersonBindingConflictModal from '../directory/PersonBindingConflictModal.svelte';
   import PersonReachBlock from '../people/PersonReachBlock.svelte';
+  import CorrespondentKindBanner from '../people/CorrespondentKindBanner.svelte';
+  import NotAPersonDialog from '../people/NotAPersonDialog.svelte';
+  import { clearKind, isNotAPerson, kindLabel, type NotAPersonKind } from '../../people/correspondent-kind';
   import LinkIdentityDialog from './LinkIdentityDialog.svelte';
 
   const STALE_CACHE_MESSAGE =
@@ -103,6 +106,11 @@
   let promotionFailure = $state<Extract<DirectoryPromotionResult, { ok: false }> | null>(null);
   let attributeGroups = $state<PersonAttributeGroup[]>([]);
   let contactPoints = $state<PersonContactPoint[]>([]);
+  // "Not a person": the open dialog (with the kind to preselect) and the
+  // "This is a person" request.
+  let kindDialog = $state<{ initial?: NotAPersonKind }>();
+  let kindPending = $state(false);
+  let kindError = $state<string | null>(null);
 
   function isPersonDetail(value: PersonSummary | DomainSummary): value is PersonSummary {
     return 'identifiers' in value;
@@ -220,7 +228,50 @@
     unlinkError = null;
     promotionFailure = null;
     activeDialog = undefined;
+    kindDialog = undefined;
+    kindError = null;
   });
+
+  const correspondentKind = $derived(detail && isPersonDetail(detail) && isNotAPerson(detail.correspondent_kind?.kind)
+    ? detail.correspondent_kind : undefined);
+
+  /** A new organization's name: the record's name, else its email domain. */
+  function suggestedOrganization(value: PersonSummary): string {
+    const email = (value.identifiers ?? []).find((identifier) => identifier.type === 'email')?.value ?? '';
+    const domain = email.includes('@') ? email.slice(email.lastIndexOf('@') + 1) : '';
+    const label = value.display_label?.trim() ?? '';
+    return label && !label.includes('@') ? label : domain;
+  }
+
+  async function reloadAfterKindChange(): Promise<void> {
+    if (capturePersonMergeContext && onReconcilePersonMerge) await onReconcilePersonMerge(capturePersonMergeContext());
+  }
+
+  async function kindDone(kind: string, deletedPersonID: number | undefined): Promise<void> {
+    kindDialog = undefined;
+    onAnnounce?.(deletedPersonID !== undefined
+      ? `Marked as ${kindLabel(kind).toLowerCase()} and deleted the saved profile.`
+      : `Marked as ${kindLabel(kind).toLowerCase()}.`);
+    await reloadAfterKindChange();
+  }
+
+  async function restorePerson(): Promise<void> {
+    const id = currentPersonID();
+    if (id === null || kindPending) return;
+    kindPending = true;
+    kindError = null;
+    try {
+      const outcome = await clearKind(client, id);
+      if (!outcome.ok) {
+        kindError = outcome.message;
+        return;
+      }
+      onAnnounce?.('Marked as a person.');
+      await reloadAfterKindChange();
+    } finally {
+      kindPending = false;
+    }
+  }
 
   $effect(() => {
     const id = profileID;
@@ -446,6 +497,7 @@
             </MenuTrigger>
             <MenuContent ariaLabel={`More actions for ${displayLabel(detail)}`}>
               <MenuItem onselect={openLinkDialog}>Same person…</MenuItem>
+              <MenuItem onselect={() => (kindDialog = { initial: correspondentKind?.kind as NotAPersonKind | undefined })}>Not a person…</MenuItem>
             </MenuContent>
           </Menu>
         </div>
@@ -500,6 +552,12 @@
         {/if}
       </div>
     </div>
+    {/if}
+    {#if correspondentKind}
+      <CorrespondentKindBanner kind={correspondentKind.kind as NotAPersonKind} organizationName={correspondentKind.organization_name}
+        pending={kindPending} error={kindError}
+        onChange={() => (kindDialog = { initial: correspondentKind?.kind as NotAPersonKind | undefined })}
+        onRestore={() => void restorePerson()} />
     {/if}
     {@render tabs?.()}
     {#if staleBanner === 'identity_cache_stale'}
@@ -589,6 +647,18 @@
         onOpenProfile={(personID) => onOpenDirectoryPerson?.(personID)}
         onSuccess={completeMerge}
         onClose={() => (activeDialog = undefined)}
+      />
+    {/if}
+    {#if kindDialog && isPersonDetail(detail)}
+      {@const opened = detail}
+      <NotAPersonDialog
+        {client}
+        participantIDs={[opened.id]}
+        label={opened.display_label}
+        suggestedOrganization={correspondentKind?.organization_name ?? suggestedOrganization(opened)}
+        initialKind={kindDialog.initial}
+        onClose={() => (kindDialog = undefined)}
+        onDone={(results, deleted) => void kindDone(results[0]?.record.kind ?? 'ignored', deleted)}
       />
     {/if}
   {/if}
