@@ -338,7 +338,9 @@ import (
 // bump: the [jev] settings keys and stored credential slot, list-row
 // identifiers, Directory name and activity filters, message conversation_type,
 // explore counterpart names, and People hub and provider preset fields.
-const APISchemaVersion = "2.33.0"
+// 2.34.0 adds enrichment identity review: listing identity_uncertain
+// attempts and confirming or rejecting their returned identity.
+const APISchemaVersion = "2.34.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

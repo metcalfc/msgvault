@@ -2698,6 +2698,24 @@ func (a *storeAPIAdapter) ListContactMatchCandidatesContext(
 	return a.store.ListContactMatchCandidatesContext(ctx, states, limit, offset)
 }
 
+func (a *storeAPIAdapter) ListPersonEnrichmentIdentityReviewsContext(
+	ctx context.Context, limit int,
+) ([]store.PersonEnrichmentIdentityReview, error) {
+	return a.store.ListPersonEnrichmentIdentityReviewsContext(ctx, limit)
+}
+
+func (a *storeAPIAdapter) ConfirmPersonEnrichmentIdentityContext(
+	ctx context.Context, attemptID int64, actor string,
+) (*store.PersonEnrichmentIdentityDecision, error) {
+	return a.store.ConfirmPersonEnrichmentIdentityContext(ctx, attemptID, actor)
+}
+
+func (a *storeAPIAdapter) RejectPersonEnrichmentIdentityContext(
+	ctx context.Context, attemptID int64, actor string,
+) (*store.PersonEnrichmentIdentityDecision, error) {
+	return a.store.RejectPersonEnrichmentIdentityContext(ctx, attemptID, actor)
+}
+
 func (a *storeAPIAdapter) BuildContactMatchCandidatesContext(
 	ctx context.Context,
 ) (*store.ContactMatchBuildResult, error) {

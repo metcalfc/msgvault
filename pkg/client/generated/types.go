@@ -8419,6 +8419,112 @@ func (p PersonDaysPage) Validate() error {
 	return errors
 }
 
+type PersonEnrichmentIdentityDecision struct {
+	AttemptID                  int64                                    `json:"attempt_id"`
+	AttemptState               string                                   `json:"attempt_state" validate:"required"`
+	Decision                   PersonEnrichmentIdentityDecisionDecision `json:"decision" validate:"required"`
+	FactGenerationKey          *string                                  `json:"fact_generation_key,omitzero"`
+	Negatives                  int64                                    `json:"negatives"`
+	PersonID                   int64                                    `json:"person_id"`
+	Projections                int64                                    `json:"projections"`
+	ProviderIdentitiesAttached int64                                    `json:"provider_identities_attached"`
+	Reason                     PersonEnrichmentIdentityDecisionReason   `json:"reason" validate:"required"`
+}
+
+func (p PersonEnrichmentIdentityDecision) Validate() error {
+	var errors runtime.ValidationErrors
+	if err := typesValidator.Var(p.AttemptState, "required"); err != nil {
+		errors = errors.Append("AttemptState", err)
+	}
+	if v, ok := any(p.Decision).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("Decision", err)
+		}
+	}
+	if v, ok := any(p.Reason).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("Reason", err)
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
+type PersonEnrichmentIdentityReview struct {
+	AttemptID             int64                            `json:"attempt_id"`
+	Claims                []PersonEnrichmentReviewClaim    `json:"claims" validate:"required"`
+	CompanySame           float64                          `json:"company_same"`
+	CompletedAt           *time.Time                       `json:"completed_at,omitempty"`
+	ExactClass            string                           `json:"exact_class" validate:"required"`
+	JudgedAt              time.Time                        `json:"judged_at" validate:"required"`
+	Model                 string                           `json:"model" validate:"required"`
+	NameCompatible        float64                          `json:"name_compatible"`
+	NameConflict          float64                          `json:"name_conflict"`
+	PersonDisplayName     *string                          `json:"person_display_name,omitzero"`
+	PersonID              int64                            `json:"person_id"`
+	ProviderKind          string                           `json:"provider_kind" validate:"required"`
+	ProviderName          string                           `json:"provider_name" validate:"required"`
+	ProviderPersonIDKnown bool                             `json:"provider_person_id_known"`
+	Returned              PersonEnrichmentReturnedIdentity `json:"returned"`
+}
+
+func (p PersonEnrichmentIdentityReview) Validate() error {
+	var errors runtime.ValidationErrors
+	for i, item := range p.Claims {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("Claims[%d]", i), err)
+			}
+		}
+	}
+	if err := typesValidator.Var(p.ExactClass, "required"); err != nil {
+		errors = errors.Append("ExactClass", err)
+	}
+	if err := typesValidator.Var(p.JudgedAt, "required"); err != nil {
+		errors = errors.Append("JudgedAt", err)
+	}
+	if err := typesValidator.Var(p.Model, "required"); err != nil {
+		errors = errors.Append("Model", err)
+	}
+	if err := typesValidator.Var(p.ProviderKind, "required"); err != nil {
+		errors = errors.Append("ProviderKind", err)
+	}
+	if err := typesValidator.Var(p.ProviderName, "required"); err != nil {
+		errors = errors.Append("ProviderName", err)
+	}
+	if v, ok := any(p.Returned).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("Returned", err)
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
+type PersonEnrichmentIdentityReviewsResponse struct {
+	Limit   int64                            `json:"limit"`
+	Reviews []PersonEnrichmentIdentityReview `json:"reviews" validate:"required"`
+}
+
+func (p PersonEnrichmentIdentityReviewsResponse) Validate() error {
+	var errors runtime.ValidationErrors
+	for i, item := range p.Reviews {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("Reviews[%d]", i), err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
 type PersonEnrichmentProviderSetting struct {
 	AllowSensitiveTargets bool                                `json:"allow_sensitive_targets"`
 	AllowedIdentifiers    []string                            `json:"allowed_identifiers" validate:"required"`
@@ -8551,6 +8657,42 @@ func (p PersonEnrichmentProviderUpdate) Validate() error {
 		return nil
 	}
 	return errors
+}
+
+type PersonEnrichmentReturnedIdentity struct {
+	CurrentRoles   []PersonEnrichmentReturnedRole `json:"current_roles" validate:"required"`
+	Location       *string                        `json:"location,omitzero"`
+	Name           *string                        `json:"name,omitzero"`
+	ProfileURLHost *string                        `json:"profile_url_host,omitzero"`
+}
+
+func (p PersonEnrichmentReturnedIdentity) Validate() error {
+	var errors runtime.ValidationErrors
+	for i, item := range p.CurrentRoles {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("CurrentRoles[%d]", i), err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
+type PersonEnrichmentReturnedRole struct {
+	Company *string `json:"company,omitzero"`
+	Title   *string `json:"title,omitzero"`
+}
+
+type PersonEnrichmentReviewClaim struct {
+	Target string `json:"target" validate:"required"`
+	Value  string `json:"value" validate:"required"`
+}
+
+func (p PersonEnrichmentReviewClaim) Validate() error {
+	return runtime.ConvertValidatorError(typesValidator.Struct(p))
 }
 
 type PersonFactClaim struct {

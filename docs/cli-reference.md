@@ -1986,8 +1986,13 @@ consented Exa or Sixtyfour policies:
 | `person enrichment run --person <id> --provider <name> --idempotency-key <key>` | Request a lookup for one person |
 | `person enrichment suppress --person <id> --reason <reason>` | Record an opt-out for the person's current identifiers |
 | `person enrichment suppress --provider <name> --identifier-class <class> --reason <reason> < identifier.txt` | Suppress an identifier read from standard input |
+| `person enrichment review list [--limit 50]` | List `identity_uncertain` attempts with the judgment and the returned identity |
+| `person enrichment review accept <attempt-id>` | Confirm the returned identity is this person: apply its claims as verified and attach its provider identity |
+| `person enrichment review reject <attempt-id>` | Say the returned identity is someone else: never propose that provider identity for this person again |
 
-Status, profiles, consent, revoke, and run accept `--json`. Suppression reasons
+Status, profiles, consent, revoke, run, and every `review` subcommand accept
+`--json`. `review` goes through the daemon; accepting or rejecting an attempt
+that is no longer `identity_uncertain` fails without changing anything. Suppression reasons
 are `opt_out` and `data_subject_request`. The suppression forms are mutually
 exclusive: `--person` does not accept `--provider` or `--identifier-class`.
 

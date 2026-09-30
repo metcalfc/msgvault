@@ -123,6 +123,7 @@ func newPersonEnrichmentCommand(deps personEnrichmentCommandDeps) *cobra.Command
 		newPersonEnrichmentRevokeCommand(deps),
 		newPersonEnrichmentRunCommand(deps),
 		newPersonEnrichmentSuppressCommand(deps),
+		newPersonEnrichmentReviewCommand(),
 	)
 	return command
 }

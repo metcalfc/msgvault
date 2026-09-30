@@ -949,6 +949,11 @@ type ListPersonRelationshipsQuery struct {
 	IncludeEnded *bool `json:"include_ended,omitempty"`
 }
 
+type ListPersonEnrichmentIdentityReviewsQuery struct {
+	// Limit Maximum attempts to return (default 50, max 200)
+	Limit *int64 `json:"limit,omitempty"`
+}
+
 type ListPersonFactTargetsQuery struct {
 	// IncludeSensitive Include sensitive targets
 	IncludeSensitive *bool `json:"include_sensitive,omitempty"`

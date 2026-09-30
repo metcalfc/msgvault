@@ -871,6 +871,18 @@ type ClientInterface interface {
 	SetPersonTracking(ctx context.Context, options *SetPersonTrackingRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPersonTrackingResponse, error)
 	SetPersonTrackingWithResponse(ctx context.Context, options *SetPersonTrackingRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPersonTrackingResp, error)
 
+	// ListPersonEnrichmentIdentityReviews List enrichment identities to confirm
+	ListPersonEnrichmentIdentityReviews(ctx context.Context, options *ListPersonEnrichmentIdentityReviewsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListPersonEnrichmentIdentityReviewsResponse, error)
+	ListPersonEnrichmentIdentityReviewsWithResponse(ctx context.Context, options *ListPersonEnrichmentIdentityReviewsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListPersonEnrichmentIdentityReviewsResp, error)
+
+	// ConfirmPersonEnrichmentIdentity Confirm an enrichment identity
+	ConfirmPersonEnrichmentIdentity(ctx context.Context, options *ConfirmPersonEnrichmentIdentityRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ConfirmPersonEnrichmentIdentityResponse, error)
+	ConfirmPersonEnrichmentIdentityWithResponse(ctx context.Context, options *ConfirmPersonEnrichmentIdentityRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ConfirmPersonEnrichmentIdentityResp, error)
+
+	// RejectPersonEnrichmentIdentity Reject an enrichment identity
+	RejectPersonEnrichmentIdentity(ctx context.Context, options *RejectPersonEnrichmentIdentityRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RejectPersonEnrichmentIdentityResponse, error)
+	RejectPersonEnrichmentIdentityWithResponse(ctx context.Context, options *RejectPersonEnrichmentIdentityRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RejectPersonEnrichmentIdentityResp, error)
+
 	// ListPersonFactTargets List eligible automatic person fact targets
 	ListPersonFactTargets(ctx context.Context, options *ListPersonFactTargetsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListPersonFactTargetsResponse, error)
 	ListPersonFactTargetsWithResponse(ctx context.Context, options *ListPersonFactTargetsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListPersonFactTargetsResp, error)
@@ -14006,6 +14018,195 @@ func (c *Client) SetPersonTracking(ctx context.Context, options *SetPersonTracki
 	}
 
 	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/api/v1/people/{id}/tracking")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+	return responseParser(ctx, resp)
+}
+
+// ListPersonEnrichmentIdentityReviews List enrichment identities to confirm
+func (c *Client) ListPersonEnrichmentIdentityReviews(ctx context.Context, options *ListPersonEnrichmentIdentityReviewsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListPersonEnrichmentIdentityReviewsResponse, error) {
+	var err error
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/api/v1/person-enrichment/identity-reviews",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	responseParser := func(ctx context.Context, resp *runtime.Response) (*ListPersonEnrichmentIdentityReviewsResponse, error) {
+		bodyBytes := resp.Content
+		if resp.StatusCode != 200 {
+			target := new(ListPersonEnrichmentIdentityReviewsErrorResponse)
+			// Handle empty error response body gracefully - skip unmarshal if no content
+			if len(bodyBytes) > 0 {
+				if err = json.Unmarshal(bodyBytes, target); err != nil {
+					return nil, &runtime.ResponseDecodeError{
+						StatusCode:    resp.StatusCode,
+						ContentType:   resp.Headers.Get("Content-Type"),
+						ContentLength: len(bodyBytes),
+						TargetType:    "ListPersonEnrichmentIdentityReviewsErrorResponse",
+						Body:          bodyBytes,
+						Err:           err,
+					}
+				}
+			}
+			// Return error with (possibly empty) target
+			if errTarget, ok := any(*target).(error); ok {
+				return nil, runtime.NewClientAPIError(errTarget, runtime.WithStatusCode(resp.StatusCode))
+			}
+			return nil, runtime.NewClientAPIError(fmt.Errorf("API error (status %d): %v", resp.StatusCode, *target),
+				runtime.WithStatusCode(resp.StatusCode))
+		}
+		target := new(ListPersonEnrichmentIdentityReviewsResponse)
+		// Handle empty response body gracefully
+		if len(bodyBytes) == 0 {
+			return target, nil
+		}
+		if err = json.Unmarshal(bodyBytes, target); err != nil {
+			return nil, &runtime.ResponseDecodeError{
+				StatusCode:    resp.StatusCode,
+				ContentType:   resp.Headers.Get("Content-Type"),
+				ContentLength: len(bodyBytes),
+				TargetType:    "ListPersonEnrichmentIdentityReviewsResponse",
+				Body:          bodyBytes,
+				Err:           err,
+			}
+		}
+		return target, nil
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/api/v1/person-enrichment/identity-reviews")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+	return responseParser(ctx, resp)
+}
+
+// ConfirmPersonEnrichmentIdentity Confirm an enrichment identity
+func (c *Client) ConfirmPersonEnrichmentIdentity(ctx context.Context, options *ConfirmPersonEnrichmentIdentityRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ConfirmPersonEnrichmentIdentityResponse, error) {
+	var err error
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/api/v1/person-enrichment/identity-reviews/{id}/confirm",
+		Method:     "POST",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	responseParser := func(ctx context.Context, resp *runtime.Response) (*ConfirmPersonEnrichmentIdentityResponse, error) {
+		bodyBytes := resp.Content
+		if resp.StatusCode != 200 {
+			target := new(ConfirmPersonEnrichmentIdentityErrorResponse)
+			// Handle empty error response body gracefully - skip unmarshal if no content
+			if len(bodyBytes) > 0 {
+				if err = json.Unmarshal(bodyBytes, target); err != nil {
+					return nil, &runtime.ResponseDecodeError{
+						StatusCode:    resp.StatusCode,
+						ContentType:   resp.Headers.Get("Content-Type"),
+						ContentLength: len(bodyBytes),
+						TargetType:    "ConfirmPersonEnrichmentIdentityErrorResponse",
+						Body:          bodyBytes,
+						Err:           err,
+					}
+				}
+			}
+			// Return error with (possibly empty) target
+			if errTarget, ok := any(*target).(error); ok {
+				return nil, runtime.NewClientAPIError(errTarget, runtime.WithStatusCode(resp.StatusCode))
+			}
+			return nil, runtime.NewClientAPIError(fmt.Errorf("API error (status %d): %v", resp.StatusCode, *target),
+				runtime.WithStatusCode(resp.StatusCode))
+		}
+		target := new(ConfirmPersonEnrichmentIdentityResponse)
+		// Handle empty response body gracefully
+		if len(bodyBytes) == 0 {
+			return target, nil
+		}
+		if err = json.Unmarshal(bodyBytes, target); err != nil {
+			return nil, &runtime.ResponseDecodeError{
+				StatusCode:    resp.StatusCode,
+				ContentType:   resp.Headers.Get("Content-Type"),
+				ContentLength: len(bodyBytes),
+				TargetType:    "ConfirmPersonEnrichmentIdentityResponse",
+				Body:          bodyBytes,
+				Err:           err,
+			}
+		}
+		return target, nil
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/api/v1/person-enrichment/identity-reviews/{id}/confirm")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+	return responseParser(ctx, resp)
+}
+
+// RejectPersonEnrichmentIdentity Reject an enrichment identity
+func (c *Client) RejectPersonEnrichmentIdentity(ctx context.Context, options *RejectPersonEnrichmentIdentityRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RejectPersonEnrichmentIdentityResponse, error) {
+	var err error
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/api/v1/person-enrichment/identity-reviews/{id}/reject",
+		Method:     "POST",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	responseParser := func(ctx context.Context, resp *runtime.Response) (*RejectPersonEnrichmentIdentityResponse, error) {
+		bodyBytes := resp.Content
+		if resp.StatusCode != 200 {
+			target := new(RejectPersonEnrichmentIdentityErrorResponse)
+			// Handle empty error response body gracefully - skip unmarshal if no content
+			if len(bodyBytes) > 0 {
+				if err = json.Unmarshal(bodyBytes, target); err != nil {
+					return nil, &runtime.ResponseDecodeError{
+						StatusCode:    resp.StatusCode,
+						ContentType:   resp.Headers.Get("Content-Type"),
+						ContentLength: len(bodyBytes),
+						TargetType:    "RejectPersonEnrichmentIdentityErrorResponse",
+						Body:          bodyBytes,
+						Err:           err,
+					}
+				}
+			}
+			// Return error with (possibly empty) target
+			if errTarget, ok := any(*target).(error); ok {
+				return nil, runtime.NewClientAPIError(errTarget, runtime.WithStatusCode(resp.StatusCode))
+			}
+			return nil, runtime.NewClientAPIError(fmt.Errorf("API error (status %d): %v", resp.StatusCode, *target),
+				runtime.WithStatusCode(resp.StatusCode))
+		}
+		target := new(RejectPersonEnrichmentIdentityResponse)
+		// Handle empty response body gracefully
+		if len(bodyBytes) == 0 {
+			return target, nil
+		}
+		if err = json.Unmarshal(bodyBytes, target); err != nil {
+			return nil, &runtime.ResponseDecodeError{
+				StatusCode:    resp.StatusCode,
+				ContentType:   resp.Headers.Get("Content-Type"),
+				ContentLength: len(bodyBytes),
+				TargetType:    "RejectPersonEnrichmentIdentityResponse",
+				Body:          bodyBytes,
+				Err:           err,
+			}
+		}
+		return target, nil
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/api/v1/person-enrichment/identity-reviews/{id}/reject")
 	if err != nil {
 		return nil, fmt.Errorf("error executing request: %w", err)
 	}

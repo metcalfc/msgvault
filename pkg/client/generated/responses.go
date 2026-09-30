@@ -2467,6 +2467,26 @@ type SetPersonTrackingErrorResponseJSON = ErrorResponse
 
 type SetPersonTrackingErrorResponseJSON503 = ErrorResponse
 
+type ListPersonEnrichmentIdentityReviewsResponse = PersonEnrichmentIdentityReviewsResponse
+
+type ListPersonEnrichmentIdentityReviewsErrorResponse = ErrorResponse
+
+type ConfirmPersonEnrichmentIdentityResponse = PersonEnrichmentIdentityDecision
+
+type ConfirmPersonEnrichmentIdentityErrorResponse = ErrorResponse
+
+type ConfirmPersonEnrichmentIdentityErrorResponseJSON = ErrorResponse
+
+type ConfirmPersonEnrichmentIdentityErrorResponseJSON503 = ErrorResponse
+
+type RejectPersonEnrichmentIdentityResponse = PersonEnrichmentIdentityDecision
+
+type RejectPersonEnrichmentIdentityErrorResponse = ErrorResponse
+
+type RejectPersonEnrichmentIdentityErrorResponseJSON = ErrorResponse
+
+type RejectPersonEnrichmentIdentityErrorResponseJSON503 = ErrorResponse
+
 type ListPersonFactTargetsResponse = Catalog
 
 type ListPersonFactTargetsErrorResponse = ErrorResponse
@@ -5465,6 +5485,34 @@ type SetPersonTrackingResp struct {
 	JSON400      *SetPersonTrackingErrorResponse
 	JSON404      *SetPersonTrackingErrorResponseJSON
 	JSON503      *SetPersonTrackingErrorResponseJSON503
+}
+
+type ListPersonEnrichmentIdentityReviewsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *ListPersonEnrichmentIdentityReviewsResponse
+	JSON503      *ListPersonEnrichmentIdentityReviewsErrorResponse
+}
+
+type ConfirmPersonEnrichmentIdentityResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *ConfirmPersonEnrichmentIdentityResponse
+	JSON404      *ConfirmPersonEnrichmentIdentityErrorResponse
+	JSON409      *ConfirmPersonEnrichmentIdentityErrorResponseJSON
+	JSON503      *ConfirmPersonEnrichmentIdentityErrorResponseJSON503
+}
+
+type RejectPersonEnrichmentIdentityResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *RejectPersonEnrichmentIdentityResponse
+	JSON404      *RejectPersonEnrichmentIdentityErrorResponse
+	JSON409      *RejectPersonEnrichmentIdentityErrorResponseJSON
+	JSON503      *RejectPersonEnrichmentIdentityErrorResponseJSON503
 }
 
 type ListPersonFactTargetsResp struct {

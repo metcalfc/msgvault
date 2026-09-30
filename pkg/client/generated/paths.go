@@ -701,6 +701,16 @@ type SetPersonTrackingPath struct {
 	ID int64 `json:"id"`
 }
 
+type ConfirmPersonEnrichmentIdentityPath struct {
+	// ID Enrichment attempt ID
+	ID int64 `json:"id"`
+}
+
+type RejectPersonEnrichmentIdentityPath struct {
+	// ID Enrichment attempt ID
+	ID int64 `json:"id"`
+}
+
 type DecidePersonMergeCandidatePath struct {
 	// CandidateID Person merge review candidate ID
 	CandidateID int64 `json:"candidate_id" validate:"gte=1"`

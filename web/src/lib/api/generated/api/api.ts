@@ -76,6 +76,7 @@ import type {
   CliStatsResponse,
   CommunicationService,
   CommunicationServicesResponse,
+  ConfirmPersonEnrichmentIdentityPathParameters,
   ConsentSettingsPeopleInferenceProviderPathParameters,
   ContactMatchBuildResult,
   ContactState,
@@ -223,6 +224,7 @@ import type {
   ListPersonBriefVersionsPathParameters,
   ListPersonEmploymentsParams,
   ListPersonEmploymentsPathParameters,
+  ListPersonEnrichmentIdentityReviewsParams,
   ListPersonFactClaimsParams,
   ListPersonFactClaimsPathParameters,
   ListPersonFactDecisionsParams,
@@ -304,6 +306,8 @@ import type {
   PersonBriefVersionsResponse,
   PersonDayPage,
   PersonDaysPage,
+  PersonEnrichmentIdentityDecision,
+  PersonEnrichmentIdentityReviewsResponse,
   PersonEnrichmentProviderUpdate,
   PersonFactClaimsResponse,
   PersonFactDecisionsResponse,
@@ -344,6 +348,7 @@ import type {
   RejectIdentityMatchCandidatePathParameters,
   RejectPersonBriefPathParameters,
   RejectPersonBriefRequest,
+  RejectPersonEnrichmentIdentityPathParameters,
   RelationshipReviewsResponse,
   RelationshipType,
   RelationshipTypesResponse,
@@ -3054,6 +3059,61 @@ export const setPersonTracking = (
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       data: putPersonTrackingRequest,
+    },
+    options,
+  );
+};
+/**
+ * Enrichment attempts whose identity check was uncertain, newest first, with the stored judgment probabilities and the returned identity as far as the archive kept it. No claim from these attempts has been applied.
+ * @summary List enrichment identities to confirm
+ */
+export const listPersonEnrichmentIdentityReviews = (
+  params?: ListPersonEnrichmentIdentityReviewsParams,
+  options?: SecondParameter<
+    typeof orvalFetch<PersonEnrichmentIdentityReviewsResponse>
+  >,
+) => {
+  return orvalFetch<PersonEnrichmentIdentityReviewsResponse>(
+    {
+      url: `/api/v1/person-enrichment/identity-reviews`,
+      method: "GET",
+      params,
+    },
+    options,
+  );
+};
+/**
+ * The user confirms the returned identity is this person. The attempt's stored claims are applied at the verified identity score, its provider person IDs are attached, and the attempt succeeds.
+ * @summary Confirm an enrichment identity
+ */
+export const confirmPersonEnrichmentIdentity = (
+  { id }: ConfirmPersonEnrichmentIdentityPathParameters,
+  options?: SecondParameter<
+    typeof orvalFetch<PersonEnrichmentIdentityDecision>
+  >,
+) => {
+  return orvalFetch<PersonEnrichmentIdentityDecision>(
+    {
+      url: `/api/v1/person-enrichment/identity-reviews/${encodeURIComponent(String(id))}/confirm`,
+      method: "POST",
+    },
+    options,
+  );
+};
+/**
+ * The user says the returned identity is someone else. The attempt is identity-rejected and that provider identity is never proposed for this person again.
+ * @summary Reject an enrichment identity
+ */
+export const rejectPersonEnrichmentIdentity = (
+  { id }: RejectPersonEnrichmentIdentityPathParameters,
+  options?: SecondParameter<
+    typeof orvalFetch<PersonEnrichmentIdentityDecision>
+  >,
+) => {
+  return orvalFetch<PersonEnrichmentIdentityDecision>(
+    {
+      url: `/api/v1/person-enrichment/identity-reviews/${encodeURIComponent(String(id))}/reject`,
+      method: "POST",
     },
     options,
   );
