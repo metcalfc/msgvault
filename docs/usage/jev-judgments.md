@@ -58,6 +58,9 @@ new `msgvault jev consent`.
    [jev.correspondent_kind]
    enabled = true
    # automatic = true   # also classify new identities at each cache build
+
+   [jev.cleanup_suggestions]
+   enabled = true      # msgvault suggest-cleanup only; never automatic
    ```
 
 2. Provide an API key. Either paste it in Settings under **Jev judgments**
@@ -73,7 +76,7 @@ new `msgvault jev consent`.
    ```
 
 Consent is per feature: run the same two `consent` commands with
-`correspondent_kind` for that feature. `msgvault jev revoke enrichment_identity`
+`correspondent_kind` or `cleanup_suggestions` for those features. `msgvault jev revoke enrichment_identity`
 or `msgvault jev revoke --all` stops the next request immediately.
 
 ## Budgets and safety
@@ -384,6 +387,87 @@ subjects." The options are:
 A request with fewer than ten identities sends only their questions.
 `msgvault jev consent correspondent_kind` prints the same disclosure.
 
+## Feature: cleanup suggestions
+
+Feature name: `cleanup_suggestions`. Setting: `[jev.cleanup_suggestions]`.
+Command: [`msgvault suggest-cleanup`](../cli-reference.md#suggest-cleanup).
+
+Cleanup suggestions help you find junk worth deleting, and warn you before
+you delete mail that looks personal. They are suggestions only: nothing is
+ever staged or deleted automatically, and `automatic` has no effect because
+the feature only runs when you ask.
+
+1. **The pool, in code.** Live email labeled `SPAM` (or an IMAP `Junk`
+   label) or `CATEGORY_PROMOTIONS`, that you did not send, in a conversation
+   you never wrote in, from a sender not
+   [classified as a person](#feature-correspondent-kind), with at least one
+   link in its body. Newest first, up to `--limit` (default 50) per run.
+   Messages already judged are skipped unless you pass `--rejudge`.
+2. **Jev, only with consent.** Four messages per request, three questions
+   each (below).
+3. **The score, in code.** `0.45 × impersonation + 0.20 × pressure + 0.35 ×
+   P(phishing_or_scam)`, plus hard signals: DMARC fail +0.20, SPF fail or
+   softfail +0.10, DKIM fail +0.10, a Reply-To on another domain +0.10, no
+   link on the sender's domain +0.05, a spam label +0.05; SPF, DKIM, and DMARC
+   all passing −0.15. The result is clamped to 0–1. Hard signals alone top
+   out at 0.60, so they never mark a message by themselves.
+
+| Result | Where it shows |
+|---|---|
+| Score ≥ 0.80 | Listed by `suggest-cleanup` as suspected phishing |
+| `personal` + `work` ≥ 0.50 | Listed as possibly worth keeping when the message is in a staged deletion batch (`show-deletion` and Web UI deletion review) |
+
+To act on a suspected message, stage it yourself with
+`msgvault stage-delete --ids`, review it, and run `delete-staged`.
+Authentication results come from the topmost `Authentication-Results`
+header, the one your receiving server adds; lower copies could come from the
+sender and are ignored. Only the header block of the stored raw message is
+read, and a message whose header block cannot be decoded sends `unknown`.
+
+### What leaves the machine
+
+Per message, under `messages[i]`:
+
+- `from_name` and `from_domain`: the sender's display name (cut to 120
+  characters) and the domain of its address; never the local part
+- `reply_to_domain`: the domain of the `Reply-To` address, if any
+- `link_hosts[]`: up to ten distinct host names of links in the body; never
+  paths or query strings
+- `authentication.spf`, `.dkim`, `.dmarc`: the receiving server's verdicts,
+  such as `pass`, `fail`, `softfail`, `none`, or `unknown`
+- `addressed_as`: `to_or_cc` when one of your addresses is a visible
+  recipient, otherwise `bcc_or_undisclosed`
+- `labels[]`: system labels only, such as `SPAM` or `CATEGORY_PROMOTIONS`;
+  your own label names are never sent
+- `thread_replied`: whether you wrote in the conversation
+- `sender_kind`: the sender's [correspondent kind](#feature-correspondent-kind),
+  or `unclassified`
+- `subject`: cut to 200 characters
+- `body_start`: **the first 500 characters of the message's text** (the
+  plain-text body, or the HTML body with tags removed)
+
+No addresses, no attachments, no text past the first 500 characters, and
+nothing about mail you sent.
+
+### The questions, exactly as sent
+
+For each message `i` in the request:
+
+- `impersonation_i` (Noul): "Does `messages[i]` pretend to come from a brand,
+  organization, or person that `from_domain`, `reply_to_domain`, and
+  `link_hosts` show it is not from?"
+- `pressure_i` (Noul): "Does `messages[i]` pressure the reader to act at
+  once: urgency, threats, account suspension, prizes, or requests for
+  credentials or payment?"
+- `category_i` (Choice): "What kind of mail is `messages[i]`? Judge from its
+  sender, subject, opening text, labels, and authentication results." The
+  options are `personal`, `work`, `transactional_or_account`,
+  `marketing_or_newsletter`, `phishing_or_scam`, and `other_junk`.
+
+A request with fewer than four messages sends only their questions.
+`msgvault jev consent cleanup_suggestions` prints the same disclosure,
+including the criteria for every answer.
+
 ## Turn it off
 
 - `msgvault jev revoke --all` stops every feature at the next request without
@@ -399,8 +483,8 @@ probabilities and outcomes, not the compared values.
 
 ## Limitations
 
-- Only the enrichment identity check, organization resolution, and
-  correspondent kind exist today. The other features in the engineering
+- Only the enrichment identity check, organization resolution,
+  correspondent kind, and cleanup suggestions exist today. The other features in the engineering
   record `docs/internal/jev-judgments-plan.md` are proposals.
 - Correspondent kind does not revisit an identity once a rule or Jev
   classified it, even after links or new messages; mark it yourself with

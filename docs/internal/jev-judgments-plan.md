@@ -373,7 +373,7 @@ Site: `cmd/msgvault/cmd/stage_delete.go`, `internal/api/deletions.go`,
   > and backfill archiving, hidden from the reader's consent button, and
   > refused by the proxy when the request names the message (`message_id`,
   > which the Web UI always sends).
-- [ ] **Task 5.2 Suspicion scoring.** `msgvault suggest-cleanup` over a pool
+- [x] **Task 5.2 Suspicion scoring.** `msgvault suggest-cleanup` over a pool
   code narrows (SPAM/Promotions, never replied, sender not a person, has
   links). State per message: from name and domain, reply-to domain, link
   hosts, SPF/DKIM/DMARC results, To/Cc vs Bcc, labels, thread replied,
@@ -381,6 +381,19 @@ Site: `cmd/msgvault/cmd/stage_delete.go`, `internal/api/deletions.go`,
   Noul `pressure`, Choice `category`. Composite score in code with hard
   signals. ≥ 0.80 lists as suspected phishing; staging still requires a
   user action; never auto-delete.
+  > `internal/cleanupsuggest`, feature `cleanup_suggestions`, four messages
+  > per request (`impersonation_i`, `pressure_i`, `category_i`). Category
+  > options: personal, work, transactional_or_account,
+  > marketing_or_newsletter, phishing_or_scam, other_junk. Score: 0.45
+  > impersonation + 0.20 pressure + 0.35 P(phishing), plus DMARC fail
+  > +0.20, SPF fail/softfail +0.10, DKIM fail +0.10, Reply-To on another
+  > registrable domain +0.10, no link on the sender's domain +0.05, spam
+  > label +0.05, full SPF/DKIM/DMARC pass −0.15; hard signals alone top out
+  > at 0.60. Authentication comes from the topmost Authentication-Results
+  > in the stored header block (the bounded prefix decode used by
+  > correspondent kinds, failing closed to `unknown`). Only system labels
+  > are sent. Results live in `cleanup_suggestions` keyed by message.
+  > `automatic` has no effect: there is no unattended path.
 - [ ] **Task 5.3 Review surfacing.** `show-deletion` and the Web UI deletion
   review list staged messages that scored personal/work ≥ 0.50 as "possibly
   worth keeping".

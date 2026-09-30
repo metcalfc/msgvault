@@ -4592,3 +4592,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_organization_match_reviews_pair
     ON organization_match_reviews(organization_id, proposed_name_normalized, proposed_domain);
 CREATE INDEX IF NOT EXISTS idx_organization_match_reviews_pending
     ON organization_match_reviews(status, created_at);
+
+-- A cleanup suggestion for one message, written by `msgvault
+-- suggest-cleanup` from a Jev cleanup_suggestions judgment and hard signals
+-- computed in code. It never stages or deletes anything: suspected phishing
+-- is only listed, and keep_probability (personal plus work) marks staged
+-- messages as possibly worth keeping in deletion review.
+CREATE TABLE IF NOT EXISTS cleanup_suggestions (
+    message_id                  INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+    score                       REAL NOT NULL CHECK (score >= 0 AND score <= 1),
+    impersonation               REAL NOT NULL CHECK (impersonation >= 0 AND impersonation <= 1),
+    pressure                    REAL NOT NULL CHECK (pressure >= 0 AND pressure <= 1),
+    category                    TEXT NOT NULL,
+    category_probabilities_json TEXT NOT NULL,
+    keep_probability            REAL NOT NULL CHECK (keep_probability >= 0 AND keep_probability <= 1),
+    signals_json                TEXT NOT NULL,
+    model                       TEXT NOT NULL,
+    judged_at                   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cleanup_suggestions_score ON cleanup_suggestions(score);

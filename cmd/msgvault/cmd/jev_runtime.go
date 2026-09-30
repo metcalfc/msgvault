@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"go.kenn.io/msgvault/internal/cleanupsuggest"
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/jev"
 	"go.kenn.io/msgvault/internal/kindclassify"
@@ -125,6 +126,20 @@ func newJevOrganizationPreparer(
 func newJevKindJudge(cfg *config.Config, st jevRuntimeStore) (kindclassify.Judge, error) {
 	if cfg == nil || !cfg.Jev.Enabled || !cfg.Jev.CorrespondentKind.Enabled {
 		return nil, nil //nolint:nilnil // nil means "rules only".
+	}
+	service, err := newJevService(cfg, st)
+	if err != nil || service == nil {
+		return nil, err
+	}
+	return service, nil
+}
+
+// newJevCleanupJudge wires the cleanup suggestion judgment, or returns nil
+// when Jev or the feature is off so `suggest-cleanup` only reports the pool.
+// Consent and the credential are rechecked by the service on every request.
+func newJevCleanupJudge(cfg *config.Config, st jevRuntimeStore) (cleanupsuggest.Judge, error) {
+	if cfg == nil || !cfg.Jev.Enabled || !cfg.Jev.CleanupSuggestions.Enabled {
+		return nil, nil //nolint:nilnil // nil means "no judgment".
 	}
 	service, err := newJevService(cfg, st)
 	if err != nil || service == nil {

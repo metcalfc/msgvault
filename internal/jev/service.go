@@ -21,6 +21,10 @@ const FeatureOrganizationResolution = "organization_resolution"
 // FeatureCorrespondentKind is the correspondent kind classification feature.
 const FeatureCorrespondentKind = "correspondent_kind"
 
+// FeatureCleanupSuggestions is the cleanup suggestion (junk and phishing)
+// feature.
+const FeatureCleanupSuggestions = "cleanup_suggestions"
+
 // Gate outcomes. Each is an expected administrative state, not a fault: the
 // caller falls back to its pre-Jev decision and reports the category.
 var (
@@ -43,6 +47,8 @@ func (c Config) FeatureConfigFor(name string) (FeatureConfig, bool) {
 		return c.OrganizationResolution, true
 	case FeatureCorrespondentKind:
 		return c.CorrespondentKind, true
+	case FeatureCleanupSuggestions:
+		return c.CleanupSuggestions, true
 	default:
 		return FeatureConfig{}, false
 	}

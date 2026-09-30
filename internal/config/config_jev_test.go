@@ -30,6 +30,7 @@ func TestLoadJevSectionDefaultsAndOverrides(t *testing.T) {
 	assert.False(cfg.Jev.OrganizationResolution.Enabled)
 	assert.False(cfg.Jev.CorrespondentKind.Enabled)
 	assert.False(cfg.Jev.CorrespondentKind.Automatic)
+	assert.False(cfg.Jev.CleanupSuggestions.Enabled)
 
 	require.NoError(os.WriteFile(configPath, []byte(`
 [jev]
@@ -50,6 +51,9 @@ enabled = true
 
 [jev.correspondent_kind]
 enabled = true
+
+[jev.cleanup_suggestions]
+enabled = true
 `), 0o644))
 	cfg, err = Load(configPath, "")
 	require.NoError(err)
@@ -64,6 +68,7 @@ enabled = true
 	assert.False(cfg.Jev.OrganizationResolution.Automatic, "automatic use stays off unless set")
 	assert.True(cfg.Jev.CorrespondentKind.Enabled)
 	assert.False(cfg.Jev.CorrespondentKind.Automatic, "automatic stays off unless set")
+	assert.True(cfg.Jev.CleanupSuggestions.Enabled)
 
 	require.NoError(os.WriteFile(configPath, []byte(`
 [jev]

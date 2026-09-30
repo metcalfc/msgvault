@@ -1678,6 +1678,9 @@ func cliRunCommandAllowed(args []string) bool {
 	if args[0] == "kinds" {
 		return cliRunKindsAllowed(args[1:])
 	}
+	if args[0] == "suggest-cleanup" {
+		return cliRunSuggestCleanupAllowed(args[1:])
+	}
 	if args[0] == cliRunPersonCommand {
 		if len(args) < 3 {
 			return false
@@ -1959,6 +1962,36 @@ func cliRunKindsAllowed(args []string) bool {
 				return false
 			}
 		case "rules-only", "json":
+			if _, err := strconv.ParseBool(value); err != nil {
+				return false
+			}
+		case "log-level", "verbose", "log-sql", "log-sql-slow-ms":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// cliRunSuggestCleanupAllowed admits `suggest-cleanup` with its bounded
+// flags only.
+func cliRunSuggestCleanupAllowed(args []string) bool {
+	values, positionals, ok := cliRunStrictFlagValues(args)
+	if !ok || len(positionals) != 0 {
+		return false
+	}
+	for name, value := range values {
+		switch name {
+		case "limit", "show":
+			if !cliRunPositiveInt(value) {
+				return false
+			}
+		case "min-score":
+			parsed, err := strconv.ParseFloat(value, 64)
+			if err != nil || parsed < 0 || parsed > 1 {
+				return false
+			}
+		case "list-only", "rejudge", "json":
 			if _, err := strconv.ParseBool(value); err != nil {
 				return false
 			}

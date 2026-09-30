@@ -83,6 +83,22 @@ msgvault stage-delete 'label:Promotions older_than:1y' --protect --dry-run
 If every candidate is protected, staging with `--protect` fails with
 `all_messages_protected` and creates nothing.
 
+### Find likely phishing first
+
+`msgvault suggest-cleanup` lists spam and promotional mail that looks like
+phishing, scored from a [Jev judgment](/docs/usage/jev-judgments/#feature-cleanup-suggestions)
+and authentication results. It never stages anything; stage what you agree
+with yourself:
+
+```bash
+msgvault suggest-cleanup
+msgvault stage-delete --ids 123,456 --dry-run
+```
+
+The same judgments mark staged messages that look like personal or work
+mail. `show-deletion` and the Web UI deletion review list them as
+**possibly worth keeping**.
+
 ## Staging in the Web UI
 
 In the [Inbox or Search](/docs/web-ui/#inbox-and-search), select individual

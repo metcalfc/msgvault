@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"go.kenn.io/msgvault/internal/cleanupsuggest"
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/jev"
 	"go.kenn.io/msgvault/internal/kindclassify"
@@ -28,6 +29,7 @@ const jevConsentActor = "cli"
 var jevFeatureSpecs = func() []jev.FeatureSpec {
 	return []jev.FeatureSpec{
 		personenrichment.JevIdentityFeature(), orgresolution.Feature(), kindclassify.JevFeature(),
+		cleanupsuggest.JevFeature(),
 	}
 }
 

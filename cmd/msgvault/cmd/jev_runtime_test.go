@@ -16,10 +16,11 @@ func TestJevFeatureRegistryListsEveryFeature(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	specs := jevFeatureSpecs()
-	require.Len(specs, 3)
+	require.Len(specs, 4)
 	assert.Equal(jev.FeatureEnrichmentIdentity, specs[0].Name)
 	assert.Equal(jev.FeatureOrganizationResolution, specs[1].Name)
 	assert.Equal(jev.FeatureCorrespondentKind, specs[2].Name)
+	assert.Equal(jev.FeatureCleanupSuggestions, specs[3].Name)
 	cfg := config.NewDefaultConfig()
 	for _, spec := range specs {
 		require.NoError(spec.Validate())
@@ -49,6 +50,24 @@ func TestNewJevKindJudgeIsNilUntilJevAndTheFeatureAreOn(t *testing.T) {
 	assert.Nil(judge, "the feature switch is separate from the [jev] switch")
 	cfg.Jev.CorrespondentKind.Enabled = true
 	judge, err = newJevKindJudge(cfg, st)
+	require.NoError(err)
+	assert.NotNil(judge)
+}
+
+func TestNewJevCleanupJudgeIsNilUntilJevAndTheFeatureAreOn(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	cfg := config.NewDefaultConfig()
+	cfg.HomeDir = t.TempDir()
+	cfg.Data.DataDir = cfg.HomeDir
+
+	cfg.Jev.CleanupSuggestions.Enabled = true
+	judge, err := newJevCleanupJudge(cfg, st)
+	require.NoError(err)
+	assert.Nil(judge, "the feature switch alone is not enough")
+	cfg.Jev.Enabled = true
+	judge, err = newJevCleanupJudge(cfg, st)
 	require.NoError(err)
 	assert.NotNil(judge)
 }

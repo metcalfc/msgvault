@@ -17,7 +17,7 @@ in your installed binary. This reference follows current `main`; see
 | Organize accounts | [identity](#identity), [collection](#collection), [update-account](#update-account) |
 | Read meeting evidence | [meetings](#meetings), [meeting workflow](usage/meetings.md) |
 | Export | [export-messages](#export-messages), [export-eml](#export-eml), [export-attachments](#export-attachments), [create-subset](#create-subset) |
-| Review and remove mail | [stage-delete](#stage-delete), [delete-staged](#delete-staged), [deduplicate](#deduplicate), [gc](#gc) |
+| Review and remove mail | [suggest-cleanup](#suggest-cleanup), [stage-delete](#stage-delete), [delete-staged](#delete-staged), [deduplicate](#deduplicate), [gc](#gc) |
 | Back up and manage attachment storage | [backup](#backup), [pack-attachments](#pack-attachments), [purge-excluded-media](#purge-excluded-media) |
 | Repair older records | [repair-identity](#repair-identity), [repair-senders](#repair-senders), [repair-message](#repair-message), [repair-derived](#repair-derived), [repair-labels](#repair-labels), [repair-list-ids](#repair-list-ids), [repair-dates](#repair-dates) |
 | Operate or integrate | [setup](#setup), [daemon](#daemon), [serve](#serve), [activity](#activity), [mcp](#mcp), [query](#query), [openapi](#openapi), [agent-token](#agent-token) |
@@ -3441,6 +3441,41 @@ msgvault stage-delete --source-id 42 "from:newsletter@example.com older_than:1y"
 
 Review a created batch with `msgvault show-deletion <batch-id>`, then execute it
 with `msgvault delete-staged <batch-id>`.
+
+---
+
+## suggest-cleanup
+
+Find likely phishing among spam and promotional mail. The command only lists
+suggestions; it never stages or deletes anything.
+
+```bash
+msgvault suggest-cleanup [--limit N] [--show N] [--min-score S] [--list-only] [--rejudge] [--json]
+```
+
+| Flag | Description |
+|---|---|
+| `--limit N` | Judge at most N pool messages this run (default: 50) |
+| `--show N` | List at most N stored suggestions (default: 25) |
+| `--min-score S` | List stored suggestions scoring at least S, from 0 to 1 (default: 0.80, suspected phishing) |
+| `--list-only` | List stored suggestions without judging new messages |
+| `--rejudge` | Judge messages again even if they already have a suggestion |
+| `--json` | Output the run report and the listed suggestions as JSON |
+
+The pool is live email labeled `SPAM` or `CATEGORY_PROMOTIONS`, in a
+conversation you never wrote in, from a sender not classified as a person,
+with at least one link. When `[jev]` and
+[`[jev.cleanup_suggestions]`](configuration.md#jevcleanup_suggestions) are
+enabled, an API key resolves, and `jev consent cleanup_suggestions --yes` has
+been given, pool messages are sent to Jev four per request, including the
+first 500 characters of each message's text. See
+[what is sent and how it is scored](usage/jev-judgments.md#feature-cleanup-suggestions).
+Without Jev the command reports the pool and lists what is already stored.
+
+The listing ends with a `msgvault stage-delete --ids ...` line you can run
+after reviewing the messages yourself. Stored suggestions also mark staged
+messages that look like personal or work mail as possibly worth keeping in
+[`show-deletion`](#show-deletion). It runs in the daemon.
 
 ---
 

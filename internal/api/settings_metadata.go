@@ -176,6 +176,7 @@ var settingsMetadata = map[string]settingMetadata{
 	"jev.organization_resolution.automatic": {"Automatic organization resolution", "Let scheduled enrichment and people sweep runs use organization resolution without a manual run.", "features"},
 	"jev.correspondent_kind.enabled":        {"Correspondent kind", "Ask Jev whether an identity the rules could not classify is a person, a shared mailbox, a mailing list, or an automated sender.", "features"},
 	"jev.correspondent_kind.automatic":      {"Automatic correspondent kinds", "Classify new identities when the analytics cache is built, without running msgvault kinds build.", "features"},
+	"jev.cleanup_suggestions.enabled":       {"Cleanup suggestions", "Ask Jev whether spam and promotional mail impersonates a sender, pressures you, or is personal or work mail, for msgvault suggest-cleanup and deletion review. It never stages or deletes anything.", "features"},
 	"vector.people.enabled":                 {"Embed person fields", "Send the consented fields of each person to the text embedding provider. Semantic search must be on.", "people"},
 	"vector.people.retention_posture":       {"Provider retention statement", "Your statement of how long the provider keeps person data.", "people"},
 	"vector.people.training_posture":        {"Provider training statement", "Your statement of whether the provider trains on person data.", "people"},

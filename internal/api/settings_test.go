@@ -142,6 +142,7 @@ func TestGetSettingsIsSelfDescribingAndIncludesSafeCatalog(t *testing.T) {
 		"jev.max_requests_per_day", "jev.max_cost_usd_per_day",
 		"jev.identity_verification.enabled", "jev.identity_verification.automatic",
 		"jev.organization_resolution.enabled", "jev.organization_resolution.automatic",
+		"jev.cleanup_suggestions.enabled",
 		"people.enrichment.enabled", "people.enrichment.schedule", "people.enrichment.batch_size",
 		"people.enrichment.lease_duration",
 	} {

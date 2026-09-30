@@ -1354,6 +1354,16 @@ Correspondent kind classification (feature `correspondent_kind`). See
 | `enabled` | `false` | Let `msgvault kinds build` ask Jev about identities the deterministic rules could not classify. Without it, `kinds build` applies the rules alone. |
 | `automatic` | `false` | Also classify up to 200 new identities, rules first and then Jev, at each analytics cache build. Rules run at cache build only when this is on. |
 
+#### `[jev.cleanup_suggestions]`
+
+Cleanup suggestions (feature `cleanup_suggestions`). See
+[the feature description](/docs/usage/jev-judgments/#feature-cleanup-suggestions).
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Let `msgvault suggest-cleanup` ask Jev about spam and promotional mail once consent is active. Without it, the command only reports the pool and lists stored suggestions. Nothing is ever staged or deleted. |
+| `automatic` | `false` | No effect: suggestions are only made on request. |
+
 ### `[activity]`
 
 Dated activity projection and per-person contact state (first and last
