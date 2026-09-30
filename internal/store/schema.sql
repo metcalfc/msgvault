@@ -3452,6 +3452,21 @@ CREATE TABLE IF NOT EXISTS identity_match_evidence_sources (
 CREATE INDEX IF NOT EXISTS idx_identity_match_evidence_sources_source
     ON identity_match_evidence_sources(source_id, evidence_id);
 
+-- The decision fields an identity match candidate had before a "not a
+-- person" classification resolved it, so clearing the classification
+-- restores them exactly. One row per resolved candidate; it goes away when
+-- the candidate is restored or deleted.
+CREATE TABLE IF NOT EXISTS correspondent_kind_candidate_snapshots (
+    candidate_id              INTEGER PRIMARY KEY REFERENCES identity_match_candidates(id) ON DELETE CASCADE,
+    prior_state               TEXT NOT NULL,
+    prior_decided_by          TEXT,
+    prior_decided_at          DATETIME,
+    prior_notes               TEXT,
+    prior_application_pending BOOLEAN NOT NULL,
+    prior_pre_conflict_state  TEXT,
+    resolved_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ============================================================================
 -- APPLIED MIGRATIONS
 -- ============================================================================

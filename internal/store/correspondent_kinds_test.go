@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"database/sql"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -189,7 +190,7 @@ func TestClearingACorrespondentKindReturnsConflictsToConflict(t *testing.T) {
 	state, notes := candidateState(t, f.st, conflict.ID)
 	assert.Equal(store.IdentityMatchStateRejected, state)
 	require.NotNil(notes)
-	assert.Equal(correspondentkind.NotAPersonConflictReason, *notes)
+	assert.Equal(correspondentkind.NotAPersonReason, *notes)
 
 	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
 		ParticipantID: left, Kind: correspondentkind.Person,
@@ -535,4 +536,55 @@ func TestClearingOneEndpointKeepsACandidateWhoseOtherEndpointIsNotAPerson(t *tes
 	assert.Equal(1, result.RestoredCandidates)
 	state, _ = candidateState(t, f.st, candidate.ID)
 	assert.Equal(store.IdentityMatchStateCandidate, state)
+}
+
+func TestClearingRestoresTheExactPriorDecision(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	left := f.emailParticipant("left-exact@example.test", "Left")
+	right := f.emailParticipant("right-exact@example.test", "Right")
+	value := "exact-handle"
+	notes := "reviewer note"
+	conflict, _, err := f.st.UpsertIdentityMatchCandidateContext(t.Context(),
+		store.IdentityMatchCandidateInput{
+			LeftKind: store.IdentityMatchParticipant, LeftID: left,
+			RightKind: store.IdentityMatchParticipant, RightID: right,
+			Basis: store.IdentityMatchDisplayName, NormalizedValue: &value,
+			State: store.IdentityMatchStateConflict, Source: store.ProvenanceSystem, Notes: &notes,
+		})
+	require.NoError(err)
+	_, err = f.st.DB().ExecContext(t.Context(), f.st.Rebind(`UPDATE identity_match_candidates
+		SET application_pending = FALSE, decided_by = 'importer', decided_at = '2026-01-02 03:04:05'
+		WHERE id = ?`), conflict.ID)
+	require.NoError(err)
+	type decision struct {
+		state, notes, decidedBy, decidedAt string
+		pending                            bool
+	}
+	read := func() decision {
+		var row decision
+		var rowNotes, decidedBy, decidedAt sql.NullString
+		require.NoError(f.st.DB().QueryRow(f.st.Rebind(`SELECT state, notes, decided_by,
+			CAST(decided_at AS TEXT), application_pending FROM identity_match_candidates WHERE id = ?`),
+			conflict.ID).Scan(&row.state, &rowNotes, &decidedBy, &decidedAt, &row.pending))
+		row.notes, row.decidedBy, row.decidedAt = rowNotes.String, decidedBy.String, decidedAt.String
+		return row
+	}
+	before := read()
+
+	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: left, Kind: correspondentkind.Ignored,
+	})
+	require.NoError(err)
+	resolved := read()
+	assert.Equal(string(store.IdentityMatchStateRejected), resolved.state)
+	assert.Equal(correspondentkind.NotAPersonReason, resolved.notes)
+
+	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: left, Kind: correspondentkind.Person,
+	})
+	require.NoError(err)
+	assert.Equal(before, read(), "state, notes, decision attribution, and application_pending come back exactly")
 }

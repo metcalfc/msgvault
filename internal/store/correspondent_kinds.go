@@ -1002,27 +1002,58 @@ func (s *Store) withdrawCorrespondentOrganizationContactsTx(
 func (s *Store) resolveNotAPersonCandidatesTx(
 	ctx context.Context, tx *loggedTx, members []int64,
 ) (int, error) {
-	resolved := 0
-	for _, state := range []IdentityMatchState{IdentityMatchStateCandidate, IdentityMatchStateConflict} {
-		reason := correspondentkind.NotAPersonReason
-		if state == IdentityMatchStateConflict {
-			reason = correspondentkind.NotAPersonConflictReason
-		}
-		for _, side := range []string{"left", "right"} {
-			count, err := execCountInChunksTx(ctx, tx, members, []any{
-				IdentityMatchStateRejected, string(ProvenanceUser), reason,
-				state, IdentityMatchParticipant,
-			}, `UPDATE identity_match_candidates SET
-					state = ?, decided_by = ?, decided_at = CURRENT_TIMESTAMP, notes = ?,
-					application_pending = FALSE, updated_at = CURRENT_TIMESTAMP
-				WHERE state = ? AND `+side+`_kind = ? AND `+side+`_id IN (%s)`)
-			if err != nil {
-				return resolved, fmt.Errorf("resolve identity candidates as not a person: %w", err)
-			}
-			resolved += count
+	ids := map[int64]struct{}{}
+	for _, side := range []string{"left", "right"} {
+		if err := queryInChunksContext(ctx, tx, members, []any{
+			IdentityMatchStateCandidate, IdentityMatchStateConflict, IdentityMatchParticipant,
+		}, `SELECT id FROM identity_match_candidates
+			WHERE state IN (?, ?) AND `+side+`_kind = ? AND `+side+`_id IN (%s)`,
+			func(rows *loggedRows) error {
+				var id int64
+				if err := rows.Scan(&id); err != nil {
+					return fmt.Errorf("scan open candidate: %w", err)
+				}
+				ids[id] = struct{}{}
+				return nil
+			}); err != nil {
+			return 0, fmt.Errorf("load open candidates: %w", err)
 		}
 	}
-	return resolved, nil
+	ordered := make([]int64, 0, len(ids))
+	for id := range ids {
+		ordered = append(ordered, id)
+	}
+	slices.Sort(ordered)
+	for _, id := range ordered {
+		if err := snapshotCandidateDecisionTx(ctx, tx, id); err != nil {
+			return 0, err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE identity_match_candidates SET
+				state = ?, decided_by = ?, decided_at = CURRENT_TIMESTAMP, notes = ?,
+				application_pending = FALSE, updated_at = CURRENT_TIMESTAMP
+			WHERE id = ?`,
+			IdentityMatchStateRejected, string(ProvenanceUser), correspondentkind.NotAPersonReason, id); err != nil {
+			return 0, fmt.Errorf("resolve identity candidate %d as not a person: %w", id, err)
+		}
+	}
+	return len(ordered), nil
+}
+
+// snapshotCandidateDecisionTx records a candidate's current decision fields
+// before a classification resolves it.
+func snapshotCandidateDecisionTx(ctx context.Context, tx *loggedTx, candidateID int64) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM correspondent_kind_candidate_snapshots
+		WHERE candidate_id = ?`, candidateID); err != nil {
+		return fmt.Errorf("clear candidate decision snapshot: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO correspondent_kind_candidate_snapshots (
+			candidate_id, prior_state, prior_decided_by, prior_decided_at, prior_notes,
+			prior_application_pending, prior_pre_conflict_state)
+		SELECT id, state, decided_by, decided_at, notes, application_pending, pre_conflict_state
+		FROM identity_match_candidates WHERE id = ?`, candidateID); err != nil {
+		return fmt.Errorf("snapshot candidate decision: %w", err)
+	}
+	return nil
 }
 
 // restoreNotAPersonCandidatesTx returns candidates a classification rejected
@@ -1039,11 +1070,13 @@ func (s *Store) restoreNotAPersonCandidatesTx(
 	found := map[int64]resolvedCandidate{}
 	for _, side := range []string{"left", "right"} {
 		if err := queryInChunksContext(ctx, tx, members, []any{
-			IdentityMatchStateRejected, correspondentkind.NotAPersonReason,
-			correspondentkind.NotAPersonConflictReason, IdentityMatchParticipant,
-		}, `SELECT id, left_kind, left_id, right_kind, right_id, notes
-			FROM identity_match_candidates
-			WHERE state = ? AND notes IN (?, ?) AND `+side+`_kind = ? AND `+side+`_id IN (%s)`,
+			IdentityMatchStateRejected, correspondentkind.NotAPersonReason, IdentityMatchParticipant,
+		}, `SELECT c.id, c.left_kind, c.left_id, c.right_kind, c.right_id, c.notes
+			FROM identity_match_candidates c
+			WHERE c.state = ? AND c.notes = ? AND EXISTS (
+				SELECT 1 FROM correspondent_kind_candidate_snapshots snapshot
+				WHERE snapshot.candidate_id = c.id)
+			  AND c.`+side+`_kind = ? AND c.`+side+`_id IN (%s)`,
 			func(rows *loggedRows) error {
 				var row resolvedCandidate
 				if err := rows.Scan(&row.id, &row.leftKind, &row.leftID,
@@ -1085,15 +1118,22 @@ func (s *Store) restoreNotAPersonCandidatesTx(
 		if stillHidden {
 			continue
 		}
-		state := IdentityMatchStateCandidate
-		if row.notes == correspondentkind.NotAPersonConflictReason {
-			state = IdentityMatchStateConflict
-		}
+		// Restore the exact decision fields the candidate had before it was
+		// resolved, then drop the snapshot.
 		if _, err := tx.ExecContext(ctx, `UPDATE identity_match_candidates SET
-				state = ?, decided_by = NULL, decided_at = NULL, notes = NULL,
-				application_pending = TRUE, updated_at = CURRENT_TIMESTAMP
-			WHERE id = ?`, state, id); err != nil {
+				state = (SELECT prior_state FROM correspondent_kind_candidate_snapshots WHERE candidate_id = ?),
+				decided_by = (SELECT prior_decided_by FROM correspondent_kind_candidate_snapshots WHERE candidate_id = ?),
+				decided_at = (SELECT prior_decided_at FROM correspondent_kind_candidate_snapshots WHERE candidate_id = ?),
+				notes = (SELECT prior_notes FROM correspondent_kind_candidate_snapshots WHERE candidate_id = ?),
+				application_pending = (SELECT prior_application_pending FROM correspondent_kind_candidate_snapshots WHERE candidate_id = ?),
+				pre_conflict_state = (SELECT prior_pre_conflict_state FROM correspondent_kind_candidate_snapshots WHERE candidate_id = ?),
+				updated_at = CURRENT_TIMESTAMP
+			WHERE id = ?`, id, id, id, id, id, id, id); err != nil {
 			return restored, fmt.Errorf("restore identity candidate %d: %w", id, err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM correspondent_kind_candidate_snapshots
+			WHERE candidate_id = ?`, id); err != nil {
+			return restored, fmt.Errorf("drop candidate decision snapshot: %w", err)
 		}
 		restored++
 	}

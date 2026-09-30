@@ -329,6 +329,7 @@ func (s *Store) upsertIdentityMatchCandidateTx(
 	// not a person is recorded already resolved, so it never reaches review
 	// and is restored with the others if the classification is cleared.
 	state, decidedBy, notes := input.State, any(nil), stringValue(input.Notes)
+	suppressed := false
 	if input.Source != ProvenanceUser &&
 		(state == IdentityMatchStateCandidate || state == IdentityMatchStateConflict) {
 		endpoints := []int64{}
@@ -343,11 +344,9 @@ func (s *Store) upsertIdentityMatchCandidateTx(
 			return nil, false, err
 		}
 		if notAPerson {
-			reason := correspondentkind.NotAPersonReason
-			if state == IdentityMatchStateConflict {
-				reason = correspondentkind.NotAPersonConflictReason
-			}
-			state, decidedBy, notes = IdentityMatchStateRejected, string(ProvenanceSystem), reason
+			state, decidedBy, notes = IdentityMatchStateRejected, string(ProvenanceSystem),
+				correspondentkind.NotAPersonReason
+			suppressed = true
 		}
 	}
 	var id int64
@@ -369,6 +368,15 @@ func (s *Store) upsertIdentityMatchCandidateTx(
 		decidedBy, decidedAt, decidedBy == nil,
 	).Scan(&id); err != nil {
 		return nil, false, fmt.Errorf("insert identity match candidate: %w", err)
+	}
+	if suppressed {
+		// Record the decision the candidate would have had, so clearing the
+		// classification restores it exactly.
+		if _, err := tx.ExecContext(ctx, `INSERT INTO correspondent_kind_candidate_snapshots (
+				candidate_id, prior_state, prior_notes, prior_application_pending)
+			VALUES (?, ?, ?, TRUE)`, id, input.State, stringValue(input.Notes)); err != nil {
+			return nil, false, fmt.Errorf("snapshot suppressed candidate: %w", err)
+		}
 	}
 	candidate, err = getIdentityMatchCandidateTx(ctx, tx, id)
 	if err != nil {

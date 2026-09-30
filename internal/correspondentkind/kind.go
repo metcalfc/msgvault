@@ -105,10 +105,6 @@ func (s Source) Precedence() int {
 // and can be restored when the classification is cleared.
 const NotAPersonReason = "not_a_person"
 
-// NotAPersonConflictReason marks a resolved candidate that was a conflict,
-// so restoring it returns it to the conflict state rather than to review.
-const NotAPersonConflictReason = "not_a_person (was conflict)"
-
 // freemailDomains are consumer mail providers whose domain says nothing about
 // an organization, so an organization is never given one as its domain.
 var freemailDomains = map[string]struct{}{
