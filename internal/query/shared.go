@@ -28,6 +28,7 @@ const (
 	datasetConversationParticipants = "conversation_participants"
 	datasetOwnerParticipants        = "owner_participants"
 	datasetPersonDisplayNames       = "person_display_names"
+	datasetCorrespondentKinds       = "correspondent_kinds"
 	datasetParticipantClusters      = "participant_clusters"
 	messageTypeDimension            = "message_type"
 	messageTypeEmail                = "email"

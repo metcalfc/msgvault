@@ -132,7 +132,7 @@ func Build(
 		"SELECT * FROM "+logicalBuildRelation); err != nil {
 		return BuildResult{}, err
 	}
-	if err := b.copyDataset(ctx, DatasetPeople, buildRelationshipPeopleSQL(effectiveAt)); err != nil {
+	if err := b.copyDataset(ctx, DatasetPeople, buildRelationshipPeopleSQL(effectiveAt, b.base)); err != nil {
 		return BuildResult{}, err
 	}
 	if err := b.copyDataset(ctx, DatasetDomains, buildRelationshipDomainsSQL()); err != nil {
@@ -196,6 +196,7 @@ var baseIdentityDatasets = []string{
 	"owner_participants",
 	"participant_clusters",
 	"person_display_names",
+	"correspondent_kinds",
 	"attachments",
 }
 

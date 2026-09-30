@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"go.kenn.io/msgvault/internal/duckdbutil"
@@ -113,6 +114,16 @@ func refreshDerivedDatasetsOnly(
 		_ = st.Close()
 		return nil, fmt.Errorf("read person display-name revision: %w", err)
 	}
+	correspondentKindRevision, err := st.CorrespondentKindRevision()
+	if err != nil {
+		_ = st.Close()
+		return nil, fmt.Errorf("read correspondent kind revision: %w", err)
+	}
+	correspondentKinds, err := st.CorrespondentKindExportRowsContext(ctx)
+	if err != nil {
+		_ = st.Close()
+		return nil, fmt.Errorf("read correspondent kinds: %w", err)
+	}
 	clusters, err := st.ParticipantClusters()
 	if err != nil {
 		_ = st.Close()
@@ -208,6 +219,7 @@ func refreshDerivedDatasetsOnly(
 		participantIdentifierRevision == state.ParticipantIdentifierRevision &&
 		participantDisplayNameRevision == state.ParticipantDisplayNameRevision &&
 		personDisplayNameRevision == state.PersonDisplayNameRevision &&
+		correspondentKindRevision == state.CorrespondentKindRevision &&
 		conversationFingerprint == state.ConversationParticipantsFingerprint &&
 		typesFingerprint == state.ConversationTypesFingerprint {
 		// Nothing the derived datasets read has changed (the account-identity
@@ -221,6 +233,7 @@ func refreshDerivedDatasetsOnly(
 		participantIdentifierRevision == state.ParticipantIdentifierRevision &&
 		participantDisplayNameRevision == state.ParticipantDisplayNameRevision &&
 		personDisplayNameRevision == state.PersonDisplayNameRevision &&
+		correspondentKindRevision == state.CorrespondentKindRevision &&
 		conversationFingerprint == state.ConversationParticipantsFingerprint &&
 		typesFingerprint == state.ConversationTypesFingerprint {
 		// Labels and attachment metadata do not enter relationship_activity.
@@ -255,6 +268,11 @@ func refreshDerivedDatasetsOnly(
 		return nil, err
 	}
 	if err := exportDerivedParticipantClusters(ctx, exportDB, clusters, staging.root); err != nil {
+		return nil, err
+	}
+	// Kinds are resolved per cluster, so identity changes move them too;
+	// the dataset is small and always re-staged with the derived index.
+	if err := exportCorrespondentKindsDataset(ctx, exportDB, correspondentKinds, staging.root); err != nil {
 		return nil, err
 	}
 	conversationChanged :=
@@ -347,6 +365,7 @@ func refreshDerivedDatasetsOnly(
 	state.ParticipantIdentifierRevision = participantIdentifierRevision
 	state.ParticipantDisplayNameRevision = participantDisplayNameRevision
 	state.PersonDisplayNameRevision = personDisplayNameRevision
+	state.CorrespondentKindRevision = correspondentKindRevision
 	state.ConversationParticipantsFingerprint = conversationFingerprint
 	state.ConversationTypesFingerprint = typesFingerprint
 	if repairRelated {
@@ -556,6 +575,66 @@ func exportDerivedParticipantIdentifiers(
 	return nil
 }
 
+// exportCorrespondentKindsDataset stages the effective correspondent kind of
+// every classified participant through a DuckDB temp table, as full builds
+// and derived refreshes both do. It always writes the file, empty when
+// nothing is classified, so the required dataset directory exists.
+func exportCorrespondentKindsDataset(
+	ctx context.Context,
+	db sqlRunner,
+	rows []store.CorrespondentKindExportRow,
+	stagingRoot string,
+) error {
+	if _, err := db.ExecContext(ctx, `
+		CREATE TEMP TABLE tmp_correspondent_kinds (
+			participant_id BIGINT,
+			kind VARCHAR,
+			source VARCHAR,
+			individual_person DOUBLE
+		)
+	`); err != nil {
+		return fmt.Errorf("create correspondent kinds temp table: %w", err)
+	}
+	const batch = 1000
+	for start := 0; start < len(rows); start += batch {
+		chunk := rows[start:min(start+batch, len(rows))]
+		values := make([]string, 0, len(chunk))
+		for _, row := range chunk {
+			individual := "NULL"
+			if row.IndividualPerson != nil {
+				individual = strconv.FormatFloat(*row.IndividualPerson, 'g', -1, 64)
+			}
+			source := "NULL"
+			if row.Source != "" {
+				source = "'" + quoteCacheSQL(string(row.Source)) + "'"
+			}
+			values = append(values, fmt.Sprintf("(%d, '%s', %s, %s)",
+				row.ParticipantID, quoteCacheSQL(string(row.Kind)), source, individual))
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO tmp_correspondent_kinds VALUES `+
+			strings.Join(values, ",")); err != nil {
+			return fmt.Errorf("populate correspondent kinds temp table: %w", err)
+		}
+	}
+	dir := filepath.Join(stagingRoot, tableCorrespondentKinds)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create correspondent kinds directory: %w", err)
+	}
+	path := filepath.Join(dir, "correspondent_kinds.parquet")
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
+		COPY (
+			SELECT participant_id, kind, source, individual_person
+			FROM tmp_correspondent_kinds ORDER BY participant_id
+		) TO '%s' (FORMAT PARQUET, COMPRESSION 'zstd')
+	`, quoteCacheSQL(path))); err != nil {
+		return fmt.Errorf("export correspondent kinds: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, `DROP TABLE tmp_correspondent_kinds`); err != nil {
+		return fmt.Errorf("drop correspondent kinds temp table: %w", err)
+	}
+	return nil
+}
+
 func exportDerivedParticipantClusters(
 	ctx context.Context,
 	db sqlRunner,
@@ -642,6 +721,7 @@ func derivedCachePublishPlan(
 	for _, dataset := range []string{
 		tableOwnerParticipants,
 		tableParticipantClusters,
+		tableCorrespondentKinds,
 		identityindex.DatasetActivity,
 		identityindex.DatasetPeople,
 		identityindex.DatasetDomains,

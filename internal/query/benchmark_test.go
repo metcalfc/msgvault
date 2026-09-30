@@ -243,6 +243,8 @@ func buildBenchData(tb testing.TB) *DuckDBEngine {
 			datasetParticipantClusters, datasetParticipantClusters + ".parquet"},
 		{"SELECT 0::BIGINT AS participant_id, 0::BIGINT AS person_id, NULL::VARCHAR AS display_name WHERE false",
 			datasetPersonDisplayNames, datasetPersonDisplayNames + ".parquet"},
+		{"SELECT 0::BIGINT AS participant_id, ''::VARCHAR AS kind, ''::VARCHAR AS source, NULL::DOUBLE AS individual_person WHERE false",
+			datasetCorrespondentKinds, datasetCorrespondentKinds + ".parquet"},
 	}
 
 	for _, t := range tables {

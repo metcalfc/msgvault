@@ -67,6 +67,9 @@ type cacheStaleness struct {
 	HasParticipantDisplayNameDrift bool
 	// HasPersonDisplayNameDrift repairs curated names without rewriting message facts.
 	HasPersonDisplayNameDrift bool
+	// HasCorrespondentKindDrift repairs exported correspondent kinds and the
+	// kind columns of relationship people without rewriting message facts.
+	HasCorrespondentKindDrift bool
 	// HasAccountIdentityDrift signals an identity mutation that invalidates
 	// baked message data since the last build: an account identity was
 	// confirmed or removed, or two participants were merged (merges repoint
@@ -538,6 +541,17 @@ func cacheNeedsBuildLockedWithOptions(ctx context.Context, dbPath, analyticsDir 
 	if personDisplayNameRevision != state.PersonDisplayNameRevision {
 		result.HasPersonDisplayNameDrift = true
 		reasons = append(reasons, "person display names changed")
+	}
+	if ctx.Err() != nil {
+		return cacheStaleness{}
+	}
+	correspondentKindRevision, err := db.CorrespondentKindRevisionContext(ctx)
+	if err != nil {
+		return cacheStalenessFailure(ctx, "cannot verify correspondent kind revision")
+	}
+	if correspondentKindRevision != state.CorrespondentKindRevision {
+		result.HasCorrespondentKindDrift = true
+		reasons = append(reasons, "correspondent kinds changed")
 	}
 
 	if full {

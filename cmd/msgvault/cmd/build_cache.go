@@ -482,6 +482,9 @@ func runBuildCacheLocalMode(mode buildCacheMode, state *invocation) error {
 	// before that ingest's confirmDefaultIdentity and suppressing the
 	// source's own address — the exact race the daemon defers it to avoid.
 
+	// New identities are classified first so this build exports their kinds.
+	classifyKindsForCacheBuild(context.Background(), cfg, dbPath, state.logger)
+
 	var result *buildResult
 	switch mode {
 	case buildCacheModeAuto:
@@ -940,7 +943,8 @@ func (s *cacheSourceSnapshot) personDisplayNamesExportSelectSQL() string {
 func derivedDriftOnly(staleness cacheStaleness) bool {
 	return (staleness.HasIdentityDrift || staleness.HasConversationParticipantDrift ||
 		staleness.HasConversationTypeDrift || staleness.HasParticipantIdentifierDrift ||
-		staleness.HasParticipantDisplayNameDrift || staleness.HasPersonDisplayNameDrift) &&
+		staleness.HasParticipantDisplayNameDrift || staleness.HasPersonDisplayNameDrift ||
+		staleness.HasCorrespondentKindDrift) &&
 		!staleness.HasNew && !staleness.HasDeleted &&
 		!staleness.HasUpdated && !staleness.HasAccountIdentityDrift &&
 		!staleness.HasDerivedDataDrift && !staleness.HasRelatedRowDrift
@@ -953,7 +957,7 @@ func relatedDriftOnly(staleness cacheStaleness) bool {
 		!staleness.HasIdentityDrift && !staleness.HasAccountIdentityDrift &&
 		!staleness.HasConversationParticipantDrift && !staleness.HasConversationTypeDrift &&
 		!staleness.HasParticipantIdentifierDrift && !staleness.HasParticipantDisplayNameDrift &&
-		!staleness.HasPersonDisplayNameDrift
+		!staleness.HasPersonDisplayNameDrift && !staleness.HasCorrespondentKindDrift
 }
 
 // refreshIdentityDatasetsOnly rebuilds every identity-derived dataset while
@@ -1085,6 +1089,16 @@ func buildCacheLocked(
 	if err != nil {
 		_ = identityStore.Close()
 		return nil, fmt.Errorf("read person display-name revision: %w", err)
+	}
+	correspondentKindRevision, err := identityStore.CorrespondentKindRevision()
+	if err != nil {
+		_ = identityStore.Close()
+		return nil, fmt.Errorf("read correspondent kind revision: %w", err)
+	}
+	correspondentKinds, err := identityStore.CorrespondentKindExportRowsContext(context.Background())
+	if err != nil {
+		_ = identityStore.Close()
+		return nil, fmt.Errorf("read correspondent kinds: %w", err)
 	}
 	participantClusters, err := identityStore.ParticipantClusters()
 	if err != nil {
@@ -1423,6 +1437,10 @@ func buildCacheLocked(
 	if _, err := exportDB.Exec(`DROP TABLE tmp_participant_clusters`); err != nil {
 		return nil, fmt.Errorf("drop participant clusters temp table: %w", err)
 	}
+	if err := exportCorrespondentKindsDataset(context.Background(), exportDB,
+		correspondentKinds, staging.root); err != nil {
+		return nil, err
+	}
 
 	conversationParticipantsDir := filepath.Join(staging.root, tableConversationParticipants)
 	escapedConversationParticipantsDir := strings.ReplaceAll(conversationParticipantsDir, "'", "''")
@@ -1681,6 +1699,7 @@ func buildCacheLocked(
 		ParticipantIdentifierRevision:       participantIdentifierRevision,
 		ParticipantDisplayNameRevision:      participantDisplayNameRevision,
 		PersonDisplayNameRevision:           personDisplayNameRevision,
+		CorrespondentKindRevision:           correspondentKindRevision,
 		ConversationParticipantsFingerprint: derived.ConversationParticipantsFingerprint,
 		ConversationTypesFingerprint:        typesFingerprint,
 		Stats:                               derived.Stats,

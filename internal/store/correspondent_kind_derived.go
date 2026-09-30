@@ -749,6 +749,11 @@ func (s *Store) CorrespondentKindExportRowsContext(ctx context.Context) ([]Corre
 		return nil
 	})
 	if err != nil {
+		// A SQLite archive opened before schema initialization created the
+		// table has nothing classified.
+		if s.dialect.IsNoSuchTableError(err) {
+			return []CorrespondentKindExportRow{}, nil
+		}
 		return nil, err
 	}
 	slices.SortFunc(rows, func(a, b CorrespondentKindExportRow) int { return cmp.Compare(a.ParticipantID, b.ParticipantID) })

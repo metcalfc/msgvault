@@ -38,9 +38,12 @@ import (
 // incremental builds can update them without rescanning expanded activity.
 // Version 30 stores direct activity edges and expands conversation membership
 // from the current roster when queried.
+// Version 31 adds the correspondent_kinds dataset and the effective kind,
+// its source, and the Jev individual_person probability to relationship
+// people.
 // Schema bumps force a full rebuild before readers use an older publication,
 // so committed caches never mix shards of different shapes.
-const CacheSchemaVersion = 30
+const CacheSchemaVersion = 31
 
 // CacheSyncState is the commit marker written after a complete analytics
 // cache publication. SQLite remains authoritative; these watermarks only
@@ -86,7 +89,11 @@ type CacheSyncState struct {
 	// shards.
 	ParticipantDisplayNameRevision int64 `json:"participant_display_name_revision,omitzero"`
 	// PersonDisplayNameRevision tracks curated names in replaceable derived datasets.
-	PersonDisplayNameRevision int64     `json:"person_display_name_revision,omitzero"`
+	PersonDisplayNameRevision int64 `json:"person_display_name_revision,omitzero"`
+	// CorrespondentKindRevision tracks classification changes, which bake
+	// into the replaceable correspondent_kinds and relationship_people
+	// datasets only.
+	CorrespondentKindRevision int64     `json:"correspondent_kind_revision,omitzero"`
 	PublishedAt               time.Time `json:"published_at"`
 	DatasetFingerprint        string    `json:"dataset_fingerprint"`
 	// FullRebuildRequired marks a publication whose export snapshot missed
@@ -134,7 +141,7 @@ func (e *CacheUnavailableError) Unwrap() error { return ErrCacheUnavailable }
 // Revision identifies one committed cache publication. It intentionally uses
 // only commit-marker fields, never ambient filesystem state.
 func (s CacheSyncState) Revision() string {
-	payload := fmt.Sprintf("v=%d|message=%d|watermark=%s|run=%d|add=%d|update=%d|related=%d|fail_count=%d|fail_sum=%d|identity=%d|derived_data=%d|account_identity=%d|participant_identifier=%d|participant_display_name=%d|person_display_name=%d|published=%s",
+	payload := fmt.Sprintf("v=%d|message=%d|watermark=%s|run=%d|add=%d|update=%d|related=%d|fail_count=%d|fail_sum=%d|identity=%d|derived_data=%d|account_identity=%d|participant_identifier=%d|participant_display_name=%d|person_display_name=%d|correspondent_kind=%d|published=%s",
 		s.SchemaVersion,
 		s.LastMessageID,
 		s.LastSyncAt.UTC().Format(time.RFC3339Nano),
@@ -150,6 +157,7 @@ func (s CacheSyncState) Revision() string {
 		s.ParticipantIdentifierRevision,
 		s.ParticipantDisplayNameRevision,
 		s.PersonDisplayNameRevision,
+		s.CorrespondentKindRevision,
 		s.PublishedAt.UTC().Format(time.RFC3339Nano),
 	)
 	return fmt.Sprintf("cache-%x", sha256.Sum256([]byte(payload)))

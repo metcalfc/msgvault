@@ -32,6 +32,11 @@ func ensureIdentityCacheFixtureDatasets(
 		personDisplayNamesPath,
 	))
 	require.NoError(t, err, "write empty person_display_names fixture dataset")
+	correspondentKindsDir := filepath.Join(analyticsDir, "correspondent_kinds")
+	require.NoError(t, os.MkdirAll(correspondentKindsDir, 0o755), "create correspondent_kinds fixture directory")
+	_, err = db.Exec(fmt.Sprintf("COPY (SELECT 0::BIGINT AS participant_id, ''::VARCHAR AS kind, ''::VARCHAR AS source, NULL::DOUBLE AS individual_person WHERE false) TO '%s' (FORMAT PARQUET)",
+		filepath.ToSlash(filepath.Join(correspondentKindsDir, "correspondent_kinds.parquet"))))
+	require.NoError(t, err, "write empty correspondent_kinds fixture dataset")
 	_, err = identityindex.Build(context.Background(), db, identityindex.BuildOptions{
 		Mode:           identityindex.ModeFull,
 		StagedBaseRoot: analyticsDir,

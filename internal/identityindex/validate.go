@@ -317,6 +317,9 @@ var datasetSchemas = map[string][]schemaColumn{
 		},
 		{"peak_temperature", "INTEGER"},
 		{"peak_year", "INTEGER"},
+		{"correspondent_kind", duckDBTypeVarchar},
+		{"correspondent_kind_source", duckDBTypeVarchar},
+		{"individual_person", "DOUBLE"},
 	},
 	DatasetDomains: {
 		{"domain", duckDBTypeVarchar},

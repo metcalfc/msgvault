@@ -876,6 +876,7 @@ func (b *parquetBuilder) build() (string, func()) {
 	b.ensureOwnerParticipantsTable()
 	b.ensureParticipantClustersTable()
 	b.ensurePersonDisplayNamesTable()
+	b.ensureCorrespondentKindsTable()
 
 	tmpDir := b.createTempDirs()
 
@@ -919,6 +920,16 @@ func (b *parquetBuilder) ensureParticipantIdentifiersTable() {
 	b.addEmptyTable(datasetParticipantIdentifiers, datasetParticipantIdentifiers,
 		datasetParticipantIdentifiers+".parquet", participantIdentifiersCols,
 		"(0::BIGINT, '', '', '', false)")
+}
+
+func (b *parquetBuilder) ensureCorrespondentKindsTable() {
+	for _, table := range b.tables {
+		if table.name == datasetCorrespondentKinds {
+			return
+		}
+	}
+	b.addEmptyTable(datasetCorrespondentKinds, datasetCorrespondentKinds, "correspondent_kinds.parquet",
+		"participant_id, kind, source, individual_person", "(0::BIGINT, '', '', NULL::DOUBLE)")
 }
 
 func (b *parquetBuilder) ensurePersonDisplayNamesTable() {

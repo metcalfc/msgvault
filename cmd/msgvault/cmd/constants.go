@@ -35,6 +35,7 @@ const (
 	tableConversationParticipants = "conversation_participants"
 	tableOwnerParticipants        = "owner_participants"
 	tableParticipantClusters      = "participant_clusters"
+	tableCorrespondentKinds       = "correspondent_kinds"
 )
 
 // flagJSON is the name of the boolean --json output flag. It is kept distinct

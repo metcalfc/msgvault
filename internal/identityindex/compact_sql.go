@@ -12,7 +12,11 @@ const (
 	directoryBuildRelation = "relationship_build_directory"
 )
 
-func buildRelationshipPeopleSQL(effectiveAt time.Time) string {
+// buildRelationshipPeopleSQL summarizes each cluster. The correspondent
+// kind columns come from the correspondent_kinds base dataset, which holds a
+// row for every member of a classified cluster, so the canonical member's
+// row is the cluster's; unclassified clusters carry NULL.
+func buildRelationshipPeopleSQL(effectiveAt time.Time, path func(string) string) string {
 	return `
 WITH logical_people AS (
 	SELECT entry_key, source_id, source_type, occurred_at, message_type, attachment_count,
@@ -84,7 +88,10 @@ SELECT d.canonical_id, d.display_label, d.partial_label, d.member_ids,
 	       meeting_signal DOUBLE, modalities INTEGER
 	   )[]) AS annual_temperatures,
 	   coalesce(pk.peak_temperature, 0)::INTEGER AS peak_temperature,
-	   coalesce(pk.peak_year, 0)::INTEGER AS peak_year
+	   coalesce(pk.peak_year, 0)::INTEGER AS peak_year,
+	   ck.kind::VARCHAR AS correspondent_kind,
+	   ck.source::VARCHAR AS correspondent_kind_source,
+	   ck.individual_person::DOUBLE AS individual_person
 FROM ` + directoryBuildRelation + ` d
 JOIN people_totals t USING (canonical_id)
 JOIN source_counts c USING (canonical_id)
@@ -92,6 +99,8 @@ JOIN source_rollups r USING (canonical_id)
 LEFT JOIN current_ranked cr USING (canonical_id)
 LEFT JOIN annual_rollups ar USING (canonical_id)
 LEFT JOIN peaks pk USING (canonical_id)
+LEFT JOIN read_parquet('` + quoteSQLString(path("correspondent_kinds")) + `') ck
+  ON ck.participant_id = d.canonical_id
 ORDER BY d.canonical_id`
 }
 

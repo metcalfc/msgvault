@@ -841,6 +841,7 @@ func writeRelationshipBaseFixture(t *testing.T, empty bool) (string, *sql.DB) {
 			(1::BIGINT, 1::BIGINT)
 		) AS t(source_id, participant_id)`+where)
 	writeRelationshipParquet(t, db, root, "person_display_names", `SELECT 0::BIGINT AS participant_id, 0::BIGINT AS person_id, NULL::VARCHAR AS display_name WHERE false`)
+	writeRelationshipParquet(t, db, root, "correspondent_kinds", `SELECT 0::BIGINT AS participant_id, ''::VARCHAR AS kind, ''::VARCHAR AS source, NULL::DOUBLE AS individual_person WHERE false`)
 	writeRelationshipParquet(t, db, root, "participant_clusters", `
 		SELECT * FROM (VALUES
 			(2::BIGINT, 2::BIGINT),
@@ -1006,4 +1007,44 @@ func TestBuildPeopleCuratedNamePreservesObservedPrimitives(t *testing.T) {
 	assertions.Equal("person", source)
 	assertions.Equal("Alice Curated", name)
 	t.Log("all observed search values and primitives retained; curated primitive source=person participant_id=3")
+}
+
+func TestBuildPeopleCarriesTheClusterCorrespondentKind(t *testing.T) {
+	assertions := assert.New(t)
+	requirements := require.New(t)
+	root, db := writeRelationshipBaseFixture(t, false)
+	// Cluster 2 has members 2 and 3; every member carries the cluster's row.
+	replaceRelationshipParquet(t, db, root, "correspondent_kinds", `
+		SELECT * FROM (VALUES
+			(2::BIGINT, 'mailing_list', 'jev', 0.05::DOUBLE),
+			(3::BIGINT, 'mailing_list', 'jev', 0.05::DOUBLE)
+		) AS t(participant_id, kind, source, individual_person)`)
+	_, err := Build(context.Background(), db, BuildOptions{Mode: ModeFull, StagedBaseRoot: root, OutputRoot: root})
+	requirements.NoError(err)
+
+	rows, err := db.Query(`SELECT canonical_id, correspondent_kind, correspondent_kind_source, individual_person
+		FROM read_parquet(?) ORDER BY canonical_id`, relationshipParquetGlob(root, DatasetPeople))
+	requirements.NoError(err)
+	defer func() { _ = rows.Close() }()
+	type person struct {
+		kind, source sql.NullString
+		individual   sql.NullFloat64
+	}
+	people := map[int64]person{}
+	for rows.Next() {
+		var id int64
+		var p person
+		requirements.NoError(rows.Scan(&id, &p.kind, &p.source, &p.individual))
+		people[id] = p
+	}
+	requirements.NoError(rows.Err())
+	requirements.Contains(people, int64(2))
+	assertions.Equal(sql.NullString{String: "mailing_list", Valid: true}, people[2].kind)
+	assertions.Equal(sql.NullString{String: "jev", Valid: true}, people[2].source)
+	assertions.InDelta(0.05, people[2].individual.Float64, 1e-9)
+	for id, p := range people {
+		if id != 2 {
+			assertions.False(p.kind.Valid, "unclassified cluster %d has no kind", id)
+		}
+	}
 }
