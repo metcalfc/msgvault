@@ -681,8 +681,11 @@ owns it:
    probability as confidence and the full probabilities). Anything else is
    stored as `none_or_unclear`, so the item is not asked again. The row keeps
    a fingerprint of every input (meeting title, attendees, item title and
-   description); when any of them changes, the item is asked again. When a
-   later import gives the item a source assignee, the inference is dropped.
+   description); when the meeting changes and any of them differs, the item
+   is asked again. Only meetings changed since their last check are read,
+   so a contact's renamed display name alone does not trigger a new
+   judgment. When a later import gives the item a source assignee, the
+   inference is dropped.
 
 Action item listings (HTTP, MCP, CLI, and the Web UI) show the inferred
 assignee separately from the source's, and `assignee_person_id` lists a
@@ -704,7 +707,12 @@ Per request:
   and 500 characters
 
 In the meeting title and item text, email addresses become `[email]` and
-phone numbers `[phone]`.
+phone numbers `[phone]`. Before matching, text is decoded (percent-escapes,
+Unicode compatibility forms, Unicode dashes and spaces), and `mailto:`,
+`tel:`, and spelled-out forms such as "name at domain dot com" count as
+addresses. Any run of 7 to 15 digits reads as a phone number, except dates
+and dotted versions such as `1.2.3`; an ambiguous number such as a meeting
+ID may be redacted too.
 
 Your own identities are never attendees: you are the `owner` option, and
 your name and addresses are never sent. No addresses, transcripts, summaries,

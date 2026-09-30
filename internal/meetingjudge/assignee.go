@@ -118,7 +118,7 @@ type ActionItemState struct {
 // AssigneeStore is the archive authority an assignee run needs.
 // *store.Store implements it.
 type AssigneeStore interface {
-	MeetingActionAssigneeCandidatesContext(ctx context.Context, limit int) ([]store.MeetingAssigneeCandidate, error)
+	MeetingActionAssigneeCandidatesContext(ctx context.Context, limit int) ([]store.MeetingAssigneeCandidate, int, error)
 	WriteInferredMeetingActionAssigneesContext(ctx context.Context, assignees []store.MeetingActionAssignee) (int, error)
 }
 
@@ -134,6 +134,9 @@ type AssigneeOptions struct {
 
 // AssigneeReport summarizes an assignee run. It never contains state.
 type AssigneeReport struct {
+	// Examined counts meetings read because they were new or changed;
+	// Meetings counts those with items to ask about.
+	Examined int `json:"examined"`
 	Meetings int `json:"meetings"`
 	Items    int `json:"items"`
 	Requests int `json:"requests"`
@@ -161,10 +164,11 @@ func RunAssignees(ctx context.Context, st AssigneeStore, options AssigneeOptions
 	if options.Judge == nil {
 		return report, nil
 	}
-	candidates, err := st.MeetingActionAssigneeCandidatesContext(ctx, options.Limit)
+	candidates, examined, err := st.MeetingActionAssigneeCandidatesContext(ctx, options.Limit)
 	if err != nil {
 		return report, fmt.Errorf("list meeting assignee candidates: %w", err)
 	}
+	report.Examined = examined
 	report.Meetings = len(candidates)
 	for _, candidate := range candidates {
 		report.Items += len(candidate.Actions)
@@ -193,8 +197,8 @@ func recordTooManyAttendees(ctx context.Context, st AssigneeStore, candidate sto
 	for _, action := range candidate.Actions {
 		rows = append(rows, store.MeetingActionAssignee{
 			MessageID: candidate.MessageID, Ordinal: action.Ordinal, ActionTitle: action.Title,
-			Fingerprint: action.Fingerprint,
-			Choice:      store.MeetingAssigneeChoiceNone, Model: tooManyAttendeesModel,
+			Fingerprint: action.Fingerprint, MeetingRevision: candidate.Revision,
+			Choice: store.MeetingAssigneeChoiceNone, Model: tooManyAttendeesModel,
 		})
 	}
 	if _, err := st.WriteInferredMeetingActionAssigneesContext(ctx, rows); err != nil {
@@ -236,7 +240,7 @@ func judgeMeetingAssignees(
 			}
 			row := assigneeFor(candidate, answer)
 			row.MessageID, row.Ordinal, row.ActionTitle = candidate.MessageID, action.Ordinal, action.Title
-			row.Fingerprint = action.Fingerprint
+			row.Fingerprint, row.MeetingRevision = action.Fingerprint, candidate.Revision
 			row.Probabilities, row.Model = answer.Probabilities, response.Model
 			rows = append(rows, row)
 		}

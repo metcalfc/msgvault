@@ -198,7 +198,22 @@ func TestAssigneesInferOwnersAndFilterByPerson(t *testing.T) {
 
 	again, err := meetingjudge.RunAssignees(t.Context(), st, meetingjudge.AssigneeOptions{Judge: service})
 	require.NoError(err)
+	assert.Zero(again.Examined, "an unchanged meeting is not even loaded")
 	assert.Zero(again.Meetings, "judged items are not asked again")
+	assert.Len(fake.requests(), 1)
+
+	// A change to the meeting that leaves every item's inputs alone loads
+	// the meeting once, marks its judgments current, and asks nothing.
+	_, err = st.DB().ExecContext(t.Context(), st.Rebind(`UPDATE messages SET snippet = ? WHERE id = ?`),
+		"a new preview", meetingID)
+	require.NoError(err)
+	touched, err := meetingjudge.RunAssignees(t.Context(), st, meetingjudge.AssigneeOptions{Judge: service})
+	require.NoError(err)
+	assert.Equal(1, touched.Examined)
+	assert.Zero(touched.Meetings)
+	settled, err := meetingjudge.RunAssignees(t.Context(), st, meetingjudge.AssigneeOptions{Judge: service})
+	require.NoError(err)
+	assert.Zero(settled.Examined, "the marked meeting is not loaded again")
 	assert.Len(fake.requests(), 1)
 }
 
@@ -219,7 +234,7 @@ func TestAssigneesNeverReplaceAUserAssignee(t *testing.T) {
 	}})
 	require.NoError(err)
 	assert.Zero(written)
-	candidates, err := st.MeetingActionAssigneeCandidatesContext(t.Context(), 0)
+	candidates, _, err := st.MeetingActionAssigneeCandidatesContext(t.Context(), 0)
 	require.NoError(err)
 	require.Len(candidates, 1)
 	for _, action := range candidates[0].Actions {

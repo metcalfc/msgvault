@@ -114,17 +114,20 @@ const activityCandidateStateCTE = `
 		)
 	)`
 
-// activityCandidateColumns reads, beside the message, its series' confident
-// Jev event kind (calendar_event_kinds, one row per conversation by primary
-// key), so an event judged to weigh nothing is no contact.
+// activityCandidateColumns reads, beside a calendar event, its series'
+// confident Jev event kind (calendar_event_kinds, one row per conversation
+// by primary key), so an event judged to weigh nothing is no contact. Other
+// message types never evaluate the lookup.
 var activityCandidateColumns = `
 	m.id, m.source_id, m.conversation_id,
 	COALESCE(c.conversation_type, ''), COALESCE(m.message_type, ''),
 	m.sent_at, m.received_at, m.internal_date, m.last_modified,
 	m.deleted_at, m.deleted_from_source_at, m.metadata,
-	(SELECT k.kind FROM calendar_event_kinds k
-	  WHERE k.conversation_id = m.conversation_id AND k.source = 'jev'
-	    AND k.confidence >= ` + strconv.FormatFloat(meetingweight.KindThreshold, 'f', -1, 64) + `),
+	CASE WHEN m.message_type = '` + calendarEventMessageType + `' THEN
+	  (SELECT k.kind FROM calendar_event_kinds k
+	    WHERE k.conversation_id = m.conversation_id AND k.source = 'jev'
+	      AND k.confidence >= ` + strconv.FormatFloat(meetingweight.KindThreshold, 'f', -1, 64) + `)
+	END,
 	COALESCE(m.source_is_from_me, FALSE),
 	r.identity_revision, r.account_identity_revision,
 	r.timezone_active, r.timezone_target, r.timezone_generation,

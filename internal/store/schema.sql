@@ -4635,13 +4635,16 @@ CREATE TABLE IF NOT EXISTS calendar_event_kinds (
 -- belongs to the action titled action_title at that ordinal.
 -- input_fingerprint hashes every judgment input (meeting title, attendees,
 -- owner, item title and description); a change means the item is judged
--- again. Inference never replaces a 'user' row, and an inference is dropped
--- once the source names an assignee.
+-- again. meeting_revision is the meeting's projection hash and content
+-- change stamp when the row was last checked, so unchanged meetings are not
+-- revisited. Inference never replaces a 'user' row, and an inference is
+-- dropped once the source names an assignee.
 CREATE TABLE IF NOT EXISTS meeting_action_assignees (
     message_id              INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     ordinal                 INTEGER NOT NULL,
     action_title            TEXT NOT NULL,
     input_fingerprint       TEXT NOT NULL DEFAULT '',
+    meeting_revision        TEXT NOT NULL DEFAULT '',
     choice                  TEXT NOT NULL CHECK (choice IN ('attendee', 'owner', 'none_or_unclear')),
     assignee_participant_id INTEGER REFERENCES participants(id) ON DELETE SET NULL,
     confidence              REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),

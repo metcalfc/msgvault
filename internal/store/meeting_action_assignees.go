@@ -55,6 +55,9 @@ type MeetingAssigneeCandidate struct {
 	// the owner is not among its recorded participants.
 	OwnerParticipantID int64
 	Actions            []MeetingAssigneeAction
+	// Revision is the meeting revision read with the candidate; store it
+	// with each result.
+	Revision string
 }
 
 // MeetingActionAssignee is one inferred assignee to store.
@@ -63,29 +66,37 @@ type MeetingActionAssignee struct {
 	Ordinal     int
 	ActionTitle string
 	// Fingerprint is the MeetingAssigneeAction fingerprint the judgment read.
-	Fingerprint   string
-	Choice        string
-	ParticipantID int64
-	Confidence    float64
-	Probabilities map[string]float64
-	Model         string
+	Fingerprint string
+	// MeetingRevision is the MeetingAssigneeCandidate revision it was read at.
+	MeetingRevision string
+	Choice          string
+	ParticipantID   int64
+	Confidence      float64
+	Probabilities   map[string]float64
+	Model           string
 }
 
+// meetingRevisionSQL is a meeting's revision for assignee judging: its
+// projection content hash (items, source participants) and its content
+// change stamp (title and other message content). Aliases m and md.
+const meetingRevisionSQL = `(COALESCE(md.content_hash, '') || '|' ||
+	COALESCE(CAST(m.content_changed_at AS TEXT), ''))`
+
 // MeetingActionAssigneeCandidatesContext lists meeting transcripts, newest
-// first, that have action items with no source assignee and no current
-// assignee row, with their attendees. limit caps the meetings; zero means
-// no cap.
+// first, with unassigned action items that were never judged or whose
+// meeting changed since they were judged, with their attendees. An item
+// whose meeting changed but whose own inputs (its fingerprint) did not is
+// marked current instead of returned, so an unchanged archive loads no
+// meetings. limit caps the meetings enumerated; zero means no cap. examined
+// counts the meetings enumerated, including those found current.
 func (s *Store) MeetingActionAssigneeCandidatesContext(
 	ctx context.Context, limit int,
-) ([]MeetingAssigneeCandidate, error) {
-	var candidates []MeetingAssigneeCandidate
-	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
-		// Every meeting with an unassigned item that has no user row is
-		// examined, newest first; whether an item needs judging depends on a
-		// fingerprint of its inputs, which only Go computes.
-		rows, err := tx.QueryContext(ctx, `
-			SELECT m.id, COALESCE(m.subject, '')
+) (candidates []MeetingAssigneeCandidate, examined int, err error) {
+	err = s.withTxContext(ctx, func(tx *loggedTx) error {
+		query := `
+			SELECT m.id, COALESCE(m.subject, ''), ` + meetingRevisionSQL + `
 			FROM messages m
+			LEFT JOIN meeting_details md ON md.message_id = m.id
 			WHERE m.message_type = ? AND m.deleted_at IS NULL
 			  AND EXISTS (
 				SELECT 1 FROM meeting_action_items a
@@ -93,15 +104,21 @@ func (s *Store) MeetingActionAssigneeCandidatesContext(
 				  AND NOT EXISTS (
 					SELECT 1 FROM meeting_action_assignees x
 					WHERE x.message_id = a.message_id AND x.ordinal = a.ordinal
-					  AND x.provenance = 'user'))
-			ORDER BY m.sent_at DESC, m.id DESC`, meetingTranscriptMessageType)
+					  AND (x.provenance = 'user' OR x.meeting_revision = ` + meetingRevisionSQL + `)))
+			ORDER BY m.sent_at DESC, m.id DESC`
+		args := []any{meetingTranscriptMessageType}
+		if limit > 0 {
+			query += ` LIMIT ?`
+			args = append(args, limit)
+		}
+		rows, err := tx.QueryContext(ctx, query, args...)
 		if err != nil {
 			return fmt.Errorf("list meeting assignee candidates: %w", err)
 		}
 		var meetings []MeetingAssigneeCandidate
 		for rows.Next() {
 			var candidate MeetingAssigneeCandidate
-			if err := rows.Scan(&candidate.MessageID, &candidate.Title); err != nil {
+			if err := rows.Scan(&candidate.MessageID, &candidate.Title, &candidate.Revision); err != nil {
 				_ = rows.Close()
 				return fmt.Errorf("scan meeting assignee candidate: %w", err)
 			}
@@ -118,10 +135,8 @@ func (s *Store) MeetingActionAssigneeCandidatesContext(
 		if err != nil {
 			return err
 		}
+		examined = len(meetings)
 		for i := range meetings {
-			if limit > 0 && len(candidates) == limit {
-				break
-			}
 			candidate := meetings[i]
 			if err := meetingAssigneeAttendeesTx(ctx, tx, &candidate, owners); err != nil {
 				return err
@@ -136,9 +151,9 @@ func (s *Store) MeetingActionAssigneeCandidatesContext(
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return candidates, nil
+	return candidates, examined, nil
 }
 
 // meetingAssigneeActionsTx keeps the meeting's unassigned items whose inputs
@@ -151,20 +166,22 @@ func meetingAssigneeActionsTx(ctx context.Context, tx *loggedTx, candidate *Meet
 		LEFT JOIN meeting_action_assignees x
 		  ON x.message_id = a.message_id AND x.ordinal = a.ordinal
 		WHERE a.message_id = ? AND a.assignee_email = '' AND a.assignee_name = ''
-		  AND (x.provenance IS NULL OR x.provenance <> 'user')
-		ORDER BY a.ordinal`, candidate.MessageID)
+		  AND (x.provenance IS NULL OR (x.provenance <> 'user' AND x.meeting_revision <> ?))
+		ORDER BY a.ordinal`, candidate.MessageID, candidate.Revision)
 	if err != nil {
 		return fmt.Errorf("read meeting assignee actions: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	var unchanged []int
 	for rows.Next() {
 		var action MeetingAssigneeAction
 		var judged sql.NullString
 		if err := rows.Scan(&action.Ordinal, &action.Title, &action.Description, &judged); err != nil {
+			_ = rows.Close()
 			return fmt.Errorf("scan meeting assignee action: %w", err)
 		}
 		action.Fingerprint = meetingAssigneeFingerprint(*candidate, action)
 		if judged.Valid && judged.String == action.Fingerprint {
+			unchanged = append(unchanged, action.Ordinal)
 			continue
 		}
 		if len(candidate.Actions) < meetingAssigneeCandidateActions {
@@ -172,7 +189,21 @@ func meetingAssigneeActionsTx(ctx context.Context, tx *loggedTx, candidate *Meet
 		}
 	}
 	if err := rows.Err(); err != nil {
+		_ = rows.Close()
 		return fmt.Errorf("iterate meeting assignee actions: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close meeting assignee actions: %w", err)
+	}
+	// The meeting changed but these items' inputs did not: their judgment
+	// stands for the new revision.
+	for _, ordinal := range unchanged {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE meeting_action_assignees SET meeting_revision = ?
+			WHERE message_id = ? AND ordinal = ? AND provenance = 'inferred'`,
+			candidate.Revision, candidate.MessageID, ordinal); err != nil {
+			return fmt.Errorf("mark meeting assignee current: %w", err)
+		}
 	}
 	return nil
 }
@@ -303,12 +334,13 @@ func (s *Store) WriteInferredMeetingActionAssigneesContext(
 			}
 			result, err := tx.ExecContext(ctx, `
 				INSERT INTO meeting_action_assignees (
-					message_id, ordinal, action_title, input_fingerprint, choice, assignee_participant_id,
+					message_id, ordinal, action_title, input_fingerprint, meeting_revision, choice, assignee_participant_id,
 					confidence, probabilities_json, provenance, model, judged_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'inferred', ?, `+s.dialect.Now()+`)
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'inferred', ?, `+s.dialect.Now()+`)
 				ON CONFLICT (message_id, ordinal) DO UPDATE SET
 					action_title = excluded.action_title,
 					input_fingerprint = excluded.input_fingerprint,
+					meeting_revision = excluded.meeting_revision,
 					choice = excluded.choice,
 					assignee_participant_id = excluded.assignee_participant_id,
 					confidence = excluded.confidence,
@@ -316,7 +348,7 @@ func (s *Store) WriteInferredMeetingActionAssigneesContext(
 					model = excluded.model,
 					judged_at = excluded.judged_at
 				WHERE meeting_action_assignees.provenance = 'inferred'`,
-				assignee.MessageID, assignee.Ordinal, assignee.ActionTitle, assignee.Fingerprint,
+				assignee.MessageID, assignee.Ordinal, assignee.ActionTitle, assignee.Fingerprint, assignee.MeetingRevision,
 				assignee.Choice, participant,
 				assignee.Confidence, string(encoded), assignee.Model)
 			if err != nil {
