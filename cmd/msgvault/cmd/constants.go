@@ -1,6 +1,9 @@
 package cmd
 
-import "go.kenn.io/msgvault/internal/msmail"
+import (
+	"go.kenn.io/msgvault/internal/identityindex"
+	"go.kenn.io/msgvault/internal/msmail"
+)
 
 // Source-type identifiers stored in sources.source_type and matched against
 // when dispatching sync/import logic per account kind.
@@ -36,6 +39,7 @@ const (
 	tableOwnerParticipants        = "owner_participants"
 	tableParticipantClusters      = "participant_clusters"
 	tableCorrespondentKinds       = "correspondent_kinds"
+	tableMeetingWeights           = identityindex.DatasetMeetingWeights
 )
 
 // flagJSON is the name of the boolean --json output flag. It is kept distinct

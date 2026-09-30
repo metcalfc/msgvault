@@ -944,7 +944,7 @@ func derivedDriftOnly(staleness cacheStaleness) bool {
 	return (staleness.HasIdentityDrift || staleness.HasConversationParticipantDrift ||
 		staleness.HasConversationTypeDrift || staleness.HasParticipantIdentifierDrift ||
 		staleness.HasParticipantDisplayNameDrift || staleness.HasPersonDisplayNameDrift ||
-		staleness.HasCorrespondentKindDrift) &&
+		staleness.HasCorrespondentKindDrift || staleness.HasMeetingWeightDrift) &&
 		!staleness.HasNew && !staleness.HasDeleted &&
 		!staleness.HasUpdated && !staleness.HasAccountIdentityDrift &&
 		!staleness.HasDerivedDataDrift && !staleness.HasRelatedRowDrift
@@ -957,7 +957,8 @@ func relatedDriftOnly(staleness cacheStaleness) bool {
 		!staleness.HasIdentityDrift && !staleness.HasAccountIdentityDrift &&
 		!staleness.HasConversationParticipantDrift && !staleness.HasConversationTypeDrift &&
 		!staleness.HasParticipantIdentifierDrift && !staleness.HasParticipantDisplayNameDrift &&
-		!staleness.HasPersonDisplayNameDrift && !staleness.HasCorrespondentKindDrift
+		!staleness.HasPersonDisplayNameDrift && !staleness.HasCorrespondentKindDrift &&
+		!staleness.HasMeetingWeightDrift
 }
 
 // refreshIdentityDatasetsOnly rebuilds every identity-derived dataset while
@@ -1099,6 +1100,16 @@ func buildCacheLocked(
 	if err != nil {
 		_ = identityStore.Close()
 		return nil, fmt.Errorf("read correspondent kinds: %w", err)
+	}
+	meetingWeightRevision, err := identityStore.MeetingWeightRevisionContext(context.Background())
+	if err != nil {
+		_ = identityStore.Close()
+		return nil, fmt.Errorf("read meeting weight revision: %w", err)
+	}
+	meetingWeights, err := identityStore.MeetingWeightExportRowsContext(context.Background())
+	if err != nil {
+		_ = identityStore.Close()
+		return nil, fmt.Errorf("read meeting weights: %w", err)
 	}
 	participantClusters, err := identityStore.ParticipantClusters()
 	if err != nil {
@@ -1441,6 +1452,10 @@ func buildCacheLocked(
 		correspondentKinds, staging.root); err != nil {
 		return nil, err
 	}
+	if err := exportMeetingWeightsDataset(context.Background(), exportDB,
+		meetingWeights, staging.root); err != nil {
+		return nil, err
+	}
 
 	conversationParticipantsDir := filepath.Join(staging.root, tableConversationParticipants)
 	escapedConversationParticipantsDir := strings.ReplaceAll(conversationParticipantsDir, "'", "''")
@@ -1700,6 +1715,7 @@ func buildCacheLocked(
 		ParticipantDisplayNameRevision:      participantDisplayNameRevision,
 		PersonDisplayNameRevision:           personDisplayNameRevision,
 		CorrespondentKindRevision:           correspondentKindRevision,
+		MeetingWeightRevision:               meetingWeightRevision,
 		ConversationParticipantsFingerprint: derived.ConversationParticipantsFingerprint,
 		ConversationTypesFingerprint:        typesFingerprint,
 		Stats:                               derived.Stats,

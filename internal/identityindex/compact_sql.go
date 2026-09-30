@@ -146,13 +146,19 @@ LEFT JOIN domain_people p USING (domain)
 ORDER BY t.domain`
 }
 
-func buildRelationshipDailySQL() string {
+// buildRelationshipDailySQL rolls relationship interactions up by day. A
+// calendar event counts as a meeting with the weight the meeting_weights
+// base dataset gives it (1 when absent); an event weighing nothing is no
+// interaction at all, so it neither counts nor moves the last contact.
+func buildRelationshipDailySQL(path func(string) string) string {
 	return fmt.Sprintf(`
 WITH logical_people AS (
-	SELECT entry_key, occurred_at, entry_kind, is_from_me, canonical_id,
-	       is_author, is_owner, with_owner
-	FROM `+logicalBuildRelation+`
-	WHERE relation_kind = 1
+	SELECT l.entry_key, l.occurred_at, l.entry_kind, l.is_from_me, l.canonical_id,
+	       l.is_author, l.is_owner, l.with_owner,
+	       %s AS meeting_weight
+	FROM `+logicalBuildRelation+` l
+	LEFT JOIN read_parquet('%s') w ON w.message_id = l.anchor_message_id
+	WHERE l.relation_kind = 1
 ), interactions AS (
 	SELECT p.*,
 	       CASE WHEN p.is_from_me
@@ -164,6 +170,8 @@ WITH logical_people AS (
 	            THEN 1::BIGINT ELSE 0::BIGINT END AS received_units,
 	       CASE WHEN p.entry_kind IN ('event','meeting') AND p.with_owner
 	            THEN 1::BIGINT ELSE 0::BIGINT END AS meeting_units,
+	       CASE WHEN p.entry_kind IN ('event','meeting') AND p.with_owner
+	            THEN p.meeting_weight ELSE 0::DOUBLE END AS meeting_weight_units,
 	       CASE
 	           WHEN p.entry_kind IN ('event','meeting') AND p.with_owner THEN %d::UTINYINT
 	           WHEN p.entry_kind = 'conversation' THEN %d::UTINYINT
@@ -173,17 +181,21 @@ WITH logical_people AS (
 	FROM logical_people p
 	WHERE NOT p.is_owner
 	  AND NOT (p.entry_kind IN ('event','meeting') AND NOT p.with_owner)
+	  AND p.meeting_weight > 0
 )
 SELECT canonical_id,
        occurred_at::DATE AS event_date,
        sum(sent_units)::BIGINT AS sent_units,
        sum(received_units)::BIGINT AS received_units,
        sum(meeting_units)::BIGINT AS meeting_units,
+       sum(meeting_weight_units)::DOUBLE AS meeting_weight,
        bit_or(modality_mask)::UTINYINT AS modality_mask,
        max(occurred_at)::TIMESTAMP AS last_at
 FROM interactions
 GROUP BY canonical_id, event_date
 ORDER BY canonical_id, event_date`,
+		MeetingWeightSQL("l.entry_kind", "w.weight"),
+		quoteSQLString(path(DatasetMeetingWeights)),
 		ModalityMeeting,
 		ModalityChat,
 		ModalityEmail,

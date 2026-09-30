@@ -173,8 +173,8 @@ func TestInspectCacheMarkerReadinessSkipsDatasetFingerprint(t *testing.T) {
 	assertions.Equal(CacheInterrupted, readiness)
 }
 
-func TestCacheSchemaVersionIncludesCorrespondentKinds(t *testing.T) {
-	assert.Equal(t, 31, CacheSchemaVersion)
+func TestCacheSchemaVersionIncludesMeetingWeights(t *testing.T) {
+	assert.Equal(t, 32, CacheSchemaVersion)
 }
 
 func TestInspectCacheReadinessNamesStaleSchemaAndDrift(t *testing.T) {

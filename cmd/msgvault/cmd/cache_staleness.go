@@ -70,6 +70,9 @@ type cacheStaleness struct {
 	// HasCorrespondentKindDrift repairs exported correspondent kinds and the
 	// kind columns of relationship people without rewriting message facts.
 	HasCorrespondentKindDrift bool
+	// HasMeetingWeightDrift repairs exported meeting weights and the
+	// relationship rollups they feed without rewriting message facts.
+	HasMeetingWeightDrift bool
 	// HasAccountIdentityDrift signals an identity mutation that invalidates
 	// baked message data since the last build: an account identity was
 	// confirmed or removed, or two participants were merged (merges repoint
@@ -552,6 +555,17 @@ func cacheNeedsBuildLockedWithOptions(ctx context.Context, dbPath, analyticsDir 
 	if correspondentKindRevision != state.CorrespondentKindRevision {
 		result.HasCorrespondentKindDrift = true
 		reasons = append(reasons, "correspondent kinds changed")
+	}
+	if ctx.Err() != nil {
+		return cacheStaleness{}
+	}
+	meetingWeightRevision, err := db.MeetingWeightRevisionContext(ctx)
+	if err != nil {
+		return cacheStalenessFailure(ctx, "cannot verify meeting weight revision")
+	}
+	if meetingWeightRevision != state.MeetingWeightRevision {
+		result.HasMeetingWeightDrift = true
+		reasons = append(reasons, "meeting kinds changed")
 	}
 
 	if full {

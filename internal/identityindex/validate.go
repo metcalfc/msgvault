@@ -229,6 +229,8 @@ func Validate(
 			    OR sent_units IS NULL OR sent_units < 0
 			    OR received_units IS NULL OR received_units < 0
 			    OR meeting_units IS NULL OR meeting_units < 0
+			    OR meeting_weight IS NULL OR meeting_weight < 0
+			    OR meeting_weight > meeting_units + 1e-9
 			    OR modality_mask IS NULL
 			    OR (modality_mask & 7::UTINYINT) IS DISTINCT FROM modality_mask
 			    OR last_at IS NULL OR last_at::DATE IS DISTINCT FROM event_date`,
@@ -336,6 +338,7 @@ var datasetSchemas = map[string][]schemaColumn{
 		{"sent_units", duckDBTypeBigInt},
 		{"received_units", duckDBTypeBigInt},
 		{"meeting_units", duckDBTypeBigInt},
+		{"meeting_weight", "DOUBLE"},
 		{"modality_mask", "UTINYINT"},
 		{"last_at", "TIMESTAMP"},
 	},

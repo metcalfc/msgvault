@@ -415,7 +415,7 @@ WITH request_clock AS (
 	       sum(d.received_units * exp(-c.decay_rate * greatest(
 	           0, date_diff('day', d.event_date, c.request_date))))::DOUBLE
 	           AS received_decayed,
-	       sum(d.meeting_units * exp(-c.decay_rate * greatest(
+	       sum(d.meeting_weight * exp(-c.decay_rate * greatest(
 	           0, date_diff('day', d.event_date, c.request_date))))::DOUBLE
 	           AS meetings_decayed,
 	       sum(d.meeting_units)::BIGINT AS meeting_count,
@@ -456,7 +456,15 @@ func (e *DuckDBEngine) buildFilteredRelationshipsSQL(
 	directory := quoteIdentitySQLPath(
 		e.parquetPath(identityindex.DatasetPeople),
 	)
+	weights := quoteIdentitySQLPath(
+		e.parquetPath(identityindex.DatasetMeetingWeights),
+	)
 	queryText := logicalSQL + `,
+weighted_people AS (
+	SELECT p.*, ` + identityindex.MeetingWeightSQL("p.entry_kind", "w.weight") + ` AS meeting_weight
+	FROM logical_people p
+	LEFT JOIN read_parquet('` + weights + `') w ON w.message_id = p.entry_num
+),
 relationship_interactions AS (
 	SELECT p.*,
 	       CASE WHEN p.is_from_me
@@ -468,6 +476,8 @@ relationship_interactions AS (
 	            THEN 1::BIGINT ELSE 0::BIGINT END AS received_units,
 	       CASE WHEN p.entry_kind IN ('event','meeting') AND p.with_owner
 	            THEN 1::BIGINT ELSE 0::BIGINT END AS meeting_units,
+	       CASE WHEN p.entry_kind IN ('event','meeting') AND p.with_owner
+	            THEN p.meeting_weight ELSE 0::DOUBLE END AS meeting_weight_units,
 	       CASE
 	           WHEN p.entry_kind IN ('event','meeting') AND p.with_owner
 	               THEN ` + strconv.FormatUint(uint64(identityindex.ModalityMeeting), 10) + `::UTINYINT
@@ -479,15 +489,16 @@ relationship_interactions AS (
 	       END AS modality_mask,
 	       exp(-? * greatest(
 	           0, date_diff('day', p.occurred_at, CAST(? AS TIMESTAMP)))) AS decay
-	FROM logical_people p
+	FROM weighted_people p
 	WHERE NOT p.is_owner
 	  AND NOT (p.entry_kind IN ('event','meeting') AND NOT p.with_owner)
+	  AND p.meeting_weight > 0
 ), aggregated AS (
 	SELECT canonical_id,
 	       sum(sent_units * decay)::DOUBLE AS sent_decayed,
 	       sum(sent_units)::BIGINT AS sent_count,
 	       sum(received_units * decay)::DOUBLE AS received_decayed,
-	       sum(meeting_units * decay)::DOUBLE AS meetings_decayed,
+	       sum(meeting_weight_units * decay)::DOUBLE AS meetings_decayed,
 	       sum(meeting_units)::BIGINT AS meeting_count,
 	       bit_or(modality_mask)::UTINYINT AS modality_mask,
 	       max(occurred_at)::TIMESTAMP AS last_at

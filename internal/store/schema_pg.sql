@@ -4183,3 +4183,18 @@ CREATE TABLE IF NOT EXISTS cleanup_suggestions (
     judged_at                   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_cleanup_suggestions_score ON cleanup_suggestions(score);
+-- The kind of one calendar conversation (a recurring series or a standalone
+-- event), decided once. Source 'jev' is the meeting_event_kind judgment with
+-- the probability of its kind as confidence; source 'rule' marks a series
+-- whose events are none of them meetings (kind 'not_a_meeting'), so it is
+-- never sent. Meeting weights read this table; see internal/meetingweight.
+CREATE TABLE IF NOT EXISTS calendar_event_kinds (
+    conversation_id    BIGINT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+    kind               TEXT NOT NULL,
+    source             TEXT NOT NULL CHECK (source IN ('jev', 'rule')),
+    confidence         DOUBLE PRECISION NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+    probabilities_json TEXT NOT NULL DEFAULT '{}',
+    model              TEXT NOT NULL DEFAULT '',
+    judged_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (LENGTH(kind) > 0)
+);

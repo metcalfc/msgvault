@@ -15,6 +15,9 @@ const (
 	DatasetRelationshipDaily        = "relationship_daily"
 	DatasetLogicalContributions     = "relationship_logical_contributions"
 	DatasetTemperatureContributions = "relationship_temperature_contributions"
+	// DatasetMeetingWeights is the base dataset of calendar events whose
+	// meeting weight differs from 1 (message_id BIGINT, weight DOUBLE).
+	DatasetMeetingWeights = "meeting_weights"
 
 	ModalityEmail   uint8 = 1
 	ModalityChat    uint8 = 2
@@ -80,6 +83,14 @@ func EntryKindSQL(messageType string) string {
 		" WHEN lower(" + messageType + ") = 'calendar_event' THEN 'event'" +
 		" WHEN lower(" + messageType + ") IN ('meeting_transcript','meeting_note','meeting_minutes') THEN 'meeting'" +
 		" ELSE 'item' END"
+}
+
+// MeetingWeightSQL renders an entry's meeting weight from trusted SQL
+// expressions for its entry kind and its meeting_weights row's weight: a
+// calendar event takes its exported weight (1 when it has no row); every
+// other entry weighs 1.
+func MeetingWeightSQL(entryKind, weight string) string {
+	return "(CASE WHEN " + entryKind + " = 'event' THEN coalesce(" + weight + ", 1.0) ELSE 1.0 END)::DOUBLE"
 }
 
 func quotedList(values []string) string {

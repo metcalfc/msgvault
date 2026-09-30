@@ -245,6 +245,8 @@ func buildBenchData(tb testing.TB) *DuckDBEngine {
 			datasetPersonDisplayNames, datasetPersonDisplayNames + ".parquet"},
 		{"SELECT 0::BIGINT AS participant_id, ''::VARCHAR AS kind, ''::VARCHAR AS source, NULL::DOUBLE AS individual_person WHERE false",
 			datasetCorrespondentKinds, datasetCorrespondentKinds + ".parquet"},
+		{"SELECT 0::BIGINT AS message_id, 1::DOUBLE AS weight WHERE false",
+			identityindex.DatasetMeetingWeights, identityindex.DatasetMeetingWeights + ".parquet"},
 	}
 
 	for _, t := range tables {

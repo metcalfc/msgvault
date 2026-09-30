@@ -49,9 +49,15 @@ type eventMetadata struct {
 	Transparency      string   `json:"transparency,omitempty"`
 	Visibility        string   `json:"visibility,omitempty"`
 	EventType         string   `json:"event_type,omitempty"`
-	OrganizerEmail    string   `json:"organizer_email,omitempty"`
-	CalendarID        string   `json:"calendar_id,omitempty"`
-	AccountEmail      string   `json:"account_email,omitempty"`
+	// OwnerResponseStatus is the account owner's own RSVP (accepted,
+	// declined, tentative, needsAction), empty when the owner is not listed.
+	OwnerResponseStatus string `json:"owner_response_status,omitempty"`
+	// AttendeeCount counts the people invited: attendees with an address,
+	// never rooms or other resources.
+	AttendeeCount  int    `json:"attendee_count,omitzero"`
+	OrganizerEmail string `json:"organizer_email,omitempty"`
+	CalendarID     string `json:"calendar_id,omitempty"`
+	AccountEmail   string `json:"account_email,omitempty"`
 }
 
 // ingestEvent persists a non-cancelled event through the canonical write path
@@ -75,12 +81,13 @@ func (s *Syncer) ingestEvent(sourceID int64, cal gcal.Calendar, ev gcal.Event) (
 		senderID = id
 	}
 
-	// Attendees → 'to' recipients + FTS toAddrs.
+	// Attendees → 'to' recipients + FTS toAddrs. Rooms and other resources
+	// are not people: they never become participants.
 	var attendeeIDs []int64
 	var attendeeNames []string
 	var attendeeEmails []string
 	for _, a := range ev.Attendees {
-		if a.Email == "" {
+		if a.Email == "" || isResourceAttendee(a) {
 			continue
 		}
 		pid, err := s.store.EnsureParticipant(a.Email, a.DisplayName, emailDomain(a.Email))
@@ -283,27 +290,70 @@ func eventSentAt(ev gcal.Event) sql.NullTime {
 	return sql.NullTime{}
 }
 
+// resourceCalendarDomain is the address domain Google Calendar gives rooms
+// and equipment. Older events can list a room without the resource flag.
+const resourceCalendarDomain = "@resource.calendar.google.com"
+
+// isResourceAttendee reports whether an attendee is a room or other
+// resource rather than a person.
+func isResourceAttendee(a gcal.Attendee) bool {
+	return a.Resource || strings.HasSuffix(normalizeParticipantEmail(a.Email), resourceCalendarDomain)
+}
+
+// ownerResponseStatus is the owner's RSVP: the attendee the API marks as
+// self, else the attendee with the account's address.
+func ownerResponseStatus(ev gcal.Event, accountEmail string) string {
+	for _, a := range ev.Attendees {
+		if a.Self {
+			return a.ResponseStatus
+		}
+	}
+	account := normalizeParticipantEmail(accountEmail)
+	if account == "" {
+		return ""
+	}
+	for _, a := range ev.Attendees {
+		if normalizeParticipantEmail(a.Email) == account {
+			return a.ResponseStatus
+		}
+	}
+	return ""
+}
+
+// attendeeCount counts invited people with an address, never resources.
+func attendeeCount(ev gcal.Event) int {
+	count := 0
+	for _, a := range ev.Attendees {
+		if strings.TrimSpace(a.Email) != "" && !isResourceAttendee(a) {
+			count++
+		}
+	}
+	return count
+}
+
 // buildMetadata projects an event into the metadata payload.
 func buildMetadata(ev gcal.Event, cal gcal.Calendar, accountEmail string) eventMetadata {
 	return eventMetadata{
-		Status:            ev.Status,
-		AllDay:            ev.Start.IsAllDay(),
-		Start:             dateTimeString(ev.Start),
-		End:               dateTimeString(ev.End),
-		TimeZone:          ev.Start.TimeZone,
-		Recurrence:        ev.Recurrence,
-		RecurringEventID:  ev.RecurringEventID,
-		OriginalStartTime: originalStartKey(ev.OriginalStartTime),
-		ICalUID:           ev.ICalUID,
-		Sequence:          ev.Sequence,
-		HTMLLink:          ev.HTMLLink,
-		HangoutLink:       ev.HangoutLink,
-		Transparency:      ev.Transparency,
-		Visibility:        ev.Visibility,
-		EventType:         ev.EventType,
-		OrganizerEmail:    ev.Organizer.Email,
-		CalendarID:        cal.ID,
-		AccountEmail:      accountEmail,
+		OwnerResponseStatus: ownerResponseStatus(ev, accountEmail),
+		AttendeeCount:       attendeeCount(ev),
+		Status:              ev.Status,
+		AllDay:              ev.Start.IsAllDay(),
+		Start:               dateTimeString(ev.Start),
+		End:                 dateTimeString(ev.End),
+		TimeZone:            ev.Start.TimeZone,
+		Recurrence:          ev.Recurrence,
+		RecurringEventID:    ev.RecurringEventID,
+		OriginalStartTime:   originalStartKey(ev.OriginalStartTime),
+		ICalUID:             ev.ICalUID,
+		Sequence:            ev.Sequence,
+		HTMLLink:            ev.HTMLLink,
+		HangoutLink:         ev.HangoutLink,
+		Transparency:        ev.Transparency,
+		Visibility:          ev.Visibility,
+		EventType:           ev.EventType,
+		OrganizerEmail:      ev.Organizer.Email,
+		CalendarID:          cal.ID,
+		AccountEmail:        accountEmail,
 	}
 }
 
@@ -338,7 +388,7 @@ func serializeBody(ev gcal.Event) string {
 
 	var names []string
 	for _, a := range ev.Attendees {
-		if a.DisplayName != "" {
+		if a.DisplayName != "" && !isResourceAttendee(a) {
 			names = append(names, a.DisplayName)
 		}
 	}

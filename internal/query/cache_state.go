@@ -41,9 +41,12 @@ import (
 // Version 31 adds the correspondent_kinds dataset and the effective kind,
 // its source, and the Jev individual_person probability to relationship
 // people.
+// Version 32 adds the meeting_weights dataset and meeting_weight to
+// relationship_daily, so calendar events that are not meetings drop out of
+// relationship rankings and large meetings count for less.
 // Schema bumps force a full rebuild before readers use an older publication,
 // so committed caches never mix shards of different shapes.
-const CacheSchemaVersion = 31
+const CacheSchemaVersion = 32
 
 // CacheSyncState is the commit marker written after a complete analytics
 // cache publication. SQLite remains authoritative; these watermarks only
@@ -93,9 +96,12 @@ type CacheSyncState struct {
 	// CorrespondentKindRevision tracks classification changes, which bake
 	// into the replaceable correspondent_kinds and relationship_people
 	// datasets only.
-	CorrespondentKindRevision int64     `json:"correspondent_kind_revision,omitzero"`
-	PublishedAt               time.Time `json:"published_at"`
-	DatasetFingerprint        string    `json:"dataset_fingerprint"`
+	CorrespondentKindRevision int64 `json:"correspondent_kind_revision,omitzero"`
+	// MeetingWeightRevision tracks event kind judgments, which bake into the
+	// replaceable meeting_weights and relationship_daily datasets only.
+	MeetingWeightRevision int64     `json:"meeting_weight_revision,omitzero"`
+	PublishedAt           time.Time `json:"published_at"`
+	DatasetFingerprint    string    `json:"dataset_fingerprint"`
 	// FullRebuildRequired marks a publication whose export snapshot missed
 	// rows committed while it ran (a sync finished mid-export). Rows related
 	// to messages already inside LastMessageID may be absent, so the next
@@ -141,7 +147,7 @@ func (e *CacheUnavailableError) Unwrap() error { return ErrCacheUnavailable }
 // Revision identifies one committed cache publication. It intentionally uses
 // only commit-marker fields, never ambient filesystem state.
 func (s CacheSyncState) Revision() string {
-	payload := fmt.Sprintf("v=%d|message=%d|watermark=%s|run=%d|add=%d|update=%d|related=%d|fail_count=%d|fail_sum=%d|identity=%d|derived_data=%d|account_identity=%d|participant_identifier=%d|participant_display_name=%d|person_display_name=%d|correspondent_kind=%d|published=%s",
+	payload := fmt.Sprintf("v=%d|message=%d|watermark=%s|run=%d|add=%d|update=%d|related=%d|fail_count=%d|fail_sum=%d|identity=%d|derived_data=%d|account_identity=%d|participant_identifier=%d|participant_display_name=%d|person_display_name=%d|correspondent_kind=%d|meeting_weight=%d|published=%s",
 		s.SchemaVersion,
 		s.LastMessageID,
 		s.LastSyncAt.UTC().Format(time.RFC3339Nano),
@@ -158,6 +164,7 @@ func (s CacheSyncState) Revision() string {
 		s.ParticipantDisplayNameRevision,
 		s.PersonDisplayNameRevision,
 		s.CorrespondentKindRevision,
+		s.MeetingWeightRevision,
 		s.PublishedAt.UTC().Format(time.RFC3339Nano),
 	)
 	return fmt.Sprintf("cache-%x", sha256.Sum256([]byte(payload)))

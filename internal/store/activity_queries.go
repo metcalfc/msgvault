@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"go.kenn.io/msgvault/internal/meetingweight"
 )
 
 // ActivityCounterpart is one participant on a candidate event, resolved to
@@ -58,8 +60,7 @@ type ActivityCandidate struct {
 }
 
 type activityMessageMetadata struct {
-	AllDay bool   `json:"all_day"`
-	Status string `json:"status"`
+	AllDay bool `json:"all_day"`
 }
 
 type activityCandidateRow struct {
@@ -368,12 +369,16 @@ func applyActivityEligibility(row *activityCandidateRow) {
 	hasTimestamp := activityUsableTime(row.candidate.SentAt) ||
 		activityUsableTime(row.candidate.ReceivedAt) ||
 		activityUsableTime(row.candidate.InternalDate)
-	cancelled := row.candidate.MessageType == "calendar_event" &&
-		strings.EqualFold(strings.TrimSpace(metadata.Status), "cancelled")
+	// A calendar event that is not a meeting (cancelled, declined by the
+	// owner, an out-of-office, focus-time, or working-location block, or
+	// marked free) is no contact with its attendees.
+	notMeeting := row.candidate.MessageType == calendarEventMessageType &&
+		row.metadata.Valid &&
+		meetingweight.ParseMetadata(row.metadata.String).Exclusion() != ""
 	row.candidate.Eligible = row.deletedAt == nil &&
 		row.deletedFromSourceAt == nil &&
 		hasTimestamp &&
-		!cancelled
+		!notMeeting
 }
 
 func activityUsableTime(value *time.Time) bool {

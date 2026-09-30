@@ -445,9 +445,20 @@ bar.
 
 ## Phase 7: meetings and calendar
 
-- [ ] **Task 7.1 Plain-code calendar fixes.** Skip resource attendees,
+- [x] **Task 7.1 Plain-code calendar fixes.** Skip resource attendees,
   owner-declined events, `outOfOffice`/`focusTime`/`workingLocation`,
   transparent events; cap attendee count for activity weight.
+  > Calendar sync no longer makes rooms and equipment participants and
+  > records the owner's RSVP and the attendee count in event metadata.
+  > `internal/meetingweight` owns the rules: an excluded event is no
+  > interaction in relationship rankings or the activity spine; otherwise a
+  > meeting weighs 1 up to 10 attendees and 10/n above. The cache exports
+  > the non-unit weights as `meeting_weights` (cache schema 32), and
+  > `relationship_daily.meeting_weight` replaces the meeting count in the
+  > score while `meeting_count` still counts events. Events synced before
+  > this change need a resync to record the owner's RSVP; the attendee count
+  > falls back to the stored attendee rows. Temperature summaries still
+  > count every event with the owner present.
 - [ ] **Task 7.2 Action-item assignee.** Choice among email-bearing
   attendees plus `owner` and `none_or_unclear`, batched per meeting at
   import; store `assignee_participant_id` with confidence at ≥ 0.80 and a

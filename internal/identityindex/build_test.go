@@ -842,6 +842,7 @@ func writeRelationshipBaseFixture(t *testing.T, empty bool) (string, *sql.DB) {
 		) AS t(source_id, participant_id)`+where)
 	writeRelationshipParquet(t, db, root, "person_display_names", `SELECT 0::BIGINT AS participant_id, 0::BIGINT AS person_id, NULL::VARCHAR AS display_name WHERE false`)
 	writeRelationshipParquet(t, db, root, "correspondent_kinds", `SELECT 0::BIGINT AS participant_id, ''::VARCHAR AS kind, ''::VARCHAR AS source, NULL::DOUBLE AS individual_person WHERE false`)
+	writeRelationshipParquet(t, db, root, DatasetMeetingWeights, `SELECT 0::BIGINT AS message_id, 1::DOUBLE AS weight WHERE false`)
 	writeRelationshipParquet(t, db, root, "participant_clusters", `
 		SELECT * FROM (VALUES
 			(2::BIGINT, 2::BIGINT),
@@ -1046,5 +1047,50 @@ func TestBuildPeopleCarriesTheClusterCorrespondentKind(t *testing.T) {
 		if id != 2 {
 			assertions.False(p.kind.Valid, "unclassified cluster %d has no kind", id)
 		}
+	}
+}
+
+func TestBuildRelationshipDailyWeighsCalendarEvents(t *testing.T) {
+	tests := []struct {
+		name       string
+		weights    string
+		wantRows   int64
+		wantWeight float64
+	}{
+		{"no row weighs one", `SELECT 0::BIGINT AS message_id, 1::DOUBLE AS weight WHERE false`, 1, 1},
+		{"large meeting counts for less", `SELECT 100::BIGINT AS message_id, 0.25::DOUBLE AS weight`, 1, 0.25},
+		{"not a meeting is no interaction", `SELECT 100::BIGINT AS message_id, 0::DOUBLE AS weight`, 0, 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assertions := assert.New(t)
+			requirements := require.New(t)
+			root, db := writeRelationshipBaseFixture(t, false)
+			replaceRelationshipParquet(t, db, root, "messages", `
+				SELECT * FROM (VALUES
+					(100::BIGINT, 1::BIGINT, 'm-100'::VARCHAR, 10::BIGINT,
+					 'Planning'::VARCHAR, 'Preview'::VARCHAR,
+					 TIMESTAMP '2026-07-20 10:30:00', 50::BIGINT, false,
+					 0::INTEGER, NULL::TIMESTAMP, 1::BIGINT, NULL::BIGINT, 'calendar_event'::VARCHAR,
+					 true, 2026::INTEGER, 7::INTEGER)
+				) AS t(id, source_id, source_message_id, conversation_id, subject,
+					snippet, sent_at, size_estimate, has_attachments, attachment_count,
+					deleted_from_source_at, sender_id, owner_participant_id, message_type, is_from_me, year, month)`)
+			replaceRelationshipParquet(t, db, root, DatasetMeetingWeights, test.weights)
+			_, err := Build(context.Background(), db, BuildOptions{Mode: ModeFull, StagedBaseRoot: root, OutputRoot: root})
+			requirements.NoError(err)
+
+			var rows int64
+			var units sql.NullInt64
+			var weight sql.NullFloat64
+			requirements.NoError(db.QueryRow(`SELECT count(*), sum(meeting_units)::BIGINT, sum(meeting_weight)
+				FROM read_parquet(?) WHERE canonical_id = 2`,
+				relationshipParquetGlob(root, DatasetRelationshipDaily)).Scan(&rows, &units, &weight))
+			assertions.Equal(test.wantRows, rows)
+			if test.wantRows > 0 {
+				assertions.Equal(int64(1), units.Int64, "the event still counts as one meeting")
+				assertions.InDelta(test.wantWeight, weight.Float64, 1e-9)
+			}
+		})
 	}
 }

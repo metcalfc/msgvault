@@ -138,7 +138,7 @@ func Build(
 	if err := b.copyDataset(ctx, DatasetDomains, buildRelationshipDomainsSQL()); err != nil {
 		return BuildResult{}, err
 	}
-	if err := b.copyDataset(ctx, DatasetRelationshipDaily, buildRelationshipDailySQL()); err != nil {
+	if err := b.copyDataset(ctx, DatasetRelationshipDaily, buildRelationshipDailySQL(b.base)); err != nil {
 		return BuildResult{}, err
 	}
 	validationActivity := activity
@@ -197,6 +197,7 @@ var baseIdentityDatasets = []string{
 	"participant_clusters",
 	"person_display_names",
 	"correspondent_kinds",
+	DatasetMeetingWeights,
 	"attachments",
 }
 

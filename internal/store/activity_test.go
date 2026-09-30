@@ -1200,6 +1200,18 @@ func TestLoadActivityCandidatePreservesBakedSenderOwnerFallback(t *testing.T) {
 		"is_from_me remains an owner signal when no account identity row exists")
 }
 
+// markCalendarEvent turns a message into a calendar event with metadata.
+func markCalendarEvent(metadata string) func(t *testing.T, f *storetest.Fixture, messageID int64) {
+	return func(t *testing.T, f *storetest.Fixture, messageID int64) {
+		t.Helper()
+		_, err := activityExec(f.Store,
+			`UPDATE messages SET message_type = 'calendar_event' WHERE id = ?`, messageID)
+		require.NoError(t, err)
+		require.NoError(t, f.Store.SetMessageMetadata(messageID,
+			sql.NullString{String: metadata, Valid: true}))
+	}
+}
+
 func TestQueuedActivityCandidateEligibilitySupportsRetractionAndRestoration(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -1233,6 +1245,18 @@ func TestQueuedActivityCandidateEligibilitySupportsRetractionAndRestoration(t *t
 				require.NoError(t, f.Store.SetMessageMetadata(messageID,
 					sql.NullString{String: `{"status":"cancelled"}`, Valid: true}))
 			},
+		},
+		{
+			name:   "calendar event the owner declined",
+			mutate: markCalendarEvent(`{"status":"confirmed","owner_response_status":"declined"}`),
+		},
+		{
+			name:   "out-of-office block",
+			mutate: markCalendarEvent(`{"status":"confirmed","event_type":"outOfOffice"}`),
+		},
+		{
+			name:   "event marked free",
+			mutate: markCalendarEvent(`{"status":"confirmed","transparency":"transparent"}`),
 		},
 		{
 			name: "missing timestamp",

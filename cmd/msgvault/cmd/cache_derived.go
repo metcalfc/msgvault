@@ -124,6 +124,16 @@ func refreshDerivedDatasetsOnly(
 		_ = st.Close()
 		return nil, fmt.Errorf("read correspondent kinds: %w", err)
 	}
+	meetingWeightRevision, err := st.MeetingWeightRevisionContext(ctx)
+	if err != nil {
+		_ = st.Close()
+		return nil, fmt.Errorf("read meeting weight revision: %w", err)
+	}
+	meetingWeights, err := st.MeetingWeightExportRowsContext(ctx)
+	if err != nil {
+		_ = st.Close()
+		return nil, fmt.Errorf("read meeting weights: %w", err)
+	}
 	clusters, err := st.ParticipantClusters()
 	if err != nil {
 		_ = st.Close()
@@ -220,6 +230,7 @@ func refreshDerivedDatasetsOnly(
 		participantDisplayNameRevision == state.ParticipantDisplayNameRevision &&
 		personDisplayNameRevision == state.PersonDisplayNameRevision &&
 		correspondentKindRevision == state.CorrespondentKindRevision &&
+		meetingWeightRevision == state.MeetingWeightRevision &&
 		conversationFingerprint == state.ConversationParticipantsFingerprint &&
 		typesFingerprint == state.ConversationTypesFingerprint {
 		// Nothing the derived datasets read has changed (the account-identity
@@ -234,6 +245,7 @@ func refreshDerivedDatasetsOnly(
 		participantDisplayNameRevision == state.ParticipantDisplayNameRevision &&
 		personDisplayNameRevision == state.PersonDisplayNameRevision &&
 		correspondentKindRevision == state.CorrespondentKindRevision &&
+		meetingWeightRevision == state.MeetingWeightRevision &&
 		conversationFingerprint == state.ConversationParticipantsFingerprint &&
 		typesFingerprint == state.ConversationTypesFingerprint {
 		// Labels and attachment metadata do not enter relationship_activity.
@@ -273,6 +285,9 @@ func refreshDerivedDatasetsOnly(
 	// Kinds are resolved per cluster, so identity changes move them too;
 	// the dataset is small and always re-staged with the derived index.
 	if err := exportCorrespondentKindsDataset(ctx, exportDB, correspondentKinds, staging.root); err != nil {
+		return nil, err
+	}
+	if err := exportMeetingWeightsDataset(ctx, exportDB, meetingWeights, staging.root); err != nil {
 		return nil, err
 	}
 	conversationChanged :=
@@ -366,6 +381,7 @@ func refreshDerivedDatasetsOnly(
 	state.ParticipantDisplayNameRevision = participantDisplayNameRevision
 	state.PersonDisplayNameRevision = personDisplayNameRevision
 	state.CorrespondentKindRevision = correspondentKindRevision
+	state.MeetingWeightRevision = meetingWeightRevision
 	state.ConversationParticipantsFingerprint = conversationFingerprint
 	state.ConversationTypesFingerprint = typesFingerprint
 	if repairRelated {
@@ -635,6 +651,52 @@ func exportCorrespondentKindsDataset(
 	return nil
 }
 
+// exportMeetingWeightsDataset stages the calendar events whose meeting
+// weight differs from 1, as full builds and derived refreshes both do. It
+// always writes the file, empty when every event weighs 1, so the required
+// dataset directory exists.
+func exportMeetingWeightsDataset(
+	ctx context.Context,
+	db sqlRunner,
+	rows []store.MeetingWeightExportRow,
+	stagingRoot string,
+) error {
+	if _, err := db.ExecContext(ctx, `
+		CREATE TEMP TABLE tmp_meeting_weights (message_id BIGINT, weight DOUBLE)
+	`); err != nil {
+		return fmt.Errorf("create meeting weights temp table: %w", err)
+	}
+	const batch = 1000
+	for start := 0; start < len(rows); start += batch {
+		chunk := rows[start:min(start+batch, len(rows))]
+		values := make([]string, 0, len(chunk))
+		for _, row := range chunk {
+			values = append(values, fmt.Sprintf("(%d, %s)",
+				row.MessageID, strconv.FormatFloat(row.Weight, 'g', -1, 64)))
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO tmp_meeting_weights VALUES `+
+			strings.Join(values, ",")); err != nil {
+			return fmt.Errorf("populate meeting weights temp table: %w", err)
+		}
+	}
+	dir := filepath.Join(stagingRoot, tableMeetingWeights)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create meeting weights directory: %w", err)
+	}
+	path := filepath.Join(dir, tableMeetingWeights+".parquet")
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
+		COPY (
+			SELECT message_id, weight FROM tmp_meeting_weights ORDER BY message_id
+		) TO '%s' (FORMAT PARQUET, COMPRESSION 'zstd')
+	`, quoteCacheSQL(path))); err != nil {
+		return fmt.Errorf("export meeting weights: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, `DROP TABLE tmp_meeting_weights`); err != nil {
+		return fmt.Errorf("drop meeting weights temp table: %w", err)
+	}
+	return nil
+}
+
 func exportDerivedParticipantClusters(
 	ctx context.Context,
 	db sqlRunner,
@@ -722,6 +784,7 @@ func derivedCachePublishPlan(
 		tableOwnerParticipants,
 		tableParticipantClusters,
 		tableCorrespondentKinds,
+		tableMeetingWeights,
 		identityindex.DatasetActivity,
 		identityindex.DatasetPeople,
 		identityindex.DatasetDomains,
