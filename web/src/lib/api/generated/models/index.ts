@@ -799,6 +799,8 @@ export * from "./settingUpdate";
 export * from "./settingValidation";
 export * from "./settingValidationFormat";
 export * from "./settingValue";
+export * from "./sharedMailboxSignal";
+export * from "./sharedMailboxSignalReasonsItem";
 export * from "./similarSearchResponse";
 export * from "./source";
 export * from "./sourceCount";

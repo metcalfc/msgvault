@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"slices"
+
+	"go.kenn.io/msgvault/internal/correspondentkind"
 )
 
 // maxEndpointSummaryAddresses bounds the addresses shown for one endpoint.
@@ -28,9 +30,12 @@ type IdentityMatchEndpointSummary struct {
 // whether a person merge it needs would be refused.
 type ContactMatchStatus struct {
 	CandidateID      int64                      `json:"candidate_id"`
-	Classification   ContactMatchClassification `json:"classification" enum:"bind,merge,ambiguous,linked"`
+	Classification   ContactMatchClassification `json:"classification" enum:"bind,merge,ambiguous,linked,shared_mailbox"`
 	BlockedReason    *ContactMatchBlockReason   `json:"blocked_reason,omitzero" nullable:"false" enum:"published,carddav_conflict"`
 	ClusterPersonIDs []int64                    `json:"cluster_person_ids"`
+	// SharedMailbox explains a shared_mailbox classification: the address
+	// and why it looks shared.
+	SharedMailbox *correspondentkind.SharedMailboxSignal `json:"shared_mailbox,omitzero" nullable:"false" doc:"Why the matched address looks like a shared mailbox, when classification is shared_mailbox."`
 }
 
 type endpointKey struct {
@@ -331,13 +336,22 @@ func (s *Store) participantPersonMatchStatusesTx(
 	if err != nil {
 		return nil, err
 	}
+	signals, err := s.sharedMailboxSignalsTx(ctx, tx, clusters, nil)
+	if err != nil {
+		return nil, err
+	}
 	for i, candidate := range relevant {
-		statuses = append(statuses, ContactMatchStatus{
+		status := ContactMatchStatus{
 			CandidateID:      candidate.ID,
 			Classification:   matches[i].Classification,
 			BlockedReason:    contactMatchBlockedReason(matches[i], blocks),
 			ClusterPersonIDs: matches[i].ClusterPersonIDs,
-		})
+		}
+		if signal, fires := signals[candidate.ID]; fires && status.Classification != ContactMatchLinked {
+			status.Classification = ContactMatchSharedMailbox
+			status.SharedMailbox = &signal
+		}
+		statuses = append(statuses, status)
 	}
 	return statuses, nil
 }

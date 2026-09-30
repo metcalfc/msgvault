@@ -12,5 +12,6 @@ export interface ContactMatchBuildResult {
   matches: number;
   merge: number;
   retired: number;
+  shared_mailbox: number;
   [key: string]: unknown;
 }

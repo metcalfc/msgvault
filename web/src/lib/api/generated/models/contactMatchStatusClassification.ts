@@ -10,4 +10,5 @@ export const ContactMatchStatusClassification = {
   merge: "merge",
   ambiguous: "ambiguous",
   linked: "linked",
+  shared_mailbox: "shared_mailbox",
 } as const;

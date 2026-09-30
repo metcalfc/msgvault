@@ -444,16 +444,17 @@ func (c ContactMatchStatusBlockedReason) Validate() error {
 type ContactMatchStatusClassification string
 
 const (
-	Ambiguous ContactMatchStatusClassification = "ambiguous"
-	Bind      ContactMatchStatusClassification = "bind"
-	Linked    ContactMatchStatusClassification = "linked"
-	Merge     ContactMatchStatusClassification = "merge"
+	Ambiguous     ContactMatchStatusClassification = "ambiguous"
+	Bind          ContactMatchStatusClassification = "bind"
+	Linked        ContactMatchStatusClassification = "linked"
+	Merge         ContactMatchStatusClassification = "merge"
+	SharedMailbox ContactMatchStatusClassification = "shared_mailbox"
 )
 
 // Validate checks if the ContactMatchStatusClassification value is valid
 func (c ContactMatchStatusClassification) Validate() error {
 	switch c {
-	case Ambiguous, Bind, Linked, Merge:
+	case Ambiguous, Bind, Linked, Merge, SharedMailbox:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid ContactMatchStatusClassification value, got: %v", c))
@@ -2469,6 +2470,23 @@ func (s SettingValidationFormat) Validate() error {
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid SettingValidationFormat value, got: %v", s))
+	}
+}
+
+type SharedMailboxSignalReasons string
+
+const (
+	RoleAddress  SharedMailboxSignalReasons = "role_address"
+	SeveralNames SharedMailboxSignalReasons = "several_names"
+)
+
+// Validate checks if the SharedMailboxSignalReasons value is valid
+func (s SharedMailboxSignalReasons) Validate() error {
+	switch s {
+	case RoleAddress, SeveralNames:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid SharedMailboxSignalReasons value, got: %v", s))
 	}
 }
 

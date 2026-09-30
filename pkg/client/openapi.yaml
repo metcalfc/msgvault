@@ -2466,6 +2466,9 @@ components:
         retired:
           format: int64
           type: integer
+        shared_mailbox:
+          format: int64
+          type: integer
       required:
         - matches
         - created
@@ -2476,6 +2479,7 @@ components:
         - merge
         - ambiguous
         - blocked
+        - shared_mailbox
       type: object
     ContactMatchStatus:
       properties:
@@ -2493,12 +2497,16 @@ components:
             - merge
             - ambiguous
             - linked
+            - shared_mailbox
           type: string
         cluster_person_ids:
           items:
             format: int64
             type: integer
           type: array
+        shared_mailbox:
+          $ref: "#/components/schemas/SharedMailboxSignal"
+          description: Why the matched address looks like a shared mailbox, when classification is shared_mailbox.
       required:
         - candidate_id
         - classification
@@ -12145,6 +12153,25 @@ components:
         - settings
         - credential_etag
         - pending_restart
+      type: object
+    SharedMailboxSignal:
+      properties:
+        address:
+          type: string
+        names:
+          items:
+            type: string
+          type: array
+        reasons:
+          items:
+            enum:
+              - role_address
+              - several_names
+            type: string
+          type: array
+      required:
+        - address
+        - reasons
       type: object
     SimilarSearchResponse:
       properties:

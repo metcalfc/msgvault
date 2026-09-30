@@ -142,11 +142,11 @@ func seedContactProfileCandidate(
 		fmt.Sprintf("contact-%d", participantID), "Contact Example",
 	).Scan(&personID))
 	_, err := st.AddPersonContactPointContext(context.Background(), personID, store.PersonContactPointInput{
-		AddressKind: store.ContactAddressEmail, OriginalValue: "contact@example.com",
+		AddressKind: store.ContactAddressEmail, OriginalValue: "casey@example.com",
 		Envelope: store.ValueEnvelopeInput{Source: store.ProvenanceCardDAVImport},
 	})
 	require.NoError(t, err)
-	value := "contact@example.com"
+	value := "casey@example.com"
 	candidate, _, err := st.UpsertIdentityMatchCandidateContext(
 		context.Background(), store.IdentityMatchCandidateInput{
 			LeftKind: store.IdentityMatchParticipant, LeftID: participantID,
@@ -163,7 +163,7 @@ func TestAcceptParticipantPersonCandidateBindsUnboundCluster(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, st := newIdentityLinkTestServer(t)
-	participant := st.mustParticipant(t, "contact@example.com", "Contact", "example.com")
+	participant := st.mustParticipant(t, "casey@example.com", "Contact", "example.com")
 	candidate, personID := seedContactProfileCandidate(t, st, participant)
 
 	response := personRequest(t, srv, http.MethodPost, acceptPath(candidate.ID), nil, "")
@@ -181,7 +181,7 @@ func TestAcceptParticipantPersonCandidateOwnedElsewhereReturnsPersonMergeRequire
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, st := newIdentityLinkTestServer(t)
-	participant := st.mustParticipant(t, "contact@example.com", "Contact", "example.com")
+	participant := st.mustParticipant(t, "casey@example.com", "Contact", "example.com")
 	existing, _, err := st.CreatePersonFromParticipantContext(context.Background(), participant)
 	require.NoError(err)
 	candidate, personID := seedContactProfileCandidate(t, st, participant)
@@ -202,13 +202,13 @@ func TestListIdentityMatchCandidatesResolvesEndpointsAndFiltersContactMatches(t 
 	assert := assert.New(t)
 	srv, st := newIdentityLinkTestServer(t)
 	pair, _, _ := seedMatchCandidate(t, st, store.IdentityMatchServiceScopeUsername)
-	participant := st.mustParticipant(t, "contact@example.com", "Contact Sender", "example.com")
+	participant := st.mustParticipant(t, "casey@example.com", "Contact Sender", "example.com")
 	var personID int64
 	require.NoError(st.DB().QueryRow(
 		`INSERT INTO persons (vcard_uid, display_name) VALUES ('contact-card', 'Contact Card') RETURNING id`,
 	).Scan(&personID))
 	_, err := st.AddPersonContactPointContext(context.Background(), personID, store.PersonContactPointInput{
-		AddressKind: store.ContactAddressEmail, OriginalValue: "contact@example.com",
+		AddressKind: store.ContactAddressEmail, OriginalValue: "casey@example.com",
 		Envelope: store.ValueEnvelopeInput{Source: store.ProvenanceCardDAVImport},
 	})
 	require.NoError(err)
@@ -235,13 +235,13 @@ func TestListIdentityMatchCandidatesResolvesEndpointsAndFiltersContactMatches(t 
 	assert.Equal(participant, sender.ID)
 	require.NotNil(sender.DisplayName)
 	assert.Equal("Contact Sender", *sender.DisplayName)
-	assert.Equal([]string{"contact@example.com"}, sender.Addresses)
+	assert.Equal([]string{"casey@example.com"}, sender.Addresses)
 	assert.Nil(sender.PersonID)
 	card := byKind[store.IdentityMatchPerson]
 	assert.True(card.Found)
 	require.NotNil(card.DisplayName)
 	assert.Equal("Contact Card", *card.DisplayName)
-	assert.Equal([]string{"contact@example.com"}, card.Addresses)
+	assert.Equal([]string{"casey@example.com"}, card.Addresses)
 
 	all := personRequest(t, srv, http.MethodGet, "/api/v1/identity/match-candidates", nil, "")
 	require.Equal(http.StatusOK, all.Code, all.Body.String())
@@ -260,12 +260,12 @@ func TestBuildContactMatchCandidatesReportsCounts(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, st := newIdentityLinkTestServer(t)
-	st.mustParticipant(t, "contact@example.com", "Contact", "example.com")
+	st.mustParticipant(t, "casey@example.com", "Contact", "example.com")
 	var personID int64
 	require.NoError(st.DB().QueryRow(
 		`INSERT INTO persons (vcard_uid) VALUES ('contact-build') RETURNING id`).Scan(&personID))
 	_, err := st.AddPersonContactPointContext(context.Background(), personID, store.PersonContactPointInput{
-		AddressKind: store.ContactAddressEmail, OriginalValue: "Contact@Example.com",
+		AddressKind: store.ContactAddressEmail, OriginalValue: "Casey@Example.com",
 		Envelope: store.ValueEnvelopeInput{Source: store.ProvenanceCardDAVImport},
 	})
 	require.NoError(err)

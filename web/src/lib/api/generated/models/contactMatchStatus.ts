@@ -3,11 +3,14 @@
  */
 import type { ContactMatchStatusBlockedReason } from "./contactMatchStatusBlockedReason";
 import type { ContactMatchStatusClassification } from "./contactMatchStatusClassification";
+import type { SharedMailboxSignal } from "./sharedMailboxSignal";
 
 export interface ContactMatchStatus {
   blocked_reason?: ContactMatchStatusBlockedReason;
   candidate_id: number;
   classification: ContactMatchStatusClassification;
   cluster_person_ids: number[];
+  /** Why the matched address looks like a shared mailbox, when classification is shared_mailbox. */
+  shared_mailbox?: SharedMailboxSignal;
   [key: string]: unknown;
 }

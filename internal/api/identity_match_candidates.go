@@ -409,6 +409,9 @@ func (s *Server) writeIdentityMatchError(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrContactMatchNotAPerson):
 		writeError(w, http.StatusConflict, "contact_match_not_a_person",
 			"The matched archive identity is marked as not a person")
+	case errors.Is(err, store.ErrContactMatchSharedMailbox):
+		writeError(w, http.StatusConflict, "contact_match_shared_mailbox",
+			"The matched address looks like a shared mailbox; mark it as not a person, or confirm it is a person, first")
 	case errors.Is(err, store.ErrIdentityMatchEndpointNotFound):
 		writeError(w, http.StatusNotFound, "identity_match_endpoint_not_found", err.Error())
 	case errors.Is(err, store.ErrPersonBindingConflict):

@@ -126,6 +126,15 @@ func (s *Store) acceptParticipantPersonMatchTx(
 	}
 	contactPersonID := candidate.RightID
 	classification := classifyContactMatch(contactPersonID, persons)
+	if classification != ContactMatchLinked {
+		signals, err := s.sharedMailboxSignalsTx(ctx, tx, map[int64][]int64{0: members}, nil)
+		if err != nil {
+			return nil, err
+		}
+		if _, shared := signals[0]; shared {
+			return nil, ErrContactMatchSharedMailbox
+		}
+	}
 	switch classification {
 	case ContactMatchMerge, ContactMatchAmbiguous:
 		return nil, newPersonBindingConflict(append(slices.Clone(persons), contactPersonID))

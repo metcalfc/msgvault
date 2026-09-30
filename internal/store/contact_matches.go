@@ -2,11 +2,13 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/textimport"
 )
 
@@ -40,6 +42,12 @@ const (
 	// ContactMatchLinked means the cluster is already bound to the contact
 	// profile; the match needs no further action.
 	ContactMatchLinked ContactMatchClassification = "linked"
+	// ContactMatchSharedMailbox means the matched address looks like a
+	// mailbox several people write from (see
+	// correspondentkind.DetectSharedMailbox). Nothing is bound or merged
+	// through it: the reviewer marks it as not a person, or says it is a
+	// person, first.
+	ContactMatchSharedMailbox ContactMatchClassification = "shared_mailbox"
 )
 
 // ContactMatchBlockReason reports why a person merge would be refused for one
@@ -74,6 +82,8 @@ type ContactMatch struct {
 	Classification   ContactMatchClassification `json:"classification"`
 	BlockedReason    *ContactMatchBlockReason   `json:"blocked_reason,omitzero" nullable:"false"`
 	Identifiers      []ContactMatchIdentifier   `json:"identifiers"`
+	// SharedMailbox explains a shared_mailbox classification.
+	SharedMailbox *correspondentkind.SharedMailboxSignal `json:"shared_mailbox,omitzero" nullable:"false"`
 }
 
 type contactMatchPoint struct {
@@ -172,8 +182,18 @@ func (s *Store) findContactMatchesTx(ctx context.Context, tx *loggedTx) ([]Conta
 		return nil, err
 	}
 
+	contactIDs := make([]int64, 0, len(keys))
+	for _, key := range keys {
+		contactIDs = append(contactIDs, key.personID)
+	}
+	contactNames, err := contactPersonNamesTx(ctx, tx, contactIDs)
+	if err != nil {
+		return nil, err
+	}
 	matches := make([]ContactMatch, 0, len(keys))
 	personIDs := []int64{}
+	signalClusters := map[int64][]int64{}
+	signalNames := map[int64][]string{}
 	for _, key := range keys {
 		cluster := clusterMembers(key.root)
 		if slices.ContainsFunc(cluster, func(id int64) bool {
@@ -209,6 +229,21 @@ func (s *Store) findContactMatchesTx(ctx context.Context, tx *loggedTx) ([]Conta
 		matches = append(matches, match)
 		personIDs = append(personIDs, key.personID)
 		personIDs = append(personIDs, clusterPersons...)
+		signalClusters[key.root] = cluster
+		if name := contactNames[key.personID]; name != "" {
+			signalNames[key.root] = append(signalNames[key.root], name)
+		}
+	}
+	signals, err := s.sharedMailboxSignalsTx(ctx, tx, signalClusters, signalNames)
+	if err != nil {
+		return nil, err
+	}
+	for i := range matches {
+		signal, fires := signals[matches[i].ClusterMembers[0]]
+		if fires && matches[i].Classification != ContactMatchLinked {
+			matches[i].Classification = ContactMatchSharedMailbox
+			matches[i].SharedMailbox = &signal
+		}
 	}
 	blocks, err := contactMatchBlockReasonsTx(ctx, tx, personIDs)
 	if err != nil {
@@ -689,6 +724,8 @@ type ContactMatchBuildResult struct {
 	Merge         int `json:"merge"`
 	Ambiguous     int `json:"ambiguous"`
 	Blocked       int `json:"blocked"`
+	// SharedMailbox counts matches through addresses that look shared.
+	SharedMailbox int `json:"shared_mailbox"`
 }
 
 // BuildContactMatchCandidatesContext writes one reviewable identity match
@@ -746,6 +783,8 @@ func (s *Store) writeContactMatchCandidateTx(
 		result.Merge++
 	case ContactMatchAmbiguous:
 		result.Ambiguous++
+	case ContactMatchSharedMailbox:
+		result.SharedMailbox++
 	case ContactMatchLinked:
 	}
 	if match.BlockedReason != nil {
@@ -902,4 +941,28 @@ func isContactMatchRetirement(err error) bool {
 		errors.Is(err, ErrContactMatchStale) ||
 		errors.Is(err, ErrContactMatchRejectedInCluster) ||
 		errors.Is(err, ErrContactMatchNotAPerson)
+}
+
+// contactPersonNamesTx returns the display names of the contact profiles in
+// personIDs, so two profiles claiming one address count as two names on it.
+func contactPersonNamesTx(
+	ctx context.Context, tx *loggedTx, personIDs []int64,
+) (map[int64]string, error) {
+	ids := slices.Clone(personIDs)
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	names := map[int64]string{}
+	if err := queryInChunksContext(ctx, tx, ids, nil, `
+		SELECT id, display_name FROM persons WHERE id IN (%s)`, func(rows *loggedRows) error {
+		var id int64
+		var name sql.NullString
+		if err := rows.Scan(&id, &name); err != nil {
+			return fmt.Errorf("scan contact profile name: %w", err)
+		}
+		names[id] = strings.TrimSpace(name.String)
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("load contact profile names: %w", err)
+	}
+	return names, nil
 }

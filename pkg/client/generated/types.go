@@ -2257,6 +2257,7 @@ type ContactMatchBuildResult struct {
 	Matches       int64 `json:"matches"`
 	Merge         int64 `json:"merge"`
 	Retired       int64 `json:"retired"`
+	SharedMailbox int64 `json:"shared_mailbox"`
 }
 
 type ContactMatchStatus struct {
@@ -2264,6 +2265,7 @@ type ContactMatchStatus struct {
 	CandidateID      int64                            `json:"candidate_id"`
 	Classification   ContactMatchStatusClassification `json:"classification" validate:"required"`
 	ClusterPersonIds []int64                          `json:"cluster_person_ids" validate:"required"`
+	SharedMailbox    *SharedMailboxSignal             `json:"shared_mailbox,omitempty"`
 }
 
 func (c ContactMatchStatus) Validate() error {
@@ -2282,6 +2284,13 @@ func (c ContactMatchStatus) Validate() error {
 	}
 	if err := typesValidator.Var(c.ClusterPersonIds, "required"); err != nil {
 		errors = errors.Append("ClusterPersonIds", err)
+	}
+	if c.SharedMailbox != nil {
+		if v, ok := any(c.SharedMailbox).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("SharedMailbox", err)
+			}
+		}
 	}
 	if len(errors) == 0 {
 		return nil
@@ -11771,6 +11780,30 @@ func (s SettingsResponse) Validate() error {
 		if v, ok := any(item).(runtime.Validator); ok {
 			if err := v.Validate(); err != nil {
 				errors = errors.Append(fmt.Sprintf("Settings[%d]", i), err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
+type SharedMailboxSignal struct {
+	Address string                       `json:"address" validate:"required"`
+	Names   []string                     `json:"names,omitempty"`
+	Reasons []SharedMailboxSignalReasons `json:"reasons" validate:"required"`
+}
+
+func (s SharedMailboxSignal) Validate() error {
+	var errors runtime.ValidationErrors
+	if err := typesValidator.Var(s.Address, "required"); err != nil {
+		errors = errors.Append("Address", err)
+	}
+	for i, item := range s.Reasons {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("Reasons[%d]", i), err)
 			}
 		}
 	}
