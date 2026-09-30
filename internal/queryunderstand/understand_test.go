@@ -182,14 +182,16 @@ func TestUnderstandSendsOnlyQueryAndLabelsAndSuggestsConfidentFilters(t *testing
 			},
 		},
 		{
-			Kind: KindPerson, Label: "From Jane Doe", Span: "from Jane Doe", Probability: 0.97,
-			QueryOperators: []string{"from:jane.doe@example.com", "from:jane@example.org"},
+			// Two addresses: repeated from: operators would be AND-ed, so the
+			// person filter (any of her identities) is kept.
+			Kind: KindPerson, Label: "With Jane Doe", Span: "from Jane Doe", Probability: 0.97,
+			Filters: []Filter{{Dimension: "participant", Values: []string{"7"}}},
 		},
 		{
 			Kind: KindMessageType, Label: "Texts", Span: "texts", Probability: 0.93,
 			Filters: []Filter{{Dimension: "message_type", Values: []string{"sms", "mms", "imessage", "rcs", "google_voice_text"}}},
 		},
-	}, outcome.Suggestions)
+	}, unplaced(outcome.Suggestions))
 }
 
 func TestUnderstandDropsUnsureAndNoneAnswers(t *testing.T) {
@@ -209,7 +211,7 @@ func TestUnderstandDropsUnsureAndNoneAnswers(t *testing.T) {
 	assert.Equal([]Suggestion{{
 		Kind: KindPerson, Label: "With Jane Doe", Span: "from Jane Doe", Probability: 0.90,
 		Filters: []Filter{{Dimension: "participant", Values: []string{"7"}}},
-	}}, outcome.Suggestions, "an unsure role keeps the person filter in any role")
+	}}, unplaced(outcome.Suggestions), "an unsure role keeps the person filter in any role")
 }
 
 func TestUnderstandSendsNothingWithoutConsentOrCandidates(t *testing.T) {
@@ -259,4 +261,27 @@ func TestFeatureDisclosesOnlyQueryAndLabels(t *testing.T) {
 	for _, field := range spec.StateFields {
 		assert.True(field == "query.text" || strings.HasSuffix(field, ".label"), field)
 	}
+}
+
+func TestUnderstandUsesOneOperatorForAPersonWithOneAddress(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	fake := &fakeJev{answers: map[string]map[string]any{
+		QuestionPerson:          choice(PersonKey(0), 0.97, OptionNone),
+		QuestionPersonRole:      choice(RoleRecipient, 0.91, RoleSender, RoleEither),
+		QuestionMessageType:     choice(OptionNone, 0.9, TypeTextMessage),
+		QuestionTimeWindow:      choice(OptionNone, 0.9, WindowKey(0)),
+		QuestionNaturalLanguage: noul(0.1),
+	}}
+	service := newService(t, fake.server(t).URL, true)
+	addresses := func(context.Context, int64) ([]string, error) {
+		return []string{"Jane.Doe@example.com", " jane.doe@example.com"}, nil
+	}
+	outcome, _, err := Understand(t.Context(), service, sampleCandidates(t), addresses, time.Now().Add(Budget))
+	require.NoError(err)
+	require.Len(outcome.Suggestions, 1)
+	assert.Equal(Suggestion{
+		Kind: KindPerson, Label: "To Jane Doe", Span: "from Jane Doe", Probability: 0.97,
+		QueryOperators: []string{"to:jane.doe@example.com"},
+	}, unplaced(outcome.Suggestions)[0])
 }

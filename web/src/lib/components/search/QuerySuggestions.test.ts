@@ -5,7 +5,7 @@ import type { QuerySuggestion } from '../../search/suggestions';
 import QuerySuggestions from './QuerySuggestions.svelte';
 
 const texts: QuerySuggestion = {
-  kind: 'message_type', label: 'Texts', span: 'texts', probability: 0.93,
+  kind: 'message_type', label: 'Texts', span: 'texts', spanStart: 0, spanEnd: 5, probability: 0.93,
   filters: [{ dimension: 'message_type', values: ['sms'] }], queryOperators: [],
 };
 const person: QuerySuggestion = {

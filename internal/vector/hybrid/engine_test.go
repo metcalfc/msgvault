@@ -315,30 +315,83 @@ func TestEngine_Hybrid_PunctuationQuery(t *testing.T) {
 // lexical match, the BM25 leg retries with any content word, so a natural
 // query still ranks the messages that share its key words.
 func TestEngine_Hybrid_AnyTermFallback(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
 	ctx := context.Background()
 	f := newEngineFixture(t)
 
 	// No message holds both "tacos" and "itinerary"; each holds one.
 	results, meta, err := f.Engine.Search(ctx, SearchRequest{
-		Mode: ModeHybrid, FreeText: "the tacos and itinerary", Limit: 5,
+		Mode: ModeHybrid, FreeText: "the tacos and itinerary", Limit: 5, AnyTermFallback: true,
 	})
-	require.NoError(t, err)
-	assert.True(t, meta.LexicalMatchAny, "an empty AND-ed leg falls back to any term")
+	require.NoError(err)
+	assert.True(meta.LexicalMatchAny, "an empty AND-ed leg falls back to any term")
 	lexical := map[int64]bool{}
 	for _, hit := range results {
 		if !math.IsNaN(hit.BM25Score) {
 			lexical[hit.MessageID] = true
 		}
 	}
-	assert.Equal(t, map[int64]bool{2: true, 3: true}, lexical,
+	assert.Equal(map[int64]bool{2: true, 3: true}, lexical,
 		"the any-term leg matches each content word; stopwords match nothing on their own")
+
+	// FTS5 metacharacters and bare boolean words stay quoted in the
+	// any-term leg, so they cannot break its MATCH syntax.
+	for _, raw := range []string{`tacos* OR (itinerary) NEAR "x`, "what's the tacos, roughly? AND itinerary"} {
+		_, _, err = f.Engine.Search(ctx, SearchRequest{
+			Mode: ModeHybrid, FreeText: raw, Limit: 5, AnyTermFallback: true,
+		})
+		require.NoErrorf(err, "any-term fallback must not raise an FTS5 syntax error for %q", raw)
+	}
+
+	// A caller that did not allow it (a quoted phrase or operators) keeps
+	// the empty AND-ed leg.
+	_, meta, err = f.Engine.Search(ctx, SearchRequest{
+		Mode: ModeHybrid, FreeText: "tacos itinerary", Limit: 5,
+	})
+	require.NoError(err)
+	assert.False(meta.LexicalMatchAny, "no fallback unless the caller allows it")
 
 	// A query whose terms all match one message keeps the AND-ed leg.
 	_, meta, err = f.Engine.Search(ctx, SearchRequest{
-		Mode: ModeHybrid, FreeText: "meeting tomorrow", Limit: 5,
+		Mode: ModeHybrid, FreeText: "meeting tomorrow", Limit: 5, AnyTermFallback: true,
 	})
-	require.NoError(t, err)
-	assert.False(t, meta.LexicalMatchAny)
+	require.NoError(err)
+	assert.False(meta.LexicalMatchAny)
+}
+
+// TestEngine_Hybrid_AnyTermFallbackUsesTheBackendCount: two boosted
+// vector-only hits fill a limit of two, pushing the one BM25 match out of
+// the page. The backend counted that match before boosting, so the engine
+// does not mistake the leg for empty.
+func TestEngine_Hybrid_AnyTermFallbackUsesTheBackendCount(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := context.Background()
+	f := newEngineFixture(t)
+	f.Engine.cfg.SubjectBoost = 50
+
+	results, meta, err := f.Engine.Search(ctx, SearchRequest{
+		Mode: ModeHybrid, FreeText: "quarterly review", Limit: 2, AnyTermFallback: true,
+		SubjectTerms: []string{"lunch", "travel"},
+	})
+	require.NoError(err)
+	require.Len(results, 2)
+	for _, hit := range results {
+		assert.True(hit.SubjectBoosted)
+		assert.True(math.IsNaN(hit.BM25Score), "the page holds only boosted vector-only hits")
+	}
+	assert.False(meta.LexicalMatchAny, "the BM25 leg matched message 1 before boosting and trimming")
+}
+
+func TestPlainQuery(t *testing.T) {
+	assert := assert.New(t)
+	assert.True(PlainQuery("what's the deposit for the lease"))
+	assert.False(PlainQuery(`"quarterly plan" budget`))
+	assert.False(PlainQuery("budget from:ana@example.com"))
+	assert.False(PlainQuery("budget message_type=sms"))
+	assert.False(PlainQuery("budget -draft"))
+	assert.False(PlainQuery("'quarterly plan' budget"))
 }
 
 func TestEngine_Vector_HappyPath(t *testing.T) {

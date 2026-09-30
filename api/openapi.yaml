@@ -4873,9 +4873,19 @@ components:
           type: array
         span:
           type: string
+        span_end:
+          format: int64
+          minimum: 0
+          type: integer
+        span_start:
+          format: int64
+          minimum: 0
+          type: integer
       required:
         - kind
         - label
+        - span_start
+        - span_end
         - probability
         - filters
         - query_operators

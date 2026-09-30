@@ -297,6 +297,8 @@ export async function understandQuery(
         kind: suggestion.kind,
         label: suggestion.label,
         span: suggestion.span,
+        spanStart: suggestion.span ? suggestion.span_start : undefined,
+        spanEnd: suggestion.span ? suggestion.span_end : undefined,
         probability: suggestion.probability,
         filters: suggestion.filters,
         queryOperators: suggestion.query_operators,

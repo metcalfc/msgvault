@@ -442,7 +442,9 @@ bar.
   > matching an account's type, display name, or domain offers it; name
   > words are looked up in the people completion index (observed people
   > merged with curated profiles), full names first, at most 6 lookups and
-  > 8 people. Each candidate keeps the exact query text it came from.
+  > 4 people, keeping only names whose whole words (case and accents
+  > folded) include every looked-up word. Each candidate keeps the exact
+  > query text it came from and its position.
 - [x] **Task 6.2 Batched judgment.** Choices `message_type`, `time_window`,
   `person`, `person_role`, `account`; Noul `natural_language`. Runs in
   parallel with the search, 800 ms budget, dropped if late.
@@ -453,8 +455,9 @@ bar.
   > answers `late` otherwise. Slots (`window_N`, `person_N`, `account_N`)
   > keep the consented wording fixed; a request asks only the questions its
   > candidates need. Labels go through meetingjudge's identifier redaction.
-  > A confident sender or recipient with email addresses becomes from:/to:
-  > operators; otherwise a participant filter. Delegated agents are skipped.
+  > A confident sender or recipient with exactly one email address becomes
+  > one from:/to: operator (repeated operators are AND-ed); otherwise a
+  > participant filter. Delegated agents are skipped.
 - [x] **Task 6.3 UI.** Suggested chips at confidence ≥ 0.80; click applies
   and removes the source span. Offer hybrid when `natural_language ≥ 0.70`
   and full-text returns zero rows. Only the query and option labels leave.

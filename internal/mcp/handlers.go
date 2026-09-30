@@ -1159,6 +1159,8 @@ func (h *handlers) searchMessageBodiesHybrid(
 		// An assistant may run unattended, so its searches are reranked
 		// only when [jev.rerank] mcp = true.
 		Rerank: h.rerankSearches && mode == string(hybrid.ModeHybrid),
+		// Only a plain bag of words may fall back to matching any word.
+		AnyTermFallback: hybrid.PlainQuery(queryStr),
 	}
 
 	hits, meta, err := h.hybridEngine.Search(ctx, req)

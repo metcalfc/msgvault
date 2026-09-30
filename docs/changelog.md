@@ -18,8 +18,8 @@ All notable changes to msgvault, grouped by release.
   addresses or phone numbers. An empty full-text search for a question offers
   hybrid search. Requires API schema 2.43.0.
 - Hybrid search ranks better on natural questions. The subject boost ignores
-  stopwords and matches whole words, and when no message contains every query
-  word, the full-text signal matches any of the query's words instead.
+  stopwords and matches whole words, and when no message contains every word
+  of a plain query, the full-text signal matches any of its words instead.
 - MCP account arguments match ignoring case, and an unknown account's error
   lists the valid ones. The search operator documentation names
   `message_type:`.

@@ -11,5 +11,9 @@ export interface ExploreQuerySuggestion {
   probability: number;
   query_operators: string[];
   span?: string;
+  /** @minimum 0 */
+  span_end: number;
+  /** @minimum 0 */
+  span_start: number;
   [key: string]: unknown;
 }

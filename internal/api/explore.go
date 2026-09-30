@@ -1638,6 +1638,8 @@ func (s *Server) resolveExploreVectorSearch(ctx context.Context, w http.Response
 		// before they become the snapshot, so every page of this search
 		// reads one order.
 		Rerank: request.Rerank && mode == hybrid.ModeHybrid,
+		// Only a plain bag of words may fall back to matching any word.
+		AnyTermFallback: hybrid.PlainQuery(request.Query),
 	})
 	if err != nil {
 		s.writeExploreVectorError(w, err)

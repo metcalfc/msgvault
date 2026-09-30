@@ -12,6 +12,7 @@ import (
 type Window struct {
 	Label  string
 	Span   string
+	At     SpanPos
 	After  time.Time
 	Before time.Time
 }
@@ -59,6 +60,7 @@ func (r dayRange) window(query string, tokens []token, s span) Window {
 	return Window{
 		Label:  r.desc + " (" + formatDays(r.first, r.last) + ")",
 		Span:   s.text(query, tokens),
+		At:     s.pos(tokens),
 		After:  after,
 		Before: before,
 	}

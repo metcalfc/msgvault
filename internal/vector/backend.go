@@ -402,6 +402,12 @@ type SearchMetadata struct {
 	// Accelerator identifies the SQLite retrieval path: vec1_ivf_opq,
 	// exact-filter, exact, or exact-fallback. Other backends leave it empty.
 	Accelerator string
+	// LexicalHits is how many messages the BM25 leg of a fused search
+	// matched (up to KPerSignal+1), counted before subject boosting or
+	// trimming to the limit. LexicalCounted is false when the backend did
+	// not count it or the request had no BM25 leg.
+	LexicalHits    int
+	LexicalCounted bool
 }
 
 // MetadataSearchingBackend is an optional search capability for backends with

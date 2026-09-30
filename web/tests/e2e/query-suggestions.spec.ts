@@ -35,7 +35,8 @@ async function installSuggestions(page: Page): Promise<{ explore: ExploreBody[];
       status: 'judged', model: 'jev-1.13.0', offer_hybrid: false, elapsed_ms: 310, natural_language: 0.2,
       suggestions: [
         {
-          kind: 'time_window', label: 'Past 7 days (Sep 24 to Sep 30, 2026)', span: 'last week', probability: 0.88,
+          kind: 'time_window', label: 'Past 7 days (Sep 24 to Sep 30, 2026)', span: 'last week', span_start: 26, span_end: 35,
+          probability: 0.88,
           filters: [
             { dimension: 'after', values: ['2026-09-24T00:00:00Z'] },
             { dimension: 'before', values: ['2026-09-30T23:59:59.999Z'] },
@@ -43,7 +44,7 @@ async function installSuggestions(page: Page): Promise<{ explore: ExploreBody[];
           query_operators: [],
         },
         {
-          kind: 'person', label: 'With Ana Example', span: 'from Ana Example', probability: 0.93,
+          kind: 'person', label: 'With Ana Example', span: 'from Ana Example', span_start: 9, span_end: 25, probability: 0.93,
           filters: [{ dimension: 'participant', values: ['12'] }], query_operators: [],
         },
       ],

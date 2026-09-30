@@ -1905,6 +1905,8 @@ thresholds are in [Jev judgments](/docs/usage/jev-judgments/#feature-explore-que
       "kind": "time_window",
       "label": "Past 7 days (Sep 24 to Sep 30, 2026)",
       "span": "last week",
+      "span_start": 23,
+      "span_end": 32,
       "probability": 0.88,
       "filters": [
         { "dimension": "after", "values": ["2026-09-24T00:00:00-07:00"] },
@@ -1919,8 +1921,10 @@ thresholds are in [Jev judgments](/docs/usage/jev-judgments/#feature-explore-que
 }
 ```
 
-Applying a suggestion removes `span` from the query, adds `query_operators`
-to it, and adds `filters` to the Explore request.
+Applying a suggestion removes `span` from the query at `span_start` to
+`span_end` (UTF-16 indexes into the trimmed query, as JavaScript counts
+them), adds `query_operators` to it, and adds `filters` to the Explore
+request.
 
 ---
 

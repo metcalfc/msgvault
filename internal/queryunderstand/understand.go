@@ -40,7 +40,9 @@ type Suggestion struct {
 	Label string
 	// Span is the exact text of the query the suggestion replaces; empty
 	// when nothing should be removed.
-	Span           string
+	Span string
+	// At is where Span sits in the query, as byte offsets.
+	At             SpanPos
 	Probability    float64
 	Filters        []Filter
 	QueryOperators []string
@@ -138,7 +140,7 @@ func Understand(
 		if i, ok := slotIndex(option, WindowKey, len(candidates.Windows)); ok {
 			window := candidates.Windows[i]
 			outcome.Suggestions = append(outcome.Suggestions, Suggestion{
-				Kind: KindTimeWindow, Label: window.Label, Span: window.Span, Probability: p,
+				Kind: KindTimeWindow, Label: window.Label, Span: window.Span, At: window.At, Probability: p,
 				Filters: []Filter{
 					{Dimension: explorecatalog.FilterAfter, Values: []string{window.After.Format(time.RFC3339Nano)}},
 					{Dimension: explorecatalog.FilterBefore, Values: []string{window.Before.Format(time.RFC3339Nano)}},
@@ -161,7 +163,7 @@ func Understand(
 		if i, ok := slotIndex(option, AccountKey, len(candidates.Accounts)); ok {
 			account := candidates.Accounts[i]
 			outcome.Suggestions = append(outcome.Suggestions, Suggestion{
-				Kind: KindAccount, Label: account.Label, Span: account.Span, Probability: p,
+				Kind: KindAccount, Label: account.Label, Span: account.Span, At: account.At, Probability: p,
 				Filters: []Filter{{Dimension: explorecatalog.FilterSource, Values: []string{strconv.FormatInt(account.SourceID, 10)}}},
 			})
 		}
@@ -205,7 +207,7 @@ func typeSuggestion(types []TypeCandidate, option string, probability float64) (
 	for _, described := range messageTypeOptions {
 		if described.option == option {
 			return Suggestion{
-				Kind: KindMessageType, Label: described.label, Span: types[index].Span, Probability: probability,
+				Kind: KindMessageType, Label: described.label, Span: types[index].Span, At: types[index].At, Probability: probability,
 				Filters: []Filter{{Dimension: explorecatalog.FilterMessageType, Values: slices.Clone(described.types)}},
 			}, true
 		}
@@ -214,15 +216,17 @@ func typeSuggestion(types []TypeCandidate, option string, probability float64) (
 }
 
 // personSuggestion filters by the person. When Jev is confident the person
-// sent (or received) the messages and the person has email addresses, the
-// suggestion uses from: (or to:) operators on those addresses instead, which
-// keep the direction; otherwise it filters by the person in any role.
+// sent (or received) the messages and the person has exactly one email
+// address, the suggestion uses one from: (or to:) operator on it instead,
+// which keeps the direction. Repeated from:/to: operators are AND-ed by the
+// search engines, so a person with several addresses keeps the participant
+// filter, which matches any of the person's identities in any role.
 func personSuggestion(
 	ctx context.Context, person PersonCandidate, probability float64, answers map[string]jev.Answer,
 	addresses PersonAddresses,
 ) Suggestion {
 	suggestion := Suggestion{
-		Kind: KindPerson, Label: "With " + person.Label, Span: person.Span, Probability: probability,
+		Kind: KindPerson, Label: "With " + person.Label, Span: person.Span, At: person.At, Probability: probability,
 		Filters: []Filter{{Dimension: explorecatalog.FilterParticipant, Values: []string{strconv.FormatInt(person.ParticipantID, 10)}}},
 	}
 	role, _, ok := chosen(answers, QuestionPersonRole)
@@ -230,26 +234,26 @@ func personSuggestion(
 		return suggestion
 	}
 	found, err := addresses(ctx, person.ParticipantID)
-	if err != nil || len(found) == 0 {
+	if err != nil {
+		return suggestion
+	}
+	unique := make([]string, 0, len(found))
+	for _, address := range found {
+		address = strings.ToLower(strings.TrimSpace(address))
+		if address == "" || strings.ContainsAny(address, " \t\"") || slices.Contains(unique, address) {
+			continue
+		}
+		unique = append(unique, address)
+	}
+	if len(unique) != 1 {
 		return suggestion
 	}
 	operator, label := "from:", "From "
 	if role == RoleRecipient {
 		operator, label = "to:", "To "
 	}
-	operators := make([]string, 0, len(found))
-	for _, address := range found {
-		address = strings.ToLower(strings.TrimSpace(address))
-		if address != "" && !strings.ContainsAny(address, " \t\"") {
-			operators = append(operators, operator+address)
-		}
-	}
-	if len(operators) == 0 {
-		return suggestion
-	}
-	slices.Sort(operators)
 	suggestion.Label = label + person.Label
 	suggestion.Filters = nil
-	suggestion.QueryOperators = slices.Compact(operators)
+	suggestion.QueryOperators = []string{operator + unique[0]}
 	return suggestion
 }

@@ -96,6 +96,16 @@ func (s span) text(query string, tokens []token) string {
 	return query[tokens[s.first].start:tokens[s.last].end]
 }
 
+// SpanPos is where a span sits in the (trimmed) query, as byte offsets.
+type SpanPos struct {
+	Start int
+	End   int
+}
+
+func (s span) pos(tokens []token) SpanPos {
+	return SpanPos{Start: tokens[s.first].start, End: tokens[s.last].end}
+}
+
 // extendBack widens a span over up to limit preceding words from words, so
 // "from Ana" and "in March" are removed whole.
 func extendBack(tokens []token, used []bool, s span, words map[string]bool, limit int) span {

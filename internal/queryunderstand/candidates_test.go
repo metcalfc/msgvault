@@ -55,13 +55,13 @@ func TestFindWindows(t *testing.T) {
 			{Label: "Yesterday (Sep 29, 2026)", Span: "yesterday",
 				After: day(time.September, 29, 2026), Before: endOf(day(time.September, 29, 2026))},
 		}},
-		{"release 2031 and after:2025-01-01", nil},
+		{"release 2031 and after:2025-01-01", []Window{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.query, func(t *testing.T) {
 			assert := assert.New(t)
 			tokens := tokenize(tt.query)
-			assert.Equal(tt.want, findWindows(tt.query, tokens, make([]bool, len(tokens)), now))
+			assert.Equal(tt.want, unplaced(findWindows(tt.query, tokens, make([]bool, len(tokens)), now)))
 		})
 	}
 }
@@ -94,14 +94,14 @@ func TestGenerateFindsTypesAccountsAndPeople(t *testing.T) {
 		People: people,
 	})
 	require.NoError(err)
-	assert.Equal([]TypeCandidate{{Option: TypeEmail, Span: "emails"}}, candidates.Types)
+	assert.Equal([]TypeCandidate{{Option: TypeEmail, Span: "emails"}}, unplaced(candidates.Types))
 	assert.Equal([]AccountCandidate{
 		{SourceID: 1, Label: "gmail account named Work at example.com", Span: "in my work account"},
-	}, candidates.Accounts)
+	}, unplaced(candidates.Accounts))
 	assert.Equal([]PersonCandidate{
 		{ParticipantID: 7, Label: "Jane Doe", Span: "from Jane Doe"},
 		{ParticipantID: 8, Label: "jane.roe", Span: "from Jane"},
-	}, candidates.People, "addresses and phone-number labels never become labels")
+	}, unplaced(candidates.People), "addresses and phone-number labels never become labels")
 	require.Len(candidates.Windows, 2)
 	assert.Equal("last week", candidates.Windows[0].Span)
 	assert.Equal([]string{"jane doe", "budget", "jane", "doe"}, lookups,
@@ -138,5 +138,81 @@ func TestTypePhrasesAndMeetingAmbiguity(t *testing.T) {
 		{Option: TypeCalendarEvent, Span: "meetings"},
 		{Option: TypeMeetingTranscript, Span: "meetings"},
 		{Option: TypeSlack, Span: "on slack"},
-	}, findTypes("text messages and meetings on slack", tokens, used))
+	}, unplaced(findTypes("text messages and meetings on slack", tokens, used)))
+}
+
+func TestPeopleMustMatchWholeNameWords(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	index := func(_ context.Context, phrase string) ([]PersonMatch, error) {
+		// The people index matches substrings, as the daemon's does.
+		all := []PersonMatch{
+			{ParticipantID: 1, DisplayLabel: "Martha Example"},
+			{ParticipantID: 2, DisplayLabel: "Art Sample"},
+			{ParticipantID: 3, DisplayLabel: "Zoë Müller"},
+		}
+		var found []PersonMatch
+		for _, person := range all {
+			if strings.Contains(strings.ToLower(person.DisplayLabel), phrase) {
+				found = append(found, person)
+			}
+		}
+		return found, nil
+	}
+	labels := func(query string) []string {
+		candidates, err := Generate(t.Context(), Input{Query: query, Now: now, People: index})
+		require.NoError(err)
+		out := []string{}
+		for _, person := range candidates.People {
+			out = append(out, person.Label)
+		}
+		return out
+	}
+	assert.Equal([]string{"Art Sample"}, labels("art"), "a substring of Martha is not her name")
+	assert.Equal([]string{"Martha Example"}, labels("martha"))
+	assert.Equal([]string{"Martha Example"}, labels("MARTHA example"))
+	assert.Equal([]string{}, labels("zoe"), "the index itself must find the name")
+	assert.True(nameHasWords("Zoë Müller", []string{"zoe", "muller"}), "accents are ignored")
+	assert.False(nameHasWords("Martha Example", []string{"art"}))
+}
+
+// placed is any candidate or suggestion with a query position.
+type placed interface {
+	Window | TypeCandidate | PersonCandidate | AccountCandidate | Suggestion
+}
+
+// unplaced clears positions so expectations can list spans by text;
+// TestSpanPositions checks the positions themselves.
+func unplaced[T placed](values []T) []T {
+	out := make([]T, len(values))
+	for i, value := range values {
+		switch v := any(&value).(type) {
+		case *Window:
+			v.At = SpanPos{}
+		case *TypeCandidate:
+			v.At = SpanPos{}
+		case *PersonCandidate:
+			v.At = SpanPos{}
+		case *AccountCandidate:
+			v.At = SpanPos{}
+		case *Suggestion:
+			v.At = SpanPos{}
+		}
+		out[i] = value
+	}
+	return out
+}
+
+func TestSpanPositionsPointAtTheCandidateNotAnEarlierCopy(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	query := `"last week" notes last week`
+	candidates, err := Generate(t.Context(), Input{Query: query, Now: now})
+	require.NoError(err)
+	require.Len(candidates.Windows, 2)
+	for _, window := range candidates.Windows {
+		assert.Equal("last week", window.Span)
+		assert.Equal(SpanPos{Start: 18, End: 27}, window.At, "the quoted phrase is not a candidate")
+		assert.Equal(window.Span, query[window.At.Start:window.At.End])
+	}
 }

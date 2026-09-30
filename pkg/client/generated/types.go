@@ -4397,6 +4397,8 @@ type ExploreQuerySuggestion struct {
 	Probability    float64                    `json:"probability"`
 	QueryOperators []string                   `json:"query_operators" validate:"required"`
 	Span           *string                    `json:"span,omitzero"`
+	SpanEnd        int64                      `json:"span_end" validate:"gte=0"`
+	SpanStart      int64                      `json:"span_start" validate:"gte=0"`
 }
 
 func (e ExploreQuerySuggestion) Validate() error {
@@ -4418,6 +4420,12 @@ func (e ExploreQuerySuggestion) Validate() error {
 	}
 	if err := typesValidator.Var(e.QueryOperators, "required"); err != nil {
 		errors = errors.Append("QueryOperators", err)
+	}
+	if err := typesValidator.Var(e.SpanEnd, "gte=0"); err != nil {
+		errors = errors.Append("SpanEnd", err)
+	}
+	if err := typesValidator.Var(e.SpanStart, "gte=0"); err != nil {
+		errors = errors.Append("SpanStart", err)
 	}
 	if len(errors) == 0 {
 		return nil

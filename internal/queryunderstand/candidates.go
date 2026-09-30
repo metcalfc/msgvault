@@ -3,9 +3,13 @@ package queryunderstand
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
 
 	"go.kenn.io/msgvault/internal/meetingjudge"
 	"go.kenn.io/msgvault/internal/vector"
@@ -18,6 +22,7 @@ var ErrQueryTooLong = errors.New("query is too long to judge")
 type TypeCandidate struct {
 	Option string
 	Span   string
+	At     SpanPos
 }
 
 // PersonCandidate is a person the people index matched to a query word.
@@ -26,6 +31,7 @@ type PersonCandidate struct {
 	// Label is sent and shown; it never holds an address or phone number.
 	Label string
 	Span  string
+	At    SpanPos
 }
 
 // AccountCandidate is one of the owner's accounts a query word names.
@@ -33,6 +39,7 @@ type AccountCandidate struct {
 	SourceID int64
 	Label    string
 	Span     string
+	At       SpanPos
 }
 
 // Candidates are the options code found in one query.
@@ -140,7 +147,7 @@ func findTypes(query string, tokens []token, used []bool) []TypeCandidate {
 		for _, option := range options {
 			if !seen[option] {
 				seen[option] = true
-				found = append(found, TypeCandidate{Option: option, Span: s.text(query, tokens)})
+				found = append(found, TypeCandidate{Option: option, Span: s.text(query, tokens), At: s.pos(tokens)})
 			}
 		}
 	}
@@ -247,7 +254,7 @@ func findAccounts(query string, tokens []token, used []bool, accounts []AccountI
 			claimed[account.SourceID] = true
 			matched = true
 			found = append(found, AccountCandidate{
-				SourceID: account.SourceID, Label: accountLabel(account), Span: s.text(query, tokens),
+				SourceID: account.SourceID, Label: accountLabel(account), Span: s.text(query, tokens), At: s.pos(tokens),
 			})
 		}
 		if matched {
@@ -304,12 +311,14 @@ func findPeople(ctx context.Context, query string, tokens []token, used []bool, 
 				continue
 			}
 			label := truncateRunes(meetingjudge.IdentifierFreeLabel(match.DisplayLabel), maxLabelRunes)
-			if label == "" {
+			// The people index matches substrings ("art" finds "Martha");
+			// only a name whose words include every query word is offered.
+			if label == "" || !nameHasWords(label, phrase) {
 				continue
 			}
 			seen[match.ParticipantID] = true
 			found = append(found, PersonCandidate{
-				ParticipantID: match.ParticipantID, Label: label, Span: removal.text(query, tokens),
+				ParticipantID: match.ParticipantID, Label: label, Span: removal.text(query, tokens), At: removal.pos(tokens),
 			})
 		}
 	}
@@ -321,4 +330,30 @@ func truncateRunes(value string, limit int) string {
 		return value
 	}
 	return strings.TrimSpace(string([]rune(value)[:limit]))
+}
+
+// nameHasWords reports whether every word of phrase is a whole word of
+// name, ignoring case and accents: "jane" and "jane doe" match "Jane Doe",
+// "art" does not match "Martha".
+func nameHasWords(name string, phrase []string) bool {
+	words := strings.FieldsFunc(foldName(name), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	for _, want := range phrase {
+		want = foldName(want)
+		if utf8.RuneCountInString(want) < 2 || !slices.Contains(words, want) {
+			return false
+		}
+	}
+	return len(phrase) > 0
+}
+
+// foldName lowercases and strips accents.
+func foldName(value string) string {
+	var builder strings.Builder
+	for _, r := range norm.NFD.String(value) {
+		if unicode.Is(unicode.Mn, r) {
+			continue
+		}
+		builder.WriteRune(unicode.ToLower(r))
+	}
+	return builder.String()
 }

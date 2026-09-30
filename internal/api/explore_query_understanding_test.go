@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -130,7 +131,8 @@ func TestExploreQueryUnderstandingSuggestsFilters(t *testing.T) {
 	assert.InDelta(0.75, *response.NaturalLanguage, 1e-9)
 	assert.Equal([]ExploreQuerySuggestion{
 		{
-			Kind: "time_window", Label: "Yesterday (Sep 29, 2026)", Span: "yesterday", Probability: 0.88,
+			Kind: "time_window", Label: "Yesterday (Sep 29, 2026)", Span: "yesterday", SpanStart: 56, SpanEnd: 65,
+			Probability: 0.88,
 			Filters: []ExploreFilter{
 				{Dimension: "after", Values: []string{"2026-09-29T00:00:00-07:00"}},
 				{Dimension: "before", Values: []string{"2026-09-29T23:59:59.999-07:00"}},
@@ -138,11 +140,14 @@ func TestExploreQueryUnderstandingSuggestsFilters(t *testing.T) {
 			QueryOperators: []string{},
 		},
 		{
-			Kind: "person", Label: "From Jane Doe", Span: "from Jane Doe", Probability: 0.95,
-			Filters: []ExploreFilter{}, QueryOperators: []string{"from:jane.doe@example.com", "from:jd@example.org"},
+			// Two addresses: from: operators would be AND-ed, so the person
+			// filter stays.
+			Kind: "person", Label: "With Jane Doe", Span: "from Jane Doe", SpanStart: 7, SpanEnd: 20, Probability: 0.95,
+			Filters:        []ExploreFilter{{Dimension: "participant", Values: []string{"7"}}},
+			QueryOperators: []string{},
 		},
 		{
-			Kind: "message_type", Label: "Email", Span: "emails", Probability: 0.92,
+			Kind: "message_type", Label: "Email", Span: "emails", SpanStart: 0, SpanEnd: 6, Probability: 0.92,
 			Filters:        []ExploreFilter{{Dimension: "message_type", Values: []string{"email"}}},
 			QueryOperators: []string{},
 		},
@@ -200,4 +205,12 @@ func TestExploreQueryUnderstandingSkipsAndDropsLateJudgments(t *testing.T) {
 		code, _, _ = postQueryUnderstanding(t, server, `{"query":"lease","timezone":"Mars/Olympus"}`)
 		assert.Equal(http.StatusBadRequest, code)
 	})
+}
+
+func TestUTF16OffsetCountsJavaScriptIndexes(t *testing.T) {
+	query := "Zoë 😀 last week"
+	start := strings.Index(query, "last week")
+	assert.Equal(t, 7, utf16Offset(query, start), "ë is one unit and the emoji two")
+	assert.Equal(t, 16, utf16Offset(query, len(query)))
+	assert.Equal(t, 0, utf16Offset(query, 0))
 }

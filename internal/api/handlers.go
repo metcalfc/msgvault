@@ -1131,6 +1131,8 @@ func (s *Server) handleHybridSearch(
 		// asks only when [jev.rerank] mcp = true. It still runs only when
 		// the daemon installed a reranker.
 		Rerank: rerank && mode == string(hybrid.ModeHybrid),
+		// Only a plain bag of words may fall back to matching any word.
+		AnyTermFallback: hybrid.PlainQuery(q),
 	}
 
 	hits, meta, err := hybridEngine.Search(ctx, req)

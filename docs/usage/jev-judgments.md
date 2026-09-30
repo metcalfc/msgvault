@@ -765,7 +765,8 @@ the query asks for, as chips under the Web UI's search bar.
 3. **Candidates come from code.** Before anything is sent:
    - A date-phrase dictionary turns phrases such as "today", "last week",
      "past 3 days", "this month", "in 2025", "Q3", month names, and "since
-     March 2026" into local calendar days in your browser's time zone.
+     March 2026" into local calendar days in your browser's time zone. Weeks
+     start on Monday.
      Ambiguous phrases offer both readings (for example "last week" is the
      previous Monday-to-Sunday week or the past 7 days). At most 4 windows.
    - Words such as "emails", "texts", "on slack", "meeting notes", or
@@ -773,7 +774,9 @@ the query asks for, as chips under the Web UI's search bar.
    - With two or more accounts, a word matching an account's type, its
      display name, or its domain name offers that account. At most 6.
    - Other words are looked up in the people index, full names first, at
-     most 6 lookups and 8 people.
+     most 6 lookups and 4 people. A person is offered only when every looked-up
+     word is a whole word of their name, ignoring case and accents: "martha"
+     offers Martha Example, "art" does not.
    Nothing is sent when there are no candidates and the query has fewer than
    three words.
 4. **One request.** Jev answers Choices `message_type`, `time_window`,
@@ -781,14 +784,17 @@ the query asks for, as chips under the Web UI's search bar.
    A request asks only the questions its candidates need.
 5. **Thresholds.** A chosen option at 0.80 or more becomes a chip; `none`
    never does. A message type is only offered when a query word named it.
-   A person is a participant filter; when `person_role` is `sender` or
-   `recipient` at 0.80 or more and the person has email addresses, the chip
-   uses `from:` or `to:` operators on those addresses instead, which keep the
-   direction but only match email. When a full-text search returns nothing
+   A person is a participant filter, which matches any of the person's
+   identities in any role. When `person_role` is `sender` or `recipient` at
+   0.80 or more and the person has exactly one email address, the chip uses
+   one `from:` or `to:` operator instead, which keeps the direction but only
+   matches email. A person with several addresses keeps the participant
+   filter, because repeated `from:` operators must all match. When a full-text search returns nothing
    and `natural_language` is 0.70 or more, the search note offers **Try
    hybrid search**.
 6. **You apply it.** A chip removes the words it came from (with a leading
-   "from", "in", or "on") and adds its filter: a person narrows the existing
+   "from", "in", or "on") at the position the daemon reported, so an earlier
+   copy of the same words, such as a quoted phrase, stays. It adds its filter: a person narrows the existing
    people, and a date bound, message type, or account replaces the current
    one. The other chips stay offered for the rewritten query.
 
@@ -828,7 +834,7 @@ No messages, bodies, participant IDs, or addresses leave the machine.
   part of the topic).
 - `person` (Choice): "Does `query.text` ask for messages with a specific
   person listed in `people`? Choose that person. An option whose key is
-  absent from `people` never applies." Options `person_1` to `person_8` and
+  absent from `people` never applies." Options `person_1` to `person_4` and
   `none`.
 - `person_role` (Choice): "If `query.text` asks for messages with a person,
   did that person send them, receive them, or either?" Options `sender`,

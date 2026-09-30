@@ -613,7 +613,10 @@
     if (current) {
       session.queryUnderstanding = {
         query: next.query,
-        result: { ...current.result, suggestions: current.result.suggestions.filter((other) => other !== suggestion) },
+        result: {
+          ...current.result,
+          suggestions: current.result.suggestions.filter((other) => other !== suggestion).map(next.rebase),
+        },
       };
     }
     commitSearch(next.query, exploreState.current.searchMode, next.filters);

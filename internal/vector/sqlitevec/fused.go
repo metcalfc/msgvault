@@ -40,8 +40,11 @@ func (b *Backend) FusedSearch(ctx context.Context, req vector.FusedRequest) ([]v
 			metadata.Accelerator = "exact"
 		}
 	}
-	hits, saturated, err := b.fusedSearchExact(ctx, req)
+	hits, saturated, lexicalHits, err := b.fusedSearchExact(ctx, req)
 	metadata.PoolSaturated = saturated
+	if len(req.FTSTerms) > 0 {
+		metadata.LexicalHits, metadata.LexicalCounted = lexicalHits, true
+	}
 	return hits, metadata, err
 }
 
@@ -66,10 +69,12 @@ func (b *Backend) fuseAcceleratedSignals(
 		bm25Request.SubjectBoost = 1
 		bm25Request.SubjectTerms = nil
 		var err error
-		bm25Hits, bm25Saturated, err = b.fusedSearchExact(ctx, bm25Request)
+		bm25Hits, bm25Saturated, _, err = b.fusedSearchExact(ctx, bm25Request)
 		if err != nil {
 			return nil, vector.SearchMetadata{}, err
 		}
+		// Counted before fusion, boosting, or trimming.
+		metadata.LexicalHits, metadata.LexicalCounted = len(bm25Hits), true
 	}
 
 	byMessage := make(map[int64]vector.FusedHit, len(bm25Hits)+len(vectorHits))
@@ -117,65 +122,66 @@ func (b *Backend) fuseAcceleratedSignals(
 // The returned saturated flag indicates that either per-signal pool
 // hit the KPerSignal cap. Both branches are over-fetched by one row
 // (BM25 via LIMIT KPerSignal+1, ANN via k=KPerSignal+1) and trimmed to
-// KPerSignal before fusion. The extra "probe" row exists only so the
+// KPerSignal before fusion. The returned count is the BM25 pool size
+// before boosting or trimming (zero when the leg was skipped or empty). The extra "probe" row exists only so the
 // outer query can report whether the pool was full on either side.
-func (b *Backend) fusedSearchExact(ctx context.Context, req vector.FusedRequest) ([]vector.FusedHit, bool, error) {
+func (b *Backend) fusedSearchExact(ctx context.Context, req vector.FusedRequest) ([]vector.FusedHit, bool, int, error) {
 	if err := vector.ValidateFilter(req.Filter); err != nil {
-		return nil, false, err
+		return nil, false, 0, err
 	}
 	if req.QueryVec == nil && len(req.FTSTerms) == 0 {
-		return nil, false, errors.New("FusedSearch: neither vector nor FTS query provided")
+		return nil, false, 0, errors.New("FusedSearch: neither vector nor FTS query provided")
 	}
 
 	var dim int
 	err := b.db.QueryRowContext(ctx,
 		`SELECT dimension FROM index_generations WHERE id = ?`, int64(req.Generation)).Scan(&dim)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, false, fmt.Errorf("%w: %d", vector.ErrUnknownGeneration, req.Generation)
+		return nil, false, 0, fmt.Errorf("%w: %d", vector.ErrUnknownGeneration, req.Generation)
 	}
 	if err != nil {
-		return nil, false, fmt.Errorf("lookup generation %d: %w", req.Generation, err)
+		return nil, false, 0, fmt.Errorf("lookup generation %d: %w", req.Generation, err)
 	}
 	if req.QueryVec != nil && len(req.QueryVec) != dim {
-		return nil, false, fmt.Errorf("%w: query has %d dims, gen has %d",
+		return nil, false, 0, fmt.Errorf("%w: query has %d dims, gen has %d",
 			vector.ErrDimensionMismatch, len(req.QueryVec), dim)
 	}
 
 	conn, err := b.openFusedConn(ctx)
 	if err != nil {
-		return nil, false, err
+		return nil, false, 0, err
 	}
 	defer func() { _ = conn.Close() }()
 
 	hasMessageType, err := sqliteColumnExists(ctx, conn, "messages", "message_type")
 	if err != nil {
-		return nil, false, err
+		return nil, false, 0, err
 	}
 	hasListID := false
 	if len(req.Filter.ListIDSubstrings) > 0 || len(req.Filter.ListIDExactGroups) > 0 || req.Filter.ListID != "" {
 		hasListID, err = sqliteColumnExists(ctx, conn, "messages", "list_id")
 		if err != nil {
-			return nil, false, err
+			return nil, false, 0, err
 		}
 		if !hasListID {
-			return nil, false, errors.New(listIDSchemaRequiredErrorText)
+			return nil, false, 0, errors.New(listIDSchemaRequiredErrorText)
 		}
 	}
 
 	messageIDs, err := idsToJSON(req.Filter.MessageIDs)
 	if err != nil {
-		return nil, false, fmt.Errorf("encode message_ids: %w", err)
+		return nil, false, 0, fmt.Errorf("encode message_ids: %w", err)
 	}
 	sourceIDs, err := idsToJSON(req.Filter.SourceIDs)
 	if err != nil {
-		return nil, false, fmt.Errorf("encode source_ids: %w", err)
+		return nil, false, 0, fmt.Errorf("encode source_ids: %w", err)
 	}
 	var conversationIDs sql.NullString
 	conversationSQL := ""
 	if len(req.Filter.ConversationIDs) > 0 {
 		conversationIDs, err = idsToJSON(req.Filter.ConversationIDs)
 		if err != nil {
-			return nil, false, fmt.Errorf("encode conversation_ids: %w", err)
+			return nil, false, 0, fmt.Errorf("encode conversation_ids: %w", err)
 		}
 		conversationSQL = `AND m.conversation_id IN (SELECT value FROM json_each(:conversation_ids))`
 	}
@@ -190,35 +196,35 @@ func (b *Backend) fusedSearchExact(ctx context.Context, req vector.FusedRequest)
 	}
 	messageTypes, err := stringsToJSON(exactMessageTypes)
 	if err != nil {
-		return nil, false, fmt.Errorf("encode message_types: %w", err)
+		return nil, false, 0, fmt.Errorf("encode message_types: %w", err)
 	}
 	senderGroupSQL, senderGroupArgs, err := senderGroupClauses(req.Filter.SenderGroups)
 	if err != nil {
-		return nil, false, fmt.Errorf("encode sender_groups: %w", err)
+		return nil, false, 0, fmt.Errorf("encode sender_groups: %w", err)
 	}
 	senderExactGroupSQL, senderExactGroupArgs, err := senderExactGroupClauses(req.Filter.SenderExactGroups)
 	if err != nil {
-		return nil, false, fmt.Errorf("encode sender_exact_groups: %w", err)
+		return nil, false, 0, fmt.Errorf("encode sender_exact_groups: %w", err)
 	}
 	recipientAnyGroupSQL, recipientAnyGroupArgs, err := recipientAnyGroupClauses(req.Filter.RecipientAnyGroups)
 	if err != nil {
-		return nil, false, fmt.Errorf("encode recipient_any_groups: %w", err)
+		return nil, false, 0, fmt.Errorf("encode recipient_any_groups: %w", err)
 	}
 	toGroupSQL, toGroupArgs, err := recipientGroupClauses("to", req.Filter.ToGroups)
 	if err != nil {
-		return nil, false, fmt.Errorf("encode to_groups: %w", err)
+		return nil, false, 0, fmt.Errorf("encode to_groups: %w", err)
 	}
 	ccGroupSQL, ccGroupArgs, err := recipientGroupClauses("cc", req.Filter.CcGroups)
 	if err != nil {
-		return nil, false, fmt.Errorf("encode cc_groups: %w", err)
+		return nil, false, 0, fmt.Errorf("encode cc_groups: %w", err)
 	}
 	bccGroupSQL, bccGroupArgs, err := recipientGroupClauses("bcc", req.Filter.BccGroups)
 	if err != nil {
-		return nil, false, fmt.Errorf("encode bcc_groups: %w", err)
+		return nil, false, 0, fmt.Errorf("encode bcc_groups: %w", err)
 	}
 	labelGroupSQL, labelGroupArgs, err := labelGroupClauses(req.Filter.LabelGroups)
 	if err != nil {
-		return nil, false, fmt.Errorf("encode label_groups: %w", err)
+		return nil, false, 0, fmt.Errorf("encode label_groups: %w", err)
 	}
 	var hasAttachment sql.NullBool
 	if req.Filter.HasAttachment != nil {
@@ -252,7 +258,7 @@ func (b *Backend) fusedSearchExact(ctx context.Context, req vector.FusedRequest)
 		}
 		buf, err := json.Marshal(patterns, json.Deterministic(true))
 		if err != nil {
-			return nil, false, fmt.Errorf("encode subject patterns: %w", err)
+			return nil, false, 0, fmt.Errorf("encode subject patterns: %w", err)
 		}
 		subjectPatterns = sql.NullString{Valid: true, String: string(buf)}
 	}
@@ -264,7 +270,7 @@ func (b *Backend) fusedSearchExact(ctx context.Context, req vector.FusedRequest)
 		}
 		buf, err := json.Marshal(patterns, json.Deterministic(true))
 		if err != nil {
-			return nil, false, fmt.Errorf("encode list id patterns: %w", err)
+			return nil, false, 0, fmt.Errorf("encode list id patterns: %w", err)
 		}
 		listIDPatterns = sql.NullString{Valid: true, String: string(buf)}
 	}
@@ -276,7 +282,7 @@ func (b *Backend) fusedSearchExact(ctx context.Context, req vector.FusedRequest)
 	if len(req.Filter.ListIDExactGroups) > 0 {
 		buf, err := json.Marshal(req.Filter.ListIDExactGroups, json.Deterministic(true))
 		if err != nil {
-			return nil, false, fmt.Errorf("encode exact list id groups: %w", err)
+			return nil, false, 0, fmt.Errorf("encode exact list id groups: %w", err)
 		}
 		exactListIDGroups = sql.NullString{Valid: true, String: string(buf)}
 	}
@@ -513,7 +519,7 @@ SELECT message_id, rrf_score, bm25_score, vector_score,
 		if err := b.db.QueryRowContext(ctx,
 			`SELECT COUNT(*) FROM embeddings WHERE generation_id = ?`,
 			int64(req.Generation)).Scan(&chunkCeiling); err != nil {
-			return nil, false, fmt.Errorf("lookup chunk count: %w", err)
+			return nil, false, 0, fmt.Errorf("lookup chunk count: %w", err)
 		}
 		ceilingSQL := fmt.Sprintf(`
 			SELECT COUNT(DISTINCT ve.message_id) FROM vec.embeddings ve
@@ -522,7 +528,7 @@ SELECT message_id, rrf_score, bm25_score, vector_score,
 			       SELECT m.id FROM messages m WHERE %s
 			   )`, filterWhere)
 		if err := conn.QueryRowContext(ctx, ceilingSQL, filterArgs...).Scan(&filteredMessageCeiling); err != nil {
-			return nil, false, fmt.Errorf("lookup filtered message count: %w", err)
+			return nil, false, 0, fmt.Errorf("lookup filtered message count: %w", err)
 		}
 	}
 
@@ -604,7 +610,7 @@ SELECT message_id, rrf_score, bm25_score, vector_score,
 
 	for {
 		if err := runFusedQuery(); err != nil {
-			return nil, false, err
+			return nil, false, 0, err
 		}
 
 		// Decide whether to widen. Only the ANN side benefits — the
@@ -641,7 +647,7 @@ SELECT message_id, rrf_score, bm25_score, vector_score,
 	// there's no sampled pool_size to read, so report not-saturated by
 	// convention.
 	saturated := bm25PoolSize > req.KPerSignal || annPoolSize > req.KPerSignal
-	return hits, saturated, nil
+	return hits, saturated, bm25PoolSize, nil
 }
 
 // openFusedConn opens a fresh connection to the main msgvault.db with

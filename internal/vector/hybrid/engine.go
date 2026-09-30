@@ -42,6 +42,24 @@ type SearchRequest struct {
 	// person's own interactive search sets it; automatic and background
 	// searches never do. It has no effect without an installed Reranker.
 	Rerank bool
+	// AnyTermFallback allows one retry of the BM25 leg matching any content
+	// word when requiring every term matched nothing. Callers set it only
+	// for plain bag-of-words queries (see PlainQuery): a quoted phrase or
+	// an operator must never be split into loose words.
+	AnyTermFallback bool
+}
+
+// PlainQuery reports whether a raw query is a plain bag of words: no
+// quotes, no operators (from:, message_type=), and no negated or required
+// terms. Only such a query may use the any-term BM25 fallback.
+func PlainQuery(raw string) bool {
+	for field := range strings.FieldsSeq(raw) {
+		if strings.ContainsAny(field, "\"\u201c\u201d:=") || strings.HasPrefix(field, "'") || strings.HasSuffix(field, "'") ||
+			strings.HasPrefix(field, "-") || strings.HasPrefix(field, "+") {
+			return false
+		}
+	}
+	return true
 }
 
 // ResultMeta returns engine-level metadata alongside the hit list.
@@ -298,7 +316,7 @@ func (e *Engine) Search(ctx context.Context, req SearchRequest) ([]vector.FusedH
 		return nil, ResultMeta{}, fmt.Errorf("fused search: %w", err)
 	}
 	lexicalAny := false
-	if anyTerms := lexicalFallbackTerms(terms, hits, limit); anyTerms != nil {
+	if anyTerms := lexicalFallbackTerms(req, terms, hits, searchMeta, limit); anyTerms != nil {
 		// Every term must match for the BM25 leg, so a long natural
 		// query often finds nothing lexically. Ask again for messages
 		// matching any content word; the vector leg is unchanged.
@@ -405,19 +423,31 @@ func ftsTerms(freeText string) []string {
 }
 
 // lexicalFallbackTerms returns the terms for an any-term BM25 retry, or nil
-// when none is warranted: the query has one term, some hit already came
-// from the BM25 leg, or no content word (non-stopword) remains. A limit of
-// one cannot tell an empty BM25 leg from a vector hit that outranked it,
-// so it never retries. With two or more slots, reciprocal rank fusion
-// places the BM25 leg's first hit in the top two, so no BM25 score among
-// the hits means the leg was empty.
-func lexicalFallbackTerms(terms []string, hits []vector.FusedHit, limit int) []string {
-	if len(terms) < 2 || limit == 1 {
+// when none is warranted: the caller did not allow it (the query is not a
+// plain bag of words), it overrides the BM25 text, the query has one term,
+// the BM25 leg matched something, or no content word (non-stopword)
+// remains. Whether the leg matched is the backend's own count, taken
+// before subject boosting or trimming. A backend that does not count falls
+// back to looking for a BM25 score among the hits; with a limit of one
+// that cannot tell an empty leg from an outranked hit, so it never retries.
+func lexicalFallbackTerms(
+	req SearchRequest, terms []string, hits []vector.FusedHit, meta vector.SearchMetadata, limit int,
+) []string {
+	if !req.AnyTermFallback || req.FTSQuery != "" || len(terms) < 2 {
 		return nil
 	}
-	for _, hit := range hits {
-		if !math.IsNaN(hit.BM25Score) {
+	if meta.LexicalCounted {
+		if meta.LexicalHits > 0 {
 			return nil
+		}
+	} else {
+		if limit == 1 {
+			return nil
+		}
+		for _, hit := range hits {
+			if !math.IsNaN(hit.BM25Score) {
+				return nil
+			}
 		}
 	}
 	content := vector.ContentTerms(terms)

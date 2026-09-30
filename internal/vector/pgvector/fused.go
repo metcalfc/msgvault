@@ -390,7 +390,10 @@ SELECT message_id, rrf_score, bm25_score, vector_score,
 	}
 
 	saturated := ftsPoolSize > req.KPerSignal || annPoolSize > req.KPerSignal
-	return hits, vector.SearchMetadata{PoolSaturated: saturated}, nil
+	// The FTS pool is counted before boosting or trimming.
+	return hits, vector.SearchMetadata{
+		PoolSaturated: saturated, LexicalHits: ftsPoolSize, LexicalCounted: useFTS,
+	}, nil
 }
 
 // filteredChunkMessageCount returns the number of distinct messages that

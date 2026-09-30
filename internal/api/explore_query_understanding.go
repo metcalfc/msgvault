@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/msgvault/internal/jev"
@@ -40,7 +41,12 @@ type ExploreQuerySuggestion struct {
 	Label string `json:"label"`
 	// Span is the exact text of the query the suggestion replaces. Applying
 	// the suggestion removes it; empty removes nothing.
-	Span        string  `json:"span,omitempty"`
+	Span string `json:"span,omitempty"`
+	// SpanStart and SpanEnd locate Span in the trimmed query, in UTF-16
+	// code units (JavaScript string indexes), so a client removes that
+	// occurrence and not an earlier copy of the same words.
+	SpanStart   int     `json:"span_start" minimum:"0"`
+	SpanEnd     int     `json:"span_end" minimum:"0"`
 	Probability float64 `json:"probability"`
 	// Filters are Explore filters to add; QueryOperators are search
 	// operators (from:, to:) to add to the query text.
@@ -186,6 +192,8 @@ func (s *Server) handleExploreQueryUnderstanding(w http.ResponseWriter, r *http.
 		}
 		response.Suggestions = append(response.Suggestions, ExploreQuerySuggestion{
 			Kind: suggestion.Kind, Label: suggestion.Label, Span: suggestion.Span,
+			SpanStart:   utf16Offset(candidates.Query, suggestion.At.Start),
+			SpanEnd:     utf16Offset(candidates.Query, suggestion.At.End),
 			Probability: suggestion.Probability, Filters: filters, QueryOperators: operators,
 		})
 	}
@@ -273,4 +281,13 @@ func (s *Server) queryUnderstandingAddresses(ctx context.Context, participantID 
 		}
 	}
 	return addresses, nil
+}
+
+// utf16Offset converts a byte offset into query into a UTF-16 index.
+func utf16Offset(query string, byteOffset int) int {
+	if byteOffset <= 0 {
+		return 0
+	}
+	byteOffset = min(byteOffset, len(query))
+	return len(utf16.Encode([]rune(query[:byteOffset])))
 }

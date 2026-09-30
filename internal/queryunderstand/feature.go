@@ -33,7 +33,7 @@ const (
 	// MaxWindows, MaxPeople, and MaxAccounts are how many candidates of
 	// each kind one request can offer.
 	MaxWindows  = 4
-	MaxPeople   = 8
+	MaxPeople   = 4
 	MaxAccounts = 6
 	// maxLabelRunes caps each label sent.
 	maxLabelRunes = 120
