@@ -934,7 +934,7 @@ func TestGeneratedBusyRetryReturnsCallContextCancellation(t *testing.T) {
 	cancel()
 	select {
 	case err := <-done:
-		check.ErrorIs(err, context.Canceled)
+		must.ErrorIs(err, context.Canceled)
 	case <-time.After(time.Second):
 		stop()
 		<-done
