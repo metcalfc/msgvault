@@ -75,6 +75,13 @@ func (h *handlers) listMeetingActionItems(ctx context.Context, req toolRequest) 
 	if value, ok := args["assignee_email"].(string); ok && value != "" {
 		body.AssigneeEmail = &value
 	}
+	assigneePersonID, err := positiveInt64Arg(args, "assignee_person_id")
+	if err != nil {
+		return toolErrorResult(err.Error()), nil
+	}
+	if assigneePersonID != 0 {
+		body.AssigneePersonID = &assigneePersonID
+	}
 	if value, ok := args["status"].(string); ok && value != "" {
 		status := generated.MeetingActionsRequestStatus(value)
 		body.Status = &status
@@ -221,6 +228,8 @@ func getMeetingContextDefinition(_ *handlers) toolDefinition {
 func listMeetingActionItemsDefinition(_ *handlers) toolDefinition {
 	properties := meetingScopeSchemaProperties()
 	properties["assignee_email"] = stringSchema("Exact assignee email")
+	properties["assignee_person_id"] = safeIDSchema("Durable person ID: action items whose source assignee " +
+		"address is the person's, or whose inferred assignee is one of the person's participants")
 	properties["status"] = stringSchema("Normalized source status", "pending", "completed", "cancelled", "unknown")
 	query := stringSchema("Literal case-insensitive title or description substring")
 	maxQuery := 256
@@ -230,7 +239,8 @@ func listMeetingActionItemsDefinition(_ *handlers) toolDefinition {
 	properties[toolArgCursor] = stringSchema("Opaque continuation cursor")
 	definition := readDefinition(
 		ToolListMeetingActionItems,
-		"List archived source-reported meeting action evidence with provenance and scope coverage.",
+		"List archived source-reported meeting action evidence with provenance and scope coverage. "+
+			"An item the source left unassigned may carry an inferred_assignee with provenance inferred and its confidence.",
 		closedObject(properties),
 		outputSchemaFor[meetingcontent.ActionsPage](),
 		(*handlers).listMeetingActionItems,

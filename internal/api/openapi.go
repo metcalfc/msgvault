@@ -389,7 +389,13 @@ import (
 // and timings.rerank_ms, and explain score breakdowns gain rerank. Settings
 // gain jev.rerank.enabled, shape, top, mcp, and message_types_excluded.
 // Additive (minor bump).
-const APISchemaVersion = "2.41.0"
+// 2.42.0 adds assignee_person_id to POST /meetings/actions, keeping action
+// items whose source assignee address belongs to the person or whose
+// inferred assignee is one of the person's participants, and an optional
+// inferred_assignee (participant, person, label, owner flag, confidence,
+// provenance) on each action row. Settings gain jev.meeting_event_kind and
+// jev.meeting_action_assignee enabled and automatic.
+const APISchemaVersion = "2.42.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

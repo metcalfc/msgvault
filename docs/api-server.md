@@ -1673,7 +1673,13 @@ Locally deleted records never participate.
 ```
 
 The actions request above also supports `query` (literal title/description
-substring, at most 256 characters) and opaque `cursor`. `limit` defaults to 50
+substring, at most 256 characters), `assignee_person_id` (a durable person ID;
+keeps items whose source `assignee_email` is one of the person's addresses or
+whose inferred assignee is one of the person's participants; schema 2.42.0),
+and opaque `cursor`. A row whose item the source left unassigned may carry
+`inferred_assignee`: `participant_id` and `person_id` when known, `label`,
+`is_owner`, `confidence` (at least 0.80), and `provenance` (`inferred`). The
+source's own assignee fields are never changed. `limit` defaults to 50
 and accepts 1–200. Status accepts `pending`, `completed`, `cancelled`, or
 `unknown`; omission includes all. Pagination reads current archived snapshots,
 so it is not a retained snapshot across edits. Coverage describes the selected

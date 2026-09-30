@@ -89,8 +89,9 @@ type ActionCoverage struct {
 }
 
 type ActionRow struct {
-	Action  Action     `json:"action"`
-	Meeting MeetingRef `json:"meeting"`
+	Action           Action            `json:"action"`
+	InferredAssignee *InferredAssignee `json:"inferred_assignee,omitempty"`
+	Meeting          MeetingRef        `json:"meeting"`
 }
 
 func (a ActionRow) Validate() error {
@@ -98,6 +99,13 @@ func (a ActionRow) Validate() error {
 	if v, ok := any(a.Action).(runtime.Validator); ok {
 		if err := v.Validate(); err != nil {
 			errors = errors.Append("Action", err)
+		}
+	}
+	if a.InferredAssignee != nil {
+		if v, ok := any(a.InferredAssignee).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("InferredAssignee", err)
+			}
 		}
 	}
 	if v, ok := any(a.Meeting).(runtime.Validator); ok {
@@ -5429,6 +5437,19 @@ func (i ImportResult) Validate() error {
 	return errors
 }
 
+type InferredAssignee struct {
+	Confidence    float64 `json:"confidence"`
+	IsOwner       bool    `json:"is_owner"`
+	Label         *string `json:"label,omitzero"`
+	ParticipantID *int64  `json:"participant_id,omitempty"`
+	PersonID      *int64  `json:"person_id,omitempty"`
+	Provenance    string  `json:"provenance" validate:"required"`
+}
+
+func (i InferredAssignee) Validate() error {
+	return runtime.ConvertValidatorError(typesValidator.Struct(i))
+}
+
 type KeepCandidate struct {
 	From string `json:"from" validate:"required"`
 
@@ -5657,17 +5678,25 @@ func (m MeetingActionItem) Validate() error {
 }
 
 type MeetingActionsRequest struct {
-	AssigneeEmail *string                      `json:"assignee_email,omitzero"`
-	Cursor        *string                      `json:"cursor,omitzero"`
-	Explore       *MeetingExploreScope         `json:"explore,omitempty"`
-	Limit         *int64                       `json:"limit,omitempty" validate:"omitempty,gte=1,lte=200"`
-	Query         *string                      `json:"query,omitzero" validate:"omitempty,max=256"`
-	Scope         *MeetingScopeRequest         `json:"scope,omitempty"`
-	Status        *MeetingActionsRequestStatus `json:"status,omitempty"`
+	AssigneeEmail *string `json:"assignee_email,omitzero"`
+
+	// AssigneePersonID Durable person ID. Keeps action items whose source assignee address belongs to the person or whose inferred assignee is one of the person's participants.
+	AssigneePersonID *int64                       `json:"assignee_person_id,omitempty" validate:"omitempty,gte=1,lte=9007199254740991"`
+	Cursor           *string                      `json:"cursor,omitzero"`
+	Explore          *MeetingExploreScope         `json:"explore,omitempty"`
+	Limit            *int64                       `json:"limit,omitempty" validate:"omitempty,gte=1,lte=200"`
+	Query            *string                      `json:"query,omitzero" validate:"omitempty,max=256"`
+	Scope            *MeetingScopeRequest         `json:"scope,omitempty"`
+	Status           *MeetingActionsRequestStatus `json:"status,omitempty"`
 }
 
 func (m MeetingActionsRequest) Validate() error {
 	var errors runtime.ValidationErrors
+	if m.AssigneePersonID != nil {
+		if err := typesValidator.Var(m.AssigneePersonID, "omitempty,gte=1,lte=9007199254740991"); err != nil {
+			errors = errors.Append("AssigneePersonID", err)
+		}
+	}
 	if m.Explore != nil {
 		if v, ok := any(m.Explore).(runtime.Validator); ok {
 			if err := v.Validate(); err != nil {

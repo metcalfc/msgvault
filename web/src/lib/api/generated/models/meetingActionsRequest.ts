@@ -7,6 +7,12 @@ import type { MeetingScopeRequest } from "./meetingScopeRequest";
 
 export interface MeetingActionsRequest {
   assignee_email?: string;
+  /**
+   * Durable person ID. Keeps action items whose source assignee address belongs to the person or whose inferred assignee is one of the person's participants.
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
+  assignee_person_id?: number;
   cursor?: string;
   explore?: MeetingExploreScope;
   /**

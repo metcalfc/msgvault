@@ -257,7 +257,7 @@ func parseMeetingCLIDate(value string) (*time.Time, error) {
 func newMeetingActionsCommand(deps meetingCommandDeps) *cobra.Command {
 	var scopeFlags meetingScopeFlags
 	var assignee, status, queryText, cursor string
-	var limit int64
+	var limit, assigneePersonID int64
 	var jsonOutput bool
 	command := &cobra.Command{
 		Use:   "actions",
@@ -270,6 +270,11 @@ func newMeetingActionsCommand(deps meetingCommandDeps) *cobra.Command {
 			}
 			if limit < 1 || limit > 200 {
 				return usageErr(command, errors.New("--limit must be between 1 and 200"))
+			}
+			if command.Flags().Changed("assignee-person-id") {
+				if err := validateMeetingIDs("--assignee-person-id", []int64{assigneePersonID}, true); err != nil {
+					return usageErr(command, err)
+				}
 			}
 			status = strings.ToLower(strings.TrimSpace(status))
 			if status != "" && status != "pending" && status != "completed" && status != "cancelled" && status != "unknown" {
@@ -287,6 +292,9 @@ func newMeetingActionsCommand(deps meetingCommandDeps) *cobra.Command {
 			body := generated.ListMeetingActionItemsBody{Scope: scope, Limit: &limit}
 			if assignee = strings.TrimSpace(assignee); assignee != "" {
 				body.AssigneeEmail = &assignee
+			}
+			if assigneePersonID > 0 {
+				body.AssigneePersonID = &assigneePersonID
 			}
 			if status != "" {
 				value := generated.MeetingActionsRequestStatus(status)
@@ -313,12 +321,27 @@ func newMeetingActionsCommand(deps meetingCommandDeps) *cobra.Command {
 	}
 	addMeetingScopeFlags(command, &scopeFlags)
 	command.Flags().StringVar(&assignee, "assignee", "", "Exact assignee email")
+	command.Flags().Int64Var(&assigneePersonID, "assignee-person-id", 0,
+		"Durable person ID: items the person owns, from the source or inferred")
 	command.Flags().StringVar(&status, "status", "", "Normalized source status")
 	command.Flags().StringVar(&queryText, "query", "", "Literal title or description substring")
 	command.Flags().Int64Var(&limit, "limit", 50, "Maximum action rows")
 	command.Flags().StringVar(&cursor, "cursor", "", "Opaque continuation cursor")
 	command.Flags().BoolVar(&jsonOutput, flagJSON, false, "Output as JSON")
 	return command
+}
+
+// inferredAssigneeText marks an inferred assignee so it never reads as the
+// meeting tool's own: "Casey Example (inferred 0.91)".
+func inferredAssigneeText(inferred *meetingcontent.InferredAssignee) string {
+	name := inferred.Label
+	if inferred.IsOwner {
+		name = "you"
+	}
+	if name == "" {
+		name = "attendee"
+	}
+	return fmt.Sprintf("%s (inferred %.2f)", name, inferred.Confidence)
 }
 
 func writeMeetingActions(command *cobra.Command, page *meetingcontent.ActionsPage) error {
@@ -334,6 +357,9 @@ func writeMeetingActions(command *cobra.Command, page *meetingcontent.ActionsPag
 		assignee := row.Action.AssigneeEmail
 		if assignee == "" {
 			assignee = row.Action.AssigneeName
+		}
+		if assignee == "" && row.InferredAssignee != nil {
+			assignee = inferredAssigneeText(row.InferredAssignee)
 		}
 		if assignee == "" {
 			assignee = "-"

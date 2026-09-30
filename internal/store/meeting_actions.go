@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json/jsontext"
@@ -30,10 +31,14 @@ const (
 type MeetingActionsQuery struct {
 	Scope         MeetingQueryScope
 	AssigneeEmail string
-	Status        meetingcontent.Status
-	Query         string
-	Limit         int
-	Cursor        string
+	// AssigneePersonID keeps action items whose source assignee address
+	// belongs to the person, or whose inferred assignee is one of the
+	// person's participants. Zero means no filter.
+	AssigneePersonID int64
+	Status           meetingcontent.Status
+	Query            string
+	Limit            int
+	Cursor           string
 }
 
 type MeetingCursorError struct {
@@ -69,6 +74,7 @@ type meetingActionsFilter struct {
 	Deletion       string             `json:"deletion"`
 	Authority      string             `json:"authority"`
 	AssigneeEmail  string             `json:"assignee_email"`
+	AssigneePerson int64              `json:"assignee_person_id,omitzero"`
 	Status         string             `json:"status"`
 	Query          string             `json:"query"`
 }
@@ -159,9 +165,20 @@ func (s *Store) ListMeetingActionsContext(
 				sm.title, sm.occurred_at,
 				a.ordinal, a.source_id, a.title, a.description,
 				a.assignee_name, a.assignee_email, a.status, a.source_status,
-				a.due_date, a.origin, a.locator
+				a.due_date, a.origin, a.locator,
+				x.choice, x.assignee_participant_id,
+				(SELECT pp.person_id FROM person_participants pp
+				  WHERE pp.participant_id = x.assignee_participant_id),
+				COALESCE(NULLIF(TRIM(ap.display_name), ''), ap.email_address, ''),
+				x.confidence, x.provenance
 			FROM scoped_meetings sm
-			JOIN meeting_action_items a ON a.message_id = sm.message_id`+
+			JOIN (meeting_action_items a
+				LEFT JOIN meeting_action_assignees x
+				  ON x.message_id = a.message_id AND x.ordinal = a.ordinal
+				 AND x.choice <> 'none_or_unclear'
+				 AND (x.action_title = a.title OR x.provenance = 'user')
+				LEFT JOIN participants ap ON ap.id = x.assignee_participant_id)
+			  ON a.message_id = sm.message_id`+
 			filters+positionSQL+`
 			ORDER BY CASE WHEN sm.occurred_key IS NULL THEN 1 ELSE 0 END,
 				sm.occurred_key DESC, sm.message_id DESC, a.ordinal ASC
@@ -172,6 +189,7 @@ func (s *Store) ListMeetingActionsContext(
 		for rows.Next() {
 			var row meetingcontent.ActionRow
 			var occurredAt nullableTimestamp
+			var inferred inferredAssigneeColumns
 			if scanErr := rows.Scan(
 				&row.Meeting.MessageID,
 				&row.Meeting.ConversationID,
@@ -192,10 +210,17 @@ func (s *Store) ListMeetingActionsContext(
 				&row.Action.DueDate,
 				&row.Action.Origin,
 				&row.Action.Locator,
+				&inferred.choice,
+				&inferred.participantID,
+				&inferred.personID,
+				&inferred.label,
+				&inferred.confidence,
+				&inferred.provenance,
 			); scanErr != nil {
 				_ = rows.Close()
 				return fmt.Errorf("scan meeting action: %w", scanErr)
 			}
+			row.InferredAssignee = inferred.assignee()
 			row.Meeting.OccurredAt = nullableTimePointer(occurredAt)
 			row.Meeting.ArchivePath = fmt.Sprintf("/api/v1/messages/%d", row.Meeting.MessageID)
 			result.Rows = append(result.Rows, row)
@@ -230,6 +255,36 @@ func (s *Store) ListMeetingActionsContext(
 	return result, nil
 }
 
+// inferredAssigneeColumns scans the optional assignee row joined to an
+// action item.
+type inferredAssigneeColumns struct {
+	choice        sql.NullString
+	participantID sql.NullInt64
+	personID      sql.NullInt64
+	label         sql.NullString
+	confidence    sql.NullFloat64
+	provenance    sql.NullString
+}
+
+func (c inferredAssigneeColumns) assignee() *meetingcontent.InferredAssignee {
+	if !c.choice.Valid {
+		return nil
+	}
+	assignee := &meetingcontent.InferredAssignee{
+		IsOwner:    c.choice.String == MeetingAssigneeChoiceOwner,
+		Confidence: c.confidence.Float64,
+		Provenance: c.provenance.String,
+	}
+	if c.participantID.Valid {
+		assignee.ParticipantID = new(c.participantID.Int64)
+		assignee.Label = c.label.String
+	}
+	if c.personID.Valid {
+		assignee.PersonID = new(c.personID.Int64)
+	}
+	return assignee
+}
+
 func normalizedMeetingActionsLimit(value int) (int, error) {
 	if value == 0 {
 		return meetingActionsDefaultLimit, nil
@@ -256,6 +311,21 @@ func (s *Store) meetingActionFilters(query MeetingActionsQuery) (string, []any) 
 	if email := strings.ToLower(strings.TrimSpace(query.AssigneeEmail)); email != "" {
 		conditions = append(conditions, s.dialect.UnicodeLowerExpression(`a.assignee_email`)+` = ?`)
 		args = append(args, email)
+	}
+	if query.AssigneePersonID > 0 {
+		conditions = append(conditions, `(EXISTS (
+				SELECT 1 FROM person_participants pp
+				JOIN participants p ON p.id = pp.participant_id
+				WHERE pp.person_id = ? AND a.assignee_email <> ''
+				  AND `+s.dialect.UnicodeLowerExpression(`p.email_address`)+` = `+
+			s.dialect.UnicodeLowerExpression(`a.assignee_email`)+`)
+			OR EXISTS (
+				SELECT 1 FROM meeting_action_assignees x
+				JOIN person_participants pp ON pp.participant_id = x.assignee_participant_id
+				WHERE x.message_id = a.message_id AND x.ordinal = a.ordinal
+				  AND pp.person_id = ? AND x.choice <> 'none_or_unclear'
+				  AND (x.action_title = a.title OR x.provenance = 'user')))`)
+		args = append(args, query.AssigneePersonID, query.AssigneePersonID)
 	}
 	if query.Status != "" {
 		conditions = append(conditions, `a.status = ?`)
@@ -306,6 +376,7 @@ func meetingActionsFilterHash(query MeetingActionsQuery) (string, error) {
 		Deletion:       normalizedMeetingDeletion(query.Scope.Deletion),
 		Authority:      query.Scope.Authority,
 		AssigneeEmail:  strings.ToLower(strings.TrimSpace(query.AssigneeEmail)),
+		AssigneePerson: query.AssigneePersonID,
 		Status:         string(query.Status),
 		Query:          strings.ToLower(query.Query),
 	}

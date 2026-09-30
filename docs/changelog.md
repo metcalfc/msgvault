@@ -52,6 +52,13 @@ All notable changes to msgvault, grouped by release.
   as an ID or vCard UID. The Web UI, CLI, and MCP tools use a shared name
   lookup (`GET /api/v1/entity-labels`), and employment listings name the
   organizations they reference. Requires API schema 2.37.0.
+- List a person's meeting action items. `assignee_person_id` (HTTP, MCP) and
+  `msgvault meetings actions --assignee-person-id` match items whose source
+  assignee address is the person's. With `[jev.meeting_action_assignee]`
+  enabled and consented, `msgvault meetings judge` asks Jev who owns items the
+  meeting tool left unassigned, sending the meeting title, attendee names,
+  and item text; an attendee or you at 0.80 or more is shown as an inferred
+  assignee, never in place of the tool's own. Requires API schema 2.42.0.
 - Relationship rankings count calendar events fairly. Cancelled and declined
   events, out-of-office, focus-time, and working-location blocks, and events
   marked free no longer count as meetings, rooms are no longer attendees,

@@ -72,26 +72,33 @@ JavaScript-safe integers. Locally deleted records are always excluded.
 |---|---|
 | `--status` | `pending`, `completed`, `cancelled`, or `unknown`; default all |
 | `--assignee` | Exact assignee email |
+| `--assignee-person-id` | Durable person ID: items whose source assignee address is the person's, or whose inferred assignee is one of the person's participants. Requires API schema 2.42.0 |
 | `--query` | Literal title or description substring, at most 256 characters |
 | `--limit` | Action rows per page, default 50; range 1–200 |
 | `--cursor` | Opaque continuation cursor from the previous page |
 
 Actions reflect the current archived source snapshot. Keep filters unchanged
-when continuing a page; refresh from page one to see newer evidence.
+when continuing a page; refresh from page one to see newer evidence. The
+ASSIGNEE column shows an inferred assignee as `Name (inferred 0.91)`.
 
 ### meetings judge
 
-Runs the meeting judgments inside the daemon. It visits calendar series (a
-recurring series or a standalone event) that have no kind yet, most recent
-first:
+Runs the meeting judgments inside the daemon. Each one runs only when its own
+feature is enabled, an API key resolves, and its consent is active.
 
-1. A series none of whose events is a meeting (cancelled, declined by you, an
-   out-of-office, focus-time, or working-location block, or marked free) is
-   recorded as not a meeting. Nothing leaves the machine.
-2. When [`[jev.meeting_event_kind]`](configuration.md#jevmeeting_event_kind)
-   is enabled, an API key resolves, and `msgvault jev consent
-   meeting_event_kind` has been given, the rest are sent to Jev ten series per
-   request. Each series is asked once.
+1. **Event kinds.** It visits calendar series (a recurring series or a
+   standalone event) that have no kind yet, most recent first. A series none
+   of whose events is a meeting (cancelled, declined by you, an out-of-office,
+   focus-time, or working-location block, or marked free) is recorded as not a
+   meeting and never sent. With
+   [`[jev.meeting_event_kind]`](configuration.md#jevmeeting_event_kind) and
+   `msgvault jev consent meeting_event_kind`, the rest are sent to Jev ten
+   series per request. Each series is asked once.
+2. **Action item assignees.** With
+   [`[jev.meeting_action_assignee]`](configuration.md#jevmeeting_action_assignee)
+   and `msgvault jev consent meeting_action_assignee`, action items the
+   meeting tool left without an assignee are sent one meeting at a time,
+   newest first. Meetings with more than 12 attendees are not sent.
 
 ```bash
 msgvault meetings judge [--limit N] [--json]
@@ -99,12 +106,14 @@ msgvault meetings judge [--limit N] [--json]
 
 | Flag | Contract |
 |---|---|
-| `--limit` | Visit at most this many series; `0` (default) means all |
-| `--json` | Structured report: counts, Jev requests, and the skip category |
+| `--limit` | Visit at most this many series and this many meetings; `0` (default) means all |
+| `--json` | Structured report: counts, Jev requests, and the skip category per judgment |
 
 A kind at or above 0.60 sets how much the series counts in relationship
 rankings; see [meeting event kind](usage/jev-judgments.md#feature-meeting-event-kind).
-The next analytics cache build publishes the new weights.
+The next analytics cache build publishes the new weights. An attendee or you
+at 0.80 or more becomes an item's inferred assignee; see
+[meeting action assignee](usage/jev-judgments.md#feature-meeting-action-assignee).
 
 ## Global Flags
 

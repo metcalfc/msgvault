@@ -135,6 +135,19 @@ func newJevEventKindJudge(cfg *config.Config, st jevRuntimeStore) (meetingjudge.
 	return service, nil
 }
 
+// newJevAssigneeJudge wires the meeting action assignee judgment's Jev door,
+// or returns nil when Jev or the feature is off so no assignee is inferred.
+func newJevAssigneeJudge(cfg *config.Config, st jevRuntimeStore) (meetingjudge.Judge, error) {
+	if cfg == nil || !cfg.Jev.Enabled || !cfg.Jev.MeetingActionAssignee.Enabled {
+		return nil, nil //nolint:nilnil // nil means "no Jev".
+	}
+	service, err := newJevService(cfg, st)
+	if err != nil || service == nil {
+		return nil, err
+	}
+	return service, nil
+}
+
 // newJevKindJudge wires the correspondent kind classifier's Jev door, or
 // returns nil when Jev or the feature is off so `kinds build` applies the
 // deterministic rules alone. Consent, the credential, and the automatic

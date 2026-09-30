@@ -120,6 +120,8 @@ components:
       properties:
         action:
           $ref: "#/components/schemas/Action"
+        inferred_assignee:
+          $ref: "#/components/schemas/InferredAssignee"
         meeting:
           $ref: "#/components/schemas/MeetingRef"
       required:
@@ -5908,6 +5910,28 @@ components:
         - candidates
         - applied
       type: object
+    InferredAssignee:
+      properties:
+        confidence:
+          format: double
+          type: number
+        is_owner:
+          type: boolean
+        label:
+          type: string
+        participant_id:
+          format: int64
+          type: integer
+        person_id:
+          format: int64
+          type: integer
+        provenance:
+          type: string
+      required:
+        - is_owner
+        - confidence
+        - provenance
+      type: object
     KeepCandidate:
       properties:
         from:
@@ -6082,6 +6106,12 @@ components:
       properties:
         assignee_email:
           type: string
+        assignee_person_id:
+          description: Durable person ID. Keeps action items whose source assignee address belongs to the person or whose inferred assignee is one of the person's participants.
+          format: int64
+          maximum: 9007199254740991
+          minimum: 1
+          type: integer
         cursor:
           type: string
         explore:
@@ -13926,7 +13956,7 @@ components:
       type: apiKey
 info:
   title: msgvault API
-  version: 2.41.0
+  version: 2.42.0
 openapi: 3.0.3
 paths:
   /api/daemon/identity:

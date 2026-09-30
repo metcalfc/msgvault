@@ -16,13 +16,14 @@ func TestJevFeatureRegistryListsEveryFeature(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	specs := jevFeatureSpecs()
-	require.Len(specs, 6)
+	require.Len(specs, 7)
 	assert.Equal(jev.FeatureEnrichmentIdentity, specs[0].Name)
 	assert.Equal(jev.FeatureOrganizationResolution, specs[1].Name)
 	assert.Equal(jev.FeatureCorrespondentKind, specs[2].Name)
 	assert.Equal(jev.FeatureCleanupSuggestions, specs[3].Name)
 	assert.Equal(jev.FeatureSearchRerank, specs[4].Name)
 	assert.Equal(jev.FeatureMeetingEventKind, specs[5].Name)
+	assert.Equal(jev.FeatureMeetingActionAssignee, specs[6].Name)
 	cfg := config.NewDefaultConfig()
 	for _, spec := range specs {
 		require.NoError(spec.Validate())
@@ -93,6 +94,14 @@ func TestNewJevEventKindJudgeIsNilUntilJevAndTheFeatureAreOn(t *testing.T) {
 	judge, err = newJevEventKindJudge(cfg, st)
 	require.NoError(err)
 	assert.NotNil(judge)
+
+	assignee, err := newJevAssigneeJudge(cfg, st)
+	require.NoError(err)
+	assert.Nil(assignee, "each meeting feature has its own switch")
+	cfg.Jev.MeetingActionAssignee.Enabled = true
+	assignee, err = newJevAssigneeJudge(cfg, st)
+	require.NoError(err)
+	assert.NotNil(assignee)
 }
 
 func TestNewJevOrganizationPreparerIsNilUntilJevAndTheFeatureAreOn(t *testing.T) {

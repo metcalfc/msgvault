@@ -4257,6 +4257,11 @@ func (s *Store) MergeParticipants(oldID, newID int64) error {
 				  AND LOWER(COALESCE(m2.email_address, '')) = LOWER(COALESCE(message_recipients.email_address, '')))`, oldID, newID); err != nil {
 			return err
 		}
+		// An inferred action item assignee follows the participant it names.
+		if _, err := tx.Exec(`UPDATE meeting_action_assignees SET assignee_participant_id = ?
+			WHERE assignee_participant_id = ?`, newID, oldID); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(`UPDATE message_recipients SET participant_id = ? WHERE participant_id = ?`, newID, oldID); err != nil {
 			return err
 		}

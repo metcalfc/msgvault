@@ -61,7 +61,14 @@
   function assignee(row: ActionRow): string {
     const { assignee_name: name, assignee_email: email } = row.action;
     if (name && email) return `${name} · ${email}`;
-    return name || email || 'Unassigned';
+    if (name) return name;
+    if (email) return email;
+    const inferred = row.inferred_assignee;
+    if (inferred) {
+      const who = inferred.is_owner ? 'You' : inferred.label || 'An attendee';
+      return `${who} (inferred, ${Math.round(inferred.confidence * 100)}%)`;
+    }
+    return 'Unassigned';
   }
 
   function openMeeting(event: MouseEvent, meeting: MeetingRef): void {

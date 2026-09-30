@@ -74,13 +74,17 @@ type MeetingContextRequest struct {
 }
 
 type MeetingActionsRequest struct {
-	Scope         *MeetingScopeRequest  `json:"scope,omitempty"`
-	Explore       *MeetingExploreScope  `json:"explore,omitempty"`
-	AssigneeEmail string                `json:"assignee_email,omitempty"`
-	Status        meetingcontent.Status `json:"status,omitempty" enum:"pending,completed,cancelled,unknown"`
-	Query         string                `json:"query,omitempty" maxLength:"256"`
-	Limit         int                   `json:"limit,omitempty" minimum:"1" maximum:"200"`
-	Cursor        string                `json:"cursor,omitempty"`
+	Scope         *MeetingScopeRequest `json:"scope,omitempty"`
+	Explore       *MeetingExploreScope `json:"explore,omitempty"`
+	AssigneeEmail string               `json:"assignee_email,omitempty"`
+	// AssigneePersonID keeps action items owned by one durable person: the
+	// meeting tool's assignee address is one of the person's, or the
+	// inferred assignee is one of the person's participants.
+	AssigneePersonID int64                 `json:"assignee_person_id,omitempty" minimum:"1" maximum:"9007199254740991" doc:"Durable person ID. Keeps action items whose source assignee address belongs to the person or whose inferred assignee is one of the person's participants."`
+	Status           meetingcontent.Status `json:"status,omitempty" enum:"pending,completed,cancelled,unknown"`
+	Query            string                `json:"query,omitempty" maxLength:"256"`
+	Limit            int                   `json:"limit,omitempty" minimum:"1" maximum:"200"`
+	Cursor           string                `json:"cursor,omitempty"`
 }
 
 type MeetingMetricsRequest struct {
@@ -230,8 +234,8 @@ func (s *Server) handleMeetingActions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := meetingStore.ListMeetingActionsContext(r.Context(), store.MeetingActionsQuery{
-		Scope: resolved.Scope, AssigneeEmail: request.AssigneeEmail, Status: request.Status,
-		Query: request.Query, Limit: request.Limit, Cursor: request.Cursor,
+		Scope: resolved.Scope, AssigneeEmail: request.AssigneeEmail, AssigneePersonID: request.AssigneePersonID,
+		Status: request.Status, Query: request.Query, Limit: request.Limit, Cursor: request.Cursor,
 	})
 	if err != nil {
 		s.writeMeetingError(w, err)
@@ -325,6 +329,12 @@ func validateMeetingActionsRequest(
 				"status must be pending, completed, cancelled, or unknown")
 			return false
 		}
+	}
+	if _, present := fields["assignee_person_id"]; present && (request.AssigneePersonID < 1 ||
+		request.AssigneePersonID > 9007199254740991) {
+		writeError(w, http.StatusBadRequest, "invalid_assignee_person_id",
+			"assignee_person_id must be a positive JavaScript-safe integer")
+		return false
 	}
 	if utf8.RuneCountInString(request.Query) > 256 {
 		writeError(w, http.StatusBadRequest, "invalid_meeting_query", "query must not exceed 256 characters")

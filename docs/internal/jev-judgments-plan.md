@@ -459,10 +459,24 @@ bar.
   > this change need a resync to record the owner's RSVP; the attendee count
   > falls back to the stored attendee rows. Temperature summaries still
   > count every event with the owner present.
-- [ ] **Task 7.2 Action-item assignee.** Choice among email-bearing
+- [x] **Task 7.2 Action-item assignee.** Choice among email-bearing
   attendees plus `owner` and `none_or_unclear`, batched per meeting at
   import; store `assignee_participant_id` with confidence at ≥ 0.80 and a
   provenance of `inferred`; add `assignee_person_id` filter.
+  > Feature `meeting_action_assignee` in `internal/meetingjudge`, run by
+  > `msgvault meetings judge` and, with `automatic = true`, at each cache
+  > build (after sync or import) rather than inside the import transaction.
+  > One Choice per item, eight items per request, over fixed slots
+  > `attendee_1`..`attendee_12` plus `owner` and `none_or_unclear`; a meeting
+  > with more attendees is recorded without a request. Only items with no
+  > source assignee name or address are asked. Rows live in
+  > `meeting_action_assignees` keyed by (meeting, ordinal) with the item
+  > title they judged; below 0.80 the row is `none_or_unclear` so the item
+  > is not asked again. The table admits `user` rows that inference never
+  > replaces, but no user edit surface exists yet. The owner's identities
+  > are never attendees and never sent. `assignee_person_id` (API 2.42.0,
+  > MCP, CLI) matches the source assignee address or the inferred
+  > participant; rows carry `inferred_assignee`.
 - [x] **Task 7.3 Event kind.** Choice over one_on_one, small_working_meeting,
   large_group_or_all_hands, external_webinar_or_marketing,
   personal_hold_or_logistics, social; recurring series asked once; weights

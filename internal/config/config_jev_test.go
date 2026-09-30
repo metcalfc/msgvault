@@ -33,6 +33,7 @@ func TestLoadJevSectionDefaultsAndOverrides(t *testing.T) {
 	assert.False(cfg.Jev.CleanupSuggestions.Enabled)
 	assert.False(cfg.Jev.MeetingEventKind.Enabled)
 	assert.False(cfg.Jev.MeetingEventKind.Automatic)
+	assert.False(cfg.Jev.MeetingActionAssignee.Enabled)
 
 	require.NoError(os.WriteFile(configPath, []byte(`
 [jev]
@@ -60,6 +61,9 @@ trusted_authserv_ids = ["mx.example.net"]
 [jev.meeting_event_kind]
 enabled = true
 automatic = true
+
+[jev.meeting_action_assignee]
+enabled = true
 `), 0o644))
 	cfg, err = Load(configPath, "")
 	require.NoError(err)
@@ -78,6 +82,8 @@ automatic = true
 	assert.Equal([]string{"mx.example.net"}, cfg.Jev.CleanupSuggestions.TrustedAuthservIDs)
 	assert.True(cfg.Jev.MeetingEventKind.Enabled)
 	assert.True(cfg.Jev.MeetingEventKind.Automatic)
+	assert.True(cfg.Jev.MeetingActionAssignee.Enabled)
+	assert.False(cfg.Jev.MeetingActionAssignee.Automatic)
 
 	require.NoError(os.WriteFile(configPath, []byte(`
 [jev]

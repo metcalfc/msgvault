@@ -4626,3 +4626,26 @@ CREATE TABLE IF NOT EXISTS calendar_event_kinds (
     judged_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CHECK (LENGTH(kind) > 0)
 );
+
+-- Who owns a meeting action item the meeting tool left unassigned. Rows with
+-- provenance 'inferred' come from the Jev meeting_action_assignee judgment:
+-- choice is 'attendee' or 'owner' when that option scored at least 0.80
+-- (confidence), else 'none_or_unclear'. assignee_participant_id is the chosen
+-- attendee, or the owner's participant on the meeting when known. The row
+-- belongs to the action titled action_title at that ordinal; a different
+-- action there is judged again. Inference never replaces a 'user' row.
+CREATE TABLE IF NOT EXISTS meeting_action_assignees (
+    message_id              INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    ordinal                 INTEGER NOT NULL,
+    action_title            TEXT NOT NULL,
+    choice                  TEXT NOT NULL CHECK (choice IN ('attendee', 'owner', 'none_or_unclear')),
+    assignee_participant_id INTEGER REFERENCES participants(id) ON DELETE SET NULL,
+    confidence              REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+    probabilities_json      TEXT NOT NULL DEFAULT '{}',
+    provenance              TEXT NOT NULL CHECK (provenance IN ('inferred', 'user')),
+    model                   TEXT NOT NULL DEFAULT '',
+    judged_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (message_id, ordinal)
+);
+CREATE INDEX IF NOT EXISTS idx_meeting_action_assignees_participant
+    ON meeting_action_assignees(assignee_participant_id);

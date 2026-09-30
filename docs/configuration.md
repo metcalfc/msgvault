@@ -1389,6 +1389,16 @@ Calendar event kind (feature `meeting_event_kind`). See
 | `enabled` | `false` | Let `msgvault meetings judge` ask Jev what kind of meeting each calendar series is. Without it, meeting weights come from the attendee count alone. |
 | `automatic` | `false` | Also judge up to 200 new calendar series at each analytics cache build. |
 
+#### `[jev.meeting_action_assignee]`
+
+Meeting action assignee (feature `meeting_action_assignee`). See
+[the feature description](/docs/usage/jev-judgments/#feature-meeting-action-assignee).
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Let `msgvault meetings judge` ask Jev which attendee owns an action item the meeting tool left unassigned. Without it, only the tool's own assignees exist. |
+| `automatic` | `false` | Also infer assignees for up to 200 newly imported meetings at each analytics cache build, such as the one after a scheduled sync. |
+
 ### `[activity]`
 
 Dated activity projection and per-person contact state (first and last

@@ -68,6 +68,10 @@ new `msgvault jev consent`.
    [jev.meeting_event_kind]
    enabled = true
    # automatic = true   # also judge new calendar series at each cache build
+
+   [jev.meeting_action_assignee]
+   enabled = true
+   # automatic = true   # also infer assignees for new meetings at each cache build
    ```
 
 2. Provide an API key. Either paste it in Settings under **Jev judgments**
@@ -84,7 +88,8 @@ new `msgvault jev consent`.
 
 Consent is per feature: run the same two `consent` commands with
 `organization_resolution`, `correspondent_kind`, `cleanup_suggestions`,
-`search_rerank`, or `meeting_event_kind` for those features. `msgvault jev revoke enrichment_identity`
+`search_rerank`, `meeting_event_kind`, or `meeting_action_assignee` for those
+features. `msgvault jev revoke enrichment_identity`
 or `msgvault jev revoke --all` stops the next request immediately.
 
 ## Budgets and safety
@@ -651,6 +656,69 @@ length, recurrence, and attendee counts." The options are:
 
 `msgvault jev consent meeting_event_kind` prints the same disclosure.
 
+## Feature: meeting action assignee
+
+Feature name: `meeting_action_assignee`. Setting:
+`[jev.meeting_action_assignee]`. Command:
+[`msgvault meetings judge`](../cli-reference.md#meetings-judge).
+
+Meeting tools often record "Casey to send the draft" without saying who owns
+it, so a person's action items cannot be listed. For an action item whose
+source has no assignee name or address, this feature asks Jev which attendee
+owns it:
+
+1. Only items with no source assignee are asked about. The meeting tool's
+   assignee is never replaced.
+2. One meeting at a time, up to eight items per request, each item is one
+   Choice among the meeting's attendees with an address (up to 12), you
+   (`owner`), and `none_or_unclear`. A meeting with more than 12 such
+   attendees is not sent.
+3. An attendee or `owner` at 0.80 or more is stored as the item's inferred
+   assignee (`meeting_action_assignees`, provenance `inferred`, with the
+   probability as confidence and the full probabilities). Anything else is
+   stored as `none_or_unclear`, so the item is not asked again. A changed item
+   at the same position is asked again.
+
+Action item listings (HTTP, MCP, CLI, and the Web UI) show the inferred
+assignee separately from the source's, and `assignee_person_id` lists a
+person's items from either. `meetings judge` runs by hand. With
+`automatic = true`, each analytics cache build first handles up to 200 newly
+imported meetings.
+
+### What leaves the machine
+
+Per request:
+
+- `meeting.title`: the meeting title, cut to 160 characters
+- `attendees.attendee_N.label`: each attendee's display name, or the local
+  part of their address (the part before `@`) when no name is known, cut to
+  120 characters
+- `action_items.item_N.title` and `.description`: the item's text, cut to 200
+  and 500 characters
+
+Your own identities are never attendees: you are the `owner` option, and
+your name and addresses are never sent. No addresses, transcripts, summaries,
+or notes leave the machine.
+
+### The question, exactly as sent
+
+`assignee_1` through `assignee_8` (Choice), one per item in the request:
+"Who is responsible for `action_items.item_N` from the meeting
+`meeting.title`? Match names in its title and description to attendee labels.
+An option whose key is absent from `attendees` never applies." The options
+are:
+
+- `attendee_1` through `attendee_12`: `attendees.attendee_N` is the one person
+  responsible for the item.
+- `owner`: the person whose meeting notes these are, who is not in
+  `attendees`: the notes' "I", "me", or "my", or an item addressed to the
+  reader.
+- `none_or_unclear`: no single person: the whole group, someone not listed,
+  or the text does not say who.
+
+A request with fewer than eight items sends only their questions.
+`msgvault jev consent meeting_action_assignee` prints the same disclosure.
+
 ## Turn it off
 
 - `msgvault jev revoke --all` stops every feature at the next request without
@@ -667,14 +735,16 @@ probabilities and outcomes, not the compared values.
 ## Limitations
 
 - Only the enrichment identity check, organization resolution,
-  correspondent kind, cleanup suggestions, hybrid search reranking, and
-  meeting event kind exist today. The other features in the engineering
-  record `docs/internal/jev-judgments-plan.md` are proposals.
+  correspondent kind, cleanup suggestions, hybrid search reranking, meeting
+  event kind, and meeting action assignee exist today. The other features in
+  the engineering record `docs/internal/jev-judgments-plan.md` are proposals.
 - Hybrid search reranking has not passed its evaluation gate. Its cached
   orders live in the daemon's memory, so a restart judges the next page of a
   search again.
 - Meeting event kind asks each calendar series once. A series whose nature
   changes later keeps its first kind.
+- There is no way yet to set or correct an action item's assignee yourself;
+  an inferred assignee you disagree with stays until the item changes.
 - Correspondent kind does not revisit an identity once a rule or Jev
   classified it, even after links or new messages; mark it yourself with
   `msgvault person kind set`.

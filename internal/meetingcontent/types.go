@@ -159,6 +159,25 @@ type PacketResult struct {
 type ActionRow struct {
 	Meeting MeetingRef `json:"meeting"`
 	Action  Action     `json:"action"`
+	// InferredAssignee is who a judgment inferred owns an action item the
+	// meeting tool left unassigned. Absent when there is no confident one.
+	InferredAssignee *InferredAssignee `json:"inferred_assignee,omitempty"`
+}
+
+// InferredAssignee is an action item owner msgvault inferred rather than
+// read from the meeting source. Provenance is "inferred" for a judgment.
+type InferredAssignee struct {
+	// ParticipantID is the chosen attendee, or the owner's participant on
+	// the meeting when known.
+	ParticipantID *int64 `json:"participant_id,omitempty"`
+	// PersonID is the person the participant belongs to, when promoted.
+	PersonID *int64 `json:"person_id,omitempty"`
+	// Label names the participant: display name, else address.
+	Label string `json:"label,omitempty"`
+	// IsOwner is true when the archive owner was inferred.
+	IsOwner    bool    `json:"is_owner"`
+	Confidence float64 `json:"confidence"`
+	Provenance string  `json:"provenance"`
 }
 
 type ActionCoverage struct {

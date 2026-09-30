@@ -22,7 +22,10 @@ import (
 type meetingsJudgeReport struct {
 	EventKinds meetingjudge.EventKindReport `json:"event_kinds"`
 	// EventKindJev is false when [jev.meeting_event_kind] is off.
-	EventKindJev bool `json:"event_kind_jev"`
+	EventKindJev bool                        `json:"event_kind_jev"`
+	Assignees    meetingjudge.AssigneeReport `json:"assignees"`
+	// AssigneeJev is false when [jev.meeting_action_assignee] is off.
+	AssigneeJev bool `json:"assignee_jev"`
 }
 
 func newMeetingsJudgeCommand() *cobra.Command {
@@ -30,15 +33,21 @@ func newMeetingsJudgeCommand() *cobra.Command {
 	var jsonOutput bool
 	command := &cobra.Command{
 		Use:   "judge",
-		Short: "Ask Jev what kind of meeting each calendar series is",
-		Long: `Visits calendar series (a recurring series or a standalone event) that have no
-kind yet. A series none of whose events is a meeting (cancelled, declined,
-out of office, focus time, working location, or marked free) is recorded
-without asking anyone. When [jev] and [jev.meeting_event_kind] are enabled,
-an API key resolves, and 'msgvault jev consent meeting_event_kind' has been
-given, the rest are sent to Jev ten series per request, each asked once. A
-kind at or above 0.60 sets how much the series counts as a meeting in
-relationship rankings; below it the attendee count does.`,
+		Short: "Ask Jev what kind of meeting each calendar series is and who owns action items",
+		Long: `Event kinds: visits calendar series (a recurring series or a standalone event)
+that have no kind yet. A series none of whose events is a meeting (cancelled,
+declined, out of office, focus time, working location, or marked free) is
+recorded without asking anyone. When [jev] and [jev.meeting_event_kind] are
+enabled, an API key resolves, and 'msgvault jev consent meeting_event_kind'
+has been given, the rest are sent to Jev ten series per request, each asked
+once. A kind at or above 0.60 sets how much the series counts as a meeting in
+relationship rankings; below it the attendee count does.
+
+Action item assignees: when [jev.meeting_action_assignee] is enabled and
+consented, meeting action items the meeting tool left without an assignee
+are sent to Jev one meeting at a time, with the meeting title and attendee
+labels. An attendee or you at 0.80 or more is stored as the inferred
+assignee; the meeting tool's own assignee is never replaced.`,
 		Args: cobra.NoArgs,
 		RunE: func(command *cobra.Command, args []string) error {
 			if limit < 0 {
@@ -71,7 +80,8 @@ relationship rankings; below it the attendee count does.`,
 			return nil
 		},
 	}
-	command.Flags().IntVar(&limit, "limit", 0, "Visit at most this many calendar series (0 means all)")
+	command.Flags().IntVar(&limit, "limit", 0,
+		"Visit at most this many calendar series and this many meetings (0 means all)")
 	command.Flags().BoolVar(&jsonOutput, flagJSON, false, "Output structured JSON")
 	return command
 }
@@ -95,6 +105,19 @@ func runMeetingsJudge(
 	if err != nil {
 		return report, err
 	}
+	assigneeJudge, err := newJevAssigneeJudge(cfg, st)
+	if err != nil {
+		return report, err
+	}
+	report.AssigneeJev = assigneeJudge != nil
+	assigneeOptions := meetingjudge.AssigneeOptions{Limit: limit, Automatic: automatic, Logger: logger}
+	if assigneeJudge != nil {
+		assigneeOptions.Judge = assigneeJudge
+	}
+	report.Assignees, err = meetingjudge.RunAssignees(ctx, st, assigneeOptions)
+	if err != nil {
+		return report, err
+	}
 	return report, nil
 }
 
@@ -111,6 +134,22 @@ func writeMeetingsJudgeReport(w io.Writer, report meetingsJudgeReport) {
 	default:
 		_, _ = fmt.Fprintf(w, "Event kinds: %d request(s), judged %d (%d confident): %s\n",
 			kinds.Requests, kinds.Judged, kinds.Confident, eventKindCounts(kinds.Kinds))
+	}
+	assignees := report.Assignees
+	switch {
+	case !report.AssigneeJev:
+		_, _ = fmt.Fprintln(w, "Action item assignees: Jev off")
+	case assignees.Skipped != "":
+		_, _ = fmt.Fprintf(w, "Action item assignees: skipped:%s after %d request(s)\n",
+			assignees.Skipped, assignees.Requests)
+	default:
+		_, _ = fmt.Fprintf(w,
+			"Action item assignees: %d meeting(s), %d request(s); %d to an attendee, %d to you, %d unclear\n",
+			assignees.Meetings, assignees.Requests, assignees.Attendees, assignees.Owner, assignees.Unclear)
+	}
+	if assignees.TooManyAttendees > 0 {
+		_, _ = fmt.Fprintf(w, "Meetings not sent (more than %d attendees): %d\n",
+			meetingjudge.MaxAssigneeAttendees, assignees.TooManyAttendees)
 	}
 }
 

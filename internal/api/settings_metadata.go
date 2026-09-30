@@ -186,6 +186,8 @@ var settingsMetadata = map[string]settingMetadata{
 	"jev.cleanup_suggestions.enabled":       {"Cleanup suggestions", "Ask Jev whether spam and promotional mail impersonates a sender, pressures you, or is personal or work mail, for msgvault suggest-cleanup and deletion review. It never stages or deletes anything.", sectionJevFeatures},
 	"jev.meeting_event_kind.enabled":        {"Meeting event kind", "Ask Jev whether a calendar series is a one-on-one, a working meeting, an all-hands, a webinar, a hold, or a social event, so rankings weigh it fairly.", sectionJevFeatures},
 	"jev.meeting_event_kind.automatic":      {"Automatic meeting event kinds", "Judge new calendar series when the analytics cache is built, without running msgvault meetings judge.", sectionJevFeatures},
+	"jev.meeting_action_assignee.enabled":   {"Meeting action assignee", "Ask Jev which attendee owns a meeting action item the meeting tool left unassigned, sending the meeting title, attendee names, and the item text.", sectionJevFeatures},
+	"jev.meeting_action_assignee.automatic": {"Automatic action assignees", "Infer assignees for newly imported meetings when the analytics cache is built, without running msgvault meetings judge.", sectionJevFeatures},
 	"vector.people.enabled":                 {"Embed person fields", "Send the consented fields of each person to the text embedding provider. Semantic search must be on.", "people"},
 	"vector.people.retention_posture":       {"Provider retention statement", "Your statement of how long the provider keeps person data.", "people"},
 	"vector.people.training_posture":        {"Provider training statement", "Your statement of whether the provider trains on person data.", "people"},

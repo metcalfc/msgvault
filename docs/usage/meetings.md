@@ -63,7 +63,16 @@ status or exact assignee email, then use **Open archived meeting** to read the
 source evidence. Back returns to the same view and scope.
 
 Action status is the last archived source status, not a local task list.
-msgvault does not infer assignees, create follow-ups, or mark source tasks done.
+msgvault does not create follow-ups or mark source tasks done. It shows the
+meeting tool's assignee when there is one and never replaces it. For an item
+the tool left unassigned, the optional
+[meeting action assignee](jev-judgments.md#feature-meeting-action-assignee)
+judgment can infer an attendee or you as its owner; the row then carries an
+`inferred_assignee` with provenance `inferred` and its confidence, and the Web
+UI marks it "(inferred, 91%)". Filter by person with `--assignee-person-id`
+(CLI) or `assignee_person_id` (HTTP and MCP): it matches items whose source
+assignee address is one of the person's and items inferred to one of the
+person's participants.
 Supported empty action lists, unsupported sources, unavailable evidence, and
 partial evidence remain distinct. Granola has no structured action support;
 Circleback and generic imports preserve explicit actions; Notion exposes

@@ -30,7 +30,7 @@ Use these read tools for [archived meeting context and follow-ups](meetings.md):
 | Tool | Use |
 |---|---|
 | `get_meeting_context` | Export selected meeting IDs as JSON or Markdown; transcript opt-in and byte budget |
-| `list_meeting_action_items` | Read source action status, explicit assignees, coverage, and source links |
+| `list_meeting_action_items` | Read source action status, explicit and inferred assignees, coverage, and source links; `assignee_person_id` filters by person |
 | `get_meeting_metrics` | Count scoped meetings and inspect known/unknown duration and monthly activity |
 
 For example, call `list_meeting_action_items` with:

@@ -19,7 +19,11 @@ const cacheBuildMeetingLimit = 200
 // It never fails the cache build and logs only counts and the Jev skip
 // category, never state.
 func judgeMeetingsForCacheBuild(ctx context.Context, cfg *config.Config, dbPath string, logger *slog.Logger) {
-	if cfg == nil || !cfg.Jev.MeetingEventKind.Enabled || !cfg.Jev.MeetingEventKind.Automatic {
+	if cfg == nil {
+		return
+	}
+	kinds, assignees := cfg.Jev.MeetingEventKind, cfg.Jev.MeetingActionAssignee
+	if !(kinds.Enabled && kinds.Automatic) && !(assignees.Enabled && assignees.Automatic) {
 		return
 	}
 	if logger == nil {
@@ -39,5 +43,7 @@ func judgeMeetingsForCacheBuild(ctx context.Context, cfg *config.Config, dbPath 
 	logger.Info("meeting judgments before cache build",
 		"series", report.EventKinds.Candidates, "not_meetings", report.EventKinds.NotMeetings,
 		"jev_judged", report.EventKinds.Judged, "jev_requests", report.EventKinds.Requests,
-		"jev_skipped", report.EventKinds.Skipped)
+		"jev_skipped", report.EventKinds.Skipped,
+		"assignee_meetings", report.Assignees.Meetings, "assignee_requests", report.Assignees.Requests,
+		"assignee_skipped", report.Assignees.Skipped)
 }

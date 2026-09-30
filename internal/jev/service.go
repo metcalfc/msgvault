@@ -24,12 +24,16 @@ const FeatureCorrespondentKind = "correspondent_kind"
 // FeatureCleanupSuggestions is the cleanup suggestion (junk and phishing)
 // feature.
 const FeatureCleanupSuggestions = "cleanup_suggestions"
+
 // FeatureMeetingEventKind is the calendar event kind feature.
 const FeatureMeetingEventKind = "meeting_event_kind"
 
 // FeatureSearchRerank is the hybrid search reranking feature. It sends
 // message text, so its consent disclosure says so.
 const FeatureSearchRerank = "search_rerank"
+
+// FeatureMeetingActionAssignee is the meeting action item assignee feature.
+const FeatureMeetingActionAssignee = "meeting_action_assignee"
 
 // Gate outcomes. Each is an expected administrative state, not a fault: the
 // caller falls back to its pre-Jev decision and reports the category.
@@ -60,6 +64,8 @@ func (c Config) FeatureConfigFor(name string) (FeatureConfig, bool) {
 		return FeatureConfig{Enabled: c.Rerank.Enabled}, true
 	case FeatureMeetingEventKind:
 		return c.MeetingEventKind, true
+	case FeatureMeetingActionAssignee:
+		return c.MeetingActionAssignee, true
 	default:
 		return FeatureConfig{}, false
 	}

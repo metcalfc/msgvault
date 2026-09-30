@@ -92,6 +92,53 @@ describe('MeetingActions', () => {
     await expect(requests[0]!.clone().json()).resolves.toEqual(request);
   });
 
+  it('labels an inferred assignee so it never reads as the source assignee', async () => {
+    const action = {
+      locator: 'action:0',
+      origin: 'source',
+      description: '',
+      status: 'pending' as const,
+    };
+    const fetchFn = vi.fn<typeof fetch>(async () =>
+      Response.json(
+        page({
+          rows: [
+            {
+              meeting,
+              action: { ...action, ordinal: 0, title: 'Draft the budget' },
+              inferred_assignee: {
+                participant_id: 7,
+                person_id: 3,
+                label: 'Casey Example',
+                is_owner: false,
+                confidence: 0.91,
+                provenance: 'inferred',
+              },
+            },
+            {
+              meeting,
+              action: { ...action, ordinal: 1, locator: 'action:1', title: 'Book the room' },
+              inferred_assignee: { is_owner: true, confidence: 0.84, provenance: 'inferred' },
+            },
+            {
+              meeting,
+              action: { ...action, ordinal: 2, locator: 'action:2', title: 'Pick a date' },
+            },
+          ],
+          total_count: 3,
+        }),
+      ),
+    );
+    render(MeetingActions, { client: createAPIClient(fetchFn), request });
+
+    const budget = (await screen.findByText('Draft the budget')).closest('li')!;
+    expect(within(budget).getByText('Casey Example (inferred, 91%)')).toBeDefined();
+    const room = screen.getByText('Book the room').closest('li')!;
+    expect(within(room).getByText('You (inferred, 84%)')).toBeDefined();
+    const date = screen.getByText('Pick a date').closest('li')!;
+    expect(within(date).getByText('Unassigned')).toBeDefined();
+  });
+
   it.each([
     [
       {
