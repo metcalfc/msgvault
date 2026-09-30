@@ -4611,6 +4611,7 @@ CREATE TABLE IF NOT EXISTS cleanup_suggestions (
     judged_at                   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_cleanup_suggestions_score ON cleanup_suggestions(score);
+
 -- The kind of one calendar conversation (a recurring series or a standalone
 -- event), decided once. Source 'jev' is the meeting_event_kind judgment with
 -- the probability of its kind as confidence; source 'rule' marks a series
