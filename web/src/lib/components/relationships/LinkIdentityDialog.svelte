@@ -28,7 +28,6 @@
   let selectedID = $state<number | null>(null);
   let confirming = $state(false);
   let confirmError = $state<string | null>(null);
-  let preserveSelectionOnClose = false;
   const options = $derived(
     results.map(
       (row): TypeaheadOption => ({
@@ -101,9 +100,10 @@
   }
   function handleQueryInput(value: string): void {
     query = value;
-    if (value.trim() === '' && preserveSelectionOnClose) {
-      preserveSelectionOnClose = false;
-    } else {
+    // Typeahead reports an empty query whenever it opens or closes, including
+    // the focusout when the user moves on to the confirm button. Only typed
+    // text replaces the choice; an empty query keeps it.
+    if (value.trim() !== '') {
       selectedID = null;
       confirmError = null;
     }
@@ -112,10 +112,6 @@
   function selectResult(id: number): void {
     selectedID = id;
     confirmError = null;
-    // Typeahead reports an empty query as it closes after selection. Preserve
-    // this result through that lifecycle reset; a later empty editable field
-    // clears it before confirmation can use stale state.
-    preserveSelectionOnClose = true;
   }
   async function confirmLink(): Promise<void> {
     if (selectedID === null || confirming) return;

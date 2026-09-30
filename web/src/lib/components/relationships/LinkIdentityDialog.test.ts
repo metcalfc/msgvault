@@ -152,15 +152,40 @@ describe('LinkIdentityDialog', () => {
     await waitFor(() => expect(onConfirm).toHaveBeenCalledWith(3));
   });
 
-  it('clears a prior selection when the editable Typeahead field is empty', async () => {
+  it('keeps the selection when focus leaves the picker for the confirm button', async () => {
     const { onConfirm } = renderDialog();
     await fireEvent.input(await openTypeahead('Search people to link'), { target: { value: 'B' } });
     await fireEvent.mouseDown(await screen.findByRole('option', { name: /Bob/ }));
-    expect(screen.getByRole('button', { name: 'These are the same person' })).toHaveProperty('disabled', false);
+    const confirm = screen.getByRole('button', { name: 'These are the same person' });
+
+    // The picker's trigger holds focus after a selection; moving to the
+    // confirm button fires focusout, which reports an empty query.
+    const trigger = document.activeElement as HTMLElement;
+    await fireEvent.focusOut(trigger, { relatedTarget: confirm });
+
+    expect(confirm).toHaveProperty('disabled', false);
+    await fireEvent.click(confirm);
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledWith(2));
+  });
+
+  it('keeps the selection when the picker reopens and closes without typing', async () => {
+    renderDialog();
+    await fireEvent.input(await openTypeahead('Search people to link'), { target: { value: 'B' } });
+    await fireEvent.mouseDown(await screen.findByRole('option', { name: /Bob/ }));
 
     const input = await openTypeahead('Search people to link');
-
     expect(input.value).toBe('');
+    expect(screen.getByRole('button', { name: 'These are the same person' })).toHaveProperty('disabled', false);
+  });
+
+  it('clears a prior selection once the user types a new search', async () => {
+    const { onConfirm } = renderDialog();
+    await fireEvent.input(await openTypeahead('Search people to link'), { target: { value: 'B' } });
+    await fireEvent.mouseDown(await screen.findByRole('option', { name: /Bob/ }));
+
+    const input = await openTypeahead('Search people to link');
+    await fireEvent.input(input, { target: { value: 'C' } });
+
     expect(screen.getByRole('button', { name: 'These are the same person' })).toHaveProperty('disabled', true);
     await fireEvent.click(screen.getByRole('button', { name: 'These are the same person' }));
     expect(onConfirm).not.toHaveBeenCalled();
