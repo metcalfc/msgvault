@@ -33,6 +33,13 @@ func TestReferencedMatchesTheBrowsersSerialization(t *testing.T) {
 		{"different path", `<img src="https://images.example/a/photo.png">`, "https://images.example/photo.png", false},
 		{"different query", `<img src="https://images.example/p.png?a=1">`, "https://images.example/p.png?a=2", false},
 		{"link, not image", `<a href="https://images.example/p.png">x</a>`, "https://images.example/p.png", false},
+		{"encoded slash is not a separator", `<img src="https://images.example/a%2F..%2Fsecret.png">`, "https://images.example/secret.png", false},
+		{"encoded slash matches itself", `<img src="https://images.example/a%2f..%2fsecret.png">`, "https://images.example/a%2F..%2Fsecret.png", true},
+		{"encoded backslash is not a separator", `<img src="https://images.example/a%5C..%5Csecret.png">`, "https://images.example/secret.png", false},
+		{"encoded question mark stays in the path", `<img src="https://images.example/a%3Fb.png">`, "https://images.example/a?b.png", false},
+		{"encoded hash stays in the path", `<img src="https://images.example/a%23b.png">`, "https://images.example/a%23b.png", true},
+		{"encoded unreserved letters decode", `<img src="https://images.example/%70hoto.png">`, "https://images.example/photo.png", true},
+		{"encoded ampersand in the query is not a separator", `<img src="https://images.example/p.png?a=1%26b=2">`, "https://images.example/p.png?a=1&b=2", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.want, Referenced(tt.request, tt.stored))

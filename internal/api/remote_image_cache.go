@@ -14,7 +14,10 @@ import (
 // message's references; without a cache each one reloaded and reparsed the
 // body. The cache keeps each message's normalized reference set, keyed on
 // the message ID and its row version (which the database bumps on any
-// message or body change), for a short time.
+// message or body change), for a short time. last_modified has one-second
+// resolution, so an in-place body edit in the same second as a cache fill
+// can serve the old references for at most the TTL; folder state is checked
+// on every request regardless.
 const (
 	remoteImageRefCacheEntries = 32
 	remoteImageRefCacheTTL     = time.Minute

@@ -53,10 +53,12 @@ func Referenceable(target string) bool {
 
 // ReferenceKey normalizes an image URL the way the reader's WHATWG URL
 // parser serializes it, so the stored HTML and the browser's request
-// compare equal: lowercase scheme and host, default port dropped, dot
-// segments resolved, an empty path as "/", and the path and query compared
-// unescaped so percent-encoding differences do not matter. The fragment is
-// dropped.
+// compare equal: lowercase scheme and host, default port dropped, an empty
+// path as "/", dot segments resolved, and percent-encoding made canonical.
+// Only unreserved characters are decoded; every other escape, including
+// %2F, %5C, %3F, and %23, stays an uppercase-hex escape, so an encoded slash
+// never becomes a path separator. %2E counts as a dot for dot segments, as
+// in WHATWG. The fragment is dropped.
 func ReferenceKey(raw string) (string, bool) {
 	normalized := remoteURL(raw)
 	if normalized == "" {
@@ -74,11 +76,72 @@ func ReferenceKey(raw string) (string, bool) {
 	if port := parsed.Port(); port != "" && (scheme != "http" || port != "80") && (scheme != "https" || port != "443") {
 		host = net.JoinHostPort(host, port)
 	}
-	query := parsed.RawQuery
-	if unescaped, err := url.QueryUnescape(query); err == nil {
-		query = unescaped
+	path := resolveDotSegments(canonicalEscapes(parsed.EscapedPath(), pathLiteral))
+	query := canonicalEscapes(parsed.RawQuery, queryLiteral)
+	return scheme + "://" + host + path + "?" + query, true
+}
+
+const upperHex = "0123456789ABCDEF"
+
+func unreserved(c byte) bool {
+	return c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' ||
+		c == '-' || c == '.' || c == '_' || c == '~'
+}
+
+// pathLiteral and queryLiteral are the bytes left unescaped in a path or
+// query: unreserved, sub-delims, ':' and '@', plus '/' in a path and '/'
+// and '?' in a query.
+func pathLiteral(c byte) bool {
+	return unreserved(c) || strings.IndexByte("!$&'()*+,;=:@/", c) >= 0
+}
+
+func queryLiteral(c byte) bool {
+	return unreserved(c) || strings.IndexByte("!$&'()*+,;=:@/?", c) >= 0
+}
+
+func unhex(c byte) (byte, bool) {
+	switch {
+	case c >= '0' && c <= '9':
+		return c - '0', true
+	case c >= 'a' && c <= 'f':
+		return c - 'a' + 10, true
+	case c >= 'A' && c <= 'F':
+		return c - 'A' + 10, true
 	}
-	return scheme + "://" + host + resolveDotSegments(parsed.Path) + "?" + query, true
+	return 0, false
+}
+
+// canonicalEscapes decodes escapes of unreserved characters, writes every
+// other escape in uppercase hex, and escapes bytes that are not literal.
+func canonicalEscapes(value string, literal func(byte) bool) string {
+	var out strings.Builder
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if c == '%' && i+2 < len(value) {
+			hi, okHi := unhex(value[i+1])
+			lo, okLo := unhex(value[i+2])
+			if okHi && okLo {
+				decoded := hi<<4 | lo
+				if unreserved(decoded) {
+					out.WriteByte(decoded)
+				} else {
+					out.WriteByte('%')
+					out.WriteByte(upperHex[decoded>>4])
+					out.WriteByte(upperHex[decoded&15])
+				}
+				i += 2
+				continue
+			}
+		}
+		if literal(c) {
+			out.WriteByte(c)
+			continue
+		}
+		out.WriteByte('%')
+		out.WriteByte(upperHex[c>>4])
+		out.WriteByte(upperHex[c&15])
+	}
+	return out.String()
 }
 
 // resolveDotSegments removes "." and ".." segments as RFC 3986 section
