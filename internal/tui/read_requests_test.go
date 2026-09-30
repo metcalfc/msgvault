@@ -14,7 +14,7 @@ import (
 
 func TestReadReplacementCancelsPreviousWithoutLosingNewOwner(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		assert := assert.New(t)
+		require := require.New(t)
 		started := make(chan context.Context)
 		releaseOld := make(chan struct{})
 		engine := newMockEngine(MockConfig{})
@@ -36,18 +36,18 @@ func TestReadReplacementCancelsPreviousWithoutLosingNewOwner(t *testing.T) {
 
 		model.detailRequestID++
 		newCommand := model.loadMessageDetail(2)
-		assert.ErrorIs(oldContext.Err(), context.Canceled)
+		require.ErrorIs(oldContext.Err(), context.Canceled)
 		newResult := make(chan tea.Msg, 1)
 		go func() { newResult <- newCommand() }()
 		newContext := <-started
 		close(releaseOld)
 		stale := <-oldResult
-		require.NoError(t, newContext.Err(), "old completion must not cancel the current read")
+		require.NoError(newContext.Err(), "old completion must not cancel the current read")
 		model = sendMsg(t, model, stale)
-		assert.NoError(model.err, "superseded cancellation must not become a visible error")
+		require.NoError(model.err, "superseded cancellation must not become a visible error")
 
 		model.Close()
-		assert.ErrorIs(newContext.Err(), context.Canceled, "new ownership survives old completion")
+		require.ErrorIs(newContext.Err(), context.Canceled, "new ownership survives old completion")
 		<-newResult
 	})
 }
@@ -65,6 +65,7 @@ func (l cancellableScopeLister) ListCollectionScopes(ctx context.Context) ([]que
 func TestModeChangeCancelsPresentationReadsButKeepsSharedScopes(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
+		require := require.New(t)
 		started := make(chan context.Context)
 		scopeStarted := make(chan context.Context)
 		engine := newMockEngine(MockConfig{})
@@ -85,20 +86,20 @@ func TestModeChangeCancelsPresentationReadsButKeepsSharedScopes(t *testing.T) {
 		scopeContext := <-scopeStarted
 
 		model, _ = sendKey(t, model, key('m'))
-		assert.ErrorIs(detailContext.Err(), context.Canceled)
-		require.NoError(t, scopeContext.Err(), "shared account scopes remain useful in another mode")
+		require.ErrorIs(detailContext.Err(), context.Canceled)
+		require.NoError(scopeContext.Err(), "shared account scopes remain useful in another mode")
 		model = sendMsg(t, model, <-result)
-		assert.NoError(model.err)
+		require.NoError(model.err)
 		assert.NotEqual(modalError, model.modal)
 		model.Close()
-		assert.ErrorIs(scopeContext.Err(), context.Canceled)
+		require.ErrorIs(scopeContext.Err(), context.Canceled)
 		<-scopeResult
 	})
 }
 
 func TestSessionCancellationReachesIndependentReads(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		assert := assert.New(t)
+		require := require.New(t)
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		started := make(chan context.Context)
@@ -121,10 +122,10 @@ func TestSessionCancellationReachesIndependentReads(t *testing.T) {
 		detailContext := <-started
 		go func() { stats(); done <- struct{}{} }()
 		statsContext := <-started
-		assert.NoError(detailContext.Err(), "a separate stats read must not cancel message details")
+		require.NoError(detailContext.Err(), "a separate stats read must not cancel message details")
 		cancel()
-		assert.ErrorIs(detailContext.Err(), context.Canceled)
-		assert.ErrorIs(statsContext.Err(), context.Canceled)
+		require.ErrorIs(detailContext.Err(), context.Canceled)
+		require.ErrorIs(statsContext.Err(), context.Canceled)
 		<-done
 		<-done
 	})
@@ -144,7 +145,7 @@ func (b cancellablePeopleBackend) Complete(ctx context.Context, _ peoplebrowser.
 
 func TestPeopleCompletionReplacementCancelsRead(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		assert := assert.New(t)
+		require := require.New(t)
 		started := make(chan context.Context)
 		model := New(newMockEngine(MockConfig{}), Options{PeopleBackend: cancellablePeopleBackend{started: started}})
 		defer model.Close()
@@ -153,7 +154,7 @@ func TestPeopleCompletionReplacementCancelsRead(t *testing.T) {
 		go func() { done <- command() }()
 		ctx := <-started
 		_ = model.loadPeopleCompletions("second")
-		assert.ErrorIs(ctx.Err(), context.Canceled)
+		require.ErrorIs(ctx.Err(), context.Canceled)
 		<-done
 	})
 }
