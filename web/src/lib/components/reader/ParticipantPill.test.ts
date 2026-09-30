@@ -48,4 +48,31 @@ describe('ParticipantPill', () => {
     await waitFor(() => expect(onOpenPerson).toHaveBeenCalledWith(55));
     expect(fetchFn).toHaveBeenCalledTimes(2);
   });
+
+  it('offers Email for an address and follows a mailto: link', async () => {
+    const openLink = vi.fn();
+    render(ParticipantPill, { props: { value: 'Bob Example <bob@example.com>', openLink } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Bob Example (bob@example.com): person actions' }));
+    expect(screen.queryByRole('menuitem', { name: 'Call' })).toBeNull();
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Email' }));
+    expect(openLink).toHaveBeenCalledWith(expect.objectContaining({ href: 'mailto:bob@example.com', external: false }));
+  });
+
+  it('offers Call for an E.164 number and follows a tel: link', async () => {
+    const openLink = vi.fn();
+    render(ParticipantPill, { props: { value: '+15550100001', openLink } });
+    await fireEvent.click(screen.getByRole('button', { name: '+15550100001: person actions' }));
+    expect(screen.queryByRole('menuitem', { name: 'Email' })).toBeNull();
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Call' }));
+    expect(openLink).toHaveBeenCalledWith(expect.objectContaining({ href: 'tel:+15550100001', external: false }));
+  });
+
+  it('offers neither for a value it cannot link', async () => {
+    render(ParticipantPill, { props: { value: 'local-number 5550100' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'local-number 5550100: person actions' }));
+    expect(await screen.findByRole('menuitem', { name: 'Copy number' })).toBeDefined();
+    expect(screen.queryByRole('menuitem', { name: 'Email' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: 'Call' })).toBeNull();
+  });
 });
+

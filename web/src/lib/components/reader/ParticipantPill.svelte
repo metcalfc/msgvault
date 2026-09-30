@@ -2,6 +2,8 @@
   import { Menu, MenuContent, MenuItem, MenuTrigger, copyToClipboard } from '@kenn-io/kit-ui';
 
   import type { APIClient } from '../../api/client';
+  import { contactLink, type ContactLink } from '../../links/contact-links';
+  import { openContactLink } from '../../links/open-link';
   import { parseAddress } from '../../reader/address';
   import { resolveParticipantID } from '../../reader/resolve-participant';
 
@@ -13,11 +15,19 @@
     onOpenPerson?: (participantID: number) => void;
     /** Narrows the current view to messages with this person. */
     onFilterPerson?: (participantID: number, label: string) => void;
+    /** Follows an Email or Call action; replaceable in tests. */
+    openLink?: (link: ContactLink) => void;
   }
 
-  let { value, client = undefined, onOpenPerson = undefined, onFilterPerson = undefined }: Props = $props();
+  let {
+    value, client = undefined, onOpenPerson = undefined, onFilterPerson = undefined, openLink = openContactLink
+  }: Props = $props();
 
   const parsed = $derived(parseAddress(value));
+  const isEmail = $derived(parsed.address.includes('@'));
+  // Email opens only for a well-formed address; Call only for an E.164 number.
+  const emailLink = $derived(isEmail ? contactLink({ kind: 'email', value: parsed.address }) : undefined);
+  const callLink = $derived(isEmail ? undefined : contactLink({ kind: 'phone', value: parsed.address }));
   let notice = $state('');
   // One lookup per address: a pending lookup is shared by repeat clicks, a
   // settled answer (a person, or definitely none) is kept, and a failed
@@ -69,7 +79,15 @@
       {parsed.label}
     </MenuTrigger>
     <MenuContent ariaLabel={`Actions for ${parsed.label}`}>
-      <MenuItem onselect={() => void copy()}>Copy {parsed.address.includes('@') ? 'address' : 'number'}</MenuItem>
+      <MenuItem onselect={() => void copy()}>Copy {isEmail ? 'address' : 'number'}</MenuItem>
+      {#if emailLink}
+        {@const link = emailLink}
+        <MenuItem onselect={() => openLink(link)}>Email</MenuItem>
+      {/if}
+      {#if callLink}
+        {@const link = callLink}
+        <MenuItem onselect={() => openLink(link)}>Call</MenuItem>
+      {/if}
       {#if client && onOpenPerson}
         <MenuItem onselect={() => void withPerson((id) => onOpenPerson?.(id))}>Open person</MenuItem>
       {/if}
