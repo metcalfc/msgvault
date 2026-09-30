@@ -1136,6 +1136,14 @@ var personSplitSnapshotColumnDependencies = map[string]map[string]personSplitSna
 			column: "service_id", table: "communication_services", key: "id",
 		},
 	},
+	// A negative's attempt is enrichment audit state that cascades with an
+	// absorbed person, so a split restores the reference only while the
+	// attempt still exists and otherwise keeps the NULL the merge left.
+	"person_enrichment_identity_rejections": {
+		"attempt_id": {
+			column: "attempt_id", table: "person_enrichment_attempts", key: "id",
+		},
+	},
 }
 
 func (s *Store) personSplitSnapshotDependenciesPresentTx(
