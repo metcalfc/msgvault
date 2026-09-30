@@ -401,6 +401,11 @@ func (s *Store) mergePersonsTx(
 		); err != nil {
 			return err
 		}
+		if err := s.reconcilePersonEnrichmentIdentityRejectionsTx(
+			ctx, tx, mergeID, survivor.ID, absorbed.ID,
+		); err != nil {
+			return err
+		}
 		if err := s.reconcilePersonDailyNotesTx(
 			ctx, tx, mergeID, survivor.ID, absorbed.ID,
 		); err != nil {
@@ -2327,4 +2332,93 @@ func listPersonMergeReviewCandidatesTx(
 		return nil, fmt.Errorf("iterate person merge review candidates: %w", err)
 	}
 	return result, nil
+}
+
+var personEnrichmentIdentityRejectionKeyColumns = []string{
+	personMergePersonIDColumn, "provider_namespace", "key_kind", "key_value",
+}
+
+func personEnrichmentIdentityRejectionRowKey(
+	personID int64, namespace, kind, value string,
+) (string, error) {
+	columns := []personMergeSnapshotColumn{
+		{Name: personMergePersonIDColumn, Value: personMergeSnapshotValue{
+			Kind: personMergeSnapshotInteger, Integer: &personID}},
+		{Name: "provider_namespace", Value: personMergeSnapshotValue{
+			Kind: personMergeSnapshotText, Text: &namespace}},
+		{Name: "key_kind", Value: personMergeSnapshotValue{
+			Kind: personMergeSnapshotText, Text: &kind}},
+		{Name: "key_value", Value: personMergeSnapshotValue{
+			Kind: personMergeSnapshotText, Text: &value}},
+	}
+	return canonicalPersonMergeSnapshotRowKey(columns, personEnrichmentIdentityRejectionKeyColumns)
+}
+
+// reconcilePersonEnrichmentIdentityRejectionsTx moves the absorbed person's
+// enrichment identity negatives to the survivor: a provider identity the
+// user refused for one profile is refused for the merged human. A negative
+// the survivor already holds is kept once. Each row is journaled so a split
+// returns it to the split-out person.
+func (s *Store) reconcilePersonEnrichmentIdentityRejectionsTx(
+	ctx context.Context, tx *loggedTx, mergeID, survivorID, absorbedID int64,
+) error {
+	rows, err := tx.QueryContext(ctx, `SELECT provider_namespace, key_kind, key_value
+		FROM person_enrichment_identity_rejections WHERE person_id = ?
+		ORDER BY provider_namespace, key_kind, key_value`, absorbedID)
+	if err != nil {
+		return fmt.Errorf("load absorbed enrichment identity rejections: %w", err)
+	}
+	type rejection struct{ namespace, kind, value string }
+	absorbedRows := []rejection{}
+	for rows.Next() {
+		var row rejection
+		if err := rows.Scan(&row.namespace, &row.kind, &row.value); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan absorbed enrichment identity rejection: %w", err)
+		}
+		absorbedRows = append(absorbedRows, row)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close absorbed enrichment identity rejections: %w", err)
+	}
+	for _, row := range absorbedRows {
+		originalKey, err := personEnrichmentIdentityRejectionRowKey(
+			absorbedID, row.namespace, row.kind, row.value)
+		if err != nil {
+			return err
+		}
+		currentKey, err := personEnrichmentIdentityRejectionRowKey(
+			survivorID, row.namespace, row.kind, row.value)
+		if err != nil {
+			return err
+		}
+		var duplicate bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT 1 FROM person_enrichment_identity_rejections
+			WHERE person_id = ? AND provider_namespace = ? AND key_kind = ? AND key_value = ?
+		)`, survivorID, row.namespace, row.kind, row.value).Scan(&duplicate); err != nil {
+			return fmt.Errorf("find duplicate enrichment identity rejection: %w", err)
+		}
+		action := "repointed"
+		if duplicate {
+			action = personMergeActionDeduplicated
+			if _, err := tx.ExecContext(ctx, `DELETE FROM person_enrichment_identity_rejections
+				WHERE person_id = ? AND provider_namespace = ? AND key_kind = ? AND key_value = ?`,
+				absorbedID, row.namespace, row.kind, row.value); err != nil {
+				return fmt.Errorf("delete duplicate enrichment identity rejection: %w", err)
+			}
+		} else if _, err := tx.ExecContext(ctx, `UPDATE person_enrichment_identity_rejections
+			SET person_id = ?
+			WHERE person_id = ? AND provider_namespace = ? AND key_kind = ? AND key_value = ?`,
+			survivorID, absorbedID, row.namespace, row.kind, row.value); err != nil {
+			return fmt.Errorf("move enrichment identity rejection: %w", err)
+		}
+		if err := s.setPersonMergeRowKeyDispositionTx(
+			ctx, tx, mergeID, "person_enrichment_identity_rejections", originalKey,
+			action, &currentKey,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }

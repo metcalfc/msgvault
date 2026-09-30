@@ -264,8 +264,11 @@ var personMergeTableRegistry = map[string]personMergeTableSpec{
 		TableName: "person_enrichment_identity_reviews", KeyColumn: "attempt_id", Snapshot: false,
 		PersonReferences: []personMergeReference{directPersonReference(personMergePersonIDColumn)},
 	},
+	// Identity negatives are the user's statement about the human, so a merge
+	// moves them to the survivor and a split returns them.
 	"person_enrichment_identity_rejections": {
-		TableName: "person_enrichment_identity_rejections", KeyColumn: personMergePersonIDColumn, Snapshot: false,
+		TableName: "person_enrichment_identity_rejections", KeyColumn: personMergePersonIDColumn,
+		KeyColumns: personEnrichmentIdentityRejectionKeyColumns, Snapshot: true,
 		PersonReferences: []personMergeReference{directPersonReference(personMergePersonIDColumn)},
 	},
 	"person_enrichment_provider_identities": {
@@ -879,7 +882,8 @@ func personMergeTableProvenance(table string) personMergeProvenanceKind {
 		personRelationshipReviewsTableName, identityMatchCandidatesTableName,
 		"identity_match_candidate_redirects", identityMatchCandidateSourcesTableName,
 		identityMatchEvidenceTableName, identityMatchEvidenceSourcesTableName, "person_merges",
-		personMergeReviewCandidatesTableName, "daily_note_entry_persons":
+		personMergeReviewCandidatesTableName, "daily_note_entry_persons",
+		"person_enrichment_identity_rejections":
 		return personMergeProvenanceInboundReference
 	default:
 		return personMergeProvenanceAbsorbedProfile
