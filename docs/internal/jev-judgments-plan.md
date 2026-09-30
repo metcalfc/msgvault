@@ -271,7 +271,7 @@ Site: `internal/store/person_fact_organization.go`,
 `organizations.go` (`NormalizeOrganizationName`),
 `person_fact_projection.go` employment identity, `employments.go` titles.
 
-- [ ] **Task 3.1 Shortlist in code.** On exact-lookup miss, build ≤ 8
+- [x] **Task 3.1 Shortlist in code.** On exact-lookup miss, build ≤ 8
   candidates by token overlap, prefix, trigram on `name_normalized` and
   `organization_names`, plus domain siblings.
 - [ ] **Task 3.2 Judgment.** One request: Choice `org_ref` over candidate
