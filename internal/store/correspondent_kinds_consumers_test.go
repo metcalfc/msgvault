@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -148,4 +149,82 @@ func TestEnrichmentLeavesOutIdentitiesThatAreNotAPerson(t *testing.T) {
 	})
 	require.NoError(err)
 	assert.Empty(attempts, "skipping records no attempt")
+}
+
+func TestDirectoryCursorRestartsWhenItsAnchorBecomesNotAPerson(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	participants := map[string]int64{}
+	for _, name := range []string{"Aria Example", "Bram Example", "Cleo Example"} {
+		participant := f.emailParticipant(strings.ToLower(strings.Fields(name)[0])+"@example.test", name)
+		_, _, err := f.st.CreatePersonFromParticipantContext(t.Context(), participant)
+		require.NoError(err)
+		participants[name] = participant
+	}
+	first, err := f.st.DirectoryPeoplePageContext(t.Context(), store.DirectoryPeopleQuery{Sort: "name", Limit: 1})
+	require.NoError(err)
+	require.Len(first.People, 1)
+	require.NotEmpty(first.NextCursor)
+	require.Equal("Aria Example", *first.People[0].DisplayName)
+
+	// Marking a person after the anchor only removes them from later pages.
+	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: participants["Bram Example"], Kind: correspondentkind.Organization,
+	})
+	require.NoError(err)
+	second, err := f.st.DirectoryPeoplePageContext(t.Context(), store.DirectoryPeopleQuery{
+		Sort: "name", Limit: 1, Cursor: first.NextCursor,
+	})
+	require.NoError(err)
+	require.Len(second.People, 1)
+	assert.Equal("Cleo Example", *second.People[0].DisplayName)
+
+	// Marking the cursor's own anchor makes the cursor invalid rather than
+	// silently skipping or repeating people; the client restarts.
+	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: participants["Aria Example"], Kind: correspondentkind.Ignored,
+	})
+	require.NoError(err)
+	_, err = f.st.DirectoryPeoplePageContext(t.Context(), store.DirectoryPeopleQuery{
+		Sort: "name", Limit: 1, Cursor: first.NextCursor,
+	})
+	assert.ErrorIs(err, store.ErrInvalidDirectoryCursor)
+}
+
+func TestUnlinkingAClassifiedClusterKeepsEachHalfClassified(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	first := f.emailParticipant("desk-one@example.test", "Desk")
+	second := f.emailParticipant("desk-two@example.test", "Desk")
+	_, err := f.st.LinkParticipants(first, second)
+	require.NoError(err)
+	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: first, Kind: correspondentkind.Ignored,
+	})
+	require.NoError(err)
+	_, err = f.st.UnlinkParticipants(first, second)
+	require.NoError(err)
+
+	// Both halves were classified as one record; each keeps the choice.
+	hidden, err := f.st.NotPersonParticipantsContext(t.Context())
+	require.NoError(err)
+	assert.Equal(map[int64]correspondentkind.Kind{
+		first: correspondentkind.Ignored, second: correspondentkind.Ignored,
+	}, hidden)
+	records, err := f.st.ListCorrespondentKindsContext(t.Context(), store.CorrespondentKindListFilter{})
+	require.NoError(err)
+	assert.Len(records, 2, "each half is listed and can be restored on its own")
+
+	// Restoring one half leaves the other alone.
+	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: second, Kind: correspondentkind.Person,
+	})
+	require.NoError(err)
+	hidden, err = f.st.NotPersonParticipantsContext(t.Context())
+	require.NoError(err)
+	assert.Equal(map[int64]correspondentkind.Kind{first: correspondentkind.Ignored}, hidden)
 }
