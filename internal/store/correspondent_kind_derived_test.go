@@ -90,3 +90,23 @@ func TestDerivedCorrespondentKindsRejectKindsTheirSourceMayNotWrite(t *testing.T
 		})
 	}
 }
+
+func TestUnclearJudgmentNeverHoldsBackAnOwnerIdentity(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := storetest.New(t)
+	later := f.EnsureParticipant("later-me@example.com", "Later Me", "example.com")
+	_, err := f.Store.WriteDerivedCorrespondentKindsContext(t.Context(), []store.DerivedCorrespondentKind{{
+		ParticipantID: later, Source: correspondentkind.SourceJev, Kind: correspondentkind.Unclear,
+	}})
+	require.NoError(err)
+	hidden, err := f.Store.RankingHiddenParticipantsContext(t.Context())
+	require.NoError(err)
+	assert.Equal(map[int64]correspondentkind.Kind{later: correspondentkind.Unclear}, hidden)
+
+	// The address turns out to be the owner's own.
+	require.NoError(f.Store.AddAccountIdentity(f.Source.ID, "later-me@example.com", "manual"))
+	hidden, err = f.Store.RankingHiddenParticipantsContext(t.Context())
+	require.NoError(err)
+	assert.Empty(hidden)
+}

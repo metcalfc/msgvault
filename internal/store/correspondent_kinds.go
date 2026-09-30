@@ -233,8 +233,13 @@ func (s *Store) correspondentKindClustersTx(
 // carry: linking a classified address into the owner's cluster, or
 // confirming a classified address as the owner's, never hides the owner.
 func applyOwnerIdentityRuleTx(ctx context.Context, tx *loggedTx, clusters []correspondentKindCluster) error {
+	// Unclear counts here too: an owner cluster is plainly a person, never
+	// held out of anything.
+	plainPerson := func(kind correspondentkind.Kind) bool {
+		return kind == correspondentkind.Person || kind == ""
+	}
 	if !slices.ContainsFunc(clusters, func(cluster correspondentKindCluster) bool {
-		return !cluster.effective.kind.IsPerson()
+		return !plainPerson(cluster.effective.kind)
 	}) {
 		return nil
 	}
@@ -243,7 +248,7 @@ func applyOwnerIdentityRuleTx(ctx context.Context, tx *loggedTx, clusters []corr
 		return err
 	}
 	for i := range clusters {
-		if clusters[i].effective.kind.IsPerson() {
+		if plainPerson(clusters[i].effective.kind) {
 			continue
 		}
 		if slices.ContainsFunc(clusters[i].members, func(id int64) bool {
