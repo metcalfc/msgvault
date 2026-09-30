@@ -124,6 +124,13 @@ export type OperationKind = GeneratedOperationKind;
 export type OperationLane = GeneratedOperationLane;
 export type OperationState = GeneratedOperationState;
 export type DirectoryReviewKind = 'identity' | 'enrichment' | 'organization' | 'correspondent' | 'fact' | 'relationship';
+/** Every Reviews queue, in page order. */
+export const DIRECTORY_REVIEW_KINDS: readonly DirectoryReviewKind[] = [
+  'identity', 'fact', 'relationship', 'enrichment', 'organization', 'correspondent'
+];
+/** Queues with nothing pending of their own: Fact review inspects one
+ * person's ledger. Every other queue must feed the Reviews dot. */
+export const REVIEW_KINDS_WITHOUT_PENDING: readonly DirectoryReviewKind[] = ['fact'];
 export type IdentityReviewState = 'candidate' | 'conflict' | 'accepted' | 'rejected';
 /**
  * Which identity candidates the Reviews queue lists: all, only contact profiles that match archive participants,

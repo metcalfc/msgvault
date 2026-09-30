@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
 import { PendingReviewsMonitor } from '../../directory/pending-reviews.svelte';
+import { PendingReviewsResponseKindsItem } from '../../api/generated/models';
+import { DIRECTORY_REVIEW_KINDS, REVIEW_KINDS_WITHOUT_PENDING } from '../../explore/models';
 import { ExploreState } from '../../explore/state.svelte';
 import { focusAndClick } from '../../../test/kit-ui';
 import AppShell from './AppShell.svelte';
@@ -101,4 +103,45 @@ describe('PendingReviewsMonitor', () => {
     await monitor.refresh(true);
     expect(monitor.waiting).toBe(true);
   });
+
+  it('stops polling while the tab is hidden and checks again when it becomes visible', async () => {
+    vi.useFakeTimers();
+    try {
+      let hidden = false;
+      let now = 0;
+      const fetchFn = vi.fn<typeof fetch>(async () => Response.json({ pending: false, kinds: [] }));
+      const monitor = new PendingReviewsMonitor(createAPIClient(fetchFn), () => now, () => hidden);
+      monitor.start(window, document);
+      await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledOnce());
+      expect(monitor.polling).toBe(true);
+
+      hidden = true;
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(monitor.polling).toBe(false);
+      now = 180_000;
+      await vi.advanceTimersByTimeAsync(180_000);
+      await monitor.refresh(true);
+      window.dispatchEvent(new Event('focus'));
+      expect(fetchFn).toHaveBeenCalledOnce();
+
+      hidden = false;
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(monitor.polling).toBe(true);
+      await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(2));
+      monitor.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
+
+describe('Reviews queue coverage', () => {
+  it('feeds every Reviews queue with pending items into the dot', () => {
+    const covered = new Set<string>(Object.values(PendingReviewsResponseKindsItem));
+    const missing = DIRECTORY_REVIEW_KINDS.filter(
+      (kind) => !REVIEW_KINDS_WITHOUT_PENDING.includes(kind) && !covered.has(kind)
+    );
+    expect(missing).toEqual([]);
+  });
+});
+

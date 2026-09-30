@@ -1913,12 +1913,13 @@ const (
 	Identity                                PendingReviewsResponseKinds = "identity"
 	PendingReviewsResponseKindsEnrichment   PendingReviewsResponseKinds = "enrichment"
 	PendingReviewsResponseKindsOrganization PendingReviewsResponseKinds = "organization"
+	PendingReviewsResponseKindsRelationship PendingReviewsResponseKinds = "relationship"
 )
 
 // Validate checks if the PendingReviewsResponseKinds value is valid
 func (p PendingReviewsResponseKinds) Validate() error {
 	switch p {
-	case Correspondent, Identity, PendingReviewsResponseKindsEnrichment, PendingReviewsResponseKindsOrganization:
+	case Correspondent, Identity, PendingReviewsResponseKindsEnrichment, PendingReviewsResponseKindsOrganization, PendingReviewsResponseKindsRelationship:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid PendingReviewsResponseKinds value, got: %v", p))

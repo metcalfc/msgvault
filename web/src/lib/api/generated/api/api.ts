@@ -3517,7 +3517,7 @@ export const patchRelationshipType = (
   );
 };
 /**
- * Answers whether any Reviews queue has an item waiting, and which: identity (open identity match candidates, including contact matches and possible duplicate people), enrichment (uncertain enrichment identities), organization (organization names to confirm), and correspondent (identities Jev could not classify). It reports presence, not counts: each queue costs one indexed lookup, so a client can poll it for a navigation hint. The correspondent check works per identity, so it can report a queue whose only item an identity cluster decision already settled.
+ * Answers whether any Reviews queue has an item waiting, and which: identity (open identity match candidates, including contact matches and possible duplicate people), relationship (imported relationships), enrichment (uncertain enrichment identities), organization (organization names to confirm), and correspondent (identities Jev could not classify). It reports presence, not counts: each queue costs one indexed lookup, so a client can poll it for a navigation hint. Unclear correspondents also resolve identity clusters the way that queue does, but only when an unclear judgment exists.
  * @summary Check whether any review is waiting
  */
 export const getPendingReviews = (

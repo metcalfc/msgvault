@@ -93,6 +93,36 @@ func TestClearingKeepsAnOrganizationWithItsOwnProfileData(t *testing.T) {
 	assert.NoError(err)
 }
 
+func TestClearingKeepsAnOrganizationWithASupersededUserContactPoint(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	orders := f.emailParticipant("orders@shop.example.test", "Example Shop")
+	marked, err := f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: orders, Kind: correspondentkind.Organization,
+	})
+	require.NoError(err)
+	organizationID := *marked.Record.OrganizationID
+	// A contact point the user added and later replaced is still the
+	// organization's own history, unlike the ones the classification added.
+	_, err = f.st.DB().ExecContext(t.Context(), f.st.Rebind(`
+		INSERT INTO organization_contact_points (
+			organization_id, address_kind, original_value, normalized_value, source,
+			active_until, superseded_at
+		) VALUES (?, 'email', 'sales@shop.example.test', 'sales@shop.example.test', 'user',
+			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`), organizationID)
+	require.NoError(err)
+
+	cleared, err := f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: orders, Kind: correspondentkind.Person, RemoveOrganizationID: &organizationID,
+	})
+	require.NoError(err)
+	assert.False(cleared.OrganizationRemoved)
+	_, err = f.st.GetOrganizationContext(t.Context(), organizationID)
+	assert.NoError(err)
+}
+
 func TestRemovingAnOrganizationRequiresClearingTheKind(t *testing.T) {
 	f := newContactMatchFixture(t)
 	orders := f.emailParticipant("orders@shop.example.test", "Example Shop")

@@ -2,7 +2,12 @@
   import { Button, EmptyState, SegmentedControl, Spinner } from '@kenn-io/kit-ui';
   import { onDestroy, tick } from 'svelte';
 
-  import type { DirectoryReviewKind, IdentityReviewOrigin, IdentityReviewState } from '../../explore/models';
+  import {
+    DIRECTORY_REVIEW_KINDS,
+    type DirectoryReviewKind,
+    type IdentityReviewOrigin,
+    type IdentityReviewState
+  } from '../../explore/models';
   import type { FactLedgerController } from '../../directory/fact-ledger-controller.svelte';
   import type {
     DirectoryReviewContextSnapshot,
@@ -71,14 +76,15 @@
   // The profile a merge kept, offered as an explicit link beside the status.
   let mergedSurvivor = $state<{ id: number; name: string }>();
 
-  const reviewKindOptions = [
-    { value: 'identity', label: 'Identity matches' },
-    { value: 'fact', label: 'Fact review' },
-    { value: 'relationship', label: 'Imported relationships' },
-    { value: 'enrichment', label: 'Enrichment identities' },
-    { value: 'organization', label: 'Organization matches' },
-    { value: 'correspondent', label: 'Unclear correspondents' }
-  ];
+  const reviewKindLabels: Record<DirectoryReviewKind, string> = {
+    identity: 'Identity matches',
+    fact: 'Fact review',
+    relationship: 'Imported relationships',
+    enrichment: 'Enrichment identities',
+    organization: 'Organization matches',
+    correspondent: 'Unclear correspondents'
+  };
+  const reviewKindOptions = DIRECTORY_REVIEW_KINDS.map((kind) => ({ value: kind, label: reviewKindLabels[kind] }));
   const identityStateOptions = [
     { value: 'candidate', label: 'Candidate' },
     { value: 'conflict', label: 'Conflict' },

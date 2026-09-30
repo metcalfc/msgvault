@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 
 	"go.kenn.io/msgvault/internal/correspondentkind"
 )
@@ -24,6 +25,9 @@ const (
 	PendingReviewOrganization PendingReviewKind = "organization"
 	// PendingReviewCorrespondent covers identities Jev could not classify.
 	PendingReviewCorrespondent PendingReviewKind = "correspondent"
+	// PendingReviewRelationship covers imported relationships awaiting a
+	// decision.
+	PendingReviewRelationship PendingReviewKind = "relationship"
 )
 
 // pendingReviewQuery is one indexed existence probe. Each returns at most
@@ -33,6 +37,9 @@ type pendingReviewQuery struct {
 	kind  PendingReviewKind
 	query string
 	args  []any
+	// confirm, when set, decides a hit the way the queue itself does. It
+	// runs only after the indexed probe finds a candidate row.
+	confirm func(ctx context.Context, s *Store, tx *loggedTx) (bool, error)
 }
 
 func pendingReviewQueries() []pendingReviewQuery {
@@ -42,6 +49,11 @@ func pendingReviewQueries() []pendingReviewQuery {
 			query: `SELECT 1 FROM identity_match_candidates
 				WHERE state IN (?, ?) LIMIT 1`,
 			args: []any{IdentityMatchStateCandidate, IdentityMatchStateConflict},
+		},
+		{
+			kind:  PendingReviewRelationship,
+			query: `SELECT 1 FROM person_relationship_reviews WHERE status = ? LIMIT 1`,
+			args:  []any{RelationshipReviewPending},
 		},
 		{
 			kind: PendingReviewEnrichment,
@@ -62,8 +74,17 @@ func pendingReviewQueries() []pendingReviewQuery {
 		},
 		{
 			// A Jev judgment is effective only while no user or rule
-			// decision outranks it for the same participant.
+			// decision outranks it. The probe rules out the same
+			// participant cheaply; confirm then applies the cluster rule
+			// the Unclear correspondents queue lists by.
 			kind: PendingReviewCorrespondent,
+			confirm: func(ctx context.Context, s *Store, tx *loggedTx) (bool, error) {
+				clusters, err := s.correspondentKindClustersTx(ctx, tx)
+				if err != nil {
+					return false, err
+				}
+				return slices.ContainsFunc(clusters, isUnclearCorrespondentCluster), nil
+			},
 			query: `SELECT 1 FROM correspondent_kinds k
 				WHERE k.source = ? AND k.kind = ? AND NOT EXISTS (
 					SELECT 1 FROM correspondent_kinds d
@@ -77,11 +98,21 @@ func pendingReviewQueries() []pendingReviewQuery {
 	}
 }
 
+// AllPendingReviewKinds lists every queue the pending check covers, in
+// Reviews order.
+func AllPendingReviewKinds() []PendingReviewKind {
+	queries := pendingReviewQueries()
+	kinds := make([]PendingReviewKind, 0, len(queries))
+	for _, probe := range queries {
+		kinds = append(kinds, probe.kind)
+	}
+	return kinds
+}
+
 // PendingReviewKindsContext reports which Reviews queues have at least one
 // item waiting, in queue order. It answers "is anything waiting?" for a
-// navigation hint, not how many: each queue costs one indexed probe. The
-// unclear-correspondent probe works per participant, so a cluster whose
-// other member carries a user decision can still report as waiting.
+// navigation hint, not how many: each queue costs one indexed probe, and
+// unclear correspondents also resolve their clusters when that probe hits.
 func (s *Store) PendingReviewKindsContext(ctx context.Context) ([]PendingReviewKind, error) {
 	kinds := []PendingReviewKind{}
 	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
@@ -93,6 +124,15 @@ func (s *Store) PendingReviewKindsContext(ctx context.Context) ([]PendingReviewK
 			}
 			if err != nil {
 				return fmt.Errorf("check pending %s reviews: %w", probe.kind, err)
+			}
+			if probe.confirm != nil {
+				waiting, err := probe.confirm(ctx, s, tx)
+				if err != nil {
+					return fmt.Errorf("confirm pending %s reviews: %w", probe.kind, err)
+				}
+				if !waiting {
+					continue
+				}
 			}
 			kinds = append(kinds, probe.kind)
 		}

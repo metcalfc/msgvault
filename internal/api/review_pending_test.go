@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -67,4 +68,26 @@ func TestClearCorrespondentKindRemovesTheOrganizationItCreated(t *testing.T) {
 	assert.Equal(correspondentkind.Person, result.Record.Kind)
 	_, err = st.GetOrganizationContext(t.Context(), *marked.Record.OrganizationID)
 	assert.ErrorIs(err, store.ErrOrganizationNotFound)
+}
+
+// Every queue the store checks is in the documented enum, in order, so a
+// client listing Reviews queues can compare against the contract.
+func TestPendingReviewsOpenAPIEnumMatchesTheStoreProbes(t *testing.T) {
+	t.Parallel()
+	operation := OpenAPIDocument().Paths["/api/v1/reviews/pending"].Get
+	require.NotNil(t, operation)
+	schema := operation.Responses["200"].Content["application/json"].Schema
+	require.NotNil(t, schema)
+	if schema.Ref != "" {
+		schema = OpenAPIDocument().Components.Schemas.Map()[strings.TrimPrefix(schema.Ref, "#/components/schemas/")]
+	}
+	require.NotNil(t, schema)
+	kinds := schema.Properties["kinds"]
+	require.NotNil(t, kinds)
+	require.NotNil(t, kinds.Items)
+	want := []any{}
+	for _, kind := range store.AllPendingReviewKinds() {
+		want = append(want, string(kind))
+	}
+	assert.Equal(t, want, kinds.Items.Enum)
 }

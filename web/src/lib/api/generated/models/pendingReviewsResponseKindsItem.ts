@@ -7,6 +7,7 @@ export type PendingReviewsResponseKindsItem =
 
 export const PendingReviewsResponseKindsItem = {
   identity: "identity",
+  relationship: "relationship",
   enrichment: "enrichment",
   organization: "organization",
   correspondent: "correspondent",

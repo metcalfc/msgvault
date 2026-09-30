@@ -577,7 +577,7 @@ func (s *Store) ListCorrespondentKindsContext(
 			// Unclear judgments are listed only when asked for: they are a
 			// review queue, not records marked as not a person.
 			if effective.kind.IsPerson() && (filter.Kind != correspondentkind.Unclear ||
-				effective.kind != correspondentkind.Unclear) {
+				!isUnclearCorrespondentCluster(cluster)) {
 				continue
 			}
 			if filter.Kind != "" && effective.kind != filter.Kind {
@@ -633,6 +633,14 @@ func (s *Store) GetCorrespondentKindContext(
 		return nil
 	})
 	return record, err
+}
+
+// isUnclearCorrespondentCluster reports a cluster the Unclear
+// correspondents review queue lists: its effective kind is a Jev unclear
+// judgment no user or rule decision outranks. The pending-review check uses
+// it too, so the Reviews dot and the queue agree.
+func isUnclearCorrespondentCluster(cluster correspondentKindCluster) bool {
+	return cluster.effective.kind == correspondentkind.Unclear
 }
 
 // clusterCorrespondentKindTx resolves the cluster containing participantID.
@@ -968,13 +976,18 @@ func clusterClassifiedUnderTx(
 // organizationReferenceQueries each find one row that keeps an organization
 // in use: an employment, a merge redirect, a classification, an active
 // contact point, or any profile, attribute, alias, review, or fact record.
-// Superseded contact points are history and go with the organization.
+// The only rows that do not count are contact points a classification
+// attached and a later clear withdrew; every other contact point, current or
+// superseded, keeps the organization.
 var organizationReferenceQueries = []string{
 	`SELECT 1 FROM employments WHERE organization_id = ? LIMIT 1`,
 	`SELECT 1 FROM organizations WHERE merged_into_id = ? LIMIT 1`,
 	`SELECT 1 FROM correspondent_kinds WHERE organization_id = ? LIMIT 1`,
 	`SELECT 1 FROM organization_contact_points
-		WHERE organization_id = ? AND superseded_at IS NULL LIMIT 1`,
+		WHERE organization_id = ? AND NOT (
+			superseded_at IS NOT NULL AND source = '` + string(ProvenanceUser) + `'
+			AND COALESCE(source_ref, '') LIKE '` + correspondentKindContactSourcePrefix + `%')
+		LIMIT 1`,
 	`SELECT 1 FROM organization_names WHERE organization_id = ? LIMIT 1`,
 	`SELECT 1 FROM organization_identifiers WHERE organization_id = ? LIMIT 1`,
 	`SELECT 1 FROM organization_addresses WHERE organization_id = ? LIMIT 1`,

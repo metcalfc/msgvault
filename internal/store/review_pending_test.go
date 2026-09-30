@@ -78,6 +78,46 @@ func TestPendingReviewKindsFollowEachQueue(t *testing.T) {
 	})
 	require.NoError(err)
 	assert.Empty(pendingKinds(t, st))
+
+	// Imported relationship: a pending review waits until it is decided.
+	owner, _, err := st.CreatePersonFromParticipant(left)
+	require.NoError(err)
+	_, err = st.db.ExecContext(t.Context(), st.Rebind(`INSERT INTO person_relationship_reviews
+		(person_id, raw_related_value, raw_related_type, value_kind, source)
+		VALUES (?, 'Casey Example', 'friend', 'text', 'vcard_import')`), owner.ID)
+	require.NoError(err)
+	assert.Equal([]PendingReviewKind{PendingReviewRelationship}, pendingKinds(t, st))
+	_, err = st.db.ExecContext(t.Context(), `UPDATE person_relationship_reviews SET status = 'rejected'`)
+	require.NoError(err)
+	assert.Empty(pendingKinds(t, st))
+}
+
+// The Unclear correspondents queue resolves clusters, so a user decision on
+// one linked member settles a Jev judgment on another. The dot agrees.
+func TestPendingUnclearCorrespondentFollowsTheClusterDecision(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := newPendingReviewStore(t)
+	desk, err := st.EnsureParticipant("desk@example.test", "Front Desk", "example.test")
+	require.NoError(err)
+	deskAlias, err := st.EnsureParticipant("frontdesk@example.test", "Front Desk", "example.test")
+	require.NoError(err)
+	_, err = st.LinkParticipants(desk, deskAlias)
+	require.NoError(err)
+	_, err = st.WriteDerivedCorrespondentKindsContext(t.Context(), []DerivedCorrespondentKind{{
+		ParticipantID: deskAlias, Source: correspondentkind.SourceJev, Kind: correspondentkind.Unclear,
+	}})
+	require.NoError(err)
+	assert.Equal([]PendingReviewKind{PendingReviewCorrespondent}, pendingKinds(t, st))
+
+	// The decision lands on the other member of the cluster.
+	_, err = st.db.ExecContext(t.Context(), st.Rebind(`INSERT INTO correspondent_kinds
+		(participant_id, source, kind, actor) VALUES (?, 'user', 'shared_mailbox', 'user')`), desk)
+	require.NoError(err)
+	assert.Empty(pendingKinds(t, st))
+	unclear, err := st.ListCorrespondentKindsContext(t.Context(), CorrespondentKindListFilter{Kind: correspondentkind.Unclear})
+	require.NoError(err)
+	assert.Empty(unclear, "the queue and the dot agree")
 }
 
 func TestPendingReviewKindsReportsUncertainEnrichment(t *testing.T) {
@@ -94,6 +134,7 @@ func TestPendingReviewProbesUseIndexesSQLite(t *testing.T) {
 		PendingReviewEnrichment:    "person_enrichment_attempts_next_action",
 		PendingReviewOrganization:  "idx_organization_match_reviews_pending",
 		PendingReviewCorrespondent: "idx_correspondent_kinds_kind",
+		PendingReviewRelationship:  "idx_person_relationship_reviews_status",
 	}
 	for _, probe := range pendingReviewQueries() {
 		t.Run(string(probe.kind), func(t *testing.T) {
