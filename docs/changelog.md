@@ -13,7 +13,7 @@ All notable changes to msgvault, grouped by release.
   Web UI warn about them, and `stage-delete --protect` (or **Skip starred,
   self-sent, and person-sent messages**) leaves them out. Remote images never
   load for spam or trash, in the reader, during sync and import, or through
-  the image proxy. Requires API schema 2.41.0.
+  the image proxy. Requires API schema 2.40.0.
 - Find likely phishing with `msgvault suggest-cleanup`. With
   `[jev.cleanup_suggestions]` enabled and consented, spam and promotional mail
   you never replied to is judged for impersonation, pressure, and category,
