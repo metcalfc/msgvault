@@ -58,11 +58,11 @@ func TestSameRoleTitlesCorroborateAtOneOrganization(t *testing.T) {
 			assert.Equal("Partner", *employments[0].Title)
 			var applied, superseded int
 			for _, decision := range result.Decisions {
-				switch decision.Action {
-				case personfacts.DecisionApplied:
+				if decision.Action == personfacts.DecisionApplied {
 					applied++
 					assert.Equal(790, decision.Score.Total, "740 plus one corroborating source")
-				case personfacts.DecisionSuperseded:
+				}
+				if decision.Action == personfacts.DecisionSuperseded {
 					superseded++
 				}
 			}

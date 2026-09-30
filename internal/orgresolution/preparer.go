@@ -199,11 +199,14 @@ func (p *Preparer) resolve(
 			return result, nil
 		}
 		return p.askTitlesOnly(ctx, result, pairs)
+	case store.OrganizationCreated:
+		if len(shortlist.Candidates) == 0 {
+			return ReferenceResult{Outcome: OutcomeNoMatch}, nil
+		}
+		return p.askOrganization(ctx, personID, reference, shortlist)
+	default:
+		return ReferenceResult{}, fmt.Errorf("unknown organization lookup status %q", shortlist.Status)
 	}
-	if len(shortlist.Candidates) == 0 {
-		return ReferenceResult{Outcome: OutcomeNoMatch}, nil
-	}
-	return p.askOrganization(ctx, personID, reference, shortlist)
 }
 
 // titlePairs pairs each claimed title with every distinct title already

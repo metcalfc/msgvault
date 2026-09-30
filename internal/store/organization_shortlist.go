@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -199,7 +200,7 @@ func (s *Store) collectOrganizationShortlistIDsTx(
 		SELECT o.id FROM organizations o
 		WHERE o.kind = 'company' AND o.retired_at IS NULL AND o.merged_into_id IS NULL
 		  AND `+condition+`
-		ORDER BY o.id LIMIT `+fmt.Sprint(organizationShortlistScanLimit), args...)
+		ORDER BY o.id LIMIT `+strconv.Itoa(organizationShortlistScanLimit), args...)
 	if err != nil {
 		return fmt.Errorf("query organization shortlist: %w", err)
 	}
@@ -408,7 +409,7 @@ func trigramSimilarity(left, right string) float64 {
 
 func trigrams(value string) map[string]struct{} {
 	grams := make(map[string]struct{})
-	for _, word := range strings.Fields(value) {
+	for word := range strings.FieldsSeq(value) {
 		runes := []rune("  " + word + " ")
 		for i := 0; i+3 <= len(runes); i++ {
 			grams[string(runes[i:i+3])] = struct{}{}
