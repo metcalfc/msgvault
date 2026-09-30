@@ -3777,6 +3777,14 @@ func (s ErrorResponse) Error() string {
 	return "unmapped client error"
 }
 
+type EventLinks struct {
+	// CalendarURL The event's page in the provider's calendar (Google Calendar htmlLink).
+	CalendarURL *string `json:"calendar_url,omitzero"`
+
+	// JoinURL The event's video-meeting link (Google Calendar hangoutLink).
+	JoinURL *string `json:"join_url,omitzero"`
+}
+
 type Execution struct {
 	CompletedAt        *time.Time `json:"completed_at,omitempty"`
 	Failed             int64      `json:"failed"`
@@ -5783,24 +5791,25 @@ type MessageDetail struct {
 	ConversationID *int64           `json:"conversation_id,omitempty"`
 
 	// ConversationType The message's conversation type as stored (for example email_thread, direct_chat, group_chat, or channel). Returned by GET /api/v1/messages/{id}; omitted when the message has no conversation.
-	ConversationType *string  `json:"conversation_type,omitzero"`
-	DeletedAt        *string  `json:"deleted_at,omitzero"`
-	From             string   `json:"from" validate:"required"`
-	FromEmail        *string  `json:"from_email,omitzero"`
-	FromName         *string  `json:"from_name,omitzero"`
-	FromPhone        *string  `json:"from_phone,omitzero"`
-	HasAttachments   bool     `json:"has_attachments"`
-	ID               int64    `json:"id"`
-	IsFromMe         *bool    `json:"is_from_me,omitempty"`
-	Labels           []string `json:"labels" validate:"required"`
-	MessageType      *string  `json:"message_type,omitzero"`
-	SentAt           string   `json:"sent_at" validate:"required"`
-	SizeBytes        int64    `json:"size_bytes"`
-	Snippet          string   `json:"snippet" validate:"required"`
-	SourceID         *int64   `json:"source_id,omitempty"`
-	SourceMessageID  *string  `json:"source_message_id,omitzero"`
-	Subject          string   `json:"subject" validate:"required"`
-	To               []string `json:"to" validate:"required"`
+	ConversationType *string     `json:"conversation_type,omitzero"`
+	DeletedAt        *string     `json:"deleted_at,omitzero"`
+	EventLinks       *EventLinks `json:"event_links,omitempty"`
+	From             string      `json:"from" validate:"required"`
+	FromEmail        *string     `json:"from_email,omitzero"`
+	FromName         *string     `json:"from_name,omitzero"`
+	FromPhone        *string     `json:"from_phone,omitzero"`
+	HasAttachments   bool        `json:"has_attachments"`
+	ID               int64       `json:"id"`
+	IsFromMe         *bool       `json:"is_from_me,omitempty"`
+	Labels           []string    `json:"labels" validate:"required"`
+	MessageType      *string     `json:"message_type,omitzero"`
+	SentAt           string      `json:"sent_at" validate:"required"`
+	SizeBytes        int64       `json:"size_bytes"`
+	Snippet          string      `json:"snippet" validate:"required"`
+	SourceID         *int64      `json:"source_id,omitempty"`
+	SourceMessageID  *string     `json:"source_message_id,omitzero"`
+	Subject          string      `json:"subject" validate:"required"`
+	To               []string    `json:"to" validate:"required"`
 }
 
 func (m MessageDetail) Validate() error {
@@ -5814,6 +5823,13 @@ func (m MessageDetail) Validate() error {
 	}
 	if err := typesValidator.Var(m.Body, "required"); err != nil {
 		errors = errors.Append("Body", err)
+	}
+	if m.EventLinks != nil {
+		if v, ok := any(m.EventLinks).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("EventLinks", err)
+			}
+		}
 	}
 	if err := typesValidator.Var(m.From, "required"); err != nil {
 		errors = errors.Append("From", err)

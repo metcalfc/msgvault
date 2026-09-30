@@ -79,6 +79,23 @@ describe('ConversationView', () => {
     expect(anchorCard.textContent).not.toContain('Unknown sender');
   });
 
+  it('carries calendar event links from the API to the event card', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => Response.json({
+      id: 7, anchor_id: 1, has_before: false, has_after: false, total: 1,
+      messages: [{
+        ...message(1, 'calendar_event'), body: 'Planning review', body_html: '',
+        event_links: { join_url: 'https://meet.google.com/abc-defg-hij', calendar_url: 'https://www.google.com/calendar/event?eid=abc' }
+      }]
+    }));
+
+    render(ConversationView, { props: { client: createAPIClient(fetchFn), conversationId: 7, anchorId: 1 } });
+
+    expect((await screen.findByRole('link', { name: 'Join meeting (opens in new tab)' })).getAttribute('href'))
+      .toBe('https://meet.google.com/abc-defg-hij');
+    expect(screen.getByRole('link', { name: 'Open in Calendar (opens in new tab)' }).getAttribute('href'))
+      .toBe('https://www.google.com/calendar/event?eid=abc');
+  });
+
   it('sends optional start/end bounds when scoping to a chat burst day', async () => {
     const requests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {

@@ -4262,6 +4262,16 @@ components:
       required:
         - error
       type: object
+    EventLinks:
+      additionalProperties: true
+      properties:
+        calendar_url:
+          description: The event's page in the provider's calendar (Google Calendar htmlLink).
+          type: string
+        join_url:
+          description: The event's video-meeting link (Google Calendar hangoutLink).
+          type: string
+      type: object
     Execution:
       additionalProperties: false
       properties:
@@ -6302,6 +6312,9 @@ components:
           type: string
         deleted_at:
           type: string
+        event_links:
+          $ref: "#/components/schemas/EventLinks"
+          description: A calendar event's stored provider links. Present only on calendar_event messages that have one.
         from:
           type: string
         from_email:

@@ -354,7 +354,9 @@ import (
 // contact_match_shared_mailbox or contact_match_not_a_person.
 // 2.36.0 adds optional uri_scheme and profile_url_template link hints to
 // person and organization contact points and to person identifiers, copied
-// from the value's communication service. Additive (minor bump).
+// from the value's communication service, and optional event_links
+// (join_url, calendar_url) to calendar-event message details. Additive
+// (minor bump).
 const APISchemaVersion = "2.36.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration

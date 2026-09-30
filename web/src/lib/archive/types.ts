@@ -66,6 +66,9 @@ export interface ArchiveMessageDetail extends ArchiveMessageSummary {
   isFromMe?: boolean;
   /** The provider's own message ID (a Gmail message's hex ID). */
   sourceMessageId?: string;
+  /** A calendar event's stored provider links, unvetted: EventCard applies
+   * the host allowlist before offering either one. */
+  eventLinks?: { joinURL?: string; calendarURL?: string };
 }
 
 export type MessageViewMode = 'html' | 'text';

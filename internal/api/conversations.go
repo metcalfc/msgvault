@@ -194,6 +194,7 @@ func (s *Server) handleGetConversation(w http.ResponseWriter, r *http.Request) {
 		}
 		messages = append(messages, detail)
 	}
+	s.attachEventLinks(r.Context(), messages)
 	writeJSON(w, http.StatusOK, ConversationResponse{
 		ID:        conversationID,
 		AnchorID:  anchorID,

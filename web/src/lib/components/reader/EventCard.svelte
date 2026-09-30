@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { APIClient } from '../../api/client';
   import type { ArchiveMessageDetail } from '../../archive/types';
+  import { eventCalendarLink, eventJoinLink } from '../../links/event-links';
   import { humanizeWhen, linkify, parseEventBody } from '../../reader/event-body';
   import { looksLikeHTML } from '../../util/html-text';
   import ContentFrame from './ContentFrame.svelte';
@@ -17,9 +18,19 @@
 
   const parsed = $derived(parseEventBody(message.body, message.subject, message.sentAt));
   const organizer = $derived(message.from?.trim() || '');
+  const joinLink = $derived(eventJoinLink(message.eventLinks?.joinURL));
+  const calendarLink = $derived(eventCalendarLink(message.eventLinks?.calendarURL));
 </script>
 
 <section class="event-card" aria-label="Event details">
+  {#if joinLink || calendarLink}
+    <div class="event-links">
+      {#if joinLink}<a class="event-link event-link--join" href={joinLink.href} target="_blank" rel="noopener noreferrer"
+          >{joinLink.label}{' '}<span class="kit-sr-only">(opens in new tab)</span></a>{/if}
+      {#if calendarLink}<a class="event-link" href={calendarLink.href} target="_blank" rel="noopener noreferrer"
+          >{calendarLink.label}{' '}<span class="kit-sr-only">(opens in new tab)</span></a>{/if}
+    </div>
+  {/if}
   <dl class="event-facts">
     {#if parsed.when}
       <div><dt>When</dt><dd>{humanizeWhen(parsed.when)}</dd></div>
@@ -71,6 +82,21 @@
   .event-card {
     display: grid;
     gap: var(--space-4);
+  }
+
+  .event-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+
+  .event-link {
+    color: var(--link-ink);
+    font-size: var(--font-size-sm);
+  }
+
+  .event-link--join {
+    font-weight: 600;
   }
 
   .event-facts {

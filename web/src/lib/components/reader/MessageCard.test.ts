@@ -91,6 +91,44 @@ describe('MessageCard', () => {
     expect(card.querySelector('.event-description')?.textContent).toBe('Bring the deck');
   });
 
+  it('offers Join meeting and Open in Calendar for allowlisted event links', () => {
+    render(MessageCard, {
+      props: {
+        message: detail({
+          messageType: 'calendar_event', body: 'Planning review',
+          eventLinks: {
+            joinURL: 'https://meet.google.com/abc-defg-hij',
+            calendarURL: 'https://www.google.com/calendar/event?eid=abc'
+          }
+        }),
+        expanded: true
+      }
+    });
+
+    const join = screen.getByRole('link', { name: 'Join meeting (opens in new tab)' });
+    expect(join.getAttribute('href')).toBe('https://meet.google.com/abc-defg-hij');
+    expect(join.getAttribute('target')).toBe('_blank');
+    expect(join.getAttribute('rel')).toBe('noopener noreferrer');
+    const calendar = screen.getByRole('link', { name: 'Open in Calendar (opens in new tab)' });
+    expect(calendar.getAttribute('href')).toBe('https://www.google.com/calendar/event?eid=abc');
+    expect(calendar.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('hides event links to hosts outside the allowlist', () => {
+    render(MessageCard, {
+      props: {
+        message: detail({
+          messageType: 'calendar_event', body: 'Planning review',
+          eventLinks: { joinURL: 'https://meet.evil.example/abc', calendarURL: 'https://calendar.evil.example/e' }
+        }),
+        expanded: true
+      }
+    });
+
+    expect(screen.queryByRole('link', { name: /Join meeting/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: /Open in Calendar/ })).toBeNull();
+  });
+
   it('collapses to one line of sender, snippet, and date that expands on click', async () => {
     const onToggle = vi.fn();
     render(MessageCard, {
