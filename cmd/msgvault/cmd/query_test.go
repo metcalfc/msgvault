@@ -317,3 +317,66 @@ func queryHTTPDaemon(t *testing.T) (*httptest.Server, *atomic.Int32) {
 	t.Cleanup(server.Close)
 	return server, queryRequests
 }
+
+func TestQueryCommandStreamsCSV(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		want    string
+		wantErr string
+	}{
+		{
+			name: "complete export",
+			body: `{"columns":["subject","size","note"],"rows":[["Hello, world",1500000,null],["Second",2.5,"x"]],"row_count":2}`,
+			want: "subject,size,note\n\"Hello, world\",1500000,\nSecond,2.5,x\n",
+		},
+		{
+			name:    "stream ends early",
+			body:    `{"columns":["subject"],"rows":[["Hello"]`,
+			wantErr: "discard partial output",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			// The daemon side of the stream is covered by the API tests; this
+			// transport fixture fixes the wire body the CLI converts.
+			mux := http.NewServeMux()
+			mux.Handle("/api/ping", daemon.NewPingHandler(daemon.PingHandlerOptions{Service: daemonService, Version: Version}))
+			mux.HandleFunc("/api/v1/query", func(w http.ResponseWriter, r *http.Request) {
+				var req struct {
+					Stream bool `json:"stream"`
+				}
+				assert.NoError(json.NewDecoder(r.Body).Decode(&req))
+				assert.True(req.Stream, "CSV export must request the stream")
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tt.body))
+			})
+			server := httptest.NewServer(mux)
+			t.Cleanup(server.Close)
+			dataDir := t.TempDir()
+			writeStatsHTTPDaemonRuntime(t, dataDir, server)
+
+			savedFormat, savedFresh, savedStream := queryFormat, queryFresh, queryStream
+			t.Cleanup(func() { queryFormat, queryFresh, queryStream = savedFormat, savedFresh, savedStream })
+			queryFormat, queryFresh, queryStream = "csv", false, true
+			cfg := &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
+			var stdout, stderr bytes.Buffer
+			cmd := &cobra.Command{Use: "query [sql]", Args: queryCmd.Args, RunE: queryCmd.RunE}
+			cmd.SetContext(testInvocationContext(t.Context(), cfg, invocationOptions{}))
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+			cmd.SetArgs([]string{"SELECT subject FROM messages"})
+
+			err := cmd.Execute()
+			if tt.wantErr != "" {
+				require.Error(err)
+				assert.Contains(err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(err)
+			assert.Equal(tt.want, stdout.String())
+		})
+	}
+}

@@ -26,7 +26,7 @@ The analytics cache is built automatically when stale or missing.
 msgvault query --format table "SELECT from_email, message_count FROM v_senders ORDER BY message_count DESC LIMIT 10"
 
 # Messages from a domain in 2024, CSV output
-msgvault query --format csv "SELECT subject, sent_at, from_email FROM v_messages WHERE from_domain = 'example.com' AND year = 2024 ORDER BY sent_at DESC"
+msgvault query --stream --format csv "SELECT subject, sent_at, from_email FROM v_messages WHERE from_domain = 'example.com' AND year = 2024 ORDER BY sent_at DESC"
 
 # Label distribution as JSON
 msgvault query "SELECT name, message_count, total_size FROM v_labels ORDER BY message_count DESC"

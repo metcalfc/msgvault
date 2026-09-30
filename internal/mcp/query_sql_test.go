@@ -127,6 +127,13 @@ func TestQuerySQLToolConfinesDaemonOwnerCredentialsToArchive(t *testing.T) {
 	require.True(ok)
 	assert.Equal([]any{[]any{"synthetic archive row"}}, structured["rows"])
 
+	// A result over the interactive limit is a query the agent can revise, so
+	// it arrives as a tool error that says why, not an internal failure.
+	tooLarge := callSQLToolHTTP(t, mcpHandler, "SELECT * FROM range(10001)", "synthetic-mcp-key")
+	require.Empty(tooLarge.Error)
+	assert.Equal(true, tooLarge.Result["isError"])
+	assert.Contains(fmt.Sprint(tooLarge.Result["content"]), "add a LIMIT")
+
 	outsidePath := filepath.Join(t.TempDir(), "outside-archive.txt")
 	require.NoError(os.WriteFile(outsidePath, []byte("synthetic outside row"), 0o600))
 	outsideSQLPath := strings.ReplaceAll(filepath.ToSlash(outsidePath), "'", "''")

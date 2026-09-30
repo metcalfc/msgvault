@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -178,6 +179,12 @@ func (h *handlers) querySQL(ctx context.Context, req toolRequest) (*toolResult, 
 		return toolErrorResult("SQL queries are unavailable"), nil
 	}
 	result, accepted, err := h.archiveSQLQuerier.QueryArchiveSQL(ctx, sql, fresh)
+	var rejected *daemonclient.APIError
+	if errors.As(err, &rejected) && rejected.Status == http.StatusBadRequest && rejected.Code == "result_too_large" {
+		// The agent can revise an oversized query, so say why. Other SQL errors
+		// stay internal: their engine text can describe files outside the archive.
+		return toolErrorResult(rejected.Message), nil
+	}
 	if err != nil {
 		return nil, newInternalError("query SQL", err)
 	}

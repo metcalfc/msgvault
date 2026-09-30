@@ -218,7 +218,7 @@ func querySQLDefinition() toolDefinition {
 	accepted.Schema = ""
 	definition := readDefinition(
 		ToolQuerySQL,
-		"Run read-only SQL against the analytics cache. Files outside the cache and network access are unavailable. Set fresh to request a coalesced background refresh; an accepted build returns a job ID instead of rows.",
+		"Run read-only SQL against the analytics cache. Results are limited to 10,000 rows and 16 MiB; add a LIMIT or aggregate for larger data. Files outside the cache and network access are unavailable. Set fresh to request a coalesced background refresh; an accepted build returns a job ID instead of rows.",
 		closedObject(map[string]*jsonschema.Schema{
 			"sql":   stringSchema("One read-only SQL statement"),
 			"fresh": booleanSchema("Request a background cache check including writes committed before this request"),

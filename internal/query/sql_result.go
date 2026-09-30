@@ -18,7 +18,7 @@ const (
 var ErrSQLResultLimit = errors.New("SQL result exceeds interactive limit")
 
 func sqlResultLimitError(kind string, limit int) error {
-	return fmt.Errorf("%w: %s budget is %d; narrow the SELECT/add LIMIT, or use msgvault query --stream for a JSON export", ErrSQLResultLimit, kind, limit)
+	return fmt.Errorf("%w: %s budget is %d; narrow the SELECT or add a LIMIT (the CLI can export everything with msgvault query --stream)", ErrSQLResultLimit, kind, limit)
 }
 
 type sqlResultBudget struct{ bytes int }

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"go.kenn.io/msgvault/internal/daemonclient"
 	"go.kenn.io/msgvault/internal/query"
 )
 
@@ -41,11 +43,11 @@ Output formats:
   table  - Aligned text table
 
 Interactive results are limited to 10,000 rows and 16 MiB of encoded data.
-Use --stream for larger JSON exports; discard partial output on any error.
+Use --stream for larger JSON or CSV exports; discard partial output on any error.
 
 Examples:
   msgvault query "SELECT from_email, COUNT(*) AS n FROM v_messages GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
-	msgvault query --format csv "SELECT * FROM v_senders ORDER BY message_count DESC"
+	msgvault query --stream --format csv "SELECT * FROM v_senders ORDER BY message_count DESC"
 	msgvault query --format table "SELECT name, message_count FROM v_labels"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -54,8 +56,9 @@ Examples:
 }
 
 func runHTTPQuery(cmd *cobra.Command, sqlStr string) error {
-	if queryStream && strings.ToLower(strings.TrimSpace(queryFormat)) != outputFormatJSON {
-		return errors.New("--stream requires --format json")
+	format := strings.ToLower(strings.TrimSpace(queryFormat))
+	if queryStream && format != outputFormatJSON && format != "csv" {
+		return errors.New("--stream requires --format json or csv")
 	}
 	st, _, err := OpenHTTPStore(cmd.Context())
 	if err != nil {
@@ -66,7 +69,7 @@ func runHTTPQuery(cmd *cobra.Command, sqlStr string) error {
 	if queryStream {
 		fresh := queryFresh
 		for {
-			accepted, err := st.StreamSQLQuery(cmd.Context(), sqlStr, fresh, cmd.OutOrStdout())
+			accepted, err := streamSQLQueryAs(cmd.Context(), st, sqlStr, fresh, format, cmd.OutOrStdout())
 			if err != nil {
 				return fmt.Errorf("query: %w", err)
 			}
@@ -109,6 +112,107 @@ func runHTTPQuery(cmd *cobra.Command, sqlStr string) error {
 		_, _ = fmt.Fprintln(cmd.ErrOrStderr())
 	}
 	return writeQueryResult(cmd.OutOrStdout(), result, queryFormat)
+}
+
+// streamSQLQueryAs writes a streamed export in the requested format. CSV is
+// converted row by row from the validated JSON stream, so it is as unbounded
+// as the JSON export and carries the same discard-on-error contract.
+func streamSQLQueryAs(
+	ctx context.Context, st *daemonclient.Client, sqlStr string, fresh bool, format string, out io.Writer,
+) (*daemonclient.CacheBuildAccepted, error) {
+	if format != "csv" {
+		return st.StreamSQLQuery(ctx, sqlStr, fresh, out)
+	}
+	reader, writer := io.Pipe()
+	converted := make(chan error, 1)
+	go func() {
+		err := writeCSVFromSQLStream(out, reader)
+		_ = reader.CloseWithError(err)
+		converted <- err
+	}()
+	accepted, err := st.StreamSQLQuery(ctx, sqlStr, fresh, writer)
+	_ = writer.CloseWithError(err)
+	convertErr := <-converted
+	if err != nil {
+		return nil, err
+	}
+	if accepted != nil {
+		return accepted, nil
+	}
+	if convertErr != nil {
+		return nil, fmt.Errorf("SQL export incomplete; discard partial output: %w", convertErr)
+	}
+	return nil, nil //nolint:nilnil // No accepted job means the export completed successfully.
+}
+
+// writeCSVFromSQLStream reads one SQL result object and writes its columns and
+// rows as CSV without retaining the row array. An empty stream (a cache build
+// was accepted instead) writes nothing.
+func writeCSVFromSQLStream(w io.Writer, r io.Reader) error {
+	dec := jsontext.NewDecoder(r)
+	if _, err := dec.ReadToken(); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return err
+	}
+	cw := csv.NewWriter(w)
+	haveColumns := false
+	for dec.PeekKind() != '}' {
+		name, err := dec.ReadToken()
+		if err != nil {
+			return err
+		}
+		switch name.String() {
+		case "columns":
+			var columns []string
+			if err := json.UnmarshalDecode(dec, &columns); err != nil {
+				return fmt.Errorf("decode columns: %w", err)
+			}
+			if err := cw.Write(columns); err != nil {
+				return fmt.Errorf("write csv header: %w", err)
+			}
+			haveColumns = true
+		case "rows":
+			if !haveColumns {
+				return errors.New("SQL result rows arrived before columns")
+			}
+			if dec.PeekKind() == 'n' {
+				if _, err := dec.ReadToken(); err != nil {
+					return err
+				}
+				continue
+			}
+			if _, err := dec.ReadToken(); err != nil {
+				return err
+			}
+			for dec.PeekKind() != ']' {
+				var row []any
+				if err := json.UnmarshalDecode(dec, &row); err != nil {
+					return fmt.Errorf("decode row: %w", err)
+				}
+				record := make([]string, len(row))
+				for i, v := range row {
+					record[i] = displayVal(v)
+				}
+				if err := cw.Write(record); err != nil {
+					return fmt.Errorf("write csv row: %w", err)
+				}
+			}
+			if _, err := dec.ReadToken(); err != nil {
+				return err
+			}
+		default:
+			if err := dec.SkipValue(); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := dec.ReadToken(); err != nil {
+		return err
+	}
+	cw.Flush()
+	return cw.Error()
 }
 
 func writeQueryResult(w io.Writer, result *query.QueryResult, format string) error {
@@ -236,7 +340,7 @@ func writeTable(
 
 func init() {
 	rootCmd.AddCommand(queryCmd)
-	queryCmd.Flags().BoolVar(&queryStream, "stream", false, "Stream a complete JSON export without interactive result limits; discard partial output on errors")
+	queryCmd.Flags().BoolVar(&queryStream, "stream", false, "Stream a complete JSON or CSV export without interactive result limits; discard partial output on errors")
 	queryCmd.Flags().BoolVar(&queryFresh, "fresh", false, "Wait for analytics to include writes committed before this request, then return rows")
 	queryCmd.Flags().StringVar(
 		&queryFormat, "format", outputFormatJSON,

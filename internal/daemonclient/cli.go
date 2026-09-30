@@ -1542,12 +1542,14 @@ func (c *Client) RunSQLQueryWithFresh(ctx context.Context, sql string, fresh boo
 	return sqlQueryResponse(resp.StatusCode, resp.Body)
 }
 
+// RunArchiveSQLQueryWithFresh returns daemon rejections as *APIError so agent
+// callers can tell an oversized result from an internal failure by its code.
 func (c *Client) RunArchiveSQLQueryWithFresh(ctx context.Context, sql string, fresh bool) (*query.QueryResult, *CacheBuildAccepted, error) {
 	body := &generated.RunArchiveQueryBody{SQL: sql}
 	if fresh {
 		body.Fresh = &fresh
 	}
-	resp, err := CLIResponseWithStatuses(ctx, c, []int{http.StatusOK, http.StatusAccepted}, func(client *apiclient.Client) (*generated.RunArchiveQueryResp, error) {
+	resp, err := APIResponseWithStatuses(ctx, c, []int{http.StatusOK, http.StatusAccepted}, func(client *apiclient.Client) (*generated.RunArchiveQueryResp, error) {
 		return client.RunArchiveQueryWithResponse(ctx, &generated.RunArchiveQueryRequestOptions{Body: body})
 	})
 	if err != nil {
