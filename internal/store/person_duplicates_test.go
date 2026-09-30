@@ -257,6 +257,64 @@ func TestRecordPersonDuplicateJudgmentsRecheckExclusionsBeforeWriting(t *testing
 	assert.NotEqual(desk, candidates[0].LeftID)
 }
 
+func TestRecordPersonDuplicateJudgmentsRevalidatesOnlyTheJudgedClusters(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	jane := duplicateParticipant(t, st, "jane@example.com", "Jane Doe")
+	janeAlias := duplicateParticipant(t, st, "jane.alias@example.com", "")
+	_, err := st.LinkParticipants(jane, janeAlias)
+	require.NoError(err)
+	janeWork := duplicateParticipant(t, st, "jdoe@example.org", "Jane Doe")
+	robin := duplicateParticipant(t, st, "robin@example.com", "Robin Example")
+	robinWork := duplicateParticipant(t, st, "rexample@example.org", "Robin Example")
+	for i := range 5 {
+		duplicateParticipant(t, st, fmt.Sprintf("bystander%d@example.net", i), fmt.Sprintf("Bystander %c", 'A'+rune(i)))
+	}
+	proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	require.Len(proposals, 2)
+	var judged store.PersonDuplicateProposal
+	for _, proposal := range proposals {
+		if proposal.Left.ParticipantID == jane {
+			judged = proposal
+		}
+	}
+	require.Equal(janeWork, judged.Right.ParticipantID)
+
+	var loaded [][]int64
+	restore := st.SetPersonDuplicateRevalidateHookForTest(func(ids []int64) { loaded = append(loaded, ids) })
+	defer restore()
+	result, err := st.RecordPersonDuplicateJudgmentsContext(t.Context(), []store.PersonDuplicateJudgment{{
+		Proposal: judged, Probability: 0.8, Model: "jev-test", Propose: true,
+	}})
+	require.NoError(err)
+	assert.Equal(store.PersonDuplicateWriteResult{Recorded: 1, Candidates: 1}, result)
+	assert.Equal([][]int64{{jane, janeAlias, janeWork}}, loaded,
+		"only the judged pair's clusters are loaded, not the other pair or bystanders")
+	assert.NotContains(loaded[0], robin)
+	assert.NotContains(loaded[0], robinWork)
+}
+
+func TestRecordPersonDuplicateJudgmentsDropAPairThatBecameTheOwner(t *testing.T) {
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	duplicateParticipant(t, st, "avery@example.com", "Avery Example")
+	duplicateParticipant(t, st, "avery.e@example.org", "Avery Example")
+	proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	require.Len(proposals, 1)
+	source, err := st.GetOrCreateSource("gmail", "avery.e@example.org")
+	require.NoError(err)
+	require.NoError(st.AddAccountIdentityContext(t.Context(), source.ID, "avery.e@example.org", "manual"))
+
+	result, err := st.RecordPersonDuplicateJudgmentsContext(t.Context(), []store.PersonDuplicateJudgment{{
+		Proposal: proposals[0], Probability: 0.9, Model: "jev-test", Propose: true,
+	}})
+	require.NoError(err)
+	assert.Equal(t, store.PersonDuplicateWriteResult{Dropped: 1}, result)
+}
+
 func TestPersonDuplicateProposalsAreDeterministic(t *testing.T) {
 	require := require.New(t)
 	st := testutil.NewTestStore(t)

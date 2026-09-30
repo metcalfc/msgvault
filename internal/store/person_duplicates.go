@@ -188,15 +188,7 @@ func (s *Store) personDuplicateProposalsTx(
 			cluster = &duplicateCluster{root: root, members: index.membersOf(id), names: map[string]string{}}
 			clusters[root] = cluster
 		}
-		address := strings.ToLower(strings.TrimSpace(email))
-		if !slices.Contains(cluster.addresses, address) {
-			cluster.addresses = append(cluster.addresses, address)
-		}
-		if key, display, ok := duplicateNameKey(name.String); ok {
-			if _, seen := cluster.names[key]; !seen {
-				cluster.names[key] = display
-			}
-		}
+		cluster.add(email, name.String)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, fmt.Errorf("close duplicate-person participants: %w", err)
@@ -563,19 +555,15 @@ func (s *Store) RecordPersonDuplicateJudgmentsContext(
 			if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
 				return err
 			}
-			// Every exclusion is rechecked under the identity lock: only a
-			// pair that is still proposed, with the same inputs, is written.
-			current, err := s.personDuplicateProposalsTx(ctx, tx)
-			if err != nil {
-				return err
-			}
-			live := make(map[[2]int64]string, len(current))
-			for _, proposal := range current {
-				live[[2]int64{proposal.Left.ParticipantID, proposal.Right.ParticipantID}] = proposal.Fingerprint
-			}
 			for _, judgment := range judgments {
-				pair := [2]int64{judgment.Proposal.Left.ParticipantID, judgment.Proposal.Right.ParticipantID}
-				if fingerprint, ok := live[pair]; !ok || fingerprint != judgment.Proposal.Fingerprint {
+				// Every exclusion is rechecked under the identity lock, for
+				// the judged pair's two clusters only: a pair that no longer
+				// qualifies, or whose inputs changed, is not written.
+				valid, err := s.revalidatePersonDuplicateTx(ctx, tx, judgment.Proposal)
+				if err != nil {
+					return err
+				}
+				if !valid {
 					result.Dropped++
 					continue
 				}

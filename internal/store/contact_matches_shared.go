@@ -31,6 +31,22 @@ var ErrContactMatchSharedMailbox = errors.New(
 func (s *Store) sharedMailboxSignalsTx(
 	ctx context.Context, tx *loggedTx, clusters map[int64][]int64,
 ) (map[int64]correspondentkind.SharedMailboxSignal, error) {
+	if len(clusters) == 0 {
+		return map[int64]correspondentkind.SharedMailboxSignal{}, nil
+	}
+	personOverride, err := s.userPersonOverridesTx(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	return s.sharedMailboxSignalsWithOverridesTx(ctx, tx, clusters, personOverride)
+}
+
+// sharedMailboxSignalsWithOverridesTx is sharedMailboxSignalsTx with the
+// user's "this is a person" members supplied by the caller, so a caller
+// that resolved the clusters' kinds itself reads nothing outside them.
+func (s *Store) sharedMailboxSignalsWithOverridesTx(
+	ctx context.Context, tx *loggedTx, clusters map[int64][]int64, personOverride map[int64]struct{},
+) (map[int64]correspondentkind.SharedMailboxSignal, error) {
 	result := map[int64]correspondentkind.SharedMailboxSignal{}
 	if len(clusters) == 0 {
 		return result, nil
@@ -41,11 +57,6 @@ func (s *Store) sharedMailboxSignalsTx(
 	}
 	slices.Sort(members)
 	members = slices.Compact(members)
-
-	personOverride, err := s.userPersonOverridesTx(ctx, tx)
-	if err != nil {
-		return nil, err
-	}
 
 	// Each participant's email addresses, lowercased; the primary one first.
 	emails := map[int64][]string{}

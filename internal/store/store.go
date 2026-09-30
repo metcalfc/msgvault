@@ -92,22 +92,25 @@ type Store struct {
 	// on another Store's work. As package-level variables
 	// they were also a data race between a test that installs one and any
 	// concurrent migration that reads it.
-	initSchemaWindowHook                   func()
-	beforeLargeIndexBuildHook              func()
-	attributeSeedReadHook                  func(slug string)
-	contentChangedBackfillBatchHook        func(fromID, toID int64) error
-	backfillFTSBatchErrHook                func(fromID, toID int64) error
-	attachmentRoleRepairPreparedHook       func()
-	listIDRepairBeforeApplyHook            func()
-	listIDRepairAfterScanHook              func(context.Context, *loggedTx, []listIDRepairUpdate) error
-	listIDRepairAfterFingerprintLockHook   func()
-	imapLabelRepairPerMessageHook          func(messageID int64)
-	cardDAVConflictResolveSnapshotHook     func()
-	cardDAVTombstonePrepareSnapshotHook    func()
-	cardDAVReviewPersonLockHook            func()
-	cardDAVCollisionIdentityLockHook       func()
-	cardDAVPublicationStateReadHook        func()
-	identityMatchAcceptBeforeDecisionHook  func()
+	initSchemaWindowHook                  func()
+	beforeLargeIndexBuildHook             func()
+	attributeSeedReadHook                 func(slug string)
+	contentChangedBackfillBatchHook       func(fromID, toID int64) error
+	backfillFTSBatchErrHook               func(fromID, toID int64) error
+	attachmentRoleRepairPreparedHook      func()
+	listIDRepairBeforeApplyHook           func()
+	listIDRepairAfterScanHook             func(context.Context, *loggedTx, []listIDRepairUpdate) error
+	listIDRepairAfterFingerprintLockHook  func()
+	imapLabelRepairPerMessageHook         func(messageID int64)
+	cardDAVConflictResolveSnapshotHook    func()
+	cardDAVTombstonePrepareSnapshotHook   func()
+	cardDAVReviewPersonLockHook           func()
+	cardDAVCollisionIdentityLockHook      func()
+	cardDAVPublicationStateReadHook       func()
+	identityMatchAcceptBeforeDecisionHook func()
+	// personDuplicateRevalidateHook receives the participants a
+	// duplicate-person revalidation loaded; tests only.
+	personDuplicateRevalidateHook          func(participantIDs []int64)
 	contactMatchBindAfterPromoteHook       func()
 	personEnrichmentReviewBeforeUpdateHook func(*loggedTx)
 	senderRepairMessageLockHook            func()

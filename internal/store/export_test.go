@@ -218,6 +218,13 @@ func (s *Store) SetIdentityMatchAcceptBeforeDecisionHookForTest(fn func()) func(
 	return func() { s.identityMatchAcceptBeforeDecisionHook = nil }
 }
 
+// SetPersonDuplicateRevalidateHookForTest observes which participants each
+// duplicate-person revalidation loads.
+func (s *Store) SetPersonDuplicateRevalidateHookForTest(fn func([]int64)) func() {
+	s.personDuplicateRevalidateHook = fn
+	return func() { s.personDuplicateRevalidateHook = nil }
+}
+
 // SetContactMatchBindAfterPromoteHookForTest runs inside a participant-to-
 // person bind after the cluster is promoted and before the merge.
 func (s *Store) SetContactMatchBindAfterPromoteHookForTest(fn func()) func() {
