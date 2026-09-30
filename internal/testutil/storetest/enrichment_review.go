@@ -137,8 +137,8 @@ func UncertainEnrichmentAttempt(t *testing.T, st *store.Store, email, name strin
 		IdentityAssessment: personenrichment.IdentityAssessment{
 			Reason: personenrichment.IdentityUncertainReason,
 			Judgment: &personenrichment.IdentityJudgment{
-				Outcome:    personenrichment.IdentityJudgmentUncertain,
-				ExactClass: personenrichment.IdentifierCurrentCompany,
+				Outcome:        personenrichment.IdentityJudgmentUncertain,
+				ExactClass:     personenrichment.IdentifierCurrentCompany,
 				NameCompatible: 0.70, CompanySame: 0.99, NameConflict: 0.10, Model: "jev-1.13.0",
 			},
 		},
