@@ -147,7 +147,10 @@ function requireCompletedCLIRun(stream: string): void {
 export function createExploreAPI(client: APIClient): ExploreAPI {
   return {
     async explore(predicate, signal) {
-      const { data, error, response } = await generatedExplore(predicate, {
+      // A person's own hybrid search asks for Jev reranking; the daemon
+      // applies it only when [jev.rerank] is enabled and consented.
+      const request = predicate.search_mode === 'hybrid' ? { ...predicate, rerank: true } : predicate;
+      const { data, error, response } = await generatedExplore(request, {
         ...client,
         signal,
       });

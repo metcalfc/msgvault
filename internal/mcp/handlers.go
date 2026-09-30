@@ -149,8 +149,11 @@ type handlers struct {
 	// a vector_not_enabled error. backend is additionally required by
 	// the find_similar_messages handler to load seed vectors and
 	// resolve the active generation.
-	hybridEngine   *hybrid.Engine
-	vectorCfg      vector.Config
+	hybridEngine *hybrid.Engine
+	vectorCfg    vector.Config
+	// rerankSearches lets hybrid searches ask for Jev reranking
+	// ([jev.rerank] mcp = true).
+	rerankSearches bool
 	backend        vector.Backend
 	visualSearcher VisualSearcher
 }
@@ -436,6 +439,9 @@ type HybridSearchRequest struct {
 	Offset         int
 	IncludeMatches bool
 	MinScore       float64
+	// Rerank asks the daemon for Jev reranking. MCP sets it only when
+	// [jev.rerank] mcp = true.
+	Rerank bool
 }
 
 type HybridSearchMatch struct {
@@ -1118,9 +1124,9 @@ func (h *handlers) searchMessageBodiesHybrid(
 		Limit:        fetchLimit,
 		SubjectTerms: subjectTerms,
 		Explain:      explain,
-		// An assistant searching on the person's behalf: the rerank stage
-		// may run when installed.
-		Rerank: mode == string(hybrid.ModeHybrid),
+		// An assistant may run unattended, so its searches are reranked
+		// only when [jev.rerank] mcp = true.
+		Rerank: h.rerankSearches && mode == string(hybrid.ModeHybrid),
 	}
 
 	hits, meta, err := h.hybridEngine.Search(ctx, req)
@@ -1245,6 +1251,7 @@ func (h *handlers) searchMessageBodiesHybridViaSearcher(
 		Offset:         offset,
 		IncludeMatches: true,
 		MinScore:       floatArg(args, toolArgMinScore, 0),
+		Rerank:         h.rerankSearches && mode == string(hybrid.ModeHybrid),
 	})
 	if err != nil {
 		return dependencyError("search daemon semantic index", err)

@@ -3,7 +3,10 @@ package rerank
 import (
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
+
+	"go.kenn.io/msgvault/internal/textimport"
 
 	"go.kenn.io/msgvault/internal/vector/embed"
 )
@@ -27,13 +30,48 @@ type Message struct {
 	BodyHTML    string
 }
 
+// unknownSender is the From line when neither a usable name nor an email
+// address exists.
+const unknownSender = "unknown sender"
+
 // Sender is the From line: the sender's display name, or the address when
-// there is no name. Phone numbers are never used.
+// there is no usable name, or "unknown sender". A display name that is a
+// phone number (importers often store the number as the name) is never
+// used, so phone numbers never leave the machine.
 func (m Message) Sender() string {
-	if name := strings.TrimSpace(m.FromName); name != "" {
+	if name := strings.TrimSpace(m.FromName); name != "" && !looksLikePhone(name) {
 		return name
 	}
-	return strings.TrimSpace(m.FromEmail)
+	if email := strings.TrimSpace(m.FromEmail); email != "" {
+		return email
+	}
+	return unknownSender
+}
+
+// looksLikePhone reports whether value parses as a phone number (with no
+// letters in it; the parser skips letters) or is mostly digits and phone
+// punctuation.
+func looksLikePhone(value string) bool {
+	digits, phonePunctuation, letters, other := 0, 0, 0, 0
+	for _, r := range value {
+		switch {
+		case unicode.IsDigit(r):
+			digits++
+		case strings.ContainsRune("+-(). /#*", r):
+			phonePunctuation++
+		case unicode.IsLetter(r):
+			letters++
+			other++
+		default:
+			other++
+		}
+	}
+	if letters == 0 {
+		if _, err := textimport.NormalizePhone(value); err == nil {
+			return true
+		}
+	}
+	return digits >= 3 && digits+phonePunctuation > 2*other
 }
 
 // Candidate renders one message as the text Jev judges: a Subject, From,

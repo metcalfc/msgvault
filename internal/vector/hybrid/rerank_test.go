@@ -6,7 +6,10 @@ import (
 	"context"
 	"errors"
 	"math"
+	"sync"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,10 +18,25 @@ import (
 )
 
 type recordingReranker struct {
-	top    int
-	scores map[int64]float64
-	err    error
-	calls  [][]int64
+	top     int
+	scores  map[int64]float64
+	err     error
+	timeout time.Duration
+	// release, when set, holds every judgment until it is closed.
+	release chan struct{}
+	// started is signalled when a judgment begins.
+	started chan struct{}
+
+	mu    sync.Mutex
+	calls [][]int64
+}
+
+func (r *recordingReranker) Timeout() time.Duration { return r.timeout }
+
+func (r *recordingReranker) callCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.calls)
 }
 
 type reasonError string
@@ -30,7 +48,15 @@ func (r *recordingReranker) Top() int         { return r.top }
 func (r *recordingReranker) Identity() string { return "batched\x00test-model" }
 
 func (r *recordingReranker) Rerank(_ context.Context, _ string, ids []int64) (RerankScores, error) {
+	r.mu.Lock()
 	r.calls = append(r.calls, append([]int64(nil), ids...))
+	r.mu.Unlock()
+	if r.started != nil {
+		r.started <- struct{}{}
+	}
+	if r.release != nil {
+		<-r.release
+	}
 	if r.err != nil {
 		return RerankScores{}, r.err
 	}
@@ -108,12 +134,12 @@ func TestEngineRerankPagesShareOneCachedOrder(t *testing.T) {
 	assert.Equal([]int64{3, 2, 1}, hitIDs(second), "the next page reads the same order")
 	require.NotNil(meta.Rerank)
 	assert.True(meta.Rerank.Cached)
-	assert.Len(reranker.calls, 1, "the cached order needs no second judgment")
+	assert.Equal(1, reranker.callCount(), "the cached order needs no second judgment")
 
 	_, meta, err = f.Engine.Search(t.Context(), SearchRequest{Mode: ModeHybrid, FreeText: "lunch", Limit: 4, Rerank: true})
 	require.NoError(err)
 	assert.False(meta.Rerank.Cached, "another query is judged afresh")
-	assert.Len(reranker.calls, 2)
+	assert.Equal(2, reranker.callCount())
 }
 
 func TestEngineRerankLeavesUnscoredHitsInPlace(t *testing.T) {
@@ -156,7 +182,7 @@ func TestEngineRerankFailureKeepsFusedOrder(t *testing.T) {
 			if tc.cached {
 				want = 1
 			}
-			assert.Len(reranker.calls, want, "transient failures are pinned for the next page; gate states are not")
+			assert.Equal(want, reranker.callCount(), "transient failures are pinned for the next page; gate states are not")
 		})
 	}
 }
@@ -179,4 +205,125 @@ func TestReorderByScoresBreaksTiesByRRFThenID(t *testing.T) {
 	}
 	reorderByScores(prefix, map[int64]float64{9: 0.5, 4: 0.5, 7: 0.5, 5: 0.5})
 	assert.Equal(t, []int64{4, 7, 9, 5}, hitIDs(prefix))
+}
+
+func fusedFixtureHits() []vector.FusedHit {
+	return []vector.FusedHit{
+		{MessageID: 1, RRFScore: 0.03}, {MessageID: 2, RRFScore: 0.02}, {MessageID: 3, RRFScore: 0.01},
+	}
+}
+
+func TestEngineRerankConcurrentMissesShareOneJudgment(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		engine := NewEngine(nil, nil, nil, Config{})
+		reranker := &recordingReranker{
+			top: 3, scores: map[int64]float64{1: 0.1, 2: 0.2, 3: 0.9}, timeout: time.Minute,
+			release: make(chan struct{}), started: make(chan struct{}, 2),
+		}
+		request := hybridRequest(5, true)
+		generation := vector.Generation{ID: 1}
+		results := make(chan []int64, 2)
+		search := func() {
+			hits := fusedFixtureHits()
+			info := engine.applyRerank(t.Context(), reranker, request, generation, hits)
+			assert.Equal(RerankApplied, info.Status)
+			results <- hitIDs(hits)
+		}
+		go search()
+		<-reranker.started // the slow judgment is in flight
+		go search()
+		synctest.Wait() // the second search is waiting on the same flight
+		close(reranker.release)
+		assert.Equal([]int64{3, 2, 1}, <-results)
+		assert.Equal([]int64{3, 2, 1}, <-results)
+		assert.Equal(1, reranker.callCount(), "concurrent misses for one key share one judgment")
+	})
+}
+
+func TestEngineRerankTimeoutKeepsFusedOrderAndNeverReplacesAnOrder(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		engine := NewEngine(nil, nil, nil, Config{})
+		reranker := &recordingReranker{
+			top: 3, scores: map[int64]float64{1: 0.1, 2: 0.2, 3: 0.9}, timeout: 2 * time.Second,
+			release: make(chan struct{}), started: make(chan struct{}, 1),
+		}
+		request := hybridRequest(5, true)
+		generation := vector.Generation{ID: 1}
+
+		hits := fusedFixtureHits()
+		started := time.Now()
+		info := engine.applyRerank(t.Context(), reranker, request, generation, hits)
+		assert.Equal(2*time.Second, time.Since(started), "the search waits exactly the bounded timeout")
+		assert.Equal("timeout", info.Reason)
+		assert.Equal([]int64{1, 2, 3}, hitIDs(hits), "a timed-out judgment keeps the fused order")
+
+		// The slow judgment then finishes with an order, which is cached.
+		<-reranker.started
+		close(reranker.release)
+		synctest.Wait()
+		key := rerankCacheKey(request, generation, reranker.Identity(), []int64{1, 2, 3})
+		cached, ok := engine.rerankCache.get(key)
+		assert.True(ok)
+		assert.Equal(RerankApplied, cached.Status)
+
+		engine.rerankCache.put(key, RerankInfo{Status: RerankSkipped, Reason: "timeout"})
+		hits = fusedFixtureHits()
+		info = engine.applyRerank(t.Context(), reranker, request, generation, hits)
+		assert.Equal(RerankApplied, info.Status, "a failure never replaces a cached order")
+		assert.True(info.Cached)
+		assert.Equal([]int64{3, 2, 1}, hitIDs(hits))
+		assert.Equal(1, reranker.callCount())
+	})
+}
+
+func TestEngineRerankCallerCancellationIsNotCached(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		engine := NewEngine(nil, nil, nil, Config{})
+		reranker := &recordingReranker{
+			top: 3, scores: map[int64]float64{1: 0.1, 2: 0.2, 3: 0.9}, timeout: time.Minute,
+			release: make(chan struct{}), started: make(chan struct{}, 1),
+		}
+		request := hybridRequest(5, true)
+		ctx, cancel := context.WithCancel(t.Context())
+		go func() {
+			<-reranker.started
+			cancel()
+		}()
+		hits := fusedFixtureHits()
+		info := engine.applyRerank(ctx, reranker, request, vector.Generation{ID: 1}, hits)
+		assert.Equal("timeout", info.Reason, "a caller that leaves keeps the fused order")
+		close(reranker.release)
+		synctest.Wait()
+		hits = fusedFixtureHits()
+		info = engine.applyRerank(t.Context(), reranker, request, vector.Generation{ID: 1}, hits)
+		assert.Equal(RerankApplied, info.Status, "the detached judgment still completed for the next search")
+		assert.Equal(1, reranker.callCount())
+	})
+}
+
+func TestRerankCacheKeyCoversEveryFilterDimension(t *testing.T) {
+	after := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	later := after.Add(24 * time.Hour)
+	generation := vector.Generation{ID: 7, Fingerprint: "fake:4"}
+	base := SearchRequest{Mode: ModeHybrid, FreeText: "budget"}
+	baseKey := rerankCacheKey(base, generation, "id", []int64{1, 2})
+	for name, filter := range map[string]vector.Filter{
+		"account scope": {SourceIDs: []int64{3}},
+		"after":         {After: &after},
+		"before":        {Before: &later},
+		"message types": {MessageTypes: []string{"email"}},
+		"labels":        {LabelGroups: [][]int64{{9}}},
+		"senders":       {SenderGroups: [][]int64{{4}}},
+		"list":          {ListID: "list.example.com"},
+	} {
+		request := base
+		request.Filter = filter
+		assert.NotEqual(t, baseKey, rerankCacheKey(request, generation, "id", []int64{1, 2}), name)
+	}
+	assert.NotEqual(t, baseKey, rerankCacheKey(base, vector.Generation{ID: 8, Fingerprint: "fake:4"}, "id", []int64{1, 2}), "generation")
+	assert.NotEqual(t, baseKey, rerankCacheKey(base, generation, "id", []int64{1, 3}), "a removed result changes the key")
+	assert.Equal(t, baseKey, rerankCacheKey(base, generation, "id", []int64{1, 2}))
 }

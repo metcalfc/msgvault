@@ -113,6 +113,7 @@ enabled = true
 shape = "per_candidate"
 top = 12
 message_types_excluded = ["whatsapp", "SMS"]
+mcp = true
 `), 0o644))
 	cfg, err = Load(configPath, "")
 	require.NoError(err)
@@ -120,6 +121,7 @@ message_types_excluded = ["whatsapp", "SMS"]
 	assert.Equal(jev.RerankShapePerCandidate, cfg.Jev.Rerank.Shape)
 	assert.Equal(12, cfg.Jev.Rerank.Top)
 	assert.True(cfg.Jev.Rerank.Excludes("sms"))
+	assert.True(cfg.Jev.Rerank.MCP)
 	assert.False(cfg.Jev.Rerank.Excludes("email"))
 	feature, _ = cfg.Jev.FeatureConfigFor(jev.FeatureSearchRerank)
 	assert.Equal(jev.FeatureConfig{Enabled: true}, feature, "reranking never allows automatic use")

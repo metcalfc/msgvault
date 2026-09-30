@@ -47,6 +47,22 @@ describe('ExploreAPI routing', () => {
     expect(paths).toEqual(['/api/v1/search/coverage', '/api/v1/explore/match-counts']);
   });
 
+  it('asks for Jev reranking only on hybrid searches', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      bodies.push(await request.json() as Record<string, unknown>);
+      return Response.json({ rows: [], cache_revision: 'cache-1', search_provenance: {} });
+    });
+    const api = createExploreAPI(createAPIClient(fetchFn));
+
+    await api.explore({ query: 'alpha', search_mode: 'hybrid', filters: [], presentation: 'table' });
+    await api.explore({ query: 'alpha', search_mode: 'semantic', filters: [], presentation: 'table' });
+    await api.explore({ query: 'alpha', search_mode: 'full_text', filters: [], presentation: 'table' });
+
+    expect(bodies.map((body) => body.rerank)).toEqual([true, undefined, undefined]);
+  });
+
   it('maps transient analytical cache preparation to initializing coverage', async () => {
     const fetchFn = vi.fn<typeof fetch>(async () => Response.json({
       error: 'analytical_cache_unavailable', message: 'The analytical cache is being prepared',

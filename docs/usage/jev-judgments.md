@@ -487,10 +487,14 @@ one that actually answers it. This feature asks Jev, for each of the leading
 results, whether the message contains the information the query asks for,
 and reorders those results by that probability.
 
-1. **Only your own hybrid searches.** Hybrid searches from the Web UI, the
-   API (`mode=hybrid`), `msgvault search --mode hybrid`, the MCP
-   `search_message_bodies` tool, and Explore's hybrid search mode ask for it.
-   Full-text (`--mode fts`) and vector searches never do, and no scheduled or
+1. **Only searches that ask for it.** Each request opts in: the Web UI's
+   hybrid search sets `rerank` on its Explore request, and
+   `msgvault search --mode hybrid` sets `rerank=true` on `GET /api/v1/search`.
+   An API client must pass the same parameter. MCP searches
+   (`search_message_bodies`, `semantic_search_messages`) ask only when
+   `[jev.rerank] mcp = true`, because an assistant may search while nobody is
+   watching; with it off, MCP never causes a Jev call. Full-text
+   (`--mode fts`) and vector searches never do, and no scheduled or
    background search ever does, so the feature has no `automatic` switch.
 2. **The leading results only.** Code takes the first `top` (at most 30)
    fused results, loads them in one batched primary-key lookup, and leaves
@@ -501,11 +505,18 @@ and reorders those results by that probability.
    back into the positions judged results held. Excluded results and
    everything after the first `top` keep their fused positions.
 4. **Pages agree.** The order is kept for ten minutes, keyed on the query,
-   the filters, the index generation, and the IDs of the leading results, so
-   the next page of the same search reuses it without a second request. A
-   provider failure is kept the same way, so later pages keep the fused order
-   too. Gate states (disabled, no consent, no key) are not kept, so a change
-   applies to the next search.
+   every search filter (accounts, dates, message types, labels, senders, and
+   the rest), the index generation, and the IDs of the leading results in
+   order. A message that is deleted or filtered out changes those IDs, so a
+   stale order is never reused. The next page of the same search reuses the
+   order without a second request, and concurrent identical searches share
+   one request. A provider failure is kept the same way, so later pages keep
+   the fused order too, but it never replaces an order already kept. Gate
+   states (disabled, no consent, no key) are not kept, so a change applies to
+   the next search.
+5. **Bounded wait.** A search waits at most `[jev] request_timeout` (default
+   10s) for the judgment and otherwise keeps the fused order; a judgment that
+   finishes later is kept for the next page.
 
 Any failure leaves the fused order and never fails the search. Hybrid
 responses carry `rerank` with `status` (`applied` or `skipped`), `reason` for

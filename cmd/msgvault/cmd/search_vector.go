@@ -44,6 +44,9 @@ func runHybridSearch(cmd *cobra.Command, queryStr, mode string, explain bool) er
 		MessageTypes: searchMessageTypes,
 		Mode:         mode,
 		Limit:        searchLimit,
+		// A person's own search: the daemon reranks it when [jev.rerank]
+		// is enabled.
+		Rerank: true,
 	})
 	if err != nil {
 		logger.Warn("vector search failed",

@@ -26,6 +26,9 @@ const (
 // leading results may be reranked.
 const RerankReasonTooFewCandidates = "too_few_candidates"
 
+// DefaultRerankTimeout bounds a judgment whose reranker names no timeout.
+const DefaultRerankTimeout = 10 * time.Second
+
 const (
 	rerankCacheTTL        = 10 * time.Minute
 	rerankCacheMaxEntries = 256
@@ -40,6 +43,9 @@ type Reranker interface {
 	// Identity names everything besides the candidates that changes scores
 	// (for example the request shape and model). It is part of the cache key.
 	Identity() string
+	// Timeout bounds one judgment; zero means DefaultRerankTimeout. A search
+	// never waits longer and keeps its fused order when it runs out.
+	Timeout() time.Duration
 	// Rerank scores some or all of messageIDs. A message it leaves out (for
 	// example an excluded message type) keeps its fused position. Scores
 	// must be finite probabilities.
@@ -112,6 +118,10 @@ func (c *rerankCache) put(key string, info RerankInfo) {
 			delete(c.entries, existing)
 		}
 	}
+	if current, ok := c.entries[key]; ok && current.info.Status == RerankApplied && info.Status != RerankApplied {
+		// A skip or failure never replaces an order already served.
+		return
+	}
 	if len(c.entries) >= rerankCacheMaxEntries {
 		oldestKey, oldest := "", now
 		for existing, entry := range c.entries {
@@ -167,30 +177,59 @@ func (e *Engine) applyRerank(
 		reorderByScores(hits[:top], info.Scores)
 		return &info
 	}
-	scores, err := reranker.Rerank(ctx, req.FreeText, ids)
+	timeout := reranker.Timeout()
+	if timeout <= 0 {
+		timeout = DefaultRerankTimeout
+	}
+	// Concurrent misses for one key share one judgment. The judgment runs
+	// detached from any one caller, bounded by the reranker's timeout, so a
+	// caller that leaves early neither cancels it for the others nor turns
+	// its own cancellation into a cached failure.
+	flight := e.rerankFlights.DoChan(key, func() (any, error) {
+		flightCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+		defer cancel()
+		return e.judgeRerank(flightCtx, reranker, req.FreeText, ids, key), nil
+	})
+	wait := time.NewTimer(timeout)
+	defer wait.Stop()
+	select {
+	case result := <-flight:
+		info, _ := result.Val.(RerankInfo)
+		if info.Status == RerankApplied {
+			reorderByScores(hits[:top], info.Scores)
+		}
+		return &info
+	case <-ctx.Done():
+		return &RerankInfo{Status: RerankSkipped, Reason: "timeout"}
+	case <-wait.C:
+		// The judgment may still finish and be cached for the next page;
+		// this search keeps the fused order.
+		return &RerankInfo{Status: RerankSkipped, Reason: "timeout"}
+	}
+}
+
+// judgeRerank asks the reranker once and caches the outcome: an order, or a
+// transient failure so the next page keeps the fused order. Gate states and
+// too-few-candidate skips are not cached.
+func (e *Engine) judgeRerank(ctx context.Context, reranker Reranker, query string, ids []int64, key string) RerankInfo {
+	scores, err := reranker.Rerank(ctx, query, ids)
 	if err == nil {
 		err = validateRerankScores(scores.Scores, ids)
 	}
 	if err != nil {
 		info := RerankInfo{Status: RerankSkipped, Reason: rerankReason(err)}
-		if cacheableRerankSkip(ctx, info.Reason) {
-			// A transient failure is remembered like an order so the next
-			// page of this query keeps the same (fused) order instead of
-			// mixing orders across pages.
+		if cacheableRerankSkip(info.Reason) {
 			e.rerankCache.put(key, info)
 		}
-		return &info
+		return info
 	}
 	info := RerankInfo{Model: scores.Model, Scores: scores.Scores, Scored: len(scores.Scores)}
 	if info.Scored < 2 {
-		info.Status, info.Reason = RerankSkipped, RerankReasonTooFewCandidates
-		info.Scores = nil
-		return &info
+		return RerankInfo{Status: RerankSkipped, Reason: RerankReasonTooFewCandidates, Model: scores.Model}
 	}
 	info.Status = RerankApplied
 	e.rerankCache.put(key, info)
-	reorderByScores(hits[:top], info.Scores)
-	return &info
+	return info
 }
 
 // reorderByScores sorts the scored hits of prefix among the positions they
@@ -279,12 +318,8 @@ func rerankReason(err error) string {
 
 // cacheableRerankSkip reports whether a skip is a transient provider
 // outcome worth pinning for the next page. Configuration and consent states
-// are not cached so a change takes effect on the next search, and a search
-// whose own context ended is never cached.
-func cacheableRerankSkip(ctx context.Context, reason string) bool {
-	if ctx.Err() != nil {
-		return false
-	}
+// are not cached so a change takes effect on the next search.
+func cacheableRerankSkip(reason string) bool {
 	switch reason {
 	case "disabled", "feature_disabled", "manual_only", "consent_required", "credential_missing",
 		"policy_unavailable", RerankReasonTooFewCandidates:

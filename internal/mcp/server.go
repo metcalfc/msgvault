@@ -101,6 +101,10 @@ type ServeOptions struct {
 	// time; a positive value clamps the per-request limit, and zero
 	// disables clamping.
 	VectorCfg vector.Config
+	// RerankSearches lets hybrid searches ask for Jev reranking. It is
+	// false unless [jev], [jev.rerank], and [jev.rerank] mcp are all on,
+	// because an assistant may search unattended.
+	RerankSearches bool
 	// Backend is optional. When nil, find_similar_messages rejects all
 	// calls with a vector_not_enabled error.
 	Backend        vector.Backend
@@ -239,6 +243,7 @@ func newMCPServerWithPolicy(
 		directoryBackend:    opts.DirectoryBackend,
 		hybridEngine:        opts.HybridEngine,
 		vectorCfg:           opts.VectorCfg,
+		rerankSearches:      opts.RerankSearches,
 		backend:             opts.Backend,
 		visualSearcher:      opts.VisualSearcher,
 		savedViews:          opts.SavedViews,

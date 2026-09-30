@@ -4177,6 +4177,7 @@ type ExploreHTTPRequest struct {
 	Limit               *int64                          `json:"limit,omitempty" validate:"omitempty,gte=0,lte=500"`
 	Presentation        *ExploreHTTPRequestPresentation `json:"presentation,omitempty"`
 	Query               *string                         `json:"query,omitzero"`
+	Rerank              *bool                           `json:"rerank,omitempty"`
 	SearchMode          *ExploreHTTPRequestSearchMode   `json:"search_mode,omitempty"`
 	Sort                []ExploreSort                   `json:"sort,omitempty"`
 }

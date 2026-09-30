@@ -375,6 +375,7 @@ var settingsCatalog = []settingDefinition{
 	stringSetting("jev.rerank.shape", settingsGroupJev, []string{jev.RerankShapeBatched, jev.RerankShapePerCandidate},
 		func(c *config.Config) string { return c.Jev.Rerank.Shape }),
 	intSetting("jev.rerank.top", settingsGroupJev, func(c *config.Config) int { return c.Jev.Rerank.Top }),
+	boolSetting("jev.rerank.mcp", settingsGroupJev, func(c *config.Config) bool { return c.Jev.Rerank.MCP }),
 	stringArraySetting("jev.rerank.message_types_excluded", settingsGroupJev, func(c *config.Config) []string { return c.Jev.Rerank.MessageTypesExcluded }),
 	boolSetting("integrations.kata.enabled", "integrations", func(c *config.Config) bool { return c.Integrations.Kata.Enabled }),
 	stringSetting("integrations.kata.endpoint", "integrations", nil, func(c *config.Config) string { return c.Integrations.Kata.Endpoint }),

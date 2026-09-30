@@ -4722,6 +4722,8 @@ components:
           type: string
         query:
           type: string
+        rerank:
+          type: boolean
         search_mode:
           enum:
             - full_text
@@ -27192,6 +27194,11 @@ paths:
         - description: Include scored semantic chunk excerpts for vector or hybrid results
           in: query
           name: include_matches
+          schema:
+            type: boolean
+        - description: Ask Jev to rerank the leading hybrid results when [jev.rerank] is enabled; ignored for other modes. Default false.
+          in: query
+          name: rerank
           schema:
             type: boolean
         - description: Minimum chunk score for included excerpts; does not filter ranked messages

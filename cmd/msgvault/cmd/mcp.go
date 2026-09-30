@@ -129,6 +129,7 @@ func daemonMCPServeOptions(ctx context.Context, st *daemonclient.Client, state *
 	if cfg != nil {
 		opts.AttachmentsDir = cfg.AttachmentsDir()
 		opts.DataDir = cfg.Data.DataDir
+		opts.RerankSearches = cfg.Jev.Enabled && cfg.Jev.Rerank.Enabled && cfg.Jev.Rerank.MCP
 	}
 	health, capabilityErr := st.Health(ctx)
 	var schemaVersion string
@@ -227,6 +228,7 @@ func (s daemonMCPHybridSearcher) SearchHybrid(
 		Offset:         req.Offset,
 		IncludeMatches: req.IncludeMatches,
 		MinScore:       req.MinScore,
+		Rerank:         req.Rerank,
 	})
 	if err != nil {
 		return nil, err

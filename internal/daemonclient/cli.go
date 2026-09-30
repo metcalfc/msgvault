@@ -196,6 +196,8 @@ type CLIHybridSearchRequest struct {
 	Offset         int
 	IncludeMatches bool
 	MinScore       float64
+	// Rerank asks the daemon for Jev reranking of a hybrid search.
+	Rerank bool
 }
 
 type CLIHybridSearch struct {
@@ -997,6 +999,7 @@ func (c *Client) GetCLIHybridSearch(
 				Offset:          optionalPositiveInt64(req.Offset),
 				IncludeMatches:  optionalBool(req.IncludeMatches),
 				MinScore:        optionalFloat32(req.MinScore),
+				Rerank:          optionalBool(req.Rerank),
 				Sender:          optionalString(req.Filter.Sender),
 				Recipient:       optionalString(req.Filter.Recipient),
 				Domain:          optionalString(req.Filter.Domain),

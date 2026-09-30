@@ -523,18 +523,23 @@ func TestRunEvalJevHarnessThroughFakeProvider(t *testing.T) {
 		{MessageID: 2, Vector: []float32{0, 1, 0}, SourceCharLen: 32},
 	}))
 
-	var bodies []map[string]any
+	type fakeRequest struct {
+		State struct {
+			Candidates []string `json:"candidates"`
+		} `json:"state"`
+	}
+	var bodies []fakeRequest
 	factory := func(shape, key string, budget *rerank.Budget) (evalReranker, error) {
 		return rerank.NewJev(shape, key, budget, testTransport(func(request *http.Request) (*http.Response, error) {
 			raw, readErr := io.ReadAll(request.Body)
 			require.NoError(t, readErr)
-			var body map[string]any
+			var body fakeRequest
 			require.NoError(t, json.Unmarshal(raw, &body))
 			bodies = append(bodies, body)
 			answers := map[string]any{}
-			for i, candidate := range body["state"].(map[string]any)["candidates"].([]any) {
+			for i, candidate := range body.State.Candidates {
 				score := 0.1
-				if strings.Contains(candidate.(string), "Weekly digest") {
+				if strings.Contains(candidate, "Weekly digest") {
 					score = 0.9
 				}
 				answers[fmt.Sprintf("candidate_%d", i)] = map[string]any{"type": "noul", "noul": score}
@@ -551,7 +556,7 @@ func TestRunEvalJevHarnessThroughFakeProvider(t *testing.T) {
 	require.NoError(t, runEvalWithRerankerFactory(cmd, nil, factory))
 
 	require.Len(t, bodies, 1)
-	candidates := bodies[0]["state"].(map[string]any)["candidates"].([]any)
+	candidates := bodies[0].State.Candidates
 	require.Len(t, candidates, 2)
 	for _, candidate := range candidates {
 		assert.Regexp(t, `^Subject: .+\nFrom: .*\nDate: \d{4}-\d{2}-\d{2}\n\n`, candidate)

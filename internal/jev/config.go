@@ -96,6 +96,9 @@ type RerankConfig struct {
 	// MessageTypesExcluded lists message types (for example "whatsapp")
 	// whose text is never sent; such results keep their fused position.
 	MessageTypesExcluded []string `toml:"message_types_excluded"`
+	// MCP lets MCP clients' hybrid searches ask for reranking. It is off by
+	// default because an assistant may search unattended.
+	MCP bool `toml:"mcp"`
 }
 
 // FeatureConfig gates one Jev-backed feature. Automatic additionally allows

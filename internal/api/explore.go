@@ -104,6 +104,10 @@ type ExploreHTTPRequest struct {
 	Cursor              string                  `json:"cursor,omitempty"`
 	Limit               int                     `json:"limit,omitzero" minimum:"0" maximum:"500"`
 	CandidateSnapshotID string                  `json:"candidate_snapshot_id,omitempty"`
+	// Rerank asks for Jev reranking of a hybrid search's leading
+	// candidates when [jev.rerank] is enabled. It is opt-in per request
+	// (the Web UI sets it) and not part of the snapshot identity.
+	Rerank bool `json:"rerank,omitzero"`
 }
 
 type ExploreHTTPResponse struct {
@@ -1636,7 +1640,7 @@ func (s *Server) resolveExploreVectorSearch(ctx context.Context, w http.Response
 		// The rerank stage, when installed, reorders the leading hits
 		// before they become the snapshot, so every page of this search
 		// reads one order.
-		Rerank: mode == hybrid.ModeHybrid,
+		Rerank: request.Rerank && mode == hybrid.ModeHybrid,
 	})
 	if err != nil {
 		s.writeExploreVectorError(w, err)

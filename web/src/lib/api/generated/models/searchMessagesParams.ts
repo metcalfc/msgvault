@@ -32,6 +32,10 @@ export type SearchMessagesParams = {
    */
   include_matches?: boolean;
   /**
+   * Ask Jev to rerank the leading hybrid results when [jev.rerank] is enabled; ignored for other modes. Default false.
+   */
+  rerank?: boolean;
+  /**
    * Minimum chunk score for included excerpts; does not filter ranked messages
    */
   min_score?: number;

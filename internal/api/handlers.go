@@ -926,6 +926,11 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			s.rejectBadParam(w, err)
 			return
 		}
+		rerank, _, err := queryBool(r, "rerank")
+		if err != nil {
+			s.rejectBadParam(w, err)
+			return
+		}
 		pageSize, ok, err := queryInt(r, "page_size")
 		if err != nil {
 			s.rejectBadParam(w, err)
@@ -947,7 +952,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		}
 		s.handleHybridSearch(
 			w, r, searchText, parsedQuery, structuredFilter,
-			mode, explain, offset, pageSize, includeMatches, minScore, scope,
+			mode, explain, rerank, offset, pageSize, includeMatches, minScore, scope,
 		)
 		return
 	}
@@ -1075,7 +1080,7 @@ func firstPresentQueryParam(r *http.Request, names []string) (string, bool) {
 func (s *Server) handleHybridSearch(
 	w http.ResponseWriter, r *http.Request,
 	q string, parsed *search.Query, structuredFilter query.MessageFilter,
-	mode string, explain bool,
+	mode string, explain, rerank bool,
 	offset, pageSize int, includeMatches bool, minScore float64,
 	scope cliScope,
 ) {
@@ -1125,8 +1130,10 @@ func (s *Server) handleHybridSearch(
 		Limit:        fetchLimit,
 		SubjectTerms: subjectTerms,
 		Explain:      explain,
-		// A person's own search: the rerank stage may run when installed.
-		Rerank: mode == string(hybrid.ModeHybrid),
+		// Reranking is opt-in per request: the CLI asks for it, and MCP
+		// asks only when [jev.rerank] mcp = true. It still runs only when
+		// the daemon installed a reranker.
+		Rerank: rerank && mode == string(hybrid.ModeHybrid),
 	}
 
 	hits, meta, err := hybridEngine.Search(ctx, req)

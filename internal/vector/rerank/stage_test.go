@@ -256,7 +256,7 @@ func TestCandidateIsBoundedAndCleaned(t *testing.T) {
 	assert.NotContains(text, "casey@example.com", "a named sender is sent by name only")
 	assert.NotContains(text, "<p>")
 
-	assert.Equal("Subject: \nFrom: \nDate: \n\n", rerank.Candidate(rerank.Message{}, embed.PreprocessConfig{}))
+	assert.Equal("Subject: \nFrom: unknown sender\nDate: \n\n", rerank.Candidate(rerank.Message{}, embed.PreprocessConfig{}))
 	assert.Equal("abc", rerank.TruncateUTF8Bytes("abc", 2048))
 	assert.Equal("a", rerank.TruncateUTF8Bytes("a界", 3), "a cut never splits a rune")
 }
@@ -271,4 +271,24 @@ func TestFeatureDisclosesBodyText(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(spec.BodyNotice, policy.BodyNotice)
 	assert.Len(policy.Questions, rerank.MaxCandidates+1)
+}
+
+func TestSenderNeverSendsAPhoneNumberAsAName(t *testing.T) {
+	for _, tc := range []struct {
+		name, email, want string
+	}{
+		{name: "+15550000002", email: "casey@example.com", want: "casey@example.com"},
+		{name: "+15550000002", want: "unknown sender"},
+		{name: "(555) 000-0002", email: "robin@example.org", want: "robin@example.org"},
+		{name: "555 0002 #12", want: "unknown sender"},
+		{name: "Casey Example", email: "casey@example.com", want: "Casey Example"},
+		{name: "Team 42", want: "Team 42"},
+		{want: "unknown sender"},
+	} {
+		message := rerank.Message{FromName: tc.name, FromEmail: tc.email}
+		assert.Equal(t, tc.want, message.Sender(), "name %q email %q", tc.name, tc.email)
+	}
+	text := rerank.Candidate(rerank.Message{Subject: "Hi", FromName: "+15550000002"}, embed.PreprocessConfig{})
+	assert.Equal(t, "Subject: Hi\nFrom: unknown sender\nDate: \n\n", text)
+	assert.NotContains(t, text, "5550000002")
 }

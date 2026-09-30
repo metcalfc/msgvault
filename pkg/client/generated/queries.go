@@ -1078,6 +1078,9 @@ type SearchMessagesQuery struct {
 	// IncludeMatches Include scored semantic chunk excerpts for vector or hybrid results
 	IncludeMatches *bool `json:"include_matches,omitempty"`
 
+	// Rerank Ask Jev to rerank the leading hybrid results when [jev.rerank] is enabled; ignored for other modes. Default false.
+	Rerank *bool `json:"rerank,omitempty"`
+
 	// MinScore Minimum chunk score for included excerpts; does not filter ranked messages
 	MinScore *float32 `json:"min_score,omitempty"`
 

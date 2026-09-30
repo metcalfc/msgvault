@@ -1373,7 +1373,8 @@ text, and it is not recommended until the evaluation gate passes. See
 
 | Key | Default | Description |
 |---|---|---|
-| `enabled` | `false` | Let your own hybrid searches (Web UI, API, CLI, MCP, Explore) ask Jev to reorder their leading results. Full-text and vector searches, and automatic searches, never use it. There is no `automatic` key. |
+| `enabled` | `false` | Let hybrid searches that opt in (the Web UI, `msgvault search`, and API requests with `rerank=true`) ask Jev to reorder their leading results. Full-text and vector searches, and automatic searches, never use it. There is no `automatic` key. |
+| `mcp` | `false` | Also let MCP clients' hybrid searches ask for reranking. Off by default because an assistant may search unattended; with it off, MCP never causes a Jev call. |
 | `shape` | `batched` | `batched` asks about every reranked result in one request; `per_candidate` sends one request per result. |
 | `top` | `30` | How many leading hybrid results are reranked, 2 to 30. |
 | `message_types_excluded` | `[]` | Message types (for example `whatsapp`) whose text is never sent. Such results keep their fused position. |

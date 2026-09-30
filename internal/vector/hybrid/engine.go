@@ -11,6 +11,8 @@ import (
 	"time"
 	"unicode"
 
+	"golang.org/x/sync/singleflight"
+
 	"go.kenn.io/msgvault/internal/query"
 	"go.kenn.io/msgvault/internal/search"
 	"go.kenn.io/msgvault/internal/vector"
@@ -112,9 +114,10 @@ type Engine struct {
 	client  EmbeddingClient
 	cfg     Config
 
-	rerankMu    sync.Mutex
-	reranker    Reranker
-	rerankCache rerankCache
+	rerankMu      sync.Mutex
+	reranker      Reranker
+	rerankCache   rerankCache
+	rerankFlights singleflight.Group
 }
 
 // NewEngine wires a backend, main DB handle, embedding client, and

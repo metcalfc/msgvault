@@ -19,6 +19,7 @@ export interface ExploreHTTPRequest {
   limit?: number;
   presentation?: ExploreHTTPRequestPresentation;
   query?: string;
+  rerank?: boolean;
   search_mode?: ExploreHTTPRequestSearchMode;
   sort?: ExploreSort[];
 }

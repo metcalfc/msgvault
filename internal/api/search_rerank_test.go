@@ -19,6 +19,7 @@ import (
 // fusingFakeBackend answers hybrid searches with a fixed fused ranking.
 type fusingFakeBackend struct {
 	*fakeVectorBackend
+
 	fused  []vector.FusedHit
 	limits []int
 }
@@ -39,6 +40,9 @@ type fixedReranker struct {
 
 func (r *fixedReranker) Top() int         { return 30 }
 func (r *fixedReranker) Identity() string { return "test" }
+func (r *fixedReranker) Timeout() time.Duration {
+	return time.Minute
+}
 func (r *fixedReranker) Rerank(_ context.Context, _ string, ids []int64) (hybrid.RerankScores, error) {
 	r.calls++
 	scores := make(map[int64]float64)
@@ -123,7 +127,7 @@ func TestHybridSearchReportsRerankAndExplainScore(t *testing.T) {
 	reranker := &fixedReranker{scores: map[int64]float64{1: 0.2, 2: 0.1, 3: 0.95}}
 	srv, backend := newRerankSearchServer(t, reranker)
 
-	resp := getRerankSearch(t, srv, "q=signed+budget&mode=hybrid&explain=1&page_size=2")
+	resp := getRerankSearch(t, srv, "q=signed+budget&mode=hybrid&rerank=true&explain=1&page_size=2")
 	assert.Equal([]int64{3, 1}, resultIDs(resp))
 	assert.True(resp.HasMore)
 	require.NotNil(resp.Rerank)
@@ -135,22 +139,33 @@ func TestHybridSearchReportsRerankAndExplainScore(t *testing.T) {
 	assert.InDelta(0.95, *resp.Results[0].Score.Rerank, 1e-12)
 	assert.Equal(30, backend.limits[0], "a reranked search retrieves the leading 30 results")
 
-	second := getRerankSearch(t, srv, "q=signed+budget&mode=hybrid&offset=2&page_size=2")
+	second := getRerankSearch(t, srv, "q=signed+budget&mode=hybrid&rerank=true&offset=2&page_size=2")
 	assert.Equal([]int64{2}, resultIDs(second), "page two continues the reranked order")
 	assert.True(second.Rerank.Cached)
 	assert.Equal(1, reranker.calls)
 	assert.Nil(second.Results[0].Score, "no explain, no score")
 
-	vectorResp := getRerankSearch(t, srv, "q=signed+budget&mode=vector")
+	vectorResp := getRerankSearch(t, srv, "q=signed+budget&mode=vector&rerank=true")
 	assert.Nil(vectorResp.Rerank, "vector searches are never reranked")
 }
 
 func TestHybridSearchWithoutRerankerOmitsRerank(t *testing.T) {
 	srv, backend := newRerankSearchServer(t, nil)
 	assert := assert.New(t)
-	resp := getRerankSearch(t, srv, "q=signed+budget&mode=hybrid&explain=1&page_size=2")
+	resp := getRerankSearch(t, srv, "q=signed+budget&mode=hybrid&rerank=true&explain=1&page_size=2")
 	assert.Equal([]int64{1, 2}, resultIDs(resp))
 	assert.Nil(resp.Rerank)
 	assert.Nil(resp.Results[0].Score.Rerank)
 	assert.Equal(3, backend.limits[0], "the fetch limit is unchanged when reranking is off")
+}
+
+func TestHybridSearchRerankIsOptInPerRequest(t *testing.T) {
+	assert := assert.New(t)
+	reranker := &fixedReranker{scores: map[int64]float64{1: 0.2, 2: 0.1, 3: 0.95}}
+	srv, backend := newRerankSearchServer(t, reranker)
+	resp := getRerankSearch(t, srv, "q=signed+budget&mode=hybrid&page_size=2")
+	assert.Equal([]int64{1, 2}, resultIDs(resp), "without rerank=true the fused order stands")
+	assert.Nil(resp.Rerank)
+	assert.Zero(reranker.calls)
+	assert.Equal(3, backend.limits[0])
 }

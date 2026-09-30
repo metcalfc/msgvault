@@ -383,10 +383,12 @@ import (
 // possibly_worth_keeping and possibly_worth_keeping_count: staged messages
 // whose stored cleanup suggestion scored personal plus work at least 0.50.
 // Settings gain jev.cleanup_suggestions.enabled. Additive (minor bump).
-// 2.41.0 adds optional Jev reranking of hybrid search: hybrid responses gain
-// rerank {status, reason, model, scored, cached} and timings.rerank_ms, and
-// explain score breakdowns gain rerank. Settings gain jev.rerank.enabled,
-// shape, top, and message_types_excluded. Additive (minor bump).
+// 2.41.0 adds optional Jev reranking of hybrid search, opted into per
+// request by GET /search's rerank parameter and the Explore request's rerank
+// field: hybrid responses gain rerank {status, reason, model, scored, cached}
+// and timings.rerank_ms, and explain score breakdowns gain rerank. Settings
+// gain jev.rerank.enabled, shape, top, mcp, and message_types_excluded.
+// Additive (minor bump).
 const APISchemaVersion = "2.41.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration

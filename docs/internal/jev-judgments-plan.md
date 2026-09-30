@@ -345,8 +345,9 @@ consumers `internal/api/handlers.go`, `internal/mcp/handlers.go`,
   ≤ 2 KiB, existing Noul wording. Sort by noul, tie-break RRF, tail
   unchanged. Response carries `rerank {status, model, scored}`; explain
   output carries the score.
-  > `hybrid.Reranker` runs only for `ModeHybrid` requests that set
-  > `Rerank` (API, MCP, CLI through the API, Explore). The candidate is one
+  > `hybrid.Reranker` runs only for `ModeHybrid` requests that opt in:
+  > `GET /search?rerank=true` (the CLI sets it), Explore's `rerank` field
+  > (the Web UI sets it), and MCP only with `[jev.rerank] mcp = true`. The candidate is one
   > text (`Subject:`, `From:`, `Date:`, cleaned body) within the existing
   > 2 KiB candidate bound, so the wire shape matches the recorded captures.
   > Results whose type is excluded keep their slots; judged results fill
@@ -358,7 +359,10 @@ consumers `internal/api/handlers.go`, `internal/mcp/handlers.go`,
   per-candidate `GetMessageContext` loop.
   > A reranked search fetches at least `top` fused results so every page
   > offers the same prefix. The cache is in memory (256 entries, ten
-  > minutes) and also pins transient provider failures, not gate states.
+  > minutes) and also pins transient provider failures, not gate states;
+  > a failure never replaces a cached order. Concurrent misses share one
+  > judgment (singleflight), detached from the caller and bounded by the
+  > request timeout.
   > `Store.GetMessagesWithBodiesByIDsContext` loads bodies with one
   > `message_id IN (...)` lookup, for search and `msgvault eval` alike.
 - [x] **Task 4.3 Config and gate.** `[jev.rerank]` `enabled`, `shape`

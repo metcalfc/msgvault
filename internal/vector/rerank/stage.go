@@ -73,6 +73,9 @@ func NewStage(options StageOptions) (*Stage, error) {
 	return &Stage{options: options}, nil
 }
 
+// Timeout implements hybrid.Reranker.
+func (s *Stage) Timeout() time.Duration { return s.options.Timeout }
+
 // Top implements hybrid.Reranker.
 func (s *Stage) Top() int { return s.options.Top }
 

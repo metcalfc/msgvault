@@ -181,6 +181,7 @@ var settingsMetadata = map[string]settingMetadata{
 	"jev.rerank.enabled":                    {"Hybrid search reranking", "Ask Jev to reorder the leading results of your hybrid searches. Sends the query and each result's subject, sender, date, and up to 2 KiB of body text. Not recommended until the evaluation gate passes.", sectionJevFeatures},
 	"jev.rerank.shape":                      {"Rerank request shape", "batched asks about every result in one request; per_candidate sends one request per result.", sectionJevFeatures},
 	"jev.rerank.top":                        {"Reranked results", "How many leading hybrid results are reranked, 2 to 30.", sectionJevFeatures},
+	"jev.rerank.mcp":                        {"Rerank assistant searches", "Also rerank hybrid searches from MCP clients. Off by default because an assistant may search without you watching.", sectionJevFeatures},
 	"jev.rerank.message_types_excluded":     {"Never rerank these message types", "Message types whose text is never sent. Such results keep their position.", sectionJevFeatures},
 	"jev.cleanup_suggestions.enabled":       {"Cleanup suggestions", "Ask Jev whether spam and promotional mail impersonates a sender, pressures you, or is personal or work mail, for msgvault suggest-cleanup and deletion review. It never stages or deletes anything.", sectionJevFeatures},
 	"vector.people.enabled":                 {"Embed person fields", "Send the consented fields of each person to the text embedding provider. Semantic search must be on.", "people"},

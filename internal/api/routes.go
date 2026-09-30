@@ -945,6 +945,7 @@ func rawRouteParameters(operationID string) []*huma.Param {
 			queryIntegerParam("offset", "Zero-based ranking offset for vector or hybrid search (default 0)"),
 			queryBooleanParam("explain", "Include score explanation when mode is vector or hybrid"),
 			queryBooleanParam("include_matches", "Include scored semantic chunk excerpts for vector or hybrid results"),
+			queryBooleanParam("rerank", "Ask Jev to rerank the leading hybrid results when [jev.rerank] is enabled; ignored for other modes. Default false."),
 			queryNumberParam("min_score", "Minimum chunk score for included excerpts; does not filter ranked messages"),
 			queryStringParam("message_type", "Message type filter; repeat or comma-separate for multiple values", false),
 		}, scopeParams(), semanticMessageFilterParams())
