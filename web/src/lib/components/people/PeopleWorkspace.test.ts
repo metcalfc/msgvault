@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
+import { withEntityLabels } from '../../../test/entity-labels';
 import { DirectoryController } from '../../directory/controller.svelte';
 import { PeopleHub, type PeopleFilters } from '../../people/hub.svelte';
 import PeopleWorkspace from './PeopleWorkspace.svelte';
@@ -63,6 +64,8 @@ describe('PeopleWorkspace', () => {
       { canonical_id: 12, member_ids: [12], kind: 'shared_mailbox', source: 'user', addresses: ['desk@example.test'],
         display_name: 'Example Desk', classified_at: '2026-09-01T00:00:00Z',
         person: { id: 7, revision: 2, only_this_cluster: false } },
+      { canonical_id: 13, member_ids: [13], kind: 'ignored', source: 'user', addresses: [],
+        classified_at: '2026-08-31T00:00:00Z' },
     ];
     const cleared: string[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
@@ -78,7 +81,7 @@ describe('PeopleWorkspace', () => {
       }
       return Response.json({}, { status: 404 });
     });
-    const client = createAPIClient(fetchFn);
+    const client = createAPIClient(withEntityLabels(fetchFn, { participant: { 13: 'unnamed@example.test' } }));
     const directory = new DirectoryController(client);
     const hub = new PeopleHub(client, directory);
     const filters: PeopleFilters = { query: '', saved: 'not_people', hasName: false, category: '', organization: '' };
@@ -94,6 +97,10 @@ describe('PeopleWorkspace', () => {
     const shared = within(list).getByRole('list', { name: 'Shared mailbox' });
     // A record with a saved profile opens the person page.
     expect(within(shared).getByRole('link', { name: /Example Desk/ }).getAttribute('href')).toBe('/people/7');
+    // A record with neither a name nor an address is named by the label lookup, never its ID.
+    const ignored = within(list).getByRole('list', { name: 'Ignored' });
+    expect(await within(ignored).findByRole('link', { name: /unnamed@example\.test/ })).toBeDefined();
+    expect(ignored.textContent).not.toContain('13');
 
     await fireEvent.click(within(organizations).getByRole('button', { name: 'Example Shop is a person' }));
     await waitFor(() => expect(within(list).queryByRole('list', { name: 'Organization' })).toBeNull());

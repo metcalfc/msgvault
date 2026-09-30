@@ -8,6 +8,7 @@ import {
   setCorrespondentKind
 } from '../api/generated/api/api';
 import type { APIClient } from '../api/client';
+import { invalidatePeopleNames } from '../names/entity-names.svelte';
 import type {
   CorrespondentKindAssignment,
   CorrespondentKindRecord,
@@ -90,7 +91,11 @@ export async function setKind(
       { kind, ...(kind === 'organization' && name ? { organization_name: name } : {}) },
       { ...client, ...(signal ? { signal } : {}) }
     );
-    return data ? { ok: true, result: data } : failure(error, response.status);
+    if (!data) return failure(error, response.status);
+    // A participant's label leads with its bound person's name only while
+    // it is a person, so every cached person and participant name is stale.
+    invalidatePeopleNames(client);
+    return { ok: true, result: data };
   } catch (cause) {
     return failure(cause, 0);
   }
@@ -100,7 +105,9 @@ export async function setKind(
 export async function clearKind(client: APIClient, participantID: number): Promise<KindResult> {
   try {
     const { data, error, response } = await clearCorrespondentKind({ id: participantID }, client);
-    return data ? { ok: true, result: data } : failure(error, response.status);
+    if (!data) return failure(error, response.status);
+    invalidatePeopleNames(client);
+    return { ok: true, result: data };
   } catch (cause) {
     return failure(cause, 0);
   }
@@ -126,7 +133,10 @@ export async function deleteSavedProfile(client: APIClient, personID: number): P
     const etag = read.response.headers.get('ETag');
     if (!read.data || !etag) return { ok: false, message: failure(read.error, read.response.status).message };
     const removed = await deletePerson({ id: personID }, { ...client, headers: { 'If-Match': etag } });
-    if (removed.response.status === 204) return { ok: true };
+    if (removed.response.status === 204) {
+      invalidatePeopleNames(client);
+      return { ok: true };
+    }
     return { ok: false, message: failure(removed.error, removed.response.status).message };
   } catch (cause) {
     return { ok: false, message: failure(cause, 0).message };

@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
 import type { SetCorrespondentKindResult } from '../../api/generated/models';
+import { entityNames } from '../../names/entity-names.svelte';
+import { entityLabelsResponse } from '../../../test/entity-labels';
 import NotAPersonDialog from './NotAPersonDialog.svelte';
 
 function result(kind: string, person?: SetCorrespondentKindResult['record']['person']): SetCorrespondentKindResult {
@@ -31,15 +33,18 @@ function setup(responses: { kind?: string; person?: SetCorrespondentKindResult['
       return Response.json({ id: 9, revision: 3, participant_ids: [41] }, { headers: { ETag: '"person-9-r3"' } });
     }
     if (request.method === 'DELETE' && path === '/api/v1/people/9') return new Response(null, { status: 204 });
+    const labels = entityLabelsResponse(request, { participant: { 41: 'Example Shop' }, person: { 9: 'Example Shop' } });
+    if (labels) return labels;
     throw new Error(`unexpected ${request.method} ${path}`);
   });
   const onDone = vi.fn();
   const onClose = vi.fn();
+  const client = createAPIClient(fetchFn);
   render(NotAPersonDialog, {
-    client: createAPIClient(fetchFn), participantIDs: [41], label: 'Example Shop',
+    client, participantIDs: [41], label: 'Example Shop',
     suggestedOrganization: 'Example Shop', onDone, onClose
   });
-  return { requests, onDone, onClose };
+  return { requests, onDone, onClose, client };
 }
 
 describe('NotAPersonDialog', () => {
@@ -90,5 +95,20 @@ describe('NotAPersonDialog', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'Keep profile' }));
     expect(onDone).toHaveBeenCalledOnce();
     expect(requests.some((request) => request.method === 'DELETE')).toBe(false);
+  });
+
+  it('asks for a participant\'s name again after marking it, since it no longer takes its person\'s name', async () => {
+    const { requests, onDone, client } = setup();
+    const names = entityNames(client);
+    await names.load('participant', [41]);
+    const lookups = () => requests.filter((request) => request.path === '/api/v1/entity-labels').length;
+    expect(lookups()).toBe(1);
+
+    await fireEvent.click(screen.getByRole('radio', { name: /Shared mailbox/ }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Mark as shared mailbox' }));
+    await waitFor(() => expect(onDone).toHaveBeenCalledOnce());
+
+    names.label('participant', 41);
+    await waitFor(() => expect(lookups()).toBe(2));
   });
 });

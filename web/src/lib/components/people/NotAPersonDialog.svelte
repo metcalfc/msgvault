@@ -11,6 +11,7 @@
     setKind,
     type NotAPersonKind
   } from '../../people/correspondent-kind';
+  import { entityNames } from '../../names/entity-names.svelte';
 
   interface Props {
     client: APIClient;
@@ -41,7 +42,8 @@
   let profile = $state<CorrespondentKindPerson>();
 
   const groupName = `not-a-person-${Math.random().toString(36).slice(2)}`;
-  const profileName = $derived(profile?.display_name?.trim() || `Person ${profile?.id ?? ''}`);
+  const names = $derived(entityNames(client));
+  const profileName = $derived(profile ? names.name('person', profile.id, profile.display_name) : '');
 
   async function submit(): Promise<void> {
     if (!kind || pending) return;

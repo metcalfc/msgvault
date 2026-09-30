@@ -329,7 +329,8 @@ export class PeopleHub {
   readonly notPeople: NotPeopleRecords;
   filters = $state<PeopleFilters>({ query: '', saved: '', hasName: false, category: '', organization: '' });
   private readonly directory: DirectoryController;
-  private readonly names: EntityNames;
+  /** Names people and contacts the list only knows by ID. */
+  readonly names: EntityNames;
   private observedKey: string | undefined;
 
   constructor(client: APIClient, directory: DirectoryController) {

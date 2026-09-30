@@ -63,7 +63,7 @@
   let restoreMessage = $state<{ tone: 'success' | 'error'; text: string }>();
 
   function recordName(record: CorrespondentKindRecord): string {
-    return record.display_name?.trim() || record.addresses[0] || `Participant ${record.canonical_id}`;
+    return record.display_name?.trim() || record.addresses[0] || hub.names.label('participant', record.canonical_id);
   }
 
   /** A saved profile opens its person page; anything else its contact page. */
