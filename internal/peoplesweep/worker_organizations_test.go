@@ -15,37 +15,23 @@ import (
 // recordingOrganizations records what the worker hands organization
 // resolution, and when relative to the apply.
 type recordingOrganizations struct {
-	sink    *workerProductionSink
-	people  []int64
-	claims  [][]personfacts.ProposedClaim
-	before  []int
-	holdErr []error
-	// loseLease makes the store report the lease gone at the hold's renewal.
-	loseLease *workerFailureStore
+	sink   *workerProductionSink
+	people []int64
+	claims [][]personfacts.ProposedClaim
+	before []int
+	fences []*personfacts.WriteFence
 }
 
 func (r *recordingOrganizations) PrepareEmploymentOrganizations(
-	ctx context.Context, personID int64, claims []personfacts.ProposedClaim, hold personfacts.LeaseHold,
+	_ context.Context, personID int64, claims []personfacts.ProposedClaim, fence *personfacts.WriteFence,
 ) {
 	r.people = append(r.people, personID)
 	r.claims = append(r.claims, claims)
 	r.before = append(r.before, len(r.sink.requests))
-	if r.loseLease != nil {
-		r.loseLease.failNextRenewal.Store(true)
-	}
-	r.holdErr = append(r.holdErr, hold(ctx))
+	r.fences = append(r.fences, fence)
 }
 
 func TestPersonSweepWorkerPreparesOrganizationsBeforeApplying(t *testing.T) {
-	for _, lost := range []bool{false, true} {
-		t.Run(fmt.Sprintf("lease lost %t", lost), func(t *testing.T) {
-			runSweepOrganizationsCase(t, lost)
-		})
-	}
-}
-
-func runSweepOrganizationsCase(t *testing.T, leaseLost bool) {
-	t.Helper()
 	assert := assert.New(t)
 	require := require.New(t)
 	config, catalog := workerTestConfig(t)
@@ -81,9 +67,6 @@ func runSweepOrganizationsCase(t *testing.T, leaseLost bool) {
 		Catalog:       workerFailureCatalog{catalog: catalog}, Clock: func() time.Time { return now },
 		NewID: func() string { return "attempt-organizations" }, WorkerID: "worker-fixture"}
 
-	if leaseLost {
-		organizations.loseLease = store
-	}
 	_, err := worker.RunPerson(t.Context(), "run-organizations", Lease{PersonID: 7,
 		WorkerID: "worker-fixture", Fence: 1, ExpiresAt: now.Add(time.Hour)}, RunIncremental)
 	require.NoError(err)
@@ -93,10 +76,7 @@ func runSweepOrganizationsCase(t *testing.T, leaseLost bool) {
 	require.Len(organizations.claims, 1)
 	assert.Equal(sink.requests[0].Generation.Claims, organizations.claims[0])
 	assert.Equal([]int{0}, organizations.before, "organizations are prepared before the generation is applied")
-	require.Len(organizations.holdErr, 1)
-	if leaseLost {
-		require.ErrorIs(organizations.holdErr[0], ErrLeaseLost, "a lost lease stops any write")
-	} else {
-		require.NoError(organizations.holdErr[0], "the hold renews a held lease")
-	}
+	assert.Equal([]*personfacts.WriteFence{{
+		Kind: personfacts.FencePersonSweep, PersonID: 7, Owner: "worker-fixture", Fence: 1,
+	}}, organizations.fences, "every organization write is fenced by this attempt's lease")
 }

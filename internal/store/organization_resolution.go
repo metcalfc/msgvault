@@ -20,6 +20,10 @@ var (
 	ErrOrganizationMatchReviewStateChanged = errors.New("organization match review is no longer pending")
 	ErrOrganizationMatchReviewAmbiguous    = errors.New(
 		"more than one organization has the proposed name; merge them in the directory first")
+	// ErrOrganizationWriteFenced refuses a write whose lease is no longer
+	// held and unexpired when its transaction runs.
+	ErrOrganizationWriteFenced = errors.New(
+		"organization write refused: the lease it is fenced by is no longer held")
 )
 
 // Organization match review states.
@@ -51,6 +55,9 @@ type OrganizationAliasInput struct {
 	Domain         string
 	Model          string
 	Confidence     float64
+	// Fence, when set, is checked inside the write's transaction; the write
+	// is refused with ErrOrganizationWriteFenced when that lease is lost.
+	Fence *personfacts.WriteFence
 }
 
 // OrganizationAliasResult reports which lookup keys were added. Both false
@@ -79,6 +86,9 @@ func (s *Store) RecordOrganizationResolutionAliasContext(
 		func() (*OrganizationAliasResult, error) {
 			var result OrganizationAliasResult
 			err := s.withTxContext(ctx, func(tx *loggedTx) error {
+				if err := s.checkOrganizationWriteFenceTx(ctx, tx, input.Fence); err != nil {
+					return err
+				}
 				var addErr error
 				result, addErr = s.addOrganizationLookupAliasTx(ctx, tx, input.OrganizationID,
 					input.Name, input.Domain, ProvenanceSystem,
@@ -113,15 +123,11 @@ func (s *Store) addOrganizationLookupAliasTx(
 			return OrganizationAliasResult{}, fmt.Errorf("%w: alias domain is invalid", ErrOrganizationInvalid)
 		}
 	}
-	organization, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, organizationID)
+	organization, err := s.canonicalOrganizationForWriteTx(ctx, tx, organizationID)
 	if err != nil {
 		return OrganizationAliasResult{}, err
 	}
-	if organization.Kind != OrganizationKindCompany || organization.MergedIntoID != nil ||
-		organization.RetiredAt != nil {
-		return OrganizationAliasResult{}, fmt.Errorf("%w: organization %d is not an active company",
-			ErrOrganizationInvalid, organizationID)
-	}
+	organizationID = organization.ID
 	var result OrganizationAliasResult
 	nameKnown := NormalizeOrganizationName(organization.Name) == normalizedName
 	if !nameKnown {
@@ -187,6 +193,9 @@ type EmploymentTitleAliasInput struct {
 	CanonicalTitle string
 	Model          string
 	Confidence     float64
+	// Fence, when set, is checked inside the write's transaction; the write
+	// is refused with ErrOrganizationWriteFenced when that lease is lost.
+	Fence *personfacts.WriteFence
 }
 
 // RecordEmploymentTitleAliasContext maps Title to CanonicalTitle at the
@@ -209,10 +218,15 @@ func (s *Store) RecordEmploymentTitleAliasContext(
 		func() (*bool, error) {
 			written := false
 			err := s.withTxContext(ctx, func(tx *loggedTx) error {
-				if _, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, input.OrganizationID); err != nil {
+				if err := s.checkOrganizationWriteFenceTx(ctx, tx, input.Fence); err != nil {
 					return err
 				}
-				aliases, err := employmentTitleAliasesTx(ctx, tx, input.OrganizationID)
+				organization, err := s.canonicalOrganizationForWriteTx(ctx, tx, input.OrganizationID)
+				if err != nil {
+					return err
+				}
+				organizationID := organization.ID
+				aliases, err := employmentTitleAliasesTx(ctx, tx, organizationID)
 				if err != nil {
 					return err
 				}
@@ -226,7 +240,7 @@ func (s *Store) RecordEmploymentTitleAliasContext(
 					UPDATE organization_title_aliases
 					SET canonical_title = ?, canonical_title_normalized = ?
 					WHERE organization_id = ? AND canonical_title_normalized = ?`,
-					canonicalDisplay, canonical, input.OrganizationID, title); err != nil {
+					canonicalDisplay, canonical, organizationID, title); err != nil {
 					return fmt.Errorf("repoint employment title aliases: %w", err)
 				}
 				if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(`
@@ -234,7 +248,7 @@ func (s *Store) RecordEmploymentTitleAliasContext(
 						organization_id, title_normalized, canonical_title,
 						canonical_title_normalized, source, source_ref, confidence
 					) VALUES (?, ?, ?, ?, ?, ?, ?)`),
-					input.OrganizationID, title, canonicalDisplay, canonical,
+					organizationID, title, canonicalDisplay, canonical,
 					ProvenanceSystem, OrganizationResolutionSourceRef(input.Model),
 					input.Confidence); err != nil {
 					return fmt.Errorf("add employment title alias: %w", err)
@@ -432,6 +446,9 @@ type OrganizationMatchReviewInput struct {
 	Domain         string
 	Model          string
 	Probability    float64
+	// Fence, when set, is checked inside the write's transaction; the write
+	// is refused with ErrOrganizationWriteFenced when that lease is lost.
+	Fence *personfacts.WriteFence
 }
 
 // RecordOrganizationMatchReviewContext stores a pending review. A review for
@@ -449,20 +466,39 @@ func (s *Store) RecordOrganizationMatchReviewContext(
 		math.IsNaN(input.Probability) || input.Probability < 0 || input.Probability > 1 {
 		return false, fmt.Errorf("%w: organization match review input is incomplete", ErrOrganizationInvalid)
 	}
-	result, err := s.db.ExecContext(ctx, s.dialect.InsertOrIgnore(`
-		INSERT OR IGNORE INTO organization_match_reviews (
-			organization_id, proposed_name, proposed_name_normalized, proposed_domain,
-			probability, model
-		) VALUES (?, ?, ?, ?, ?, ?)`),
-		input.OrganizationID, name, normalizedName, domain, input.Probability, input.Model)
+	inserted, err := retryContendedWrite(ctx, s, "record organization match review",
+		func() (*bool, error) {
+			inserted := false
+			err := s.withTxContext(ctx, func(tx *loggedTx) error {
+				if err := s.checkOrganizationWriteFenceTx(ctx, tx, input.Fence); err != nil {
+					return err
+				}
+				organization, err := s.canonicalOrganizationForWriteTx(ctx, tx, input.OrganizationID)
+				if err != nil {
+					return err
+				}
+				result, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(`
+					INSERT OR IGNORE INTO organization_match_reviews (
+						organization_id, proposed_name, proposed_name_normalized, proposed_domain,
+						probability, model
+					) VALUES (?, ?, ?, ?, ?, ?)`),
+					organization.ID, name, normalizedName, domain, input.Probability, input.Model)
+				if err != nil {
+					return fmt.Errorf("record organization match review: %w", err)
+				}
+				rows, err := result.RowsAffected()
+				if err != nil {
+					return fmt.Errorf("record organization match review: %w", err)
+				}
+				inserted = rows > 0
+				return nil
+			})
+			return &inserted, err
+		})
 	if err != nil {
-		return false, fmt.Errorf("record organization match review: %w", err)
+		return false, err
 	}
-	inserted, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("record organization match review: %w", err)
-	}
-	return inserted > 0, nil
+	return *inserted, nil
 }
 
 // OrganizationMatchReview is one pending "is this the same organization?"
@@ -846,4 +882,69 @@ func organizationMatchAcceptStage(ctx context.Context, stage string) error {
 		return nil
 	}
 	return fail(stage)
+}
+
+// canonicalOrganizationForWriteTx locks the organization a write names and,
+// when it has been merged, follows the redirect chain to the surviving
+// organization, which must be an active company. A write that raced a merge
+// therefore lands where the lookup will find it.
+func (s *Store) canonicalOrganizationForWriteTx(
+	ctx context.Context, tx *loggedTx, organizationID int64,
+) (*Organization, error) {
+	currentID := organizationID
+	for range maxPersonFactOrganizationRedirects {
+		organization, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, currentID)
+		if err != nil {
+			return nil, err
+		}
+		if organization.MergedIntoID != nil {
+			currentID = *organization.MergedIntoID
+			continue
+		}
+		if organization.Kind != OrganizationKindCompany || organization.RetiredAt != nil {
+			return nil, fmt.Errorf("%w: organization %d is not an active company",
+				ErrOrganizationInvalid, organization.ID)
+		}
+		return organization, nil
+	}
+	return nil, fmt.Errorf("%w: organization merge redirect from %d is too long",
+		ErrOrganizationInvalid, organizationID)
+}
+
+// checkOrganizationWriteFenceTx refuses the write unless the fence's lease is
+// still held and unexpired, checked and locked inside the write's own
+// transaction so the lease cannot be lost between the check and the commit.
+func (s *Store) checkOrganizationWriteFenceTx(
+	ctx context.Context, tx *loggedTx, fence *personfacts.WriteFence,
+) error {
+	if fence == nil {
+		return nil
+	}
+	var query string
+	var args []any
+	switch fence.Kind {
+	case personfacts.FencePersonSweep:
+		query = `SELECT person_id FROM person_sweep_work
+			WHERE person_id = ? AND lease_owner = ? AND lease_fence = ?
+			  AND lease_until > ` + s.dialect.Now()
+		args = []any{fence.PersonID, fence.Owner, fence.Fence}
+	case personfacts.FencePersonEnrichment:
+		query = `SELECT person_id FROM person_enrichment_work
+			WHERE person_id = ? AND profile_fingerprint = ? AND run_id = ?
+			  AND lease_owner = ? AND lease_fence = ? AND lease_until > ?
+			  AND ((? = 0 AND active_attempt_id IS NULL) OR active_attempt_id = ?)`
+		args = []any{fence.PersonID, fence.ProfileFingerprint, fence.RunID, fence.Owner, fence.Fence,
+			s.personEnrichmentTime(), fence.AttemptID, fence.AttemptID}
+	default:
+		return fmt.Errorf("%w: unknown fence kind %q", ErrOrganizationWriteFenced, fence.Kind)
+	}
+	var personID int64
+	err := tx.QueryRowContext(ctx, query+s.dialect.SelectForUpdate(), args...).Scan(&personID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrOrganizationWriteFenced
+	}
+	if err != nil {
+		return fmt.Errorf("check organization write fence: %w", err)
+	}
+	return nil
 }

@@ -196,8 +196,9 @@ decides both questions once and stores the answer, so the exact lookup and
 employment projection get them right from then on.
 
 It runs before an enrichment result or a people sweep's facts are saved, for
-each organization a fact names without an ID. It writes nothing unless the
-run still holds its lease: each write first renews it. The steps are:
+each organization a fact names without an ID. Every write checks, inside its
+own transaction, that the run still holds an unexpired lease, and is refused
+otherwise. The steps are:
 
 1. **Exact lookup, no Jev.** A name and domain that already resolve to one
    organization are used as they are.
@@ -242,9 +243,12 @@ probability.
 - **Different organization** (`reject`) keeps that organization off the name's
   shortlist from now on.
 
-Merging organizations in the directory carries their reviews, rejections, and
+Merging organizations in the directory carries their reviews, aliases, and
 title mappings to the surviving organization, so a decision made before the
-merge keeps applying.
+merge keeps applying whichever organization survives. When both were asked
+about the same name, a decision beats an open question and the later of two
+decisions wins. Titles either organization treated as one role stay one role,
+under the surviving organization's title.
 
 Accepting fails when more than one organization has the proposed name, or
 when the merge would give a person two current jobs with the same title at

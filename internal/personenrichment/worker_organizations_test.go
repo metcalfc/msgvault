@@ -15,20 +15,28 @@ import (
 
 // recordingPreparer records what the worker hands organization resolution.
 type recordingPreparer struct {
-	mu      sync.Mutex
-	people  []int64
-	claims  [][]personfacts.ProposedClaim
-	holdErr []error
+	mu             sync.Mutex
+	store          *store.Store
+	organizationID int64
+	people         []int64
+	claims         [][]personfacts.ProposedClaim
+	fenced         []error
 }
 
+// PrepareEmploymentOrganizations records the call and makes one fenced write
+// through the real store, which checks the fence inside its transaction.
 func (p *recordingPreparer) PrepareEmploymentOrganizations(
-	ctx context.Context, personID int64, claims []personfacts.ProposedClaim, hold personfacts.LeaseHold,
+	ctx context.Context, personID int64, claims []personfacts.ProposedClaim, fence *personfacts.WriteFence,
 ) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.people = append(p.people, personID)
 	p.claims = append(p.claims, claims)
-	p.holdErr = append(p.holdErr, hold(ctx))
+	_, err := p.store.RecordEmploymentTitleAliasContext(ctx, store.EmploymentTitleAliasInput{
+		OrganizationID: p.organizationID, Title: "GP", CanonicalTitle: "Partner",
+		Model: "jev-1.13.0", Confidence: 0.9, Fence: fence,
+	})
+	p.fenced = append(p.fenced, err)
 }
 
 func TestWorkerPreparesOrganizationsBeforeCommittingAnAcceptedResult(t *testing.T) {
@@ -36,7 +44,11 @@ func TestWorkerPreparesOrganizationsBeforeCommittingAnAcceptedResult(t *testing.
 	require := require.New(t)
 	fixture := newWorkerFixture(t, "organizations", nil)
 	fixture.enqueue(t)
-	preparer := &recordingPreparer{}
+	organization, err := fixture.store.CreateOrganizationContext(t.Context(), store.OrganizationInput{
+		Name: "Example Labs", Kind: store.OrganizationKindCompany,
+	})
+	require.NoError(err)
+	preparer := &recordingPreparer{store: fixture.store, organizationID: organization.ID}
 	factories := map[string]personenrichment.ProviderFactory{
 		fixture.config.Name: func(personenrichment.ProviderConfig, string) (personenrichment.Provider, error) {
 			return &functionProvider{
@@ -67,8 +79,8 @@ func TestWorkerPreparesOrganizationsBeforeCommittingAnAcceptedResult(t *testing.
 	require.Len(preparer.claims, 1)
 	require.Len(preparer.claims[0], 1)
 	assert.Equal(fixture.target.Key, preparer.claims[0][0].Target.Key)
-	require.Len(preparer.holdErr, 1)
-	require.NoError(preparer.holdErr[0], "the hold extends the attempt's own work lease")
+	require.Len(preparer.fenced, 1)
+	require.NoError(preparer.fenced[0], "the attempt's own work lease lets a fenced write through")
 
 	attempts, err := fixture.store.ListPersonEnrichmentAttemptsContext(t.Context(), store.PersonEnrichmentAttemptFilter{
 		PersonID: fixture.person.ID, RunID: fixture.run.ID, Limit: 10,

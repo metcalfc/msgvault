@@ -461,6 +461,21 @@ func (s *Store) RenewLease(
 		return errors.New("person enrichment lease renewal must be in the future")
 	}
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
+		// An expired lease is lost even before another worker reclaims it:
+		// renewing must not revive it, because anything fenced by it may
+		// already have been refused.
+		var live bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT 1 FROM person_enrichment_work
+			WHERE person_id = ? AND profile_fingerprint = ? AND run_id = ?
+			  AND lease_owner = ? AND lease_fence = ? AND lease_until > ?
+		)`, token.WorkPersonID, token.ProfileFingerprint, token.RunID, token.Owner, token.Fence,
+			s.personEnrichmentTime()).Scan(&live); err != nil {
+			return fmt.Errorf("check person enrichment lease expiry: %w", err)
+		}
+		if !live {
+			return ErrStaleLease
+		}
 		if err := updateEnrichmentWorkLeaseTx(ctx, tx, token, `lease_until = ?`, until.UTC()); err != nil {
 			return err
 		}

@@ -787,12 +787,14 @@ func (w *Worker) completeAttempt(
 	assessment := w.assessIdentity(ctx, request, result, knownIDs)
 	result = StampIdentityConfidence(assessment, result)
 	if assessment.Accepted && w.options.OrganizationPreparer != nil && len(result.Claims) > 0 {
-		// Organization aliases are written only while this attempt still holds
-		// its work lease: each write first extends it, and a lost lease stops
-		// the preparer before anything lands.
+		// Organization aliases are fenced by this attempt's work lease: each
+		// write checks it inside its own transaction, so none lands for a lost
+		// or expired lease.
 		w.options.OrganizationPreparer.PrepareEmploymentOrganizations(ctx, lease.PersonID, result.Claims,
-			func(holdCtx context.Context) error {
-				return w.work.RenewLease(holdCtx, lease.Token, w.options.Clock().Add(w.options.LeaseDuration))
+			&personfacts.WriteFence{
+				Kind: personfacts.FencePersonEnrichment, PersonID: lease.Token.WorkPersonID,
+				Owner: lease.Token.Owner, Fence: lease.Token.Fence, RunID: lease.Token.RunID,
+				ProfileFingerprint: lease.Token.ProfileFingerprint, AttemptID: lease.Token.AttemptID,
 			})
 	}
 	commit, err := NewClaimCommit(ClaimCommitInput{

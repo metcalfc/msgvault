@@ -1,8 +1,6 @@
 package orgresolution_test
 
 import (
-	"context"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,6 +8,7 @@ import (
 	"go.kenn.io/msgvault/internal/jev"
 	"go.kenn.io/msgvault/internal/orgresolution"
 	"go.kenn.io/msgvault/internal/personfacts"
+	"go.kenn.io/msgvault/internal/store"
 )
 
 func TestPreparerNeverAsksWhenAGateIsClosedAndCreatesAsBefore(t *testing.T) {
@@ -167,18 +166,14 @@ func TestPreparerWritesNothingOnceTheLeaseIsLost(t *testing.T) {
 			fake := newFakeJev(t, map[string]float64{"candidate_1": test.orgRef}, 0.95)
 			f := newFixture(t, fake)
 			labs := f.organization(t, "Example Labs", "")
-			lost := errors.New("lease expired")
-			holds := 0
-			hold := func(context.Context) error {
-				holds++
-				return lost
+			// No sweep lease row holds this fence: the lease is gone.
+			lost := &personfacts.WriteFence{
+				Kind: personfacts.FencePersonSweep, PersonID: f.personID, Owner: "sweep-worker", Fence: 1,
 			}
 
 			_, err := f.preparer().Prepare(t.Context(), f.personID,
-				[]personfacts.ProposedClaim{f.claim(`{"name":"Example Labs, Inc."}`, "Engineer", "lost")}, hold)
-			require.ErrorIs(err, orgresolution.ErrLeaseLost)
-			require.ErrorIs(err, lost)
-			assert.Equal(1, holds, "the hold runs before the write")
+				[]personfacts.ProposedClaim{f.claim(`{"name":"Example Labs, Inc."}`, "Engineer", "lost")}, lost)
+			require.ErrorIs(err, store.ErrOrganizationWriteFenced)
 			assert.Len(fake.requests(), 1, "asking is not a write")
 
 			profile, err := f.store.GetOrganizationProfileContext(t.Context(), labs.ID, false)

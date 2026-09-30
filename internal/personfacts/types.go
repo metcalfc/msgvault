@@ -12,17 +12,36 @@ import (
 // then uses. It never changes a claim and never fails the commit: a
 // preparer that cannot decide leaves the lookup exactly as it was.
 //
-// hold is called immediately before every write and must confirm, renewing
-// if it can, that the caller still holds the lease the generation is
-// committed under. A hold error stops the preparer before that write, so no
-// alias lands for a lease that is already lost. A nil hold checks nothing.
+// fence names the lease the generation is committed under. Every write the
+// preparer makes checks it inside the write's own transaction and is refused
+// when that lease is no longer held and unexpired, so no alias lands for a
+// lost lease. A nil fence checks nothing.
 type OrganizationPreparer interface {
-	PrepareEmploymentOrganizations(ctx context.Context, personID int64, claims []ProposedClaim, hold LeaseHold)
+	PrepareEmploymentOrganizations(ctx context.Context, personID int64, claims []ProposedClaim, fence *WriteFence)
 }
 
-// LeaseHold confirms the caller still holds its lease; see
-// OrganizationPreparer.
-type LeaseHold func(ctx context.Context) error
+// WriteFenceKind names which lease table a WriteFence refers to.
+type WriteFenceKind string
+
+const (
+	// FencePersonSweep is a people sweep lease: PersonID, Owner, and Fence.
+	FencePersonSweep WriteFenceKind = "person_sweep"
+	// FencePersonEnrichment is an enrichment work lease: PersonID, Owner,
+	// Fence, RunID, ProfileFingerprint, and AttemptID.
+	FencePersonEnrichment WriteFenceKind = "person_enrichment"
+)
+
+// WriteFence identifies a lease that must still be held when a write
+// commits.
+type WriteFence struct {
+	Kind               WriteFenceKind
+	PersonID           int64
+	Owner              string
+	Fence              int64
+	RunID              int64
+	ProfileFingerprint string
+	AttemptID          int64
+}
 
 type TargetKind string
 type ValueType string
