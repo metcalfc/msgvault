@@ -209,12 +209,25 @@ type CLIHybridSearch struct {
 	ScopeLabel       string
 	ScopeSourceCount int
 	HasMore          bool
+	// Rerank reports the optional Jev rerank stage; nil when it is not
+	// enabled on the daemon.
+	Rerank *CLIHybridRerank
 }
 
 type CLIHybridSearchTimings struct {
 	QueryEmbeddingMS int64 `json:"query_embedding_ms"`
 	RetrievalMS      int64 `json:"retrieval_ms"`
 	HydrationMS      int64 `json:"hydration_ms"`
+	RerankMS         int64 `json:"rerank_ms,omitzero"`
+}
+
+// CLIHybridRerank is the rerank stage report of one hybrid search.
+type CLIHybridRerank struct {
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
+	Model  string `json:"model,omitempty"`
+	Scored int    `json:"scored"`
+	Cached bool   `json:"cached,omitzero"`
 }
 
 type CLIHybridGeneration struct {
@@ -234,6 +247,7 @@ type CLIHybridSearchResult struct {
 	RRFScore         *float64
 	BM25Score        *float64
 	VectorScore      *float64
+	RerankScore      *float64
 	SubjectBoosted   bool
 	Matches          []CLIHybridSearchMatch
 	MatchesTruncated bool

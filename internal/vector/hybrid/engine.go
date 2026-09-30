@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -37,6 +38,10 @@ type SearchRequest struct {
 	Limit        int
 	SubjectTerms []string // lowercased terms for subject-boost check
 	Explain      bool     // reserved for future use; no-op in this task
+	// Rerank asks for the optional rerank stage on a hybrid search. Only a
+	// person's own interactive search sets it; automatic and background
+	// searches never do. It has no effect without an installed Reranker.
+	Rerank bool
 }
 
 // ResultMeta returns engine-level metadata alongside the hit list.
@@ -52,6 +57,11 @@ type ResultMeta struct {
 	// for structured diagnostics; they contain no query or vector data.
 	QueryEmbeddingDuration time.Duration
 	RetrievalDuration      time.Duration
+	// Rerank reports the rerank stage when the request asked for it and a
+	// reranker is installed; nil otherwise.
+	Rerank *RerankInfo
+	// RerankDuration is the time spent in the rerank stage.
+	RerankDuration time.Duration
 }
 
 // EmbeddingClient embeds free-text queries. The engine uses it once per
@@ -101,6 +111,10 @@ type Engine struct {
 	mainDB  *sql.DB
 	client  EmbeddingClient
 	cfg     Config
+
+	rerankMu    sync.Mutex
+	reranker    Reranker
+	rerankCache rerankCache
 }
 
 // NewEngine wires a backend, main DB handle, embedding client, and
@@ -112,7 +126,10 @@ func NewEngine(backend vector.Backend, mainDB *sql.DB, client any, cfg Config) *
 			queryClient = legacyQueryAdapter{client: legacy}
 		}
 	}
-	return &Engine{backend: backend, mainDB: mainDB, client: queryClient, cfg: cfg}
+	return &Engine{
+		backend: backend, mainDB: mainDB, client: queryClient, cfg: cfg,
+		rerankCache: rerankCache{now: time.Now},
+	}
 }
 
 // EmbedQuery embeds free text for within-message chunk scoring.
@@ -248,12 +265,20 @@ func (e *Engine) Search(ctx context.Context, req SearchRequest) ([]vector.FusedH
 	if req.FTSQuery != "" {
 		terms = ftsTerms(req.FTSQuery)
 	}
+	var reranker Reranker
+	limit := req.Limit
+	if req.Rerank {
+		reranker = e.currentReranker()
+		if reranker != nil {
+			limit = rerankFetchLimit(limit, reranker)
+		}
+	}
 	fReq := vector.FusedRequest{
 		FTSTerms:     terms,
 		QueryVec:     queryVec,
 		Generation:   active.ID,
 		KPerSignal:   e.cfg.KPerSignal,
-		Limit:        req.Limit,
+		Limit:        limit,
 		RRFK:         e.cfg.RRFK,
 		SubjectBoost: e.cfg.SubjectBoost,
 		SubjectTerms: req.SubjectTerms,
@@ -264,15 +289,25 @@ func (e *Engine) Search(ctx context.Context, req SearchRequest) ([]vector.FusedH
 	if err != nil {
 		return nil, ResultMeta{}, fmt.Errorf("fused search: %w", err)
 	}
-	return hits, ResultMeta{
+	meta := ResultMeta{
 		Generation:             active,
-		ReturnedCount:          len(hits),
 		PoolSaturated:          searchMeta.PoolSaturated,
 		Accelerator:            searchMeta.Accelerator,
 		QueryVector:            queryVec,
 		QueryEmbeddingDuration: embeddingDuration,
 		RetrievalDuration:      time.Since(retrievalStarted),
-	}, nil
+	}
+	if reranker != nil {
+		rerankStarted := time.Now()
+		meta.Rerank = e.applyRerank(ctx, reranker, req, active, hits)
+		meta.RerankDuration = time.Since(rerankStarted)
+		if req.Limit > 0 && len(hits) > req.Limit {
+			hits = hits[:req.Limit]
+			meta.PoolSaturated = true
+		}
+	}
+	meta.ReturnedCount = len(hits)
+	return hits, meta, nil
 }
 
 func (e *Engine) validateBuildScope(filter vector.Filter) error {

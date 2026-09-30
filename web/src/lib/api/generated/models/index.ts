@@ -370,6 +370,8 @@ export * from "./getTotalStatsParams";
 export * from "./gmailIDsResponse";
 export * from "./healthResponse";
 export * from "./hybridGenerationSummary";
+export * from "./hybridRerankSummary";
+export * from "./hybridRerankSummaryStatus";
 export * from "./hybridSearchItem";
 export * from "./hybridSearchMatch";
 export * from "./hybridSearchResponse";

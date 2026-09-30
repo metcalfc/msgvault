@@ -379,6 +379,7 @@ type hybridSearchResponse struct {
 	Timings          hybridSearchTimings     `json:"timings"`
 	ScopeLabel       string                  `json:"scope_label,omitempty"`
 	ScopeSourceCount int                     `json:"scope_source_count,omitzero"`
+	Rerank           *hybridRerankSummary    `json:"rerank,omitempty"`
 	Results          []hybridSearchItem      `json:"results"`
 }
 
@@ -386,6 +387,41 @@ type hybridSearchTimings struct {
 	QueryEmbeddingMS int64 `json:"query_embedding_ms"`
 	RetrievalMS      int64 `json:"retrieval_ms"`
 	HydrationMS      int64 `json:"hydration_ms"`
+	RerankMS         int64 `json:"rerank_ms,omitzero"`
+}
+
+// hybridRerankSummary reports the optional Jev rerank stage of a hybrid
+// search. It is present only when [jev.rerank] is enabled for the daemon.
+// Status applied means the leading results are in Jev's order; skipped
+// means they keep the fused order and Reason names the safe category
+// (for example consent_required or timeout).
+type hybridRerankSummary struct {
+	Status string `json:"status" enum:"applied,skipped"`
+	Reason string `json:"reason,omitempty"`
+	Model  string `json:"model,omitempty"`
+	Scored int    `json:"scored"`
+	Cached bool   `json:"cached,omitzero"`
+}
+
+func newHybridRerankSummary(info *hybrid.RerankInfo) *hybridRerankSummary {
+	if info == nil {
+		return nil
+	}
+	return &hybridRerankSummary{
+		Status: info.Status, Reason: info.Reason, Model: info.Model, Scored: info.Scored, Cached: info.Cached,
+	}
+}
+
+// rerankScore returns a message's rerank score for explain output.
+func rerankScore(info *hybrid.RerankInfo, messageID int64) *float64 {
+	if info == nil || info.Status != hybrid.RerankApplied {
+		return nil
+	}
+	score, ok := info.Scores[messageID]
+	if !ok {
+		return nil
+	}
+	return &score
 }
 
 type similarSearchResponse struct {
@@ -432,9 +468,12 @@ type hybridSearchMatch struct {
 // In particular, mode=vector reports vector with no rrf (RRF requires
 // two signals to fuse), and mode=fts reports bm25 with no rrf or vector.
 type scoreBreakdown struct {
-	RRF            *float64 `json:"rrf,omitzero" nullable:"false"`
-	BM25           *float64 `json:"bm25,omitzero" nullable:"false"`
-	Vector         *float64 `json:"vector,omitzero" nullable:"false"`
+	RRF    *float64 `json:"rrf,omitzero" nullable:"false"`
+	BM25   *float64 `json:"bm25,omitzero" nullable:"false"`
+	Vector *float64 `json:"vector,omitzero" nullable:"false"`
+	// Rerank is the Jev probability that the message answers the query,
+	// present when the rerank stage scored it.
+	Rerank         *float64 `json:"rerank,omitzero" nullable:"false"`
 	SubjectBoosted bool     `json:"subject_boosted,omitzero"`
 }
 
@@ -1086,6 +1125,8 @@ func (s *Server) handleHybridSearch(
 		Limit:        fetchLimit,
 		SubjectTerms: subjectTerms,
 		Explain:      explain,
+		// A person's own search: the rerank stage may run when installed.
+		Rerank: mode == string(hybrid.ModeHybrid),
 	}
 
 	hits, meta, err := hybridEngine.Search(ctx, req)
@@ -1164,6 +1205,7 @@ func (s *Server) handleHybridSearch(
 				v := h.VectorScore
 				sb.Vector = &v
 			}
+			sb.Rerank = rerankScore(meta.Rerank, h.MessageID)
 			item.Score = sb
 		}
 		items = append(items, item)
@@ -1182,6 +1224,7 @@ func (s *Server) handleHybridSearch(
 		HasMore:          hasMore,
 		ScopeLabel:       scope.displayName(),
 		ScopeSourceCount: len(scope.sourceIDs()),
+		Rerank:           newHybridRerankSummary(meta.Rerank),
 		Generation: hybridGenerationSummary{
 			ID:          int64(meta.Generation.ID),
 			Model:       meta.Generation.Model,
@@ -1194,6 +1237,7 @@ func (s *Server) handleHybridSearch(
 			QueryEmbeddingMS: meta.QueryEmbeddingDuration.Milliseconds(),
 			RetrievalMS:      meta.RetrievalDuration.Milliseconds(),
 			HydrationMS:      hydrationDuration.Milliseconds(),
+			RerankMS:         meta.RerankDuration.Milliseconds(),
 		},
 		Results: items,
 	})

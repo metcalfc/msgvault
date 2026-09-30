@@ -271,7 +271,9 @@ func cliHybridSearchFromGenerated(resp generated.HybridSearchResponse) (*CLIHybr
 			QueryEmbeddingMS: resp.Timings.QueryEmbeddingMs,
 			RetrievalMS:      resp.Timings.RetrievalMs,
 			HydrationMS:      resp.Timings.HydrationMs,
+			RerankMS:         int64Value(resp.Timings.RerankMs),
 		},
+		Rerank:           cliHybridRerankFromGenerated(resp.Rerank),
 		PoolSaturated:    resp.PoolSaturated,
 		Accelerator:      stringValue(resp.Accelerator),
 		ReturnedCount:    int(resp.Returned),
@@ -346,9 +348,20 @@ func cliHybridSearchResultFromGenerated(item generated.HybridSearchItem) (CLIHyb
 		out.RRFScore = item.Score.Rrf
 		out.BM25Score = item.Score.Bm25
 		out.VectorScore = item.Score.Vector
+		out.RerankScore = item.Score.Rerank
 		out.SubjectBoosted = boolValue(item.Score.SubjectBoosted)
 	}
 	return out, nil
+}
+
+func cliHybridRerankFromGenerated(rerank *generated.HybridRerankSummary) *CLIHybridRerank {
+	if rerank == nil {
+		return nil
+	}
+	return &CLIHybridRerank{
+		Status: string(rerank.Status), Reason: stringValue(rerank.Reason), Model: stringValue(rerank.Model),
+		Scored: int(rerank.Scored), Cached: boolValue(rerank.Cached),
+	}
 }
 
 func queryAddressesFromStrings(addresses []string) []query.Address {

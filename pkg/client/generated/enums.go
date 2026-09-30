@@ -896,6 +896,23 @@ func (f FileSearchRowContentState) Validate() error {
 	}
 }
 
+type HybridRerankSummaryStatus string
+
+const (
+	Applied HybridRerankSummaryStatus = "applied"
+	Skipped HybridRerankSummaryStatus = "skipped"
+)
+
+// Validate checks if the HybridRerankSummaryStatus value is valid
+func (h HybridRerankSummaryStatus) Validate() error {
+	switch h {
+	case Applied, Skipped:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid HybridRerankSummaryStatus value, got: %v", h))
+	}
+}
+
 type IdentityLinkResponseCacheState string
 
 const (
@@ -1215,12 +1232,12 @@ const (
 	IdentityRejected                    OperationPublicCounterName = "identity_rejected"
 	ItemErrors                          OperationPublicCounterName = "item_errors"
 	OperationPublicCounterNameFailed    OperationPublicCounterName = "failed"
+	OperationPublicCounterNameSkipped   OperationPublicCounterName = "skipped"
 	OperationPublicCounterNameSucceeded OperationPublicCounterName = "succeeded"
 	Processed                           OperationPublicCounterName = "processed"
 	ProjectedWrites                     OperationPublicCounterName = "projected_writes"
 	Removed                             OperationPublicCounterName = "removed"
 	Requested                           OperationPublicCounterName = "requested"
-	Skipped                             OperationPublicCounterName = "skipped"
 	Started                             OperationPublicCounterName = "started"
 	Suppressed                          OperationPublicCounterName = "suppressed"
 	Truncated                           OperationPublicCounterName = "truncated"
@@ -1230,7 +1247,7 @@ const (
 // Validate checks if the OperationPublicCounterName value is valid
 func (o OperationPublicCounterName) Validate() error {
 	switch o {
-	case Added, Attempted, Books, Created, IdentityRejected, ItemErrors, OperationPublicCounterNameFailed, OperationPublicCounterNameSucceeded, Processed, ProjectedWrites, Removed, Requested, Skipped, Started, Suppressed, Truncated, Updated:
+	case Added, Attempted, Books, Created, IdentityRejected, ItemErrors, OperationPublicCounterNameFailed, OperationPublicCounterNameSkipped, OperationPublicCounterNameSucceeded, Processed, ProjectedWrites, Removed, Requested, Started, Suppressed, Truncated, Updated:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid OperationPublicCounterName value, got: %v", o))

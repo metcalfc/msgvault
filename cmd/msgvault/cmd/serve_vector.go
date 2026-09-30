@@ -653,6 +653,18 @@ func setupVectorFeatures(ctx context.Context, mainStore *store.Store, mainPath s
 			Rebind:     dialect.Rebind,
 			BuildScope: vecCfg.Embed.Scope.BuildScope(),
 		})
+		if !readOnly {
+			// The rerank stage writes the feature's daily counters, so a
+			// query-only handle never gets one.
+			reranker, rerankErr := newJevSearchReranker(cfg, mainStore, vecCfg)
+			if rerankErr != nil {
+				_ = closeFn()
+				return nil, fmt.Errorf("configure search reranking: %w", rerankErr)
+			}
+			if reranker != nil {
+				features.HybridEngine.SetReranker(reranker)
+			}
+		}
 		personSearchBackend, ok := backend.(personsearch.Backend)
 		if !ok {
 			_ = closeFn()

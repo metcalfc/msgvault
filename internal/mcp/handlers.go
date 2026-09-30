@@ -450,6 +450,7 @@ type HybridSearchHit struct {
 	RRFScore         *float64
 	BM25Score        *float64
 	VectorScore      *float64
+	RerankScore      *float64
 	SubjectBoosted   bool
 	Matches          []HybridSearchMatch
 	MatchesTruncated bool
@@ -463,12 +464,32 @@ type HybridSearchResult struct {
 	HasMore       bool
 	TookMS        int64
 	Timings       HybridSearchTimings
+	Rerank        *HybridRerank
 }
 
 type HybridSearchTimings struct {
 	QueryEmbeddingMS int64 `json:"query_embedding_ms"`
 	RetrievalMS      int64 `json:"retrieval_ms"`
 	HydrationMS      int64 `json:"hydration_ms"`
+	RerankMS         int64 `json:"rerank_ms,omitzero"`
+}
+
+// HybridRerank reports the optional Jev rerank stage of a hybrid search:
+// applied (the leading results are in Jev's order) or skipped with a safe
+// reason. It is absent when reranking is not enabled.
+type HybridRerank struct {
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
+	Model  string `json:"model,omitempty"`
+	Scored int    `json:"scored"`
+	Cached bool   `json:"cached,omitzero"`
+}
+
+func hybridRerankFromInfo(info *hybrid.RerankInfo) *HybridRerank {
+	if info == nil {
+		return nil
+	}
+	return &HybridRerank{Status: info.Status, Reason: info.Reason, Model: info.Model, Scored: info.Scored, Cached: info.Cached}
 }
 
 type SimilarSearcher interface {
@@ -985,6 +1006,7 @@ type hybridScoreBreakdown struct {
 	RRF            *float64 `json:"rrf,omitzero"`
 	BM25           *float64 `json:"bm25,omitzero"`
 	Vector         *float64 `json:"vector,omitzero"`
+	Rerank         *float64 `json:"rerank,omitzero"`
 	SubjectBoosted bool     `json:"subject_boosted,omitzero"`
 }
 
@@ -1012,6 +1034,7 @@ type searchMessageBodiesResponse struct {
 	Generation    hybridGenerationSummary `json:"generation"`
 	TookMS        int64                   `json:"took_ms"`
 	Timings       HybridSearchTimings     `json:"timings"`
+	Rerank        *HybridRerank           `json:"rerank,omitempty"`
 }
 
 // searchMessageBodiesHybrid runs vector or hybrid search via the configured
@@ -1095,6 +1118,9 @@ func (h *handlers) searchMessageBodiesHybrid(
 		Limit:        fetchLimit,
 		SubjectTerms: subjectTerms,
 		Explain:      explain,
+		// An assistant searching on the person's behalf: the rerank stage
+		// may run when installed.
+		Rerank: mode == string(hybrid.ModeHybrid),
 	}
 
 	hits, meta, err := h.hybridEngine.Search(ctx, req)
@@ -1140,6 +1166,11 @@ func (h *handlers) searchMessageBodiesHybrid(
 				v := hit.VectorScore
 				sb.Vector = &v
 			}
+			if meta.Rerank != nil && meta.Rerank.Status == hybrid.RerankApplied {
+				if score, ok := meta.Rerank.Scores[hit.MessageID]; ok {
+					sb.Rerank = &score
+				}
+			}
 			item.Score = sb
 		}
 		items = append(items, item)
@@ -1184,7 +1215,9 @@ func (h *handlers) searchMessageBodiesHybrid(
 			QueryEmbeddingMS: meta.QueryEmbeddingDuration.Milliseconds(),
 			RetrievalMS:      meta.RetrievalDuration.Milliseconds(),
 			HydrationMS:      hydrationDuration.Milliseconds(),
+			RerankMS:         meta.RerankDuration.Milliseconds(),
 		},
+		Rerank: hybridRerankFromInfo(meta.Rerank),
 	})
 }
 
@@ -1249,6 +1282,7 @@ func (h *handlers) searchMessageBodiesHybridViaSearcher(
 				RRF:            hit.RRFScore,
 				BM25:           hit.BM25Score,
 				Vector:         hit.VectorScore,
+				Rerank:         hit.RerankScore,
 				SubjectBoosted: hit.SubjectBoosted,
 			}
 		}
@@ -1276,6 +1310,7 @@ func (h *handlers) searchMessageBodiesHybridViaSearcher(
 		Generation:        result.Generation,
 		TookMS:            result.TookMS,
 		Timings:           result.Timings,
+		Rerank:            result.Rerank,
 	})
 }
 

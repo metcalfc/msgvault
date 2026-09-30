@@ -1633,6 +1633,10 @@ func (s *Server) resolveExploreVectorSearch(ctx context.Context, w http.Response
 	hits, meta, err := hybridEngine.Search(ctx, hybrid.SearchRequest{
 		Mode: mode, FreeText: freeText, Filter: filter, Limit: exploreMaxLimit,
 		SubjectTerms: subjectTerms,
+		// The rerank stage, when installed, reorders the leading hits
+		// before they become the snapshot, so every page of this search
+		// reads one order.
+		Rerank: mode == hybrid.ModeHybrid,
 	})
 	if err != nil {
 		s.writeExploreVectorError(w, err)

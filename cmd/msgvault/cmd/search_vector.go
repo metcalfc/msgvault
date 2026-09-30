@@ -106,8 +106,15 @@ func writeHybridResultsTable(out io.Writer, results []daemonclient.CLIHybridSear
 
 func writeHybridResultsTableWidth(out io.Writer, results []daemonclient.CLIHybridSearchResult, explain bool, width int) error {
 	headers := []string{"ID", "DATE", "FROM", "SUBJECT"}
+	reranked := false
+	for _, r := range results {
+		reranked = reranked || r.RerankScore != nil
+	}
 	if explain {
 		headers = append(headers, "RRF", "BM25", "VEC")
+		if reranked {
+			headers = append(headers, "JEV")
+		}
 	}
 	rows := make([][]searchTableCell, 0, len(results))
 	for _, r := range results {
@@ -131,6 +138,9 @@ func writeHybridResultsTableWidth(out io.Writer, results []daemonclient.CLIHybri
 				searchTableCell{text: formatOptionalScorePtr(r.BM25Score)},
 				searchTableCell{text: formatOptionalScorePtr(r.VectorScore)},
 			)
+			if reranked {
+				row = append(row, searchTableCell{text: formatOptionalScorePtr(r.RerankScore)})
+			}
 		}
 		rows = append(rows, row)
 	}
@@ -146,6 +156,21 @@ func outputHybridTimings(resp *daemonclient.CLIHybridSearch, explain bool) {
 	}
 	fmt.Printf("Timings: total=%dms query_embedding=%dms retrieval=%dms hydration=%dms\n",
 		resp.TookMS, resp.Timings.QueryEmbeddingMS, resp.Timings.RetrievalMS, resp.Timings.HydrationMS)
+	if rerank := resp.Rerank; rerank != nil {
+		fmt.Println(hybridRerankLine(rerank, resp.Timings.RerankMS))
+	}
+}
+
+// hybridRerankLine describes the rerank stage for explain output.
+func hybridRerankLine(rerank *daemonclient.CLIHybridRerank, elapsedMS int64) string {
+	if rerank.Status != "applied" {
+		return fmt.Sprintf("Jev rerank: skipped (%s)", rerank.Reason)
+	}
+	cached := ""
+	if rerank.Cached {
+		cached = ", cached"
+	}
+	return fmt.Sprintf("Jev rerank: applied to %d results by %s in %dms%s", rerank.Scored, rerank.Model, elapsedMS, cached)
 }
 
 func outputHybridResultsJSON(resp *daemonclient.CLIHybridSearch, explain bool) error {
@@ -170,6 +195,9 @@ func outputHybridResultsJSON(resp *daemonclient.CLIHybridSearch, explain bool) e
 		if explain && r.VectorScore != nil && !math.IsNaN(*r.VectorScore) {
 			row["vector_score"] = *r.VectorScore
 		}
+		if explain && r.RerankScore != nil {
+			row["rerank_score"] = *r.RerankScore
+		}
 		rows[i] = row
 	}
 	output := map[string]any{
@@ -188,6 +216,9 @@ func outputHybridResultsJSON(resp *daemonclient.CLIHybridSearch, explain bool) e
 	}
 	if resp.Accelerator != "" {
 		output["accelerator"] = resp.Accelerator
+	}
+	if resp.Rerank != nil {
+		output["rerank"] = resp.Rerank
 	}
 	return printJSON(output)
 }
