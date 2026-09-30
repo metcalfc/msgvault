@@ -38,6 +38,7 @@ describe('PersonAgenda', () => {
     expect(await screen.findByRole('heading', { name: 'Agenda' })).toBeDefined();
     expect(await screen.findByRole('heading', { name: 'Gift Ideas' })).toBeDefined();
     expect(screen.getByRole('link', { name: 'Open in Kata' }).getAttribute('href')).toBe('https://tasks.example.test/one');
+    expect(screen.getByRole('link', { name: 'Open in Kata' }).getAttribute('rel')).toBe('noopener noreferrer');
 
     await fireEvent.input(screen.getByLabelText('New agenda item'), { target: { value: 'Send notes' } });
     await fireEvent.click(screen.getByRole('button', { name: 'Add item' }));

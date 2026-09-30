@@ -8,6 +8,14 @@ All notable changes to msgvault, grouped by release.
 
 ## Unreleased
 
+- Act on contact facts from the Web UI. Email addresses, E.164 phone numbers,
+  and profile handles on person pages, identity reviews, and the file viewer
+  open as `mailto:`, `tel:`, and `https:` links, and a message's name pill
+  offers **Email** and **Call**. Postal addresses open Google Maps, and
+  calendar events offer **Join meeting** and **Open in Calendar**. Other
+  schemes and private-network addresses stay plain text; message bodies stay
+  unlinked. GitHub, YouTube, Threads, and Mastodon join the service catalog.
+  Requires API schema 2.36.0.
 - Mark records that aren't people. Use **Not a person…** on a person or
   contact page, a review card's **Not a person** menu, or
   `msgvault person kind set`. Choose **Organization** to group a business's

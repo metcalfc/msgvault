@@ -302,7 +302,7 @@
       <p>Your contacts account and OAuth app can differ from your mail accounts. A matching Google authorization is reused; otherwise, CardDAV stores separate credentials.</p>
       <details><summary>Authorize from the terminal instead</summary>
         <code class="authorization-command">{authorizationCommand}</code>
-        <p>For a remote daemon, copy the authorized token to that host before testing. <a href="https://msgvault.io/docs/usage/people-carddav/#google-contacts" target="_blank" rel="noreferrer">Google Contacts setup</a></p>
+        <p>For a remote daemon, copy the authorized token to that host before testing. <a href="https://msgvault.io/docs/usage/people-carddav/#google-contacts" target="_blank" rel="noopener noreferrer">Google Contacts setup</a></p>
       </details>
     {:else}
       <div class="field">

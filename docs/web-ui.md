@@ -281,6 +281,34 @@ For unattended, offline preservation of remote images, see
 to load an image and permission to archive remote images during ingest are
 separate choices.
 
+### Links
+
+Contact facts open where you would act on them. Email addresses open your mail
+app, phone numbers start a call, and profile handles open the profile page.
+This applies to a person's contact methods and structured profile, identity
+reviews, a file's sender, and an organization's domain. A message's name pill
+offers **Email** and **Call** in its menu. A calendar event offers **Join
+meeting** and **Open in Calendar** when Google Calendar stored those links.
+
+- Only `mailto:`, `tel:`, and `https:` links are created. An `http:` address is
+  upgraded to `https:`. Any other scheme, such as `javascript:` or `sms:`, stays
+  plain text.
+- A phone number becomes a `tel:` link only in international E.164 form, such
+  as `+15555550123`.
+- A web link never carries a user name or password and never points at a local
+  or private network address.
+- Web links open in a new tab without sharing the page address. Email and
+  phone links stay in the current tab.
+- **Join meeting** appears only for Google Meet, Zoom, and Microsoft Teams
+  addresses.
+- Postal addresses link to a Google Maps search, or to exact coordinates when
+  the profile stores them.
+- Values inside rows you click to open, such as People list rows, stay plain
+  text.
+
+Message bodies stay unlinked. An event description links only plain `http:`
+and `https:` addresses.
+
 ## People
 
 <figure class="screenshot" data-lightbox>
@@ -323,7 +351,7 @@ as not a person shows a banner with **Change** and **This is a person**; see
 
 | Tab | What it shows |
 |---|---|
-| Overview | Contact methods with a copy action, last contact, the five most recent items across mail, texts, and meetings, and filled context such as location and current employment |
+| Overview | Contact methods, linked as described in [Links](#links), with a copy action, last contact, the five most recent items across mail, texts, and meetings, and filled context such as location and current employment |
 | Timeline | Mail, texts, and meetings interleaved for their busiest archive identity, with a switch between identities |
 | Files | Files exchanged with them |
 | Meetings | Their meetings, with [meeting activity and follow-ups](#meeting-context-and-follow-ups) |

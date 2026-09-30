@@ -235,7 +235,7 @@
                 <strong>{item.title}</strong>
                 {#if item.state !== 'open'}<small>{label(item.state)}</small>{/if}
                 {#if item.status !== item.state}<small>{label(item.status)}</small>{/if}
-                {#if item.web_url}<a href={item.web_url} target="_blank" rel="noreferrer">Open in Kata</a>{/if}
+                {#if item.web_url}<a href={item.web_url} target="_blank" rel="noopener noreferrer">Open in Kata</a>{/if}
               </span>
             </span>
             <span data-detail-actions="hover">
