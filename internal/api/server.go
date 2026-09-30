@@ -260,6 +260,7 @@ type Server struct {
 	analyticsState         atomic.Pointer[analyticsEngineState]
 	savedViewStore         SavedViewStore
 	sqlQueryRunner         SQLQueryRunner
+	sqlQueryStreamRunner   SQLQueryStreamRunner
 	archiveSQLQueryRunner  SQLQueryRunner
 	cacheBuildStatusReader CacheBuildStatusReader
 	shutdownToken          string
@@ -481,6 +482,8 @@ func (s *Server) clockNow() time.Time {
 }
 
 type SQLQueryRunner func(ctx context.Context, sql string, fresh bool) (*query.QueryResult, *CacheBuildAccepted, error)
+
+type SQLQueryStreamRunner func(ctx context.Context, sql string, fresh, archiveOnly bool, consume query.SQLRowConsumer) (*query.QueryResult, *CacheBuildAccepted, error)
 type CacheBuildStatusReader func(id string) (CacheBuildStatus, bool)
 
 const (
@@ -519,6 +522,7 @@ type ServerOptions struct {
 	SavedViewStore         SavedViewStore
 	Engine                 query.Engine // Optional: query engine for aggregates and TUI support
 	SQLQueryRunner         SQLQueryRunner
+	SQLQueryStreamRunner   SQLQueryStreamRunner
 	ArchiveSQLQueryRunner  SQLQueryRunner
 	CacheBuildStatusReader CacheBuildStatusReader
 	ShutdownToken          string
@@ -618,6 +622,7 @@ func NewServerWithOptions(opts ServerOptions) *Server {
 		store:                  opts.Store,
 		savedViewStore:         opts.SavedViewStore,
 		sqlQueryRunner:         opts.SQLQueryRunner,
+		sqlQueryStreamRunner:   opts.SQLQueryStreamRunner,
 		archiveSQLQueryRunner:  opts.ArchiveSQLQueryRunner,
 		cacheBuildStatusReader: opts.CacheBuildStatusReader,
 		shutdownToken:          opts.ShutdownToken,

@@ -51,3 +51,33 @@ func TestDaemonArchiveSQLUsesRestrictedEngine(t *testing.T) {
 	requirements.NoError(err)
 	assertions.Equal("synthetic outside content", result.Rows[0][0])
 }
+
+func TestDaemonSQLStreamsPublishedArchive(t *testing.T) {
+	assertions := assert.New(t)
+	requirements := require.New(t)
+	c, s := openTestDaemonAnalyticsStore(t)
+	c.Analytics.AutoBuildCache = false
+	_, err := buildCache(c.DatabaseDSN(), c.AnalyticsDir(), true)
+	requirements.NoError(err)
+	engine, err := openDaemonDuckDBEngine(c, s)
+	requirements.NoError(err)
+	t.Cleanup(func() { requirements.NoError(engine.Close()) })
+	jobs := newCacheBuildJobs(t.Context(), nil, func(context.Context, buildCacheMode) error { return nil })
+	for _, archiveOnly := range []bool{false, true} {
+		count := 0
+		consume := func(columns []string, row []any) error {
+			assertions.Equal([]string{"id"}, columns)
+			if row != nil {
+				count++
+			}
+			return nil
+		}
+		result, accepted, err := runDaemonSQLQueryWithJobs(t.Context(), c, s, engine, "SELECT range AS id FROM range(10001)", daemonSQLQueryOptions{archiveOnly: archiveOnly, consume: consume}, jobs)
+		requirements.NoError(err)
+		assertions.Nil(accepted)
+		assertions.Nil(result.Rows)
+		assertions.Equal(10001, count)
+		assertions.Equal(count, result.RowCount)
+		requirements.NotNil(result.Cache)
+	}
+}

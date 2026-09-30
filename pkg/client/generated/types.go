@@ -10890,8 +10890,9 @@ type PutPersonTrackingRequest struct {
 }
 
 type QueryRequest struct {
-	Fresh *bool  `json:"fresh,omitempty"`
-	SQL   string `json:"sql" validate:"required"`
+	Fresh  *bool  `json:"fresh,omitempty"`
+	SQL    string `json:"sql" validate:"required"`
+	Stream *bool  `json:"stream,omitempty"`
 }
 
 func (q QueryRequest) Validate() error {

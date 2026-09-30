@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-27"
+last_edited: "2026-09-30"
 title: SQL Queries
 description: Run read-only DuckDB queries against the analytics cache.
 ---
@@ -46,6 +46,30 @@ msgvault query --format table "SELECT from_email, message_count FROM v_senders L
 | `json` | JSON object with `columns`, `rows`, `row_count`, and optional `cache` metadata (default) |
 | `csv` | Standard CSV with a header row |
 | `table` | Aligned text table with separator line and `(N rows)` footer |
+
+## Large results
+
+Interactive SQL results, including MCP `query_sql`, are limited to 10,000 rows
+and 16 MiB of JSON-encoded columns and rows. Queries that exceed either budget
+fail without returning a truncated result. Add `LIMIT`, select fewer columns,
+or aggregate the data to keep an interactive result small.
+
+For a complete larger export, stream JSON to a file:
+
+```bash
+msgvault query --stream "SELECT * FROM messages" > messages.json
+```
+
+`--stream` requires `--format json` (the default). It writes the same result
+object incrementally without collecting every row in memory. It has no total
+row or byte budget; DuckDB execution limits and the server's 120-second query
+timeout still apply. A single field or row still needs memory to decode and
+encode. `--fresh` and cache-build waiting work as usual.
+
+Check the command's exit status before using the file. Cancellation, a failed
+query, a broken connection, or a write error can leave partial output. The CLI
+returns an error for an incomplete result; discard the file and retry. An
+interrupted server stream has no closing JSON object or completion count.
 
 ## Available Views
 

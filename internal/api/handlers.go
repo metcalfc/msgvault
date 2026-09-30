@@ -2037,8 +2037,9 @@ func (s *Server) handleAddAccount(w http.ResponseWriter, r *http.Request) {
 // ============================================================================
 
 type QueryRequest struct {
-	SQL   string `json:"sql"`
-	Fresh *bool  `json:"fresh,omitempty"`
+	SQL    string `json:"sql"`
+	Fresh  *bool  `json:"fresh,omitempty"`
+	Stream bool   `json:"stream,omitempty"`
 }
 
 // ErrSQLQueryEngineUnavailable is returned when a raw SQL request has no
@@ -2105,6 +2106,11 @@ func (s *Server) handleSQLQuery(w http.ResponseWriter, r *http.Request, archiveO
 		}
 	}
 
+	if req.Stream {
+		s.handleSQLQueryStream(w, r, req.SQL, fresh, archiveOnly)
+		return
+	}
+
 	var result *query.QueryResult
 	var accepted *CacheBuildAccepted
 	var err error
@@ -2135,6 +2141,10 @@ func (s *Server) handleSQLQuery(w http.ResponseWriter, r *http.Request, archiveO
 		}
 		if errors.Is(err, query.ErrQueryNotReadOnly) {
 			writeError(w, http.StatusBadRequest, "not_read_only", err.Error())
+			return
+		}
+		if errors.Is(err, query.ErrSQLResultLimit) {
+			writeError(w, http.StatusBadRequest, "result_too_large", err.Error())
 			return
 		}
 		writeError(w, http.StatusBadRequest, "query_error", err.Error())

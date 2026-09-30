@@ -406,7 +406,8 @@ import (
 // probability as confidence). Settings gain jev.sweep_evidence_rerank,
 // jev.sweep_claim_grounding, jev.person_duplicates, and
 // jev.person_profile_choices enabled and automatic. Additive (minor bump).
-const APISchemaVersion = "2.45.0"
+// 2.46.0 adds opt-in stream to SQL queries for bounded-memory JSON exports.
+const APISchemaVersion = "2.46.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

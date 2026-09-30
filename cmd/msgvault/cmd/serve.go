@@ -726,6 +726,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 			}
 			return runDaemonSQLQueryWithJobs(requestCtx, cfg, s, apiServer.QueryEngineForRequest(requestCtx), sql, daemonSQLQueryOptions{fresh: fresh}, cacheJobs)
 		},
+		SQLQueryStreamRunner: func(requestCtx context.Context, sql string, fresh, archiveOnly bool, consume query.SQLRowConsumer) (*query.QueryResult, *api.CacheBuildAccepted, error) {
+			if apiServer == nil {
+				return nil, nil, errors.New("daemon API server unavailable")
+			}
+			return runDaemonSQLQueryWithJobs(requestCtx, cfg, s, apiServer.QueryEngineForRequest(requestCtx), sql, daemonSQLQueryOptions{fresh: fresh, archiveOnly: archiveOnly, consume: consume}, cacheJobs)
+		},
 		ArchiveSQLQueryRunner: func(requestCtx context.Context, sql string, fresh bool) (*query.QueryResult, *api.CacheBuildAccepted, error) {
 			return runDaemonSQLQueryWithJobs(requestCtx, cfg, s, nil, sql, daemonSQLQueryOptions{fresh: fresh, archiveOnly: true}, cacheJobs)
 		},
@@ -1104,6 +1110,7 @@ func shutdownServeRuntime(
 }
 
 type daemonSQLQueryOptions struct {
+	consume     query.SQLRowConsumer
 	fresh       bool
 	archiveOnly bool
 }
@@ -1126,7 +1133,7 @@ func runDaemonSQLQueryWithJobs(
 			return nil, nil, api.ErrSQLQueryEngineUnavailable
 		}
 		if querier, ok := engine.(query.SQLQuerier); ok {
-			result, err := querier.QuerySQL(ctx, sqlStr)
+			result, err := queryCommittedSQLWithConsumer(ctx, querier, sqlStr, cacheStaleness{}, options.consume)
 			return result, nil, err
 		}
 		return nil, nil, api.ErrSQLQueryEngineUnavailable
@@ -1198,7 +1205,7 @@ func runDaemonSQLQueryWithJobs(
 		defer func() { _ = duckEngine.Close() }()
 		querier = duckEngine
 	}
-	result, err := queryCommittedSQL(ctx, querier, sqlStr, staleness)
+	result, err := queryCommittedSQLWithConsumer(ctx, querier, sqlStr, staleness, options.consume)
 	if err != nil {
 		if errors.Is(err, query.ErrCacheUnavailable) {
 			return acceptUnavailableCacheQuery(c, jobs, options.fresh)
@@ -1234,10 +1241,18 @@ func cacheFreshnessFromStaleness(staleness cacheStaleness) *query.CacheFreshness
 	}
 }
 
-func queryCommittedSQL(
-	ctx context.Context, querier query.SQLQuerier, sqlStr string, staleness cacheStaleness,
-) (*query.QueryResult, error) {
-	result, err := querier.QuerySQL(ctx, sqlStr)
+func queryCommittedSQLWithConsumer(ctx context.Context, querier query.SQLQuerier, sqlStr string, staleness cacheStaleness, consume query.SQLRowConsumer) (*query.QueryResult, error) {
+	var result *query.QueryResult
+	var err error
+	if consume != nil {
+		streamer, ok := querier.(query.SQLStreamer)
+		if !ok {
+			return nil, api.ErrSQLQueryEngineUnavailable
+		}
+		result, err = streamer.StreamSQL(ctx, sqlStr, consume)
+	} else {
+		result, err = querier.QuerySQL(ctx, sqlStr)
+	}
 	if err != nil || result == nil || result.Cache == nil {
 		return result, err
 	}

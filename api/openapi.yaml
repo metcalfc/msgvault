@@ -11650,6 +11650,8 @@ components:
           type: boolean
         sql:
           type: string
+        stream:
+          type: boolean
       required:
         - sql
       type: object
@@ -14393,7 +14395,7 @@ components:
       type: apiKey
 info:
   title: msgvault API
-  version: 2.45.0
+  version: 2.46.0
 openapi: 3.1.0
 paths:
   /api/ping:

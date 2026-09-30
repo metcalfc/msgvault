@@ -285,6 +285,15 @@ applicable. A usable stale publication remains queryable during
 `min_rebuild_interval` and while a refresh runs. This includes messages deleted
 since publication; see the [cache freshness policy](configuration.md#analytics).
 
+Interactive responses are limited to 10,000 rows and 16 MiB of JSON-encoded
+columns and rows. Exceeding either budget returns `400 result_too_large`,
+without a truncated result. Set `stream:true` in the JSON body to export larger
+results incrementally with the same response shape. The 120-second query
+timeout and SQL access rules still apply. Once output starts, failures leave
+incomplete JSON instead of an HTTP error response. Clients must validate the
+complete JSON object and `row_count`, and discard partial output. See
+[large SQL results](usage/querying.md#large-results) for the CLI export path.
+
 With `fresh=true`, the endpoint accepts a refresh with `202`, `job_id`, and
 `status` instead of holding the request open. Automatic recovery of a missing
 or incompatible cache also returns `202` when enabled. A fresh request checks

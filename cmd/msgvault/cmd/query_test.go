@@ -83,10 +83,13 @@ func TestQueryCommand_UsesLocalDaemonHTTPAndPreservesJSONOutput(t *testing.T) {
 func TestQueryCommandWaitsForAcceptedBuild(t *testing.T) {
 	for _, test := range []struct {
 		name    string
+		stream  bool
 		fresh   bool
 		outcome string
 		wantErr string
 	}{
+		{name: "streamed fresh query", stream: true, fresh: true, outcome: "published"},
+		{name: "streamed failed build", stream: true, outcome: "failed", wantErr: "synthetic build failure"},
 		{name: "plain query", outcome: "published"},
 		{name: "fresh query", fresh: true, outcome: "published"},
 		{name: "failed build", fresh: true, outcome: "failed", wantErr: "synthetic build failure"},
@@ -106,14 +109,16 @@ func TestQueryCommandWaitsForAcceptedBuild(t *testing.T) {
 			}))
 			mux.HandleFunc("POST /api/v1/query", func(w http.ResponseWriter, r *http.Request) {
 				var req struct {
-					SQL   string `json:"sql"`
-					Fresh bool   `json:"fresh"`
+					SQL    string `json:"sql"`
+					Fresh  bool   `json:"fresh"`
+					Stream bool   `json:"stream"`
 				}
 				if !assert.NoError(json.NewDecoder(r.Body).Decode(&req)) {
 					w.WriteHeader(http.StatusBadRequest)
 					return
 				}
 				assert.Equal("SELECT id FROM messages", req.SQL)
+				assert.Equal(test.stream, req.Stream)
 				w.Header().Set("Content-Type", "application/json")
 				if queries.Add(1) == 1 {
 					assert.Equal(test.fresh, req.Fresh)
@@ -153,13 +158,13 @@ func TestQueryCommandWaitsForAcceptedBuild(t *testing.T) {
 			server := httptest.NewServer(mux)
 			t.Cleanup(server.Close)
 			writeStatsHTTPDaemonRuntime(t, dataDir, server)
-			savedFormat, savedFresh := queryFormat, queryFresh
+			savedFormat, savedFresh, savedStream := queryFormat, queryFresh, queryStream
 			t.Cleanup(func() {
-				queryFormat, queryFresh = savedFormat, savedFresh
+				queryFormat, queryFresh, queryStream = savedFormat, savedFresh, savedStream
 			})
 			cfg := &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
 			testCtx := testInvocationContext(ctx, cfg, invocationOptions{useLocal: true})
-			queryFormat, queryFresh = outputFormatJSON, test.fresh
+			queryFormat, queryFresh, queryStream = outputFormatJSON, test.fresh, test.stream
 			var stdout, stderr bytes.Buffer
 			cmd := &cobra.Command{
 				Use: "query", Args: queryCmd.Args, RunE: queryCmd.RunE,

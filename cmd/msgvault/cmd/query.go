@@ -17,6 +17,7 @@ import (
 
 var queryFormat string
 var queryFresh bool
+var queryStream bool
 
 var queryCmd = &cobra.Command{
 	Use:   "query [sql]",
@@ -39,6 +40,9 @@ Output formats:
   csv    - CSV with header row
   table  - Aligned text table
 
+Interactive results are limited to 10,000 rows and 16 MiB of encoded data.
+Use --stream for larger JSON exports; discard partial output on any error.
+
 Examples:
   msgvault query "SELECT from_email, COUNT(*) AS n FROM v_messages GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
 	msgvault query --format csv "SELECT * FROM v_senders ORDER BY message_count DESC"
@@ -50,12 +54,34 @@ Examples:
 }
 
 func runHTTPQuery(cmd *cobra.Command, sqlStr string) error {
+	if queryStream && strings.ToLower(strings.TrimSpace(queryFormat)) != outputFormatJSON {
+		return errors.New("--stream requires --format json")
+	}
 	st, _, err := OpenHTTPStore(cmd.Context())
 	if err != nil {
 		return err
 	}
 	defer func() { _ = st.Close() }()
 
+	if queryStream {
+		fresh := queryFresh
+		for {
+			accepted, err := st.StreamSQLQuery(cmd.Context(), sqlStr, fresh, cmd.OutOrStdout())
+			if err != nil {
+				return fmt.Errorf("query: %w", err)
+			}
+			if accepted == nil {
+				return nil
+			}
+			if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Analytics cache build %s: %s; waiting for completion\n", accepted.Status, accepted.JobID); err != nil {
+				return fmt.Errorf("write cache build status: %w", err)
+			}
+			if err := st.WaitForCacheBuild(cmd.Context(), accepted.JobID); err != nil {
+				return fmt.Errorf("query: %w", err)
+			}
+			fresh = false
+		}
+	}
 	result, accepted, err := st.RunSQLQueryWithFresh(cmd.Context(), sqlStr, queryFresh)
 	if err != nil {
 		return fmt.Errorf("query: %w", err)
@@ -210,6 +236,7 @@ func writeTable(
 
 func init() {
 	rootCmd.AddCommand(queryCmd)
+	queryCmd.Flags().BoolVar(&queryStream, "stream", false, "Stream a complete JSON export without interactive result limits; discard partial output on errors")
 	queryCmd.Flags().BoolVar(&queryFresh, "fresh", false, "Wait for analytics to include writes committed before this request, then return rows")
 	queryCmd.Flags().StringVar(
 		&queryFormat, "format", outputFormatJSON,

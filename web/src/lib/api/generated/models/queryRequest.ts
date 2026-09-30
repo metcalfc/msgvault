@@ -5,4 +5,5 @@
 export interface QueryRequest {
   fresh?: boolean;
   sql: string;
+  stream?: boolean;
 }

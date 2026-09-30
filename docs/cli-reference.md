@@ -3171,8 +3171,9 @@ the request, rebuilding if needed, before returning rows.
 |---|---|---|
 | `--format` | `json` | Output format: `json`, `csv`, or `table` |
 | `--fresh` | `false` | Wait for a freshness check and any required rebuild before returning rows |
+| `--stream` | `false` | Export JSON incrementally without interactive result budgets; discard partial output on failure |
 
-See [SQL Queries](/docs/usage/querying/) for available views and example queries.
+See [SQL Queries](/docs/usage/querying/) for result budgets, large exports, available views, and example queries.
 
 ---
 

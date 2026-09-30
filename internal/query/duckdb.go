@@ -341,6 +341,19 @@ func (e *DuckDBEngine) Close() error {
 func (e *DuckDBEngine) QuerySQL(
 	ctx context.Context, sqlStr string,
 ) (*QueryResult, error) {
+	return e.querySQL(ctx, sqlStr, nil)
+}
+
+// StreamSQL visits rows without retaining the complete result. The returned
+// summary includes columns, count, and cache metadata, but no rows.
+func (e *DuckDBEngine) StreamSQL(ctx context.Context, sqlStr string, consume SQLRowConsumer) (*QueryResult, error) {
+	if consume == nil {
+		return nil, errors.New("SQL stream requires a row consumer")
+	}
+	return e.querySQL(ctx, sqlStr, consume)
+}
+
+func (e *DuckDBEngine) querySQL(ctx context.Context, sqlStr string, consume SQLRowConsumer) (*QueryResult, error) {
 	if err := EnsureReadOnly(sqlStr); err != nil {
 		return nil, err
 	}
@@ -376,7 +389,21 @@ func (e *DuckDBEngine) QuerySQL(
 	}
 
 	result := &QueryResult{Columns: cols, Cache: cache}
+	budget := sqlResultBudget{}
+	if consume != nil {
+		if err := consume(cols, nil); err != nil {
+			return nil, err
+		}
+	} else if err := budget.add(cols); err != nil {
+		return nil, err
+	}
 	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if consume == nil && result.RowCount >= SQLResultMaxRows {
+			return nil, sqlResultLimitError("row", SQLResultMaxRows)
+		}
 		vals := make([]any, len(cols))
 		ptrs := make([]any, len(cols))
 		for i := range vals {
@@ -390,12 +417,24 @@ func (e *DuckDBEngine) QuerySQL(
 				vals[i] = string(b)
 			}
 		}
-		result.Rows = append(result.Rows, vals)
+		if consume != nil {
+			if err := consume(cols, vals); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := budget.add(vals); err != nil {
+				return nil, err
+			}
+			result.Rows = append(result.Rows, vals)
+		}
+		result.RowCount++
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate rows: %w", err)
 	}
-	result.RowCount = len(result.Rows)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
