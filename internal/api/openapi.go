@@ -344,9 +344,10 @@ import (
 // /identity/correspondent-kinds/{id} and GET /identity/correspondent-kinds
 // mark an identity cluster as an organization, a shared mailbox, or ignored
 // (or a person again). Participant summaries and relationship rows gain
-// correspondent_kind; relationship rankings leave classified clusters out
-// unless include_not_people is set, and restart pagination with 409
-// not_people_changed when the set changes; the Directory hides people whose
+// correspondent_kind; relationship rankings leave organization and ignored
+// clusters out unless include_not_people is set (shared mailboxes stay as
+// labelled rows), and restart pagination with 409 not_people_changed when
+// that set changes; the Directory hides people whose
 // every identity is an organization or ignored unless not_people asks for
 // them. Contact-match verdicts gain the shared_mailbox classification and
 // its signal, and accepting such a match is refused with 409

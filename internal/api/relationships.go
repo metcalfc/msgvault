@@ -31,9 +31,8 @@ type RelationshipsHTTPRequest struct {
 	// the People list can merge them with saved people without duplicates.
 	UnsavedOnly bool `json:"unsaved_only,omitzero" doc:"List only counterparts whose cluster is not bound to a saved Directory person."`
 	// IncludeNotPeople keeps clusters the user classified as an
-	// organization, a shared mailbox, or ignored; rankings leave them out
-	// by default.
-	IncludeNotPeople bool `json:"include_not_people,omitzero" doc:"Include counterparts whose identity cluster is marked as an organization, a shared mailbox, or ignored. They are left out by default."`
+	// organization or ignored; rankings leave them out by default.
+	IncludeNotPeople bool `json:"include_not_people,omitzero" doc:"Include counterparts whose identity cluster is marked as an organization or ignored. They are left out by default; a shared mailbox is always listed, marked by correspondent_kind."`
 }
 
 // RelationshipsHTTPResponse echoes both revisions a page was computed
@@ -200,7 +199,7 @@ func (s *Server) handleRelationships(w http.ResponseWriter, r *http.Request) {
 	}
 	notPeople := ""
 	if !request.IncludeNotPeople {
-		hidden, fingerprint, ok := s.notPersonParticipantSet(r.Context(), w)
+		hidden, fingerprint, ok := s.rankingHiddenParticipantSet(r.Context(), w)
 		if !ok {
 			return
 		}
@@ -242,13 +241,11 @@ func (s *Server) handleRelationships(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.attachRelationshipRowProfiles(r.Context(), result.Rows)
-	if request.IncludeNotPeople {
-		refs := make([]*querySummaryRef, 0, len(result.Rows))
-		for i := range result.Rows {
-			refs = append(refs, &querySummaryRef{id: result.Rows[i].CanonicalID, target: &result.Rows[i].CorrespondentKind})
-		}
-		s.attachCorrespondentKinds(r.Context(), refs)
+	refs := make([]*querySummaryRef, 0, len(result.Rows))
+	for i := range result.Rows {
+		refs = append(refs, &querySummaryRef{id: result.Rows[i].CanonicalID, target: &result.Rows[i].CorrespondentKind})
 	}
+	s.attachCorrespondentKinds(r.Context(), refs)
 	response := RelationshipsHTTPResponse{
 		Rows: result.Rows, TotalCount: result.TotalCount,
 		CacheRevision: result.CacheRevision, IdentityRevision: result.IdentityRevision,
@@ -409,10 +406,11 @@ type NotPersonParticipantStore interface {
 	NotPersonParticipantsContext(ctx context.Context) (map[int64]correspondentkind.Kind, error)
 }
 
-// notPersonParticipantSet returns every participant in a cluster classified
-// as not a person, with a fingerprint of the set for cursor drift checks. A
-// store without the capability classifies nothing.
-func (s *Server) notPersonParticipantSet(
+// rankingHiddenParticipantSet returns every participant in a cluster
+// classified as an organization or ignored, which rankings leave out, with a
+// fingerprint of the set for cursor drift checks. Shared mailboxes stay as
+// labelled rows. A store without the capability classifies nothing.
+func (s *Server) rankingHiddenParticipantSet(
 	ctx context.Context, w http.ResponseWriter,
 ) (map[int64]correspondentkind.Kind, string, bool) {
 	kinds, ok := s.store.(NotPersonParticipantStore)
@@ -424,6 +422,11 @@ func (s *Server) notPersonParticipantSet(
 		s.logger.Error("correspondent kind lookup failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Could not read records marked as not a person")
 		return nil, "", false
+	}
+	for id, kind := range hidden {
+		if !kind.LeavesPeopleLists() {
+			delete(hidden, id)
+		}
 	}
 	if len(hidden) == 0 {
 		return hidden, "", true

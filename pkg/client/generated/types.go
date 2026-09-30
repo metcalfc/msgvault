@@ -10921,7 +10921,7 @@ type RelationshipsHTTPRequest struct {
 	Cursor  *string         `json:"cursor,omitzero"`
 	Filters []ExploreFilter `json:"filters,omitempty"`
 
-	// IncludeNotPeople Include counterparts whose identity cluster is marked as an organization, a shared mailbox, or ignored. They are left out by default.
+	// IncludeNotPeople Include counterparts whose identity cluster is marked as an organization or ignored. They are left out by default; a shared mailbox is always listed, marked by correspondent_kind.
 	IncludeNotPeople *bool  `json:"include_not_people,omitempty"`
 	Limit            *int64 `json:"limit,omitempty" validate:"omitempty,gte=0,lte=500"`
 	ShowAll          *bool  `json:"show_all,omitempty"`

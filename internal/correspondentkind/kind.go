@@ -42,11 +42,14 @@ func (k Kind) IsPerson() bool {
 	return k == Person || k == ""
 }
 
-// HiddenFromPeople reports whether k removes the cluster from People lists,
-// relationship rankings, and people-oriented tools. A shared mailbox stays
-// visible in sender views with its own label, but it is not a person either.
-func (k Kind) HiddenFromPeople() bool {
-	return !k.IsPerson()
+// LeavesPeopleLists reports whether k removes the cluster, and a saved
+// profile made only of such clusters, from People lists and relationship
+// rankings. Organizations and ignored records leave them. A shared mailbox
+// stays as a labelled non-person row in sender views and keeps any saved
+// profile listed, because the people who wrote from it are still
+// correspondents.
+func (k Kind) LeavesPeopleLists() bool {
+	return k == Organization || k == Ignored
 }
 
 // Label is the short human label for k.

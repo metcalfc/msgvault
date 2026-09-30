@@ -8,7 +8,7 @@ import type { RelationshipSignals } from "./relationshipSignals";
 
 export interface RelationshipRow {
   canonical_id: number;
-  /** Present when the identity cluster is marked as an organization, a shared mailbox, or ignored; such rows appear only with include_not_people. */
+  /** Present when the identity cluster is marked as an organization, a shared mailbox, or ignored. Organizations and ignored records appear only with include_not_people. */
   correspondent_kind?: CorrespondentKindAssignment;
   display_label: string;
   last_at: string;

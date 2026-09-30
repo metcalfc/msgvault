@@ -11200,7 +11200,7 @@ components:
           type: integer
         correspondent_kind:
           $ref: "#/components/schemas/CorrespondentKindAssignment"
-          description: Present when the identity cluster is marked as an organization, a shared mailbox, or ignored; such rows appear only with include_not_people.
+          description: Present when the identity cluster is marked as an organization, a shared mailbox, or ignored. Organizations and ignored records appear only with include_not_people.
         display_label:
           type: string
         last_at:
@@ -11379,7 +11379,7 @@ components:
             $ref: "#/components/schemas/ExploreFilter"
           type: array
         include_not_people:
-          description: Include counterparts whose identity cluster is marked as an organization, a shared mailbox, or ignored. They are left out by default.
+          description: Include counterparts whose identity cluster is marked as an organization or ignored. They are left out by default; a shared mailbox is always listed, marked by correspondent_kind.
           type: boolean
         limit:
           format: int64

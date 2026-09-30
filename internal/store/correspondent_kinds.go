@@ -1011,10 +1011,9 @@ func rewriteCorrespondentKindsForMergeTx(ctx context.Context, tx *loggedTx, oldI
 }
 
 // hidesSavedPerson reports whether a kind removes a saved person whose every
-// identity carries it from People lists. A shared mailbox does not: the
-// people who wrote from it keep their own profiles.
+// identity carries it from People lists.
 func hidesSavedPerson(kind correspondentkind.Kind) bool {
-	return kind == correspondentkind.Organization || kind == correspondentkind.Ignored
+	return kind.LeavesPeopleLists()
 }
 
 // notPeoplePersonIDsTx returns saved people whose every bound participant is

@@ -644,6 +644,18 @@ func TestRelationshipsLeaveOutRecordsMarkedNotAPerson(t *testing.T) {
 		fmt.Sprintf(`{"show_all":true,"sort":"last_contact","limit":1,"cursor":%q}`, first.NextCursor))
 	assert.Equal(http.StatusConflict, stale.Code)
 	assert.Contains(stale.Body.String(), "not_people_changed")
+
+	// A shared mailbox stays listed as a labelled non-person row.
+	_, err = identityStore.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: relNewsletterID, Kind: correspondentkind.SharedMailbox,
+	})
+	require.NoError(err)
+	ranked = relationshipsPage(t, srv, `{"show_all":true}`)
+	require.Len(ranked.Rows, 2)
+	shared := relationshipRowOf(t, ranked, relNewsletterID)
+	require.NotNil(shared.CorrespondentKind)
+	assert.Equal(correspondentkind.SharedMailbox, shared.CorrespondentKind.Kind)
+	assert.Nil(relationshipRowOf(t, ranked, relAliceID).CorrespondentKind)
 }
 
 func TestRelationshipsUnsavedCursorRestartsWhenSavedPeopleChange(t *testing.T) {
