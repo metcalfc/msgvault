@@ -464,6 +464,7 @@
   function searchArchive(query: string): void {
     beforeCommit();
     exploreState.commitWorkspace('everything', { query });
+    everythingSession.submitTypedQuery(query);
     void focusGridAfterUpdate();
   }
   // Reviews wait for a decision; the gear menu says how many.

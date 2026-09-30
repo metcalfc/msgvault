@@ -1,6 +1,7 @@
 import type { MeetingPanelScope } from '../../meetings/controller.svelte';
 import type { ReadingPaneSelection } from '../reader/ReadingPane.svelte';
 import { VisibleLexicalCountCache, type SearchCoverageValue } from '../../search/modes';
+import type { QueryUnderstanding } from '../../search/suggestions';
 
 /**
  * Session-scoped state for the Everything workspace that must survive a
@@ -38,4 +39,16 @@ export class EverythingSessionState {
   readingDetailGeneration = 0;
   /** Predicate, outer authority and exact group identity used to load the detail. */
   readingDetailFingerprint = '';
+  /** The last query the person typed and submitted. Only a typed query
+   * asks for suggested filters; URL restores and Saved Views never do. */
+  typedQuery = $state<{ query: string; nonce: number }>();
+  /** The typed query whose suggestions were last requested. */
+  understoodNonce = 0;
+  /** Suggested filters for `query`; shown only while it is the current query. */
+  queryUnderstanding = $state<{ query: string; result: QueryUnderstanding }>();
+
+  /** Records a typed, submitted query so the workspace asks for suggestions. */
+  submitTypedQuery(query: string): void {
+    this.typedQuery = { query: query.trim(), nonce: (this.typedQuery?.nonce ?? 0) + 1 };
+  }
 }

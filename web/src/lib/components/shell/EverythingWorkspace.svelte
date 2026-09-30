@@ -22,7 +22,7 @@
     ExploreWorkspace,
     FileViewerTarget,
   } from '../../explore/models';
-  import { createExploreAPI } from '../../explore/api';
+  import { createExploreAPI, understandQuery } from '../../explore/api';
   import { filtersForGroup, parseGroupSelection, withPersonFilter } from '../../explore/group-context';
   import { findGroupDetail } from '../../explore/group-detail';
   import type { ExploreLoader } from '../../explore/loader.svelte';
@@ -38,9 +38,11 @@
   import PersonTimeline from '../people/PersonTimeline.svelte';
   import SearchStatus from '../search/SearchStatus.svelte';
   import SearchModeControl from '../search/SearchModeControl.svelte';
+  import QuerySuggestions from '../search/QuerySuggestions.svelte';
+  import { applySuggestion, type QuerySuggestion } from '../../search/suggestions';
   import ReadingPane, { type ReadingPaneSelection, type ReadingPaneStatus } from '../reader/ReadingPane.svelte';
   import type { SearchCoverageAction } from '../../search/modes';
-  import { extractQueryFilters, freeTextTerms, searchModeFellBack } from '../../search/query';
+  import { extractQueryFilters, freeTextTerms, hasFreeText, searchModeFellBack } from '../../search/query';
   import MeetingPanel from '../meetings/MeetingPanel.svelte';
   import { exploreMeetingScope } from '../../meetings/scopes';
   import type { EverythingSessionState } from './EverythingSessionState.svelte';
@@ -571,8 +573,66 @@
     // the rest of the query stays in the box.
     const extracted = extractQueryFilters(exploreState.current.query.trim(), exploreState.current.filters);
     commitSearch(extracted.query, exploreState.current.searchMode, extracted.moved ? extracted.filters : undefined);
+    session.submitTypedQuery(extracted.query);
     focusGrid();
   }
+
+  // Suggested filters: a typed, submitted query is judged beside the search
+  // (never before it). The daemon answers within its 800 ms budget or drops
+  // the judgment; a query that changed meanwhile drops it here too.
+  let understandingController: AbortController | undefined;
+  $effect(() => {
+    const typed = session.typedQuery;
+    if (!typed || typed.nonce === session.understoodNonce) return;
+    session.understoodNonce = typed.nonce;
+    understandingController?.abort();
+    untrack(() => {
+      session.queryUnderstanding = undefined;
+    });
+    if (!hasFreeText(typed.query)) return;
+    const controller = new AbortController();
+    understandingController = controller;
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
+    void understandQuery(client, typed.query, timezone, controller.signal).then((result) => {
+      if (controller.signal.aborted || !result || result.status !== 'judged') return;
+      if (session.typedQuery?.nonce !== typed.nonce) return;
+      session.queryUnderstanding = { query: typed.query, result };
+    });
+  });
+
+  const visibleUnderstanding = $derived(
+    session.queryUnderstanding && session.queryUnderstanding.query === exploreState.current.query.trim()
+      ? session.queryUnderstanding.result
+      : undefined
+  );
+
+  function applyQuerySuggestion(suggestion: QuerySuggestion): void {
+    const current = session.queryUnderstanding;
+    const next = applySuggestion(exploreState.current.query.trim(), exploreState.current.filters, suggestion);
+    // The other suggestions stay offered for the rewritten query.
+    if (current) {
+      session.queryUnderstanding = {
+        query: next.query,
+        result: { ...current.result, suggestions: current.result.suggestions.filter((other) => other !== suggestion) },
+      };
+    }
+    commitSearch(next.query, exploreState.current.searchMode, next.filters);
+    focusGrid();
+  }
+
+  // An empty full-text result for a query that reads as a question offers
+  // hybrid search, which matches meaning rather than every word.
+  const offerHybrid = $derived(Boolean(
+    enabled &&
+      visibleUnderstanding?.offerHybrid &&
+      exploreState.current.searchMode === 'full_text' &&
+      session.coverage?.status !== 'disabled' &&
+      loader.result &&
+      !loader.loading &&
+      !loader.error &&
+      loader.rows.length === 0 &&
+      loader.resultFingerprint === predicateFingerprint(exploreState.predicate())
+  ));
 
   function commitQueryText(query: string): void {
     commitSearch(query.trim(), exploreState.current.searchMode);
@@ -701,6 +761,7 @@
     if (lexicalCountTimer !== undefined) clearTimeout(lexicalCountTimer);
     lexicalCountController?.abort();
     semanticProbeController?.abort();
+    understandingController?.abort();
     session.readingDetailGeneration += 1;
     readingDetailController?.abort();
   });
@@ -746,8 +807,22 @@
     <Button type="submit" label="Search" tone="info" surface="solid" />
   </form>
 
+  {#if visibleUnderstanding && visibleUnderstanding.suggestions.length > 0}
+    <QuerySuggestions suggestions={visibleUnderstanding.suggestions} onapply={applyQuerySuggestion} />
+  {/if}
+
   {#if modeFellBack}
     <p class="search-note" role="status">Searched full text because this query has only filters.</p>
+  {:else if offerHybrid}
+    <p class="search-note" role="status">
+      No exact matches · this reads like a question ·
+      <button
+        type="button"
+        class="search-note__action kit-control-states"
+        aria-label="Search by meaning with hybrid search"
+        onclick={() => trySearchMode('hybrid')}
+      >Try hybrid search</button>
+    </p>
   {:else if offerManualProbe}
     <p class="search-note" role="status">
       Few exact matches ·

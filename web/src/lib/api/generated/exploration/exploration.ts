@@ -14,6 +14,8 @@ import type {
   ExploreMatchCountsResponse,
   ExplorePreflightRequest,
   ExplorePreflightResponse,
+  ExploreQueryUnderstandingRequest,
+  ExploreQueryUnderstandingResponse,
   FileGroupsHTTPRequest,
   FileGroupsHTTPResponse,
   FileSearchHTTPRequest,
@@ -204,6 +206,26 @@ export const preflightExploreSelection = (
       method: "POST",
       headers: { "Content-Type": "application/json" },
       data: explorePreflightRequest,
+    },
+    options,
+  );
+};
+/**
+ * Finds candidate time windows, message types, accounts, and people in a typed query and, when [jev.query_understanding] is enabled and consented, asks Jev which of them the query means. The whole exchange is bounded to 800 ms; a late judgment is dropped (status late). Only the query text and candidate labels leave the machine, with addresses and phone numbers removed. Delegated agent callers are always skipped. It never runs the search; call it alongside POST /explore.
+ * @summary Suggest Explore filters for a typed query
+ */
+export const understandExploreQuery = (
+  exploreQueryUnderstandingRequest: ExploreQueryUnderstandingRequest,
+  options?: SecondParameter<
+    typeof orvalFetch<ExploreQueryUnderstandingResponse>
+  >,
+) => {
+  return orvalFetch<ExploreQueryUnderstandingResponse>(
+    {
+      url: `/api/v1/explore/query-understanding`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: exploreQueryUnderstandingRequest,
     },
     options,
   );

@@ -6,7 +6,9 @@ import {
   getSearchCoverage as generatedGetSearchCoverage,
   groupFiles as generatedGroupFiles,
   listExploreFiles as generatedListExploreFiles,
+  understandExploreQuery as generatedUnderstandExploreQuery,
 } from '../api/generated/exploration/exploration';
+import type { QueryUnderstanding } from '../search/suggestions';
 import type { APIClient } from '../api/client';
 import type {
   ExploreCacheUnavailable,
@@ -270,4 +272,37 @@ export function createExploreAPI(client: APIClient): ExploreAPI {
       requireCompletedCLIRun(data ?? '');
     },
   };
+}
+
+/** Asks the daemon which filters a typed query means. The daemon bounds the
+ * judgment to 800 ms and answers skipped or late instead of failing; any
+ * transport failure resolves to undefined so a search never depends on it. */
+export async function understandQuery(
+  client: APIClient,
+  query: string,
+  timezone: string,
+  signal?: AbortSignal,
+): Promise<QueryUnderstanding | undefined> {
+  try {
+    const { data } = await generatedUnderstandExploreQuery(
+      { query, ...(timezone ? { timezone } : {}) },
+      { ...client, signal },
+    );
+    if (!data) return undefined;
+    return {
+      status: data.status,
+      reason: data.reason,
+      offerHybrid: data.offer_hybrid,
+      suggestions: data.suggestions.map((suggestion) => ({
+        kind: suggestion.kind,
+        label: suggestion.label,
+        span: suggestion.span,
+        probability: suggestion.probability,
+        filters: suggestion.filters,
+        queryOperators: suggestion.query_operators,
+      })),
+    };
+  } catch {
+    return undefined;
+  }
 }
