@@ -363,6 +363,26 @@ describe('SettingsWorkspace', () => {
     expect(await screen.findByText('No unsaved changes')).toBeDefined();
   });
 
+  it('settles a saved draft that the daemon normalized', async () => {
+    const normalized = {
+      ...initialSettings,
+      settings: initialSettings.settings.map((item) =>
+        item.key === 'vector.embeddings.endpoint' ? { ...item, value: { string: 'http://127.0.0.1:11435' } } : item,
+      ),
+    };
+    const fetchFn = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(settingsResponse(initialSettings, '"etag-a"'))
+      .mockResolvedValueOnce(settingsResponse(normalized, '"etag-b"'));
+    render(SettingsWorkspace, { client: createAPIClient(fetchFn), section: 'search' });
+    const endpoint = await screen.findByLabelText('Text embedding endpoint') as HTMLInputElement;
+    await fireEvent.input(endpoint, { target: { value: ' http://127.0.0.1:11435 ' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+
+    expect(await screen.findByText('No unsaved changes')).toBeDefined();
+    expect(endpoint.value).toBe('http://127.0.0.1:11435');
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
   it.each(['replace', 'clear'] as const)('keeps a secret %s staged during a settings save', async (action) => {
     let finishSave!: (response: Response) => void;
     const pendingSave = new Promise<Response>((resolve) => { finishSave = resolve; });

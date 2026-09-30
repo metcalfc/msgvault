@@ -276,12 +276,21 @@
   function isDirty(key: string): boolean {
     return Object.hasOwn(drafts, key) || Object.hasOwn(secretUpdates, key);
   }
+  function withoutAcknowledged<T>(current: Record<string, T>, submitted: Record<string, T>): Record<string, T> {
+    const remaining = { ...current };
+    for (const [key, value] of Object.entries(submitted)) {
+      if (Object.hasOwn(remaining, key) && JSON.stringify(remaining[key]) === JSON.stringify(value)) delete remaining[key];
+    }
+    return remaining;
+  }
   async function saveSettings() {
     if (saving) return;
+    const submittedDrafts = Object.fromEntries(
+      Object.entries(drafts).filter(([key]) => !settings.find((setting) => setting.key === key)?.read_only),
+    );
     const submittedSecrets = { ...secretUpdates };
     const updates: SettingUpdate[] = [
-      ...Object.entries(drafts)
-        .filter(([key]) => !settings.find((setting) => setting.key === key)?.read_only)
+      ...Object.entries(submittedDrafts)
         .map(([key, value]) => ({
           key,
           value: typedValue(
@@ -323,13 +332,11 @@
       pendingRestart = result.pending_restart;
       etag = response.headers.get('ETag') ?? etag;
       credentialETag = response.headers.get('Credential-ETag') ?? result.credential_etag ?? credentialETag;
-      // Secret responses contain only masked hints, so acknowledge the exact
-      // submitted actions. Later replacements and clears remain unsaved.
-      const remainingSecrets = { ...secretUpdates };
-      for (const [key, submitted] of Object.entries(submittedSecrets)) {
-        if (JSON.stringify(remainingSecrets[key]) === JSON.stringify(submitted)) delete remainingSecrets[key];
-      }
-      secretUpdates = remainingSecrets;
+      // Acknowledge exactly what was submitted: the daemon may normalize a
+      // value (trimmed cron, clamped minimum) and secrets come back only as
+      // masked hints. Edits made while the save was in flight stay unsaved.
+      drafts = withoutAcknowledged(drafts, submittedDrafts);
+      secretUpdates = withoutAcknowledged(secretUpdates, submittedSecrets);
     } catch (cause) {
       error = cause instanceof Error ? cause.message : 'Unable to save settings.';
     } finally {
