@@ -338,7 +338,7 @@ func (s *Store) upsertIdentityMatchCandidateTx(
 		if rightKind == IdentityMatchParticipant {
 			endpoints = append(endpoints, rightID)
 		}
-		notAPerson, err := participantsClassifiedNotPersonTx(ctx, tx, endpoints)
+		notAPerson, err := s.participantsClassifiedNotPersonTx(ctx, tx, endpoints)
 		if err != nil {
 			return nil, false, err
 		}

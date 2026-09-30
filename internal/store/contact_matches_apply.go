@@ -117,7 +117,7 @@ func (s *Store) acceptParticipantPersonMatchTx(
 		return nil, err
 	}
 	members := sortedComponentMembers(candidate.LeftID, edges)
-	if err := contactMatchAcceptGuardsTx(ctx, tx, *candidate, members); err != nil {
+	if err := s.contactMatchAcceptGuardsTx(ctx, tx, *candidate, members); err != nil {
 		return nil, err
 	}
 	persons, err := personIDsForParticipantsTx(ctx, tx, members)
@@ -170,7 +170,7 @@ func (s *Store) acceptParticipantPersonMatchTx(
 // changed since: the cluster must not contain an owner identity, no member
 // may have a rejected match with the person, and one of the person's current
 // addresses must still exactly match a cluster member.
-func contactMatchAcceptGuardsTx(
+func (s *Store) contactMatchAcceptGuardsTx(
 	ctx context.Context, tx *loggedTx, candidate IdentityMatchCandidate, members []int64,
 ) error {
 	owners, err := ownerParticipantIDsTx(ctx, tx)
@@ -182,7 +182,7 @@ func contactMatchAcceptGuardsTx(
 			return ErrContactMatchOwnerIdentity
 		}
 	}
-	notAPerson, err := participantsClassifiedNotPersonTx(ctx, tx, members)
+	notAPerson, err := s.participantsClassifiedNotPersonTx(ctx, tx, members)
 	if err != nil {
 		return err
 	}

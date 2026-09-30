@@ -917,7 +917,7 @@ func (s *Store) retireStaleContactMatchCandidatesTx(ctx context.Context, tx *log
 			members = append(members, id)
 		}
 		slices.Sort(members)
-		guardErr := contactMatchAcceptGuardsTx(ctx, tx, row, members)
+		guardErr := s.contactMatchAcceptGuardsTx(ctx, tx, row, members)
 		if guardErr == nil {
 			continue
 		}

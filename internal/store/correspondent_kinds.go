@@ -1079,26 +1079,35 @@ func execCountInChunksTx[T any](
 }
 
 // participantsClassifiedNotPersonTx reports whether any of the given
-// participants carries a user classification other than person. It reads
-// the participants' own rows only, which a classification writes for every
-// cluster member, so it is cheap enough for per-candidate writers.
-func participantsClassifiedNotPersonTx(
+// participants is in a cluster whose effective kind is not a person. It
+// resolves clusters from all their members' rows (so a later-linked member
+// is covered and a newer person override wins), and costs one indexed probe
+// when nothing is classified.
+func (s *Store) participantsClassifiedNotPersonTx(
 	ctx context.Context, tx *loggedTx, participantIDs []int64,
 ) (bool, error) {
 	if len(participantIDs) == 0 {
 		return false, nil
 	}
-	args := []any{correspondentkind.SourceUser, correspondentkind.Person}
+	var classified int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM (
+		SELECT 1 FROM correspondent_kinds WHERE kind <> ? LIMIT 1) probe`,
+		correspondentkind.Person).Scan(&classified); err != nil {
+		return false, fmt.Errorf("probe correspondent kinds: %w", err)
+	}
+	if classified == 0 {
+		return false, nil
+	}
+	hidden, err := s.hiddenCorrespondentParticipantsTx(ctx, tx)
+	if err != nil {
+		return false, err
+	}
 	for _, id := range participantIDs {
-		args = append(args, id)
+		if _, ok := hidden[id]; ok {
+			return true, nil
+		}
 	}
-	var count int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM correspondent_kinds
-		WHERE source = ? AND kind <> ? AND participant_id IN (`+placeholders(len(participantIDs))+`)`,
-		args...).Scan(&count); err != nil {
-		return false, fmt.Errorf("check correspondent kinds: %w", err)
-	}
-	return count > 0, nil
+	return false, nil
 }
 
 // rewriteCorrespondentKindsForMergeTx moves a merged-away participant's

@@ -406,3 +406,77 @@ func TestOwnerIdentityAddedLaterStillResolvesAsAPerson(t *testing.T) {
 	require.NoError(err)
 	assert.Empty(hidden)
 }
+
+func upsertDisplayNameCandidate(t *testing.T, st *store.Store, left, right int64, value string) *store.IdentityMatchCandidate {
+	t.Helper()
+	candidate, _, err := st.UpsertIdentityMatchCandidateContext(t.Context(), store.IdentityMatchCandidateInput{
+		LeftKind: store.IdentityMatchParticipant, LeftID: left,
+		RightKind: store.IdentityMatchParticipant, RightID: right,
+		Basis: store.IdentityMatchDisplayName, NormalizedValue: &value,
+		State: store.IdentityMatchStateCandidate, Source: store.ProvenanceSystem,
+	})
+	require.NoError(t, err)
+	return candidate
+}
+
+func TestCandidateSuppressionFollowsTheEffectiveClusterKind(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	// A participant linked into an ignored cluster after it was classified
+	// carries no row of its own, but its cluster is ignored.
+	ignored := f.emailParticipant("ignored-desk@example.test", "Desk")
+	lateMember := f.emailParticipant("late-desk@example.test", "Desk")
+	other := f.emailParticipant("other@example.test", "Other")
+	_, err := f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: ignored, Kind: correspondentkind.Ignored,
+	})
+	require.NoError(err)
+	_, err = f.st.LinkParticipants(ignored, lateMember)
+	require.NoError(err)
+	suppressed := upsertDisplayNameCandidate(t, f.st, lateMember, other, "late-name")
+	assert.Equal(store.IdentityMatchStateRejected, suppressed.State)
+
+	// An older ignored row loses to a newer person override in the same
+	// cluster, so it must not suppress new candidates.
+	older := f.emailParticipant("older@example.test", "Sam")
+	newer := f.emailParticipant("newer@example.test", "Sam")
+	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: older, Kind: correspondentkind.Ignored,
+	})
+	require.NoError(err)
+	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: newer, Kind: correspondentkind.Person,
+	})
+	require.NoError(err)
+	_, err = f.st.LinkParticipants(older, newer)
+	require.NoError(err)
+	record, err := f.st.GetCorrespondentKindContext(t.Context(), older)
+	require.NoError(err)
+	require.Equal(correspondentkind.Person, record.Kind)
+	open := upsertDisplayNameCandidate(t, f.st, older, other, "sam-name")
+	assert.Equal(store.IdentityMatchStateCandidate, open.State)
+}
+
+func TestAcceptContactMatchUsesTheEffectiveClusterKind(t *testing.T) {
+	require := require.New(t)
+	f := newContactMatchFixture(t)
+
+	older := f.emailParticipant("remy@example.test", "Remy")
+	newer := f.emailParticipant("remy.work@example.test", "Remy")
+	_, err := f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: older, Kind: correspondentkind.Ignored,
+	})
+	require.NoError(err)
+	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: newer, Kind: correspondentkind.Person,
+	})
+	require.NoError(err)
+	_, err = f.st.LinkParticipants(older, newer)
+	require.NoError(err)
+	people := f.importCards(f.card("card-remy", "Remy Card", []string{"remy@example.test"}, nil))
+	candidate := f.buildCandidate(people["card-remy"])
+	_, _, err = f.st.AcceptIdentityMatchCandidateContext(t.Context(), candidate.ID, "user", nil)
+	require.NoError(err, "the cluster's newer person override wins over the older ignored row")
+}
