@@ -42,6 +42,9 @@
   let error = $state<string | null>(null);
   let idempotencyKey = $state<string | null>(null);
   let reloadRequired = $state(false);
+  // The modal merges into the default survivor on open and shows the choice
+  // only when that automatic merge cannot complete.
+  let choosing = $state(false);
   let requestGeneration = 0;
   let disposed = false;
   let abortController: AbortController | undefined;
@@ -54,6 +57,7 @@
   );
   onMount(() => {
     releaseShortcutScope = appShortcuts.pushScope('person-binding-conflict-modal');
+    void mergeAutomatically();
   });
   onDestroy(() => {
     disposed = true;
@@ -162,11 +166,23 @@
       if (!disposed && generation === requestGeneration) pending = false;
     }
   }
+  // Merges into the default survivor, reloading and retrying once when the
+  // profiles changed underneath; any other outcome hands the choice to the user.
+  async function mergeAutomatically(): Promise<void> {
+    let outcome = await attemptMerge();
+    if (outcome === 'reloaded') outcome = await attemptMerge();
+    if (disposed || outcome === 'merged' || outcome === 'superseded') return;
+    choosing = true;
+  }
   async function submit(): Promise<void> {
-    if (pending || completed || reloadRequired || survivorID === null) return;
+    await attemptMerge();
+  }
+  type MergeOutcome = 'merged' | 'reloaded' | 'failed' | 'superseded' | 'skipped';
+  async function attemptMerge(): Promise<MergeOutcome> {
+    if (pending || completed || reloadRequired || survivorID === null) return 'skipped';
     const survivor = profiles.find((profile) => profile.person.id === survivorID);
     const absorbed = profiles.find((profile) => profile.person.id !== survivorID);
-    if (!survivor || !absorbed) return;
+    if (!survivor || !absorbed) return 'skipped';
     const key = idempotencyKey ?? crypto.randomUUID();
     idempotencyKey = key;
     pending = true;
@@ -186,7 +202,7 @@
           },
         },
       );
-      if (disposed || generation !== requestGeneration) return;
+      if (disposed || generation !== requestGeneration) return 'superseded';
       if (response.data) {
         completed = true;
         // The absorbed person's identities now belong to the survivor.
@@ -201,93 +217,121 @@
         } catch {
           error = 'People were merged, but the surrounding view could not be refreshed.';
         }
-        return;
+        return 'merged';
       }
       idempotencyKey = null;
       if (isPersonMergeRevisionConflict(response.error)) {
         reloadRequired = true;
         await reloadProfiles(generation, abortController.signal);
-      } else {
-        error = response.error?.message ?? 'The people could not be merged.';
+        if (disposed || generation !== requestGeneration) return 'superseded';
+        return reloadRequired ? 'failed' : 'reloaded';
       }
+      error = response.error?.message ?? 'The people could not be merged.';
+      return 'failed';
     } catch (cause) {
-      if (disposed || generation !== requestGeneration || abortController.signal.aborted) return;
+      if (disposed || generation !== requestGeneration || abortController.signal.aborted) return 'superseded';
       error = cause instanceof Error ? cause.message : 'The merge request could not be sent.';
+      return 'failed';
     } finally {
       if (!disposed && generation === requestGeneration) pending = false;
     }
   }
 </script>
 
-<Modal
-  title="Resolve person merge"
-  ariaLabel="Resolve person merge"
-  closeLabel="Close person merge"
-  closable={!pending && !completed}
-  closeOnOverlayClick={!pending && !completed}
-  onclose={requestClose}
-  maxWidth="min(680px, calc(100vw - 32px))"
->
-  <div class="conflict" aria-busy={pending}>
-    <p>
-      These identities already belong to different Directory profiles. Inspect both profiles, then choose the one that
-      survives.
-    </p>
+{#if choosing}
+  <Modal
+    title="Resolve person merge"
+    ariaLabel="Resolve person merge"
+    closeLabel="Close person merge"
+    closable={!pending && !completed}
+    closeOnOverlayClick={!pending && !completed}
+    onclose={requestClose}
+    maxWidth="min(680px, calc(100vw - 32px))"
+  >
+    <div class="conflict" aria-busy={pending}>
+      <p>
+        These people could not be merged automatically. Inspect both profiles, then choose the one to keep.
+      </p>
 
-    <div class="profiles">
-      {#each profiles as profile (profile.person.id)}
-        <article>
-          <strong>{profileName(profile)}</strong>
-          <span>{profileDetail(profile)}</span>
-          <Button
-            surface="soft"
-            label={`Open ${profileName(profile)} profile`}
-            disabled={pending}
-            onclick={() => onOpenProfile(profile.person.id)}
-          />
-        </article>
-      {/each}
+      <div class="profiles">
+        {#each profiles as profile (profile.person.id)}
+          <article>
+            <strong>{profileName(profile)}</strong>
+            <span>{profileDetail(profile)}</span>
+            <Button
+              surface="soft"
+              label={`Open ${profileName(profile)} profile`}
+              disabled={pending}
+              onclick={() => onOpenProfile(profile.person.id)}
+            />
+          </article>
+        {/each}
+      </div>
+
+      <SegmentedControl
+        ariaLabel="Merge survivor"
+        {options}
+        value={survivorID === null ? '' : String(survivorID)}
+        onchange={selectSurvivor}
+        disabled={pending || completed || reloadRequired}
+        block
+      />
+
+      <p class="undo-hint">
+        You can undo a merge later: open the kept person's Maintenance tab, find it under Merge history, and choose
+        Split merged profile.
+      </p>
+
+      {#if error}<p class="error" role="alert">{error}</p>{/if}
+      {#if completed}<p role="status">People merged.</p>{/if}
     </div>
 
-    <SegmentedControl
-      ariaLabel="Merge survivor"
-      {options}
-      value={survivorID === null ? '' : String(survivorID)}
-      onchange={selectSurvivor}
-      disabled={pending || completed || reloadRequired}
-      block
-    />
-
-    <p class="undo-hint">
-      You can undo a merge later: open the kept person's Maintenance tab, find it under Merge history, and choose
-      Split merged profile.
-    </p>
-
-    {#if error}<p class="error" role="alert">{error}</p>{/if}
-    {#if completed}<p role="status">People merged.</p>{/if}
-  </div>
-
-  {#snippet footer()}
-    <Button surface="soft" label="Cancel" disabled={pending || completed} onclick={requestClose} />
-    {#if !completed}
-      {#if reloadRequired}
+    {#snippet footer()}
+      <Button surface="soft" label="Cancel" disabled={pending || completed} onclick={requestClose} />
+      {#if !completed}
+        {#if reloadRequired}
+          <Button
+            surface="soft"
+            label="Retry profile reload"
+            disabled={pending}
+            onclick={() => void retryProfileReload()}
+          />
+        {/if}
         <Button
-          surface="soft"
-          label="Retry profile reload"
-          disabled={pending}
-          onclick={() => void retryProfileReload()}
+          tone="info"
+          surface="solid"
+          label="Merge into selected survivor"
+          disabled={pending || reloadRequired || survivorID === null}
+          onclick={() => void submit()}
         />
       {/if}
-      <Button
-        tone="info"
-        surface="solid"
-        label="Merge into selected survivor"
-        disabled={pending || reloadRequired || survivorID === null}
-        onclick={() => void submit()}
-      />
-    {/if}
-  {/snippet}
-</Modal>
+    {/snippet}
+  </Modal>
+{:else}
+  <!-- The automatic merge cannot be dismissed mid-request; it either
+       completes or falls back to the choice above. Only a merge whose
+       surrounding view failed to refresh leaves it open to close. -->
+  <Modal
+    title="Merging people"
+    ariaLabel="Merging people"
+    closeLabel="Close"
+    closable={completed && error !== null}
+    closeOnOverlayClick={false}
+    onclose={() => {
+      if (completed && error !== null) onClose();
+    }}
+    maxWidth="min(420px, calc(100vw - 32px))"
+  >
+    <div class="automatic" aria-busy={!completed}>
+      {#if completed}
+        <p role="status">People merged.</p>
+      {:else}
+        <p role="status">Merging people…</p>
+      {/if}
+      {#if error}<p class="error" role="alert">{error}</p>{/if}
+    </div>
+  </Modal>
+{/if}
 
 <style>
   .conflict {
@@ -297,6 +341,10 @@
   }
   p {
     margin: 0;
+  }
+  .automatic {
+    display: grid;
+    gap: var(--space-3);
   }
   .profiles {
     display: grid;

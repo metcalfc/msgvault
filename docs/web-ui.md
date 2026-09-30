@@ -421,12 +421,14 @@ accepting or rejecting a candidate. Decision notes are optional; choose
 - A contact match through an address that looks shared says **Looks like a
   shared mailbox** and cannot be linked until you choose **This is a person**
   on the card.
-- Conflicts between existing profiles open **Resolve person merge**. The
-  profile with more identities, then the older one, is preselected to survive;
-  pick the other to keep it instead. Undo a merge from the kept person's
-  **Maintenance** tab: under **Merge history**, inspect the merge and choose
-  **Split merged profile**. Merge history and reversal follow the boundaries
-  documented in [People](/docs/usage/people/).
+- When the two identities already belong to different people, **Same
+  person…** and accepting a match merge those people for you. The person with
+  more identities, then the older one, is kept. Only if that merge fails does
+  **Resolve person merge** open, so you can inspect both and choose which to
+  keep. Undo a merge from the kept person's **Maintenance** tab: under
+  **Merge history**, inspect the merge and choose **Split merged profile**.
+  Merge history and reversal follow the boundaries documented in
+  [People](/docs/usage/people/).
 
 ## Saved Views
 

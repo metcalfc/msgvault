@@ -300,15 +300,22 @@ test('Directory review, merge, split, and honest Fact gate have no axe violation
   await page.getByRole('radio', { name: 'All matches' }).click();
   await expect(page.getByRole('article', { name: 'Identity match 17' })).toBeVisible();
 
+  // Fail the first automatic merge so the choice UI is audited too.
+  const failMerge = /\/api\/v1\/people\/\d+\/merge$/;
+  await page.route(failMerge, (route) => route.fulfill({
+    status: 409, json: { error: 'person_carddav_published', message: 'Synthetic profile is published to CardDAV.' }
+  }));
   await page.getByRole('article', { name: 'Identity match 19' })
     .getByRole('button', { name: 'Link identities' }).click();
   const conflict = page.getByRole('dialog', { name: 'Link identities' });
   await conflict.getByRole('button', { name: 'Link identities' }).click();
   await conflict.getByRole('button', { name: 'Resolve merge' }).click();
+  // The merge runs on its own; a failed one falls back to the choice.
   const merge = page.getByRole('dialog', { name: 'Resolve person merge' });
   await expect(merge).toBeVisible();
-  await assertNoViolations(page, 'Directory person merge');
+  await assertNoViolations(page, 'Directory person merge choice');
   await expect(merge.getByRole('radio', { name: 'Synthetic One' })).toBeChecked();
+  await page.unroute(failMerge);
   await merge.getByRole('button', { name: 'Merge into selected survivor' }).click();
   // Merging from Reviews stays in the queue and moves on to the next match.
   await expect(merge).toHaveCount(0);

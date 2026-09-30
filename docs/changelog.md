@@ -8,6 +8,9 @@ All notable changes to msgvault, grouped by release.
 
 ## Unreleased
 
+- **Same person…** and accepting an identity match merge the two people
+  automatically when both already have profiles, keeping the one with more
+  identities. The Web UI asks you to choose only when that merge fails.
 - Reviews has its own place in the Web UI's primary navigation, with a dot
   when any review waits. `GET /api/v1/reviews/pending` answers which review
   queues have an item waiting with one indexed lookup per queue. Deciding

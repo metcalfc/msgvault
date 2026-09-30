@@ -84,8 +84,8 @@ describe('DirectoryReviewCentre', () => {
     expect(calls).toEqual([{ method: 'GET', path: '/api/v1/person-relationship-reviews', status: 'pending' }]);
     expect(screen.getByText('Imported relationship reviews are read-only in the browser until generated decision operations are available.')).toBeDefined();
   });
-  it('replaces an accept decision with the shared merge modal without replaying acceptance', async () => {
-    const conflict = {
+  function mergeConflict() {
+    return {
       error: 'person_merge_required',
       message: 'Choose a survivor',
       profiles: [
@@ -93,11 +93,76 @@ describe('DirectoryReviewCentre', () => {
         { etag: '"person-9-r2"', person: { id: 9, revision: 2, display_name: 'Synthetic Two' } }
       ]
     };
+  }
+
+  function mergedResponse(): Response {
+    const survivor = {
+      id: 7, revision: 5, display_name: 'Synthetic One', participant_ids: [70, 90], vcard_uid: 'synthetic-7',
+      created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-03T00:00:00Z'
+    };
+    return Response.json({
+      cache_state: 'ready', identity_revision: 8, person: survivor, review_candidates: [],
+      merge: {
+        id: 41, survivor_person_id: 7, absorbed_person_id: 9, current_person_id: 7,
+        survivor_vcard_uid: 'synthetic-7', absorbed_vcard_uid: 'synthetic-9',
+        survivor_revision_before: 4, absorbed_revision_before: 2, survivor_revision_after: 5,
+        actor: 'web', snapshot_version: 1, snapshot_sha256: 'synthetic-digest', created_at: '2026-08-03T00:00:00Z'
+      }
+    }, { headers: { ETag: '"person-7-r5"' } });
+  }
+
+  it('merges the two people automatically after an accept needs a merge, without replaying acceptance', async () => {
+    const requests: Request[] = [];
+    let merged = false;
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = requestOf(input);
+      requests.push(request);
+      const path = new URL(request.url).pathname;
+      if (path.endsWith('/accept')) return Response.json(mergeConflict(), { status: 409 });
+      if (path === '/api/v1/people/7/merge') {
+        merged = true;
+        return mergedResponse();
+      }
+      return page(merged ? [] : [candidate(17)]);
+    });
+    const onAnnounce = vi.fn();
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
+    controller.rows = [candidate(17)];
+    render(DirectoryReviewCentre, {
+      controller,
+      relationshipController: new RelationshipReviewController(controller.apiClient),
+      factController: new FactLedgerController(controller.apiClient),
+      directoryPersonID: null,
+      onOpenPerson: vi.fn(),
+      onAnnounce
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Link identities' }));
+    await fireEvent.click(screen.getByRole('dialog', { name: 'Link identities' }).querySelector('button.kit-button--solid')!);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Resolve merge' }));
+
+    await waitFor(() => expect(onAnnounce).toHaveBeenCalledWith(
+      "People merged into Synthetic One. Undo it from Synthetic One's merge history."
+    ));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(await screen.findByRole('button', { name: 'Open Synthetic One profile' })).toBeDefined();
+    const posts = requests.filter((request) => request.method === 'POST' && new URL(request.url).pathname.endsWith('/merge'));
+    expect(posts).toHaveLength(1);
+    expect(new URL(posts[0]!.url).pathname).toBe('/api/v1/people/7/merge');
+    expect(posts[0]!.headers.get('If-Match')).toBe('"person-7-r4", "person-9-r2"');
+    expect(posts[0]!.headers.get('Idempotency-Key')).toBeTruthy();
+    await expect(posts[0]!.clone().json()).resolves.toEqual({ absorbed_person_id: 9 });
+    expect(requests.filter((request) => new URL(request.url).pathname.endsWith('/accept'))).toHaveLength(1);
+  });
+
+  it('shows the merge choice in place of the decision when the automatic merge fails', async () => {
     const requests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = requestOf(input);
       requests.push(request);
-      return Response.json(conflict, { status: 409 });
+      const path = new URL(request.url).pathname;
+      if (path.endsWith('/accept')) return Response.json(mergeConflict(), { status: 409 });
+      return Response.json({ error: 'person_carddav_published', message: 'Unpublish first' }, { status: 409 });
     });
     const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
     controller.rows = [candidate(17)];
@@ -107,10 +172,12 @@ describe('DirectoryReviewCentre', () => {
     await fireEvent.click(screen.getByRole('dialog', { name: 'Link identities' }).querySelector('button.kit-button--solid')!);
     await fireEvent.click(await screen.findByRole('button', { name: 'Resolve merge' }));
 
+    const merge = await screen.findByRole('dialog', { name: 'Resolve person merge' });
+    expect(within(merge).getByRole('alert').textContent).toContain('Unpublish first');
     expect(screen.queryByRole('dialog', { name: 'Link identities' })).toBeNull();
-    expect(screen.getByRole('dialog', { name: 'Resolve person merge' })).toBeDefined();
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
     expect(requests.filter((request) => new URL(request.url).pathname.endsWith('/accept'))).toHaveLength(1);
+    expect(requests.filter((request) => new URL(request.url).pathname.endsWith('/merge'))).toHaveLength(1);
   });
 
   it('changes identity state through the controller and commits the URL filter', async () => {

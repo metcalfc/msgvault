@@ -910,8 +910,6 @@ describe('AppShell', () => {
     await focusAndClick(within(firstCard).getByRole('button', { name: 'Link identities' }));
     await focusAndClick(screen.getByRole('dialog', { name: 'Link identities' }).querySelector('button.kit-button--solid')!);
     await focusAndClick(await screen.findByRole('button', { name: 'Resolve merge' }));
-    expect(screen.getByRole('radio', { name: 'Synthetic One' }).getAttribute('aria-checked')).toBe('true');
-    await focusAndClick(screen.getByRole('button', { name: 'Merge into selected survivor' }));
 
     const nextCard = await screen.findByRole('article', { name: 'Identity match 18' });
     await waitFor(() => expect(document.activeElement).toBe(nextCard));
@@ -922,6 +920,11 @@ describe('AppShell', () => {
       .toContain("People merged into Synthetic One. Undo it from Synthetic One's merge history."));
     expect(requests.some((request) => request.method === 'GET' && new URL(request.url).pathname === '/api/v1/people/7')).toBe(false);
     expect(requests.filter((request) => new URL(request.url).pathname.endsWith('/accept'))).toHaveLength(1);
+    // The merge ran on its own into the default survivor, absorbing the other profile.
+    const merges = requests.filter((request) => request.method === 'POST' && new URL(request.url).pathname.endsWith('/merge'));
+    expect(merges.map((request) => new URL(request.url).pathname)).toEqual(['/api/v1/people/7/merge']);
+    expect(merges[0]!.headers.get('If-Match')).toBe('"person-7-r4", "person-9-r2"');
+    await expect(merges[0]!.clone().json()).resolves.toEqual({ absorbed_person_id: 9 });
 
     // The kept profile opens only from its explicit link.
     await focusAndClick(await screen.findByRole('button', { name: 'Open Synthetic One profile' }));

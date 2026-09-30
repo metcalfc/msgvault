@@ -80,12 +80,14 @@ function clusteredPersonWithBareMember(): PersonSummary {
   };
 }
 
-function searchClient(): ReturnType<typeof createAPIClient> {
+function searchClient(other?: (request: Request) => Response | undefined): ReturnType<typeof createAPIClient> {
   const fetchFn = vi.fn<typeof fetch>(async (input) => {
     const request = input instanceof Request ? input : new Request(input);
     if (new URL(request.url).pathname === '/api/v1/participants/search') {
       return Response.json({ rows: [searchResult()], total_count: 1, cache_revision: 'cache-rel', search_provenance: {} });
     }
+    const answer = other?.(request);
+    if (answer) return answer;
     throw new Error(`unexpected fetch to ${request.url}`);
   });
   return createAPIClient(withEntityLabels(fetchFn, { participant: { 78: 'Dana Example' } }));
@@ -393,22 +395,70 @@ describe('RelationshipHeader', () => {
     expect(screen.queryByRole('dialog', { name: /Link another identity/ })).toBeNull();
   });
 
-  it('replaces the link dialog with the shared merge modal without replaying the link', async () => {
-    const conflict = {
+  function mergeRequired(): ValidatedPersonMergeRequired {
+    return {
       error: 'person_merge_required', message: 'Choose a survivor', profiles: [
         { etag: '"person-7-r4"', person: { id: 7, revision: 4, display_name: 'Synthetic One' } },
         { etag: '"person-9-r2"', person: { id: 9, revision: 2, display_name: 'Synthetic Two' } }
       ]
     } as unknown as ValidatedPersonMergeRequired;
+  }
+
+  it('merges the two people automatically when Same person needs a merge, without replaying the link', async () => {
+    const conflict = mergeRequired();
+    const merges: Request[] = [];
+    const survivor = {
+      id: 7, revision: 5, display_name: 'Synthetic One', participant_ids: [12, 99], vcard_uid: 'synthetic-7',
+      created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-03T00:00:00Z'
+    };
+    const client = searchClient((request) => {
+      if (request.method !== 'POST' || new URL(request.url).pathname !== '/api/v1/people/7/merge') return undefined;
+      merges.push(request);
+      return Response.json({
+        cache_state: 'ready', identity_revision: 8, person: survivor, review_candidates: [],
+        merge: {
+          id: 41, survivor_person_id: 7, absorbed_person_id: 9, current_person_id: 7,
+          survivor_vcard_uid: 'synthetic-7', absorbed_vcard_uid: 'synthetic-9',
+          survivor_revision_before: 4, absorbed_revision_before: 2, survivor_revision_after: 5,
+          actor: 'web', snapshot_version: 1, snapshot_sha256: 'synthetic-digest', created_at: '2026-08-03T00:00:00Z'
+        }
+      }, { headers: { ETag: '"person-7-r5"' } });
+    });
     const onLinkParticipants = vi.fn(async (): Promise<LinkOutcome> => ({
       ok: false, code: 'merge_required', message: conflict.message, conflict
     }));
-    render(RelationshipHeader, baseProps({ onLinkParticipants }));
+    const onAnnounce = vi.fn();
+    const onOpenDirectoryPerson = vi.fn();
+    render(RelationshipHeader, baseProps({ client, onLinkParticipants, onAnnounce, onOpenDirectoryPerson }));
 
     await linkToSearchResult();
 
+    await waitFor(() => expect(onOpenDirectoryPerson).toHaveBeenCalledWith(7));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(onAnnounce).toHaveBeenCalledWith('People merged into Synthetic One. Identity cache ready.'));
+    expect(merges).toHaveLength(1);
+    expect(merges[0]!.headers.get('If-Match')).toBe('"person-7-r4", "person-9-r2"');
+    expect(merges[0]!.headers.get('Idempotency-Key')).toBeTruthy();
+    await expect(merges[0]!.clone().json()).resolves.toEqual({ absorbed_person_id: 9 });
+    expect(onLinkParticipants).toHaveBeenCalledOnce();
+  });
+
+  it('replaces the link dialog with the merge choice when the automatic merge fails', async () => {
+    const conflict = mergeRequired();
+    const client = searchClient((request) => {
+      if (new URL(request.url).pathname !== '/api/v1/people/7/merge') return undefined;
+      return Response.json({ error: 'person_carddav_published', message: 'Unpublish first' }, { status: 409 });
+    });
+    const onLinkParticipants = vi.fn(async (): Promise<LinkOutcome> => ({
+      ok: false, code: 'merge_required', message: conflict.message, conflict
+    }));
+    render(RelationshipHeader, baseProps({ client, onLinkParticipants }));
+
+    await linkToSearchResult();
+
+    expect(await screen.findByRole('dialog', { name: 'Resolve person merge' })).toBeDefined();
+    expect((await screen.findByRole('alert')).textContent).toContain('Unpublish first');
     expect(screen.queryByRole('dialog', { name: /Link another identity/ })).toBeNull();
-    expect(screen.getByRole('dialog', { name: 'Resolve person merge' })).toBeDefined();
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
     expect(onLinkParticipants).toHaveBeenCalledOnce();
   });

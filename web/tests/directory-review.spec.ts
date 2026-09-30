@@ -18,7 +18,8 @@ function reviewURL(
   }))}`;
 }
 
-async function openMergeModal(page: Page) {
+/** Accepts identity match 19, which needs the two profiles merged first. */
+async function startMerge(page: Page) {
   const card = page.getByRole('article', { name: 'Identity match 19' });
   await card.getByRole('button', { name: 'Link identities' }).focus();
   await page.keyboard.press('Enter');
@@ -29,13 +30,28 @@ async function openMergeModal(page: Page) {
   await expect(page.getByRole('dialog')).toHaveCount(1);
   await decision.getByRole('button', { name: 'Resolve merge' }).focus();
   await page.keyboard.press('Enter');
+  await expect(decision).toHaveCount(0);
+}
+
+/** Makes the automatic merge fail so the choice between both profiles shows. */
+async function openMergeChoice(page: Page) {
+  const attempts: string[] = [];
+  await page.route(/\/api\/v1\/people\/\d+\/merge$/, (route) => {
+    attempts.push(new URL(route.request().url()).pathname);
+    return route.fulfill({
+      status: 409,
+      json: { error: 'person_carddav_published', message: 'Synthetic profile is published to CardDAV.' },
+    });
+  });
+  await startMerge(page);
   const merge = page.getByRole('dialog', { name: 'Resolve person merge' });
   await expect(merge).toBeVisible();
-  await expect(decision).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(1);
+  await expect(merge.getByRole('alert')).toContainText('Synthetic profile is published to CardDAV.');
   await expect(merge).toContainText('revision 4');
   await expect(merge).toContainText('revision 2');
   await expect(merge).not.toContainText(/Person \d/);
+  expect(attempts).toEqual(['/api/v1/people/7/merge']);
   return merge;
 }
 
@@ -280,10 +296,10 @@ for (const profile of [
   { id: 7, name: 'Synthetic One' },
   { id: 9, name: 'Synthetic Two' }
 ]) {
-  test(`merge handoff inspects ${profile.name} separately without mutating`, async ({ page }) => {
+  test(`a failed automatic merge lets the user inspect ${profile.name} separately`, async ({ page }) => {
     const fixture = await installDirectoryReviewArchive(page);
     await page.goto(reviewURL());
-    const merge = await openMergeModal(page);
+    const merge = await openMergeChoice(page);
 
     await merge.getByRole('button', { name: `Open ${profile.name} profile` }).focus();
     await page.keyboard.press('Enter');
@@ -306,19 +322,11 @@ for (const completionTarget of [
   const fixture = await installDirectoryReviewArchive(page);
   await page.setViewportSize({ width: 1280, height: 1000 });
   await page.goto(reviewURL());
-  const merge = await openMergeModal(page);
-
-  // The profile with more identities is preselected; no checkbox gates it.
-  const mergeSubmit = merge.getByRole('button', { name: 'Merge into selected survivor' });
-  await expect(merge.getByRole('checkbox')).toHaveCount(0);
-  await expect(merge.getByRole('radio', { name: 'Synthetic One' })).toBeChecked();
-  await expect(merge).toContainText('Split merged profile');
-  await expect(mergeSubmit).toBeEnabled();
-  await mergeSubmit.focus();
-  await page.keyboard.press('Enter');
+  // Same person merges on its own into the profile with more identities.
+  await startMerge(page);
 
   // The queue stays open: the merged match leaves and focus moves on.
-  await expect(merge).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page).toHaveURL(/\/reviews/);
   await expect(page.getByRole('article', { name: 'Identity match 19' })).toBeHidden();
   await expect(page.getByRole('article', { name: 'Identity match 25' })).toBeFocused();
