@@ -45,6 +45,7 @@ func TestPersonSweepWorkerPreparesOrganizationsBeforeApplying(t *testing.T) {
 }
 
 func runSweepOrganizationsCase(t *testing.T, leaseLost bool) {
+	t.Helper()
 	assert := assert.New(t)
 	require := require.New(t)
 	config, catalog := workerTestConfig(t)
