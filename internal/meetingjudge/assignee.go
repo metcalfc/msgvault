@@ -88,6 +88,8 @@ func AssigneeFeature() jev.FeatureSpec {
 			"action_items.item_N.title",
 			"action_items.item_N.description",
 		},
+		BodyNotice: "each action item sends its title and description as written in the meeting notes, " +
+			"with email addresses and phone numbers removed.",
 	}
 }
 

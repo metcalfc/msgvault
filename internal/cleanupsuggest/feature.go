@@ -120,5 +120,7 @@ func JevFeature() jev.FeatureSpec {
 			"or deleted. Each message sends at most the first 500 characters of its text.",
 		Questions:   questions,
 		StateFields: StateFields,
+		BodyNotice: "each judged message sends at most the first 500 characters of its text " +
+			"(body_start), with its subject, sender name and domain, and link hosts.",
 	}
 }
