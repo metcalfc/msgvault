@@ -70,7 +70,7 @@ func TestProductionPersonSweepCodexUsesReleasedIsolationGate(t *testing.T) {
 	fullConfig.People.Sweep = config
 	st := testutil.NewTestStore(t)
 
-	worker, err := newProductionPersonSweepWorker(fullConfig, st)
+	worker, err := newProductionPersonSweepWorker(fullConfig, st, true)
 	must.ErrorIs(err, peoplesweep.ErrCodexIsolationUnreleased)
 	checks.Nil(worker)
 	checks.NoDirExists(fullConfig.TokensDir())

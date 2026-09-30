@@ -111,6 +111,15 @@ describe('Explore URL state', () => {
     expect(restored).toMatchObject({ workspace: 'directory_review', reviewKind: 'enrichment' });
   });
 
+  it('restores the organization match review queue from URL state', () => {
+    const restored = parseExploreURLState(serializeExploreURLState({
+      ...defaultExploreURLState,
+      workspace: 'directory_review',
+      reviewKind: 'organization',
+    }));
+    expect(restored).toMatchObject({ workspace: 'directory_review', reviewKind: 'organization' });
+  });
+
   it('keeps the selected person when sharing a Fact review', () => {
     const restored = parseExploreURLState(serializeExploreURLState({
       ...defaultExploreURLState,

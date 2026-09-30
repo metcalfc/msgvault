@@ -7673,6 +7673,79 @@ components:
         - identifier_value
         - source
       type: object
+    OrganizationMatchDecision:
+      additionalProperties: true
+      properties:
+        decision:
+          enum:
+            - accepted
+            - rejected
+          type: string
+        merged_organization_id:
+          format: int64
+          type: integer
+        organization_id:
+          format: int64
+          type: integer
+        review_id:
+          format: int64
+          type: integer
+      required:
+        - review_id
+        - decision
+        - organization_id
+      type: object
+    OrganizationMatchReview:
+      additionalProperties: true
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        id:
+          format: int64
+          type: integer
+        model:
+          type: string
+        organization_domain:
+          type: string
+        organization_id:
+          format: int64
+          type: integer
+        organization_name:
+          type: string
+        probability:
+          format: double
+          type: number
+        proposed_domain:
+          type: string
+        proposed_name:
+          type: string
+        proposed_organization_id:
+          format: int64
+          type: integer
+      required:
+        - id
+        - organization_id
+        - organization_name
+        - proposed_name
+        - probability
+        - model
+        - created_at
+      type: object
+    OrganizationMatchReviewsResponse:
+      additionalProperties: true
+      properties:
+        limit:
+          format: int64
+          type: integer
+        reviews:
+          items:
+            $ref: "#/components/schemas/OrganizationMatchReview"
+          type: array
+      required:
+        - reviews
+        - limit
+      type: object
     OrganizationMedia:
       additionalProperties: true
       properties:
@@ -14040,7 +14113,7 @@ components:
       type: apiKey
 info:
   title: msgvault API
-  version: 2.37.0
+  version: 2.38.0
 openapi: 3.1.0
 paths:
   /api/ping:
@@ -21289,6 +21362,137 @@ paths:
       security:
         - apiKey: []
       summary: Get normalized operation lane status
+      tags:
+        - API
+  /api/v1/organization-match-reviews:
+    get:
+      description: Organization names the organization resolution judgment found possibly, but not confidently, the same as an existing organization, newest first, with the stored probability and model.
+      operationId: listOrganizationMatchReviews
+      parameters:
+        - description: Maximum reviews to return (default 50, max 200)
+          in: query
+          name: limit
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrganizationMatchReviewsResponse"
+          description: OK
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+      security:
+        - apiKey: []
+      summary: List organization names to confirm
+      tags:
+        - API
+  /api/v1/organization-match-reviews/{id}/accept:
+    post:
+      description: The user confirms the proposed name is the existing organization. A separate organization already created for the name is merged into it, and the organization answers to the name and domain from now on.
+      operationId: acceptOrganizationMatchReview
+      parameters:
+        - description: Organization match review ID
+          in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrganizationMatchDecision"
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+      security:
+        - apiKey: []
+      summary: Confirm an organization match
+      tags:
+        - API
+  /api/v1/organization-match-reviews/{id}/reject:
+    post:
+      description: The user says the proposed name is a different organization. The existing organization is never proposed for that name again.
+      operationId: rejectOrganizationMatchReview
+      parameters:
+        - description: Organization match review ID
+          in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrganizationMatchDecision"
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+      security:
+        - apiKey: []
+      summary: Reject an organization match
       tags:
         - API
   /api/v1/organizations:

@@ -143,7 +143,7 @@ func defaultPersonSweepCommandDeps() personSweepCommandDeps {
 				}
 				productionConfig := *currentCfg
 				productionConfig.People.Sweep = sweepConfig
-				return newProductionPersonSweepWorker(&productionConfig, st)
+				return newProductionPersonSweepWorker(&productionConfig, st, false)
 			}
 			deps.openStore = func() (personSweepCommandStore, func(), error) {
 				return openWritableStoreAndInitForInvocation(state)

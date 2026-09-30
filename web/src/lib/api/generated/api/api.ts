@@ -3,6 +3,7 @@
  */
 import type {
   AcceptIdentityMatchCandidatePathParameters,
+  AcceptOrganizationMatchReviewPathParameters,
   AccountListResponse,
   AddAccountRequest,
   AgentTokenIssueRequest,
@@ -220,6 +221,7 @@ import type {
   ListOrganizationAttributesPathParameters,
   ListOrganizationEmploymentsParams,
   ListOrganizationEmploymentsPathParameters,
+  ListOrganizationMatchReviewsParams,
   ListOrganizationsParams,
   ListParticipantInboxesPathParameters,
   ListPersonActivityDaysParams,
@@ -269,6 +271,8 @@ import type {
   OrganizationAttributesResponse,
   OrganizationBody,
   OrganizationCreateBody,
+  OrganizationMatchDecision,
+  OrganizationMatchReviewsResponse,
   OrganizationProfile,
   OrganizationProfileBody,
   OrganizationsResponse,
@@ -353,6 +357,7 @@ import type {
   QueryRequest,
   QueryResult,
   RejectIdentityMatchCandidatePathParameters,
+  RejectOrganizationMatchReviewPathParameters,
   RejectPersonBriefPathParameters,
   RejectPersonBriefRequest,
   RejectPersonEnrichmentIdentityPathParameters,
@@ -2161,6 +2166,53 @@ export const getOperationStatus = (
 ) => {
   return orvalFetch<OperationStatusResponse>(
     { url: `/api/v1/operations/status`, method: "GET" },
+    options,
+  );
+};
+/**
+ * Organization names the organization resolution judgment found possibly, but not confidently, the same as an existing organization, newest first, with the stored probability and model.
+ * @summary List organization names to confirm
+ */
+export const listOrganizationMatchReviews = (
+  params?: ListOrganizationMatchReviewsParams,
+  options?: SecondParameter<
+    typeof orvalFetch<OrganizationMatchReviewsResponse>
+  >,
+) => {
+  return orvalFetch<OrganizationMatchReviewsResponse>(
+    { url: `/api/v1/organization-match-reviews`, method: "GET", params },
+    options,
+  );
+};
+/**
+ * The user confirms the proposed name is the existing organization. A separate organization already created for the name is merged into it, and the organization answers to the name and domain from now on.
+ * @summary Confirm an organization match
+ */
+export const acceptOrganizationMatchReview = (
+  { id }: AcceptOrganizationMatchReviewPathParameters,
+  options?: SecondParameter<typeof orvalFetch<OrganizationMatchDecision>>,
+) => {
+  return orvalFetch<OrganizationMatchDecision>(
+    {
+      url: `/api/v1/organization-match-reviews/${encodeURIComponent(String(id))}/accept`,
+      method: "POST",
+    },
+    options,
+  );
+};
+/**
+ * The user says the proposed name is a different organization. The existing organization is never proposed for that name again.
+ * @summary Reject an organization match
+ */
+export const rejectOrganizationMatchReview = (
+  { id }: RejectOrganizationMatchReviewPathParameters,
+  options?: SecondParameter<typeof orvalFetch<OrganizationMatchDecision>>,
+) => {
+  return orvalFetch<OrganizationMatchDecision>(
+    {
+      url: `/api/v1/organization-match-reviews/${encodeURIComponent(String(id))}/reject`,
+      method: "POST",
+    },
     options,
   );
 };

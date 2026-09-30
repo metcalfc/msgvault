@@ -14,6 +14,10 @@ import (
 // FeatureEnrichmentIdentity is the enrichment identity verification feature.
 const FeatureEnrichmentIdentity = "enrichment_identity"
 
+// FeatureOrganizationResolution is the organization resolution and job
+// title equivalence feature.
+const FeatureOrganizationResolution = "organization_resolution"
+
 // Gate outcomes. Each is an expected administrative state, not a fault: the
 // caller falls back to its pre-Jev decision and reports the category.
 var (
@@ -32,6 +36,8 @@ func (c Config) FeatureConfigFor(name string) (FeatureConfig, bool) {
 	switch name {
 	case FeatureEnrichmentIdentity:
 		return c.IdentityVerification, true
+	case FeatureOrganizationResolution:
+		return c.OrganizationResolution, true
 	default:
 		return FeatureConfig{}, false
 	}
@@ -284,7 +290,24 @@ func (s *Service) check(ctx context.Context, spec FeatureSpec, automatic bool) (
 // rechecked first; nothing leaves the process on any error. The state must
 // contain only the fields the spec discloses; that is the caller's contract.
 func (s *Service) Judge(ctx context.Context, spec FeatureSpec, automatic bool, state any, deadline time.Time) (Response, error) {
+	return s.JudgeQuestions(ctx, spec, automatic, state, nil, deadline)
+}
+
+// JudgeQuestions is Judge restricted to some of the feature's consented
+// questions, for a feature whose state does not need every question each
+// time (for example a fixed number of pair slots of which only a few are
+// filled). questionIDs must name questions of the spec; nil or empty asks
+// every question. The questions are sent exactly as the policy words them,
+// so a subset stays within the consented policy.
+func (s *Service) JudgeQuestions(
+	ctx context.Context, spec FeatureSpec, automatic bool, state any, questionIDs []string, deadline time.Time,
+) (Response, error) {
 	cleared, err := s.check(ctx, spec, automatic)
+	if err != nil {
+		return Response{}, err
+	}
+	policy := cleared.policy
+	questions, err := policyQuestionSubset(policy, questionIDs)
 	if err != nil {
 		return Response{}, err
 	}
@@ -292,10 +315,9 @@ func (s *Service) Judge(ctx context.Context, spec FeatureSpec, automatic bool, s
 	if err != nil {
 		return Response{}, err
 	}
-	policy := cleared.policy
 	started := s.options.Now()
 	response, err := client.Ask(ctx, Request{
-		State: state, Questions: policy.Questions, Deadline: deadline, Feature: spec.Name,
+		State: state, Questions: questions, Deadline: deadline, Feature: spec.Name,
 	})
 	latency := s.options.Now().Sub(started)
 	if err != nil {
@@ -310,6 +332,32 @@ func (s *Service) Judge(ctx context.Context, spec FeatureSpec, automatic bool, s
 		"output_tokens", tokenValue(response.Usage.OutputTokens),
 		"answers", SafeAnswers(response.Answers), "budget", client.BudgetState())
 	return response, nil
+}
+
+// policyQuestionSubset returns the policy's questions named by ids, in
+// policy order. An unknown or repeated id is a request-bounds error so a
+// caller can never send wording the policy does not cover.
+func policyQuestionSubset(policy Policy, ids []string) ([]Question, error) {
+	if len(ids) == 0 {
+		return policy.Questions, nil
+	}
+	wanted := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if _, duplicate := wanted[id]; duplicate {
+			return nil, fmt.Errorf("%w: question %q requested twice", ErrRequestBounds, id)
+		}
+		wanted[id] = struct{}{}
+	}
+	questions := make([]Question, 0, len(ids))
+	for _, question := range policy.Questions {
+		if _, ok := wanted[question.ID]; ok {
+			questions = append(questions, question)
+		}
+	}
+	if len(questions) != len(wanted) {
+		return nil, fmt.Errorf("%w: a requested question is not in the %s policy", ErrRequestBounds, policy.Feature)
+	}
+	return questions, nil
 }
 
 func (s *Service) clientFor(cfg Config, key string) (*Client, error) {

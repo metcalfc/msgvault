@@ -307,6 +307,7 @@ func (s *Server) registerHumaRoutes(api huma.API, apiV1 huma.API) {
 	s.registerIdentityMatchRoutes(apiV1)
 	s.registerCorrespondentKindRoutes(apiV1)
 	s.registerPersonEnrichmentIdentityReviewRoutes(apiV1)
+	s.registerOrganizationMatchReviewRoutes(apiV1)
 	s.registerTaskIntegrationRoutes(apiV1)
 	s.registerTaskLinkRoutes(apiV1)
 	s.registerSearchCoverageRoute(apiV1)
@@ -873,6 +874,12 @@ func rawRouteParameters(operationID string) []*huma.Param {
 		}
 	case "confirmPersonEnrichmentIdentity", "rejectPersonEnrichmentIdentity":
 		return []*huma.Param{pathIntegerParam("Enrichment attempt ID")}
+	case "listOrganizationMatchReviews":
+		return []*huma.Param{
+			queryIntegerParam(limitParam, "Maximum reviews to return (default 50, max 200)"),
+		}
+	case "acceptOrganizationMatchReview", "rejectOrganizationMatchReview":
+		return []*huma.Param{pathIntegerParam("Organization match review ID")}
 	case "acceptIdentityMatchCandidate", "rejectIdentityMatchCandidate":
 		return []*huma.Param{pathIntegerParam("Identity match candidate ID")}
 	case "listCorrespondentKinds":

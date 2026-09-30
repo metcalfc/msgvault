@@ -33,7 +33,7 @@ func newPeopleSweepScheduledRun(
 	cfg *config.Config, st *store.Store,
 ) func(context.Context) error {
 	return func(ctx context.Context) error {
-		worker, err := newProductionPersonSweepWorker(cfg, st)
+		worker, err := newProductionPersonSweepWorker(cfg, st, true)
 		if err != nil {
 			return err
 		}
@@ -53,7 +53,7 @@ func newPersonBriefManualRun(
 	cfg *config.Config, st *store.Store,
 ) func(context.Context, int64) (api.PersonBriefRun, error) {
 	return func(ctx context.Context, personID int64) (api.PersonBriefRun, error) {
-		worker, err := newProductionPersonSweepWorker(cfg, st)
+		worker, err := newProductionPersonSweepWorker(cfg, st, false)
 		if err != nil {
 			return api.PersonBriefRun{}, err
 		}
@@ -86,8 +86,11 @@ func personBriefRunResult(
 	return run
 }
 
+// newProductionPersonSweepWorker builds the sweep worker. automatic marks the
+// daemon's scheduled runs, which may ask Jev only when the feature allows
+// automatic use.
 func newProductionPersonSweepWorker(
-	cfg *config.Config, st *store.Store,
+	cfg *config.Config, st *store.Store, automatic bool,
 ) (*peoplesweep.Worker, error) {
 	if cfg == nil {
 		return nil, errors.New("people sweep production config is unavailable")
@@ -99,12 +102,17 @@ func newProductionPersonSweepWorker(
 	if err != nil {
 		return nil, err
 	}
+	organizations, err := newJevOrganizationPreparer(cfg, st, automatic)
+	if err != nil {
+		return nil, err
+	}
 	sweepConfig := cfg.People.Sweep
 	return &peoplesweep.Worker{
 		Config: sweepConfig, Store: st, Source: st,
 		Context: peoplesweep.NewContextRetriever(st), Sink: st,
 		Runner: runner, Catalog: st, Brief: st, Archive: st,
-		Clock: time.Now, NewID: uuid.NewString,
+		Organizations: organizations,
+		Clock:         time.Now, NewID: uuid.NewString,
 		WorkerID: peopleSweepJobName + "-" + uuid.NewString(),
 	}, nil
 }

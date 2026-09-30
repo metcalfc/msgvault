@@ -2103,6 +2103,19 @@ func copyEmploymentData(tx *sql.Tx, result *CopyResult) error {
 		`organization_id IN (SELECT id FROM organizations)`); err != nil {
 		return fmt.Errorf("copy organization_contact_points: %w", err)
 	}
+	// Title aliases decide which employment titles are one role, so the
+	// copy fingerprints employments the way the source does. A source that
+	// predates them has none to copy.
+	hasTitleAliases, err := sourceTableExists(tx, "organization_title_aliases")
+	if err != nil {
+		return fmt.Errorf("check organization title alias schema: %w", err)
+	}
+	if hasTitleAliases {
+		if _, err := copyByName(tx, "organization_title_aliases",
+			`organization_id IN (SELECT id FROM organizations)`); err != nil {
+			return fmt.Errorf("copy organization_title_aliases: %w", err)
+		}
+	}
 	employmentsCopied, err := copyByName(tx, "employments",
 		`person_id IN (SELECT id FROM persons)`)
 	if err != nil {

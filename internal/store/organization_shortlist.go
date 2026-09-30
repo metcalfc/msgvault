@@ -152,6 +152,22 @@ func (s *Store) organizationShortlistTx(
 		}
 	}
 
+	// A user who rejected "this name is that organization" has answered for
+	// good; the organization never returns to the name's shortlist.
+	rejected, err := queryOrganizationShortlistStrings(ctx, tx, `
+		SELECT CAST(organization_id AS TEXT) FROM organization_match_reviews
+		WHERE proposed_name_normalized = ? AND status = 'rejected'`,
+		NormalizeOrganizationName(ref.Name))
+	if err != nil {
+		return nil, err
+	}
+	for _, raw := range rejected {
+		var id int64
+		if _, scanErr := fmt.Sscan(raw, &id); scanErr == nil {
+			delete(ids, id)
+		}
+	}
+
 	candidates := make([]OrganizationShortlistCandidate, 0, len(ids))
 	for id := range ids {
 		candidate, err := loadOrganizationShortlistCandidateTx(ctx, tx, id)

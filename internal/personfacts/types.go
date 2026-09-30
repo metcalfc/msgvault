@@ -7,6 +7,14 @@ import (
 	"time"
 )
 
+// OrganizationPreparer runs before a generation's claims are committed and
+// may record organization aliases that the deterministic organization lookup
+// then uses. It never changes a claim and never fails the commit: a
+// preparer that cannot decide leaves the lookup exactly as it was.
+type OrganizationPreparer interface {
+	PrepareEmploymentOrganizations(ctx context.Context, personID int64, claims []ProposedClaim)
+}
+
 type TargetKind string
 type ValueType string
 type Cardinality string

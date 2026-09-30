@@ -18,6 +18,8 @@
   import EnrichmentIdentityReviewQueue from './EnrichmentIdentityReviewQueue.svelte';
   import { EnrichmentReviewController } from '../../directory/enrichment-review-controller.svelte';
   import { entityNames } from '../../names/entity-names.svelte';
+  import OrganizationMatchReviewQueue from './OrganizationMatchReviewQueue.svelte';
+  import { OrganizationReviewController } from '../../directory/organization-review-controller.svelte';
   import type { PersonMergeSuccess, ValidatedPersonMergeRequired } from '../../directory/person-merge';
   import type { NotAPersonKind } from '../../people/correspondent-kind';
 
@@ -49,13 +51,17 @@
   // svelte-ignore state_referenced_locally
   const enrichmentController = new EnrichmentReviewController(controller.apiClient);
   onDestroy(() => enrichmentController.destroy());
+  // svelte-ignore state_referenced_locally
+  const organizationController = new OrganizationReviewController(controller.apiClient);
+  onDestroy(() => organizationController.destroy());
   let identityReviewHeading = $state<HTMLHeadingElement>();
 
   const reviewKindOptions = [
     { value: 'identity', label: 'Identity matches' },
     { value: 'fact', label: 'Fact review' },
     { value: 'relationship', label: 'Imported relationships' },
-    { value: 'enrichment', label: 'Enrichment identities' }
+    { value: 'enrichment', label: 'Enrichment identities' },
+    { value: 'organization', label: 'Organization matches' }
   ];
   const identityStateOptions = [
     { value: 'candidate', label: 'Candidate' },
@@ -119,6 +125,8 @@
       ? document.getElementById('fact-review-heading')
       : controller.reviewKind === 'enrichment'
         ? document.getElementById('enrichment-review-heading')
+      : controller.reviewKind === 'organization'
+        ? document.getElementById('organization-review-heading')
       : controller.reviewKind === 'relationship'
         ? document.getElementById('relationship-review-heading')
         : identityReviewHeading;
@@ -272,6 +280,8 @@
     </section>
   {:else if controller.reviewKind === 'enrichment'}
     <EnrichmentIdentityReviewQueue controller={enrichmentController} {onOpenPerson} />
+  {:else if controller.reviewKind === 'organization'}
+    <OrganizationMatchReviewQueue controller={organizationController} />
   {:else if controller.reviewKind === 'fact'}
     {#if factController}
       <FactReviewPanel controller={factController} personID={directoryPersonID} {onOpenDirectory} {onOpenPerson} />

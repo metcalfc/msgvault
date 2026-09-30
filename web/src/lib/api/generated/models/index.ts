@@ -3,6 +3,7 @@
  */
 
 export * from "./acceptIdentityMatchCandidatePathParameters";
+export * from "./acceptOrganizationMatchReviewPathParameters";
 export * from "./accountInfo";
 export * from "./accountListResponse";
 export * from "./accountStatus";
@@ -419,6 +420,7 @@ export * from "./listOrganizationAttributesParams";
 export * from "./listOrganizationAttributesPathParameters";
 export * from "./listOrganizationEmploymentsParams";
 export * from "./listOrganizationEmploymentsPathParameters";
+export * from "./listOrganizationMatchReviewsParams";
 export * from "./listOrganizationsParams";
 export * from "./listParticipantInboxesPathParameters";
 export * from "./listPersonActivityDaysParams";
@@ -536,6 +538,10 @@ export * from "./organizationIdentifier";
 export * from "./organizationIdentifierBody";
 export * from "./organizationIdentifierBodyIdentifierKind";
 export * from "./organizationIdentifierBodySource";
+export * from "./organizationMatchDecision";
+export * from "./organizationMatchDecisionDecision";
+export * from "./organizationMatchReview";
+export * from "./organizationMatchReviewsResponse";
 export * from "./organizationMedia";
 export * from "./organizationMediaBody";
 export * from "./organizationMediaBodyMediaKind";
@@ -716,6 +722,7 @@ export * from "./queryRequest";
 export * from "./queryResult";
 export * from "./rejectedCandidate";
 export * from "./rejectIdentityMatchCandidatePathParameters";
+export * from "./rejectOrganizationMatchReviewPathParameters";
 export * from "./rejectPersonBriefPathParameters";
 export * from "./rejectPersonBriefRequest";
 export * from "./rejectPersonEnrichmentIdentityPathParameters";

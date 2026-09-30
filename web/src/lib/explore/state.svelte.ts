@@ -461,7 +461,7 @@ function normalize(value: unknown): ExploreURLState {
     ? legacyRelationshipTarget(analysisTarget, legacyFacet)
     : relationshipTargetValue(value.relationshipTarget);
   const reviewKind: DirectoryReviewKind = value.reviewKind === 'fact' || value.reviewKind === 'relationship' ||
-    value.reviewKind === 'enrichment'
+    value.reviewKind === 'enrichment' || value.reviewKind === 'organization'
     ? value.reviewKind
     : 'identity';
   const identityState: IdentityReviewState =

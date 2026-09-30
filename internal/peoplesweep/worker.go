@@ -420,11 +420,15 @@ type Worker struct {
 	Catalog CatalogSource
 	// Brief and Archive carry the person brief step. Both nil turns the step
 	// off entirely, which is what a caller that predates the brief gets.
-	Brief    BriefStore
-	Archive  BriefArchive
-	Clock    func() time.Time
-	NewID    func() string
-	WorkerID string
+	Brief   BriefStore
+	Archive BriefArchive
+	// Organizations, when set, runs on a generation's claims before they are
+	// applied and may record organization aliases the deterministic
+	// organization lookup then uses. Nil keeps the exact lookup alone.
+	Organizations personfacts.OrganizationPreparer
+	Clock         func() time.Time
+	NewID         func() string
+	WorkerID      string
 }
 
 func personSweepAttemptEnvelopeHash(cursors []GenerationCursor) (string, error) {
@@ -913,6 +917,9 @@ func (w *Worker) runPerson(
 		Policy: personfacts.PolicyContext{AllowSensitive: profile.AllowSensitive,
 			ProviderPolicyFingerprint: profile.Fingerprint}, Claims: claims,
 		EvidenceStatusChanges: assembly.EvidenceStatusChanges}
+	if w.Organizations != nil && len(claims) > 0 {
+		w.Organizations.PrepareEmploymentOrganizations(ctx, lease.PersonID, claims)
+	}
 	renewed, renewErr := w.Store.RenewPersonSweep(ctx, lease, w.Config.LeaseDuration)
 	if renewErr != nil {
 		return PersonRunResult{}, w.finalizeFailure(ctx, lease, attemptID, reservations,

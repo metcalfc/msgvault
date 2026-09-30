@@ -28,6 +28,11 @@ type WorkerOptions struct {
 	// declines a result in which exactly one of name and current company
 	// matched. A nil judge keeps the exact rule alone.
 	IdentityJudge IdentityJudge
+	// OrganizationPreparer, when set, runs on an accepted result's claims
+	// before they are committed and may record organization aliases the
+	// deterministic organization lookup then uses. Nil keeps the exact
+	// lookup alone.
+	OrganizationPreparer personfacts.OrganizationPreparer
 }
 
 type Worker struct {
@@ -781,6 +786,9 @@ func (w *Worker) completeAttempt(
 ) error {
 	assessment := w.assessIdentity(ctx, request, result, knownIDs)
 	result = StampIdentityConfidence(assessment, result)
+	if assessment.Accepted && w.options.OrganizationPreparer != nil && len(result.Claims) > 0 {
+		w.options.OrganizationPreparer.PrepareEmploymentOrganizations(ctx, lease.PersonID, result.Claims)
+	}
 	commit, err := NewClaimCommit(ClaimCommitInput{
 		AttemptID: lease.Token.AttemptID, RunID: lease.RunID, PersonID: lease.PersonID,
 		LeaseFence: lease.Token.Fence, ProfileFingerprint: lease.ProfileFingerprint,

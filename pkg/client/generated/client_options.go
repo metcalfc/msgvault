@@ -5767,6 +5767,138 @@ func (o *GetOperationRunRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
+// ListOrganizationMatchReviewsRequestOptions is the options needed to make a request to ListOrganizationMatchReviews.
+type ListOrganizationMatchReviewsRequestOptions struct {
+	Query *ListOrganizationMatchReviewsQuery
+}
+
+// Validate validates all the fields in the options.
+// Use it if fields validation was not run.
+func (o *ListOrganizationMatchReviewsRequestOptions) Validate() error {
+	var errors runtime.ValidationErrors
+
+	if o.Query != nil {
+		if v, ok := any(o.Query).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("Query", err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+
+	return errors
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ListOrganizationMatchReviewsRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ListOrganizationMatchReviewsRequestOptions) GetQuery() (map[string]any, error) {
+	return runtime.AsMap[any](o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ListOrganizationMatchReviewsRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *ListOrganizationMatchReviewsRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// AcceptOrganizationMatchReviewRequestOptions is the options needed to make a request to AcceptOrganizationMatchReview.
+type AcceptOrganizationMatchReviewRequestOptions struct {
+	PathParams *AcceptOrganizationMatchReviewPath
+}
+
+// Validate validates all the fields in the options.
+// Use it if fields validation was not run.
+func (o *AcceptOrganizationMatchReviewRequestOptions) Validate() error {
+	var errors runtime.ValidationErrors
+
+	if o.PathParams != nil {
+		if v, ok := any(o.PathParams).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("PathParams", err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+
+	return errors
+}
+
+// GetPathParams returns the path params as a map.
+func (o *AcceptOrganizationMatchReviewRequestOptions) GetPathParams() (map[string]any, error) {
+	return runtime.AsMap[any](o.PathParams)
+}
+
+// GetQuery returns the query params as a map.
+func (o *AcceptOrganizationMatchReviewRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *AcceptOrganizationMatchReviewRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *AcceptOrganizationMatchReviewRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// RejectOrganizationMatchReviewRequestOptions is the options needed to make a request to RejectOrganizationMatchReview.
+type RejectOrganizationMatchReviewRequestOptions struct {
+	PathParams *RejectOrganizationMatchReviewPath
+}
+
+// Validate validates all the fields in the options.
+// Use it if fields validation was not run.
+func (o *RejectOrganizationMatchReviewRequestOptions) Validate() error {
+	var errors runtime.ValidationErrors
+
+	if o.PathParams != nil {
+		if v, ok := any(o.PathParams).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("PathParams", err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+
+	return errors
+}
+
+// GetPathParams returns the path params as a map.
+func (o *RejectOrganizationMatchReviewRequestOptions) GetPathParams() (map[string]any, error) {
+	return runtime.AsMap[any](o.PathParams)
+}
+
+// GetQuery returns the query params as a map.
+func (o *RejectOrganizationMatchReviewRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *RejectOrganizationMatchReviewRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *RejectOrganizationMatchReviewRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // ListOrganizationsRequestOptions is the options needed to make a request to ListOrganizations.
 type ListOrganizationsRequestOptions struct {
 	Query *ListOrganizationsQuery

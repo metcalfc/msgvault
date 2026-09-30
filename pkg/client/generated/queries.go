@@ -731,6 +731,11 @@ func (l ListOperationRunsQuery) Validate() error {
 	return errors
 }
 
+type ListOrganizationMatchReviewsQuery struct {
+	// Limit Maximum reviews to return (default 50, max 200)
+	Limit *int64 `json:"limit,omitempty"`
+}
+
 type ListOrganizationsQuery struct {
 	// Limit Maximum results
 	Limit *int64 `json:"limit,omitempty"`

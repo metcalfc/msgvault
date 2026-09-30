@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/personenrichment"
+	"go.kenn.io/msgvault/internal/personfacts"
 	"go.kenn.io/msgvault/internal/providercredentials"
 	"go.kenn.io/msgvault/internal/store"
 )
@@ -74,11 +75,15 @@ func defaultPersonEnrichmentCommandDeps(contexts ...context.Context) personEnric
 				if err != nil {
 					return nil, err
 				}
+				organizations, err := newJevOrganizationPreparer(currentCfg, st, false)
+				if err != nil {
+					return nil, err
+				}
 				return newPersonEnrichmentCLIWorker(
 					workerCtx, st, enrichmentConfig,
 					personEnrichmentEnvironmentLookup(currentCfg),
 					personEnrichmentProviderCredentialLookup(currentCfg),
-					judge,
+					judge, organizations,
 				)
 			}
 			deps.openStore = func() (*store.Store, func(), error) {
@@ -107,7 +112,7 @@ func defaultPersonEnrichmentCommandDeps(contexts ...context.Context) personEnric
 				ctx, st, enrichmentConfig,
 				personEnrichmentEnvironmentLookup(nil),
 				personEnrichmentProviderCredentialLookup(nil),
-				nil,
+				nil, nil,
 			)
 		},
 		clock: time.Now,
@@ -784,6 +789,7 @@ func newPersonEnrichmentCLIWorker(
 	suppressionLookup personenrichment.CredentialLookup,
 	providerLookup personenrichment.ProviderCredentialLookup,
 	identityJudge personenrichment.IdentityJudge,
+	organizations personfacts.OrganizationPreparer,
 ) (personEnrichmentScheduleWorker, error) {
 	if suppressionLookup == nil || providerLookup == nil {
 		return nil, errors.New("person enrichment worker requires suppression and provider credential lookups")
@@ -831,7 +837,7 @@ func newPersonEnrichmentCLIWorker(
 		Owner: "daemon-person-enrichment-manual", LeaseDuration: config.LeaseDuration,
 		RenewEvery: config.LeaseDuration / 4, Clock: time.Now,
 		Jitter: func(delay time.Duration) time.Duration { return delay }, ProviderConfigs: providerConfigs,
-		IdentityJudge: identityJudge,
+		IdentityJudge: identityJudge, OrganizationPreparer: organizations,
 	})
 }
 

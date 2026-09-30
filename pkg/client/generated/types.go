@@ -6949,6 +6949,63 @@ func (o OrganizationIdentifierBody) Validate() error {
 	return errors
 }
 
+type OrganizationMatchDecision struct {
+	Decision             OrganizationMatchDecisionDecision `json:"decision" validate:"required"`
+	MergedOrganizationID *int64                            `json:"merged_organization_id,omitempty"`
+	OrganizationID       int64                             `json:"organization_id"`
+	ReviewID             int64                             `json:"review_id"`
+}
+
+func (o OrganizationMatchDecision) Validate() error {
+	var errors runtime.ValidationErrors
+	if v, ok := any(o.Decision).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("Decision", err)
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
+type OrganizationMatchReview struct {
+	CreatedAt              time.Time `json:"created_at" validate:"required"`
+	ID                     int64     `json:"id"`
+	Model                  string    `json:"model" validate:"required"`
+	OrganizationDomain     *string   `json:"organization_domain,omitzero"`
+	OrganizationID         int64     `json:"organization_id"`
+	OrganizationName       string    `json:"organization_name" validate:"required"`
+	Probability            float64   `json:"probability"`
+	ProposedDomain         *string   `json:"proposed_domain,omitzero"`
+	ProposedName           string    `json:"proposed_name" validate:"required"`
+	ProposedOrganizationID *int64    `json:"proposed_organization_id,omitempty"`
+}
+
+func (o OrganizationMatchReview) Validate() error {
+	return runtime.ConvertValidatorError(typesValidator.Struct(o))
+}
+
+type OrganizationMatchReviewsResponse struct {
+	Limit   int64                     `json:"limit"`
+	Reviews []OrganizationMatchReview `json:"reviews" validate:"required"`
+}
+
+func (o OrganizationMatchReviewsResponse) Validate() error {
+	var errors runtime.ValidationErrors
+	for i, item := range o.Reviews {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("Reviews[%d]", i), err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
 type OrganizationMedia struct {
 	ByteSize       *int64        `json:"byte_size,omitempty"`
 	ContentHash    *string       `json:"content_hash,omitzero"`

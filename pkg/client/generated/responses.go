@@ -1635,6 +1635,26 @@ type GetOperationStatusResponse = OperationStatusResponse
 
 type GetOperationStatusErrorResponse = OperationErrorResponse
 
+type ListOrganizationMatchReviewsResponse = OrganizationMatchReviewsResponse
+
+type ListOrganizationMatchReviewsErrorResponse = ErrorResponse
+
+type AcceptOrganizationMatchReviewResponse = OrganizationMatchDecision
+
+type AcceptOrganizationMatchReviewErrorResponse = ErrorResponse
+
+type AcceptOrganizationMatchReviewErrorResponseJSON = ErrorResponse
+
+type AcceptOrganizationMatchReviewErrorResponseJSON503 = ErrorResponse
+
+type RejectOrganizationMatchReviewResponse = OrganizationMatchDecision
+
+type RejectOrganizationMatchReviewErrorResponse = ErrorResponse
+
+type RejectOrganizationMatchReviewErrorResponseJSON = ErrorResponse
+
+type RejectOrganizationMatchReviewErrorResponseJSON503 = ErrorResponse
+
 type ListOrganizationsResponse = OrganizationsResponse
 
 type ListOrganizationsErrorResponse = ErrorResponse
@@ -4805,6 +4825,34 @@ type GetOperationStatusResp struct {
 	Body         []byte
 	StatusCode   int
 	JSON200      *GetOperationStatusResponse
+}
+
+type ListOrganizationMatchReviewsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *ListOrganizationMatchReviewsResponse
+	JSON503      *ListOrganizationMatchReviewsErrorResponse
+}
+
+type AcceptOrganizationMatchReviewResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *AcceptOrganizationMatchReviewResponse
+	JSON404      *AcceptOrganizationMatchReviewErrorResponse
+	JSON409      *AcceptOrganizationMatchReviewErrorResponseJSON
+	JSON503      *AcceptOrganizationMatchReviewErrorResponseJSON503
+}
+
+type RejectOrganizationMatchReviewResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *RejectOrganizationMatchReviewResponse
+	JSON404      *RejectOrganizationMatchReviewErrorResponse
+	JSON409      *RejectOrganizationMatchReviewErrorResponseJSON
+	JSON503      *RejectOrganizationMatchReviewErrorResponseJSON503
 }
 
 type ListOrganizationsResp struct {

@@ -274,11 +274,24 @@ Site: `internal/store/person_fact_organization.go`,
 - [x] **Task 3.1 Shortlist in code.** On exact-lookup miss, build ≤ 8
   candidates by token overlap, prefix, trigram on `name_normalized` and
   `organization_names`, plus domain siblings.
-- [ ] **Task 3.2 Judgment.** One request: Choice `org_ref` over candidate
+- [x] **Task 3.2 Judgment.** One request: Choice `org_ref` over candidate
   keys plus `new_organization`; Noul `title_same_role` per title pair.
   Confidence ≥ 0.85 writes a durable `organization_names` alias with
   provenance `jev` and model version, then the deterministic lookup reruns.
   0.50 to 0.85 creates an org-merge review candidate. Below: create as today.
+  > The judgment runs before a generation is committed (enrichment and
+  > people sweep), never inside the projection transaction. The threshold is
+  > the probability Jev gives the best candidate option. Consent binds fixed
+  > questions, so the request carries `org_ref` plus the pair slots it needs,
+  > `title_same_role_1` to `_4`, each worded once in the policy. Provenance
+  > `jev` is recorded as source `system` with source_ref
+  > `jev:organization_resolution:<model>` and the probability as confidence,
+  > because `jev` is not a profile provenance a user can write. An alias also
+  > adds the reference's domain when the organization lacks it, since the
+  > exact lookup requires every key to match. There was no organization
+  > merge review surface, so `organization_match_reviews` backs a new Reviews
+  > kind (API `/organization-match-reviews`): accept merges the organization
+  > projection created for the name, reject keeps the pair off the shortlist.
 - [ ] **Task 3.3 Employment fingerprint.** Let same-role titles corroborate
   by mapping through the alias table before fingerprinting, so Exa and
   sweep claims for the same role add up. Resolver arithmetic unchanged.

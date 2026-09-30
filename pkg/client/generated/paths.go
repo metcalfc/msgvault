@@ -358,6 +358,16 @@ func (g GetOperationRunPath) Validate() error {
 	return runtime.ConvertValidatorError(typesValidator.Struct(g))
 }
 
+type AcceptOrganizationMatchReviewPath struct {
+	// ID Organization match review ID
+	ID int64 `json:"id"`
+}
+
+type RejectOrganizationMatchReviewPath struct {
+	// ID Organization match review ID
+	ID int64 `json:"id"`
+}
+
 type DeleteOrganizationPath struct {
 	// ID Organization ID
 	ID int64 `json:"id"`

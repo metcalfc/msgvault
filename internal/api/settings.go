@@ -365,6 +365,8 @@ var settingsCatalog = []settingDefinition{
 	numberSetting("jev.output_usd_per_million_tokens", settingsGroupJev, func(c *config.Config) float64 { return c.Jev.OutputUSDPerMillionTokens }),
 	boolSetting("jev.identity_verification.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.IdentityVerification.Enabled }),
 	boolSetting("jev.identity_verification.automatic", settingsGroupJev, func(c *config.Config) bool { return c.Jev.IdentityVerification.Automatic }),
+	boolSetting("jev.organization_resolution.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.OrganizationResolution.Enabled }),
+	boolSetting("jev.organization_resolution.automatic", settingsGroupJev, func(c *config.Config) bool { return c.Jev.OrganizationResolution.Automatic }),
 	boolSetting("integrations.kata.enabled", "integrations", func(c *config.Config) bool { return c.Integrations.Kata.Enabled }),
 	stringSetting("integrations.kata.endpoint", "integrations", nil, func(c *config.Config) string { return c.Integrations.Kata.Endpoint }),
 	secretSetting("integrations.kata.api_key", "integrations", func(c *config.Config) string { return c.Integrations.Kata.APIKey }),

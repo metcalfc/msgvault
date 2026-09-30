@@ -27,6 +27,7 @@ func TestLoadJevSectionDefaultsAndOverrides(t *testing.T) {
 	assert.Equal(jev.DefaultAPIKeyEnv, cfg.Jev.APIKeyEnv)
 	assert.Equal(jev.DefaultRequestTimeout, cfg.Jev.RequestTimeout)
 	assert.False(cfg.Jev.IdentityVerification.Enabled)
+	assert.False(cfg.Jev.OrganizationResolution.Enabled)
 
 	require.NoError(os.WriteFile(configPath, []byte(`
 [jev]
@@ -41,6 +42,9 @@ output_usd_per_million_tokens = 1.5
 [jev.identity_verification]
 enabled = true
 automatic = true
+
+[jev.organization_resolution]
+enabled = true
 `), 0o644))
 	cfg, err = Load(configPath, "")
 	require.NoError(err)
@@ -51,6 +55,8 @@ automatic = true
 	assert.Equal(jev.DayLimits{MaxRequests: 25, MaxCostUSDMicros: 250_000}, cfg.Jev.DayLimits())
 	assert.True(cfg.Jev.IdentityVerification.Enabled)
 	assert.True(cfg.Jev.IdentityVerification.Automatic)
+	assert.True(cfg.Jev.OrganizationResolution.Enabled)
+	assert.False(cfg.Jev.OrganizationResolution.Automatic, "automatic use stays off unless set")
 
 	require.NoError(os.WriteFile(configPath, []byte(`
 [jev]

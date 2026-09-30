@@ -635,6 +635,18 @@ type ClientInterface interface {
 	GetOperationStatus(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetOperationStatusResponse, error)
 	GetOperationStatusWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetOperationStatusResp, error)
 
+	// ListOrganizationMatchReviews List organization names to confirm
+	ListOrganizationMatchReviews(ctx context.Context, options *ListOrganizationMatchReviewsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListOrganizationMatchReviewsResponse, error)
+	ListOrganizationMatchReviewsWithResponse(ctx context.Context, options *ListOrganizationMatchReviewsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListOrganizationMatchReviewsResp, error)
+
+	// AcceptOrganizationMatchReview Confirm an organization match
+	AcceptOrganizationMatchReview(ctx context.Context, options *AcceptOrganizationMatchReviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*AcceptOrganizationMatchReviewResponse, error)
+	AcceptOrganizationMatchReviewWithResponse(ctx context.Context, options *AcceptOrganizationMatchReviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*AcceptOrganizationMatchReviewResp, error)
+
+	// RejectOrganizationMatchReview Reject an organization match
+	RejectOrganizationMatchReview(ctx context.Context, options *RejectOrganizationMatchReviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RejectOrganizationMatchReviewResponse, error)
+	RejectOrganizationMatchReviewWithResponse(ctx context.Context, options *RejectOrganizationMatchReviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RejectOrganizationMatchReviewResp, error)
+
 	// ListOrganizations List organizations
 	ListOrganizations(ctx context.Context, options *ListOrganizationsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListOrganizationsResponse, error)
 	ListOrganizationsWithResponse(ctx context.Context, options *ListOrganizationsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListOrganizationsResp, error)
@@ -10355,6 +10367,195 @@ func (c *Client) GetOperationStatus(ctx context.Context, reqEditors ...runtime.R
 	}
 
 	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/api/v1/operations/status")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+	return responseParser(ctx, resp)
+}
+
+// ListOrganizationMatchReviews List organization names to confirm
+func (c *Client) ListOrganizationMatchReviews(ctx context.Context, options *ListOrganizationMatchReviewsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListOrganizationMatchReviewsResponse, error) {
+	var err error
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/api/v1/organization-match-reviews",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	responseParser := func(ctx context.Context, resp *runtime.Response) (*ListOrganizationMatchReviewsResponse, error) {
+		bodyBytes := resp.Content
+		if resp.StatusCode != 200 {
+			target := new(ListOrganizationMatchReviewsErrorResponse)
+			// Handle empty error response body gracefully - skip unmarshal if no content
+			if len(bodyBytes) > 0 {
+				if err = json.Unmarshal(bodyBytes, target); err != nil {
+					return nil, &runtime.ResponseDecodeError{
+						StatusCode:    resp.StatusCode,
+						ContentType:   resp.Headers.Get("Content-Type"),
+						ContentLength: len(bodyBytes),
+						TargetType:    "ListOrganizationMatchReviewsErrorResponse",
+						Body:          bodyBytes,
+						Err:           err,
+					}
+				}
+			}
+			// Return error with (possibly empty) target
+			if errTarget, ok := any(*target).(error); ok {
+				return nil, runtime.NewClientAPIError(errTarget, runtime.WithStatusCode(resp.StatusCode))
+			}
+			return nil, runtime.NewClientAPIError(fmt.Errorf("API error (status %d): %v", resp.StatusCode, *target),
+				runtime.WithStatusCode(resp.StatusCode))
+		}
+		target := new(ListOrganizationMatchReviewsResponse)
+		// Handle empty response body gracefully
+		if len(bodyBytes) == 0 {
+			return target, nil
+		}
+		if err = json.Unmarshal(bodyBytes, target); err != nil {
+			return nil, &runtime.ResponseDecodeError{
+				StatusCode:    resp.StatusCode,
+				ContentType:   resp.Headers.Get("Content-Type"),
+				ContentLength: len(bodyBytes),
+				TargetType:    "ListOrganizationMatchReviewsResponse",
+				Body:          bodyBytes,
+				Err:           err,
+			}
+		}
+		return target, nil
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/api/v1/organization-match-reviews")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+	return responseParser(ctx, resp)
+}
+
+// AcceptOrganizationMatchReview Confirm an organization match
+func (c *Client) AcceptOrganizationMatchReview(ctx context.Context, options *AcceptOrganizationMatchReviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*AcceptOrganizationMatchReviewResponse, error) {
+	var err error
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/api/v1/organization-match-reviews/{id}/accept",
+		Method:     "POST",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	responseParser := func(ctx context.Context, resp *runtime.Response) (*AcceptOrganizationMatchReviewResponse, error) {
+		bodyBytes := resp.Content
+		if resp.StatusCode != 200 {
+			target := new(AcceptOrganizationMatchReviewErrorResponse)
+			// Handle empty error response body gracefully - skip unmarshal if no content
+			if len(bodyBytes) > 0 {
+				if err = json.Unmarshal(bodyBytes, target); err != nil {
+					return nil, &runtime.ResponseDecodeError{
+						StatusCode:    resp.StatusCode,
+						ContentType:   resp.Headers.Get("Content-Type"),
+						ContentLength: len(bodyBytes),
+						TargetType:    "AcceptOrganizationMatchReviewErrorResponse",
+						Body:          bodyBytes,
+						Err:           err,
+					}
+				}
+			}
+			// Return error with (possibly empty) target
+			if errTarget, ok := any(*target).(error); ok {
+				return nil, runtime.NewClientAPIError(errTarget, runtime.WithStatusCode(resp.StatusCode))
+			}
+			return nil, runtime.NewClientAPIError(fmt.Errorf("API error (status %d): %v", resp.StatusCode, *target),
+				runtime.WithStatusCode(resp.StatusCode))
+		}
+		target := new(AcceptOrganizationMatchReviewResponse)
+		// Handle empty response body gracefully
+		if len(bodyBytes) == 0 {
+			return target, nil
+		}
+		if err = json.Unmarshal(bodyBytes, target); err != nil {
+			return nil, &runtime.ResponseDecodeError{
+				StatusCode:    resp.StatusCode,
+				ContentType:   resp.Headers.Get("Content-Type"),
+				ContentLength: len(bodyBytes),
+				TargetType:    "AcceptOrganizationMatchReviewResponse",
+				Body:          bodyBytes,
+				Err:           err,
+			}
+		}
+		return target, nil
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/api/v1/organization-match-reviews/{id}/accept")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+	return responseParser(ctx, resp)
+}
+
+// RejectOrganizationMatchReview Reject an organization match
+func (c *Client) RejectOrganizationMatchReview(ctx context.Context, options *RejectOrganizationMatchReviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RejectOrganizationMatchReviewResponse, error) {
+	var err error
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/api/v1/organization-match-reviews/{id}/reject",
+		Method:     "POST",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	responseParser := func(ctx context.Context, resp *runtime.Response) (*RejectOrganizationMatchReviewResponse, error) {
+		bodyBytes := resp.Content
+		if resp.StatusCode != 200 {
+			target := new(RejectOrganizationMatchReviewErrorResponse)
+			// Handle empty error response body gracefully - skip unmarshal if no content
+			if len(bodyBytes) > 0 {
+				if err = json.Unmarshal(bodyBytes, target); err != nil {
+					return nil, &runtime.ResponseDecodeError{
+						StatusCode:    resp.StatusCode,
+						ContentType:   resp.Headers.Get("Content-Type"),
+						ContentLength: len(bodyBytes),
+						TargetType:    "RejectOrganizationMatchReviewErrorResponse",
+						Body:          bodyBytes,
+						Err:           err,
+					}
+				}
+			}
+			// Return error with (possibly empty) target
+			if errTarget, ok := any(*target).(error); ok {
+				return nil, runtime.NewClientAPIError(errTarget, runtime.WithStatusCode(resp.StatusCode))
+			}
+			return nil, runtime.NewClientAPIError(fmt.Errorf("API error (status %d): %v", resp.StatusCode, *target),
+				runtime.WithStatusCode(resp.StatusCode))
+		}
+		target := new(RejectOrganizationMatchReviewResponse)
+		// Handle empty response body gracefully
+		if len(bodyBytes) == 0 {
+			return target, nil
+		}
+		if err = json.Unmarshal(bodyBytes, target); err != nil {
+			return nil, &runtime.ResponseDecodeError{
+				StatusCode:    resp.StatusCode,
+				ContentType:   resp.Headers.Get("Content-Type"),
+				ContentLength: len(bodyBytes),
+				TargetType:    "RejectOrganizationMatchReviewResponse",
+				Body:          bodyBytes,
+				Err:           err,
+			}
+		}
+		return target, nil
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/api/v1/organization-match-reviews/{id}/reject")
 	if err != nil {
 		return nil, fmt.Errorf("error executing request: %w", err)
 	}

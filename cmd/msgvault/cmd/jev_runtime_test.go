@@ -12,18 +12,46 @@ import (
 	"go.kenn.io/msgvault/internal/testutil"
 )
 
-func TestJevFeatureRegistryIncludesEnrichmentIdentity(t *testing.T) {
+func TestJevFeatureRegistryListsEveryFeature(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	specs := jevFeatureSpecs()
-	require.Len(specs, 1)
+	require.Len(specs, 2)
 	assert.Equal(jev.FeatureEnrichmentIdentity, specs[0].Name)
-	require.NoError(specs[0].Validate())
+	assert.Equal(jev.FeatureOrganizationResolution, specs[1].Name)
 	cfg := config.NewDefaultConfig()
-	policy, err := specs[0].Policy(cfg.Jev)
+	for _, spec := range specs {
+		require.NoError(spec.Validate())
+		policy, err := spec.Policy(cfg.Jev)
+		require.NoError(err)
+		assert.Len(policy.Fingerprint, 64)
+		assert.Equal(jev.DefaultEndpoint, policy.Endpoint)
+		_, known := cfg.Jev.FeatureConfigFor(spec.Name)
+		assert.True(known, "every registered feature has a [jev] section")
+	}
+}
+
+func TestNewJevOrganizationPreparerIsNilUntilJevAndTheFeatureAreOn(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	cfg := config.NewDefaultConfig()
+	cfg.HomeDir = t.TempDir()
+	cfg.Data.DataDir = cfg.HomeDir
+
+	preparer, err := newJevOrganizationPreparer(cfg, st, true)
 	require.NoError(err)
-	assert.Len(policy.Fingerprint, 64)
-	assert.Equal(jev.DefaultEndpoint, policy.Endpoint)
+	assert.Nil(preparer, "everything off means the exact organization lookup alone")
+
+	cfg.Jev.Enabled = true
+	preparer, err = newJevOrganizationPreparer(cfg, st, true)
+	require.NoError(err)
+	assert.Nil(preparer, "the feature switch is separate from the [jev] switch")
+
+	cfg.Jev.OrganizationResolution.Enabled = true
+	preparer, err = newJevOrganizationPreparer(cfg, st, true)
+	require.NoError(err)
+	assert.NotNil(preparer)
 }
 
 func TestJevCredentialRevisionTracksTheStoreFile(t *testing.T) {

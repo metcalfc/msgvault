@@ -372,3 +372,45 @@ func TestSkippedClassifiesEveryGateAndBudgetOutcome(t *testing.T) {
 		})
 	}
 }
+
+func TestServiceJudgeQuestionsSendsOnlyTheNamedConsentedQuestions(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	server, recorded := newFakeJev(t, `{"model":"jev-1.13.0","answers":{"second":{"type":"noul","noul":0.4}}}`)
+	cfg := serviceConfig(server.URL)
+	cfg.OrganizationResolution = FeatureConfig{Enabled: true}
+	spec := FeatureSpec{
+		Name: FeatureOrganizationResolution, Title: "Test pairs", Purpose: "Compare slots.",
+		Questions: []Question{
+			{ID: "first", Type: QuestionNoul, Instructions: "Is `slot_1` true?"},
+			{ID: "second", Type: QuestionNoul, Instructions: "Is `slot_2` true?"},
+		},
+		StateFields: []string{"slot_1", "slot_2"},
+	}
+	policy, err := spec.Policy(cfg)
+	require.NoError(err)
+	service, err := NewService(ServiceOptions{
+		Config:     func() (Config, error) { return cfg, nil },
+		Consents:   &fakeConsents{active: map[string]string{FeatureOrganizationResolution: policy.Fingerprint}},
+		Credential: func(string, string) (string, bool, error) { return "secret-key", true, nil },
+	})
+	require.NoError(err)
+
+	response, err := service.JudgeQuestions(t.Context(), spec, false,
+		map[string]any{"slot_2": "yes"}, []string{"second"}, time.Time{})
+	require.NoError(err)
+	assert.InDelta(0.4, response.Answers["second"].Noul, 1e-9)
+	require.Len(*recorded, 1)
+	assert.Equal(map[string]any{"second": map[string]any{
+		"type": "noul", "instructions": "Is `slot_2` true?",
+	}}, (*recorded)[0].Body["questions"])
+
+	for name, ids := range map[string][]string{
+		"unknown question":  {"third"},
+		"repeated question": {"second", "second"},
+	} {
+		_, err = service.JudgeQuestions(t.Context(), spec, false, map[string]any{}, ids, time.Time{})
+		require.ErrorIs(err, ErrRequestBounds, name)
+	}
+	assert.Len(*recorded, 1, "a question outside the policy never leaves")
+}

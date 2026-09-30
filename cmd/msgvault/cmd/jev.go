@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/jev"
+	"go.kenn.io/msgvault/internal/orgresolution"
 	"go.kenn.io/msgvault/internal/personenrichment"
 	"go.kenn.io/msgvault/internal/providercredentials"
 	"go.kenn.io/msgvault/internal/store"
@@ -24,7 +25,7 @@ const jevConsentActor = "cli"
 // jevFeatureSpecs lists every Jev-backed feature the CLI can report on and
 // consent to. Feature packages own their specs; this is the only registry.
 var jevFeatureSpecs = func() []jev.FeatureSpec {
-	return []jev.FeatureSpec{personenrichment.JevIdentityFeature()}
+	return []jev.FeatureSpec{personenrichment.JevIdentityFeature(), orgresolution.Feature()}
 }
 
 // jevCredentialState reports whether a key resolves and from where, without

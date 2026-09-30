@@ -41,6 +41,10 @@ type Config struct {
 	// IdentityVerification is [jev.identity_verification]: the enrichment
 	// identity check.
 	IdentityVerification FeatureConfig `toml:"identity_verification"`
+	// OrganizationResolution is [jev.organization_resolution]: matching a
+	// missed organization name to an existing organization and deciding
+	// whether two job titles name the same role.
+	OrganizationResolution FeatureConfig `toml:"organization_resolution"`
 }
 
 // FeatureConfig gates one Jev-backed feature. Automatic additionally allows

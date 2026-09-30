@@ -362,7 +362,10 @@ import (
 // Employment listings gain organizations ({id, name}) for the organizations
 // their rows reference, entity-label participant entries gain an optional
 // identity, and text conversation rows gain an optional participant_label.
-const APISchemaVersion = "2.37.0"
+// 2.38.0 adds organization match review: listing organization names the
+// organization resolution judgment was unsure about and accepting or
+// rejecting them.
+const APISchemaVersion = "2.38.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

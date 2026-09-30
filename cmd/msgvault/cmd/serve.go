@@ -539,11 +539,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("configure Jev identity judge: %w", err)
 	}
+	organizationPreparer, err := newJevOrganizationPreparer(cfg, s, true)
+	if err != nil {
+		return fmt.Errorf("configure Jev organization resolution: %w", err)
+	}
 	if err := registerPersonEnrichmentJob(
 		ctx, sched, s, cfg.People.Enrichment, personEnrichmentRuntimeCredentials{
-			Suppression:   personEnrichmentEnvironmentLookup(cfg),
-			Provider:      personEnrichmentProviderCredentialLookup(cfg),
-			IdentityJudge: identityJudge,
+			Suppression:          personEnrichmentEnvironmentLookup(cfg),
+			Provider:             personEnrichmentProviderCredentialLookup(cfg),
+			IdentityJudge:        identityJudge,
+			OrganizationPreparer: organizationPreparer,
 		}); err != nil {
 		return fmt.Errorf("schedule person enrichment: %w", err)
 	}
@@ -2705,6 +2710,24 @@ func (a *storeAPIAdapter) ListContactMatchCandidatesContext(
 	return a.store.ListContactMatchCandidatesContext(ctx, states, limit, offset)
 }
 
+func (a *storeAPIAdapter) ListOrganizationMatchReviewsContext(
+	ctx context.Context, limit int,
+) ([]store.OrganizationMatchReview, error) {
+	return a.store.ListOrganizationMatchReviewsContext(ctx, limit)
+}
+
+func (a *storeAPIAdapter) AcceptOrganizationMatchReviewContext(
+	ctx context.Context, id int64, actor string,
+) (*store.OrganizationMatchDecision, error) {
+	return a.store.AcceptOrganizationMatchReviewContext(ctx, id, actor)
+}
+
+func (a *storeAPIAdapter) RejectOrganizationMatchReviewContext(
+	ctx context.Context, id int64, actor string,
+) (*store.OrganizationMatchDecision, error) {
+	return a.store.RejectOrganizationMatchReviewContext(ctx, id, actor)
+}
+
 func (a *storeAPIAdapter) ListPersonEnrichmentIdentityReviewsContext(
 	ctx context.Context, limit int,
 ) ([]store.PersonEnrichmentIdentityReview, error) {
@@ -3662,6 +3685,9 @@ type personEnrichmentRuntimeCredentials struct {
 	// IdentityJudge is the scheduled runs' semantic identity check, or nil
 	// when [jev] or [jev.identity_verification] is off.
 	IdentityJudge personenrichment.IdentityJudge
+	// OrganizationPreparer is the scheduled runs' organization resolution,
+	// or nil when [jev] or [jev.organization_resolution] is off.
+	OrganizationPreparer personfacts.OrganizationPreparer
 }
 
 func registerPersonEnrichmentJob(
@@ -3748,6 +3774,7 @@ func registerPersonEnrichmentJob(
 		RenewEvery: enrichmentConfig.LeaseDuration / 4, Clock: time.Now,
 		Jitter:          func(delay time.Duration) time.Duration { return delay },
 		ProviderConfigs: providerConfigs, IdentityJudge: credentials.IdentityJudge,
+		OrganizationPreparer: credentials.OrganizationPreparer,
 	})
 	if err != nil {
 		return fmt.Errorf("configure person enrichment worker: %w", err)

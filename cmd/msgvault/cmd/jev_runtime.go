@@ -8,7 +8,9 @@ import (
 
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/jev"
+	"go.kenn.io/msgvault/internal/orgresolution"
 	"go.kenn.io/msgvault/internal/personenrichment"
+	"go.kenn.io/msgvault/internal/personfacts"
 	"go.kenn.io/msgvault/internal/providercredentials"
 )
 
@@ -89,4 +91,28 @@ func newJevIdentityJudge(cfg *config.Config, st jevRuntimeStore, automatic bool)
 		return nil, err
 	}
 	return personenrichment.NewJevIdentityJudge(service, automatic), nil
+}
+
+// jevOrganizationStore is what organization resolution needs from the
+// archive besides the Jev service's own consent and counters.
+type jevOrganizationStore interface {
+	jevRuntimeStore
+	orgresolution.Store
+}
+
+// newJevOrganizationPreparer wires organization resolution, or returns nil
+// when Jev or the feature is off in the startup configuration so the exact
+// organization lookup alone applies until the daemon restarts with them on.
+// automatic marks unattended callers such as scheduled runs.
+func newJevOrganizationPreparer(
+	cfg *config.Config, st jevOrganizationStore, automatic bool,
+) (personfacts.OrganizationPreparer, error) {
+	if cfg == nil || !cfg.Jev.Enabled || !cfg.Jev.OrganizationResolution.Enabled {
+		return nil, nil //nolint:nilnil // nil means "no preparer"; claims keep the exact lookup.
+	}
+	service, err := newJevService(cfg, st)
+	if err != nil || service == nil {
+		return nil, err
+	}
+	return orgresolution.NewPreparer(service, st, automatic, nil), nil
 }

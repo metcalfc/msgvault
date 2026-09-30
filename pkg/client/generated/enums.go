@@ -1722,6 +1722,23 @@ func (o OrganizationIdentifierBodySource) Validate() error {
 	}
 }
 
+type OrganizationMatchDecisionDecision string
+
+const (
+	Accepted OrganizationMatchDecisionDecision = "accepted"
+	Rejected OrganizationMatchDecisionDecision = "rejected"
+)
+
+// Validate checks if the OrganizationMatchDecisionDecision value is valid
+func (o OrganizationMatchDecisionDecision) Validate() error {
+	switch o {
+	case Accepted, Rejected:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid OrganizationMatchDecisionDecision value, got: %v", o))
+	}
+}
+
 type OrganizationMediaBodyMediaKind string
 
 const (
@@ -1850,13 +1867,13 @@ type PersonEnrichmentIdentityDecisionDecision string
 
 const (
 	PersonEnrichmentIdentityDecisionDecisionConfirmed PersonEnrichmentIdentityDecisionDecision = "confirmed"
-	Rejected                                          PersonEnrichmentIdentityDecisionDecision = "rejected"
+	PersonEnrichmentIdentityDecisionDecisionRejected  PersonEnrichmentIdentityDecisionDecision = "rejected"
 )
 
 // Validate checks if the PersonEnrichmentIdentityDecisionDecision value is valid
 func (p PersonEnrichmentIdentityDecisionDecision) Validate() error {
 	switch p {
-	case PersonEnrichmentIdentityDecisionDecisionConfirmed, Rejected:
+	case PersonEnrichmentIdentityDecisionDecisionConfirmed, PersonEnrichmentIdentityDecisionDecisionRejected:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid PersonEnrichmentIdentityDecisionDecision value, got: %v", p))
@@ -2709,7 +2726,7 @@ func (s SetPersonFactPinPathKind) Validate() error {
 type ListPersonRelationshipReviewsQueryStatus string
 
 const (
-	Accepted                                         ListPersonRelationshipReviewsQueryStatus = "accepted"
+	ListPersonRelationshipReviewsQueryStatusAccepted ListPersonRelationshipReviewsQueryStatus = "accepted"
 	ListPersonRelationshipReviewsQueryStatusRejected ListPersonRelationshipReviewsQueryStatus = "rejected"
 	Pending                                          ListPersonRelationshipReviewsQueryStatus = "pending"
 )
@@ -2717,7 +2734,7 @@ const (
 // Validate checks if the ListPersonRelationshipReviewsQueryStatus value is valid
 func (l ListPersonRelationshipReviewsQueryStatus) Validate() error {
 	switch l {
-	case Accepted, ListPersonRelationshipReviewsQueryStatusRejected, Pending:
+	case ListPersonRelationshipReviewsQueryStatusAccepted, ListPersonRelationshipReviewsQueryStatusRejected, Pending:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid ListPersonRelationshipReviewsQueryStatus value, got: %v", l))
