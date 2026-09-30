@@ -255,19 +255,17 @@ type employmentTitleAlias struct {
 	display    string
 }
 
-// employmentTitleAliasesTx loads an organization's title mappings, including
-// those recorded against organizations merged into it, keyed by the mapped
-// normalized title.
-func employmentTitleAliasesTx(
+// directEmploymentTitleAliasesTx loads an organization's title mapping rows
+// as stored, keyed by the mapped normalized title. An organization merge
+// moves the losing side's rows here, so no redirect needs following.
+func directEmploymentTitleAliasesTx(
 	ctx context.Context, tx *loggedTx, organizationID int64,
 ) (map[string]employmentTitleAlias, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT title_normalized, canonical_title, canonical_title_normalized
 		FROM organization_title_aliases
-		WHERE organization_id = ? OR organization_id IN (
-			SELECT id FROM organizations WHERE merged_into_id = ?)
-		ORDER BY CASE WHEN organization_id = ? THEN 0 ELSE 1 END, id`,
-		organizationID, organizationID, organizationID)
+		WHERE organization_id = ?
+		ORDER BY id`, organizationID)
 	if err != nil {
 		return nil, fmt.Errorf("load employment title aliases: %w", err)
 	}
@@ -279,14 +277,32 @@ func employmentTitleAliasesTx(
 		if err := rows.Scan(&title, &alias.display, &alias.normalized); err != nil {
 			return nil, fmt.Errorf("scan employment title alias: %w", err)
 		}
-		if _, exists := aliases[title]; !exists {
-			aliases[title] = alias
-		}
+		aliases[title] = alias
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate employment title aliases: %w", err)
 	}
 	return aliases, nil
+}
+
+// employmentTitleAliasesTx maps each of an organization's aliased titles to
+// the canonical title at the end of its chain. Writes keep chains one hop
+// long; resolving the whole chain here keeps reads right even if one is not.
+// A title whose chain loops has no canonical title.
+func employmentTitleAliasesTx(
+	ctx context.Context, tx *loggedTx, organizationID int64,
+) (map[string]employmentTitleAlias, error) {
+	direct, err := directEmploymentTitleAliasesTx(ctx, tx, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	resolved := make(map[string]employmentTitleAlias, len(direct))
+	for title := range direct {
+		if final, ok := followEmploymentTitleAlias(direct, title); ok {
+			resolved[title] = final
+		}
+	}
+	return resolved, nil
 }
 
 // EmploymentTitleCanonicalContext returns, for each of titles that has a
@@ -619,61 +635,60 @@ func loadOrganizationMatchReviewTx(
 func (s *Store) AcceptOrganizationMatchReviewContext(
 	ctx context.Context, id int64, actor string,
 ) (*OrganizationMatchDecision, error) {
-	var review organizationMatchReviewRow
-	var proposed []int64
-	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
-		var err error
-		review, err = loadOrganizationMatchReviewTx(ctx, tx, noLockDialect{s.dialect}, id)
-		if err != nil {
-			return err
-		}
-		proposed, err = proposedOrganizationIDsTx(ctx, tx, review)
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	if len(proposed) > 1 {
-		return nil, ErrOrganizationMatchReviewAmbiguous
-	}
-	decision := &OrganizationMatchDecision{
-		ReviewID: id, Decision: OrganizationMatchAccepted, OrganizationID: review.organizationID,
-	}
-	if len(proposed) == 1 {
-		survivor, err := s.GetOrganizationContext(ctx, review.organizationID)
-		if err != nil {
-			return nil, err
-		}
-		losing, err := s.GetOrganizationContext(ctx, proposed[0])
-		if err != nil {
-			return nil, err
-		}
-		if _, err := s.MergeOrganizationsContext(ctx, survivor.ID, survivor.Revision,
-			losing.ID, losing.Revision); err != nil {
-			return nil, err
-		}
-		decision.MergedOrganizationID = new(losing.ID)
-	}
-	_, err = retryContendedWrite(ctx, s, "accept organization match review",
+	// The review lock, the merge, the alias, and the decision commit together:
+	// a concurrent decision makes the conditional decide fail, and then the
+	// merge rolls back with it.
+	return retryContendedWrite(ctx, s, "accept organization match review",
 		func() (*OrganizationMatchDecision, error) {
-			return decision, s.withTxContext(ctx, func(tx *loggedTx) error {
-				current, err := loadOrganizationMatchReviewTx(ctx, tx, s.dialect, id)
+			var decision *OrganizationMatchDecision
+			err := s.withTxContext(ctx, func(tx *loggedTx) error {
+				if lock := s.dialect.RowWriterLockSQL("organization_match_reviews", "status"); lock != "" {
+					if _, err := tx.ExecContext(ctx, lock, id); err != nil {
+						return fmt.Errorf("lock organization match review: %w", err)
+					}
+				}
+				review, err := loadOrganizationMatchReviewTx(ctx, tx, s.dialect, id)
 				if err != nil {
 					return err
 				}
-				if _, err := s.addOrganizationLookupAliasTx(ctx, tx, current.organizationID,
-					current.proposedName, current.proposedDomain, ProvenanceUser,
+				proposed, err := proposedOrganizationIDsTx(ctx, tx, review)
+				if err != nil {
+					return err
+				}
+				if len(proposed) > 1 {
+					return ErrOrganizationMatchReviewAmbiguous
+				}
+				decision = &OrganizationMatchDecision{
+					ReviewID: id, Decision: OrganizationMatchAccepted, OrganizationID: review.organizationID,
+				}
+				if len(proposed) == 1 {
+					survivor, err := getOrganizationTx(ctx, tx, review.organizationID)
+					if err != nil {
+						return err
+					}
+					losing, err := getOrganizationTx(ctx, tx, proposed[0])
+					if err != nil {
+						return err
+					}
+					if err := s.mergeOrganizationsTx(ctx, tx, survivor.ID, survivor.Revision,
+						losing.ID, losing.Revision); err != nil {
+						return err
+					}
+					decision.MergedOrganizationID = new(losing.ID)
+				}
+				if err := organizationMatchAcceptStage(ctx, "merged"); err != nil {
+					return err
+				}
+				if _, err := s.addOrganizationLookupAliasTx(ctx, tx, review.organizationID,
+					review.proposedName, review.proposedDomain, ProvenanceUser,
 					fmt.Sprintf("organization-match-review:%d", id), nil); err != nil {
 					return err
 				}
 				return decideOrganizationMatchReviewTx(ctx, tx, s.dialect, id,
 					OrganizationMatchAccepted, actor)
 			})
+			return decision, err
 		})
-	if err != nil {
-		return nil, err
-	}
-	return decision, nil
 }
 
 // RejectOrganizationMatchReviewContext is the user saying the proposed name
@@ -686,6 +701,11 @@ func (s *Store) RejectOrganizationMatchReviewContext(
 		func() (*OrganizationMatchDecision, error) {
 			var decision *OrganizationMatchDecision
 			err := s.withTxContext(ctx, func(tx *loggedTx) error {
+				if lock := s.dialect.RowWriterLockSQL("organization_match_reviews", "status"); lock != "" {
+					if _, err := tx.ExecContext(ctx, lock, id); err != nil {
+						return fmt.Errorf("lock organization match review: %w", err)
+					}
+				}
 				review, err := loadOrganizationMatchReviewTx(ctx, tx, s.dialect, id)
 				if err != nil {
 					return err
@@ -723,11 +743,6 @@ func decideOrganizationMatchReviewTx(
 	}
 	return nil
 }
-
-// noLockDialect drops FOR UPDATE for reads inside a read-only snapshot.
-type noLockDialect struct{ Dialect }
-
-func (noLockDialect) SelectForUpdate() string { return "" }
 
 // employmentTitleCanonicalizer maps employment titles through each
 // organization's title aliases within one transaction, loading each
@@ -815,4 +830,20 @@ func employmentTitleGroupTx(
 		args[i] = value
 	}
 	return args, nil
+}
+
+type organizationMatchAcceptFailpointKey struct{}
+
+// withOrganizationMatchAcceptFailpoint lets a test fail an accept at a named
+// stage to prove what commits together.
+func withOrganizationMatchAcceptFailpoint(ctx context.Context, fail func(string) error) context.Context {
+	return context.WithValue(ctx, organizationMatchAcceptFailpointKey{}, fail)
+}
+
+func organizationMatchAcceptStage(ctx context.Context, stage string) error {
+	fail, _ := ctx.Value(organizationMatchAcceptFailpointKey{}).(func(string) error)
+	if fail == nil {
+		return nil
+	}
+	return fail(stage)
 }

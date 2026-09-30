@@ -76,142 +76,11 @@ func (s *Store) mergeOrganizationsOnce(
 ) (*Organization, error) {
 	var survivor *Organization
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
-		firstID, secondID := survivorID, losingID
-		if firstID > secondID {
-			firstID, secondID = secondID, firstID
-		}
-		first, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, firstID)
-		if err != nil {
+		if err := s.mergeOrganizationsTx(
+			ctx, tx, survivorID, survivorRevision, losingID, losingRevision); err != nil {
 			return err
 		}
-		second, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, secondID)
-		if err != nil {
-			return err
-		}
-		lockedSurvivor, lockedLosing := first, second
-		if survivorID != firstID {
-			lockedSurvivor, lockedLosing = second, first
-		}
-		if lockedSurvivor.Revision != survivorRevision ||
-			lockedLosing.Revision != losingRevision {
-			return ErrOrganizationRevisionConflict
-		}
-		if lockedSurvivor.MergedIntoID != nil {
-			return fmt.Errorf("%w: cannot merge into an already merged organization",
-				ErrOrganizationInvalid)
-		}
-		if lockedLosing.MergedIntoID != nil {
-			return fmt.Errorf("%w: cannot re-merge an already merged organization",
-				ErrOrganizationInvalid)
-		}
-		if lockedSurvivor.RetiredAt != nil {
-			return fmt.Errorf("%w: cannot merge into a retired organization",
-				ErrOrganizationInvalid)
-		}
-
-		inferenceBefore, err := s.captureOrganizationInferenceExportTx(ctx, tx, survivorID, losingID)
-		if err != nil {
-			return err
-		}
-		// Both sides before anything moves: the losing organization's people
-		// keep their employments but gain a different employer profile, and
-		// the survivor's people gain the retained 'former' name.
-		if err := s.bumpEmployedPersonVCardProjectionsTx(
-			ctx, tx, survivorID, losingID,
-		); err != nil {
-			return err
-		}
-		if err := s.invalidateCurrentEmploymentPersonEnrichmentTx(
-			ctx, tx, losingID,
-		); err != nil {
-			return err
-		}
-
-		var collisions int64
-		collisionQuery := `SELECT COUNT(*)
-			FROM employments losing_row
-			WHERE losing_row.organization_id = ? AND ` +
-			s.dialect.BoolTrueExpr("losing_row.is_current") + `
-			  AND EXISTS (
-				SELECT 1 FROM employments survivor_row
-				WHERE survivor_row.organization_id = ?
-				  AND survivor_row.person_id = losing_row.person_id
-				  AND survivor_row.title_normalized = losing_row.title_normalized
-				  AND ` + s.dialect.BoolTrueExpr("survivor_row.is_current") + `
-			  )`
-		if err := tx.QueryRowContext(ctx, collisionQuery, losingID, survivorID).
-			Scan(&collisions); err != nil {
-			return fmt.Errorf("check organization merge employment collisions: %w", err)
-		}
-		if collisions > 0 {
-			return fmt.Errorf("%w: person already has a current employment with this "+
-				"organization and title", ErrOrganizationMergeConflict)
-		}
-
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
-			UPDATE employments
-			SET organization_id = ?, address_id = NULL, revision = revision + 1,
-			    updated_at = %s
-			WHERE organization_id = ?
-		`, s.dialect.Now()), survivorID, losingID); err != nil {
-			return fmt.Errorf("repoint organization employments: %w", err)
-		}
-		now := time.Now().UTC()
-		for _, table := range []string{
-			"organization_names", "organization_identifiers",
-			"organization_addresses", "organization_contact_points",
-			"organization_media", "organization_categories",
-		} {
-			if err := s.supersedeOrganizationRowsTx(
-				ctx, tx, table, losingID, nil, now); err != nil {
-				return fmt.Errorf("retire merged organization values: %w", err)
-			}
-		}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE organization_attribute_values
-			SET superseded_at = ?
-			WHERE organization_id = ? AND superseded_at IS NULL AND active_from > ?
-		`, now, losingID, now); err != nil {
-			return fmt.Errorf("retract future merged organization attributes: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE organization_attribute_values
-			SET active_until = ?, superseded_at = ?
-			WHERE organization_id = ? AND active_until IS NULL
-			  AND superseded_at IS NULL AND active_from <= ?
-		`, now, now, losingID, now); err != nil {
-			return fmt.Errorf("retire merged organization attributes: %w", err)
-		}
-		sourceRef := fmt.Sprintf("organization-merge:%d", losingID)
-		if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(`
-			INSERT OR IGNORE INTO organization_names (
-				organization_id, name_kind, formatted, original_value,
-				name_normalized, source, source_ref
-			) VALUES (?, 'former', ?, ?, ?, 'system', ?)
-		`), survivorID, lockedLosing.Name,
-			lockedLosing.Name, NormalizeOrganizationName(lockedLosing.Name),
-			sourceRef); err != nil {
-			return fmt.Errorf("retain merged organization name: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
-			UPDATE organizations
-			SET merged_into_id = ?, retired_at = %s, revision = revision + 1,
-			    updated_at = %s
-			WHERE id = ? AND revision = ?
-		`, s.dialect.Now(), s.dialect.Now()),
-			survivorID, losingID, losingRevision); err != nil {
-			return fmt.Errorf("mark losing organization merged: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
-			UPDATE organizations
-			SET revision = revision + 1, updated_at = %s
-			WHERE id = ? AND revision = ?
-		`, s.dialect.Now()), survivorID, survivorRevision); err != nil {
-			return fmt.Errorf("bump surviving organization revision: %w", err)
-		}
-		if err := s.invalidateInferenceExportChangesTx(ctx, tx, inferenceBefore); err != nil {
-			return err
-		}
+		var err error
 		survivor, err = getOrganizationTx(ctx, tx, survivorID)
 		return err
 	})
@@ -219,6 +88,154 @@ func (s *Store) mergeOrganizationsOnce(
 		return nil, err
 	}
 	return survivor, nil
+}
+
+// mergeOrganizationsTx folds the losing organization into the survivor inside
+// the caller's transaction, so a caller can make a merge part of a larger
+// decision that commits or rolls back as one.
+func (s *Store) mergeOrganizationsTx(
+	ctx context.Context, tx *loggedTx, survivorID, survivorRevision, losingID, losingRevision int64,
+) error {
+	firstID, secondID := survivorID, losingID
+	if firstID > secondID {
+		firstID, secondID = secondID, firstID
+	}
+	first, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, firstID)
+	if err != nil {
+		return err
+	}
+	second, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, secondID)
+	if err != nil {
+		return err
+	}
+	lockedSurvivor, lockedLosing := first, second
+	if survivorID != firstID {
+		lockedSurvivor, lockedLosing = second, first
+	}
+	if lockedSurvivor.Revision != survivorRevision ||
+		lockedLosing.Revision != losingRevision {
+		return ErrOrganizationRevisionConflict
+	}
+	if lockedSurvivor.MergedIntoID != nil {
+		return fmt.Errorf("%w: cannot merge into an already merged organization",
+			ErrOrganizationInvalid)
+	}
+	if lockedLosing.MergedIntoID != nil {
+		return fmt.Errorf("%w: cannot re-merge an already merged organization",
+			ErrOrganizationInvalid)
+	}
+	if lockedSurvivor.RetiredAt != nil {
+		return fmt.Errorf("%w: cannot merge into a retired organization",
+			ErrOrganizationInvalid)
+	}
+
+	inferenceBefore, err := s.captureOrganizationInferenceExportTx(ctx, tx, survivorID, losingID)
+	if err != nil {
+		return err
+	}
+	// Both sides before anything moves: the losing organization's people
+	// keep their employments but gain a different employer profile, and
+	// the survivor's people gain the retained 'former' name.
+	if err := s.bumpEmployedPersonVCardProjectionsTx(
+		ctx, tx, survivorID, losingID,
+	); err != nil {
+		return err
+	}
+	if err := s.invalidateCurrentEmploymentPersonEnrichmentTx(
+		ctx, tx, losingID,
+	); err != nil {
+		return err
+	}
+
+	var collisions int64
+	collisionQuery := `SELECT COUNT(*)
+		FROM employments losing_row
+		WHERE losing_row.organization_id = ? AND ` +
+		s.dialect.BoolTrueExpr("losing_row.is_current") + `
+		  AND EXISTS (
+			SELECT 1 FROM employments survivor_row
+			WHERE survivor_row.organization_id = ?
+			  AND survivor_row.person_id = losing_row.person_id
+			  AND survivor_row.title_normalized = losing_row.title_normalized
+			  AND ` + s.dialect.BoolTrueExpr("survivor_row.is_current") + `
+		  )`
+	if err := tx.QueryRowContext(ctx, collisionQuery, losingID, survivorID).
+		Scan(&collisions); err != nil {
+		return fmt.Errorf("check organization merge employment collisions: %w", err)
+	}
+	if collisions > 0 {
+		return fmt.Errorf("%w: person already has a current employment with this "+
+			"organization and title", ErrOrganizationMergeConflict)
+	}
+
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
+		UPDATE employments
+		SET organization_id = ?, address_id = NULL, revision = revision + 1,
+		    updated_at = %s
+		WHERE organization_id = ?
+	`, s.dialect.Now()), survivorID, losingID); err != nil {
+		return fmt.Errorf("repoint organization employments: %w", err)
+	}
+	if err := s.retargetOrganizationReferencesTx(ctx, tx, survivorID, losingID); err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	for _, table := range []string{
+		"organization_names", "organization_identifiers",
+		"organization_addresses", "organization_contact_points",
+		"organization_media", "organization_categories",
+	} {
+		if err := s.supersedeOrganizationRowsTx(
+			ctx, tx, table, losingID, nil, now); err != nil {
+			return fmt.Errorf("retire merged organization values: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE organization_attribute_values
+		SET superseded_at = ?
+		WHERE organization_id = ? AND superseded_at IS NULL AND active_from > ?
+	`, now, losingID, now); err != nil {
+		return fmt.Errorf("retract future merged organization attributes: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE organization_attribute_values
+		SET active_until = ?, superseded_at = ?
+		WHERE organization_id = ? AND active_until IS NULL
+		  AND superseded_at IS NULL AND active_from <= ?
+	`, now, now, losingID, now); err != nil {
+		return fmt.Errorf("retire merged organization attributes: %w", err)
+	}
+	sourceRef := fmt.Sprintf("organization-merge:%d", losingID)
+	if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(`
+		INSERT OR IGNORE INTO organization_names (
+			organization_id, name_kind, formatted, original_value,
+			name_normalized, source, source_ref
+		) VALUES (?, 'former', ?, ?, ?, 'system', ?)
+	`), survivorID, lockedLosing.Name,
+		lockedLosing.Name, NormalizeOrganizationName(lockedLosing.Name),
+		sourceRef); err != nil {
+		return fmt.Errorf("retain merged organization name: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
+		UPDATE organizations
+		SET merged_into_id = ?, retired_at = %s, revision = revision + 1,
+		    updated_at = %s
+		WHERE id = ? AND revision = ?
+	`, s.dialect.Now(), s.dialect.Now()),
+		survivorID, losingID, losingRevision); err != nil {
+		return fmt.Errorf("mark losing organization merged: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
+		UPDATE organizations
+		SET revision = revision + 1, updated_at = %s
+		WHERE id = ? AND revision = ?
+	`, s.dialect.Now()), survivorID, survivorRevision); err != nil {
+		return fmt.Errorf("bump surviving organization revision: %w", err)
+	}
+	if err := s.invalidateInferenceExportChangesTx(ctx, tx, inferenceBefore); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Organization is a durable curated real-world entity.
