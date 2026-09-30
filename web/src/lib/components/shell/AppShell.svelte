@@ -811,6 +811,7 @@
     // Kit comboboxes are inputs or buttons, both covered above.
     '[role="button"]'
   ].join(', ');
+  const NATIVE_SCROLL_KEYS = new Set(['PageUp', 'PageDown', 'Home', 'End', ' ', 'ArrowUp', 'ArrowDown']);
   function preserveNativeControlKey(event: KeyboardEvent): void {
     if (!(event.target instanceof Element)) return;
     const target = event.target;
@@ -826,7 +827,12 @@
       // Local control handlers and browser defaults run before this document
       // listener; stop only the app-wide shortcut listener on window.
       event.stopPropagation();
+      return;
     }
+    // The paging and row keys drive the results grid. Where a workspace has
+    // no grid to relay them to, they belong to the browser, which scrolls the
+    // page the reader is in.
+    if (NATIVE_SCROLL_KEYS.has(event.key) && !currentGrid()) event.stopPropagation();
   }
   function syncEditableShortcutScope(target: EventTarget | null): void {
     const focused = editableTarget(target);

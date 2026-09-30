@@ -127,6 +127,9 @@
   ];
   const contactTab = $derived(CONTACT_TABS.some((tab) => tab.id === personTab) ? personTab : 'overview');
   const contactFilesOpen = $derived(layout === 'contact' ? contactTab === 'files' : filesOpen);
+  /** Contact Overview and Meetings are pages of cards with no results grid
+   * to scroll, so the column scrolls them itself. */
+  const contactDocument = $derived(layout === 'contact' && (contactTab === 'overview' || contactTab === 'meetings'));
   function contactTabKeydown(event: KeyboardEvent, index: number): void {
     const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
     if (!step) return;
@@ -446,7 +449,7 @@
               />
             </div>
           {:else}
-            <div class="pane-center-column">
+            <div class="pane-center-column" class:pane-center-column--document={contactDocument}>
               <RelationshipHeader
                 detail={controller.detail}
                 loading={controller.timelineLoading}
@@ -677,6 +680,14 @@
     gap: var(--space-4);
     margin-inline: auto;
     padding: var(--space-6) var(--space-7);
+  }
+
+  .pane-center-column--document {
+    overflow-y: auto;
+  }
+
+  .pane-center-column--document > :global(*) {
+    flex-shrink: 0;
   }
 
   .contact-page {

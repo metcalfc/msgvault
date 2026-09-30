@@ -339,13 +339,15 @@
 {/if}
 
 <style>
-  .review-centre { display: grid; gap: var(--space-5); padding: var(--space-5); }
+  /* The app shell clips its overflow, so the review queue scrolls here; the
+   * sticky loading overlay pins to this container. */
+  .review-centre { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--space-5); min-width: 0; min-height: 0; padding: var(--space-5); overflow: auto; }
   .page-header, .review-toolbar { display: flex; align-items: start; justify-content: space-between; gap: var(--space-5); flex-wrap: wrap; }
   .page-header > div, .review-toolbar > div, .identity-review { display: grid; gap: var(--space-2); }
   .review-toolbar > .filters { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
   h1, h2, p { margin: 0; }
   .page-header p, .review-toolbar p { color: var(--text-muted); }
-  .identity-review { gap: var(--space-4); }
+  .identity-review { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
   .status { color: var(--text-secondary); }
   .loading { display: flex; align-items: center; gap: var(--space-2); color: var(--text-muted); }
   .message { display: grid; justify-items: start; gap: var(--space-2); padding: var(--space-3); border-left: 2px solid var(--accent-red); color: var(--text-secondary); }
@@ -355,7 +357,7 @@
   .pagination { display: flex; align-items: center; justify-content: center; gap: var(--space-3); color: var(--text-muted); font-size: var(--font-size-sm); }
   @media (max-width: 760px) {
     .review-centre { padding: var(--space-4); }
-    .page-header :global(.kit-segmented), .review-toolbar :global(.kit-segmented) { width: 100%; }
+    .page-header :global(.kit-segmented), .review-toolbar :global(.kit-segmented) { width: 100%; flex-wrap: wrap; }
     .review-toolbar > .filters { width: 100%; }
   }
 </style>

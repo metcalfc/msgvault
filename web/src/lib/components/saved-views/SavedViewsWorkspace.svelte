@@ -304,6 +304,7 @@
     gap: var(--space-4);
     margin-inline: auto;
     padding: var(--space-5) var(--space-6);
+    overflow: auto;
   }
   header,
   article,
