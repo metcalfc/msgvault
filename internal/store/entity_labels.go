@@ -163,13 +163,15 @@ func (s *Store) EntityLabelsContext(ctx context.Context, request EntityLabelRequ
 }
 
 // participantLabels returns each participant's label (who it is: its bound
-// person's name first) and its identity (its own name and address).
+// person's name first, unless the participant is marked as not a person)
+// and its identity (its own name and address).
 func (s *Store) participantLabels(ctx context.Context, ids []int64) (map[int64]string, map[int64]string, error) {
 	labels := make(map[int64]string, len(ids))
 	identities := make(map[int64]string, len(ids))
 	if len(ids) == 0 {
 		return labels, identities, nil
 	}
+	ownParticipantLabels := make(map[int64]string, len(ids))
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT p.id, COALESCE(`+sqlParticipantLabelExpr("p")+`, ''),
 		        COALESCE(NULLIF(TRIM(p.display_name), ''), ''),
@@ -191,9 +193,34 @@ func (s *Store) participantLabels(ctx context.Context, ids []int64) (map[int64]s
 		if identity := participantIdentity(name, identifier); identity != "" {
 			identities[id] = identity
 		}
+		if name != "" {
+			ownParticipantLabels[id] = name
+		} else if identifier != "" {
+			ownParticipantLabels[id] = identifier
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, nil, fmt.Errorf("list participant labels: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, nil, fmt.Errorf("close participant labels: %w", err)
+	}
+	// A participant in a cluster marked as not a person (an organization, a
+	// shared mailbox, or ignored) is not the person it may still be bound
+	// to, so it reads as its own name or address, never the person's name.
+	notPeople, err := s.NotPersonParticipantsContext(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list participant labels: %w", err)
+	}
+	for _, id := range ids {
+		if _, notPerson := notPeople[id]; !notPerson {
+			continue
+		}
+		if own := ownParticipantLabels[id]; own != "" {
+			labels[id] = own
+		} else {
+			delete(labels, id)
+		}
 	}
 	return labels, identities, nil
 }

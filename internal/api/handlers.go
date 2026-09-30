@@ -4010,6 +4010,29 @@ func (s *Server) handleDeepSearch(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// withNotPersonParticipants attaches the participants marked as not a person
+// so untitled conversation labels name them by their own name or address
+// rather than a person they are still bound to. A store without the
+// capability classifies nothing.
+func (s *Server) withNotPersonParticipants(
+	ctx context.Context, w http.ResponseWriter,
+) (context.Context, bool) {
+	kinds, ok := s.store.(NotPersonParticipantStore)
+	if !ok {
+		return ctx, true
+	}
+	notPeople, err := kinds.NotPersonParticipantsContext(ctx)
+	if err != nil {
+		if s.writeIfContextError(w, err) {
+			return nil, false
+		}
+		s.logger.Error("correspondent kind lookup failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Could not read records marked as not a person")
+		return nil, false
+	}
+	return query.WithNotPersonParticipants(ctx, notPeople), true
+}
+
 func (s *Server) handleTextConversations(w http.ResponseWriter, r *http.Request) {
 	textEngine, ok := s.textEngine(r.Context(), w)
 	if !ok {
@@ -4034,8 +4057,12 @@ func (s *Server) handleTextConversations(w http.ResponseWriter, r *http.Request)
 
 	requestLimit := filter.Pagination.Limit
 	filter.Pagination.Limit = requestLimit + 1
+	labelCtx, ok := s.withNotPersonParticipants(r.Context(), w)
+	if !ok {
+		return
+	}
 	rows, cacheRevision, err := snapshotReader.ListConversationsSnapshot(
-		r.Context(), filter,
+		labelCtx, filter,
 	)
 	if err != nil {
 		if s.writeIfContextError(w, err) {

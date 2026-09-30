@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/testutil"
 )
@@ -306,4 +307,48 @@ func TestEntityLabelsParticipantIdentitiesTellOnePersonsIdentitiesApart(t *testi
 		home:  "jane.home@example.org",
 		phone: "Jane Mobile · +15550100002",
 	}, labels.ParticipantIdentities)
+}
+
+// TestEntityLabelsParticipantMarkedNotAPersonKeepsItsOwnName pins that a
+// participant in a cluster marked as not a person reads as its own name or
+// address rather than the person it is still bound to, while that person
+// keeps its own label.
+func TestEntityLabelsParticipantMarkedNotAPersonKeepsItsOwnName(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := context.Background()
+	st := testutil.NewTestStore(t)
+
+	desk, err := st.EnsureParticipant("desk@example.com", "Help Desk", "example.com")
+	require.NoError(err)
+	person, _, err := st.CreatePersonFromParticipant(desk)
+	require.NoError(err)
+	_, err = st.UpdatePersonDisplayNameContext(ctx, person.ID, person.Revision, new("Avery Stone"))
+	require.NoError(err)
+	orders, err := st.EnsureParticipant("orders@example.com", "", "example.com")
+	require.NoError(err)
+	shop, _, err := st.CreatePersonFromParticipant(orders)
+	require.NoError(err)
+	_, err = st.UpdatePersonDisplayNameContext(ctx, shop.ID, shop.Revision, new("Blair Example"))
+	require.NoError(err)
+
+	before, err := st.EntityLabelsContext(ctx, store.EntityLabelRequest{ParticipantIDs: []int64{desk, orders}})
+	require.NoError(err)
+	assert.Equal(map[int64]string{desk: "Avery Stone", orders: "Blair Example"}, before.Participants)
+
+	_, err = st.SetCorrespondentKindContext(ctx, store.SetCorrespondentKindInput{
+		ParticipantID: desk, Kind: correspondentkind.SharedMailbox,
+	})
+	require.NoError(err)
+	_, err = st.SetCorrespondentKindContext(ctx, store.SetCorrespondentKindInput{
+		ParticipantID: orders, Kind: correspondentkind.Ignored,
+	})
+	require.NoError(err)
+
+	after, err := st.EntityLabelsContext(ctx, store.EntityLabelRequest{
+		ParticipantIDs: []int64{desk, orders}, PersonIDs: []int64{person.ID},
+	})
+	require.NoError(err)
+	assert.Equal(map[int64]string{desk: "Help Desk", orders: "orders@example.com"}, after.Participants)
+	assert.Equal(map[int64]string{person.ID: "Avery Stone"}, after.People)
 }

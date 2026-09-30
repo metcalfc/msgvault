@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/testutil/dbtest"
 )
 
@@ -100,6 +101,25 @@ func TestSQLiteConversationParticipantLabels(t *testing.T) {
 	snapshot, _, err := engine.ListConversationsSnapshot(t.Context(), filter)
 	require.NoError(err)
 	assert.Equal(wantConversationLabels, conversationLabelsByID(snapshot))
+}
+
+// TestConversationLabelNamesANotAPersonParticipantByItsOwnName pins that a
+// participant marked as not a person (here a shared mailbox still bound to
+// a curated person) reads as its own name, not that person's.
+func TestConversationLabelNamesANotAPersonParticipantByItsOwnName(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	engine := NewSQLiteEngine(conversationLabelFixture(t))
+	sourceID := int64(7)
+	ctx := WithNotPersonParticipants(t.Context(), map[int64]correspondentkind.Kind{
+		11: correspondentkind.SharedMailbox,
+	})
+
+	listed, err := engine.ListConversations(ctx, TextFilter{SourceID: &sourceID})
+	require.NoError(err)
+	labels := conversationLabelsByID(listed)
+	assert.Equal("Avery Observed, blake@example.com", labels[701])
+	assert.Equal("Avery Observed, blake@example.com, Casey Example +2", labels[702])
 }
 
 func TestDuckDBConversationParticipantLabelsComeFromTheArchive(t *testing.T) {

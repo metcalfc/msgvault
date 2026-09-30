@@ -35,6 +35,7 @@ import (
 	"go.kenn.io/msgvault/internal/circleback"
 	"go.kenn.io/msgvault/internal/clirun"
 	"go.kenn.io/msgvault/internal/config"
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/daemonclient"
 	"go.kenn.io/msgvault/internal/deletion"
 	"go.kenn.io/msgvault/internal/gcal"
@@ -8835,4 +8836,67 @@ func TestDaemonTextSearchScopesBeforePagination(t *testing.T) {
 	require.NoError(err)
 	require.Len(messages, 1)
 	assert.Equal(t, int64(2), messages[0].ID)
+}
+
+// notPeopleMockStore reports fixed participants as marked not a person.
+type notPeopleMockStore struct {
+	*mockStore
+
+	notPeople map[int64]correspondentkind.Kind
+}
+
+func (s *notPeopleMockStore) NotPersonParticipantsContext(context.Context) (map[int64]correspondentkind.Kind, error) {
+	return s.notPeople, nil
+}
+
+// TestTextConversationLabelsNameNotAPersonParticipantsByTheirOwnName pins
+// that the conversations endpoint tells the engine which participants are
+// marked not a person, so a shared mailbox still bound to a saved person
+// reads as its own name in an untitled conversation's label.
+func TestTextConversationLabelsNameNotAPersonParticipantsByTheirOwnName(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		notPeople map[int64]correspondentkind.Kind
+		want      string
+	}{
+		{name: "person", want: "Avery Curated, blake@example.test"},
+		{name: "shared mailbox", notPeople: map[int64]correspondentkind.Kind{11: correspondentkind.SharedMailbox},
+			want: "Help Desk, blake@example.test"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			db := dbtest.NewTestDB(t, "../store/schema.sql")
+			_, err := db.DB.Exec(`
+				INSERT INTO sources (id, source_type, identifier) VALUES (7, 'whatsapp', 'owner@example.test');
+				INSERT INTO participants (id, email_address, display_name) VALUES
+					(11, 'desk@example.test', 'Help Desk'), (12, 'blake@example.test', NULL);
+				INSERT INTO persons (id, vcard_uid, display_name) VALUES (1, 'synthetic-uid-1', 'Avery Curated');
+				INSERT INTO person_participants (person_id, participant_id) VALUES (1, 11);
+				INSERT INTO conversations (id, source_id, source_conversation_id, conversation_type, title) VALUES
+					(701, 7, 'c-701', 'group_chat', NULL);
+				INSERT INTO messages (id, conversation_id, source_id, source_message_id, message_type, sent_at, snippet, sender_id, is_from_me) VALUES
+					(801, 701, 7, 'm-801', 'whatsapp', '2026-08-20 10:00:00', 'hi', 11, FALSE);
+				INSERT INTO conversation_participants (conversation_id, participant_id) VALUES (701, 11), (701, 12);
+			`)
+			require.NoError(err, "seed conversation")
+			srv := NewServerWithOptions(ServerOptions{
+				Config:    &config.Config{Server: config.ServerConfig{APIPort: 8080}},
+				Store:     &notPeopleMockStore{mockStore: &mockStore{}, notPeople: tc.notPeople},
+				Engine:    query.NewSQLiteEngine(db.DB),
+				Scheduler: newMockScheduler(),
+				Logger:    testLogger(),
+			})
+
+			w := httptest.NewRecorder()
+			srv.Router().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/text/conversations", nil))
+
+			require.Equal(http.StatusOK, w.Code, "status (body: %s)", w.Body.String())
+			var resp TextConversationsResponse
+			require.NoError(json.NewDecoder(w.Body).Decode(&resp), "decode conversations")
+			require.Len(resp.Conversations, 1)
+			assert.Equal(tc.want, resp.Conversations[0].ParticipantLabel)
+		})
+	}
 }

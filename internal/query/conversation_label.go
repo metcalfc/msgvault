@@ -4,27 +4,34 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"go.kenn.io/msgvault/internal/correspondentkind"
 )
 
 // maxConversationLabelNames bounds how many participant names one untitled
 // conversation's label lists before summarizing the rest as "+N".
 const maxConversationLabelNames = 3
 
-// sqlStoreParticipantLabelExpr renders one participants row's (alias) label
-// from the live archive tables, following the display-label policy in
-// person_label.go: the curated name of the durable person the participant
-// is bound to, then the participant's own observed name, then the
-// identifier chain (phone → email → stored identifier evidence). Unlike the
-// analytics fallback it yields NULL instead of "Unknown person", so an
-// unnamed participant contributes nothing to a conversation label.
-func sqlStoreParticipantLabelExpr(alias string) string {
-	return `COALESCE(
-		(SELECT NULLIF(TRIM(lp.display_name), '')
+// sqlStoreBoundPersonNameExpr renders the curated name of the durable
+// person one participants row (alias) is bound to, or NULL. It leads a
+// participant's label, following the display-label policy in
+// person_label.go, unless the participant is marked as not a person.
+func sqlStoreBoundPersonNameExpr(alias string) string {
+	return `(SELECT NULLIF(TRIM(lp.display_name), '')
 		 FROM person_participants lb
 		 JOIN persons lp ON lp.id = lb.person_id
 		 WHERE lb.participant_id = ` + alias + `.id
 		   AND NULLIF(TRIM(lp.display_name), '') IS NOT NULL
-		 ORDER BY lb.person_id LIMIT 1),
+		 ORDER BY lb.person_id LIMIT 1)`
+}
+
+// sqlStoreOwnParticipantLabelExpr renders one participants row's (alias)
+// own label from the live archive tables: its observed name, then the
+// identifier chain (phone → email → stored identifier evidence). Unlike the
+// analytics fallback it yields NULL instead of "Unknown person", so an
+// unnamed participant contributes nothing to a conversation label.
+func sqlStoreOwnParticipantLabelExpr(alias string) string {
+	return `COALESCE(
 		NULLIF(TRIM(` + alias + `.display_name), ''),
 		NULLIF(TRIM(` + alias + `.phone_number), ''),
 		NULLIF(TRIM(` + alias + `.email_address), ''),
@@ -33,6 +40,24 @@ func sqlStoreParticipantLabelExpr(alias string) string {
 		 WHERE pi.participant_id = ` + alias + `.id
 		   AND COALESCE(NULLIF(TRIM(pi.display_value), ''), NULLIF(TRIM(pi.identifier_value), '')) IS NOT NULL
 		 ORDER BY pi.is_primary DESC, pi.identifier_type, pi.identifier_value LIMIT 1))`
+}
+
+type notPersonParticipantsKey struct{}
+
+// WithNotPersonParticipants tells conversation labels which participants
+// are in a cluster marked as not a person (the store's
+// NotPersonParticipantsContext). Such a participant is named by its own
+// name or address, never by the person it may still be bound to. Without
+// it, every participant counts as a person.
+func WithNotPersonParticipants(
+	ctx context.Context, participants map[int64]correspondentkind.Kind,
+) context.Context {
+	return context.WithValue(ctx, notPersonParticipantsKey{}, participants)
+}
+
+func notPersonParticipants(ctx context.Context) map[int64]correspondentkind.Kind {
+	participants, _ := ctx.Value(notPersonParticipantsKey{}).(map[int64]correspondentkind.Kind)
+	return participants
 }
 
 // conversationLabelRecentMessages bounds how many of a conversation's most
@@ -113,7 +138,7 @@ func sqlConversationLabelQuery(n int) string {
 					       OR (pi.identifier_type <> 'email'
 					        AND pi.identifier_value = ai.address))))
 		)
-		SELECT mb.conversation_id, %s
+		SELECT mb.conversation_id, p.id, %s, %s
 		FROM members mb
 		JOIN participants p ON p.id = mb.participant_id
 		WHERE NOT EXISTS (
@@ -121,7 +146,8 @@ func sqlConversationLabelQuery(n int) string {
 			WHERE f.conversation_id = mb.conversation_id AND f.sender_id = mb.participant_id)
 		  AND NOT EXISTS (SELECT 1 FROM owners o WHERE o.id = mb.participant_id)
 		ORDER BY mb.conversation_id, p.id`,
-		in, conversationLabelRecentMessages-1, sqlStoreParticipantLabelExpr("p"))
+		in, conversationLabelRecentMessages-1,
+		sqlStoreBoundPersonNameExpr("p"), sqlStoreOwnParticipantLabelExpr("p"))
 }
 
 // fillConversationParticipantLabels names each untitled conversation on a
@@ -152,12 +178,17 @@ func (e *SQLiteEngine) fillConversationParticipantLabels(
 		return fmt.Errorf("label untitled conversations: %w", err)
 	}
 	defer func() { _ = result.Close() }()
+	notPeople := notPersonParticipants(ctx)
 	names := make(map[int64][]string, len(ids))
 	for result.Next() {
-		var conversationID int64
-		var label *string
-		if err := result.Scan(&conversationID, &label); err != nil {
+		var conversationID, participantID int64
+		var boundName, ownLabel *string
+		if err := result.Scan(&conversationID, &participantID, &boundName, &ownLabel); err != nil {
 			return fmt.Errorf("scan conversation label: %w", err)
+		}
+		label := ownLabel
+		if _, notPerson := notPeople[participantID]; !notPerson && boundName != nil {
+			label = boundName
 		}
 		if label != nil && strings.TrimSpace(*label) != "" {
 			names[conversationID] = append(names[conversationID], strings.TrimSpace(*label))
