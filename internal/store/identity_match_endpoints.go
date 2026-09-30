@@ -336,7 +336,7 @@ func (s *Store) participantPersonMatchStatusesTx(
 	if err != nil {
 		return nil, err
 	}
-	signals, err := s.sharedMailboxSignalsTx(ctx, tx, clusters, nil)
+	signals, err := s.sharedMailboxSignalsTx(ctx, tx, clusters)
 	if err != nil {
 		return nil, err
 	}

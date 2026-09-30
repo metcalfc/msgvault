@@ -127,7 +127,7 @@ func (s *Store) acceptParticipantPersonMatchTx(
 	contactPersonID := candidate.RightID
 	classification := classifyContactMatch(contactPersonID, persons)
 	if classification != ContactMatchLinked {
-		signals, err := s.sharedMailboxSignalsTx(ctx, tx, map[int64][]int64{0: members}, nil)
+		signals, err := s.sharedMailboxSignalsTx(ctx, tx, map[int64][]int64{0: members})
 		if err != nil {
 			return nil, err
 		}

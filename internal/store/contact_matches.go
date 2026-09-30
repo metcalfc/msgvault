@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"slices"
@@ -182,18 +181,9 @@ func (s *Store) findContactMatchesTx(ctx context.Context, tx *loggedTx) ([]Conta
 		return nil, err
 	}
 
-	contactIDs := make([]int64, 0, len(keys))
-	for _, key := range keys {
-		contactIDs = append(contactIDs, key.personID)
-	}
-	contactNames, err := contactPersonNamesTx(ctx, tx, contactIDs)
-	if err != nil {
-		return nil, err
-	}
 	matches := make([]ContactMatch, 0, len(keys))
 	personIDs := []int64{}
 	signalClusters := map[int64][]int64{}
-	signalNames := map[int64][]string{}
 	for _, key := range keys {
 		cluster := clusterMembers(key.root)
 		if slices.ContainsFunc(cluster, func(id int64) bool {
@@ -230,11 +220,8 @@ func (s *Store) findContactMatchesTx(ctx context.Context, tx *loggedTx) ([]Conta
 		personIDs = append(personIDs, key.personID)
 		personIDs = append(personIDs, clusterPersons...)
 		signalClusters[key.root] = cluster
-		if name := contactNames[key.personID]; name != "" {
-			signalNames[key.root] = append(signalNames[key.root], name)
-		}
 	}
-	signals, err := s.sharedMailboxSignalsTx(ctx, tx, signalClusters, signalNames)
+	signals, err := s.sharedMailboxSignalsTx(ctx, tx, signalClusters)
 	if err != nil {
 		return nil, err
 	}
@@ -941,28 +928,4 @@ func isContactMatchRetirement(err error) bool {
 		errors.Is(err, ErrContactMatchStale) ||
 		errors.Is(err, ErrContactMatchRejectedInCluster) ||
 		errors.Is(err, ErrContactMatchNotAPerson)
-}
-
-// contactPersonNamesTx returns the display names of the contact profiles in
-// personIDs, so two profiles claiming one address count as two names on it.
-func contactPersonNamesTx(
-	ctx context.Context, tx *loggedTx, personIDs []int64,
-) (map[int64]string, error) {
-	ids := slices.Clone(personIDs)
-	slices.Sort(ids)
-	ids = slices.Compact(ids)
-	names := map[int64]string{}
-	if err := queryInChunksContext(ctx, tx, ids, nil, `
-		SELECT id, display_name FROM persons WHERE id IN (%s)`, func(rows *loggedRows) error {
-		var id int64
-		var name sql.NullString
-		if err := rows.Scan(&id, &name); err != nil {
-			return fmt.Errorf("scan contact profile name: %w", err)
-		}
-		names[id] = strings.TrimSpace(name.String)
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("load contact profile names: %w", err)
-	}
-	return names, nil
 }

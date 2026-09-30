@@ -19,15 +19,17 @@ var ErrContactMatchSharedMailbox = errors.New(
 	"the matched address looks like a shared mailbox")
 
 // sharedMailboxSignalsTx computes the shared-mailbox signal for each cluster
-// in clusters (keyed by any caller-chosen key), from the cluster's email
-// addresses and two groups of names seen on it: the participant display
-// names and the names messages carried for its members, and separately the
-// saved people bound to it, the contact profiles with open matches to it,
-// and extraNames. A cluster the
-// user said is a person never fires. Clusters that do not fire are absent.
+// in clusters (keyed by any caller-chosen key). Each email address in the
+// cluster is judged only by the names seen on that address, in two groups
+// judged separately: the names messages carried for it (and the display
+// name of the participant whose address it is), and the names of saved or
+// contact profiles that list it or are bound to that participant. Names seen
+// on another address or a phone number in the same cluster never count, so
+// a shared household phone cannot make a personal email look shared. A
+// cluster whose effective kind is a user's "this is a person" never fires.
+// Clusters that do not fire are absent.
 func (s *Store) sharedMailboxSignalsTx(
-	ctx context.Context, tx *loggedTx,
-	clusters map[int64][]int64, extraNames map[int64][]string,
+	ctx context.Context, tx *loggedTx, clusters map[int64][]int64,
 ) (map[int64]correspondentkind.SharedMailboxSignal, error) {
 	result := map[int64]correspondentkind.SharedMailboxSignal{}
 	if len(clusters) == 0 {
@@ -40,34 +42,30 @@ func (s *Store) sharedMailboxSignalsTx(
 	slices.Sort(members)
 	members = slices.Compact(members)
 
-	personOverride := map[int64]struct{}{}
-	if err := queryInChunksContext(ctx, tx, members,
-		[]any{correspondentkind.SourceUser, correspondentkind.Person}, `
-		SELECT participant_id FROM correspondent_kinds
-		WHERE source = ? AND kind = ? AND participant_id IN (%s)`,
-		func(rows *loggedRows) error {
-			var id int64
-			if err := rows.Scan(&id); err != nil {
-				return fmt.Errorf("scan person override: %w", err)
-			}
-			personOverride[id] = struct{}{}
-			return nil
-		}); err != nil {
-		return nil, fmt.Errorf("load person overrides: %w", err)
+	personOverride, err := s.userPersonOverridesTx(ctx, tx)
+	if err != nil {
+		return nil, err
 	}
 
+	// Each participant's email addresses, lowercased; the primary one first.
 	emails := map[int64][]string{}
-	// Names messages carried and names of saved or contact profiles are two
-	// groups judged separately: a card may call someone by a nickname.
-	names := map[int64][]string{}
-	profileNames := map[int64][]string{}
-	addTo := func(target map[int64][]string, id int64, value sql.NullString) {
-		if text := strings.TrimSpace(value.String); value.Valid && text != "" {
-			target[id] = append(target[id], text)
+	primary := map[int64]string{}
+	addEmail := func(id int64, value string) {
+		address := strings.ToLower(strings.TrimSpace(value))
+		if address == "" || slices.Contains(emails[id], address) {
+			return
+		}
+		emails[id] = append(emails[id], address)
+	}
+	messageNames := map[string][]string{}
+	profileNames := map[string][]string{}
+	addName := func(target map[string][]string, address string, value sql.NullString) {
+		address = strings.ToLower(strings.TrimSpace(address))
+		if text := strings.TrimSpace(value.String); value.Valid && text != "" && address != "" {
+			target[address] = append(target[address], text)
 		}
 	}
-	addName := func(id int64, value sql.NullString) { addTo(names, id, value) }
-	addProfileName := func(id int64, value sql.NullString) { addTo(profileNames, id, value) }
+	participantNames := map[int64]sql.NullString{}
 	if err := queryInChunksContext(ctx, tx, members, nil, `
 		SELECT id, email_address, display_name FROM participants WHERE id IN (%s)`,
 		func(rows *loggedRows) error {
@@ -76,13 +74,17 @@ func (s *Store) sharedMailboxSignalsTx(
 			if err := rows.Scan(&id, &email, &name); err != nil {
 				return fmt.Errorf("scan cluster participant: %w", err)
 			}
-			if text := strings.TrimSpace(email.String); email.Valid && text != "" {
-				emails[id] = append(emails[id], text)
+			if email.Valid {
+				addEmail(id, email.String)
+				primary[id] = strings.ToLower(strings.TrimSpace(email.String))
 			}
-			addName(id, name)
+			participantNames[id] = name
 			return nil
 		}); err != nil {
 		return nil, fmt.Errorf("load cluster participants: %w", err)
+	}
+	for id, name := range participantNames {
+		addName(messageNames, primary[id], name)
 	}
 	if err := queryInChunksContext(ctx, tx, members, nil, `
 		SELECT participant_id, identifier_value FROM participant_identifiers
@@ -93,24 +95,28 @@ func (s *Store) sharedMailboxSignalsTx(
 			if err := rows.Scan(&id, &email); err != nil {
 				return fmt.Errorf("scan cluster email identifier: %w", err)
 			}
-			if text := strings.TrimSpace(email); text != "" {
-				emails[id] = append(emails[id], text)
-			}
+			addEmail(id, email)
 			return nil
 		}); err != nil {
 		return nil, fmt.Errorf("load cluster email identifiers: %w", err)
 	}
+	// A message row names the address it was sent from or to: its envelope
+	// address, or else its participant's primary address.
 	if err := queryInChunksContext(ctx, tx, members, nil, `
-		SELECT participant_id, display_name FROM message_recipients
-		WHERE participant_id IN (%s) AND display_name IS NOT NULL AND TRIM(display_name) <> ''
-		GROUP BY participant_id, display_name`,
+		SELECT mr.participant_id, mr.email_address, mr.display_name FROM message_recipients mr
+		WHERE mr.participant_id IN (%s) AND mr.display_name IS NOT NULL AND TRIM(mr.display_name) <> ''
+		GROUP BY mr.participant_id, mr.email_address, mr.display_name`,
 		func(rows *loggedRows) error {
 			var id int64
-			var name sql.NullString
-			if err := rows.Scan(&id, &name); err != nil {
+			var envelope, name sql.NullString
+			if err := rows.Scan(&id, &envelope, &name); err != nil {
 				return fmt.Errorf("scan message display name: %w", err)
 			}
-			addName(id, name)
+			address := envelope.String
+			if strings.TrimSpace(address) == "" {
+				address = primary[id]
+			}
+			addName(messageNames, address, name)
 			return nil
 		}); err != nil {
 		return nil, fmt.Errorf("load message display names: %w", err)
@@ -125,29 +131,35 @@ func (s *Store) sharedMailboxSignalsTx(
 			if err := rows.Scan(&id, &name); err != nil {
 				return fmt.Errorf("scan bound person name: %w", err)
 			}
-			addProfileName(id, name)
+			addName(profileNames, primary[id], name)
 			return nil
 		}); err != nil {
 		return nil, fmt.Errorf("load bound person names: %w", err)
 	}
-	if err := queryInChunksContext(ctx, tx, members, []any{
-		IdentityMatchParticipant, IdentityMatchPerson, ContactMatchSourceRef,
-		IdentityMatchStateCandidate, IdentityMatchStateConflict,
-	}, `
-		SELECT c.left_id, p.display_name FROM identity_match_candidates c
-		JOIN persons p ON p.id = c.right_id
-		WHERE c.left_kind = ? AND c.right_kind = ? AND c.source_ref = ?
-		  AND c.state IN (?, ?) AND c.left_id IN (%s)`,
-		func(rows *loggedRows) error {
-			var id int64
-			var name sql.NullString
-			if err := rows.Scan(&id, &name); err != nil {
-				return fmt.Errorf("scan matched contact name: %w", err)
+	addresses := []string{}
+	for _, list := range emails {
+		for _, address := range list {
+			if !slices.Contains(addresses, address) {
+				addresses = append(addresses, address)
 			}
-			addProfileName(id, name)
+		}
+	}
+	slices.Sort(addresses)
+	if err := queryInChunksContext(ctx, tx, addresses, []any{ContactAddressEmail}, `
+		SELECT LOWER(cp.normalized_value), p.display_name FROM person_contact_points cp
+		JOIN persons p ON p.id = cp.person_id
+		WHERE cp.address_kind = ? AND cp.active_until IS NULL AND cp.superseded_at IS NULL
+		  AND LOWER(cp.normalized_value) IN (%s)`,
+		func(rows *loggedRows) error {
+			var address string
+			var name sql.NullString
+			if err := rows.Scan(&address, &name); err != nil {
+				return fmt.Errorf("scan profile listing the address: %w", err)
+			}
+			addName(profileNames, address, name)
 			return nil
 		}); err != nil {
-		return nil, fmt.Errorf("load matched contact names: %w", err)
+		return nil, fmt.Errorf("load profiles listing the addresses: %w", err)
 	}
 
 	for key, cluster := range clusters {
@@ -157,20 +169,41 @@ func (s *Store) sharedMailboxSignalsTx(
 		}) {
 			continue
 		}
-		clusterProfiles := slices.Clone(extraNames[key])
-		clusterNames := []string{}
 		clusterEmails := []string{}
 		for _, id := range cluster {
-			clusterNames = append(clusterNames, names[id]...)
-			clusterProfiles = append(clusterProfiles, profileNames[id]...)
-			clusterEmails = append(clusterEmails, emails[id]...)
+			for _, address := range emails[id] {
+				if !slices.Contains(clusterEmails, address) {
+					clusterEmails = append(clusterEmails, address)
+				}
+			}
 		}
 		for _, email := range clusterEmails {
-			if signal := correspondentkind.DetectSharedMailbox(email, clusterNames, clusterProfiles); signal.Fires() {
+			signal := correspondentkind.DetectSharedMailbox(email, messageNames[email], profileNames[email])
+			if signal.Fires() {
 				result[key] = signal
 				break
 			}
 		}
 	}
 	return result, nil
+}
+
+// userPersonOverridesTx maps every member of a cluster whose effective
+// classification is a user's explicit "this is a person".
+func (s *Store) userPersonOverridesTx(ctx context.Context, tx *loggedTx) (map[int64]struct{}, error) {
+	clusters, err := s.correspondentKindClustersTx(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	overrides := map[int64]struct{}{}
+	for _, cluster := range clusters {
+		if cluster.effective.kind != correspondentkind.Person ||
+			cluster.effective.source != correspondentkind.SourceUser {
+			continue
+		}
+		for _, member := range cluster.members {
+			overrides[member] = struct{}{}
+		}
+	}
+	return overrides, nil
 }

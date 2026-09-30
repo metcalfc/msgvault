@@ -129,3 +129,33 @@ func TestContactMatchesKeepBindingOnePersonsAddress(t *testing.T) {
 	assert.Equal(store.ContactMatchBind, matches[0].Classification)
 	assert.Nil(matches[0].SharedMailbox)
 }
+
+func TestContactMatchesJudgeEachAddressByItsOwnNames(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	// Alex's personal email is linked to the household landline, which Jamie
+	// also lists. The shared phone must not make Alex's email look shared.
+	alex := f.emailParticipant("alex@example.test", "Alex Rivera")
+	f.sendAs(alex, "Alex Rivera")
+	home, err := f.st.EnsureParticipantByPhone("+1 (555) 010-0142", "Rivera Home", "whatsapp")
+	require.NoError(err)
+	_, err = f.st.LinkParticipants(alex, home)
+	require.NoError(err)
+	f.importCards(
+		f.card("card-alex", "Alex Rivera", []string{"alex@example.test"}, []string{"+15550100142"}),
+		f.card("card-jamie", "Jamie Rivera", nil, []string{"+15550100142"}),
+	)
+
+	matches, err := f.st.FindContactMatchesContext(t.Context())
+	require.NoError(err)
+	require.NotEmpty(matches)
+	for _, match := range matches {
+		assert.NotEqual(store.ContactMatchSharedMailbox, match.Classification)
+		assert.Nil(match.SharedMailbox)
+	}
+	result, err := f.st.BuildContactMatchCandidatesContext(t.Context())
+	require.NoError(err)
+	assert.Equal(0, result.SharedMailbox)
+}
