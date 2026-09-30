@@ -94,9 +94,9 @@ func (m Model) loadPeopleRelationshipCalendar(
 	backend := m.peopleBackend
 	relationshipGeneration := m.peopleState.relationshipGeneration
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			response, err := backend.RelationshipCalendar(context.Background(), peoplebrowser.CalendarRequest{
+	return m.readCommand("people.relationship",
+		func(ctx context.Context) tea.Msg {
+			response, err := backend.RelationshipCalendar(ctx, peoplebrowser.CalendarRequest{
 				ParticipantID: participantID,
 				Year:          year,
 				Timezone:      timezone,

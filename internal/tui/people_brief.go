@@ -114,9 +114,9 @@ func (m Model) loadPeopleBrief(personID int64) tea.Cmd {
 	requestID := m.peopleState.requestID
 	participantID := m.peopleState.participantID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			brief, err := reader.GetPersonBrief(context.Background(), personID)
+	return m.readCommand("people.brief",
+		func(ctx context.Context) tea.Msg {
+			brief, err := reader.GetPersonBrief(ctx, personID)
 			return peopleBriefLoadedMsg{
 				brief: brief, err: err, requestID: requestID,
 				participantID: participantID, personID: personID,

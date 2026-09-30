@@ -205,9 +205,9 @@ func (m Model) loadPeopleDirectory(cursor string, appendResults bool) tea.Cmd {
 	}
 	requestID := m.peopleState.requestID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			page, err := backend.Search(context.Background(), request)
+	return m.readCommand("people.directory",
+		func(ctx context.Context) tea.Msg {
+			page, err := backend.Search(ctx, request)
 			return peopleDirectoryLoadedMsg{
 				page: page, err: err, requestID: requestID, append: appendResults,
 				presentationGeneration: presentationGeneration,
@@ -227,9 +227,9 @@ func (m Model) loadPeopleCompletions(queryText string) tea.Cmd {
 	request := peoplebrowser.CompletionRequest{Query: queryText, Limit: peopleCompletionLimit}
 	requestID := m.peopleState.requestID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			page, err := backend.Complete(context.Background(), request)
+	return m.readCommand("people.completions",
+		func(ctx context.Context) tea.Msg {
+			page, err := backend.Complete(ctx, request)
 			return peopleCompletionLoadedMsg{
 				page: page, err: err, query: queryText, requestID: requestID,
 				presentationGeneration: presentationGeneration,
@@ -353,9 +353,9 @@ func (m Model) loadPeopleContact(participantID int64) tea.Cmd {
 	backend := m.peopleBackend
 	requestID := m.peopleState.requestID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			contact, err := backend.GetContact(context.Background(), participantID)
+	return m.readCommand("people.contact",
+		func(ctx context.Context) tea.Msg {
+			contact, err := backend.GetContact(ctx, participantID)
 			return peopleContactLoadedMsg{
 				contact: contact, err: err, requestID: requestID, participantID: participantID,
 				presentationGeneration: presentationGeneration,
@@ -461,9 +461,9 @@ func (m Model) loadPeopleAttributes(personID int64, tab peopleTab) tea.Cmd {
 	requestID := m.peopleState.requestID
 	participantID := m.peopleState.participantID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			attributes, err := backend.ListAttributes(context.Background(), personID)
+	return m.readCommand("people.attributes",
+		func(ctx context.Context) tea.Msg {
+			attributes, err := backend.ListAttributes(ctx, personID)
 			return peopleAttributesLoadedMsg{
 				attributes: attributes, err: err, requestID: requestID,
 				participantID: participantID, personID: personID, tab: tab,
@@ -535,9 +535,9 @@ func (m Model) loadPeopleInboxes(participantID int64) tea.Cmd {
 	backend := m.peopleBackend
 	requestID := m.peopleState.requestID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			inboxes, err := backend.ListInboxes(context.Background(), participantID)
+	return m.readCommand("people.inboxes",
+		func(ctx context.Context) tea.Msg {
+			inboxes, err := backend.ListInboxes(ctx, participantID)
 			return peopleInboxesLoadedMsg{
 				inboxes: inboxes, err: err, requestID: requestID,
 				participantID: participantID, presentationGeneration: presentationGeneration,
@@ -570,9 +570,9 @@ func (m Model) loadPeopleConversations(selected query.PersonInboxRow, offset int
 	requestID := m.peopleState.requestID
 	participantID := m.peopleState.participantID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			page, err := backend.ListConversations(context.Background(), filter)
+	return m.readCommand("people.conversations",
+		func(ctx context.Context) tea.Msg {
+			page, err := backend.ListConversations(ctx, filter)
 			if page == nil {
 				page = &peoplebrowser.ConversationPage{}
 			}
@@ -603,10 +603,10 @@ func (m Model) loadPeopleConversationMessages(
 	requestID := m.peopleState.requestID
 	participantID := m.peopleState.participantID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
+	return m.readCommand("people.conversationmessages",
+		func(ctx context.Context) tea.Msg {
 			page, err := backend.ListConversationMessages(
-				context.Background(), conversationID, filter,
+				ctx, conversationID, filter,
 			)
 			if page == nil {
 				page = &peoplebrowser.ConversationMessagePage{}
@@ -639,9 +639,9 @@ func (m Model) loadPeopleMessage(
 	requestID := m.peopleState.requestID
 	participantID := m.peopleState.participantID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			detail, err := backend.GetMessage(context.Background(), messageID)
+	return m.readCommand("people.message",
+		func(ctx context.Context) tea.Msg {
+			detail, err := backend.GetMessage(ctx, messageID)
 			return peopleMessageLoadedMsg{
 				detail: detail, err: err, requestID: requestID,
 				participantID: participantID, sourceID: selected.SourceID,
@@ -670,9 +670,9 @@ func (m Model) loadPeopleMeetings(cursor string, appendResults bool) tea.Cmd {
 		Cursor:        cursor,
 		Limit:         peoplePageSize,
 	}
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			page, err := backend.ListMeetings(context.Background(), request)
+	return m.readCommand("people.meetings",
+		func(ctx context.Context) tea.Msg {
+			page, err := backend.ListMeetings(ctx, request)
 			return peopleMeetingsLoadedMsg{
 				page: page, err: err, requestID: requestID, participantID: participantID,
 				cursor: cursor, append: appendResults,
@@ -694,9 +694,9 @@ func (m Model) loadPeopleMeeting(messageID int64) tea.Cmd {
 	requestID := m.peopleState.requestID
 	participantID := m.peopleState.participantID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			detail, err := backend.GetMessage(context.Background(), messageID)
+	return m.readCommand("people.meeting",
+		func(ctx context.Context) tea.Msg {
+			detail, err := backend.GetMessage(ctx, messageID)
 			return peopleMeetingLoadedMsg{
 				detail: detail, err: err, requestID: requestID,
 				participantID: participantID, messageID: messageID,
@@ -723,9 +723,9 @@ func (m Model) loadPeopleFiles(cursor string, appendResults bool) tea.Cmd {
 		Cursor:        cursor,
 		Limit:         peoplePageSize,
 	}
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			page, err := backend.ListFiles(context.Background(), request)
+	return m.readCommand("people.files",
+		func(ctx context.Context) tea.Msg {
+			page, err := backend.ListFiles(ctx, request)
 			return peopleFilesLoadedMsg{
 				page: page, err: err, requestID: requestID, participantID: participantID,
 				cursor: cursor, append: appendResults,
@@ -747,9 +747,9 @@ func (m Model) loadPeopleFileMessage(fileID, messageID int64) tea.Cmd {
 	requestID := m.peopleState.requestID
 	participantID := m.peopleState.participantID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			detail, err := backend.GetMessage(context.Background(), messageID)
+	return m.readCommand("people.filemessage",
+		func(ctx context.Context) tea.Msg {
+			detail, err := backend.GetMessage(ctx, messageID)
 			return peopleFileMessageLoadedMsg{
 				detail: detail, err: err, requestID: requestID,
 				participantID: participantID, fileID: fileID, messageID: messageID,
@@ -776,9 +776,9 @@ func (m Model) loadPeopleActivity(cursor string, appendResults bool) tea.Cmd {
 		Cursor:        cursor,
 		Limit:         peoplePageSize,
 	}
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			page, err := backend.ListActivity(context.Background(), request)
+	return m.readCommand("people.activity",
+		func(ctx context.Context) tea.Msg {
+			page, err := backend.ListActivity(ctx, request)
 			return peopleActivityLoadedMsg{
 				page: page, err: err, requestID: requestID, participantID: participantID,
 				cursor: cursor, append: appendResults,
@@ -800,9 +800,9 @@ func (m Model) loadPeopleActivityMessage(messageID int64) tea.Cmd {
 	requestID := m.peopleState.requestID
 	participantID := m.peopleState.participantID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			detail, err := backend.GetMessage(context.Background(), messageID)
+	return m.readCommand("people.activitymessage",
+		func(ctx context.Context) tea.Msg {
+			detail, err := backend.GetMessage(ctx, messageID)
 			return peopleActivityMessageLoadedMsg{
 				detail: detail, err: err, requestID: requestID,
 				participantID: participantID, messageID: messageID,

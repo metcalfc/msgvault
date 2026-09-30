@@ -244,7 +244,7 @@ func (m Model) handleGlobalKeys(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 		}
 		next := nextMode(m.mode, m.textEngine != nil, m.peopleBackend != nil)
 		m.switchMessageReaderState(next)
-		m.presentationGeneration++
+		m.beginPresentation()
 		m.mode = next
 		// A frozen view and the email search loading flags describe the mode
 		// being left. Do not let them obscure or animate the destination mode.
@@ -1665,7 +1665,7 @@ func (m *Model) invalidateSourceScope() {
 	m.loadRequestID++
 	m.detailRequestID++
 	m.searchRequestID++
-	m.presentationGeneration++
+	m.beginPresentation()
 	m.invalidatePreSearchSnapshot()
 	m.resetEmailNavigation()
 }

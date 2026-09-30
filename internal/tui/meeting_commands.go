@@ -42,9 +42,9 @@ func (m Model) loadMeetingMessagesWithOffset(offset int, appendResults bool) tea
 	filter.Pagination.Offset = offset
 	requestID := m.meetingState.requestID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			messages, err := engine.ListMessages(context.Background(), filter)
+	return m.readCommand("meetings.list",
+		func(ctx context.Context) tea.Msg {
+			messages, err := engine.ListMessages(ctx, filter)
 			return meetingMessagesLoadedMsg{
 				messages: messages, err: err, requestID: requestID, append: appendResults,
 				presentationGeneration: presentationGeneration,
@@ -97,8 +97,8 @@ func (m Model) loadMeetingSearch(queryString string, offset int, _ bool) tea.Cmd
 	filter := m.meetingMessageFilter()
 	requestID := m.meetingState.searchRequestID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
+	return m.readCommand("meetings.search",
+		func(ctx context.Context) tea.Msg {
 			parsed := search.Parse(queryString)
 			if err := parsed.Err(); err != nil {
 				return meetingSearchLoadedMsg{
@@ -107,7 +107,7 @@ func (m Model) loadMeetingSearch(queryString string, offset int, _ bool) tea.Cmd
 				}
 			}
 			merged := query.MergeFilterIntoQuery(parsed, filter)
-			messages, err := engine.Search(context.Background(), merged, searchPageSize, offset)
+			messages, err := engine.Search(ctx, merged, searchPageSize, offset)
 			return meetingSearchLoadedMsg{
 				messages: messages,
 				err:      err, requestID: requestID, offset: offset,
@@ -157,9 +157,9 @@ func (m Model) loadMeetingDetail(id int64) tea.Cmd {
 	engine := m.engine
 	requestID := m.meetingState.detailRequestID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			detail, err := engine.GetMessage(context.Background(), id)
+	return m.readCommand("meetings.detail",
+		func(ctx context.Context) tea.Msg {
+			detail, err := engine.GetMessage(ctx, id)
 			return meetingDetailLoadedMsg{
 				detail: detail, err: err, requestID: requestID,
 				presentationGeneration: presentationGeneration,

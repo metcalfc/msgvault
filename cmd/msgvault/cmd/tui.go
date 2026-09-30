@@ -109,6 +109,7 @@ HTTP Mode:
 		semanticSearch := tuiSemanticSearcher(cmd.Context(), backend.client, backend.engine)
 		collectionScopes := tuiCollectionScopes(cmd.Context(), backend.client, backend.engine)
 		model := tui.New(backend.engine, tui.Options{
+			Context:               cmd.Context(),
 			DataDir:               currentCfg.Data.DataDir,
 			ExportDir:             currentCfg.ExportDir(),
 			Version:               Version,
@@ -121,7 +122,8 @@ HTTP Mode:
 			SettingsBackend:       backend.settings,
 			CollectionScopeLister: collectionScopes,
 		})
-		p := tea.NewProgram(model)
+		defer model.Close()
+		p := tea.NewProgram(model, tea.WithContext(cmd.Context()))
 		noticeCtx, stopNoticeRefresh := context.WithCancel(cmd.Context())
 		defer stopNoticeRefresh()
 		if notice != "" {

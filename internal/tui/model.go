@@ -43,6 +43,9 @@ const defaultThreadMessageLimit = 1000
 
 // Options configuration for TUI.
 type Options struct {
+	// Context bounds reads to the owning terminal session.
+	Context context.Context
+
 	DataDir   string
 	ExportDir string
 	Version   string
@@ -369,6 +372,7 @@ type Model struct {
 	spinnerActive   bool // True when spinner tick is running
 
 	// Request tracking to ignore stale async results
+	reads                  *readRequests
 	aggregateRequestID     uint64 // Current request ID for aggregate data
 	statsRequestID         uint64 // Current request ID for total statistics
 	loadRequestID          uint64 // Current request ID for message list
@@ -470,6 +474,7 @@ func New(engine query.Engine, opts Options) Model {
 		textEngine:            textEngine,
 		collectionScopeLister: opts.CollectionScopeLister,
 		sourceScope:           allSourceScope(),
+		reads:                 newReadRequests(opts.Context),
 		peopleBackend:         opts.PeopleBackend,
 		settingsBackend:       opts.SettingsBackend,
 		settings:              newSettingsState(),
@@ -598,8 +603,8 @@ func (m Model) loadData() tea.Cmd {
 	scopeLabel := m.scopeLabelForLog()
 	viewLabel := m.viewType.String()
 	searchTerm := m.searchQuery
-	return safeCmdWithPanic(
-		func() tea.Msg {
+	return m.readCommand("email.aggregate",
+		func(ctx context.Context) tea.Msg {
 			opts := query.AggregateOptions{
 				SortField:             m.sortField,
 				SortDirection:         m.sortDirection,
@@ -614,7 +619,6 @@ func (m Model) loadData() tea.Cmd {
 			opts.SourceIDs = copySourceIDs(scope.sourceIDs)
 
 			start := time.Now()
-			ctx := context.Background()
 			var rows []query.AggregateRow
 			var err error
 
@@ -692,15 +696,15 @@ func (m *Model) refreshStats() tea.Cmd {
 func (m Model) loadStats() tea.Cmd {
 	requestID := m.statsRequestID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
+	return m.readCommand("email.stats",
+		func(ctx context.Context) tea.Msg {
 			opts := query.StatsOptions{
 				WithAttachmentsOnly:   m.filters.attachmentsOnly,
 				HideDeletedFromSource: m.filters.hideDeletedFromSource,
 			}
 			opts.SourceID = m.sourceScope.accountID
 			opts.SourceIDs = copySourceIDs(m.sourceScope.sourceIDs)
-			stats, err := m.engine.GetTotalStats(context.Background(), opts)
+			stats, err := m.engine.GetTotalStats(ctx, opts)
 			return statsLoadedMsg{stats: stats, err: err, requestID: requestID, presentationGeneration: presentationGeneration}
 		},
 		func(r any) tea.Msg {
@@ -711,9 +715,8 @@ func (m Model) loadStats() tea.Cmd {
 
 // loadAccounts fetches the list of accounts.
 func (m Model) loadAccounts() tea.Cmd {
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			ctx := context.Background()
+	return m.sessionReadCommand("accounts",
+		func(ctx context.Context) tea.Msg {
 			accounts, err := m.engine.ListAccounts(ctx)
 			if err != nil {
 				slog.Warn("tui loadAccounts: ListAccounts failed",
@@ -732,12 +735,12 @@ func (m Model) loadAccounts() tea.Cmd {
 
 func (m Model) loadCollectionScopes() tea.Cmd {
 	lister := m.collectionScopeLister
-	return safeCmdWithPanic(
-		func() tea.Msg {
+	return m.sessionReadCommand("collections",
+		func(ctx context.Context) tea.Msg {
 			if lister == nil {
 				return collectionScopesLoadedMsg{}
 			}
-			scopes, err := lister.ListCollectionScopes(context.Background())
+			scopes, err := lister.ListCollectionScopes(ctx)
 			if err != nil {
 				slog.Warn("tui loadCollectionScopes failed", "error", err)
 				return collectionScopesLoadedMsg{err: err}
@@ -868,9 +871,8 @@ func (m Model) loadSearchWithOffset(queryStr string, offset int, appendResults b
 		modeLabel = "semantic"
 	}
 	scopeLabel := m.scopeLabelForLog()
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			ctx := context.Background()
+	return m.readCommand("email.search",
+		func(ctx context.Context) tea.Msg {
 			q := search.Parse(queryStr)
 			searchFilter := emailScopedMessageFilter(m.searchFilter)
 			m.sourceScope.apply(&searchFilter)
@@ -1046,14 +1048,14 @@ func (m Model) loadMessagesWithOffset(offset int, appendMode bool) tea.Cmd {
 	presentationGeneration := m.presentationGeneration
 	scopeLabel := m.scopeLabelForLog()
 	searchTerm := m.searchQuery
-	return safeCmdWithPanic(
-		func() tea.Msg {
+	return m.readCommand("email.messages",
+		func(ctx context.Context) tea.Msg {
 			filter := m.buildMessageFilter()
 			filter.Pagination.Limit = messageListPageSize
 			filter.Pagination.Offset = offset
 
 			start := time.Now()
-			messages, err := m.engine.ListMessages(context.Background(), filter)
+			messages, err := m.engine.ListMessages(ctx, filter)
 			if err != nil {
 				slog.Warn("tui loadMessages failed",
 					"scope", scopeLabel,
@@ -1133,8 +1135,8 @@ func (m Model) loadThreadMessages(conversationID int64) tea.Cmd {
 	requestID := m.loadRequestID
 	presentationGeneration := m.presentationGeneration
 	threadLimit := m.threadMessageLimit
-	return safeCmdWithPanic(
-		func() tea.Msg {
+	return m.readCommand("email.messages",
+		func(ctx context.Context) tea.Msg {
 			filter := query.MessageFilter{
 				ConversationID: &conversationID,
 				MessageType:    emailMessageType,
@@ -1142,7 +1144,7 @@ func (m Model) loadThreadMessages(conversationID int64) tea.Cmd {
 				Pagination:     query.Pagination{Limit: threadLimit + 1}, // Request one extra to detect truncation
 			}
 			m.sourceScope.apply(&filter)
-			messages, err := m.engine.ListMessages(context.Background(), filter)
+			messages, err := m.engine.ListMessages(ctx, filter)
 
 			// Check if truncated (more messages than limit)
 			truncated := false
@@ -1194,9 +1196,9 @@ func emailScopedSearchQuery(raw string) (string, bool) {
 func (m Model) loadMessageDetail(id int64) tea.Cmd {
 	requestID := m.detailRequestID
 	presentationGeneration := m.presentationGeneration
-	return safeCmdWithPanic(
-		func() tea.Msg {
-			detail, err := m.engine.GetMessage(context.Background(), id)
+	return m.readCommand("email.detail",
+		func(ctx context.Context) tea.Msg {
+			detail, err := m.engine.GetMessage(ctx, id)
 			return messageDetailLoadedMsg{
 				detail: detail, err: err, requestID: requestID,
 				presentationGeneration: presentationGeneration,
@@ -1340,8 +1342,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleTextMessageLoaded(msg)
 	case textSearchResultMsg:
 		return m.handleTextSearchResult(msg)
-	case textStatsLoadedMsg:
-		return m.handleTextStatsLoaded(msg)
 	case meetingMessagesLoadedMsg:
 		return m.handleMeetingMessagesLoaded(msg)
 	case meetingSearchLoadedMsg:
@@ -1456,14 +1456,6 @@ func (m Model) handleTextSearchResult(msg textSearchResultMsg) (tea.Model, tea.C
 	m.textState.unfilteredMessages = nil
 	m.textState.cursor = 0
 	m.textState.scrollOffset = 0
-	return m, nil
-}
-
-// handleTextStatsLoaded processes text stats load completion.
-func (m Model) handleTextStatsLoaded(msg textStatsLoadedMsg) (tea.Model, tea.Cmd) {
-	if msg.err == nil {
-		m.textState.stats = msg.stats
-	}
 	return m, nil
 }
 
