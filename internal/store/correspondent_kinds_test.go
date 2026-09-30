@@ -346,3 +346,63 @@ func TestParticipantMergeKeepsTheNewerClassification(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(correspondentkind.Person, record.Kind, "the survivor's newer person override wins")
 }
+
+func TestOwnerIdentitiesAlwaysResolveAsAPerson(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+	source, err := f.st.GetOrCreateSource("gmail", "me@example.test")
+	require.NoError(err)
+
+	alias := f.emailParticipant("old-alias@example.test", "Old Alias")
+	owner := f.emailParticipant("me@example.test", "Me")
+	require.NoError(f.st.AddAccountIdentityContext(t.Context(), source.ID, "me@example.test", "manual"))
+	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: alias, Kind: correspondentkind.Ignored,
+	})
+	require.NoError(err)
+
+	// Linking the ignored alias into the owner's cluster must never make the
+	// owner "not a person".
+	_, err = f.st.LinkParticipants(alias, owner)
+	require.NoError(err)
+	hidden, err := f.st.NotPersonParticipantsContext(t.Context())
+	require.NoError(err)
+	assert.Empty(hidden)
+	record, err := f.st.GetCorrespondentKindContext(t.Context(), owner)
+	require.NoError(err)
+	assert.Equal(correspondentkind.Person, record.Kind)
+
+	// The alias's classification was dropped with a record of why.
+	var kind, actor string
+	require.NoError(f.st.DB().QueryRow(f.st.Rebind(`SELECT kind, actor FROM correspondent_kinds
+		WHERE participant_id = ? AND source = 'user'`), alias).Scan(&kind, &actor))
+	assert.Equal(string(correspondentkind.Person), kind)
+	assert.Equal("system:owner_identity", actor)
+	records, err := f.st.ListCorrespondentKindsContext(t.Context(), store.CorrespondentKindListFilter{})
+	require.NoError(err)
+	assert.Empty(records)
+}
+
+func TestOwnerIdentityAddedLaterStillResolvesAsAPerson(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+	source, err := f.st.GetOrCreateSource("gmail", "me@example.test")
+	require.NoError(err)
+
+	mine := f.emailParticipant("second-me@example.test", "Me")
+	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: mine, Kind: correspondentkind.Ignored,
+	})
+	require.NoError(err)
+	// Confirming the address as the owner's own afterwards overrides the row
+	// at read time, even before anything rewrites it.
+	_, err = f.st.DB().ExecContext(t.Context(), f.st.Rebind(
+		`INSERT INTO account_identities (source_id, address, source_signal) VALUES (?, ?, 'manual')`),
+		source.ID, "second-me@example.test")
+	require.NoError(err)
+	hidden, err := f.st.NotPersonParticipantsContext(t.Context())
+	require.NoError(err)
+	assert.Empty(hidden)
+}

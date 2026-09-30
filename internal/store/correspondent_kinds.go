@@ -210,7 +210,110 @@ func (s *Store) correspondentKindClustersTx(
 	for _, root := range order {
 		result = append(result, *byRoot[root])
 	}
+	if err := applyOwnerIdentityRuleTx(ctx, tx, result); err != nil {
+		return nil, err
+	}
 	return result, nil
+}
+
+// applyOwnerIdentityRuleTx makes every cluster that contains one of the
+// archive owner's identities resolve as a person, whatever rows its members
+// carry: linking a classified address into the owner's cluster, or
+// confirming a classified address as the owner's, never hides the owner.
+func applyOwnerIdentityRuleTx(ctx context.Context, tx *loggedTx, clusters []correspondentKindCluster) error {
+	if !slices.ContainsFunc(clusters, func(cluster correspondentKindCluster) bool {
+		return !cluster.effective.kind.IsPerson()
+	}) {
+		return nil
+	}
+	owners, err := ownerParticipantIDsTx(ctx, tx)
+	if err != nil || len(owners) == 0 {
+		return err
+	}
+	for i := range clusters {
+		if clusters[i].effective.kind.IsPerson() {
+			continue
+		}
+		if slices.ContainsFunc(clusters[i].members, func(id int64) bool {
+			_, owner := owners[id]
+			return owner
+		}) {
+			clusters[i].effective = correspondentKindRow{
+				participantID: clusters[i].root, kind: correspondentkind.Person,
+			}
+		}
+	}
+	return nil
+}
+
+// ownerIdentityActor records why a classification was replaced when its
+// cluster came to include one of the owner's identities.
+const ownerIdentityActor = "system:owner_identity"
+
+// dropOwnerClusterClassificationsTx replaces the non-person classifications
+// of clusters that now include an owner identity. A user row becomes an
+// explicit person row with actor system:owner_identity, so the change is on
+// record; derived rows are removed; organization contact points the
+// classification added are withdrawn. It runs with every identity revision
+// bump, and costs one indexed probe when nothing is classified.
+func (s *Store) dropOwnerClusterClassificationsTx(ctx context.Context, tx *loggedTx) error {
+	var classified int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM (
+		SELECT 1 FROM correspondent_kinds WHERE kind <> ? LIMIT 1) probe`,
+		correspondentkind.Person).Scan(&classified); err != nil {
+		return fmt.Errorf("probe correspondent kinds: %w", err)
+	}
+	if classified == 0 {
+		return nil
+	}
+	rows, err := loadCorrespondentKindRowsTx(ctx, tx)
+	if err != nil {
+		return err
+	}
+	owners, err := ownerParticipantIDsTx(ctx, tx)
+	if err != nil || len(owners) == 0 {
+		return err
+	}
+	edges, err := s.loadLinkEdgesTxContext(ctx, tx)
+	if err != nil {
+		return err
+	}
+	adjacency := buildAdjacency(edges)
+	now := time.Now().UTC()
+	for _, row := range rows {
+		if row.kind.IsPerson() {
+			continue
+		}
+		component := componentOfAdj(row.participantID, adjacency)
+		component[row.participantID] = struct{}{}
+		ownerCluster := false
+		for id := range component {
+			if _, owner := owners[id]; owner {
+				ownerCluster = true
+				break
+			}
+		}
+		if !ownerCluster {
+			continue
+		}
+		if err := s.withdrawCorrespondentOrganizationContactsTx(ctx, tx, []int64{row.participantID}); err != nil {
+			return err
+		}
+		if row.source != correspondentkind.SourceUser {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM correspondent_kinds
+				WHERE participant_id = ? AND source = ?`, row.participantID, row.source); err != nil {
+				return fmt.Errorf("drop owner cluster classification: %w", err)
+			}
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE correspondent_kinds
+			SET kind = ?, organization_id = NULL, actor = ?, classified_at = ?
+			WHERE participant_id = ? AND source = ?`,
+			correspondentkind.Person, ownerIdentityActor, now, row.participantID, row.source); err != nil {
+			return fmt.Errorf("clear owner cluster classification: %w", err)
+		}
+	}
+	return nil
 }
 
 // hiddenCorrespondentParticipantsTx maps every member of every cluster whose
@@ -401,7 +504,11 @@ func (s *Store) clusterCorrespondentKindTx(
 			found = true
 		}
 	}
-	return cluster, nil
+	resolved := []correspondentKindCluster{cluster}
+	if err := applyOwnerIdentityRuleTx(ctx, tx, resolved); err != nil {
+		return cluster, err
+	}
+	return resolved[0], nil
 }
 
 func requireParticipantTx(ctx context.Context, tx *loggedTx, participantID int64) error {

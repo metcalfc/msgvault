@@ -236,6 +236,11 @@ func (s *Store) bumpIdentityRevisionContext(
 		identityRevisionKey).Scan(&revision); err != nil {
 		return 0, fmt.Errorf("bump identity revision: %w", err)
 	}
+	// Every identity change (a link, a merge, a newly confirmed owner
+	// address) can pull a classified address into the owner's cluster.
+	if err := s.dropOwnerClusterClassificationsTx(ctx, tx); err != nil {
+		return 0, err
+	}
 	return revision, nil
 }
 
