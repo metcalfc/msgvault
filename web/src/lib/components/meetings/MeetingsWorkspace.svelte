@@ -132,7 +132,17 @@
     }).catch(() => undefined);
     return () => controller.abort();
   });
-  const accountOptions = $derived([{ value: '', label: 'All accounts' }, ...accounts]);
+  // SelectDropdown shows its first option for an unmatched value. Until the
+  // account list loads, or for an account it no longer lists, the chosen
+  // account keeps its own row so the trigger never reads "All accounts" while
+  // the results are filtered to one.
+  const accountOptions = $derived([
+    { value: '', label: 'All accounts' },
+    ...(source && !accounts.some((account) => account.value === source)
+      ? [{ value: source, label: `Account #${source}` }]
+      : []),
+    ...accounts,
+  ]);
   const windowOptions: Array<{ value: MeetingWindow; label: string }> = [
     { value: '30d', label: 'Last 30 days' },
     { value: '90d', label: 'Last 90 days' },

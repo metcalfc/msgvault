@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
+import { chooseSelectOption, focusAndClick } from '../../../test/kit-ui';
 import MeetingPage from './MeetingPage.svelte';
 import MeetingsWorkspace from './MeetingsWorkspace.svelte';
 
@@ -59,6 +60,36 @@ describe('Meetings workspace', () => {
     await view.rerender({ client: createAPIClient(fetchFn), person: '', source: '', since: 'all', onFiltersChange, onOpenMeeting });
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(bodies[1]!.filters.some((filter) => filter.dimension === 'after')).toBe(false);
+  });
+
+  it('keeps the chosen person and account as focus moves between the filters', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      if (path === '/api/v1/explore') return Response.json({ rows: [], total_count: 0, cache_revision: 'c', search_provenance: {} });
+      if (path === '/api/v1/participants/completions') return Response.json({
+        cache_revision: 'c', rows: [{ participant_id: 21, display_label: 'Ada Example', kind: 'email', source: 'observed', value: 'ada@example.test' }],
+      });
+      if (path === '/api/v1/sources/status') return Response.json({ sources: [] });
+      return Response.json({}, { status: 404 });
+    });
+    const onFiltersChange = vi.fn();
+    const props = { client: createAPIClient(fetchFn), person: '', source: '9', since: '30d' as const, onFiltersChange, onOpenMeeting: vi.fn() };
+    const view = render(MeetingsWorkspace, props);
+
+    // An account the list does not name still reads as chosen, not "All accounts".
+    expect(await screen.findByRole('combobox', { name: 'Account: Account #9' })).toBeDefined();
+
+    await focusAndClick(screen.getByRole('button', { name: 'Person: Anyone' }));
+    await fireEvent.input(screen.getByRole('combobox', { name: 'Find a person…' }), { target: { value: 'ada' } });
+    await fireEvent.mouseDown(await screen.findByRole('option', { name: /Ada Example/ }));
+    expect(onFiltersChange).toHaveBeenLastCalledWith({ meetingPerson: '21' });
+    await view.rerender({ ...props, person: '21' });
+
+    await chooseSelectOption(screen.getByRole('combobox', { name: /^Window:/ }), 'All time');
+    expect(onFiltersChange).toHaveBeenLastCalledWith({ meetingSince: 'all' });
+    expect(onFiltersChange.mock.calls.some(([change]) => change.meetingPerson === '')).toBe(false);
+    expect(screen.getByRole('button', { name: 'Person: Ada Example' })).toBeDefined();
   });
 
   it('asks for later pages with the first page\'s exact bounds, so the cursor stays valid', async () => {
