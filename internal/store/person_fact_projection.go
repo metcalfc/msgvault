@@ -1221,6 +1221,7 @@ func (p *personFactEmploymentProjector) loadCurrent(
 		return nil, err
 	}
 	current := make([]personfacts.CurrentProjection, 0, len(employments))
+	titles := newEmploymentTitleCanonicalizer(p.tx)
 	for _, employment := range employments {
 		if _, owned := ownedHistorical[employment.ID]; !employment.IsCurrent && !owned {
 			continue
@@ -1229,7 +1230,11 @@ func (p *personFactEmploymentProjector) loadCurrent(
 		if loadErr != nil {
 			return nil, loadErr
 		}
-		normalized, normalizeErr := normalizedPersonFactEmploymentValue(target, employment, *organization)
+		canonical, titleErr := titles.employment(ctx, employment)
+		if titleErr != nil {
+			return nil, titleErr
+		}
+		normalized, normalizeErr := normalizedPersonFactEmploymentValue(target, canonical, *organization)
 		if normalizeErr != nil {
 			return nil, normalizeErr
 		}
@@ -1334,6 +1339,7 @@ func (p *personFactEmploymentProjector) projectionContext(
 		Candidates  []int64                      `json:"candidate_ids"`
 	}
 	entries := make([]fingerprintEntry, 0, len(preparedClaims))
+	titles := newEmploymentTitleCanonicalizer(p.tx)
 	for _, prepared := range preparedClaims {
 		match, err := p.store.prepareLockedPersonFactOrganizationReferenceTx(
 			ctx, p.tx, prepared.ref, prepared.keys, lockSet, false)
@@ -1356,6 +1362,14 @@ func (p *personFactEmploymentProjector) projectionContext(
 			}
 		} else if match.Status == OrganizationReused && match.Organization != nil {
 			prepared.value.Organization = canonicalPersonFactOrganizationReference(*match.Organization)
+			// Titles that name one role at this organization fingerprint as
+			// its canonical title, so equivalent claims corroborate and match
+			// the employment they describe.
+			canonicalTitle, titleErr := titles.title(ctx, match.Organization.ID, prepared.value.Title)
+			if titleErr != nil {
+				return "", titleErr
+			}
+			prepared.value.Title = canonicalTitle
 			normalized, failure, normalizeErr := personfacts.NormalizeClaimValue(
 				claim.Claim.Target, mustMarshalPersonFactEmployment(prepared.value))
 			if normalizeErr != nil {
@@ -1718,7 +1732,11 @@ func (s *Store) personFactEmploymentProjectionMatchesClaimTx(
 	if err != nil {
 		return false, err
 	}
-	actual, err := normalizedPersonFactEmploymentValue(claim.Claim.Target, *employment, *organization)
+	canonical, err := newEmploymentTitleCanonicalizer(tx).employment(ctx, *employment)
+	if err != nil {
+		return false, err
+	}
+	actual, err := normalizedPersonFactEmploymentValue(claim.Claim.Target, canonical, *organization)
 	if err != nil {
 		return false, err
 	}
@@ -2039,13 +2057,19 @@ func (s *Store) projectEmploymentFactTx(
 		}
 		input := personFactEmploymentInput(
 			claim.PersonID, organization.ID, value, source, sourceRef, confidence)
+		titleGroup, err := employmentTitleGroupTx(ctx, tx, organization.ID, input.Title)
+		if err != nil {
+			return nil, err
+		}
 		if value.EndDate == nil {
+			args := append([]any{claim.PersonID, organization.ID}, titleGroup...)
 			current, currentErr := scanEmployment(tx.QueryRowContext(ctx, fmt.Sprintf(`
 				SELECT %s FROM employments
-				WHERE person_id = ? AND organization_id = ? AND title_normalized = ?
-				  AND %s%s
-			`, employmentColumns, s.dialect.BoolTrueExpr("is_current"), s.dialect.SelectForUpdate()),
-				claim.PersonID, organization.ID, NormalizeEmploymentTitle(input.Title)))
+				WHERE person_id = ? AND organization_id = ? AND title_normalized IN (%s)
+				  AND %s
+				ORDER BY id%s
+			`, employmentColumns, placeholders(len(titleGroup)), s.dialect.BoolTrueExpr("is_current"),
+				s.dialect.SelectForUpdate()), args...))
 			if currentErr == nil {
 				if _, alreadyConsumed := consumed[current.ID]; !alreadyConsumed {
 					corrected, reviseErr := s.reviseEmploymentTx(
@@ -2062,7 +2086,7 @@ func (s *Store) projectEmploymentFactTx(
 			}
 		}
 		projectedID, projectionErr := s.loadMatchingPersonFactEmploymentProjectionTx(
-			ctx, tx, claim, input, consumed)
+			ctx, tx, claim, input, titleGroup, consumed)
 		if projectionErr == nil && value.EndDate != nil {
 			historical, loadErr := getEmploymentForUpdateTx(ctx, tx, s.dialect, projectedID)
 			if loadErr != nil {
@@ -2090,11 +2114,13 @@ func (s *Store) projectEmploymentFactTx(
 
 func (s *Store) loadMatchingPersonFactEmploymentProjectionTx(
 	ctx context.Context, tx *loggedTx, claim personfacts.Claim, input EmploymentInput,
-	consumed map[int64]struct{},
+	titleGroup []any, consumed map[int64]struct{},
 ) (int64, error) {
+	args := append([]any{claim.PersonID, input.OrganizationID}, titleGroup...)
+	args = append(args, claim.PersonID, claim.Origin)
 	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`
 		SELECT %s FROM employments
-		WHERE person_id = ? AND organization_id = ? AND title_normalized = ?
+		WHERE person_id = ? AND organization_id = ? AND title_normalized IN (%s)
 		  AND NOT (%s) AND id IN (
 			SELECT d.projection_row_id
 			FROM person_fact_decisions d
@@ -2102,9 +2128,8 @@ func (s *Store) loadMatchingPersonFactEmploymentProjectionTx(
 			WHERE d.person_id = ? AND d.action = 'applied'
 			  AND d.projection_kind = 'employment' AND d.projection_row_id IS NOT NULL
 			  AND c.relation = 'support' AND c.origin = ?)
-		ORDER BY id`, employmentColumns, s.dialect.BoolTrueExpr("is_current")),
-		claim.PersonID, input.OrganizationID, NormalizeEmploymentTitle(input.Title),
-		claim.PersonID, claim.Origin)
+		ORDER BY id`, employmentColumns, placeholders(len(titleGroup)), s.dialect.BoolTrueExpr("is_current")),
+		args...)
 	if err != nil {
 		return 0, fmt.Errorf("load employment projection candidates: %w", err)
 	}

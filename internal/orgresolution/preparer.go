@@ -5,6 +5,7 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ type Store interface {
 	RecordOrganizationResolutionAliasContext(ctx context.Context, input store.OrganizationAliasInput) (store.OrganizationAliasResult, error)
 	RecordOrganizationMatchReviewContext(ctx context.Context, input store.OrganizationMatchReviewInput) (bool, error)
 	RecordEmploymentTitleAliasContext(ctx context.Context, input store.EmploymentTitleAliasInput) (bool, error)
+	EmploymentTitleCanonicalContext(ctx context.Context, organizationID int64, titles []string) (map[string]string, error)
 }
 
 // Judge asks a subset of the feature's consented questions. *jev.Service
@@ -217,21 +219,38 @@ func (p *Preparer) titlePairs(
 	if err != nil {
 		return nil, err
 	}
+	// Compare roles, not spellings: a title already mapped to a known title
+	// is that role and needs no question.
+	canonical, err := p.store.EmploymentTitleCanonicalContext(ctx, organizationID, append(slices.Clone(titles), known...))
+	if err != nil {
+		return nil, err
+	}
+	role := func(title string) string {
+		if mapped, ok := canonical[titleKey(title)]; ok {
+			return titleKey(mapped)
+		}
+		return titleKey(title)
+	}
 	var pairs []titlePair
 	room := MaxTitlePairs - len(existing)
 	for _, title := range titles {
+		sameRole := false
+		for _, other := range known {
+			if role(title) == role(other) {
+				sameRole = true
+				break
+			}
+		}
+		if sameRole {
+			continue
+		}
 		for _, other := range known {
 			if len(pairs) >= room {
 				return pairs, nil
 			}
-			if titleKey(title) == titleKey(other) {
-				continue
-			}
 			pairs = append(pairs, titlePair{organizationID: organizationID, title: title, other: other})
 		}
-		if !containsTitle(known, title) {
-			known = append(known, title)
-		}
+		known = append(known, title)
 	}
 	return pairs, nil
 }

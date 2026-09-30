@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -727,3 +728,91 @@ func decideOrganizationMatchReviewTx(
 type noLockDialect struct{ Dialect }
 
 func (noLockDialect) SelectForUpdate() string { return "" }
+
+// employmentTitleCanonicalizer maps employment titles through each
+// organization's title aliases within one transaction, loading each
+// organization's aliases once.
+type employmentTitleCanonicalizer struct {
+	tx    *loggedTx
+	byOrg map[int64]map[string]employmentTitleAlias
+}
+
+func newEmploymentTitleCanonicalizer(tx *loggedTx) *employmentTitleCanonicalizer {
+	return &employmentTitleCanonicalizer{tx: tx, byOrg: make(map[int64]map[string]employmentTitleAlias)}
+}
+
+func (c *employmentTitleCanonicalizer) aliases(
+	ctx context.Context, organizationID int64,
+) (map[string]employmentTitleAlias, error) {
+	if aliases, loaded := c.byOrg[organizationID]; loaded {
+		return aliases, nil
+	}
+	aliases, err := employmentTitleAliasesTx(ctx, c.tx, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	c.byOrg[organizationID] = aliases
+	return aliases, nil
+}
+
+// title returns the canonical title for a title at the organization, or the
+// title itself when it has no mapping.
+func (c *employmentTitleCanonicalizer) title(
+	ctx context.Context, organizationID int64, title string,
+) (string, error) {
+	if title == "" {
+		return title, nil
+	}
+	aliases, err := c.aliases(ctx, organizationID)
+	if err != nil {
+		return "", err
+	}
+	if alias, mapped := aliases[NormalizeEmploymentTitle(&title)]; mapped {
+		return alias.display, nil
+	}
+	return title, nil
+}
+
+// employment returns a copy of the employment carrying its canonical title.
+func (c *employmentTitleCanonicalizer) employment(
+	ctx context.Context, employment Employment,
+) (Employment, error) {
+	if employment.Title == nil {
+		return employment, nil
+	}
+	title, err := c.title(ctx, employment.OrganizationID, *employment.Title)
+	if err != nil {
+		return Employment{}, err
+	}
+	employment.Title = &title
+	return employment, nil
+}
+
+// employmentTitleGroupTx lists every normalized title that names the same
+// role as title at the organization: its canonical title and every title
+// mapped to it. A title without mappings is its own group.
+func employmentTitleGroupTx(
+	ctx context.Context, tx *loggedTx, organizationID int64, title *string,
+) ([]any, error) {
+	key := NormalizeEmploymentTitle(title)
+	aliases, err := employmentTitleAliasesTx(ctx, tx, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	canonical := key
+	if alias, mapped := aliases[key]; mapped {
+		canonical = alias.normalized
+	}
+	group := []string{canonical}
+	for mapped, alias := range aliases {
+		if alias.normalized == canonical && mapped != canonical {
+			group = append(group, mapped)
+		}
+	}
+	slices.Sort(group)
+	args := make([]any, len(group))
+	for i, value := range group {
+		args[i] = value
+	}
+	return args, nil
+}

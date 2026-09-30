@@ -292,9 +292,18 @@ Site: `internal/store/person_fact_organization.go`,
   > merge review surface, so `organization_match_reviews` backs a new Reviews
   > kind (API `/organization-match-reviews`): accept merges the organization
   > projection created for the name, reject keeps the pair off the shortlist.
-- [ ] **Task 3.3 Employment fingerprint.** Let same-role titles corroborate
+- [x] **Task 3.3 Employment fingerprint.** Let same-role titles corroborate
   by mapping through the alias table before fingerprinting, so Exa and
   sweep claims for the same role add up. Resolver arithmetic unchanged.
+  > Title aliases live in `organization_title_aliases`, one canonical title
+  > per role. Projection maps both the claimed title (when the organization
+  > resolves to an existing one) and stored employment titles before
+  > fingerprinting, and finds the employment row for any title of the role,
+  > so the canonical title is what a new projection writes. Claims corroborate
+  > within one generation; across generations the store already keeps only
+  > the newest generation per organization and title, which now means a
+  > later title for the same role corrects the one employment instead of
+  > adding a second.
 - [ ] **Task 3.4 Tests.** "Example Labs, Inc." resolves to existing
   "Example Labs"; unrelated similar name creates new org; alias write is
   idempotent; replay with stored alias needs no Jev call.

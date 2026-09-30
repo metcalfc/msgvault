@@ -182,6 +182,16 @@ func (f *fixture) claim(organizationJSON, title, suffix string) personfacts.Prop
 	}
 }
 
+// weakClaim is a claim whose evidence alone scores 740, just under the
+// resolver's 750 apply threshold; a second independent source adds the
+// 50-point corroboration bonus.
+func (f *fixture) weakClaim(organizationJSON, title, suffix string) personfacts.ProposedClaim {
+	claim := f.claim(organizationJSON, title, suffix)
+	claim.Evidence[0].Directness = personfacts.DirectOther
+	claim.Evidence[0].Authority = personfacts.AuthorityOrdinary
+	return claim
+}
+
 // apply commits a generation the way the enrichment and sweep sinks do.
 func (f *fixture) apply(t *testing.T, suffix string, claims ...personfacts.ProposedClaim) *personfacts.GenerationResult {
 	t.Helper()
