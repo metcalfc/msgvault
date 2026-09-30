@@ -25,6 +25,7 @@ import {
   setPrimaryEmployment as generatedSetPrimaryEmployment,
 } from '../api/generated/api/api';
 import { SvelteMap } from 'svelte/reactivity';
+import { RequestSlot } from '../util/request-slot';
 import { UNKNOWN_LABELS, entityNames } from '../names/entity-names.svelte';
 import type { APIClient } from '../api/client';
 import type {
@@ -99,17 +100,14 @@ export class DirectoryEntityController {
   });
   private readonly client: APIClient;
   private readonly options: DirectoryEntityControllerOptions;
-  private organizationAbort: AbortController | undefined;
-  private employmentAbort: AbortController | undefined;
-  private relationshipAbort: AbortController | undefined;
-  private relationshipTypeAbort: AbortController | undefined;
-  private networkAbort: AbortController | undefined;
+  private readonly collections: Record<DirectoryEntityResource, RequestSlot> = {
+    organizations: new RequestSlot(),
+    employments: new RequestSlot(),
+    relationships: new RequestSlot(),
+    relationshipTypes: new RequestSlot(),
+    network: new RequestSlot(),
+  };
   private readonly entityRequests = new Set<AbortController>();
-  private organizationGeneration = 0;
-  private employmentGeneration = 0;
-  private relationshipGeneration = 0;
-  private relationshipTypeGeneration = 0;
-  private networkGeneration = 0;
   private disposed = false;
   constructor(
     client: APIClient,
@@ -163,7 +161,7 @@ export class DirectoryEntityController {
     await Promise.all([this.refreshEmployments(), this.refreshRelationships(), this.refreshRelationshipTypes()]);
   }
   async refreshOrganizations(query = ''): Promise<void> {
-    const { abort, generation } = this.beginCollection('organizations');
+    const abort = this.beginCollection('organizations');
     try {
       const response = await generatedListOrganizations(
         { limit: 50, offset: 0, ...(query.trim() ? { q: query.trim() } : {}) },
@@ -172,7 +170,7 @@ export class DirectoryEntityController {
           signal: abort.signal,
         },
       );
-      if (!this.owns('organizations', abort, generation)) return;
+      if (!this.owns('organizations', abort)) return;
       if (response.data) {
         this.organizations = response.data.organizations ?? [];
         this.createBlocked.organizations = false;
@@ -181,22 +179,22 @@ export class DirectoryEntityController {
         this.errors.organizations = failureMessage(response.error, response.response.status);
       }
     } catch (cause: unknown) {
-      if (this.owns('organizations', abort, generation)) this.errors.organizations = failureMessage(cause, 0);
+      if (this.owns('organizations', abort)) this.errors.organizations = failureMessage(cause, 0);
     } finally {
-      if (generation === this.organizationGeneration) this.loading.organizations = false;
+      if (this.collections.organizations.finish(abort)) this.loading.organizations = false;
     }
   }
   async refreshEmployments(): Promise<void> {
     await this.loadEmployments(true);
   }
   private async loadEmployments(clearCreateBlock: boolean): Promise<boolean> {
-    const { abort, generation } = this.beginCollection('employments');
+    const abort = this.beginCollection('employments');
     try {
       const response = await generatedListPersonEmployments({ id: this.personID }, undefined, {
         ...this.client,
         signal: abort.signal,
       });
-      if (!this.owns('employments', abort, generation)) return false;
+      if (!this.owns('employments', abort)) return false;
       if (response.data) {
         this.employments = response.data.employments ?? [];
         this.employmentProjection = response.data.projection;
@@ -212,10 +210,10 @@ export class DirectoryEntityController {
         return false;
       }
     } catch (cause: unknown) {
-      if (this.owns('employments', abort, generation)) this.errors.employments = failureMessage(cause, 0);
+      if (this.owns('employments', abort)) this.errors.employments = failureMessage(cause, 0);
       return false;
     } finally {
-      if (generation === this.employmentGeneration) this.loading.employments = false;
+      if (this.collections.employments.finish(abort)) this.loading.employments = false;
     }
   }
   async refreshRelationships(includeEnded = this.relationshipsIncludeEnded): Promise<void> {
@@ -223,7 +221,7 @@ export class DirectoryEntityController {
     await this.loadRelationships(true);
   }
   private async loadRelationships(clearCreateBlock: boolean): Promise<boolean> {
-    const { abort, generation } = this.beginCollection('relationships');
+    const abort = this.beginCollection('relationships');
     try {
       const response = await generatedListPersonRelationships(
         { id: this.personID },
@@ -233,7 +231,7 @@ export class DirectoryEntityController {
           signal: abort.signal,
         },
       );
-      if (!this.owns('relationships', abort, generation)) return false;
+      if (!this.owns('relationships', abort)) return false;
       if (response.data) {
         this.relationships = response.data.relationships ?? [];
         if (clearCreateBlock) this.createBlocked.relationships = false;
@@ -244,20 +242,20 @@ export class DirectoryEntityController {
         return false;
       }
     } catch (cause: unknown) {
-      if (this.owns('relationships', abort, generation)) this.errors.relationships = failureMessage(cause, 0);
+      if (this.owns('relationships', abort)) this.errors.relationships = failureMessage(cause, 0);
       return false;
     } finally {
-      if (generation === this.relationshipGeneration) this.loading.relationships = false;
+      if (this.collections.relationships.finish(abort)) this.loading.relationships = false;
     }
   }
   async refreshRelationshipTypes(): Promise<void> {
-    const { abort, generation } = this.beginCollection('relationshipTypes');
+    const abort = this.beginCollection('relationshipTypes');
     try {
       const response = await generatedListRelationshipTypes({
         ...this.client,
         signal: abort.signal,
       });
-      if (!this.owns('relationshipTypes', abort, generation)) return;
+      if (!this.owns('relationshipTypes', abort)) return;
       if (response.data) {
         this.relationshipTypes = response.data.relationship_types ?? [];
         this.createBlocked.relationshipTypes = false;
@@ -266,13 +264,13 @@ export class DirectoryEntityController {
         this.errors.relationshipTypes = failureMessage(response.error, response.response.status);
       }
     } catch (cause: unknown) {
-      if (this.owns('relationshipTypes', abort, generation)) this.errors.relationshipTypes = failureMessage(cause, 0);
+      if (this.owns('relationshipTypes', abort)) this.errors.relationshipTypes = failureMessage(cause, 0);
     } finally {
-      if (generation === this.relationshipTypeGeneration) this.loading.relationshipTypes = false;
+      if (this.collections.relationshipTypes.finish(abort)) this.loading.relationshipTypes = false;
     }
   }
   async loadNetwork(depth = 1, includeEnded = false): Promise<void> {
-    const { abort, generation } = this.beginCollection('network');
+    const abort = this.beginCollection('network');
     try {
       const response = await generatedGetPersonNetwork(
         { id: this.personID },
@@ -282,7 +280,7 @@ export class DirectoryEntityController {
           signal: abort.signal,
         },
       );
-      if (!this.owns('network', abort, generation)) return;
+      if (!this.owns('network', abort)) return;
       if (response.data) {
         this.network = response.data;
         delete this.errors.network;
@@ -290,9 +288,9 @@ export class DirectoryEntityController {
         this.errors.network = failureMessage(response.error, response.response.status);
       }
     } catch (cause: unknown) {
-      if (this.owns('network', abort, generation)) this.errors.network = failureMessage(cause, 0);
+      if (this.owns('network', abort)) this.errors.network = failureMessage(cause, 0);
     } finally {
-      if (generation === this.networkGeneration) this.loading.network = false;
+      if (this.collections.network.finish(abort)) this.loading.network = false;
     }
   }
   async prepareOrganizationMutation(id: number): Promise<OrganizationProfile> {
@@ -644,18 +642,9 @@ export class DirectoryEntityController {
   }
   destroy(): void {
     this.disposed = true;
-    this.organizationAbort?.abort();
-    this.employmentAbort?.abort();
-    this.relationshipAbort?.abort();
-    this.relationshipTypeAbort?.abort();
-    this.networkAbort?.abort();
+    for (const slot of Object.values(this.collections)) slot.cancel();
     for (const request of this.entityRequests) request.abort();
     this.entityRequests.clear();
-    ++this.organizationGeneration;
-    ++this.employmentGeneration;
-    ++this.relationshipGeneration;
-    ++this.relationshipTypeGeneration;
-    ++this.networkGeneration;
     this.loading.organizations = false;
     this.loading.employments = false;
     this.loading.relationships = false;
@@ -854,77 +843,17 @@ export class DirectoryEntityController {
     return { ok: false, kind: 'unknown', message: `${unknownCreateMessage} ${detail}` };
   }
   private invalidateCollection(resource: DirectoryEntityCreateResource): void {
-    switch (resource) {
-      case 'organizations':
-        this.organizationAbort?.abort();
-        ++this.organizationGeneration;
-        break;
-      case 'employments':
-        this.employmentAbort?.abort();
-        ++this.employmentGeneration;
-        break;
-      case 'relationships':
-        this.relationshipAbort?.abort();
-        ++this.relationshipGeneration;
-        break;
-      case 'relationshipTypes':
-        this.relationshipTypeAbort?.abort();
-        ++this.relationshipTypeGeneration;
-        break;
-    }
+    this.collections[resource].cancel();
     this.loading[resource] = false;
   }
-  private beginCollection(resource: DirectoryEntityResource): {
-    abort: AbortController;
-    generation: number;
-  } {
-    const abort = new AbortController();
-    let generation: number;
-    switch (resource) {
-      case 'organizations':
-        this.organizationAbort?.abort();
-        this.organizationAbort = abort;
-        generation = ++this.organizationGeneration;
-        break;
-      case 'employments':
-        this.employmentAbort?.abort();
-        this.employmentAbort = abort;
-        generation = ++this.employmentGeneration;
-        break;
-      case 'relationships':
-        this.relationshipAbort?.abort();
-        this.relationshipAbort = abort;
-        generation = ++this.relationshipGeneration;
-        break;
-      case 'relationshipTypes':
-        this.relationshipTypeAbort?.abort();
-        this.relationshipTypeAbort = abort;
-        generation = ++this.relationshipTypeGeneration;
-        break;
-      case 'network':
-        this.networkAbort?.abort();
-        this.networkAbort = abort;
-        generation = ++this.networkGeneration;
-        break;
-    }
+  private beginCollection(resource: DirectoryEntityResource): AbortController {
+    const request = this.collections[resource].begin();
     this.loading[resource] = true;
     delete this.errors[resource];
-    return { abort, generation };
+    return request;
   }
-  private owns(resource: DirectoryEntityResource, abort: AbortController, generation: number): boolean {
-    if (this.disposed || abort.signal.aborted) return false;
-    switch (resource) {
-      case 'organizations':
-        return this.organizationAbort === abort && this.organizationGeneration === generation;
-      case 'employments':
-        return this.employmentAbort === abort && this.employmentGeneration === generation;
-      case 'relationships':
-        return this.relationshipAbort === abort && this.relationshipGeneration === generation;
-      case 'relationshipTypes':
-        return this.relationshipTypeAbort === abort && this.relationshipTypeGeneration === generation;
-      case 'network':
-        return this.networkAbort === abort && this.networkGeneration === generation;
-    }
+  private owns(resource: DirectoryEntityResource, request: AbortController): boolean {
+    return !this.disposed && this.collections[resource].owns(request);
   }
   private captureETag(map: SvelteMap<number, string>, id: number, response: Response): void {
     const etag = response.headers.get('ETag');

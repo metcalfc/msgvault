@@ -92,10 +92,8 @@
   import { routeTitle } from '../../routing/routes';
   import ArchivedMeetingReader from '../meetings/ArchivedMeetingReader.svelte';
   import { ArchiveMeetingNavigation, archiveMeetingSelection, parseArchiveMeetingSelection } from '../../meetings/archive-navigation.svelte';
-  import { getMessage } from '../../api/generated/api/api';
-  import type { MessageDetail } from '../../api/generated/models';
+  import { MessageNavigation } from '../../explore/message-navigation';
   import type { RelationshipSiblingCluster } from '../../relationships/models';
-  import { messageEntryKey, messageRowFilters } from '../../explore/entry-key';
   import { ARCHIVE_MEETING_HISTORY_KEY, parseArchiveMeetingHistory } from '../../meetings/archive-selection';
   import EverythingWorkspace from './EverythingWorkspace.svelte';
   import { stepThread } from '../../reader/thread-stepper';
@@ -885,62 +883,18 @@
       [ARCHIVE_MEETING_HISTORY_KEY]: { id: message.id, returnSelectedRow }
     }, '', window.location.href);
   }
-  let messageNavigation: { origin: string; controller: AbortController } | undefined;
-  function cancelMessageNavigation(): void {
-    messageNavigation?.controller.abort();
-    messageNavigation = undefined;
-  }
+  const messageNavigation = new MessageNavigation(
+    untrack(() => client),
+    () => canonicalFingerprint(exploreState.current),
+    commitRestorableNavigation,
+    announceOperation,
+  );
   $effect(() => {
     const current = archiveNavigationFingerprint;
-    untrack(() => {
-      if (messageNavigation && messageNavigation.origin !== current) cancelMessageNavigation();
-    });
+    untrack(() => messageNavigation.reconcileOrigin(current));
   });
-  /** Opens a message known only by id (a Directory contact-state ref) in
-   * the Everything reading pane: a fresh table view bounded to the day it
-   * was sent, with the message's row selected and the thread anchored on
-   * it. The explore loader restores a selected key across pages, so the
-   * row is found without a dedicated message route. */
-  async function openMessageByID(messageID: number): Promise<void> {
-    cancelMessageNavigation();
-    const origin = canonicalFingerprint(exploreState.current);
-    const controller = new AbortController();
-    messageNavigation = { origin, controller };
-    let data: MessageDetail | undefined;
-    let status: number | undefined;
-    try {
-      ({ data, response: { status } } = await getMessage({ id: messageID }, { ...client, signal: controller.signal }));
-    } catch {
-      data = undefined;
-    }
-    if (controller.signal.aborted || origin !== canonicalFingerprint(exploreState.current)) return;
-    messageNavigation = undefined;
-    if (!data) {
-      announceOperation(status === 404
-        ? 'Couldn\'t open that message: it is no longer in the archive.'
-        : 'Couldn\'t open that message: the archive did not respond.');
-      return;
-    }
-    // The detail carries message_type and conversation_type, so the row key
-    // is derived exactly (chat rows are keyed by conversation).
-    const key = messageEntryKey(data);
-    if (!key) {
-      announceOperation('Couldn\'t open that message: the archive has no row for it.');
-      return;
-    }
-    commitRestorableNavigation({
-      workspace: 'everything',
-      presentation: 'table',
-      query: '',
-      groupingChain: [],
-      filters: messageRowFilters(data),
-      selectedRow: key,
-      conversationAnchor: String(data.id),
-      analysisTarget: null,
-      selectedIdentifier: null,
-      activeRow: null,
-      scrollAnchor: null,
-    });
+  function openMessageByID(messageID: number): Promise<void> {
+    return messageNavigation.open(messageID);
   }
 
   async function restoreArchiveFocus(): Promise<void> {
@@ -1401,7 +1355,7 @@
     };
   });
   onDestroy(() => {
-    cancelMessageNavigation();
+    messageNavigation.destroy();
     pendingReviews.stop();
     debouncedSearchPatch.cancel();
     loader.destroy();

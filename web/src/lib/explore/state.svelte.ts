@@ -1,36 +1,21 @@
 import { SvelteSet } from 'svelte/reactivity';
-
 import type {
   AllMatchingExploreSelection,
-  ExploreColumn,
   ExploreFilter,
   ExploreGroupDimension,
   ExplorePredicate,
-  ExploreScrollAnchor,
   ExploreSearchMode,
   ExploreSelection,
-  ExploreSort,
-  FileSearchSort,
-  FileMIMEFamily,
-  PersonFileDirection,
   ExploreURLState,
-  ExploreWorkspace,
-  DirectoryReviewKind,
-  IdentityReviewOrigin,
-  IdentityReviewState,
-  RelationshipReviewState,
-  RelationshipFacet,
-  OperationKind,
-  OperationLane,
-  OperationStatusAuthority,
-  OperationState
+  ExploreWorkspace
 } from './models';
-import { DEFAULT_EXPLORE_COLUMNS, isValidSourceID } from './models';
-import { isGroupingDimension, validateGroupingChain } from '../grouping/catalog';
+import { isGroupingDimension } from '../grouping/catalog';
 import { hasValidSearchAuthority, predicateFingerprint } from './selection';
-import { parseAttachmentSelection } from './attachment-authority';
-import { ARCHIVE_MEETING_HISTORY_KEY, parseArchiveMeetingHistory, type ArchiveMeetingHistory } from '../meetings/archive-selection';
-import { normalizeSettingsNavigationAuthority } from '../carddav/navigation';
+import {
+  ARCHIVE_MEETING_HISTORY_KEY,
+  parseArchiveMeetingHistory,
+  type ArchiveMeetingHistory
+} from '../meetings/archive-selection';
 import {
   availableSearchModeStorage,
   explicitSearchModeFromURL,
@@ -39,32 +24,24 @@ import {
   type SearchModeStorage
 } from '../search/modes';
 import { effectiveSearchMode } from '../search/query';
+import { defaultEverythingFilters, isDateDimension } from './date-range';
 
-import { defaultEverythingFilters, isDateDimension, withoutDateRange } from './date-range';
 import {
-  DEFAULT_WORKSPACE,
-  PERSON_TABS,
-  isRoutedField,
-  ROUTE_PARAMETERS,
-  routeForState,
-  stateFromRoute,
-  withRoutedDateBounds,
-  type PersonTab
-} from '../routing/routes';
+  freshExploreURLState as freshDefaults,
+  normalizeExploreURLState as normalize,
+  normalizeExploreFilters as filters,
+  normalizeSelectedRow as selectedRow,
+  normalizeScrollAnchor as scrollAnchor,
+  normalizeOperationRunID as operationRunID,
+  isStateRecord as isRecord,
+  parseExploreURLState,
+  serializeExploreURLState,
+  isDefaultLanding
+} from './url-codec';
+// Keep existing consumers stable while pure bookmark codecs live independently
+// of Svelte state, browser preferences, and history ownership.
+export { defaultExploreURLState, parseExploreURLState, serializeExploreURLState, isDefaultLanding } from './url-codec';
 
-const STATE_PARAMETER = 'explore';
-const FILTER_DIMENSIONS = new Set([
-  'source',
-  'identity',
-  'participant',
-  'domain',
-  'mailing_list',
-  'message_type',
-  'after',
-  'before',
-  'deletion'
-]);
-const COLUMNS = new Set(['kind', 'people', 'title', 'excerpt', 'time', 'attachments', 'size']);
 const TRANSIENT_HISTORY_FIELDS = [
   'columns',
   'columnWidths',
@@ -120,39 +97,11 @@ const RESTORATION_INVALIDATING_FIELDS = new Set<keyof ExploreURLState>([
   'meetingSource',
   'meetingSince'
 ]);
-const FILE_MIME_FAMILIES = new Set<FileMIMEFamily>([
-  'image', 'pdf', 'audio', 'video', 'text', 'document', 'archive', 'other'
-]);
-const PERSON_FILE_DIRECTIONS = new Set<PersonFileDirection>(['from_person', 'to_person', 'group']);
-const OPERATION_LANES = new Set<OperationLane>([
-  'messages', 'person_facts', 'contacts', 'documents', 'visual_attachments'
-]);
-const OPERATION_KINDS = new Set<OperationKind>([
-  'carddav_sync',
-  'document_embedding',
-  'document_extraction',
-  'message_embedding',
-  'person_embedding',
-  'person_enrichment',
-  'person_sweep',
-  'source_sync',
-  'visual_embedding'
-]);
-const OPERATION_STATES = new Set<OperationState>([
-  'cancelled', 'failed', 'partial', 'queued', 'running', 'succeeded'
-]);
-const OPERATION_STATUS_AUTHORITIES = new Set<OperationStatusAuthority>([
-  'getDocumentIndexStatus', 'getDocumentVectorStatus', 'getVisualAttachmentStatus'
-]);
-const OPERATION_KINDS_BY_LANE: Record<OperationLane, ReadonlySet<OperationKind>> = {
-  messages: new Set(['source_sync', 'message_embedding']),
-  person_facts: new Set(['person_sweep', 'person_embedding', 'person_enrichment']),
-  contacts: new Set(['carddav_sync']),
-  documents: new Set(['document_extraction', 'document_embedding']),
-  visual_attachments: new Set(['visual_embedding'])
-};
 const NORMALIZED_VIEW_FIELDS = [
-  'workspace', 'directoryPersonID', 'peopleSaved', 'personTab'
+  'workspace',
+  'directoryPersonID',
+  'peopleSaved',
+  'personTab'
 ] as const satisfies ReadonlyArray<keyof ExploreURLState>;
 const OPERATION_FILTER_FIELDS = [
   'operationLane',
@@ -162,68 +111,6 @@ const OPERATION_FILTER_FIELDS = [
   'operationStartedBefore'
 ] as const satisfies ReadonlyArray<keyof ExploreURLState>;
 
-export const defaultExploreURLState: ExploreURLState = {
-  schemaVersion: 2,
-  workspace: 'directory',
-  directoryQuery: '',
-  directoryContactState: '',
-  directoryCategory: '',
-  directoryOrganization: '',
-  directoryPrimaryChannel: '',
-  directoryLastContactAfter: '',
-  directoryLastContactBefore: '',
-  directorySort: 'last_contact_desc',
-  directoryPersonID: null,
-  directoryHasName: false,
-  peopleSaved: '',
-  personTab: 'overview',
-  reviewKind: 'identity',
-  identityState: 'candidate',
-  identityOrigin: 'all',
-  relationshipReviewState: 'pending',
-  query: '',
-  searchMode: 'full_text',
-  filters: [],
-  dateBoundsChosen: false,
-  groupingChain: [],
-  presentation: 'table',
-  sort: [{ field: 'occurred_at', direction: 'desc' }],
-  fileSort: { field: 'occurred_at', direction: 'desc' },
-  fileFilenameQuery: '',
-  fileMIMEFamilies: [],
-  personFilePresentation: 'files',
-  personFileDirections: ['from_person'],
-  identityQuery: '',
-  identitySort: { field: 'activity_count', direction: 'desc' },
-  analysisTarget: null,
-  selectedIdentifier: null,
-  relationshipFacet: 'people',
-  relationshipTarget: null,
-  relationshipShowAll: false,
-  relationshipFiles: false,
-  operationLane: '',
-  operationKind: '',
-  operationState: '',
-  operationStartedFrom: '',
-  operationStartedBefore: '',
-  operationRunID: null,
-  operationStatus: '',
-  settingsAuthority: '',
-  settingsSection: '',
-  messageID: null,
-  meetingID: null,
-  meetingPerson: '',
-  meetingSource: '',
-  meetingSince: '30d',
-  columns: [...DEFAULT_EXPLORE_COLUMNS],
-  columnWidths: {},
-  activeRow: null,
-  selectedRow: null,
-  inspectorPinned: true,
-  conversationAnchor: null,
-  scrollAnchor: null
-};
-
 interface ExploreWindow {
   location: Pick<Location, 'href' | 'pathname' | 'search' | 'hash'>;
   history: Pick<History, 'state' | 'pushState' | 'replaceState'>;
@@ -231,456 +118,9 @@ interface ExploreWindow {
   removeEventListener(type: 'popstate', listener: () => void): void;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /** The date bounds among a filter list, as a comparable key. */
 function dateBoundsKey(filters: readonly ExploreFilter[]): string {
   return JSON.stringify(filters.filter((filter) => isDateDimension(filter.dimension)));
-}
-
-function freshDefaults(): ExploreURLState {
-  return {
-    ...defaultExploreURLState,
-    filters: defaultExploreURLState.filters.map((filter) => ({
-      ...filter,
-      values: [...filter.values]
-    })),
-    groupingChain: [...defaultExploreURLState.groupingChain],
-    sort: defaultExploreURLState.sort.map((sort) => ({ ...sort })),
-    fileSort: defaultExploreURLState.fileSort ? { ...defaultExploreURLState.fileSort } : undefined,
-    fileMIMEFamilies: [...defaultExploreURLState.fileMIMEFamilies],
-    personFileDirections: [...defaultExploreURLState.personFileDirections],
-    columns: [...defaultExploreURLState.columns],
-    columnWidths: { ...defaultExploreURLState.columnWidths }
-  };
-}
-
-function isFilter(value: unknown): value is ExploreFilter {
-  return (
-    isRecord(value) &&
-    typeof value.dimension === 'string' &&
-    FILTER_DIMENSIONS.has(value.dimension) &&
-    Array.isArray(value.values) &&
-    value.values.every((item) => typeof item === 'string')
-  );
-}
-
-function filters(value: unknown): ExploreFilter[] {
-  if (!Array.isArray(value) || !value.every(isFilter)) return [];
-  const copied = value.map((filter) => ({ ...filter, values: [...filter.values] }));
-  const sourceFilters = copied.filter((filter) => filter.dimension === 'source');
-  const sourceValue = sourceFilters.length === 1 && sourceFilters[0]?.values.length === 1
-    ? sourceFilters[0].values[0]
-    : undefined;
-  const sourceID = isValidSourceID(sourceValue) ? sourceValue : undefined;
-  const identityFilters = copied.filter((filter) => filter.dimension === 'identity');
-  const identity = identityFilters.length === 1 ? identityFilters[0] : undefined;
-  const validIdentity = identity !== undefined &&
-    sourceID !== undefined &&
-    identity.values.length === 3 &&
-    identity.values[0] === sourceID &&
-    identity.values[1] !== '' &&
-    (identity.values[2] === 'any' || identity.values[2] === 'sender' || identity.values[2] === 'recipient');
-  return copied.filter((filter) => filter.dimension !== 'identity' || validIdentity);
-}
-
-function groups(value: unknown): ExploreGroupDimension[] {
-  return validateGroupingChain(value);
-}
-
-function columns(value: unknown): ExploreColumn[] {
-  return Array.isArray(value) && value.every((item) => COLUMNS.has(String(item)))
-    ? ([...value] as ExploreColumn[])
-    : [...DEFAULT_EXPLORE_COLUMNS];
-}
-
-function sorts(value: unknown): ExploreSort[] {
-  return Array.isArray(value) &&
-    value.every(
-      (item) =>
-        isRecord(item) && item.field === 'occurred_at' && item.direction === 'desc'
-    )
-    ? (value.map((item) => ({ ...item })) as ExploreSort[])
-    : defaultExploreURLState.sort.map((sort) => ({ ...sort }));
-}
-
-function fileSort(value: unknown): FileSearchSort {
-  return isRecord(value) &&
-    (value.field === 'occurred_at' || value.field === 'filename' || value.field === 'size') &&
-    (value.direction === 'asc' || value.direction === 'desc')
-    ? { field: value.field, direction: value.direction }
-    : { field: 'occurred_at', direction: 'desc' };
-}
-
-function fileMIMEFamilies(value: unknown): FileMIMEFamily[] {
-  return Array.isArray(value) && value.every((item) =>
-    typeof item === 'string' && FILE_MIME_FAMILIES.has(item as FileMIMEFamily))
-    ? [...new Set(value)] as FileMIMEFamily[]
-    : [];
-}
-
-function personFileDirections(value: unknown): PersonFileDirection[] {
-  if (!Array.isArray(value) || value.length === 0 || !value.every((item) =>
-    typeof item === 'string' && PERSON_FILE_DIRECTIONS.has(item as PersonFileDirection))) return ['from_person'];
-  const selected = new Set(value as PersonFileDirection[]);
-  return (['from_person', 'to_person', 'group'] as PersonFileDirection[])
-    .filter((direction) => selected.has(direction));
-}
-
-function widths(value: unknown): Partial<Record<ExploreColumn, number>> {
-  if (!isRecord(value)) return {};
-  const result: Partial<Record<ExploreColumn, number>> = {};
-  for (const [key, width] of Object.entries(value)) {
-    if (COLUMNS.has(key) && typeof width === 'number' && Number.isFinite(width) && width > 0) {
-      result[key as ExploreColumn] = width;
-    }
-  }
-  return result;
-}
-
-function scrollAnchor(value: unknown): ExploreScrollAnchor | null {
-  if (value === null) return null;
-  return isRecord(value) && typeof value.key === 'string' && typeof value.offset === 'number'
-    ? { key: value.key, offset: value.offset }
-    : null;
-}
-
-function selectedRow(value: unknown): string | null {
-  if (value === null) return null;
-  if (typeof value !== 'string') return null;
-  if (!value.startsWith('attachment:')) return value;
-  return parseAttachmentSelection(value) === undefined ? null : value;
-}
-
-function relationshipTargetValue(value: unknown): string | null {
-  return typeof value === 'string' &&
-    (/^cluster:\d+$/.test(value) || /^domain:\S+$/.test(value))
-    ? value
-    : null;
-}
-
-function directoryPersonID(value: unknown): number | null {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null;
-}
-
-function personTab(value: unknown): PersonTab {
-  return PERSON_TABS.includes(value as PersonTab) ? value as PersonTab : 'overview';
-}
-
-function settingsSection(value: unknown): string {
-  return typeof value === 'string' && /^[a-z0-9_-]{1,64}$/.test(value) ? value : '';
-}
-
-function operationDateBound(value: unknown): string {
-  if (typeof value !== 'string' ||
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{0,8}[1-9])?Z$/.test(value)) return '';
-  const parsed = Date.parse(value);
-  if (!Number.isFinite(parsed)) return '';
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/.exec(value);
-  if (!match) return '';
-  const [, year, month, day, hour, minute, second] = match;
-  const date = new Date(parsed);
-  return date.getUTCFullYear() === Number(year) &&
-    date.getUTCMonth() + 1 === Number(month) &&
-    date.getUTCDate() === Number(day) &&
-    date.getUTCHours() === Number(hour) &&
-    date.getUTCMinutes() === Number(minute) &&
-    date.getUTCSeconds() === Number(second)
-    ? value
-    : '';
-}
-
-function operationDateSortKey(value: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?Z$/.exec(value);
-  if (!match) return '';
-  const [, year, month, day, hour, minute, second, fraction = ''] = match;
-  return `${year}${month}${day}${hour}${minute}${second}${fraction.padEnd(9, '0')}`;
-}
-
-function operationRunID(value: unknown): string | null {
-  return typeof value === 'string' && value.length <= 4096 &&
-    /^op2\.[a-f0-9]{32}\.[A-Za-z0-9_-]+$/.test(value)
-    ? value
-    : null;
-}
-
-function legacyRelationshipTarget(
-  analysisTarget: string | null,
-  facet: RelationshipFacet
-): string | null {
-  if (analysisTarget === null) return null;
-  if (facet === 'people' && analysisTarget.startsWith('person:')) {
-    return relationshipTargetValue(`cluster:${analysisTarget.slice('person:'.length)}`);
-  }
-  if (facet === 'domains' && analysisTarget.startsWith('domain:')) {
-    return relationshipTargetValue(analysisTarget);
-  }
-  return null;
-}
-
-function normalize(value: unknown): ExploreURLState {
-  if (!isRecord(value)) return freshDefaults();
-  const {
-    selection: _selection,
-    bulkSelection: _bulkSelection,
-    operationCursor: _operationCursor,
-    ...knownAndFuture
-  } = value;
-  const searchMode =
-    value.searchMode === 'full_text' ||
-    value.searchMode === 'semantic' ||
-    value.searchMode === 'hybrid'
-      ? value.searchMode
-      : defaultExploreURLState.searchMode;
-  const presentation =
-    value.presentation === 'table' ||
-    value.presentation === 'timeline' ||
-    value.presentation === 'files'
-      ? value.presentation
-      : defaultExploreURLState.presentation;
-  const legacyFacet: RelationshipFacet | undefined =
-    value.workspace === 'people' ? 'people' : value.workspace === 'domains' ? 'domains' : undefined;
-  // Legacy People and Domains workspaces were Relationships facets.
-  const workspace = legacyFacet ? 'relationships' : value.workspace === 'everything' || value.workspace === 'directory' || value.workspace === 'directory_review' || value.workspace === 'settings' ||
-    value.workspace === 'files' || value.workspace === 'relationships' ||
-    value.workspace === 'saved_views' || value.workspace === 'sources' ||
-    value.workspace === 'deletions' || value.workspace === 'operations' || value.workspace === 'meetings' ||
-    (value.workspace === 'message' && directoryPersonID(value.messageID) !== null)
-    ? value.workspace
-    : DEFAULT_WORKSPACE;
-  const analysisTarget = typeof value.analysisTarget === 'string' &&
-    (/^person:[1-9][0-9]*$/.test(value.analysisTarget) || /^domain:[a-z0-9.-]+$/.test(value.analysisTarget))
-    ? value.analysisTarget : null;
-  const relationshipFacet: RelationshipFacet = legacyFacet ??
-    (value.relationshipFacet === 'people' || value.relationshipFacet === 'domains'
-      ? value.relationshipFacet
-      : 'people');
-  const relationshipTarget = legacyFacet
-    ? legacyRelationshipTarget(analysisTarget, legacyFacet)
-    : relationshipTargetValue(value.relationshipTarget);
-  const reviewKind: DirectoryReviewKind = value.reviewKind === 'fact' || value.reviewKind === 'relationship' ||
-    value.reviewKind === 'enrichment' || value.reviewKind === 'organization' || value.reviewKind === 'correspondent'
-    ? value.reviewKind
-    : 'identity';
-  const identityState: IdentityReviewState =
-    value.identityState === 'conflict' || value.identityState === 'accepted' || value.identityState === 'rejected'
-      ? value.identityState
-      : 'candidate';
-  const identityOrigin: IdentityReviewOrigin =
-    value.identityOrigin === 'contact_match' || value.identityOrigin === 'person_duplicate'
-      ? value.identityOrigin
-      : 'all';
-  const relationshipReviewState: RelationshipReviewState =
-    value.relationshipReviewState === 'accepted' || value.relationshipReviewState === 'rejected'
-      ? value.relationshipReviewState
-      : 'pending';
-  const operationLane = typeof value.operationLane === 'string' &&
-    OPERATION_LANES.has(value.operationLane as OperationLane)
-    ? value.operationLane as OperationLane
-    : '';
-  const candidateOperationKind = typeof value.operationKind === 'string' &&
-    OPERATION_KINDS.has(value.operationKind as OperationKind)
-    ? value.operationKind as OperationKind
-    : '';
-  const operationKind = operationLane !== '' && candidateOperationKind !== '' &&
-    !OPERATION_KINDS_BY_LANE[operationLane].has(candidateOperationKind)
-    ? ''
-    : candidateOperationKind;
-  const operationState = typeof value.operationState === 'string' &&
-    OPERATION_STATES.has(value.operationState as OperationState)
-    ? value.operationState as OperationState
-    : '';
-  let operationStartedFrom = operationDateBound(value.operationStartedFrom);
-  let operationStartedBefore = operationDateBound(value.operationStartedBefore);
-  if (operationStartedFrom !== '' && operationStartedBefore !== '' &&
-    operationDateSortKey(operationStartedFrom) >= operationDateSortKey(operationStartedBefore)) {
-    operationStartedFrom = '';
-    operationStartedBefore = '';
-  }
-
-  // The ranked contacts list became the People list's Not saved filter;
-  // only domains and single contacts still open the relationships views.
-  const peopleList = workspace === 'relationships' && relationshipFacet === 'people' && relationshipTarget === null;
-  return {
-    ...knownAndFuture,
-    schemaVersion: value.schemaVersion === 1
-      ? defaultExploreURLState.schemaVersion
-      : typeof value.schemaVersion === 'number' && Number.isSafeInteger(value.schemaVersion)
-        ? value.schemaVersion
-        : defaultExploreURLState.schemaVersion,
-    workspace: peopleList ? 'directory' : workspace,
-    directoryQuery: typeof value.directoryQuery === 'string' ? value.directoryQuery : '',
-    directoryContactState: typeof value.directoryContactState === 'string' ? value.directoryContactState : '',
-    directoryCategory: typeof value.directoryCategory === 'string' ? value.directoryCategory : '',
-    directoryOrganization: typeof value.directoryOrganization === 'string' ? value.directoryOrganization : '',
-    directoryPrimaryChannel: typeof value.directoryPrimaryChannel === 'string' ? value.directoryPrimaryChannel : '',
-    directoryLastContactAfter: typeof value.directoryLastContactAfter === 'string' ? value.directoryLastContactAfter : '',
-    directoryLastContactBefore: typeof value.directoryLastContactBefore === 'string' ? value.directoryLastContactBefore : '',
-    directorySort: value.directorySort === 'name' || value.directorySort === 'last_contact_asc' ? value.directorySort : 'last_contact_desc',
-    directoryPersonID: peopleList ? null : directoryPersonID(value.directoryPersonID),
-    directoryHasName: value.directoryHasName === true,
-    peopleSaved: peopleList ? 'unsaved'
-      : value.peopleSaved === 'saved' || value.peopleSaved === 'unsaved' || value.peopleSaved === 'not_people'
-        ? value.peopleSaved : '',
-    // A contact opened with its files pane (before person tabs) opens on Files.
-    personTab: personTab(value.personTab) === 'overview' && value.relationshipFiles === true &&
-      relationshipTarget?.startsWith('cluster:') ? 'files' : personTab(value.personTab),
-    reviewKind,
-    identityState,
-    identityOrigin,
-    relationshipReviewState,
-    query: typeof value.query === 'string' ? value.query : '',
-    searchMode,
-    filters: filters(value.filters),
-    dateBoundsChosen: value.dateBoundsChosen === true,
-    groupingChain: groups(value.groupingChain),
-    presentation,
-    sort: sorts(value.sort),
-    fileSort: fileSort(value.fileSort),
-    fileFilenameQuery: value.schemaVersion === 2 && typeof value.fileFilenameQuery === 'string'
-      ? value.fileFilenameQuery
-      : '',
-    fileMIMEFamilies: value.schemaVersion === 2 ? fileMIMEFamilies(value.fileMIMEFamilies) : [],
-    personFilePresentation: value.personFilePresentation === 'media' ? 'media' : 'files',
-    personFileDirections: personFileDirections(value.personFileDirections),
-    identityQuery: typeof value.identityQuery === 'string' ? value.identityQuery : '',
-    identitySort: isRecord(value.identitySort) &&
-      (value.identitySort.field === 'activity_count' || value.identitySort.field === 'latest_at' || value.identitySort.field === 'display_label') &&
-      (value.identitySort.direction === 'asc' || value.identitySort.direction === 'desc')
-      ? { field: value.identitySort.field, direction: value.identitySort.direction }
-      : { field: 'activity_count', direction: 'desc' },
-    analysisTarget,
-    selectedIdentifier: typeof value.selectedIdentifier === 'string' ? value.selectedIdentifier : null,
-    relationshipFacet,
-    relationshipTarget,
-    relationshipShowAll: value.relationshipShowAll === true,
-    relationshipFiles: value.relationshipFiles === true,
-    operationLane,
-    operationKind,
-    operationState,
-    operationStartedFrom,
-    operationStartedBefore,
-    operationRunID: operationRunID(value.operationRunID),
-    operationStatus: typeof value.operationStatus === 'string' &&
-      OPERATION_STATUS_AUTHORITIES.has(value.operationStatus as OperationStatusAuthority)
-      ? value.operationStatus as OperationStatusAuthority
-      : '',
-    settingsAuthority: normalizeSettingsNavigationAuthority(value.settingsAuthority),
-    settingsSection: settingsSection(value.settingsSection),
-    messageID: directoryPersonID(value.messageID),
-    meetingID: directoryPersonID(value.meetingID),
-    meetingPerson: typeof value.meetingPerson === 'string' && /^[1-9]\d*$/.test(value.meetingPerson) ? value.meetingPerson : '',
-    meetingSource: typeof value.meetingSource === 'string' && /^[1-9]\d*$/.test(value.meetingSource) ? value.meetingSource : '',
-    meetingSince: value.meetingSince === '90d' || value.meetingSince === 'all' ? value.meetingSince : '30d',
-    columns: columns(value.columns),
-    columnWidths: widths(value.columnWidths),
-    activeRow:
-      typeof value.activeRow === 'string' || value.activeRow === null
-        ? value.activeRow
-        : null,
-    selectedRow: selectedRow(value.selectedRow),
-    inspectorPinned: true,
-    conversationAnchor:
-      typeof value.conversationAnchor === 'string' || value.conversationAnchor === null
-        ? value.conversationAnchor
-        : null,
-    scrollAnchor: scrollAnchor(value.scrollAnchor)
-  } as ExploreURLState;
-}
-
-// Fields that only describe one workspace stay out of the link when another
-// workspace is shared; browser history still carries them for Back/Forward.
-const WORKSPACE_FIELDS: Partial<Record<keyof ExploreURLState, ReadonlyArray<ExploreWorkspace>>> = {
-  directoryQuery: ['directory'],
-  directoryContactState: ['directory'],
-  directoryCategory: ['directory'],
-  directoryOrganization: ['directory'],
-  directoryPrimaryChannel: ['directory'],
-  directoryLastContactAfter: ['directory'],
-  directoryLastContactBefore: ['directory'],
-  directorySort: ['directory'],
-  directoryPersonID: ['directory', 'directory_review'],
-  directoryHasName: ['directory'],
-  peopleSaved: ['directory'],
-  reviewKind: ['directory_review'],
-  identityState: ['directory_review'],
-  identityOrigin: ['directory_review'],
-  relationshipReviewState: ['directory_review'],
-  fileSort: ['files'],
-  fileFilenameQuery: ['files'],
-  fileMIMEFamilies: ['files'],
-  personFilePresentation: ['relationships'],
-  personFileDirections: ['relationships'],
-  identityQuery: ['relationships'],
-  identitySort: ['relationships'],
-  analysisTarget: ['relationships'],
-  selectedIdentifier: ['relationships'],
-  relationshipFacet: ['relationships'],
-  relationshipTarget: ['relationships'],
-  relationshipShowAll: ['relationships'],
-  relationshipFiles: ['relationships'],
-  operationLane: ['operations'],
-  operationKind: ['operations'],
-  operationState: ['operations'],
-  operationStartedFrom: ['operations'],
-  operationStartedBefore: ['operations'],
-  operationRunID: ['operations'],
-  operationStatus: ['operations'],
-  settingsAuthority: ['settings'],
-  settingsSection: ['settings'],
-  personTab: ['directory', 'relationships'],
-  messageID: ['message'],
-  meetingID: ['meetings'],
-  meetingPerson: ['meetings'],
-  meetingSource: ['meetings'],
-  meetingSince: ['meetings'],
-  dateBoundsChosen: ['everything']
-};
-const ARCHIVE_PREDICATE_FIELDS = new Set<keyof ExploreURLState>(['filters', 'groupingChain', 'presentation', 'sort']);
-const FILTERLESS_WORKSPACES = new Set<ExploreWorkspace>(['directory', 'directory_review', 'settings', 'message', 'saved_views', 'meetings']);
-// Keyboard focus and scroll position live only in browser history.
-const SESSION_ONLY_FIELDS = new Set<keyof ExploreURLState>(['activeRow', 'scrollAnchor']);
-
-function sharedDetails(state: ExploreURLState, routesDateBounds: boolean): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(state).flatMap(([key, value]) => {
-    const field = key as keyof ExploreURLState;
-    if (field === 'schemaVersion') return [];
-    if (isRoutedField(state.workspace, field)) return [];
-    // Archive filters shape Inbox, Files, and contact timelines; a person,
-    // review, settings, or message link does not carry them.
-    if (ARCHIVE_PREDICATE_FIELDS.has(field) && FILTERLESS_WORKSPACES.has(state.workspace)) return [];
-    if (SESSION_ONLY_FIELDS.has(field)) return [];
-    const owners = WORKSPACE_FIELDS[field];
-    if (owners && !owners.includes(state.workspace)) return [];
-    // Date bounds the path already names as readable parameters.
-    const shared = field === 'filters' && routesDateBounds ? withoutDateRange(state.filters) : value;
-    return JSON.stringify(shared) === JSON.stringify(defaultExploreURLState[field]) ? [] : [[key, shared]];
-  }));
-}
-
-/**
- * The address for a state: a readable path (`/inbox`, `/people/42`,
- * `/activity/operations`), readable parameters where people type or share
- * (`q`, `mode`, `since`), and the `explore` JSON for the rest. Parameters
- * the router does not own (feature flags) are kept from `baseSearch`.
- */
-export function serializeExploreURLState(state: ExploreURLState, baseSearch = ''): string {
-  const parameters = new URLSearchParams(baseSearch.startsWith('?') ? baseSearch.slice(1) : baseSearch);
-  for (const name of ROUTE_PARAMETERS) parameters.delete(name);
-  const normalized = normalize(state);
-  const route = routeForState(normalized);
-  const routed = new URLSearchParams(route.parameters);
-  // An explicit mode keeps a shared link independent of browser preferences.
-  if (normalized.workspace !== 'everything' && normalized.query.trim()) routed.set('mode', normalized.searchMode);
-  for (const [name, value] of parameters) routed.append(name, value);
-  const details = sharedDetails(normalized, route.routesDateBounds);
-  if (Object.keys(details).length > 0) {
-    routed.set(STATE_PARAMETER, JSON.stringify({ schemaVersion: normalized.schemaVersion, ...details }));
-  }
-  const search = routed.toString();
-  return `${route.pathname}${search ? `?${search}` : ''}`;
 }
 
 const HISTORY_DEPTH_KEY = 'exploreDepth';
@@ -688,60 +128,13 @@ const HISTORY_DEPTH_KEY = 'exploreDepth';
  * load, which records the address rather than a view the user chose. */
 const HISTORY_CANONICAL_KEY = 'exploreCanonical';
 
-function historyEntry(url: string, state: ExploreURLState, depth: number):
-  { exploreSearch: string; exploreState: unknown; [HISTORY_DEPTH_KEY]: number } {
+function historyEntry(
+  url: string,
+  state: ExploreURLState,
+  depth: number
+): { exploreSearch: string; exploreState: unknown; [HISTORY_DEPTH_KEY]: number } {
   // History entries must be structured-cloneable, so strip reactive proxies.
   return { exploreSearch: url, exploreState: JSON.parse(JSON.stringify(state)), [HISTORY_DEPTH_KEY]: depth };
-}
-
-/**
- * Reads an address. A path the router owns names the surface; the root
- * path (and any path the app does not own) falls back to the legacy
- * `?workspace=` parameter and the workspace inside the JSON payload, so
- * bookmarks from before readable paths keep opening the same view.
- */
-export function parseExploreURLState(address: string, pathname = '/'): ExploreURLState {
-  // Accepts a search string with its pathname, or a whole address such as
-  // serializeExploreURLState returns.
-  let search = address;
-  if (address.startsWith('/')) {
-    const url = new URL(address, 'http://msgvault.invalid');
-    pathname = url.pathname;
-    search = url.search;
-  }
-  const parameters = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-  const encoded = parameters.get(STATE_PARAMETER);
-  let details: unknown = {};
-  try {
-    if (encoded !== null) details = JSON.parse(encoded);
-  } catch {
-    // A malformed detail payload must not discard the selected workspace.
-  }
-  const payload = isRecord(details) ? details : {};
-  const route = stateFromRoute(pathname, parameters);
-  if (!route) {
-    return normalize({
-      ...payload,
-      ...(parameters.has('workspace') ? { workspace: parameters.get('workspace') } : {}),
-      ...(parameters.has('mode') ? { searchMode: parameters.get('mode') } : {}),
-    });
-  }
-  const { dateFilters, ...routeFields } = route as Record<string, unknown> & { dateFilters?: ExploreFilter[] };
-  const payloadFilters = Array.isArray(payload.filters) ? payload.filters as ExploreFilter[] : [];
-  return normalize({
-    ...payload,
-    ...(parameters.has('mode') ? { searchMode: parameters.get('mode') } : {}),
-    ...routeFields,
-    ...(dateFilters ? { filters: withRoutedDateBounds(payloadFilters, dateFilters) } : {}),
-  });
-}
-
-/** True for an address that names no view: the bare root with no legacy
- * workspace or payload, or a path the app does not own. */
-export function isDefaultLanding(pathname: string, search: string): boolean {
-  const parameters = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-  return stateFromRoute(pathname, parameters) === undefined &&
-    !parameters.has('workspace') && !parameters.has(STATE_PARAMETER);
 }
 
 export class ExploreState {
@@ -773,9 +166,7 @@ export class ExploreState {
 
   constructor(
     browser: ExploreWindow = window,
-    preferenceStorage: SearchModeStorage | null = browser === globalThis.window
-      ? availableSearchModeStorage()
-      : null
+    preferenceStorage: SearchModeStorage | null = browser === globalThis.window ? availableSearchModeStorage() : null
   ) {
     this.browser = browser;
     this.preferenceStorage = preferenceStorage;
@@ -855,11 +246,7 @@ export class ExploreState {
   // or a user mode choice overrides the configured default.
   setConfiguredDefaultSearchMode(mode: ExploreSearchMode | undefined): void {
     this.configuredDefaultSearchMode = mode;
-    const resolved = resolveInitialSearchMode(
-      this.explicitSearchMode,
-      this.preferenceStorage,
-      mode
-    );
+    const resolved = resolveInitialSearchMode(this.explicitSearchMode, this.preferenceStorage, mode);
     if (resolved === this.current.searchMode) return;
     this.current.searchMode = resolved;
     this.committed = normalize({ ...this.committed, searchMode: resolved });
@@ -898,12 +285,10 @@ export class ExploreState {
   }
 
   replaceSearchDraft(query: string, searchMode: ExploreSearchMode): void {
-	rememberSearchMode(searchMode, this.preferenceStorage);
+    rememberSearchMode(searchMode, this.preferenceStorage);
     this.pendingSearchPriorFocus ??= {
       activeRow: this.current.activeRow,
-      scrollAnchor: this.current.scrollAnchor
-        ? { ...this.current.scrollAnchor }
-        : null
+      scrollAnchor: this.current.scrollAnchor ? { ...this.current.scrollAnchor } : null
     };
     this.navigate({ query, searchMode, activeRow: null, scrollAnchor: null }, 'replace');
   }
@@ -911,43 +296,55 @@ export class ExploreState {
   /** Commits a search. `filters`, when given, replaces the filters in the
    * same history entry (operators moved out of the query into chips). */
   commitSearch(query: string, searchMode: ExploreSearchMode, filters?: ExploreFilter[]): void {
-	rememberSearchMode(searchMode, this.preferenceStorage);
-    this.navigate({
-      query, searchMode, ...(filters ? { filters } : {}),
-      selectedRow: null, conversationAnchor: null, activeRow: null, scrollAnchor: null
-    }, 'push');
+    rememberSearchMode(searchMode, this.preferenceStorage);
+    this.navigate(
+      {
+        query,
+        searchMode,
+        ...(filters ? { filters } : {}),
+        selectedRow: null,
+        conversationAnchor: null,
+        activeRow: null,
+        scrollAnchor: null
+      },
+      'push'
+    );
   }
 
   /** Opens a workspace. `patch` applies in the same history entry, after
    * the workspace resets (Search opens the Inbox view with its query). */
   commitWorkspace(workspace: ExploreWorkspace, patch: Partial<ExploreURLState> = {}): void {
-    this.navigate({
-      workspace,
-      ...(workspace === 'everything' ? this.everythingBoundsPatch(this.current.filters) : {}),
-      // The Relationships ranking and cluster-timeline endpoints accept no
-      // text query (ranking is over reciprocity signals, not lexical), so a
-      // carried search query could only ever half-apply (domains and files
-      // yes, ranked people and cluster timeline no). Entering the hub drops
-      // the carried query — visibly, in the URL state — so every surface
-      // consistently reflects no text filter.
-      ...(workspace === 'relationships' ? { query: '' } : {}),
-      analysisTarget: null,
-      selectedIdentifier: null,
-      activeRow: null,
-      selectedRow: null,
-      conversationAnchor: null,
-      scrollAnchor: null,
-      operationStatus: '',
-      settingsAuthority: '',
-      ...patch
-    }, 'push');
+    this.navigate(
+      {
+        workspace,
+        ...(workspace === 'everything' ? this.everythingBoundsPatch(this.current.filters) : {}),
+        // The Relationships ranking and cluster-timeline endpoints accept no
+        // text query (ranking is over reciprocity signals, not lexical), so a
+        // carried search query could only ever half-apply (domains and files
+        // yes, ranked people and cluster timeline no). Entering the hub drops
+        // the carried query — visibly, in the URL state — so every surface
+        // consistently reflects no text filter.
+        ...(workspace === 'relationships' ? { query: '' } : {}),
+        analysisTarget: null,
+        selectedIdentifier: null,
+        activeRow: null,
+        selectedRow: null,
+        conversationAnchor: null,
+        scrollAnchor: null,
+        operationStatus: '',
+        settingsAuthority: '',
+        ...patch
+      },
+      'push'
+    );
   }
 
   commitNavigation(patch: Partial<ExploreURLState>): void {
     const selectionChanged = 'selectedRow' in patch && patch.selectedRow !== this.current.selectedRow;
-    this.navigate(selectionChanged && !('conversationAnchor' in patch)
-      ? { ...patch, conversationAnchor: null }
-      : patch, 'push');
+    this.navigate(
+      selectionChanged && !('conversationAnchor' in patch) ? { ...patch, conversationAnchor: null } : patch,
+      'push'
+    );
   }
 
   commitRestorableNavigation(patch: Partial<ExploreURLState>): void {
@@ -966,20 +363,26 @@ export class ExploreState {
 
   commitGrouping(dimension: ExploreGroupDimension): void {
     if (!isGroupingDimension(dimension) || this.current.groupingChain.includes(dimension)) return;
-    this.navigate({
-      groupingChain: [...this.current.groupingChain, dimension],
-      activeRow: null,
-      scrollAnchor: null
-    }, 'push');
+    this.navigate(
+      {
+        groupingChain: [...this.current.groupingChain, dimension],
+        activeRow: null,
+        scrollAnchor: null
+      },
+      'push'
+    );
   }
 
   commitUngroup(): void {
     if (this.current.groupingChain.length === 0) return;
-    this.navigate({
-      groupingChain: this.current.groupingChain.slice(0, -1),
-      activeRow: null,
-      scrollAnchor: null
-    }, 'push');
+    this.navigate(
+      {
+        groupingChain: this.current.groupingChain.slice(0, -1),
+        activeRow: null,
+        scrollAnchor: null
+      },
+      'push'
+    );
   }
 
   predicate(): ExplorePredicate {
@@ -1016,25 +419,30 @@ export class ExploreState {
     return parsed;
   }
 
-  private navigate(
-    patch: Partial<ExploreURLState>,
-    mode: 'push' | 'replace'
-  ): void {
+  private navigate(patch: Partial<ExploreURLState>, mode: 'push' | 'replace'): void {
     if (patch.searchMode !== undefined) this.explicitSearchMode = patch.searchMode;
     let effectivePatch = patch;
     // A change to Everything's date bounds (after/before added, removed, or
     // changed — including "All time") is the user's choice, so it is never
     // overwritten by the default and survives a bookmark. Filter edits in
     // other workspaces, and non-date filters, leave the default in place.
-    if (patch.filters && (patch.workspace ?? this.current.workspace) === 'everything' &&
-      dateBoundsKey(normalize({ ...this.current, filters: patch.filters }).filters) !== dateBoundsKey(this.current.filters)) {
+    if (
+      patch.filters &&
+      (patch.workspace ?? this.current.workspace) === 'everything' &&
+      dateBoundsKey(normalize({ ...this.current, filters: patch.filters }).filters) !==
+        dateBoundsKey(this.current.filters)
+    ) {
       effectivePatch = { ...effectivePatch, dateBoundsChosen: true };
       this.everythingDefaultApplied = true;
     }
     // Overrides compose: a patch that both chooses bounds and changes an
     // operation filter keeps the marker and resets the run.
-    if (mode === 'push' && OPERATION_FILTER_FIELDS.some((key) =>
-      key in patch && normalize({ ...this.current, ...patch })[key] !== this.current[key])) {
+    if (
+      mode === 'push' &&
+      OPERATION_FILTER_FIELDS.some(
+        (key) => key in patch && normalize({ ...this.current, ...patch })[key] !== this.current[key]
+      )
+    ) {
       effectivePatch = { ...effectivePatch, operationRunID: null };
     }
     if (
@@ -1047,14 +455,21 @@ export class ExploreState {
     if (mode === 'push') {
       const priorFocus = this.pendingSearchPriorFocus;
       const transient = Object.fromEntries(
-        TRANSIENT_HISTORY_FIELDS
-          .filter((key) => !priorFocus || (key !== 'activeRow' && key !== 'scrollAnchor'))
-          .map((key) => [key, this.current[key]])
+        TRANSIENT_HISTORY_FIELDS.filter((key) => !priorFocus || (key !== 'activeRow' && key !== 'scrollAnchor')).map(
+          (key) => [key, this.current[key]]
+        )
       ) as Partial<ExploreURLState>;
       const priorEntry = normalize({ ...this.committed, ...transient, ...priorFocus });
       const priorURL = serializeExploreURLState(priorEntry, baseSearch);
       const committedURL = `${priorURL}${this.browser.location.hash}`;
-      this.browser.history.replaceState({ ...historyEntry(priorURL, priorEntry, this.historyDepth()), ...this.archiveHistoryState(priorEntry.selectedRow) }, '', committedURL);
+      this.browser.history.replaceState(
+        {
+          ...historyEntry(priorURL, priorEntry, this.historyDepth()),
+          ...this.archiveHistoryState(priorEntry.selectedRow)
+        },
+        '',
+        committedURL
+      );
     }
     const next = normalize({ ...this.current, ...effectivePatch });
     // Preserve per-field reactivity: transient scroll/column changes must not
@@ -1076,10 +491,17 @@ export class ExploreState {
       this.browser.history.pushState(historyEntry(address, this.current, depth + 1), '', url);
       this.committed = normalize(this.current);
       this.pendingSearchPriorFocus = undefined;
-    } else this.browser.history.replaceState({ ...historyEntry(address, this.current, depth), ...this.archiveHistoryState(this.current.selectedRow) }, '', url);
+    } else
+      this.browser.history.replaceState(
+        { ...historyEntry(address, this.current, depth), ...this.archiveHistoryState(this.current.selectedRow) },
+        '',
+        url
+      );
   }
 
-  private archiveHistoryState(selectedRow: string | null): { [ARCHIVE_MEETING_HISTORY_KEY]: ArchiveMeetingHistory } | null {
+  private archiveHistoryState(
+    selectedRow: string | null
+  ): { [ARCHIVE_MEETING_HISTORY_KEY]: ArchiveMeetingHistory } | null {
     const marker = parseArchiveMeetingHistory(this.browser.history.state, selectedRow);
     return marker ? { [ARCHIVE_MEETING_HISTORY_KEY]: marker } : null;
   }
@@ -1142,17 +564,12 @@ export class ExploreSelectionState {
       throw new Error('All-matching selection requires a result generation');
     }
     if (
-      (selection.predicate.search_mode === 'semantic' ||
-        selection.predicate.search_mode === 'hybrid') &&
+      (selection.predicate.search_mode === 'semantic' || selection.predicate.search_mode === 'hybrid') &&
       !selection.candidateSnapshotId
     ) {
       throw new Error('Semantic all-matching selection requires a server candidate snapshot');
     }
-    if (!hasValidSearchAuthority(
-      selection.predicate,
-      selection.searchProvenance,
-      selection.candidateSnapshotId
-    )) {
+    if (!hasValidSearchAuthority(selection.predicate, selection.searchProvenance, selection.candidateSnapshotId)) {
       throw new Error('All-matching selection search provenance does not match its mode');
     }
     this.clear();
