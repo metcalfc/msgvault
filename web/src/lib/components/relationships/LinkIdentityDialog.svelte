@@ -183,6 +183,7 @@
   title={`Link another identity for ${personLabel}`}
   ariaLabel={`Link another identity for ${personLabel}`}
   onclose={requestClose}
+  maxWidth="min(960px, calc(100vw - 32px))"
 >
   <div class="link-identity-dialog" aria-busy={confirming}>
     <Typeahead
@@ -218,11 +219,36 @@
 </Modal>
 
 <style>
+  /* Candidates are told apart by their addresses, history, and years, so
+   * the search fills a wide dialog and each result gets room to read. */
   .link-identity-dialog {
     display: flex;
-    min-width: 20rem;
+    width: min(56rem, calc(100vw - 80px));
     flex-direction: column;
     gap: var(--space-3);
+    --typeahead-min-width: 100%;
+    --typeahead-max-width: none;
+    --typeahead-control-height: 44px;
+    --typeahead-control-padding: 0 var(--space-3);
+    --typeahead-control-font-size: var(--font-size-md);
+  }
+
+  .link-identity-dialog :global(.kit-typeahead__panel) {
+    max-height: 70vh;
+  }
+
+  .link-identity-dialog :global(.kit-typeahead__option) {
+    gap: var(--space-4);
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--font-size-sm);
+  }
+
+  /* Keep the name readable beside a long summary instead of shrinking it
+   * to a few letters. */
+  .link-identity-dialog :global(.kit-typeahead__option-label) {
+    flex: 0 1 auto;
+    min-width: min(16rem, 40%);
+    color: var(--text-primary);
   }
 
   .confirm-error {
