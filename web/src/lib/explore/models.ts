@@ -123,7 +123,7 @@ export type ExploreWorkspace =
 export type OperationKind = GeneratedOperationKind;
 export type OperationLane = GeneratedOperationLane;
 export type OperationState = GeneratedOperationState;
-export type DirectoryReviewKind = 'identity' | 'fact' | 'relationship';
+export type DirectoryReviewKind = 'identity' | 'enrichment' | 'fact' | 'relationship';
 export type IdentityReviewState = 'candidate' | 'conflict' | 'accepted' | 'rejected';
 /** Which identity candidates the Reviews queue lists: all, or only contact profiles that match archive participants. */
 export type IdentityReviewOrigin = 'all' | 'contact_match';

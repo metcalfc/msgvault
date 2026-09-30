@@ -190,6 +190,12 @@ test('Directory review, merge, split, and honest Fact gate have no axe violation
   await expect(page.getByRole('article', { name: 'Identity match 17' })).toBeVisible();
   await assertNoViolations(page, 'Directory identity review');
 
+  await page.getByRole('radio', { name: 'Enrichment identities' }).click();
+  await expect(page.getByRole('article', { name: 'Synthetic One' })).toBeVisible();
+  await assertNoViolations(page, 'Directory enrichment identity review');
+  await page.getByRole('radio', { name: 'Identity matches' }).click();
+  await expect(page.getByRole('article', { name: 'Identity match 17' })).toBeVisible();
+
   await page.getByRole('article', { name: 'Identity match 17' })
     .getByRole('button', { name: 'Keep separate' }).click();
   const decision = page.getByRole('dialog', { name: 'Keep separate' });

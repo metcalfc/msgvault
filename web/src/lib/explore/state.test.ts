@@ -102,6 +102,15 @@ describe('Explore URL state', () => {
     expect(invalid.identityOrigin).toBe('all');
   });
 
+  it('restores the enrichment identity review queue from URL state', () => {
+    const restored = parseExploreURLState(serializeExploreURLState({
+      ...defaultExploreURLState,
+      workspace: 'directory_review',
+      reviewKind: 'enrichment',
+    }));
+    expect(restored).toMatchObject({ workspace: 'directory_review', reviewKind: 'enrichment' });
+  });
+
   it('keeps the selected person when sharing a Fact review', () => {
     const restored = parseExploreURLState(serializeExploreURLState({
       ...defaultExploreURLState,

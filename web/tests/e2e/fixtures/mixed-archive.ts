@@ -1007,6 +1007,52 @@ export async function installDirectoryReviewArchive(page: Page) {
     });
   });
 
+  const enrichmentReviews = [
+    {
+      attempt_id: 61, person_id: 7, person_display_name: 'Synthetic One', provider_name: 'exa',
+      provider_kind: 'exa', exact_class: 'current_company', name_compatible: 0.7, company_same: 0.99,
+      name_conflict: 0.1, model: 'jev-1.13.0', judged_at: '2026-01-02T10:00:00Z',
+      provider_person_id_known: true,
+      returned: {
+        name: 'S. One', current_roles: [{ title: 'Engineer', company: 'Example Labs' }],
+        location: 'Example City', profile_url_host: 'profiles.example.test',
+      },
+      claims: [{ target: 'location', value: 'Example City' }],
+    },
+    {
+      attempt_id: 62, person_id: 9, person_display_name: 'Synthetic Two', provider_name: 'exa',
+      provider_kind: 'exa', exact_class: 'name', name_compatible: 0.95, company_same: 0.6,
+      name_conflict: 0.05, model: 'jev-1.13.0', judged_at: '2026-01-02T09:00:00Z',
+      provider_person_id_known: false,
+      returned: { current_roles: [], profile_url_host: 'profiles.example.test' },
+      claims: [],
+    },
+  ];
+  await page.route(/\/api\/v1\/person-enrichment\/identity-reviews(?:\?.*)?$/, (route) => {
+    requests.push(capture(route.request()));
+    return route.fulfill({ json: { reviews: enrichmentReviews, limit: 50 } });
+  });
+  await page.route(/\/api\/v1\/person-enrichment\/identity-reviews\/\d+\/(?:confirm|reject)$/, (route) => {
+    const captured = capture(route.request());
+    requests.push(captured);
+    const match = captured.path.match(/\/(\d+)\/(confirm|reject)$/);
+    const attemptID = Number(match?.[1]);
+    const index = enrichmentReviews.findIndex((item) => item.attempt_id === attemptID);
+    if (index < 0) {
+      return route.fulfill({ status: 404, json: { error: 'enrichment_attempt_not_found', message: 'Not found.' } });
+    }
+    const [decided] = enrichmentReviews.splice(index, 1);
+    const confirm = match?.[2] === 'confirm';
+    return route.fulfill({
+      json: {
+        attempt_id: attemptID, person_id: decided!.person_id,
+        decision: confirm ? 'confirmed' : 'rejected', reason: confirm ? 'user_confirmed' : 'user_rejected',
+        attempt_state: confirm ? 'succeeded' : 'identity_rejected',
+        projections: confirm ? 1 : 0, provider_identities_attached: confirm ? 1 : 0, negatives: confirm ? 0 : 1,
+      },
+    });
+  });
+
   await page.route(/\/api\/v1\/identity\/match-candidates\/\d+\/(?:accept|reject)$/, async (route) => {
     const request = route.request();
     const captured = capture(request);

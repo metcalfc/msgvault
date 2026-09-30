@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Button, EmptyState, SegmentedControl, Spinner } from '@kenn-io/kit-ui';
-  import { tick } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
 
   import type { DirectoryReviewKind, IdentityReviewOrigin, IdentityReviewState } from '../../explore/models';
   import type { FactLedgerController } from '../../directory/fact-ledger-controller.svelte';
@@ -15,6 +15,8 @@
   import RelationshipReviewQueue from './RelationshipReviewQueue.svelte';
   import type { RelationshipReviewController } from '../../directory/relationship-review-controller.svelte';
   import PersonBindingConflictModal from './PersonBindingConflictModal.svelte';
+  import EnrichmentIdentityReviewQueue from './EnrichmentIdentityReviewQueue.svelte';
+  import { EnrichmentReviewController } from '../../directory/enrichment-review-controller.svelte';
   import type { PersonMergeSuccess, ValidatedPersonMergeRequired } from '../../directory/person-merge';
 
   interface Props {
@@ -40,12 +42,16 @@
     | { kind: 'decision'; candidate: IdentityMatchCandidate; decision: 'accept' | 'reject'; context: DirectoryReviewContextSnapshot }
     | { kind: 'merge'; candidate: IdentityMatchCandidate; context: DirectoryReviewContextSnapshot; conflict: ValidatedPersonMergeRequired };
   let activeDecision = $state<ActiveModal>();
+  // svelte-ignore state_referenced_locally
+  const enrichmentController = new EnrichmentReviewController(controller.apiClient);
+  onDestroy(() => enrichmentController.destroy());
   let identityReviewHeading = $state<HTMLHeadingElement>();
 
   const reviewKindOptions = [
     { value: 'identity', label: 'Identity matches' },
     { value: 'fact', label: 'Fact review' },
-    { value: 'relationship', label: 'Imported relationships' }
+    { value: 'relationship', label: 'Imported relationships' },
+    { value: 'enrichment', label: 'Enrichment identities' }
   ];
   const identityStateOptions = [
     { value: 'candidate', label: 'Candidate' },
@@ -98,6 +104,8 @@
     await tick();
     const target = controller.reviewKind === 'fact'
       ? document.getElementById('fact-review-heading')
+      : controller.reviewKind === 'enrichment'
+        ? document.getElementById('enrichment-review-heading')
       : controller.reviewKind === 'relationship'
         ? document.getElementById('relationship-review-heading')
         : identityReviewHeading;
@@ -245,6 +253,8 @@
         {/if}
       {/if}
     </section>
+  {:else if controller.reviewKind === 'enrichment'}
+    <EnrichmentIdentityReviewQueue controller={enrichmentController} {onOpenPerson} />
   {:else if controller.reviewKind === 'fact'}
     {#if factController}
       <FactReviewPanel controller={factController} personID={directoryPersonID} {onOpenDirectory} {onOpenPerson} />

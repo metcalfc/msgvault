@@ -460,7 +460,8 @@ function normalize(value: unknown): ExploreURLState {
   const relationshipTarget = legacyFacet
     ? legacyRelationshipTarget(analysisTarget, legacyFacet)
     : relationshipTargetValue(value.relationshipTarget);
-  const reviewKind: DirectoryReviewKind = value.reviewKind === 'fact' || value.reviewKind === 'relationship'
+  const reviewKind: DirectoryReviewKind = value.reviewKind === 'fact' || value.reviewKind === 'relationship' ||
+    value.reviewKind === 'enrichment'
     ? value.reviewKind
     : 'identity';
   const identityState: IdentityReviewState =

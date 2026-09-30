@@ -88,6 +88,37 @@ test('contacts that match the archive are named, explained, and linked from thei
   await expect(card).toBeHidden();
 });
 
+test('enrichment identities are shown with what the provider returned and decided explicitly', async ({ page }) => {
+  await installDirectoryReviewArchive(page);
+  await page.goto(reviewURL());
+  await page.getByRole('radio', { name: 'Enrichment identities' }).click();
+  await expect(page).toHaveURL(/reviewKind%22%3A%22enrichment/);
+
+  const first = page.getByRole('article', { name: 'Synthetic One' });
+  const returned = first.getByRole('region', { name: 'Returned identity for attempt 61' });
+  await expect(returned).toContainText('S. One');
+  await expect(returned).toContainText('Engineer at Example Labs');
+  await expect(returned).toContainText('profiles.example.test');
+  await expect(first).toContainText('70%');
+  await expect(first).toContainText('99%');
+
+  const confirmed = page.waitForRequest((request) =>
+    request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/61/confirm'));
+  await first.getByRole('button', { name: 'Confirm identity' }).click();
+  await confirmed;
+  await expect(page.getByRole('region', { name: 'Enrichment identities to confirm' }).getByRole('status'))
+    .toContainText('Identity confirmed for Synthetic One');
+  await expect(first).toBeHidden();
+
+  const second = page.getByRole('article', { name: 'Synthetic Two' });
+  await expect(second).toContainText('profiles.example.test');
+  const rejected = page.waitForRequest((request) =>
+    request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/62/reject'));
+  await second.getByRole('button', { name: 'Not this person' }).click();
+  await rejected;
+  await expect(page.getByText('No enrichment identities to confirm.')).toBeVisible();
+});
+
 test('ordinary accept and reject keep keyboard focus connected as rows leave the queue', async ({ page }) => {
   await installDirectoryReviewArchive(page);
   await page.goto(reviewURL());
