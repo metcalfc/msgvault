@@ -422,3 +422,44 @@ func TestRerankCacheKeyCoversEveryFilterDimension(t *testing.T) {
 	assert.NotEqual(t, baseKey, rerankCacheKey(base, generation, "id", []int64{1, 3}), "a removed result changes the key")
 	assert.Equal(t, baseKey, rerankCacheKey(base, generation, "id", []int64{1, 2}))
 }
+
+// TestEngineRerankAbandonedJudgmentNeverPublishes pauses a finished judgment
+// between Rerank returning and publishing, lets its only caller leave, and
+// checks that neither an order nor a cacheable failure reaches the cache.
+func TestEngineRerankAbandonedJudgmentNeverPublishes(t *testing.T) {
+	for name, providerErr := range map[string]error{"order": nil, "provider failure": reasonError("provider_error")} {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				assert := assert.New(t)
+				engine := NewEngine(nil, nil, nil, Config{})
+				reranker := &recordingReranker{
+					top: 3, scores: map[int64]float64{1: 0.1, 2: 0.2, 3: 0.9}, timeout: time.Minute,
+					err: providerErr,
+				}
+				returned := make(chan struct{})
+				publish := make(chan struct{})
+				engine.rerankBeforePublish = func() {
+					close(returned)
+					<-publish
+				}
+				request := hybridRequest(5, true)
+				generation := vector.Generation{ID: 1}
+				ctx, cancel := context.WithCancel(t.Context())
+				left := make(chan *RerankInfo, 1)
+				go func() { left <- engine.applyRerank(ctx, reranker, request, generation, fusedFixtureHits()) }()
+				<-returned // the judgment finished and waits to publish
+				cancel()
+				assert.Equal("timeout", (<-left).Reason, "the caller left before publication")
+				close(publish)
+				synctest.Wait()
+
+				key := rerankCacheKey(request, generation, reranker.Identity()+"\x00policy-1", []int64{1, 2, 3})
+				_, cached := engine.rerankCache.get(key)
+				assert.False(cached, "an abandoned judgment never reaches the cache")
+				engine.rerankFlightsMu.Lock()
+				assert.Empty(engine.rerankFlights)
+				engine.rerankFlightsMu.Unlock()
+			})
+		})
+	}
+}

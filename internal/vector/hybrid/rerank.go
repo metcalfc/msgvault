@@ -193,8 +193,8 @@ func (e *Engine) applyRerank(
 	if timeout <= 0 {
 		timeout = DefaultRerankTimeout
 	}
-	flight := e.joinRerankFlight(ctx, key, timeout, func(flightCtx context.Context) RerankInfo {
-		return e.judgeRerank(flightCtx, reranker, req.FreeText, ids, key)
+	flight := e.joinRerankFlight(ctx, key, timeout, func(flightCtx context.Context) (RerankInfo, bool) {
+		return judgeRerank(flightCtx, reranker, req.FreeText, ids)
 	})
 	wait := time.NewTimer(timeout)
 	defer wait.Stop()
@@ -224,7 +224,7 @@ type rerankFlight struct {
 }
 
 func (e *Engine) joinRerankFlight(
-	ctx context.Context, key string, timeout time.Duration, judge func(context.Context) RerankInfo,
+	ctx context.Context, key string, timeout time.Duration, judge func(context.Context) (RerankInfo, bool),
 ) *rerankFlight {
 	e.rerankFlightsMu.Lock()
 	defer e.rerankFlightsMu.Unlock()
@@ -240,12 +240,25 @@ func (e *Engine) joinRerankFlight(
 	e.rerankFlights[key] = flight
 	go func() {
 		defer cancel()
-		info := judge(flightCtx)
-		e.rerankFlightsMu.Lock()
-		flight.info = info
-		if e.rerankFlights[key] == flight {
-			delete(e.rerankFlights, key)
+		info, cacheable := judge(flightCtx)
+		if e.rerankBeforePublish != nil {
+			e.rerankBeforePublish()
 		}
+		// Publish under the mutex leaveRerankFlight holds while it cancels
+		// and unregisters, so an abandoned judgment can never reach the
+		// cache: it is either still registered and live here, or it is not
+		// published at all.
+		e.rerankFlightsMu.Lock()
+		live := e.rerankFlights[key] == flight && flightCtx.Err() == nil
+		if live {
+			delete(e.rerankFlights, key)
+			if cacheable {
+				e.rerankCache.put(key, info)
+			}
+		} else {
+			info = RerankInfo{Status: RerankSkipped, Reason: "timeout"}
+		}
+		flight.info = info
 		e.rerankFlightsMu.Unlock()
 		close(flight.done)
 	}()
@@ -269,33 +282,30 @@ func (e *Engine) leaveRerankFlight(key string, flight *rerankFlight) {
 	}
 }
 
-// judgeRerank asks the reranker once and caches the outcome: an order, or a
-// transient failure so the next page keeps the fused order. Gate states and
-// too-few-candidate skips are not cached.
-func (e *Engine) judgeRerank(ctx context.Context, reranker Reranker, query string, ids []int64, key string) RerankInfo {
+// judgeRerank asks the reranker once and reports whether the outcome may be
+// cached: an order, or a transient failure so the next page keeps the fused
+// order. Gate states and too-few-candidate skips are not cacheable. The
+// flight publishes, and only while it is still live.
+func judgeRerank(ctx context.Context, reranker Reranker, query string, ids []int64) (RerankInfo, bool) {
 	scores, err := reranker.Rerank(ctx, query, ids)
 	if ctx.Err() != nil {
 		// Cancelled because every caller left, or out of time: nothing is
 		// cached, and the next search judges afresh.
-		return RerankInfo{Status: RerankSkipped, Reason: "timeout"}
+		return RerankInfo{Status: RerankSkipped, Reason: "timeout"}, false
 	}
 	if err == nil {
 		err = validateRerankScores(scores.Scores, ids)
 	}
 	if err != nil {
 		info := RerankInfo{Status: RerankSkipped, Reason: rerankReason(err)}
-		if cacheableRerankSkip(info.Reason) {
-			e.rerankCache.put(key, info)
-		}
-		return info
+		return info, cacheableRerankSkip(info.Reason)
 	}
 	info := RerankInfo{Model: scores.Model, Scores: scores.Scores, Scored: len(scores.Scores)}
 	if info.Scored < 2 {
-		return RerankInfo{Status: RerankSkipped, Reason: RerankReasonTooFewCandidates, Model: scores.Model}
+		return RerankInfo{Status: RerankSkipped, Reason: RerankReasonTooFewCandidates, Model: scores.Model}, false
 	}
 	info.Status = RerankApplied
-	e.rerankCache.put(key, info)
-	return info
+	return info, true
 }
 
 // reorderByScores sorts the scored hits of prefix among the positions they

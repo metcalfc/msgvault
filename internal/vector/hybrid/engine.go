@@ -117,6 +117,9 @@ type Engine struct {
 	rerankCache     rerankCache
 	rerankFlightsMu sync.Mutex
 	rerankFlights   map[string]*rerankFlight
+	// rerankBeforePublish, set only by tests, runs after a judgment returns
+	// and before the flight publishes it.
+	rerankBeforePublish func()
 }
 
 // NewEngine wires a backend, main DB handle, embedding client, and
