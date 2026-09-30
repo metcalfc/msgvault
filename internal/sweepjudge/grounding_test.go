@@ -134,8 +134,9 @@ func TestGrounderKeepsReportedConfidenceWhenJevIsUnavailable(t *testing.T) {
 }
 
 func TestGroundedScoreRoundsAndClamps(t *testing.T) {
-	assert.Equal(t, 1000, sweepjudge.GroundedScore(1, 1))
-	assert.Equal(t, 0, sweepjudge.GroundedScore(0, 0.9))
-	assert.Equal(t, 333, sweepjudge.GroundedScore(0.5, 0.666))
-	assert.Equal(t, 1000, sweepjudge.GroundedScore(1.2, 1))
+	assert := assert.New(t)
+	assert.Equal(1000, sweepjudge.GroundedScore(1, 1))
+	assert.Equal(0, sweepjudge.GroundedScore(0, 0.9))
+	assert.Equal(333, sweepjudge.GroundedScore(0.5, 0.666))
+	assert.Equal(1000, sweepjudge.GroundedScore(1.2, 1))
 }

@@ -188,11 +188,11 @@ type conflictRequest struct {
 	Conflicts map[string]ConflictState `json:"conflicts"`
 }
 
-// errStop marks a Jev failure that stops the run's remaining requests.
-type errStop struct{ err error }
+// stopError marks a Jev failure that stops the run's remaining requests.
+type stopError struct{ err error }
 
-func (e errStop) Error() string { return e.err.Error() }
-func (e errStop) Unwrap() error { return e.err }
+func (e stopError) Error() string { return e.err.Error() }
+func (e stopError) Unwrap() error { return e.err }
 
 // Run asks every question that has candidates. Any gate, budget, or
 // provider failure stops Jev for the rest of the run and leaves the rest
@@ -209,8 +209,7 @@ func Run(ctx context.Context, st Store, options Options) (Report, error) {
 		runPrimaryRoles, runDisplayNames, runMergeConflicts,
 	} {
 		err := step(ctx, st, options, &report)
-		var stop errStop
-		if errors.As(err, &stop) {
+		if stop, ok := errors.AsType[stopError](err); ok {
 			report.Skipped = jev.Skipped(stop.err)
 			options.Logger.Info("person profile choices: jev skipped",
 				"feature", jev.FeaturePersonProfileChoices, "category", report.Skipped)
@@ -240,7 +239,7 @@ func ask(
 		}
 	}
 	if err != nil {
-		return jev.Response{}, errStop{err}
+		return jev.Response{}, stopError{err}
 	}
 	return response, nil
 }

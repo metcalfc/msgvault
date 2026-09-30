@@ -142,6 +142,7 @@ func TestAssemblerShrinksAPacketByDroppingTheLeastRelevantContext(t *testing.T) 
 }
 
 func TestMemoContextJudgeAsksOncePerTargetAndItemSet(t *testing.T) {
+	assert := assert.New(t)
 	judge := &scoringContextJudge{scores: map[string]map[string]float64{"target:food": {"ramen": 0.9}}}
 	memo := newMemoContextJudge(judge)
 	target := packetTestTarget("target:food", "favorite food")
@@ -149,8 +150,8 @@ func TestMemoContextJudgeAsksOncePerTargetAndItemSet(t *testing.T) {
 	for range 3 {
 		scores, err := memo.JudgeContext(t.Context(), target, items)
 		require.NoError(t, err)
-		assert.Equal(t, []float64{0.9}, scores)
+		assert.Equal([]float64{0.9}, scores)
 	}
-	assert.Len(t, judge.calls, 1)
-	assert.Nil(t, newMemoContextJudge(nil))
+	assert.Len(judge.calls, 1)
+	assert.Nil(newMemoContextJudge(nil))
 }

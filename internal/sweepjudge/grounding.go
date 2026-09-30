@@ -239,7 +239,7 @@ func claimValueText(value jsontext.Value) (string, bool) {
 		text = strings.TrimSpace(text)
 		return text, text != ""
 	}
-	compact := jsontext.Value(slices.Clone(value))
+	compact := slices.Clone(value)
 	if err := compact.Compact(); err != nil {
 		return "", false
 	}
