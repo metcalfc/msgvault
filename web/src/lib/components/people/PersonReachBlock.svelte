@@ -2,7 +2,8 @@
   import { onDestroy, type Snippet } from 'svelte';
   import { copyToClipboard } from '@kenn-io/kit-ui';
 
-  import { reachRowLabel, reachRowMeta, type ReachEntry } from '../../people/reach';
+  import { reachLinkInput, reachRowLabel, reachRowMeta, type ReachEntry } from '../../people/reach';
+  import LinkedValue from '../common/LinkedValue.svelte';
 
   interface Props {
     entries: ReachEntry[];
@@ -39,7 +40,7 @@
         {#if entry.opaque}
           <span data-fact-value>{entry.name ?? 'account'}</span>
         {:else}
-          <span data-fact-value data-mono>{entry.display}</span>
+          <span data-fact-value data-mono><LinkedValue input={reachLinkInput(entry)} text={entry.display} copy={false} /></span>
         {/if}
         <span data-fact-meta>
           {#each reachRowMeta(entry) as part (part)}<span>{part}</span><span aria-hidden="true">{" · "}</span>{/each}

@@ -64,4 +64,19 @@ describe('PersonReachBlock', () => {
     render(PersonReachBlock, { entries: [] });
     expect(screen.queryByRole('list')).toBeNull();
   });
+
+  it('links emails, E.164 phones, and profiles, and leaves opaque keys unlinked', () => {
+    render(PersonReachBlock, { entries: [
+      ...entries(),
+      { key: 'handle:github:example', kind: 'handle', value: 'example-person', display: 'example-person', label: 'example-person',
+        service: 'GitHub', serviceSlug: 'github', profileURLTemplate: 'https://github.com/{username}', observed: false, participantIDs: [] }
+    ] });
+    const links = screen.getAllByRole('link');
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      'mailto:person@example.test', 'tel:+15550100001', 'https://github.com/example-person'
+    ]);
+    expect(links[2]?.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(links[2]?.getAttribute('target')).toBe('_blank');
+  });
 });
+

@@ -267,8 +267,12 @@ describe('RelationshipHeader', () => {
 
     await waitFor(() => expect(loadContactPoints).toHaveBeenCalledWith(5));
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(3));
+    // A web link carries a screen-reader note that it opens a new tab.
     expect(screen.getAllByRole('listitem').map((row) => row.querySelector('[data-fact-value]')?.textContent)).toEqual([
-      'alice@example.com', '+1 555 010 0001', 'https://example.com/in/alice'
+      'alice@example.com', '+1 555 010 0001', 'https://example.com/in/alice (opens in new tab)'
+    ]);
+    expect(screen.getAllByRole('listitem').map((row) => row.querySelector('[data-fact-value] a')?.getAttribute('href'))).toEqual([
+      'mailto:alice@example.com', 'tel:+15550100001', 'https://example.com/in/alice'
     ]);
     expect(rowFor('alice@example.com').textContent).not.toContain('observed');
     expect(rowFor('+1 555 010 0001').textContent).toContain('observed');
