@@ -360,8 +360,9 @@ func personEnrichmentIdentityRefusedTx(
 				return true, nil
 			}
 		case personEnrichmentRejectionProfileURL:
-			if slices.ContainsFunc(urls, func(candidate string) bool {
-				return normalizeRejectedProfileURL(candidate) == value
+			stored := normalizeRejectedProfileURL(value)
+			if stored != "" && slices.ContainsFunc(urls, func(candidate string) bool {
+				return normalizeRejectedProfileURL(candidate) == stored
 			}) {
 				return true, nil
 			}
@@ -370,18 +371,65 @@ func personEnrichmentIdentityRefusedTx(
 	return false, rows.Err()
 }
 
-// normalizeRejectedProfileURL compares profile URLs case-insensitively in
-// scheme and host and without a trailing slash or fragment.
+// normalizeRejectedProfileURL gives equivalent profile URLs one form, applied
+// to both a stored negative and an incoming URL (RFC 3986 section 6.2.2):
+// the scheme and host are lowercased, percent-encoded unreserved characters
+// are decoded, other escapes keep their encoding with uppercase hex, the
+// fragment is dropped, and a trailing slash is trimmed. The path otherwise
+// stays case-sensitive.
 func normalizeRejectedProfileURL(raw string) string {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || parsed.Host == "" {
 		return ""
 	}
-	parsed.Scheme = strings.ToLower(parsed.Scheme)
-	parsed.Host = strings.ToLower(parsed.Host)
-	parsed.Fragment = ""
-	parsed.Path = strings.TrimSuffix(parsed.Path, "/")
-	return parsed.String()
+	path := normalizePercentEncoding(parsed.EscapedPath())
+	path = strings.TrimSuffix(path, "/")
+	query := normalizePercentEncoding(parsed.RawQuery)
+	normalized := strings.ToLower(parsed.Scheme) + "://" + strings.ToLower(parsed.Host) + path
+	if query != "" {
+		normalized += "?" + query
+	}
+	return normalized
+}
+
+// normalizePercentEncoding decodes percent-escapes of RFC 3986 unreserved
+// characters and uppercases the hex digits of every other escape.
+func normalizePercentEncoding(escaped string) string {
+	var builder strings.Builder
+	for i := 0; i < len(escaped); i++ {
+		if escaped[i] != '%' || i+2 >= len(escaped) || !isHexDigit(escaped[i+1]) || !isHexDigit(escaped[i+2]) {
+			builder.WriteByte(escaped[i])
+			continue
+		}
+		decoded := hexValue(escaped[i+1])<<4 | hexValue(escaped[i+2])
+		if isUnreservedURLByte(decoded) {
+			builder.WriteByte(decoded)
+		} else {
+			builder.WriteString(strings.ToUpper(escaped[i : i+3]))
+		}
+		i += 2
+	}
+	return builder.String()
+}
+
+func isUnreservedURLByte(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' ||
+		value >= '0' && value <= '9' || value == '-' || value == '.' || value == '_' || value == '~'
+}
+
+func isHexDigit(value byte) bool {
+	return value >= '0' && value <= '9' || value >= 'a' && value <= 'f' || value >= 'A' && value <= 'F'
+}
+
+func hexValue(value byte) byte {
+	switch {
+	case value >= '0' && value <= '9':
+		return value - '0'
+	case value >= 'a' && value <= 'f':
+		return value - 'a' + 10
+	default:
+		return value - 'A' + 10
+	}
 }
 
 type reviewAttempt struct {

@@ -328,3 +328,37 @@ func TestConfirmPersonEnrichmentIdentityRecountsARunStillRunning(t *testing.T) {
 	checks.Equal(int64(1), succeeded)
 	checks.Equal(int64(0), rejected)
 }
+
+func TestNormalizeRejectedProfileURLDecodesUnreservedEscapes(t *testing.T) {
+	checks := assert.New(t)
+	want := normalizeRejectedProfileURL("https://sources.example.test/profile/alice")
+	checks.NotEmpty(want)
+	for _, variant := range []string{
+		"https://sources.example.test/profile/%61lice",
+		"https://sources.example.test/profile/%61lice/",
+		"HTTPS://Sources.Example.TEST/profile/alice",
+		"https://SOURCES.example.test/profile/%61%6C%69%63%65#section",
+	} {
+		checks.Equal(want, normalizeRejectedProfileURL(variant), variant)
+	}
+	// Reserved characters keep their encoding: %2F is not a path separator.
+	checks.NotEqual(normalizeRejectedProfileURL("https://sources.example.test/profile/a/b"),
+		normalizeRejectedProfileURL("https://sources.example.test/profile/a%2Fb"))
+	checks.NotEqual(want, normalizeRejectedProfileURL("https://sources.example.test/profile/Alice"),
+		"paths stay case-sensitive")
+}
+
+func TestLegacyProfileURLNegativeCatchesAnEncodedVariant(t *testing.T) {
+	requirements := require.New(t)
+	checks := assert.New(t)
+	f := newEnrichmentResultFixture(t)
+	_, err := f.store.DB().ExecContext(t.Context(), `INSERT INTO person_enrichment_identity_rejections
+		(person_id, provider_namespace, key_kind, key_value, actor, created_at)
+		VALUES (?, ?, 'profile_url', ?, 'user', ?)`, f.person.ID, f.profile.ProviderNamespace,
+		"https://Sources.Example.TEST/profile/%61lice/", f.now)
+	requirements.NoError(err)
+
+	outcome, err := f.store.CommitEnrichmentClaims(t.Context(), f.commit)
+	requirements.NoError(err)
+	checks.Equal(personenrichment.ClaimIdentityRejected, outcome.Status)
+}
