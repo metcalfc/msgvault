@@ -10,5 +10,7 @@ export interface StageDeletionRequest {
   filter?: StageDeletionFilter;
   message_ids?: number[];
   operation_token?: string;
+  /** Leave starred, owner-sent, and person-sent messages out of the batch instead of only reporting them. */
+  protect?: boolean;
   selection?: ExploreSelection;
 }

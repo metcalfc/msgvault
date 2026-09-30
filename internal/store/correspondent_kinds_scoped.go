@@ -29,7 +29,7 @@ func (s *Store) NotPersonParticipantsForContext(
 		if err != nil || !classified {
 			return err
 		}
-		clusters, err := scopedCorrespondentKindClustersTx(ctx, tx, ids)
+		clusters, err := scopedCorrespondentKindClustersTx(ctx, tx, ids, true)
 		if err != nil {
 			return err
 		}
@@ -52,9 +52,10 @@ func (s *Store) NotPersonParticipantsForContext(
 }
 
 // scopedCorrespondentKindClustersTx resolves the clusters containing ids
-// that carry at least one non-person classification row.
+// that carry a classification row. With notPersonOnly it keeps only the
+// clusters with at least one non-person row.
 func scopedCorrespondentKindClustersTx(
-	ctx context.Context, tx *loggedTx, ids []int64,
+	ctx context.Context, tx *loggedTx, ids []int64, notPersonOnly bool,
 ) ([]correspondentKindCluster, error) {
 	components, err := linkComponentsFromTx(ctx, tx, ids)
 	if err != nil {
@@ -70,11 +71,11 @@ func scopedCorrespondentKindClustersTx(
 		return nil, err
 	}
 	byRoot := map[int64]*correspondentKindCluster{}
-	hasNotPerson := map[int64]bool{}
+	kept := map[int64]bool{}
 	for _, row := range rows {
 		root := components[row.participantID]
-		if !row.kind.IsPerson() {
-			hasNotPerson[root] = true
+		if !notPersonOnly || !row.kind.IsPerson() {
+			kept[root] = true
 		}
 		cluster, ok := byRoot[root]
 		if !ok {
@@ -87,13 +88,13 @@ func scopedCorrespondentKindClustersTx(
 	}
 	for _, member := range members {
 		root := components[member]
-		if cluster, ok := byRoot[root]; ok && hasNotPerson[root] {
+		if cluster, ok := byRoot[root]; ok && kept[root] {
 			cluster.members = append(cluster.members, member)
 		}
 	}
 	roots := make([]int64, 0, len(byRoot))
 	for root := range byRoot {
-		if hasNotPerson[root] {
+		if kept[root] {
 			roots = append(roots, root)
 		}
 	}
@@ -186,7 +187,7 @@ func loadCorrespondentKindRowsForTx(
 	result := []correspondentKindRow{}
 	err := queryInChunksContext(ctx, tx, participantIDs, nil, `
 		SELECT ck.participant_id, ck.source, ck.kind, ck.organization_id, o.name,
-		       ck.actor, ck.classified_at
+		       ck.actor, ck.classified_at, ck.confidence, ck.probabilities_json
 		FROM correspondent_kinds ck
 		LEFT JOIN organizations o ON o.id = ck.organization_id
 		WHERE ck.participant_id IN (%s)
@@ -194,12 +195,17 @@ func loadCorrespondentKindRowsForTx(
 		var row correspondentKindRow
 		var source, kind string
 		var organizationID sql.NullInt64
-		var organizationName, actor sql.NullString
+		var organizationName, actor, probabilities sql.NullString
 		var classifiedAt nullableTimestamp
+		var confidence sql.NullFloat64
 		if err := rows.Scan(&row.participantID, &source, &kind, &organizationID,
-			&organizationName, &actor, &classifiedAt); err != nil {
+			&organizationName, &actor, &classifiedAt, &confidence, &probabilities); err != nil {
 			return fmt.Errorf("scan correspondent kind: %w", err)
 		}
+		if confidence.Valid {
+			row.confidence = &confidence.Float64
+		}
+		row.probabilities = decodeKindProbabilities(probabilities)
 		row.source = correspondentkind.Source(source)
 		row.kind = correspondentkind.Kind(kind)
 		if organizationID.Valid {

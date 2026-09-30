@@ -14,7 +14,10 @@ import (
 	"go.kenn.io/msgvault/pkg/client/generated"
 )
 
-var stageDeleteDryRun bool
+var (
+	stageDeleteDryRun  bool
+	stageDeleteProtect bool
+)
 
 const (
 	stageDeleteMinAPISchemaVersion = "2.18.0"
@@ -33,11 +36,18 @@ reported and skipped rather than rejecting the whole search. Use --dry-run to
 see the same staged subset and counts without creating a batch.
 Alternatively, pass a comma-separated --ids list to stage explicit internal
 message IDs; this form bypasses search and analytical-cache readiness.
-Review a created batch with show-deletion before running delete-staged.`,
+Review a created batch with show-deletion before running delete-staged.
+
+Staging warns about matches that are starred, that you sent, or that come
+from a sender classified as a person (your own decision, or a Jev judgment of
+at least 0.60 individual_person). Pass --protect to leave those messages out
+of the batch instead.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: runStageDelete,
 	}
 	cmd.Flags().BoolVar(&stageDeleteDryRun, "dry-run", false, "Show the staged subset and skipped counts without creating a deletion batch")
+	cmd.Flags().BoolVar(&stageDeleteProtect, "protect", false,
+		"Leave starred, self-sent, and person-sent messages out of the batch instead of only warning")
 	cmd.Flags().Int64("source-id", 0, "Restrict staging to one exact source ID")
 	cmd.Flags().String("ids", "", "Stage these comma-separated internal message IDs instead of a query")
 	cmd.MarkFlagsMutuallyExclusive("ids", "source-id")
@@ -178,6 +188,7 @@ func runStageDeleteFromQuery(cmd *cobra.Command, queryText string) error {
 				Description:    &description,
 				DryRun:         &stageDeleteDryRun,
 				OperationToken: &operationToken,
+				Protect:        stageDeleteProtectFlag(),
 				Selection:      &selection,
 			},
 		})
@@ -228,6 +239,7 @@ func runStageDeleteFromIDs(cmd *cobra.Command) error {
 				Description: &description,
 				DryRun:      &stageDeleteDryRun,
 				MessageIds:  messageIDs,
+				Protect:     stageDeleteProtectFlag(),
 			},
 		})
 	})
@@ -292,7 +304,7 @@ func writeStageDeleteOutcome(w io.Writer, result *generated.StageDeletionRespons
 		if err := writeStageDeleteSkipped(w, result); err != nil {
 			return err
 		}
-		return nil
+		return writeStageDeleteProtection(w, result)
 	}
 	if result.ID == nil || strings.TrimSpace(*result.ID) == "" {
 		return errors.New("stage deletion response did not include a batch ID")
@@ -301,6 +313,9 @@ func writeStageDeleteOutcome(w io.Writer, result *generated.StageDeletionRespons
 		return fmt.Errorf("write staging summary: %w", err)
 	}
 	if err := writeStageDeleteSkipped(w, result); err != nil {
+		return err
+	}
+	if err := writeStageDeleteProtection(w, result); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(w, "Review with 'msgvault show-deletion %s', then execute with 'msgvault delete-staged %s'.\n", *result.ID, *result.ID); err != nil {
@@ -331,6 +346,50 @@ func writeStageDeleteSkipped(w io.Writer, result *generated.StageDeletionRespons
 	return nil
 }
 
+// stageDeleteProtectFlag sends protect only when it is set: the daemon
+// rejects unknown fields, so an older daemon keeps accepting plain staging.
+func stageDeleteProtectFlag() *bool {
+	if !stageDeleteProtect {
+		return nil
+	}
+	protect := true
+	return &protect
+}
+
+// writeStageDeleteProtection reports starred, self-sent, and person-sent
+// messages: left out with --protect, otherwise staged with a warning.
+func writeStageDeleteProtection(w io.Writer, result *generated.StageDeletionResponse) error {
+	protection := result.Protection
+	if protection == nil || protection.ProtectedCount <= 0 {
+		return nil
+	}
+	reasons := []string{}
+	for _, reason := range []struct {
+		count int64
+		label string
+	}{
+		{protection.Starred, "starred"},
+		{protection.OwnerSent, "sent by you"},
+		{protection.PersonSender, "from a person"},
+	} {
+		if reason.count > 0 {
+			reasons = append(reasons, fmt.Sprintf("%d %s", reason.count, reason.label))
+		}
+	}
+	var err error
+	if protection.Skipped {
+		_, err = fmt.Fprintf(w, "Protected: %d message(s) were left out (%s).\n",
+			protection.ProtectedCount, strings.Join(reasons, ", "))
+	} else {
+		_, err = fmt.Fprintf(w, "Warning: %d staged message(s) may be worth keeping (%s). "+
+			"Rerun with --protect to leave them out.\n", protection.ProtectedCount, strings.Join(reasons, ", "))
+	}
+	if err != nil {
+		return fmt.Errorf("write protection summary: %w", err)
+	}
+	return nil
+}
+
 // stageDeleteDaemonErr turns the daemon's structured rejections into
 // actionable messages instead of bare API errors.
 func stageDeleteDaemonErr(op string, err error) error {
@@ -350,6 +409,8 @@ func stageDeleteDaemonErr(op string, err error) error {
 	case "multi_account_selection":
 		return fmt.Errorf("%s: %s; rerun stage-delete once per source with --source-id",
 			op, apiErr.Message)
+	case "all_messages_protected":
+		return fmt.Errorf("%s: %s; rerun without --protect to stage them anyway", op, apiErr.Message)
 	}
 	return fmt.Errorf("%s: %w", op, err)
 }

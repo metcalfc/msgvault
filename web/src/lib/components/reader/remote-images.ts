@@ -42,10 +42,13 @@ async function fetchRemoteImage(
   url: string,
   budget: DecodedByteBudget,
   signal: AbortSignal,
+  messageId: number | undefined,
 ): Promise<string> {
   throwIfAborted(signal);
+  // The message ID lets the daemon refuse spam and trash; it is sent only
+  // when known so an older daemon still accepts the request.
   const { data, response } = await generatedGetRemoteImage(
-    { url },
+    messageId !== undefined && messageId > 0 ? { url, message_id: messageId } : { url },
     {
       ...client,
       signal,
@@ -78,6 +81,7 @@ async function fetchRemoteImage(
 export async function resolveArchivedRemoteImages(options: {
   html: string;
   remoteImages: string[];
+  messageId?: number;
   client: APIClient | undefined;
   signal: AbortSignal;
   publicationLimits?: RemoteImagePublicationLimits;
@@ -110,7 +114,7 @@ export async function resolveArchivedRemoteImages(options: {
     throwIfAborted(options.signal);
     if (!options.client || budget.used >= MAX_ARCHIVED_REMOTE_IMAGE_TOTAL_BYTES) continue;
     try {
-      group.dataURL = await fetchRemoteImage(options.client, group.url, budget, options.signal);
+      group.dataURL = await fetchRemoteImage(options.client, group.url, budget, options.signal, options.messageId);
     } catch (error) {
       if (options.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
         throw abortError();

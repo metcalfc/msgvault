@@ -60,6 +60,29 @@ complete search index and requires daemon API schema `2.18.0` or newer.
 These CLI staging paths currently resolve Gmail targets. IMAP deletion uses
 manifests staged through the TUI. Creating a manifest never executes it.
 
+### Protected messages
+
+Staging from the CLI or the Web UI checks each candidate for three signs that
+it may be worth keeping:
+
+- **Starred:** the message carries the `STARRED` label.
+- **Sent by you:** the archive attributes the message to your own account.
+- **From a person:** the sender's identity is classified as a person, either
+  by your decision (`msgvault person kind set <participant> person`) or by a
+  [correspondent kind](/docs/usage/jev-judgments/) judgment of at least 0.60
+  `individual_person`. Senders nobody classified do not count.
+
+By default these messages are still staged and the result warns about them.
+Pass `--protect` (or check **Skip starred, self-sent, and person-sent
+messages** in the Web UI) to leave them out of the batch instead:
+
+```bash
+msgvault stage-delete 'label:Promotions older_than:1y' --protect --dry-run
+```
+
+If every candidate is protected, staging with `--protect` fails with
+`all_messages_protected` and creates nothing.
+
 ## Staging in the Web UI
 
 In the [Inbox or Search](/docs/web-ui/#inbox-and-search), select individual

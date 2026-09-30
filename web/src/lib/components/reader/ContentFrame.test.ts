@@ -236,9 +236,33 @@ describe('ContentFrame', () => {
     const request = fetchFn.mock.calls[0]?.[0] as Request;
     expect(request.method).toBe('POST');
     expect(new URL(request.url).pathname).toBe('/api/v1/content/remote-image');
-    expect(((await request.clone().json()) as { url: string }).url)
-      .toBe('https://images.example/chart.png');
+    expect(await request.clone().json())
+      .toEqual({ url: 'https://images.example/chart.png', message_id: 42 });
     expect(screen.queryByRole('button', { name: /remote image/ })).toBeNull();
+  });
+
+  it('never offers or fetches remote images for a spam or trash message', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => new Response(onePixelPNG, {
+      headers: { 'Content-Type': 'image/png' }
+    }));
+    const { container } = render(ContentFrame, {
+      props: {
+        client: createAPIClient(fetchFn),
+        messageId: 43,
+        html: '<img src="https://images.example/pixel.png" alt="Pixel">',
+        title: 'Archived message',
+        remoteImagesBlocked: true
+      }
+    });
+    await screen.findByText(/Remote images never load for spam or trash\./);
+    await waitFor(() => {
+      const srcdoc = container.querySelector('iframe')?.getAttribute('srcdoc') ?? '';
+      expect(srcdoc).toContain('data-archived-remote-image="0"');
+      expect(srcdoc).not.toContain('images.example');
+    });
+    await fireEvent.load(container.querySelector('iframe')!);
+    expect(screen.queryByRole('button', { name: /remote image/ })).toBeNull();
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 
   it('degrades a failed proxy fetch to the unavailable placeholder after consent', async () => {

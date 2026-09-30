@@ -761,6 +761,56 @@ func TestStageDeleteCommandByIDs(t *testing.T) {
 		assert.Equal("Dry run: 3 message(s) would be staged; no deletion batch was created.\n", stdout.String())
 	})
 
+	t.Run("protection", func(t *testing.T) {
+		for _, tt := range []struct {
+			name    string
+			protect bool
+			want    string
+		}{
+			{name: "warns", want: "Warning: 2 staged message(s) may be worth keeping (1 starred, 1 sent by you, 1 from a person). " +
+				"Rerun with --protect to leave them out.\n"},
+			{name: "protects", protect: true, want: "Protected: 2 message(s) were left out (1 starred, 1 sent by you, 1 from a person).\n"},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				assert := assert.New(t)
+				require := require.New(t)
+				var body map[string]any
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if !assert.NoError(json.NewDecoder(r.Body).Decode(&body)) {
+						http.Error(w, "malformed stage deletion request", http.StatusBadRequest)
+						return
+					}
+					writeStageDeleteJSON(t, w, http.StatusCreated, map[string]any{
+						"dry_run": false, "message_count": 1, "id": "batch-p", "status": "pending",
+						"protection": map[string]any{
+							"protected_count": 2, "starred": 1, "owner_sent": 1, "person_sender": 1, "skipped": tt.protect,
+						},
+					})
+				}))
+				defer server.Close()
+				testCtx := withStoreResolverConfig(t, &config.Config{
+					Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
+				})
+				var stdout bytes.Buffer
+				root := newRegisteredStageDeleteTestRoot(t, testCtx)
+				root.SetOut(&stdout)
+				args := []string{"stage-delete", "--ids", "1,2,3"}
+				if tt.protect {
+					args = append(args, "--protect")
+				}
+				root.SetArgs(args)
+
+				require.NoError(root.Execute())
+				assert.Contains(stdout.String(), tt.want)
+				protect, sent := body["protect"]
+				assert.Equal(tt.protect, sent, "protect is sent only when requested")
+				if tt.protect {
+					assert.Equal(true, protect)
+				}
+			})
+		}
+	})
+
 	t.Run("multi_source", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)

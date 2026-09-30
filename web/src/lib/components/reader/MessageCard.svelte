@@ -57,6 +57,10 @@
   const gmailURL = $derived(sourceType === 'gmail' ? gmailMessageURL(message.sourceMessageId, sourceIdentifier) : undefined);
   const isEvent = $derived(message.messageType === 'calendar_event');
   const fromAddress = $derived(message.isFromMe ? '' : (message.from ?? ''));
+  // Spam and trash never load remote images; the daemon refuses them too.
+  const remoteImagesBlocked = $derived(
+    (message.labels ?? []).some((label) => ['SPAM', 'TRASH', 'JUNK'].includes(label.trim().toUpperCase()))
+  );
 
   let menuOpen = $state(false);
 
@@ -166,6 +170,7 @@
             messageId={message.id}
             html={message.bodyHtml ?? ''}
             title="Message body"
+            {remoteImagesBlocked}
           />
         {:else if renderCalendarMarkup}
           <ContentFrame
@@ -173,6 +178,7 @@
             messageId={message.id}
             html={message.body}
             title="Event description"
+            {remoteImagesBlocked}
           />
         {:else}
           <pre>{message.body}</pre>

@@ -13,6 +13,7 @@ import (
 
 	"go.kenn.io/msgvault/internal/deletion"
 	"go.kenn.io/msgvault/internal/query"
+	"go.kenn.io/msgvault/internal/store"
 )
 
 // stageDeletionSampleSize caps the dry-run Gmail-ID preview.
@@ -37,6 +38,29 @@ type DeletionManifestLister interface {
 type DeletionManifestCanceller interface {
 	GetDeletionManifest(ctx context.Context, id string) (*deletion.Manifest, deletion.Status, error)
 	CancelDeletionManifest(ctx context.Context, id string) error
+}
+
+// DeletionProtectionStore reports which messages about to be staged are
+// starred, sent by the owner, or from a sender classified as a person.
+// Implemented by the serve daemon's store adapter.
+type DeletionProtectionStore interface {
+	DeletionProtectionsContext(ctx context.Context, messageIDs []int64) (map[int64]store.DeletionProtection, error)
+}
+
+// deletionProtectionSampleSize caps the protected message IDs a staging
+// response names.
+const deletionProtectionSampleSize = 20
+
+// DeletionProtectionSummary counts the staged candidates that deserve a
+// second look before deletion. A message can have several reasons, so the
+// reason counts may add up to more than ProtectedCount.
+type DeletionProtectionSummary struct {
+	ProtectedCount   int     `json:"protected_count" doc:"Candidate messages with at least one protection reason."`
+	Starred          int     `json:"starred" doc:"Candidate messages that are starred."`
+	OwnerSent        int     `json:"owner_sent" doc:"Candidate messages the archive owner sent."`
+	PersonSender     int     `json:"person_sender" doc:"Candidate messages from a sender classified as a person (a user decision, or a Jev individual_person probability of at least 0.60)."`
+	Skipped          bool    `json:"skipped" doc:"True when protect was requested and these messages were left out of the batch."`
+	SampleMessageIDs []int64 `json:"sample_message_ids,omitempty" doc:"Up to 20 protected message IDs, lowest first."`
 }
 
 // StageDeletionFilter selects messages to stage. All fields optional,
@@ -97,6 +121,7 @@ type StageDeletionRequest struct {
 	OperationToken string               `json:"operation_token,omitempty"`
 	Description    string               `json:"description,omitempty"`
 	DryRun         bool                 `json:"dry_run,omitzero"`
+	Protect        bool                 `json:"protect,omitzero" doc:"Leave starred, owner-sent, and person-sent messages out of the batch instead of only reporting them."`
 }
 
 // StageDeletionResponse covers both dry-run (200) and create (201).
@@ -113,6 +138,8 @@ type StageDeletionResponse struct {
 	ID             string                    `json:"id,omitempty"`
 	Status         string                    `json:"status,omitempty"`
 	Source         *deletion.SourceReference `json:"source,omitzero" nullable:"false"`
+	// Protection is present whenever the daemon could check the candidates.
+	Protection *DeletionProtectionSummary `json:"protection,omitzero" nullable:"false" doc:"Starred, owner-sent, and person-sent candidates. Without protect they are staged and only reported."`
 }
 
 // DeletionManifestSummary is one row of GET /api/v1/deletions.
@@ -212,6 +239,14 @@ func (s *Server) handleStageDeletion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "no_messages_matched", "No messages matched the given criteria")
 		return
 	}
+	// Unsupported matches are counted before protection narrows the batch,
+	// so skipped_count keeps meaning "cannot be deleted from its source".
+	unsupported := max(matched-len(targets), 0)
+	targets, protection, httpErr := s.applyDeletionProtection(r.Context(), targets, req.Protect)
+	if httpErr != nil {
+		writeAPIHTTPError(w, httpErr)
+		return
+	}
 
 	source, httpErr := sourceReferenceForTargets(targets)
 	if httpErr != nil {
@@ -230,10 +265,11 @@ func (s *Server) handleStageDeletion(w http.ResponseWriter, r *http.Request) {
 			DryRun:         true,
 			MessageCount:   len(gmailIDs),
 			MatchedCount:   matched,
-			SkippedCount:   max(matched-len(gmailIDs), 0),
+			SkippedCount:   unsupported,
 			Account:        account,
 			Source:         source,
 			SampleGmailIDs: sample,
+			Protection:     protection,
 		})
 		return
 	}
@@ -282,12 +318,72 @@ func (s *Server) handleStageDeletion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, StageDeletionResponse{
 		MessageCount: len(gmailIDs),
 		MatchedCount: matched,
-		SkippedCount: max(matched-len(gmailIDs), 0),
+		SkippedCount: unsupported,
 		Account:      account,
 		ID:           manifest.ID,
 		Status:       string(manifest.Status),
 		Source:       source,
+		Protection:   protection,
 	})
+}
+
+// applyDeletionProtection counts the protected candidates and, when protect
+// is set, leaves them out. Without a store that can check, nothing is
+// reported, and protect is refused rather than silently ignored.
+func (s *Server) applyDeletionProtection(
+	ctx context.Context, targets []query.DeletionTarget, protect bool,
+) ([]query.DeletionTarget, *DeletionProtectionSummary, *apiHTTPError) {
+	checker, ok := s.store.(DeletionProtectionStore)
+	if !ok {
+		if protect {
+			return nil, nil, newAPIHTTPError(http.StatusServiceUnavailable, "protection_unavailable",
+				"This daemon cannot check deletion protection; stage without protect or upgrade the daemon")
+		}
+		return targets, nil, nil
+	}
+	ids := make([]int64, len(targets))
+	for i, target := range targets {
+		ids[i] = target.MessageID
+	}
+	protections, err := checker.DeletionProtectionsContext(ctx, ids)
+	if err != nil {
+		s.logger.Error("deletion protection check failed", "error", err)
+		return nil, nil, newAPIHTTPError(http.StatusInternalServerError, "internal_error", "Deletion protection check failed")
+	}
+	summary := &DeletionProtectionSummary{Skipped: protect}
+	kept := make([]query.DeletionTarget, 0, len(targets))
+	for _, target := range targets {
+		protection, found := protections[target.MessageID]
+		if !found || !protection.Protected() {
+			kept = append(kept, target)
+			continue
+		}
+		summary.ProtectedCount++
+		if protection.Starred {
+			summary.Starred++
+		}
+		if protection.OwnerSent {
+			summary.OwnerSent++
+		}
+		if protection.PersonSender {
+			summary.PersonSender++
+		}
+		summary.SampleMessageIDs = append(summary.SampleMessageIDs, target.MessageID)
+		if !protect {
+			kept = append(kept, target)
+		}
+	}
+	sort.Slice(summary.SampleMessageIDs, func(i, j int) bool {
+		return summary.SampleMessageIDs[i] < summary.SampleMessageIDs[j]
+	})
+	if len(summary.SampleMessageIDs) > deletionProtectionSampleSize {
+		summary.SampleMessageIDs = summary.SampleMessageIDs[:deletionProtectionSampleSize]
+	}
+	if len(kept) == 0 {
+		return nil, nil, newAPIHTTPError(http.StatusConflict, "all_messages_protected",
+			"Every matched message is starred, sent by you, or from a person; protect leaves nothing to stage")
+	}
+	return kept, summary, nil
 }
 
 func sourceReferenceForTargets(targets []query.DeletionTarget) (*deletion.SourceReference, *apiHTTPError) {

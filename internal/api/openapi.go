@@ -372,7 +372,12 @@ import (
 // rankings leave automated, mailing list, and unclear clusters out unless
 // include_not_people is set. GET /aggregates gains sender_kind for the
 // senders view. Settings gain jev.correspondent_kind.enabled and automatic.
-const APISchemaVersion = "2.39.0"
+// 2.41.0 adds deletion protection: POST /deletions reports starred,
+// owner-sent, and person-sent candidates in protection and accepts protect
+// to leave them out (409 all_messages_protected when nothing is left).
+// POST /content/remote-image accepts message_id and refuses spam and trash
+// messages with 403 remote_images_blocked. Additive (minor bump).
+const APISchemaVersion = "2.41.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

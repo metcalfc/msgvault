@@ -3,6 +3,8 @@
  */
 
 export interface RemoteImageRequest {
+  /** The message the image appears in. The daemon refuses images of spam and trash messages with 403 remote_images_blocked. */
+  message_id?: number;
   /** Absolute http(s) URL of the consented remote image */
   url: string;
 }

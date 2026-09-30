@@ -274,7 +274,9 @@ filename browsing does not use that provider.
 
 The reader displays archived inline images and leaves remote images unloaded
 until you choose **Load images**. That choice applies to the current item and
-fetches images through the daemon. Moving to another item resets it.
+fetches images through the daemon. Moving to another item resets it. Spam and
+trash messages never offer **Load images**; see
+[Spam and trash never load images](/docs/usage/remote-images/#spam-and-trash-never-load-images).
 
 For unattended, offline preservation of remote images, see
 [Archive Remote Email Images](/docs/usage/remote-images/). Reader permission
@@ -509,7 +511,10 @@ operation history** to load a fresh snapshot.
 The Inbox and Search support explicit row selection and select-all-matching
 for the current query and filters. `d` and `D` open Activity > Deletions, where the
 daemon first preflights the selection and reports any unavailable action before
-the UI offers a separate staging confirmation. Deletions lists, inspects,
+the UI offers a separate staging confirmation. Dry runs and staging results
+name [protected messages](/docs/usage/deletion/#protected-messages) (starred,
+sent by you, or from a person); check **Skip starred, self-sent, and
+person-sent messages** to leave them out. Deletions lists, inspects,
 and cancels manifests; it cannot execute deletion against a provider. Use the
 explicit `msgvault delete-staged` CLI workflow for that final operation.
 

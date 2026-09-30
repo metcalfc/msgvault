@@ -30,13 +30,16 @@ func (s *Store) MessageRemoteImages(messageID int64) (map[string]AttachmentRef, 
 // storage. Bodies are subsequently read by message primary key.
 func (s *Store) RemoteImageBackfillMessageIDs(ctx context.Context, after, sourceID int64, limit int) ([]int64, error) {
 	// Match IsEmailMessageType: legacy NULL and empty types also denote email.
-	query := "SELECT id FROM messages WHERE id > ? AND COALESCE(message_type, '') IN ('', 'email') AND deleted_at IS NULL"
+	// Spam and trash never have their remote images fetched.
+	query := "SELECT m.id FROM messages m WHERE m.id > ? AND COALESCE(m.message_type, '') IN ('', 'email')" +
+		" AND m.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM message_labels ml JOIN labels l ON l.id = ml.label_id" +
+		" WHERE ml.message_id = m.id AND " + labelRoleSQL("l", "SPAM", "TRASH", "JUNK") + ")"
 	args := []any{after}
 	if sourceID != 0 {
-		query += " AND source_id = ?"
+		query += " AND m.source_id = ?"
 		args = append(args, sourceID)
 	}
-	query += " ORDER BY id LIMIT ?"
+	query += " ORDER BY m.id LIMIT ?"
 	args = append(args, limit)
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {

@@ -6,7 +6,7 @@
     stageDeletion as generatedStageDeletion,
   } from '../../api/generated/api/api';
   import { preflightExploreSelection as generatedPreflightExploreSelection } from '../../api/generated/exploration/exploration';
-  import { Button, Card, KbdBadge, Modal, appShortcuts } from '@kenn-io/kit-ui';
+  import { Button, Card, Checkbox, KbdBadge, Modal, appShortcuts } from '@kenn-io/kit-ui';
   import { onDestroy, onMount } from 'svelte';
   import type { APIClient } from '../../api/client';
   import type {
@@ -42,6 +42,8 @@
   let preview = $state<StageDeletionResponse>();
   let confirmStage = $state<'explicit' | 'all_matching'>();
   let confirmCancel = $state<ManifestSummary>();
+  // Leave starred, self-sent, and person-sent messages out of the batch.
+  let protect = $state(false);
   let listController: AbortController | undefined;
   onMount(() => {
     void loadManifests();
@@ -146,6 +148,7 @@
           selection: dryRunSelection,
           operation_token: reviewed!.operation_token,
           dry_run: true,
+          ...protectField(),
         },
         client,
       );
@@ -178,6 +181,7 @@
           description:
             stagedSelection.mode === 'all_matching' ? 'reviewed matching selection' : 'reviewed explicit selection',
           dry_run: false,
+          ...protectField(),
         },
         client,
       );
@@ -246,6 +250,29 @@
     }
     return `Partial staging: only the deletable Gmail subset (${staged.toLocaleString()}) was staged; ${skipped.toLocaleString()} unsupported ${skipped === 1 ? 'match was' : 'matches were'} skipped.`;
   }
+  // protect is sent only when set: the daemon rejects unknown fields, so an
+  // older daemon keeps accepting plain staging.
+  function protectField(): { protect?: true } {
+    return protect ? { protect: true } : {};
+  }
+  function protectionWarning(value: StageDeletionResponse): string {
+    const protection = value.protection;
+    if (!protection || protection.protected_count <= 0) return '';
+    const reasons = [
+      [protection.starred, 'starred'],
+      [protection.owner_sent, 'sent by you'],
+      [protection.person_sender, 'from a person'],
+    ]
+      .filter(([count]) => (count as number) > 0)
+      .map(([count, label]) => `${(count as number).toLocaleString()} ${label}`)
+      .join(', ');
+    const count = protection.protected_count.toLocaleString();
+    if (protection.skipped) {
+      return `Protected: ${count} ${protection.protected_count === 1 ? 'message was' : 'messages were'} left out (${reasons}).`;
+    }
+    const verb = value.dry_run ? 'would be staged' : 'were staged';
+    return `Possibly worth keeping: ${count} ${protection.protected_count === 1 ? 'message' : 'messages'} ${verb} (${reasons}). Check "Skip starred, self-sent, and person-sent messages" to leave them out.`;
+  }
   function selectionExclusions(): string {
     const count = selection?.exclusions?.length ?? 0;
     return selection?.mode === 'all_matching' && count > 0
@@ -256,7 +283,8 @@
     const counts = preview?.dry_run
       ? resultSummary(preview)
       : `Matched: ${reviewed!.count.toLocaleString()} · Will stage: ${reviewed!.deletable_count.toLocaleString()} · Will skip: ${(reviewed!.count - reviewed!.deletable_count).toLocaleString()}`;
-    return `${counts}.${selectionExclusions()} Only deletable Gmail messages will be staged. This creates a staged manifest; it does not execute deletion.`;
+    const protection = protect ? ' Starred, self-sent, and person-sent messages will be left out.' : '';
+    return `${counts}.${selectionExclusions()} Only deletable Gmail messages will be staged.${protection} This creates a staged manifest; it does not execute deletion.`;
   }
   function messageFor(value: unknown, fallback: string): string {
     return typeof value === 'object' && value !== null && 'message' in value && typeof value.message === 'string'
@@ -308,6 +336,15 @@
             <span class="reason">{unavailable.action}: {unavailable.reason}</span>
           {/each}
         </div>
+        <Checkbox
+          checked={protect}
+          label="Skip starred, self-sent, and person-sent messages"
+          disabled={pending}
+          onchange={(checked) => {
+            protect = checked;
+            preview = undefined;
+          }}
+        />
         <div class="actions">
           <Button surface="soft" label="Dry run" disabled={pending} onclick={() => void dryRun()} />
           <Button
@@ -324,6 +361,7 @@
       {#if preview}
         <p class="preview" role="status">{resultSummary(preview)}</p>
         {#if stageCounts(preview).skipped > 0}<p class="notice" role="alert">{partialWarning(preview)}</p>{/if}
+        {#if protectionWarning(preview)}<p class="notice" role="status">{protectionWarning(preview)}</p>{/if}
       {/if}
     </section>
   </Card>

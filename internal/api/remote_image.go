@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
 	"net/http"
 	"net/netip"
 
@@ -23,6 +25,15 @@ func prohibitedRemoteIP(addr netip.Addr) bool { return netguard.ProhibitedIP(add
 // RemoteImageRequest is the JSON body of POST /api/v1/content/remote-image.
 type RemoteImageRequest struct {
 	URL string `json:"url" doc:"Absolute http(s) URL of the consented remote image"`
+	// MessageID names the message the image belongs to so the daemon can
+	// refuse spam and trash. The Web UI always sends it.
+	MessageID int64 `json:"message_id,omitzero" doc:"The message the image appears in. The daemon refuses images of spam and trash messages with 403 remote_images_blocked."`
+}
+
+// RemoteImagePolicyStore reports whether a message's remote images must
+// never be fetched. Implemented by the serve daemon's store adapter.
+type RemoteImagePolicyStore interface {
+	MessageRemoteImagesBlockedContext(ctx context.Context, messageID int64) (bool, error)
 }
 
 // handleRemoteImage serves POST /api/v1/content/remote-image. Success passes
@@ -40,6 +51,13 @@ func (s *Server) handleRemoteImage(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.URL == "" {
 		writeError(w, http.StatusBadRequest, "missing_url", "Missing 'url' in request body")
+		return
+	}
+	if req.MessageID < 0 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "message_id must be positive")
+		return
+	}
+	if req.MessageID > 0 && !s.remoteImagesAllowed(r.Context(), w, req.MessageID) {
 		return
 	}
 	fetcher := s.remoteImages
@@ -60,4 +78,31 @@ func (s *Server) handleRemoteImage(w http.ResponseWriter, r *http.Request) {
 	// type, nosniff pins it, and the frontend consumes the bytes as a blob
 	// URL inside a sandboxed srcdoc frame.
 	_, _ = w.Write(body)
+}
+
+// remoteImagesAllowed refuses a message whose labels block remote images.
+// It fails closed: a daemon that cannot check never fetches for a message.
+func (s *Server) remoteImagesAllowed(ctx context.Context, w http.ResponseWriter, messageID int64) bool {
+	policy, ok := s.store.(RemoteImagePolicyStore)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "remote_image_policy_unavailable",
+			"This daemon cannot check whether the message allows remote images")
+		return false
+	}
+	blocked, err := policy.MessageRemoteImagesBlockedContext(ctx, messageID)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "not_found", "Message not found")
+		return false
+	}
+	if err != nil {
+		s.logger.Error("remote image policy check failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Remote image policy check failed")
+		return false
+	}
+	if blocked {
+		writeError(w, http.StatusForbidden, "remote_images_blocked",
+			"Remote images are never loaded for spam or trash messages")
+		return false
+	}
+	return true
 }

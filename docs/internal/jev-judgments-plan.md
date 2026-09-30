@@ -361,9 +361,18 @@ consumers `internal/api/handlers.go`, `internal/mcp/handlers.go`,
 Site: `cmd/msgvault/cmd/stage_delete.go`, `internal/api/deletions.go`,
 `internal/deletion/manifest.go`.
 
-- [ ] **Task 5.1 Plain-code protection.** Deletion staging warns on (and
+- [x] **Task 5.1 Plain-code protection.** Deletion staging warns on (and
   `--protect` skips) STARRED, owner-sent, and `individual_person` senders.
   Stop remote-image fetch for SPAM and TRASH labels.
+  > Staging is daemon-side, so `POST /deletions` reports `protection` counts
+  > and takes `protect`; the CLI flag and a Web UI checkbox send it. A person
+  > sender is an explicit classification only: a user `person` decision, or a
+  > Jev row at or above 0.60 `individual_person` that no user decision
+  > overrides; unclassified senders are not protected, or nearly everything
+  > would be. Spam and trash (and IMAP `Junk`) are skipped by sync, import,
+  > and backfill archiving, hidden from the reader's consent button, and
+  > refused by the proxy when the request names the message (`message_id`,
+  > which the Web UI always sends).
 - [ ] **Task 5.2 Suspicion scoring.** `msgvault suggest-cleanup` over a pool
   code narrows (SPAM/Promotions, never replied, sender not a person, has
   links). State per message: from name and domain, reply-to domain, link

@@ -2865,6 +2865,26 @@ func (d DeletionManifestSummary) Validate() error {
 	return runtime.ConvertValidatorError(typesValidator.Struct(d))
 }
 
+type DeletionProtectionSummary struct {
+	// OwnerSent Candidate messages the archive owner sent.
+	OwnerSent int64 `json:"owner_sent"`
+
+	// PersonSender Candidate messages from a sender classified as a person (a user decision, or a Jev individual_person probability of at least 0.60).
+	PersonSender int64 `json:"person_sender"`
+
+	// ProtectedCount Candidate messages with at least one protection reason.
+	ProtectedCount int64 `json:"protected_count"`
+
+	// SampleMessageIds Up to 20 protected message IDs, lowest first.
+	SampleMessageIds []int64 `json:"sample_message_ids,omitempty"`
+
+	// Skipped True when protect was requested and these messages were left out of the batch.
+	Skipped bool `json:"skipped"`
+
+	// Starred Candidate messages that are starred.
+	Starred int64 `json:"starred"`
+}
+
 type DeletionTarget struct {
 	MessageID        int64  `json:"message_id"`
 	SourceID         int64  `json:"source_id"`
@@ -11130,6 +11150,9 @@ func (r RelationshipsHTTPResponse) Validate() error {
 }
 
 type RemoteImageRequest struct {
+	// MessageID The message the image appears in. The daemon refuses images of spam and trash messages with 403 remote_images_blocked.
+	MessageID *int64 `json:"message_id,omitempty"`
+
 	// URL Absolute http(s) URL of the consented remote image
 	URL string `json:"url" validate:"required"`
 }
@@ -12337,7 +12360,10 @@ type StageDeletionRequest struct {
 	Filter         *StageDeletionFilter `json:"filter,omitempty"`
 	MessageIds     []int64              `json:"message_ids,omitempty"`
 	OperationToken *string              `json:"operation_token,omitzero"`
-	Selection      *ExploreSelection    `json:"selection,omitempty"`
+
+	// Protect Leave starred, owner-sent, and person-sent messages out of the batch instead of only reporting them.
+	Protect   *bool             `json:"protect,omitempty"`
+	Selection *ExploreSelection `json:"selection,omitempty"`
 }
 
 func (s StageDeletionRequest) Validate() error {
@@ -12363,19 +12389,27 @@ func (s StageDeletionRequest) Validate() error {
 }
 
 type StageDeletionResponse struct {
-	Account        *string          `json:"account,omitzero"`
-	DryRun         bool             `json:"dry_run"`
-	ID             *string          `json:"id,omitzero"`
-	MatchedCount   *int64           `json:"matched_count,omitempty"`
-	MessageCount   int64            `json:"message_count"`
-	SampleGmailIds []string         `json:"sample_gmail_ids,omitempty"`
-	SkippedCount   *int64           `json:"skipped_count,omitempty"`
-	Source         *SourceReference `json:"source,omitempty"`
-	Status         *string          `json:"status,omitzero"`
+	Account        *string                    `json:"account,omitzero"`
+	DryRun         bool                       `json:"dry_run"`
+	ID             *string                    `json:"id,omitzero"`
+	MatchedCount   *int64                     `json:"matched_count,omitempty"`
+	MessageCount   int64                      `json:"message_count"`
+	Protection     *DeletionProtectionSummary `json:"protection,omitempty"`
+	SampleGmailIds []string                   `json:"sample_gmail_ids,omitempty"`
+	SkippedCount   *int64                     `json:"skipped_count,omitempty"`
+	Source         *SourceReference           `json:"source,omitempty"`
+	Status         *string                    `json:"status,omitzero"`
 }
 
 func (s StageDeletionResponse) Validate() error {
 	var errors runtime.ValidationErrors
+	if s.Protection != nil {
+		if v, ok := any(s.Protection).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("Protection", err)
+			}
+		}
+	}
 	if s.Source != nil {
 		if v, ok := any(s.Source).(runtime.Validator); ok {
 			if err := v.Validate(); err != nil {

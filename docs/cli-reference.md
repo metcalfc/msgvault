@@ -3401,6 +3401,13 @@ exclusive, and `--ids` is also mutually exclusive with `--source-id`.
 | `--dry-run` | Show the staged subset and skipped counts without creating a deletion batch |
 | `--source-id ID` | Restrict staging to one exact source ID |
 | `--ids IDS` | Stage positive, unique, comma-separated internal message IDs instead of a query |
+| `--protect` | Leave starred, self-sent, and person-sent messages out of the batch instead of only warning about them |
+
+Every staging result names the candidates that are starred, sent by you, or
+from a sender classified as a person, as described in
+[Protected messages](/docs/usage/deletion/#protected-messages). With
+`--protect` they are left out; when nothing is left, the command fails with
+`all_messages_protected` and stages nothing.
 
 Query staging requires daemon API schema 2.18.0 or newer so the preflight
 reports the exact deletable subset. Upgrade the daemon if the CLI rejects its

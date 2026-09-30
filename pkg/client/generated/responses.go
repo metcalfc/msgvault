@@ -565,9 +565,15 @@ type GetRemoteImageErrorResponse = ErrorResponse
 
 type GetRemoteImageErrorResponseJSON = ErrorResponse
 
+type GetRemoteImageErrorResponseJSON403 = ErrorResponse
+
+type GetRemoteImageErrorResponseJSON404 = ErrorResponse
+
 type GetRemoteImageErrorResponseJSON415 = ErrorResponse
 
 type GetRemoteImageErrorResponseJSON502 = ErrorResponse
+
+type GetRemoteImageErrorResponseJSON503 = ErrorResponse
 
 type GetConversationResponse = ConversationResponse
 
@@ -4115,8 +4121,11 @@ type GetRemoteImageResp struct {
 	StatusCode   int
 	JSON400      *GetRemoteImageErrorResponse
 	JSON401      *GetRemoteImageErrorResponseJSON
+	JSON403      *GetRemoteImageErrorResponseJSON403
+	JSON404      *GetRemoteImageErrorResponseJSON404
 	JSON415      *GetRemoteImageErrorResponseJSON415
 	JSON502      *GetRemoteImageErrorResponseJSON502
+	JSON503      *GetRemoteImageErrorResponseJSON503
 }
 
 type GetConversationResp struct {

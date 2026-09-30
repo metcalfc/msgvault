@@ -119,6 +119,43 @@ describe('DeletionsWorkspace', () => {
     expect(stageBody).toMatchObject({ selection: explicit, operation_token: 'operation-1', dry_run: false });
   });
 
+  it('warns about starred, self-sent, and person-sent messages and leaves them out on request', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      if (path.endsWith('/explore/preflight')) return Response.json(preflight({ count: 3, deletable_count: 3 }));
+      if (request.method === 'POST') {
+        const body = (await request.clone().json()) as Record<string, unknown>;
+        bodies.push(body);
+        const protectedBatch = body.protect === true;
+        const protection = { protected_count: 2, starred: 1, owner_sent: 0, person_sender: 1, skipped: protectedBatch };
+        const counts = { matched_count: 3, message_count: protectedBatch ? 1 : 3, skipped_count: 0, protection };
+        return body.dry_run
+          ? Response.json({ dry_run: true, ...counts })
+          : Response.json({ dry_run: false, ...counts, id: 'batch-3', status: 'pending' }, { status: 201 });
+      }
+      return Response.json({ manifests: [] });
+    });
+    render(DeletionsWorkspace, { client: createAPIClient(fetchFn), selection: explicit });
+
+    await screen.findByText('No deletion manifests yet.');
+    await fireEvent.click(screen.getByRole('button', { name: 'Review selection' }));
+    await screen.findByText('3 items · 120 bytes');
+    await fireEvent.click(screen.getByRole('button', { name: 'Dry run' }));
+    expect(
+      await screen.findByText(/Possibly worth keeping: 2 messages would be staged \(1 starred, 1 from a person\)/),
+    ).toBeDefined();
+    expect(bodies[0]).not.toHaveProperty('protect');
+
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Skip starred, self-sent, and person-sent messages' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Stage deletion' }));
+    expect(screen.getByRole('dialog').textContent).toMatch(/Starred, self-sent, and person-sent messages will be left out/);
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm stage deletion' }));
+    expect(await screen.findByText(/Protected: 2 messages were left out \(1 starred, 1 from a person\)/)).toBeDefined();
+    expect(bodies.at(-1)).toMatchObject({ dry_run: false, protect: true });
+  });
+
   it('shows mixed dry-run and staged counts with a partial-staging warning', async () => {
     const requests: Request[] = [];
     let deletionPosts = 0;

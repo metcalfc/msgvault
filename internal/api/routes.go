@@ -470,8 +470,11 @@ func (s *Server) registerHumaRoutes(api huma.API, apiV1 huma.API) {
 		s.handleRemoteImage,
 		http.StatusBadRequest,
 		http.StatusUnauthorized,
+		http.StatusForbidden,
+		http.StatusNotFound,
 		http.StatusUnsupportedMediaType,
 		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
 	)
 	registerAPIV1RawHumaJSONOneOfRoute(apiV1, "searchMessages", http.MethodGet, "/search", "Search messages", s.handleSearch, reflect.TypeFor[SearchResult](), reflect.TypeFor[hybridSearchResponse]())
 

@@ -18,12 +18,16 @@
     messageId,
     html,
     title,
+    remoteImagesBlocked = false,
     onEscapeContent = undefined
   }: {
     client?: APIClient;
     messageId: number;
     html: string;
     title: string;
+    /** Spam and trash never load remote images: a remote image tells the
+     * sender the message was opened. The daemon refuses them as well. */
+    remoteImagesBlocked?: boolean;
     /** Called when Escape is pressed while focus is inside the archived
      * frame — the keyboard path out of the content. Defaults to focusing
      * the nearest scrollable ancestor. */
@@ -71,7 +75,7 @@
     // reports the real content height as soon as the document loads. Reusing
     // the previous message's height would leave a tall empty frame.
     if (identityChanged) frameHeight = 96;
-    const allowRemoteImages = identityChanged ? false : remoteImagesAllowed;
+    const allowRemoteImages = identityChanged || remoteImagesBlocked ? false : remoteImagesAllowed;
     untrack(invalidateDocument);
     const generation = documentGeneration;
     const buildNonce = createFrameNonce();
@@ -94,6 +98,7 @@
       ? resolveArchivedRemoteImages({
           html: resolvedHTML,
           remoteImages: sanitized.remoteImages,
+          messageId: currentMessageID,
           client: currentClient,
           signal
         })
@@ -121,7 +126,7 @@
   }
 
   function loadRemoteImages(): void {
-    if (remoteImagesAllowed || documentState !== 'ready') return;
+    if (remoteImagesBlocked || remoteImagesAllowed || documentState !== 'ready') return;
     invalidateDocument();
     remoteImagesAllowed = true;
   }
@@ -207,7 +212,14 @@
       />
     </div>
   {/if}
-  {#if remoteImageCount > 0 && !remoteImagesAllowed}
+  {#if remoteImageCount > 0 && remoteImagesBlocked}
+    <p class="remote-notice" role="status">
+      <span>{remoteImageCount === 1
+        ? '1 remote image is not loaded.'
+        : `${remoteImageCount} remote images are not loaded.`}
+        Remote images never load for spam or trash.</span>
+    </p>
+  {:else if remoteImageCount > 0 && !remoteImagesAllowed}
     <p class="remote-notice" role="status">
       <span>{remoteImageCount === 1
         ? '1 remote image is not loaded.'

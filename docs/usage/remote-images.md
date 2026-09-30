@@ -68,6 +68,21 @@ The original raw MIME and stored HTML stay unchanged. An `export-eml` therefore
 preserves the original message, including its original image URLs; it does not
 embed the newly archived images into that EML file.
 
+## Spam and trash never load images
+
+A remote image tells its host that the message was opened, and junk senders
+are exactly the ones who should not learn that. msgvault therefore never
+fetches remote images for a message labeled `SPAM` or `TRASH` (or an IMAP
+`Junk` folder label):
+
+- Sync, import, and `archive-remote-images` skip those messages.
+- The Web UI reader shows the image count but no **Load images** button.
+- The daemon's image proxy refuses a request naming such a message with
+  `403 remote_images_blocked`.
+
+Moving a message out of spam or trash lifts the block for later reads and
+backfills.
+
 ## Coverage and limits
 
 Archiving reads HTTP(S) `<img src>` URLs, including URLs beginning with `//`.

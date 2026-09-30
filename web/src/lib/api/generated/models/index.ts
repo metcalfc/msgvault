@@ -207,6 +207,7 @@ export * from "./deleteSettingsPeopleInferenceProviderPathParameters";
 export * from "./deleteSettingsProviderCredentialPathParameters";
 export * from "./deletionManifestDetail";
 export * from "./deletionManifestSummary";
+export * from "./deletionProtectionSummary";
 export * from "./deletionTarget";
 export * from "./directoryPeopleResponse";
 export * from "./directoryPersonSummary";

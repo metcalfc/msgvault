@@ -126,6 +126,16 @@ func (f *Fetcher) Archive(ctx context.Context, st *store.Store, dir string, mess
 	if source == "" {
 		return result
 	}
+	// Spam and trash are never fetched: a remote image is a read receipt
+	// for the sender, and junk senders are the ones who should not get one.
+	blocked, err := st.MessageRemoteImagesBlockedContext(ctx, messageID)
+	if err != nil {
+		result.Errors = append(result.Errors, fmt.Errorf("check remote image policy: %w", err))
+		return result
+	}
+	if blocked {
+		return result
+	}
 	ctx, cancel := context.WithTimeout(ctx, archiveTimeout)
 	defer cancel()
 	refs, err := st.MessageRemoteImages(messageID)

@@ -3131,6 +3131,40 @@ components:
         - description
         - message_count
       type: object
+    DeletionProtectionSummary:
+      properties:
+        owner_sent:
+          description: Candidate messages the archive owner sent.
+          format: int64
+          type: integer
+        person_sender:
+          description: Candidate messages from a sender classified as a person (a user decision, or a Jev individual_person probability of at least 0.60).
+          format: int64
+          type: integer
+        protected_count:
+          description: Candidate messages with at least one protection reason.
+          format: int64
+          type: integer
+        sample_message_ids:
+          description: Up to 20 protected message IDs, lowest first.
+          items:
+            format: int64
+            type: integer
+          type: array
+        skipped:
+          description: True when protect was requested and these messages were left out of the batch.
+          type: boolean
+        starred:
+          description: Candidate messages that are starred.
+          format: int64
+          type: integer
+      required:
+        - protected_count
+        - starred
+        - owner_sent
+        - person_sender
+        - skipped
+      type: object
     DeletionTarget:
       properties:
         message_id:
@@ -11575,6 +11609,10 @@ components:
     RemoteImageRequest:
       additionalProperties: false
       properties:
+        message_id:
+          description: The message the image appears in. The daemon refuses images of spam and trash messages with 403 remote_images_blocked.
+          format: int64
+          type: integer
         url:
           description: Absolute http(s) URL of the consented remote image
           type: string
@@ -12701,6 +12739,9 @@ components:
           type: array
         operation_token:
           type: string
+        protect:
+          description: Leave starred, owner-sent, and person-sent messages out of the batch instead of only reporting them.
+          type: boolean
         selection:
           $ref: "#/components/schemas/ExploreSelection"
       type: object
@@ -12718,6 +12759,9 @@ components:
         message_count:
           format: int64
           type: integer
+        protection:
+          $ref: "#/components/schemas/DeletionProtectionSummary"
+          description: Starred, owner-sent, and person-sent candidates. Without protect they are staged and only reported.
         sample_gmail_ids:
           items:
             type: string
@@ -13810,7 +13854,7 @@ components:
       type: apiKey
 info:
   title: msgvault API
-  version: 2.39.0
+  version: 2.41.0
 openapi: 3.0.3
 paths:
   /api/daemon/identity:
@@ -17325,6 +17369,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
           description: Error
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
         "415":
           content:
             application/json:
@@ -17332,6 +17388,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
           description: Error
         "502":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+        "503":
           content:
             application/json:
               schema:
