@@ -482,12 +482,17 @@ func runBuildCacheLocalMode(mode buildCacheMode, state *invocation) error {
 	// before that ingest's confirmDefaultIdentity and suppressing the
 	// source's own address — the exact race the daemon defers it to avoid.
 
-	// New identities are classified first so this build exports their kinds.
-	classifyKindsForCacheBuild(context.Background(), cfg, dbPath, state.logger)
-	// New calendar series are judged first so this build exports their weights.
-	judgeMeetingsForCacheBuild(context.Background(), cfg, dbPath, state.logger)
-	// Possible duplicate people are proposed for review; nothing is applied.
-	judgePeopleForCacheBuild(context.Background(), cfg, dbPath, state.logger)
+	// A derived-only refresh answers an interactive identity edit (a merge,
+	// link, or match), which waits for it within its request timeout. Jev
+	// judgments can take longer than that, so the next message build runs them.
+	if mode != buildCacheModeDerived {
+		// New identities are classified first so this build exports their kinds.
+		classifyKindsForCacheBuild(context.Background(), cfg, dbPath, state.logger)
+		// New calendar series are judged first so this build exports their weights.
+		judgeMeetingsForCacheBuild(context.Background(), cfg, dbPath, state.logger)
+		// Possible duplicate people are proposed for review; nothing is applied.
+		judgePeopleForCacheBuild(context.Background(), cfg, dbPath, state.logger)
+	}
 
 	var result *buildResult
 	switch mode {

@@ -78,6 +78,10 @@ func TestCacheBuildClassifiesKindsOnlyWhenAutomatic(t *testing.T) {
 	assert.Nil(kindOf(receipts).Source, "automatic off classifies nothing")
 
 	configuration.Jev.CorrespondentKind.Automatic = true
+	// An identity edit waits on the derived refresh, so it judges nothing.
+	require.NoError(runBuildCacheLocalMode(buildCacheModeDerived, state))
+	assert.Nil(kindOf(receipts).Source, "a derived-only refresh leaves classification to the next build")
+
 	require.NoError(runBuildCacheLocalMode(buildCacheModeDefault, state))
 	record := kindOf(receipts)
 	assert.Equal(correspondentkind.Automated, record.Kind)
