@@ -17,6 +17,8 @@ import (
 const (
 	sectionProvider = "provider"
 	sectionVisual   = "visual"
+	// sectionJevFeatures holds the per-feature Jev switches.
+	sectionJevFeatures = "features"
 )
 
 type settingMetadata struct {
@@ -94,7 +96,7 @@ var settingsGroups = []SettingGroup{
 		Sections: []SettingSection{
 			{ID: sectionProvider, Label: "Provider", Description: "Save endpoint changes before storing a credential."},
 			{ID: "limits", Label: "Daily limits and prices"},
-			{ID: "features", Label: "Features", Description: "Each feature also needs an active consent for its exact policy."},
+			{ID: sectionJevFeatures, Label: "Features", Description: "Each feature also needs an active consent for its exact policy."},
 		},
 	},
 	{
@@ -170,13 +172,17 @@ var settingsMetadata = map[string]settingMetadata{
 	"jev.max_cost_usd_per_day":              {"Daily cost limit", "Spend each feature may reach per UTC day. 0 means no cap. Applies only when prices are set.", "limits"},
 	"jev.input_usd_per_million_tokens":      {"Input price", "USD per million input tokens. 0 turns off cost accounting.", "limits"},
 	"jev.output_usd_per_million_tokens":     {"Output price", "USD per million output tokens. 0 turns off cost accounting.", "limits"},
-	"jev.identity_verification.enabled":     {"Enrichment identity check", "Ask Jev whether a partially matching enrichment result is the requested person.", "features"},
-	"jev.identity_verification.automatic":   {"Automatic identity checks", "Let scheduled enrichment runs use the identity check without a manual run.", "features"},
-	"jev.organization_resolution.enabled":   {"Organization resolution", "Ask Jev whether an organization name that matches no existing organization is one of a few similar ones, and whether two job titles at one organization are the same role.", "features"},
-	"jev.organization_resolution.automatic": {"Automatic organization resolution", "Let scheduled enrichment and people sweep runs use organization resolution without a manual run.", "features"},
-	"jev.correspondent_kind.enabled":        {"Correspondent kind", "Ask Jev whether an identity the rules could not classify is a person, a shared mailbox, a mailing list, or an automated sender.", "features"},
-	"jev.correspondent_kind.automatic":      {"Automatic correspondent kinds", "Classify new identities when the analytics cache is built, without running msgvault kinds build.", "features"},
-	"jev.cleanup_suggestions.enabled":       {"Cleanup suggestions", "Ask Jev whether spam and promotional mail impersonates a sender, pressures you, or is personal or work mail, for msgvault suggest-cleanup and deletion review. It never stages or deletes anything.", "features"},
+	"jev.identity_verification.enabled":     {"Enrichment identity check", "Ask Jev whether a partially matching enrichment result is the requested person.", sectionJevFeatures},
+	"jev.identity_verification.automatic":   {"Automatic identity checks", "Let scheduled enrichment runs use the identity check without a manual run.", sectionJevFeatures},
+	"jev.organization_resolution.enabled":   {"Organization resolution", "Ask Jev whether an organization name that matches no existing organization is one of a few similar ones, and whether two job titles at one organization are the same role.", sectionJevFeatures},
+	"jev.organization_resolution.automatic": {"Automatic organization resolution", "Let scheduled enrichment and people sweep runs use organization resolution without a manual run.", sectionJevFeatures},
+	"jev.correspondent_kind.enabled":        {"Correspondent kind", "Ask Jev whether an identity the rules could not classify is a person, a shared mailbox, a mailing list, or an automated sender.", sectionJevFeatures},
+	"jev.correspondent_kind.automatic":      {"Automatic correspondent kinds", "Classify new identities when the analytics cache is built, without running msgvault kinds build.", sectionJevFeatures},
+	"jev.rerank.enabled":                    {"Hybrid search reranking", "Ask Jev to reorder the leading results of your hybrid searches. Sends the query and each result's subject, sender, date, and up to 2 KiB of body text. Not recommended until the evaluation gate passes.", sectionJevFeatures},
+	"jev.rerank.shape":                      {"Rerank request shape", "batched asks about every result in one request; per_candidate sends one request per result.", sectionJevFeatures},
+	"jev.rerank.top":                        {"Reranked results", "How many leading hybrid results are reranked, 2 to 30.", sectionJevFeatures},
+	"jev.rerank.message_types_excluded":     {"Never rerank these message types", "Message types whose text is never sent. Such results keep their position.", sectionJevFeatures},
+	"jev.cleanup_suggestions.enabled":       {"Cleanup suggestions", "Ask Jev whether spam and promotional mail impersonates a sender, pressures you, or is personal or work mail, for msgvault suggest-cleanup and deletion review. It never stages or deletes anything.", sectionJevFeatures},
 	"vector.people.enabled":                 {"Embed person fields", "Send the consented fields of each person to the text embedding provider. Semantic search must be on.", "people"},
 	"vector.people.retention_posture":       {"Provider retention statement", "Your statement of how long the provider keeps person data.", "people"},
 	"vector.people.training_posture":        {"Provider training statement", "Your statement of whether the provider trains on person data.", "people"},

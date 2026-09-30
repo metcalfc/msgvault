@@ -16,11 +16,12 @@ func TestJevFeatureRegistryListsEveryFeature(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	specs := jevFeatureSpecs()
-	require.Len(specs, 4)
+	require.Len(specs, 5)
 	assert.Equal(jev.FeatureEnrichmentIdentity, specs[0].Name)
 	assert.Equal(jev.FeatureOrganizationResolution, specs[1].Name)
 	assert.Equal(jev.FeatureCorrespondentKind, specs[2].Name)
 	assert.Equal(jev.FeatureCleanupSuggestions, specs[3].Name)
+	assert.Equal(jev.FeatureSearchRerank, specs[4].Name)
 	cfg := config.NewDefaultConfig()
 	for _, spec := range specs {
 		require.NoError(spec.Validate())

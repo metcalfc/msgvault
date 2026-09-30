@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/msgvault/internal/personenrichment"
 	"go.kenn.io/msgvault/internal/providercredentials"
 	"go.kenn.io/msgvault/internal/store"
+	"go.kenn.io/msgvault/internal/vector/rerank"
 )
 
 const jevConsentActor = "cli"
@@ -30,6 +31,7 @@ var jevFeatureSpecs = func() []jev.FeatureSpec {
 	return []jev.FeatureSpec{
 		personenrichment.JevIdentityFeature(), orgresolution.Feature(), kindclassify.JevFeature(),
 		cleanupsuggest.JevFeature(),
+		rerank.JevFeature(),
 	}
 }
 
@@ -375,6 +377,11 @@ func printJevDisclosure(w io.Writer, policy jev.Policy, feature jev.FeatureConfi
 		if question.Criteria != nil {
 			_, _ = fmt.Fprintf(w, "  criteria: %s\n", jev.QuestionText(question.Criteria))
 		}
+	}
+	if policy.BodyNotice != "" {
+		_, _ = fmt.Fprintf(w, "Message body text leaves the machine: %s\n", policy.BodyNotice)
+		_, _ = fmt.Fprintln(w, "Nothing else is sent: no attachments, no addresses beyond the listed fields, no identifiers.")
+		return
 	}
 	_, _ = fmt.Fprintln(w, "Nothing else is sent: no message bodies, no addresses beyond the listed fields, no identifiers.")
 }

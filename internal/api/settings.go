@@ -17,6 +17,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/msgvault/internal/config"
+	"go.kenn.io/msgvault/internal/jev"
 	"go.kenn.io/msgvault/internal/providercredentials"
 	"go.kenn.io/msgvault/internal/scheduler"
 )
@@ -370,6 +371,11 @@ var settingsCatalog = []settingDefinition{
 	boolSetting("jev.correspondent_kind.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.CorrespondentKind.Enabled }),
 	boolSetting("jev.correspondent_kind.automatic", settingsGroupJev, func(c *config.Config) bool { return c.Jev.CorrespondentKind.Automatic }),
 	boolSetting("jev.cleanup_suggestions.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.CleanupSuggestions.Enabled }),
+	boolSetting("jev.rerank.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.Rerank.Enabled }),
+	stringSetting("jev.rerank.shape", settingsGroupJev, []string{jev.RerankShapeBatched, jev.RerankShapePerCandidate},
+		func(c *config.Config) string { return c.Jev.Rerank.Shape }),
+	intSetting("jev.rerank.top", settingsGroupJev, func(c *config.Config) int { return c.Jev.Rerank.Top }),
+	stringArraySetting("jev.rerank.message_types_excluded", settingsGroupJev, func(c *config.Config) []string { return c.Jev.Rerank.MessageTypesExcluded }),
 	boolSetting("integrations.kata.enabled", "integrations", func(c *config.Config) bool { return c.Integrations.Kata.Enabled }),
 	stringSetting("integrations.kata.endpoint", "integrations", nil, func(c *config.Config) string { return c.Integrations.Kata.Endpoint }),
 	secretSetting("integrations.kata.api_key", "integrations", func(c *config.Config) string { return c.Integrations.Kata.APIKey }),

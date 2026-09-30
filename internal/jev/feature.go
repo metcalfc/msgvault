@@ -25,6 +25,11 @@ type FeatureSpec struct {
 	Questions []Question
 	// StateFields lists every field path that leaves the machine.
 	StateFields []string
+	// BodyNotice, when set, states that message body text leaves the
+	// machine and how much. Disclosures print it prominently instead of the
+	// "no message bodies" assurance. The state fields already carry the
+	// body field, so the notice is not part of the fingerprint.
+	BodyNotice string
 }
 
 // Validate checks the spec is complete enough to fingerprint.
@@ -65,6 +70,7 @@ type Policy struct {
 	Model       string     `json:"model"`
 	Questions   []Question `json:"questions"`
 	StateFields []string   `json:"state_fields"`
+	BodyNotice  string     `json:"body_notice,omitzero"`
 }
 
 type policyQuestion struct {
@@ -111,7 +117,7 @@ func (s FeatureSpec) Policy(cfg Config) (Policy, error) {
 		Feature: s.Name, Title: s.Title, Purpose: s.Purpose,
 		Fingerprint: hex.EncodeToString(digest[:]),
 		Endpoint:    cfg.Endpoint, Model: cfg.Model,
-		Questions: slices.Clone(s.Questions), StateFields: fields,
+		Questions: slices.Clone(s.Questions), StateFields: fields, BodyNotice: s.BodyNotice,
 	}, nil
 }
 

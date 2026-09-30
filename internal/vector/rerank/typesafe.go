@@ -12,6 +12,17 @@ import (
 	"go.kenn.io/msgvault/internal/jev"
 )
 
+// Request shapes. The eval flags and this package spell per-candidate with a
+// hyphen; [jev.rerank] spells it per_candidate (see ShapeFromConfig).
+const (
+	ShapeBatched      = "batched"
+	ShapePerCandidate = "per-candidate"
+)
+
+const perCandidateQuestionID = "matches"
+
+func batchedQuestionID(i int) string { return fmt.Sprintf("candidate_%d", i) }
+
 const (
 	JevEndpoint       = jev.DefaultEndpoint
 	JevModel          = jev.DefaultModel
@@ -40,7 +51,7 @@ type Jev struct {
 
 // NewJev creates a scorer. A nil transport uses the default HTTP transport.
 func NewJev(shape, key string, budget *Budget, transport http.RoundTripper) (*Jev, error) {
-	if shape != "per-candidate" && shape != "batched" {
+	if shape != ShapePerCandidate && shape != ShapeBatched {
 		return nil, fmt.Errorf("unknown Jev request shape %q", shape)
 	}
 	if strings.TrimSpace(key) == "" {
@@ -95,19 +106,19 @@ func encodeJevCalls(query string, candidates []string, shape string) ([]jev.Requ
 		}
 	}
 	switch shape {
-	case "per-candidate":
+	case ShapePerCandidate:
 		requests := make([]jev.Request, len(candidates))
 		for i, candidate := range candidates {
 			requests[i] = jev.Request{
 				State:     jevPerCandidateState{Query: query, Candidate: candidate},
-				Questions: []jev.Question{rankingQuestion("matches", "candidate")},
+				Questions: []jev.Question{rankingQuestion(perCandidateQuestionID, "candidate")},
 			}
 		}
 		return requests, nil
-	case "batched":
+	case ShapeBatched:
 		questions := make([]jev.Question, len(candidates))
 		for i := range candidates {
-			questions[i] = rankingQuestion(fmt.Sprintf("candidate_%d", i), fmt.Sprintf("candidates[%d]", i))
+			questions[i] = rankingQuestion(batchedQuestionID(i), fmt.Sprintf("candidates[%d]", i))
 		}
 		return []jev.Request{{
 			State:     jevBatchedState{Query: query, Candidates: slices.Clone(candidates)},
@@ -126,21 +137,38 @@ func (j *Jev) Rerank(ctx context.Context, request Request) (Result, error) {
 		return emptyJevResult(), err
 	}
 	batch, err := j.client.AskAll(ctx, calls)
-	result := Result{Scores: make([]float64, len(request.Candidates)), Usage: batch.Usage}
+	return resultFromBatch(batch, err, j.shape, len(request.Candidates))
+}
+
+// resultFromBatch reads one Noul per candidate out of the responses to
+// encodeJevCalls' requests. Usage is kept on every path.
+func resultFromBatch(batch jev.BatchResult, err error, shape string, candidates int) (Result, error) {
+	result := Result{Scores: make([]float64, candidates), Usage: batch.Usage}
 	if err != nil {
 		return result, fmt.Errorf("rerank requests failed: %w", err)
+	}
+	if len(batch.Responses) == 0 {
+		return result, fmt.Errorf("%w: missing response", ErrInvalidResponse)
 	}
 	for i, response := range batch.Responses {
 		if response == nil {
 			return result, fmt.Errorf("%w: missing response", ErrInvalidResponse)
 		}
-		if j.shape == "batched" {
-			for k := range request.Candidates {
-				result.Scores[k] = response.Answers[fmt.Sprintf("candidate_%d", k)].Noul
+		if shape == ShapeBatched {
+			for k := range candidates {
+				answer, ok := response.Answers[batchedQuestionID(k)]
+				if !ok {
+					return result, fmt.Errorf("%w: missing answer", ErrInvalidResponse)
+				}
+				result.Scores[k] = answer.Noul
 			}
 			continue
 		}
-		result.Scores[i] = response.Answers["matches"].Noul
+		answer, ok := response.Answers[perCandidateQuestionID]
+		if !ok {
+			return result, fmt.Errorf("%w: missing answer", ErrInvalidResponse)
+		}
+		result.Scores[i] = answer.Noul
 	}
 	return result, nil
 }

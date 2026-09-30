@@ -53,6 +53,10 @@ type Config struct {
 	// phishing candidates for `msgvault suggest-cleanup`. It only ever runs
 	// on request, so its automatic switch has no effect.
 	CleanupSuggestions CleanupSuggestionsConfig `toml:"cleanup_suggestions"`
+	// Rerank is [jev.rerank]: reordering the leading hybrid search results
+	// by asking Jev which candidates answer the query. It never runs for
+	// full-text or automatic searches, so it has no automatic switch.
+	Rerank RerankConfig `toml:"rerank"`
 }
 
 // CleanupSuggestionsConfig is [jev.cleanup_suggestions]. Beyond the feature
@@ -70,6 +74,28 @@ type CleanupSuggestionsConfig struct {
 // Feature returns the feature switches.
 func (c CleanupSuggestionsConfig) Feature() FeatureConfig {
 	return FeatureConfig{Enabled: c.Enabled, Automatic: c.Automatic}
+}
+
+// Rerank request shapes. Batched asks about every candidate in one request;
+// per_candidate sends one request per candidate.
+const (
+	RerankShapeBatched      = "batched"
+	RerankShapePerCandidate = "per_candidate"
+	// MaxRerankTop is the most leading results one search may rerank, and
+	// the default.
+	MaxRerankTop = 30
+)
+
+// RerankConfig is [jev.rerank]. Enabled is off by default.
+type RerankConfig struct {
+	Enabled bool `toml:"enabled"`
+	// Shape is batched or per_candidate.
+	Shape string `toml:"shape"`
+	// Top is how many leading hybrid results are reranked, 2 to 30.
+	Top int `toml:"top"`
+	// MessageTypesExcluded lists message types (for example "whatsapp")
+	// whose text is never sent; such results keep their fused position.
+	MessageTypesExcluded []string `toml:"message_types_excluded"`
 }
 
 // FeatureConfig gates one Jev-backed feature. Automatic additionally allows
@@ -107,6 +133,12 @@ func (c *Config) ApplyDefaults() {
 	if c.RequestTimeout == 0 {
 		c.RequestTimeout = DefaultRequestTimeout
 	}
+	if c.Rerank.Shape == "" {
+		c.Rerank.Shape = RerankShapeBatched
+	}
+	if c.Rerank.Top == 0 {
+		c.Rerank.Top = MaxRerankTop
+	}
 }
 
 // Validate checks the section regardless of Enabled so a misconfigured
@@ -130,7 +162,35 @@ func (c Config) Validate() error {
 	if c.MaxCostUSDPerDay < 0 || c.InputUSDPerMillionTokens < 0 || c.OutputUSDPerMillionTokens < 0 {
 		return errors.New("[jev] prices and cost limits must be non-negative")
 	}
+	return c.Rerank.Validate()
+}
+
+// Validate checks [jev.rerank] regardless of Enabled.
+func (c RerankConfig) Validate() error {
+	if c.Shape != RerankShapeBatched && c.Shape != RerankShapePerCandidate {
+		return fmt.Errorf("invalid [jev.rerank] shape %q: want %s or %s", c.Shape, RerankShapeBatched, RerankShapePerCandidate)
+	}
+	if c.Top < 2 || c.Top > MaxRerankTop {
+		return fmt.Errorf("invalid [jev.rerank] top %d: must be between 2 and %d", c.Top, MaxRerankTop)
+	}
+	for _, messageType := range c.MessageTypesExcluded {
+		if strings.TrimSpace(messageType) == "" {
+			return errors.New("invalid [jev.rerank] message_types_excluded: entries must not be empty")
+		}
+	}
 	return nil
+}
+
+// Excludes reports whether results of messageType are never sent for
+// reranking. Matching ignores case and surrounding space.
+func (c RerankConfig) Excludes(messageType string) bool {
+	messageType = strings.ToLower(strings.TrimSpace(messageType))
+	for _, excluded := range c.MessageTypesExcluded {
+		if strings.ToLower(strings.TrimSpace(excluded)) == messageType {
+			return true
+		}
+	}
+	return false
 }
 
 // Priced reports whether token prices are configured, which turns on cost

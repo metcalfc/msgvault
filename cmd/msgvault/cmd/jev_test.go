@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/msgvault/internal/jev"
 	"go.kenn.io/msgvault/internal/providercredentials"
 	"go.kenn.io/msgvault/internal/testutil"
+	"go.kenn.io/msgvault/internal/vector/rerank"
 )
 
 func jevTestSpec() jev.FeatureSpec {
@@ -202,4 +203,25 @@ func TestJevCommandsProxyToTheDaemonOutsideASubprocess(t *testing.T) {
 	_, err = executeJevCommand(t, deps, "status", "--json")
 	require.NoError(err)
 	assert.Equal([]string{"jev", "status", "--json"}, *proxied)
+}
+
+func TestJevConsentDisclosesThatSearchRerankSendsBodyText(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	cfg := jevTestConfig(t)
+	cfg.Jev.Rerank.Enabled = true
+	deps, _ := jevTestDeps(t, cfg, true)
+	deps.features = func() []jev.FeatureSpec { return []jev.FeatureSpec{rerank.JevFeature()} }
+
+	out, err := executeJevCommand(t, deps, "consent", jev.FeatureSearchRerank)
+	require.ErrorContains(err, "--yes")
+	assert.Contains(out, "Jev feature disclosure: Hybrid search reranking (search_rerank)")
+	assert.Contains(out, "Feature switch: enabled=on automatic=off", "reranking has no automatic use")
+	assert.Contains(out, "Message body text leaves the machine: each reranked message sends up to 2 KiB of its body text")
+	assert.NotContains(out, "no message bodies")
+	assert.Contains(out, "- candidate_29 (noul): Could `candidates[29]` be the best answer to `query`?")
+
+	out, err = executeJevCommand(t, deps, "consent", jev.FeatureSearchRerank, "--yes")
+	require.NoError(err)
+	assert.Contains(out, "Consent: active (")
 }

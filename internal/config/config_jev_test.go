@@ -90,3 +90,43 @@ endpoint = "http://api.typesafe.ai/v1/systemone"
 	_, err = Load(configPath, "")
 	require.ErrorContains(err, "[jev] endpoint")
 }
+
+func TestLoadJevRerankSection(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	tmpDir := t.TempDir()
+	t.Setenv("MSGVAULT_HOME", tmpDir)
+	configPath := filepath.Join(tmpDir, "config.toml")
+
+	require.NoError(os.WriteFile(configPath, []byte("[data]\n"), 0o644))
+	cfg, err := Load(configPath, "")
+	require.NoError(err)
+	assert.Equal(jev.RerankConfig{Shape: jev.RerankShapeBatched, Top: jev.MaxRerankTop}, cfg.Jev.Rerank,
+		"reranking is off by default, batched, over the leading 30 results")
+	feature, known := cfg.Jev.FeatureConfigFor(jev.FeatureSearchRerank)
+	assert.True(known)
+	assert.Equal(jev.FeatureConfig{}, feature)
+
+	require.NoError(os.WriteFile(configPath, []byte(`
+[jev.rerank]
+enabled = true
+shape = "per_candidate"
+top = 12
+message_types_excluded = ["whatsapp", "SMS"]
+`), 0o644))
+	cfg, err = Load(configPath, "")
+	require.NoError(err)
+	assert.True(cfg.Jev.Rerank.Enabled)
+	assert.Equal(jev.RerankShapePerCandidate, cfg.Jev.Rerank.Shape)
+	assert.Equal(12, cfg.Jev.Rerank.Top)
+	assert.True(cfg.Jev.Rerank.Excludes("sms"))
+	assert.False(cfg.Jev.Rerank.Excludes("email"))
+	feature, _ = cfg.Jev.FeatureConfigFor(jev.FeatureSearchRerank)
+	assert.Equal(jev.FeatureConfig{Enabled: true}, feature, "reranking never allows automatic use")
+
+	for _, invalid := range []string{`shape = "sorted"`, "top = 1", "top = 31", `message_types_excluded = [" "]`} {
+		require.NoError(os.WriteFile(configPath, []byte("[jev.rerank]\n"+invalid+"\n"), 0o644))
+		_, err = Load(configPath, "")
+		require.ErrorContains(err, "[jev.rerank]", invalid)
+	}
+}

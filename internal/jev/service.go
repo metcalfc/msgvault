@@ -25,6 +25,10 @@ const FeatureCorrespondentKind = "correspondent_kind"
 // feature.
 const FeatureCleanupSuggestions = "cleanup_suggestions"
 
+// FeatureSearchRerank is the hybrid search reranking feature. It sends
+// message text, so its consent disclosure says so.
+const FeatureSearchRerank = "search_rerank"
+
 // Gate outcomes. Each is an expected administrative state, not a fault: the
 // caller falls back to its pre-Jev decision and reports the category.
 var (
@@ -49,6 +53,9 @@ func (c Config) FeatureConfigFor(name string) (FeatureConfig, bool) {
 		return c.CorrespondentKind, true
 	case FeatureCleanupSuggestions:
 		return c.CleanupSuggestions.Feature(), true
+	case FeatureSearchRerank:
+		// Reranking only ever runs for a person's own interactive search.
+		return FeatureConfig{Enabled: c.Rerank.Enabled}, true
 	default:
 		return FeatureConfig{}, false
 	}
@@ -343,6 +350,53 @@ func (s *Service) JudgeQuestions(
 		"output_tokens", tokenValue(response.Usage.OutputTokens),
 		"answers", SafeAnswers(response.Answers), "budget", client.BudgetState())
 	return response, nil
+}
+
+// Judgment is one state and the consented questions to ask about it, for
+// JudgeAll. Nil or empty QuestionIDs asks every question of the policy.
+type Judgment struct {
+	State       any
+	QuestionIDs []string
+}
+
+// JudgeAll asks several independent judgments of one feature concurrently,
+// after one pass through every gate. Each judgment's questions are taken
+// from the consented policy by ID, so no other wording can be sent. The
+// result aligns with judgments; usage covers every attempted request even
+// on error. Like Judge, nothing leaves the process on a gate error.
+func (s *Service) JudgeAll(
+	ctx context.Context, spec FeatureSpec, automatic bool, judgments []Judgment, deadline time.Time,
+) (BatchResult, error) {
+	cleared, err := s.check(ctx, spec, automatic)
+	if err != nil {
+		return emptyBatch(), err
+	}
+	requests := make([]Request, len(judgments))
+	for i, judgment := range judgments {
+		questions, err := policyQuestionSubset(cleared.policy, judgment.QuestionIDs)
+		if err != nil {
+			return emptyBatch(), err
+		}
+		requests[i] = Request{State: judgment.State, Questions: questions, Deadline: deadline, Feature: spec.Name}
+	}
+	client, err := s.clientFor(cleared.config, cleared.key)
+	if err != nil {
+		return emptyBatch(), err
+	}
+	started := s.options.Now()
+	result, err := client.AskAll(ctx, requests)
+	latency := s.options.Now().Sub(started)
+	if err != nil {
+		s.options.Logger.Debug("jev judgments failed",
+			"feature", spec.Name, "category", Skipped(err), "requests", result.Usage.Requests,
+			"latency_ms", latency.Milliseconds(), "budget", client.BudgetState())
+		return result, err
+	}
+	s.options.Logger.Debug("jev judgments",
+		"feature", spec.Name, "requests", result.Usage.Requests, "latency_ms", latency.Milliseconds(),
+		"input_tokens", tokenValue(result.Usage.InputTokens),
+		"output_tokens", tokenValue(result.Usage.OutputTokens), "budget", client.BudgetState())
+	return result, nil
 }
 
 // policyQuestionSubset returns the policy's questions named by ids, in
