@@ -1016,7 +1016,7 @@ func TestCanonicalizeAttachmentBlobPathsNormalizesUppercaseStoredHash(t *testing
 		{hash: storedContentHash, want: content},
 		{hash: storedThumbnailHash, want: thumbnail},
 	} {
-		reader, size, err := loose.Open(tc.hash)
+		reader, size, err := loose.OpenStream(context.Background(), tc.hash)
 		require.NoError(err)
 		got, err := io.ReadAll(reader)
 		require.NoError(err)

@@ -288,7 +288,7 @@ func (s *Syncer) syncCalendarFull(
 				break
 			}
 			ev := page.Items[i]
-			added, cancelled, err := s.persistOne(src.ID, cal, ev, result)
+			added, cancelled, err := s.persistOne(ctx, src.ID, cal, ev, result)
 			if err != nil {
 				return fail(fmt.Errorf("persist event %s: %w", ev.ID, err))
 			}
@@ -389,9 +389,12 @@ func decodeCalendarFullCheckpoint(raw sql.NullString) (string, bool) {
 
 // persistOne routes an event to ingest or cancellation handling and updates the
 // run result. Returns (added, cancelled).
-func (s *Syncer) persistOne(sourceID int64, cal gcal.Calendar, ev gcal.Event, result *Result) (bool, bool, error) {
+func (s *Syncer) persistOne(ctx context.Context, sourceID int64, cal gcal.Calendar, ev gcal.Event, result *Result) (bool, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, false, err
+	}
 	if ev.IsCancelled() {
-		id, inserted, err := s.flagCancelled(sourceID, cal, ev)
+		id, inserted, err := s.flagCancelled(ctx, sourceID, cal, ev)
 		if err != nil {
 			return false, false, err
 		}
@@ -401,7 +404,7 @@ func (s *Syncer) persistOne(sourceID int64, cal gcal.Calendar, ev gcal.Event, re
 		}
 		return inserted, true, nil
 	}
-	id, err := s.ingestEvent(sourceID, cal, ev)
+	id, err := s.ingestEvent(ctx, sourceID, cal, ev)
 	if err != nil {
 		return false, false, err
 	}

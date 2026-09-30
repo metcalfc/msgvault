@@ -454,12 +454,17 @@ type UnresolvedMessageReply struct {
 // MessageExistsBatch checks which message IDs already exist in the database.
 // Returns a map of source_message_id -> internal message_id for existing messages.
 func (s *Store) MessageExistsBatch(sourceID int64, sourceMessageIDs []string) (map[string]int64, error) {
+	return s.MessageExistsBatchContext(context.Background(), sourceID, sourceMessageIDs)
+}
+
+// MessageExistsBatchContext is the request-aware form of MessageExistsBatch.
+func (s *Store) MessageExistsBatchContext(ctx context.Context, sourceID int64, sourceMessageIDs []string) (map[string]int64, error) {
 	if len(sourceMessageIDs) == 0 {
 		return make(map[string]int64), nil
 	}
 
 	result := make(map[string]int64)
-	err := queryInChunks(s.db, sourceMessageIDs, []any{sourceID},
+	err := queryInChunksContext(ctx, s.db, sourceMessageIDs, []any{sourceID},
 		`SELECT source_message_id, id FROM messages WHERE source_id = ? AND source_message_id IN (%s)`,
 		func(rows *loggedRows) error {
 			var srcID string
@@ -781,7 +786,12 @@ func (s *Store) listUnresolvedMessageReplies(
 // JSONB cast on PG (?::JSONB) and a bare ? on SQLite, so a JSON string binds in
 // both backends.
 func (s *Store) SetMessageMetadata(messageID int64, metadata sql.NullString) error {
-	ctx := context.Background()
+	return s.SetMessageMetadataContext(context.Background(), messageID, metadata)
+}
+
+// SetMessageMetadataContext writes metadata and refreshes meeting evidence with
+// cancellation propagated through connection acquisition and the transaction.
+func (s *Store) SetMessageMetadataContext(ctx context.Context, messageID int64, metadata sql.NullString) error {
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
 		if err := s.lockMeetingEvidenceWith(ctx, tx, messageID); err != nil {
 			return err
@@ -814,8 +824,13 @@ func setMessageMetadataWith(q querier, dialect Dialect, messageID int64, metadat
 // without losing the rest of the stored JSON. Returns an invalid NullString when
 // the column is NULL.
 func (s *Store) GetMessageMetadata(messageID int64) (sql.NullString, error) {
+	return s.GetMessageMetadataContext(context.Background(), messageID)
+}
+
+// GetMessageMetadataContext is the request-aware form of GetMessageMetadata.
+func (s *Store) GetMessageMetadataContext(ctx context.Context, messageID int64) (sql.NullString, error) {
 	var meta sql.NullString
-	err := s.db.QueryRow(`SELECT metadata FROM messages WHERE id = ?`, messageID).Scan(&meta)
+	err := s.db.QueryRowContext(ctx, `SELECT metadata FROM messages WHERE id = ?`, messageID).Scan(&meta)
 	if err != nil {
 		return sql.NullString{}, fmt.Errorf("get message metadata (id=%d): %w", messageID, err)
 	}
@@ -1220,13 +1235,18 @@ func upsertMessageSQL(now string) string {
 // UpsertMessage inserts or updates a message.
 // Existing nonempty RFC Message-IDs are preserved.
 func (s *Store) UpsertMessage(msg *Message) (int64, error) {
+	return s.UpsertMessageContext(context.Background(), msg)
+}
+
+// UpsertMessageContext inserts or updates a message with a cancellable
+// transaction, including journal and meeting-projection updates.
+func (s *Store) UpsertMessageContext(ctx context.Context, msg *Message) (int64, error) {
 	if msg == nil {
 		return 0, errors.New("upsert message requires a message")
 	}
 	if err := s.requireSyncSource(msg.SourceID); err != nil {
 		return 0, err
 	}
-	ctx := context.Background()
 	var id int64
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
 		q := boundQuerier{ctx: ctx, q: tx}
@@ -1446,16 +1466,22 @@ func enqueueActivityProjectionMessage(q querier, d Dialect, messageID int64) err
 
 // UpsertMessageBody stores the body text and HTML for a message in the separate message_bodies table.
 func (s *Store) UpsertMessageBody(messageID int64, bodyText, bodyHTML sql.NullString) error {
+	return s.UpsertMessageBodyContext(context.Background(), messageID, bodyText, bodyHTML)
+}
+
+// UpsertMessageBodyContext is the request-aware form of UpsertMessageBody.
+func (s *Store) UpsertMessageBodyContext(ctx context.Context, messageID int64, bodyText, bodyHTML sql.NullString) error {
 	if s.syncGeneration != nil {
-		return s.withTx(func(tx *loggedTx) error {
-			if err := s.requireSyncMessageSourceTx(tx, messageID); err != nil {
+		return s.withTxContext(ctx, func(tx *loggedTx) error {
+			q := boundQuerier{ctx: ctx, q: tx}
+			if err := s.requireSyncMessageSourceTx(q, messageID); err != nil {
 				return err
 			}
-			return upsertMessageBody(tx, s.dialect, s.fts5Available,
+			return upsertMessageBody(q, s.dialect, s.fts5Available,
 				messageID, bodyText, bodyHTML)
 		})
 	}
-	return upsertMessageBody(s.db, s.dialect, s.fts5Available, messageID, bodyText, bodyHTML)
+	return upsertMessageBody(boundQuerier{ctx: ctx, q: s.db}, s.dialect, s.fts5Available, messageID, bodyText, bodyHTML)
 }
 
 func upsertMessageBody(
@@ -2305,14 +2331,20 @@ func (s *Store) EnsureParticipantsBatch(addresses []mime.Address) (map[string]in
 
 // ReplaceMessageRecipients replaces all recipients for a message atomically.
 func (s *Store) ReplaceMessageRecipients(messageID int64, recipientType string, participantIDs []int64, displayNames []string) error {
-	return s.withTx(func(tx *loggedTx) error {
-		if err := s.lockMessageForRecipientWrite(tx, messageID); err != nil {
+	return s.ReplaceMessageRecipientsContext(context.Background(), messageID, recipientType, participantIDs, displayNames)
+}
+
+// ReplaceMessageRecipientsContext is the request-aware form of ReplaceMessageRecipients.
+func (s *Store) ReplaceMessageRecipientsContext(ctx context.Context, messageID int64, recipientType string, participantIDs []int64, displayNames []string) error {
+	return s.withTxContext(ctx, func(tx *loggedTx) error {
+		q := boundQuerier{ctx: ctx, q: tx}
+		if err := s.lockMessageForRecipientWrite(q, messageID); err != nil {
 			return err
 		}
-		if err := s.requireSyncMessageSourceTx(tx, messageID); err != nil {
+		if err := s.requireSyncMessageSourceTx(q, messageID); err != nil {
 			return err
 		}
-		if err := replaceMessageRecipientsTx(tx, messageID, RecipientSet{
+		if err := replaceMessageRecipientsTx(q, messageID, RecipientSet{
 			Type:           recipientType,
 			ParticipantIDs: participantIDs,
 			DisplayNames:   displayNames,
@@ -2325,7 +2357,7 @@ func (s *Store) ReplaceMessageRecipients(messageID int64, recipientType string, 
 		// 'from' rows are attribution input: the message upsert's CTE could not
 		// see the envelope rows this call just replaced, and importers on this
 		// granular path never reach persistMessageWith's final recompute.
-		return refreshMessageAttributionWith(tx, messageID)
+		return refreshMessageAttributionWith(q, messageID)
 	})
 }
 
@@ -3359,6 +3391,11 @@ func (s *Store) GetRandomMessageIDs(sourceID int64, limit int) ([]int64, error) 
 // UpsertFTS inserts or updates the FTS index for a message.
 // No-op if FTS is not available.
 func (s *Store) UpsertFTS(messageID int64, subject, bodyText, fromAddr, toAddrs, ccAddrs string) error {
+	return s.UpsertFTSContext(context.Background(), messageID, subject, bodyText, fromAddr, toAddrs, ccAddrs)
+}
+
+// UpsertFTSContext is the request-aware form of UpsertFTS.
+func (s *Store) UpsertFTSContext(ctx context.Context, messageID int64, subject, bodyText, fromAddr, toAddrs, ccAddrs string) error {
 	if !s.fts5Available {
 		return nil
 	}
@@ -3371,14 +3408,15 @@ func (s *Store) UpsertFTS(messageID int64, subject, bodyText, fromAddr, toAddrs,
 		CcAddrs:   ccAddrs,
 	}
 	if s.syncGeneration != nil {
-		return s.withTx(func(tx *loggedTx) error {
-			if err := s.requireSyncMessageSourceTx(tx, messageID); err != nil {
+		return s.withTxContext(ctx, func(tx *loggedTx) error {
+			q := boundQuerier{ctx: ctx, q: tx}
+			if err := s.requireSyncMessageSourceTx(q, messageID); err != nil {
 				return err
 			}
-			return s.dialect.FTSUpsert(tx, doc)
+			return s.dialect.FTSUpsert(q, doc)
 		})
 	}
-	return s.dialect.FTSUpsert(s.db, doc)
+	return s.dialect.FTSUpsert(boundQuerier{ctx: ctx, q: s.db}, doc)
 }
 
 // BackfillFTS populates the FTS table from existing message data.
@@ -3924,19 +3962,25 @@ func (s *Store) forEachHostedContentBody(query string, sourceID int64, fn func(m
 // a non-empty title — preserves the prior behavior of not blanking out
 // stored titles when re-syncs pass an empty value.
 func (s *Store) EnsureConversationWithType(sourceID int64, sourceConversationID, conversationType, title string) (int64, error) {
+	return s.EnsureConversationWithTypeContext(context.Background(), sourceID, sourceConversationID, conversationType, title)
+}
+
+// EnsureConversationWithTypeContext is the request-aware form of EnsureConversationWithType.
+func (s *Store) EnsureConversationWithTypeContext(ctx context.Context, sourceID int64, sourceConversationID, conversationType, title string) (int64, error) {
 	if err := s.requireSyncSource(sourceID); err != nil {
 		return 0, err
 	}
 	if s.syncGeneration != nil {
 		var id int64
-		err := s.withTx(func(tx *loggedTx) error {
+		err := s.withTxContext(ctx, func(tx *loggedTx) error {
+			q := boundQuerier{ctx: ctx, q: tx}
 			var err error
-			id, err = ensureConversationWithType(tx, s.dialect, sourceID, sourceConversationID, conversationType, title)
+			id, err = ensureConversationWithType(q, s.dialect, sourceID, sourceConversationID, conversationType, title)
 			return err
 		})
 		return id, err
 	}
-	return ensureConversationWithType(s.db, s.dialect, sourceID, sourceConversationID, conversationType, title)
+	return ensureConversationWithType(boundQuerier{ctx: ctx, q: s.db}, s.dialect, sourceID, sourceConversationID, conversationType, title)
 }
 
 func ensureConversationWithType(q querier, dialect Dialect, sourceID int64, sourceConversationID, conversationType, title string) (int64, error) {
@@ -5405,7 +5449,11 @@ func (s *Store) ReplaceReactions(messageID int64, reactions []ReactionRef) error
 // UpsertMessageRawWithFormat stores compressed raw data with an explicit format.
 // Unlike UpsertMessageRaw (which hardcodes 'mime'), this accepts the format as a parameter.
 func (s *Store) UpsertMessageRawWithFormat(messageID int64, rawData []byte, format string) error {
-	ctx := context.Background()
+	return s.UpsertMessageRawWithFormatContext(context.Background(), messageID, rawData, format)
+}
+
+// UpsertMessageRawWithFormatContext is the request-aware form of UpsertMessageRawWithFormat.
+func (s *Store) UpsertMessageRawWithFormatContext(ctx context.Context, messageID int64, rawData []byte, format string) error {
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
 		if err := s.lockMeetingEvidenceWith(ctx, tx, messageID); err != nil {
 			return err

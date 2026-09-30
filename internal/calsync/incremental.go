@@ -144,8 +144,11 @@ func (s *Syncer) incrementalCalendar(ctx context.Context, src *store.Source, cal
 
 		for i := range page.Items {
 			ev := page.Items[i]
-			added, cancelled, perr := s.persistOne(src.ID, cal, ev, result)
+			added, cancelled, perr := s.persistOne(ctx, src.ID, cal, ev, result)
 			if perr != nil {
+				if err := ctx.Err(); err != nil {
+					return fail(err)
+				}
 				cp.ErrorsCount++
 				s.recordItemError(syncID, ev.ID, perr)
 				continue

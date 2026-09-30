@@ -262,7 +262,7 @@ func TestBackupCapturesLooseBlobAboveMaintenanceLimit(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(int64(len(content)), size)
 	assert.Equal(content, readAllAndClose(t, stream))
-	_, _, err = blobs.ReadBounded(h, int64(len(content)))
+	_, _, err = physical.ReadBounded(ctx, packstore.Hash(h), int64(len(content)))
 	var limitErr *packstore.LimitError
 	require.ErrorAs(err, &limitErr, "bounded reads must retain the configured maintenance ceiling")
 	assert.Equal(packstore.LimitBlobRawBytes, limitErr.Dimension)
@@ -470,8 +470,8 @@ func TestBackupPackedRestoreLifecycle(t *testing.T) {
 	blobs, err := attachmentstore.New(store.NewPackCatalog(restoredStore), restoredAttDir)
 	require.NoError(err)
 	for h, want := range map[string][]byte{hashA: contentA, hashB: contentB} {
-		r, size, err := blobs.Open(h)
-		require.NoErrorf(err, "attachmentstore.Open(%s) after packed restore", h)
+		r, size, err := blobs.OpenStream(context.Background(), h)
+		require.NoErrorf(err, "attachmentstore.OpenStream(%s) after packed restore", h)
 		assert.Equalf(int64(len(want)), size, "blob %s size", h)
 		assert.Equalf(want, readAllAndClose(t, r), "blob %s reads byte-identical", h)
 		_, err = os.Stat(filepath.Join(restoredAttDir, h[:2], h))
@@ -518,7 +518,7 @@ func TestBackupPackedRestoreLifecycle(t *testing.T) {
 	assert.Equal(2, repacked.BlobsPacked)
 	cycleBlobs := attachmentstore.Wrap(maint.Store())
 	for h, want := range map[string][]byte{hashA: contentA, hashB: contentB} {
-		r, size, err := cycleBlobs.Open(h)
+		r, size, err := cycleBlobs.OpenStream(context.Background(), h)
 		require.NoError(err)
 		assert.Equal(int64(len(want)), size)
 		assert.Equal(want, readAllAndClose(t, r))
@@ -539,7 +539,7 @@ func TestBackupPackedRestoreLifecycle(t *testing.T) {
 	require.NoError(err)
 	defer func() { require.NoError(looseBlobs.Close()) }()
 	for h, want := range map[string][]byte{hashA: contentA, hashB: contentB} {
-		r, _, err := looseBlobs.Open(h)
+		r, _, err := looseBlobs.OpenStream(context.Background(), h)
 		require.NoError(err)
 		assert.Equal(want, readAllAndClose(t, r))
 	}
@@ -615,10 +615,10 @@ func TestBackupPackedRestoreOverwriteReplacesPriorPackAuthority(t *testing.T) {
 	blobs, err := attachmentstore.New(store.NewPackCatalog(restoredStore), filepath.Join(target, "attachments"))
 	require.NoError(err)
 	defer func() { require.NoError(blobs.Close()) }()
-	reader, _, err := blobs.Open(snapshotHash)
+	reader, _, err := blobs.OpenStream(context.Background(), snapshotHash)
 	require.NoError(err)
 	assert.Equal(snapshotContent, readAllAndClose(t, reader))
-	_, _, err = blobs.Open(newerHash)
+	_, _, err = blobs.OpenStream(context.Background(), newerHash)
 	require.ErrorIs(err, fs.ErrNotExist,
 		"a preserved old pack file must not grant authority to non-snapshot content")
 }
@@ -667,7 +667,7 @@ func TestBackupPackedRestoreMixedConfiguredLimit(t *testing.T) {
 	require.NoError(err)
 	defer func() { require.NoError(blobs.Close()) }()
 	for h, want := range map[string][]byte{smallHash: small, largeHash: large} {
-		r, _, err := blobs.Open(h)
+		r, _, err := blobs.OpenStream(context.Background(), h)
 		require.NoError(err)
 		assert.Equal(want, readAllAndClose(t, r))
 	}
@@ -799,7 +799,7 @@ func TestBackupCaptureOverlapsRepack(t *testing.T) {
 	verify, err := backup.Verify(context.Background(), repo, backupapp.New("test"), backup.VerifyOptions{All: true})
 	require.NoError(err)
 	assert.Empty(verify.Problems)
-	r, _, err := f.blobs.Open(liveHash)
+	r, _, err := f.blobs.OpenStream(context.Background(), liveHash)
 	require.NoError(err)
 	assert.Equal(live, readAllAndClose(t, r))
 }

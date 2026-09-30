@@ -1024,7 +1024,7 @@ func TestStore_RemoveSourceSerialized_PackedLogicalGC(t *testing.T) {
 	bs, err := attachmentstore.New(store.NewPackCatalog(f.Store), attachmentsDir)
 	require.NoError(err)
 	defer func() { require.NoError(bs.Close()) }()
-	_, _, err = bs.Open(uniqueContent)
+	_, _, err = bs.OpenStream(context.Background(), uniqueContent)
 	require.ErrorIs(err, fs.ErrNotExist,
 		"logical deletion rejects even a canonical loose crash leftover")
 	assert.FileExists(loosePath, "file cleanup remains best effort and separate from logical GC")

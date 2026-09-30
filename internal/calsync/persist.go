@@ -64,7 +64,7 @@ type eventMetadata struct {
 // ingestEvent persists a non-cancelled event through the canonical write path
 // plus the metadata helper, and indexes it for FTS/embeddings. It is idempotent
 // via UpsertMessage's ON CONFLICT(source_id, source_message_id).
-func (s *Syncer) ingestEvent(sourceID int64, cal gcal.Calendar, ev gcal.Event) (int64, error) {
+func (s *Syncer) ingestEvent(ctx context.Context, sourceID int64, cal gcal.Calendar, ev gcal.Event) (int64, error) {
 	smid := deriveSourceMessageID(ev)
 	ev.Organizer.Email = normalizeParticipantEmail(ev.Organizer.Email)
 	for i := range ev.Attendees {
@@ -75,7 +75,7 @@ func (s *Syncer) ingestEvent(sourceID int64, cal gcal.Calendar, ev gcal.Event) (
 	// calendar people dedupe with email contacts.
 	var senderID int64
 	if ev.Organizer.Email != "" {
-		id, err := s.store.EnsureParticipant(ev.Organizer.Email, ev.Organizer.DisplayName, emailDomain(ev.Organizer.Email))
+		id, err := s.store.EnsureParticipantContext(ctx, ev.Organizer.Email, ev.Organizer.DisplayName, emailDomain(ev.Organizer.Email))
 		if err != nil {
 			return 0, fmt.Errorf("organizer participant: %w", err)
 		}
@@ -91,7 +91,7 @@ func (s *Syncer) ingestEvent(sourceID int64, cal gcal.Calendar, ev gcal.Event) (
 		if a.Email == "" || isResourceAttendee(a) {
 			continue
 		}
-		pid, err := s.store.EnsureParticipant(a.Email, a.DisplayName, emailDomain(a.Email))
+		pid, err := s.store.EnsureParticipantContext(ctx, a.Email, a.DisplayName, emailDomain(a.Email))
 		if err != nil {
 			return 0, fmt.Errorf("attendee participant: %w", err)
 		}
@@ -110,7 +110,7 @@ func (s *Syncer) ingestEvent(sourceID int64, cal gcal.Calendar, ev gcal.Event) (
 	if ev.RecurringEventID != "" {
 		convTitle = ""
 	}
-	convID, err := s.store.EnsureConversationWithType(sourceID, conversationKey(ev), gcal.ConversationType, convTitle)
+	convID, err := s.store.EnsureConversationWithTypeContext(ctx, sourceID, conversationKey(ev), gcal.ConversationType, convTitle)
 	if err != nil {
 		return 0, fmt.Errorf("ensure conversation: %w", err)
 	}
@@ -122,7 +122,7 @@ func (s *Syncer) ingestEvent(sourceID int64, cal gcal.Calendar, ev gcal.Event) (
 		strings.EqualFold(ev.Organizer.Email, s.opts.AccountEmail)
 	fromMe := ev.Organizer.Self || identityFromMe
 
-	msgID, err := s.store.UpsertMessage(&store.Message{
+	msgID, err := s.store.UpsertMessageContext(ctx, &store.Message{
 		ConversationID:          convID,
 		SourceID:                sourceID,
 		SourceMessageID:         smid,
@@ -139,15 +139,15 @@ func (s *Syncer) ingestEvent(sourceID int64, cal gcal.Calendar, ev gcal.Event) (
 		return 0, fmt.Errorf("upsert message: %w", err)
 	}
 
-	metaJSON, err := json.Marshal(buildMetadata(ev, cal, s.opts.AccountEmail, s.ownerAddressSet()), json.Deterministic(true))
+	metaJSON, err := json.Marshal(buildMetadata(ev, cal, s.opts.AccountEmail, s.ownerAddressSet(ctx)), json.Deterministic(true))
 	if err != nil {
 		return 0, fmt.Errorf("marshal metadata: %w", err)
 	}
-	if err := s.store.SetMessageMetadata(msgID, sql.NullString{String: string(metaJSON), Valid: true}); err != nil {
+	if err := s.store.SetMessageMetadataContext(ctx, msgID, sql.NullString{String: string(metaJSON), Valid: true}); err != nil {
 		return 0, fmt.Errorf("set metadata: %w", err)
 	}
 
-	if err := s.store.UpsertMessageBody(msgID, sql.NullString{String: body, Valid: body != ""}, sql.NullString{}); err != nil {
+	if err := s.store.UpsertMessageBodyContext(ctx, msgID, sql.NullString{String: body, Valid: body != ""}, sql.NullString{}); err != nil {
 		return 0, fmt.Errorf("upsert body: %w", err)
 	}
 
@@ -157,7 +157,7 @@ func (s *Syncer) ingestEvent(sourceID int64, cal gcal.Calendar, ev gcal.Event) (
 			return 0, fmt.Errorf("marshal raw event: %w", err)
 		}
 	}
-	if err := s.store.UpsertMessageRawWithFormat(msgID, raw, gcal.RawFormat); err != nil {
+	if err := s.store.UpsertMessageRawWithFormatContext(ctx, msgID, raw, gcal.RawFormat); err != nil {
 		return 0, fmt.Errorf("upsert raw: %w", err)
 	}
 
@@ -173,21 +173,24 @@ func (s *Syncer) ingestEvent(sourceID int64, cal gcal.Calendar, ev gcal.Event) (
 		fromIDs = []int64{senderID}
 		fromNames = []string{ev.Organizer.DisplayName}
 	}
-	if err := s.store.ReplaceMessageRecipients(msgID, "from", fromIDs, fromNames); err != nil {
+	if err := s.store.ReplaceMessageRecipientsContext(ctx, msgID, "from", fromIDs, fromNames); err != nil {
 		return 0, fmt.Errorf("replace from recipient: %w", err)
 	}
-	if err := s.store.ReplaceMessageRecipients(msgID, "to", attendeeIDs, attendeeNames); err != nil {
+	if err := s.store.ReplaceMessageRecipientsContext(ctx, msgID, "to", attendeeIDs, attendeeNames); err != nil {
 		return 0, fmt.Errorf("replace to recipients: %w", err)
 	}
 
 	// FTS: raw attendee emails go ONLY through the toAddrs column, never the
 	// body, so BM25/ts_rank doesn't double-count them and embeddings see only
 	// semantic prose.
-	if err := s.store.UpsertFTS(msgID, subject, body, ev.Organizer.Email, strings.Join(attendeeEmails, " "), ""); err != nil {
+	if err := s.store.UpsertFTSContext(ctx, msgID, subject, body, ev.Organizer.Email, strings.Join(attendeeEmails, " "), ""); err != nil {
+		if ctx.Err() != nil {
+			return 0, ctx.Err()
+		}
 		s.logger.Warn("upsert calendar event fts failed", "message_id", msgID, "event_id", smid, "error", err)
 	}
 
-	return msgID, nil
+	return msgID, ctx.Err()
 }
 
 // flagCancelled retains a cancelled event rather than soft-deleting it. If the
@@ -196,25 +199,25 @@ func (s *Syncer) ingestEvent(sourceID int64, cal gcal.Calendar, ev gcal.Event) (
 // summary/start, so re-upserting would wipe the archived event). If the row was
 // never seen, it inserts a minimal tombstone whose metadata records the
 // cancellation. Returns (messageID, insertedNew).
-func (s *Syncer) flagCancelled(sourceID int64, cal gcal.Calendar, ev gcal.Event) (int64, bool, error) {
+func (s *Syncer) flagCancelled(ctx context.Context, sourceID int64, cal gcal.Calendar, ev gcal.Event) (int64, bool, error) {
 	smid := deriveSourceMessageID(ev)
-	existing, err := s.store.MessageExistsBatch(sourceID, []string{smid})
+	existing, err := s.store.MessageExistsBatchContext(ctx, sourceID, []string{smid})
 	if err != nil {
 		return 0, false, fmt.Errorf("lookup existing event: %w", err)
 	}
 	if id, ok := existing[smid]; ok {
-		merged, err := mergeStatusCancelled(s.store, id)
+		merged, err := mergeStatusCancelled(ctx, s.store, id)
 		if err != nil {
 			return 0, false, err
 		}
-		if err := s.store.SetMessageMetadata(id, merged); err != nil {
+		if err := s.store.SetMessageMetadataContext(ctx, id, merged); err != nil {
 			return 0, false, fmt.Errorf("flag cancelled metadata: %w", err)
 		}
 		return id, false, nil
 	}
 	// Never-seen cancellation: record it as a tombstone via the normal path.
 	// ev.Status == "cancelled" flows into metadata.status.
-	id, err := s.ingestEvent(sourceID, cal, ev)
+	id, err := s.ingestEvent(ctx, sourceID, cal, ev)
 	if err != nil {
 		return 0, false, err
 	}
@@ -223,8 +226,8 @@ func (s *Syncer) flagCancelled(sourceID int64, cal gcal.Calendar, ev gcal.Event)
 
 // mergeStatusCancelled reads a message's existing metadata, sets status to
 // "cancelled", and returns the merged JSON, preserving all other keys.
-func mergeStatusCancelled(st *store.Store, messageID int64) (sql.NullString, error) {
-	existing, err := st.GetMessageMetadata(messageID)
+func mergeStatusCancelled(ctx context.Context, st *store.Store, messageID int64) (sql.NullString, error) {
+	existing, err := st.GetMessageMetadataContext(ctx, messageID)
 	if err != nil {
 		return sql.NullString{}, fmt.Errorf("read metadata: %w", err)
 	}
@@ -326,11 +329,14 @@ func ownerResponseStatus(ev gcal.Event, accountEmail string, ownerAddresses map[
 // ownerAddressSet reads the confirmed owner addresses once per syncer. A
 // read failure leaves the set empty: the account address and the API's self
 // flag still identify the owner.
-func (s *Syncer) ownerAddressSet() map[string]struct{} {
+func (s *Syncer) ownerAddressSet(ctx context.Context) map[string]struct{} {
 	if s.ownerAddresses != nil {
 		return s.ownerAddresses
 	}
-	addresses, err := s.store.OwnerEmailAddressesContext(context.Background())
+	addresses, err := s.store.OwnerEmailAddressesContext(ctx)
+	if ctx.Err() != nil {
+		return nil
+	}
 	if err != nil {
 		s.logger.Warn("read owner addresses for calendar RSVPs", "error", err)
 		addresses = map[string]struct{}{}

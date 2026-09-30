@@ -58,14 +58,6 @@ func TestUppercaseHashReadsLooseAndPackedContent(t *testing.T) {
 			t.Cleanup(func() { require.NoError(blobs.Close()) })
 			uppercase := strings.ToUpper(hash.String())
 
-			reader, size, err := blobs.Open(uppercase)
-			require.NoError(err)
-			got := make([]byte, size)
-			_, err = reader.Read(got)
-			require.NoError(err)
-			require.NoError(reader.Close())
-			assert.Equal(content, got)
-
 			stream, streamSize, err := blobs.OpenStream(context.Background(), uppercase)
 			require.NoError(err)
 			streamed, readErr := io.ReadAll(stream)
@@ -79,10 +71,6 @@ func TestUppercaseHashReadsLooseAndPackedContent(t *testing.T) {
 			require.NoError(err)
 			require.ErrorIs(incomplete.Close(), pack.ErrVerificationIncomplete)
 
-			bounded, boundedSize, err := blobs.ReadBounded(uppercase, int64(len(content)))
-			require.NoError(err)
-			assert.Equal(int64(len(content)), boundedSize)
-			assert.Equal(content, bounded)
 		})
 	}
 }

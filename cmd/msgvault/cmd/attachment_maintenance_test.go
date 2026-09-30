@@ -102,7 +102,7 @@ func (f *attachmentMaintenanceFixture) packedEntry(hash string) *store.PackIndex
 
 func (f *attachmentMaintenanceFixture) readBlob(hash string) []byte {
 	f.t.Helper()
-	r, _, err := f.blob.Open(hash)
+	r, _, err := f.blob.OpenStream(f.t.Context(), hash)
 	require.NoError(f.t, err, "open blob %s", hash)
 	defer func() { require.NoError(f.t, r.Close(), "close blob reader") }()
 	data, err := io.ReadAll(r)

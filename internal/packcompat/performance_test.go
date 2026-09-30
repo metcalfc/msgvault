@@ -24,16 +24,6 @@ import (
 const benchmarkBlobBytes = 256 << 10
 const benchmarkLargeBlobBytes = 32 << 20
 
-func BenchmarkLooseRead(b *testing.B) {
-	blobs, hash, content := benchmarkLooseStore(b)
-	b.SetBytes(int64(len(content)))
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		readBenchmarkBlob(b, blobs, hash)
-	}
-}
-
 func BenchmarkLooseStream(b *testing.B) {
 	blobs, hash, content := benchmarkLooseStore(b)
 	b.SetBytes(int64(len(content)))
@@ -41,17 +31,6 @@ func BenchmarkLooseStream(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		streamBenchmarkBlob(b, blobs, hash)
-	}
-}
-
-func BenchmarkPackedWarmRead(b *testing.B) {
-	blobs, hash, content, _ := benchmarkPackedStore(b)
-	readBenchmarkBlob(b, blobs, hash)
-	b.SetBytes(int64(len(content)))
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		readBenchmarkBlob(b, blobs, hash)
 	}
 }
 
@@ -66,17 +45,6 @@ func BenchmarkPackedWarmStream(b *testing.B) {
 	}
 }
 
-func BenchmarkPackedLargeRead(b *testing.B) {
-	blobs, hash, content, _ := benchmarkPackedStoreWithContent(b, benchmarkContentSize(benchmarkLargeBlobBytes))
-	readBenchmarkBlob(b, blobs, hash)
-	b.SetBytes(int64(len(content)))
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		readBenchmarkBlob(b, blobs, hash)
-	}
-}
-
 func BenchmarkPackedLargeStream(b *testing.B) {
 	blobs, hash, content, _ := benchmarkPackedStoreWithContent(b, benchmarkContentSize(benchmarkLargeBlobBytes))
 	streamBenchmarkBlob(b, blobs, hash)
@@ -85,17 +53,6 @@ func BenchmarkPackedLargeStream(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		streamBenchmarkBlob(b, blobs, hash)
-	}
-}
-
-func BenchmarkPackedLargeRawRead(b *testing.B) {
-	blobs, hash, content, _ := benchmarkPackedStoreWithContent(b, benchmarkNoise(benchmarkLargeBlobBytes))
-	readBenchmarkBlob(b, blobs, hash)
-	b.SetBytes(int64(len(content)))
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		readBenchmarkBlob(b, blobs, hash)
 	}
 }
 
@@ -108,30 +65,6 @@ func BenchmarkPackedLargeRawStream(b *testing.B) {
 	for range b.N {
 		streamBenchmarkBlob(b, blobs, hash)
 	}
-}
-
-func BenchmarkPackedConcurrentRead(b *testing.B) {
-	blobs, hash, content, _ := benchmarkPackedStore(b)
-	readBenchmarkBlob(b, blobs, hash)
-	b.SetBytes(int64(len(content)))
-	b.ReportAllocs()
-	b.ResetTimer()
-	var firstErr error
-	var once sync.Once
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			reader, _, err := blobs.Open(hash)
-			if err == nil {
-				_, err = io.Copy(io.Discard, reader)
-				err = errors.Join(err, reader.Close())
-			}
-			if err != nil {
-				once.Do(func() { firstErr = err })
-				return
-			}
-		}
-	})
-	require.NoError(b, firstErr)
 }
 
 func BenchmarkPackedConcurrentStream(b *testing.B) {
@@ -249,14 +182,6 @@ func benchmarkNoise(size int) []byte {
 func benchmarkHash(content []byte) string {
 	sum := sha256.Sum256(content)
 	return hex.EncodeToString(sum[:])
-}
-
-func readBenchmarkBlob(b *testing.B, blobs *attachmentstore.Store, hash string) {
-	b.Helper()
-	reader, _, err := blobs.Open(hash)
-	require.NoError(b, err)
-	_, readErr := io.Copy(io.Discard, reader)
-	require.NoError(b, errors.Join(readErr, reader.Close()))
 }
 
 func streamBenchmarkBlob(b *testing.B, blobs *attachmentstore.Store, hash string) {

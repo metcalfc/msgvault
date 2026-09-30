@@ -40,19 +40,6 @@ func New(resolver packstore.Resolver, attachmentsDir string) (*Store, error) {
 	return Wrap(physical), nil
 }
 
-// Open preserves msgvault's established string-hash reader interface.
-func (s *Store) Open(hash string) (io.ReadSeekCloser, int64, error) {
-	parsed, err := parseHash(hash)
-	if err != nil {
-		return nil, 0, fmt.Errorf("parse attachment hash: %w", err)
-	}
-	reader, size, err := s.store.Open(context.Background(), parsed)
-	if err != nil {
-		return nil, 0, fmt.Errorf("open attachment %s: %w", hash, err)
-	}
-	return reader, size, nil
-}
-
 // OpenStream returns a verified sequential reader without buffering the whole
 // attachment. Callers must consume it through EOF (or use the Kit-specific
 // verification methods) and must observe the Close error.
@@ -68,19 +55,6 @@ func (s *Store) OpenStream(ctx context.Context, hash string) (io.ReadCloser, int
 	return reader, size, nil
 }
 
-// ReadBounded preserves msgvault's maintenance reader interface.
-func (s *Store) ReadBounded(hash string, maxBytes int64) ([]byte, int64, error) {
-	parsed, err := parseHash(hash)
-	if err != nil {
-		return nil, 0, fmt.Errorf("parse bounded attachment hash: %w", err)
-	}
-	data, size, err := s.store.ReadBounded(context.Background(), parsed, maxBytes)
-	if err != nil {
-		return nil, 0, fmt.Errorf("read bounded attachment %s: %w", hash, err)
-	}
-	return data, size, nil
-}
-
 func parseHash(hash string) (packstore.Hash, error) {
 	if err := export.ValidateContentHash(hash); err != nil {
 		return "", err
@@ -90,22 +64,6 @@ func parseHash(hash string) (packstore.Hash, error) {
 		return "", fmt.Errorf("parse canonical attachment hash: %w", err)
 	}
 	return parsed, nil
-}
-
-// RetirePack closes cached readers before physically deleting packID.
-func (s *Store) RetirePack(packID string) error {
-	if err := s.store.RetirePack(packID); err != nil {
-		return fmt.Errorf("retire attachment pack %s: %w", packID, err)
-	}
-	return nil
-}
-
-// Opener adapts verified streaming reads for export consumers.
-func (s *Store) Opener() export.AttachmentOpener {
-	return func(hash string) (io.ReadCloser, error) {
-		reader, _, err := s.OpenStream(context.Background(), hash)
-		return reader, err
-	}
 }
 
 // Close releases cached pack descriptors.

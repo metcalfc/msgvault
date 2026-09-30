@@ -45,7 +45,7 @@ func TestCrossReadKitStoreReadsFrozenMsgvaultPack(t *testing.T) {
 	for _, blob := range manifest.Blobs {
 		want, decodeErr := base64.StdEncoding.DecodeString(blob.ContentBase64)
 		require.NoError(decodeErr)
-		reader, size, openErr := blobs.Open(blob.Hash)
+		reader, size, openErr := blobs.OpenStream(context.Background(), blob.Hash)
 		require.NoError(openErr)
 		got, readErr := io.ReadAll(reader)
 		require.NoError(readErr)

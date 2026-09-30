@@ -668,7 +668,7 @@ func assertRestoredCLIBlob(t *testing.T, target, hash string, want []byte, packe
 	}
 	blobs, err := attachmentstore.New(store.NewPackCatalog(restored), filepath.Join(target, "attachments"))
 	require.NoError(err)
-	reader, size, err := blobs.Open(hash)
+	reader, size, err := blobs.OpenStream(context.Background(), hash)
 	require.NoError(err)
 	got, err := io.ReadAll(reader)
 	require.NoError(err)

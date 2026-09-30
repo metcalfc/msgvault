@@ -220,7 +220,7 @@ func assertRestoredBenchmarkBytes(
 	blobs, err := attachmentstore.New(store.NewPackCatalog(st), attachmentsDir)
 	require.NoError(tb, err)
 	for hash, want := range expected {
-		reader, size, err := blobs.Open(hash)
+		reader, size, err := blobs.OpenStream(context.Background(), hash)
 		require.NoError(tb, err)
 		got, err := io.ReadAll(reader)
 		require.NoError(tb, err)
