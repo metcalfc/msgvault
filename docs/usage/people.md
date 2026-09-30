@@ -163,7 +163,9 @@ to link or merge through it. An address looks shared when:
 
 Case, quotes, a trailing "via …", name order, and initials or short forms do
 not count as different names. Message names and profile names are compared
-only among themselves, because a contact card may use a nickname.
+only among themselves, because a contact card may use a nickname. Each address
+is judged only by the names seen on that address, so a phone number or another
+address linked to it, such as a shared household phone, does not count.
 
 The review card says **Looks like a shared mailbox** and why, and
 **Link identities** is unavailable. Mark the address as not a person, or
