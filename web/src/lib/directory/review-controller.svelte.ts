@@ -16,6 +16,7 @@ import type {
   IdentityReviewState,
   RelationshipReviewState,
 } from '../explore/models';
+import { setKind } from '../people/correspondent-kind';
 import {
   validatePersonMergeRequired,
   type PersonMergeSuccess,
@@ -272,6 +273,32 @@ export class DirectoryReviewController {
     context = this.reviewContextSnapshot(),
   ): Promise<IdentityDecisionResult> {
     return this.decideIdentity(candidateID, 'reject', notes, context);
+  }
+  /** "This is a person" for a shared-looking address: the user's override
+   * lifts the hold, so the candidate reloads as an ordinary match. Returns
+   * an error message, or null on success. */
+  async confirmPerson(
+    candidateID: number,
+    participantID: number,
+    context: DirectoryReviewContextSnapshot,
+  ): Promise<string | null> {
+    if (this.disposed || this.pendingDecisions.has(candidateID)) return 'A decision is already pending.';
+    if (!this.isReviewContextCurrent(context)) return 'The review context changed.';
+    this.pendingDecisions.add(candidateID);
+    this.decisionError = null;
+    try {
+      const outcome = await setKind(this.client, participantID, 'person');
+      if (!outcome.ok) {
+        if (this.ownsDecisionContext(context)) this.decisionError = outcome.message;
+        return outcome.message;
+      }
+      if (!this.ownsDecisionContext(context)) return null;
+      await this.loadIdentityPage(context.offset, context.identityState);
+      this.status = 'Marked as a person. The match can be linked now.';
+      return null;
+    } finally {
+      this.pendingDecisions.delete(candidateID);
+    }
   }
   /** After a record was marked as not a person from the queue: its open
    * candidates are resolved, so the page reloads without them. */

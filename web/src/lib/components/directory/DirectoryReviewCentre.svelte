@@ -236,6 +236,7 @@
                   onAccept={() => openDecision(row, 'accept')}
                   onReject={() => openDecision(row, 'reject')}
                   onNotAPerson={(participantID, notAPersonKind) => openNotAPerson(row, participantID, notAPersonKind)}
+                  onIsPerson={(participantID) => void controller.confirmPerson(row.id, participantID, controller.reviewContextSnapshot())}
                 />
               {/each}
             </div>

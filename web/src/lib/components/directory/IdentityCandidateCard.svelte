@@ -26,11 +26,13 @@
     onReject: () => void;
     /** Marks one of the candidate's archive identities as not a person. */
     onNotAPerson?: (participantID: number, kind: NotAPersonKind) => void;
+    /** Says a shared-looking address is a person after all. */
+    onIsPerson?: (participantID: number) => void;
   }
 
   let {
     candidate, pending, left = undefined, right = undefined, contactMatch = undefined, onAccept, onReject,
-    onNotAPerson = undefined
+    onNotAPerson = undefined, onIsPerson = undefined
   }: Props = $props();
   const headingID = $derived(`identity-match-${candidate.id}-heading`);
   const evidence = $derived(candidate.evidence ?? []);
@@ -76,7 +78,11 @@
     {#if sharedMailbox}
       <div class="shared-hint" role="note">
         <strong>Looks like a shared mailbox</strong>
-        <span>{sharedMailboxReason(sharedMailbox)} Nothing is linked through it. Mark it as not a person below, or open it and choose “This is a person”.</span>
+        <span>{sharedMailboxReason(sharedMailbox)} Nothing is linked through it. Mark it as not a person below, or say it is a person to link it.</span>
+        {#if onIsPerson && candidate.left_kind === 'participant'}
+          <div><Button size="sm" surface="soft" label="This is a person" disabled={pending}
+            ariaLabel={`${leftLabel} is a person`} onclick={() => onIsPerson?.(candidate.left_id)} /></div>
+        {/if}
       </div>
     {:else if contactMatch}
       <p class="match-summary" class:blocked={!!blockedMessage}>

@@ -169,6 +169,7 @@ describe('IdentityCandidateCard', () => {
 
   it('holds back a shared mailbox and offers the not-a-person actions', async () => {
     const onNotAPerson = vi.fn();
+    const onIsPerson = vi.fn();
     render(IdentityCandidateCard, {
       candidate: { ...completeCandidate(), left_kind: 'participant', left_id: 40, right_kind: 'person', right_id: 41 },
       pending: false,
@@ -180,7 +181,8 @@ describe('IdentityCandidateCard', () => {
       },
       onAccept: vi.fn(),
       onReject: vi.fn(),
-      onNotAPerson
+      onNotAPerson,
+      onIsPerson
     });
 
     const hint = screen.getByRole('note');
@@ -194,6 +196,9 @@ describe('IdentityCandidateCard', () => {
       .toEqual(['Organization', 'Shared mailbox', 'Ignore']);
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Shared mailbox' }));
     expect(onNotAPerson).toHaveBeenCalledWith(40, 'shared_mailbox');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Support is a person' }));
+    expect(onIsPerson).toHaveBeenCalledWith(40);
   });
 
   it('names each archive identity when both sides are identities', async () => {
