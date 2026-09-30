@@ -1209,6 +1209,9 @@ func (s *Store) collapseIdentityMatchCandidateMergeGroupTx(
 	confidence, source, sourceRef := identityMatchCandidateMergeConfidenceProvenance(group)
 	observationOrigin := reconcileIdentityMatchCandidateMergeObservationOrigin(group, state)
 	preConflict := reconcileIdentityMatchCandidateMergePreConflictState(group, state)
+	if err := carryNotAPersonSnapshotTx(ctx, tx, group, state, notes); err != nil {
+		return err
+	}
 
 	for _, loser := range group[1:] {
 		if _, err := tx.ExecContext(ctx, `

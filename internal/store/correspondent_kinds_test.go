@@ -588,3 +588,36 @@ func TestClearingRestoresTheExactPriorDecision(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(before, read(), "state, notes, decision attribution, and application_pending come back exactly")
 }
+
+func TestParticipantMergeKeepsTheSnapshotOfACollapsedResolvedCandidate(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	survivor := f.emailParticipant("survivor-desk@example.test", "Desk")
+	absorbed := f.emailParticipant("absorbed-desk@example.test", "Desk")
+	other := f.emailParticipant("other-desk@example.test", "Desk")
+	kept := upsertDisplayNameCandidate(t, f.st, survivor, other, "desk")
+	upsertDisplayNameCandidate(t, f.st, absorbed, other, "desk")
+
+	_, err := f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: absorbed, Kind: correspondentkind.Ignored,
+	})
+	require.NoError(err)
+	// The absorbed participant's resolved candidate collapses into the
+	// survivor's open one, and the survivor inherits the classification.
+	require.NoError(f.st.MergeParticipants(absorbed, survivor))
+	state, notes := candidateState(t, f.st, kept.ID)
+	require.Equal(store.IdentityMatchStateRejected, state)
+	require.NotNil(notes)
+	require.Equal(correspondentkind.NotAPersonReason, *notes)
+
+	result, err := f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: survivor, Kind: correspondentkind.Person,
+	})
+	require.NoError(err)
+	assert.Equal(1, result.RestoredCandidates)
+	state, notes = candidateState(t, f.st, kept.ID)
+	assert.Equal(store.IdentityMatchStateCandidate, state)
+	assert.Nil(notes)
+}

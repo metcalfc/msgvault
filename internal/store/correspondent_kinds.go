@@ -1054,6 +1054,59 @@ func (s *Store) resolveNotAPersonCandidatesTx(
 	return len(ordered), nil
 }
 
+// carryNotAPersonSnapshotTx keeps a "not a person" resolution restorable
+// when duplicate candidates collapse into one (after a participant merge).
+// The losers are deleted and their snapshots go with them, so when the
+// collapsed row ends up as a not_a_person rejection the survivor needs its
+// own snapshot: its own pre-collapse decision when it was not itself the
+// resolved row, otherwise a loser's snapshot moved onto it. group[0] is the
+// winner; the losers are still present when this runs.
+func carryNotAPersonSnapshotTx(
+	ctx context.Context, tx *loggedTx, group []identityMatchCandidateMergeRow,
+	state IdentityMatchState, notes sql.NullString,
+) error {
+	winner := group[0]
+	resolved := state == IdentityMatchStateRejected && notes.Valid &&
+		notes.String == correspondentkind.NotAPersonReason
+	if !resolved {
+		return nil
+	}
+	var winnerSnapshots int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM correspondent_kind_candidate_snapshots
+		WHERE candidate_id = ?`, winner.ID).Scan(&winnerSnapshots); err != nil {
+		return fmt.Errorf("check candidate decision snapshot: %w", err)
+	}
+	if winnerSnapshots > 0 {
+		return nil
+	}
+	var source int64
+	for _, loser := range group[1:] {
+		var count int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM correspondent_kind_candidate_snapshots
+			WHERE candidate_id = ?`, loser.ID).Scan(&count); err != nil {
+			return fmt.Errorf("check candidate decision snapshot: %w", err)
+		}
+		if count > 0 {
+			source = loser.ID
+			break
+		}
+	}
+	if source == 0 {
+		return nil
+	}
+	winnerResolved := winner.State == IdentityMatchStateRejected && winner.Notes.Valid &&
+		winner.Notes.String == correspondentkind.NotAPersonReason
+	if !winnerResolved {
+		// The survivor's own open decision is what clearing should restore.
+		return snapshotCandidateDecisionTx(ctx, tx, winner.ID)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE correspondent_kind_candidate_snapshots
+		SET candidate_id = ? WHERE candidate_id = ?`, winner.ID, source); err != nil {
+		return fmt.Errorf("move candidate decision snapshot: %w", err)
+	}
+	return nil
+}
+
 // snapshotCandidateDecisionTx records a candidate's current decision fields
 // before a classification resolves it.
 func snapshotCandidateDecisionTx(ctx context.Context, tx *loggedTx, candidateID int64) error {
