@@ -352,3 +352,56 @@ func TestEntityLabelsParticipantMarkedNotAPersonKeepsItsOwnName(t *testing.T) {
 	assert.Equal(map[int64]string{desk: "Help Desk", orders: "orders@example.com"}, after.Participants)
 	assert.Equal(map[int64]string{person.ID: "Avery Stone"}, after.People)
 }
+
+// TestEntityLabelsScopeNotAPersonToTheRequestedClusters pins that the
+// not-a-person check follows links from the requested participants: a
+// participant linked into a classified cluster reads as its own name, and
+// participants outside every classified cluster keep their bound person's
+// name while another cluster is classified. The scoped lookup agrees with
+// the whole-archive one for the requested participants.
+func TestEntityLabelsScopeNotAPersonToTheRequestedClusters(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := context.Background()
+	st := testutil.NewTestStore(t)
+
+	named := func(address, name, personName string) int64 {
+		id, err := st.EnsureParticipant(address, name, "example.com")
+		require.NoError(err)
+		if personName != "" {
+			person, _, err := st.CreatePersonFromParticipant(id)
+			require.NoError(err)
+			_, err = st.UpdatePersonDisplayNameContext(ctx, person.ID, person.Revision, new(personName))
+			require.NoError(err)
+		}
+		return id
+	}
+	desk := named("desk@example.com", "Help Desk", "")
+	middle := named("desk-alias@example.com", "", "")
+	alias := named("desk-other@example.com", "Desk Alias", "Avery Stone")
+	friend := named("friend@example.com", "Blair", "Blair Example")
+	_, err := st.LinkParticipants(desk, middle)
+	require.NoError(err)
+	_, err = st.LinkParticipants(middle, alias)
+	require.NoError(err)
+	_, err = st.SetCorrespondentKindContext(ctx, store.SetCorrespondentKindInput{
+		ParticipantID: desk, Kind: correspondentkind.SharedMailbox,
+	})
+	require.NoError(err)
+
+	labels, err := st.EntityLabelsContext(ctx, store.EntityLabelRequest{ParticipantIDs: []int64{alias, friend}})
+	require.NoError(err)
+	assert.Equal(map[int64]string{alias: "Desk Alias", friend: "Blair Example"}, labels.Participants)
+
+	scoped, err := st.NotPersonParticipantsForContext(ctx, []int64{alias, friend})
+	require.NoError(err)
+	assert.Equal(map[int64]correspondentkind.Kind{alias: correspondentkind.SharedMailbox}, scoped)
+	whole, err := st.NotPersonParticipantsContext(ctx)
+	require.NoError(err)
+	assert.Equal(whole[alias], scoped[alias])
+	assert.NotContains(whole, friend)
+
+	outside, err := st.NotPersonParticipantsForContext(ctx, []int64{friend})
+	require.NoError(err)
+	assert.Empty(outside)
+}

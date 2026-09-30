@@ -42,22 +42,27 @@ func sqlStoreOwnParticipantLabelExpr(alias string) string {
 		 ORDER BY pi.is_primary DESC, pi.identifier_type, pi.identifier_value LIMIT 1))`
 }
 
+// NotPersonParticipantsLookup maps each of the given participants whose
+// identity cluster is marked as not a person to its kind (the store's
+// NotPersonParticipantsForContext).
+type NotPersonParticipantsLookup func(
+	ctx context.Context, participantIDs []int64,
+) (map[int64]correspondentkind.Kind, error)
+
 type notPersonParticipantsKey struct{}
 
-// WithNotPersonParticipants tells conversation labels which participants
-// are in a cluster marked as not a person (the store's
-// NotPersonParticipantsContext). Such a participant is named by its own
-// name or address, never by the person it may still be bound to. Without
-// it, every participant counts as a person.
-func WithNotPersonParticipants(
-	ctx context.Context, participants map[int64]correspondentkind.Kind,
-) context.Context {
-	return context.WithValue(ctx, notPersonParticipantsKey{}, participants)
+// WithNotPersonParticipants tells conversation labels how to find the
+// participants marked as not a person. Labels ask only about the
+// participants on the page; such a participant is named by its own name or
+// address, never by the person it may still be bound to. Without a lookup,
+// every participant counts as a person.
+func WithNotPersonParticipants(ctx context.Context, lookup NotPersonParticipantsLookup) context.Context {
+	return context.WithValue(ctx, notPersonParticipantsKey{}, lookup)
 }
 
-func notPersonParticipants(ctx context.Context) map[int64]correspondentkind.Kind {
-	participants, _ := ctx.Value(notPersonParticipantsKey{}).(map[int64]correspondentkind.Kind)
-	return participants
+func notPersonParticipantsLookup(ctx context.Context) NotPersonParticipantsLookup {
+	lookup, _ := ctx.Value(notPersonParticipantsKey{}).(NotPersonParticipantsLookup)
+	return lookup
 }
 
 // conversationLabelRecentMessages bounds how many of a conversation's most
@@ -178,24 +183,40 @@ func (e *SQLiteEngine) fillConversationParticipantLabels(
 		return fmt.Errorf("label untitled conversations: %w", err)
 	}
 	defer func() { _ = result.Close() }()
-	notPeople := notPersonParticipants(ctx)
-	names := make(map[int64][]string, len(ids))
+	type labelMember struct {
+		conversationID, participantID int64
+		boundName, ownLabel           *string
+	}
+	var members []labelMember
+	var participantIDs []int64
 	for result.Next() {
-		var conversationID, participantID int64
-		var boundName, ownLabel *string
-		if err := result.Scan(&conversationID, &participantID, &boundName, &ownLabel); err != nil {
+		var member labelMember
+		if err := result.Scan(&member.conversationID, &member.participantID,
+			&member.boundName, &member.ownLabel); err != nil {
 			return fmt.Errorf("scan conversation label: %w", err)
 		}
-		label := ownLabel
-		if _, notPerson := notPeople[participantID]; !notPerson && boundName != nil {
-			label = boundName
-		}
-		if label != nil && strings.TrimSpace(*label) != "" {
-			names[conversationID] = append(names[conversationID], strings.TrimSpace(*label))
-		}
+		members = append(members, member)
+		participantIDs = append(participantIDs, member.participantID)
 	}
 	if err := result.Err(); err != nil {
 		return fmt.Errorf("iterate conversation labels: %w", err)
+	}
+	_ = result.Close()
+	var notPeople map[int64]correspondentkind.Kind
+	if lookup := notPersonParticipantsLookup(ctx); lookup != nil && len(participantIDs) > 0 {
+		if notPeople, err = lookup(ctx, participantIDs); err != nil {
+			return fmt.Errorf("label untitled conversations: %w", err)
+		}
+	}
+	names := make(map[int64][]string, len(ids))
+	for _, member := range members {
+		label := member.ownLabel
+		if _, notPerson := notPeople[member.participantID]; !notPerson && member.boundName != nil {
+			label = member.boundName
+		}
+		if label != nil && strings.TrimSpace(*label) != "" {
+			names[member.conversationID] = append(names[member.conversationID], strings.TrimSpace(*label))
+		}
 	}
 	for conversationID, indexes := range positions {
 		label := conversationParticipantLabel(names[conversationID])

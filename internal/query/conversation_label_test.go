@@ -1,6 +1,7 @@
 package query
 
 import (
+	"context"
 	"database/sql"
 	"strconv"
 	"strings"
@@ -111,8 +112,10 @@ func TestConversationLabelNamesANotAPersonParticipantByItsOwnName(t *testing.T) 
 	require := require.New(t)
 	engine := NewSQLiteEngine(conversationLabelFixture(t))
 	sourceID := int64(7)
-	ctx := WithNotPersonParticipants(t.Context(), map[int64]correspondentkind.Kind{
-		11: correspondentkind.SharedMailbox,
+	var asked []int64
+	ctx := WithNotPersonParticipants(t.Context(), func(_ context.Context, ids []int64) (map[int64]correspondentkind.Kind, error) {
+		asked = append(asked, ids...)
+		return map[int64]correspondentkind.Kind{11: correspondentkind.SharedMailbox}, nil
 	})
 
 	listed, err := engine.ListConversations(ctx, TextFilter{SourceID: &sourceID})
@@ -120,9 +123,13 @@ func TestConversationLabelNamesANotAPersonParticipantByItsOwnName(t *testing.T) 
 	labels := conversationLabelsByID(listed)
 	assert.Equal("Avery Observed, blake@example.com", labels[701])
 	assert.Equal("Avery Observed, blake@example.com, Casey Example +2", labels[702])
+	assert.NotContains(asked, int64(13), "the owner is never asked about")
+	assert.Subset(asked, []int64{11, 12, 14})
 }
 
 func TestDuckDBConversationParticipantLabelsComeFromTheArchive(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	db := conversationLabelFixture(t)
 	b := NewTestDataBuilder(t)
 	sourceID := b.AddSourceWithType("owner@example.com", "whatsapp")
@@ -139,12 +146,24 @@ func TestDuckDBConversationParticipantLabelsComeFromTheArchive(t *testing.T) {
 	analyticsDir, cleanup := b.Build()
 	t.Cleanup(cleanup)
 	engine, err := NewDuckDBEngine(analyticsDir, "", db)
-	require.NoError(t, err)
+	require.NoError(err)
 	t.Cleanup(func() { _ = engine.Close() })
 
 	rows, err := engine.ListConversations(t.Context(), TextFilter{})
-	require.NoError(t, err)
-	assert.Equal(t, wantConversationLabels, conversationLabelsByID(rows))
+	require.NoError(err)
+	assert.Equal(wantConversationLabels, conversationLabelsByID(rows))
+
+	// The Parquet path labels through the same archive lookup, so a
+	// participant marked as not a person reads the same on both engines.
+	ctx := WithNotPersonParticipants(t.Context(), func(context.Context, []int64) (map[int64]correspondentkind.Kind, error) {
+		return map[int64]correspondentkind.Kind{11: correspondentkind.SharedMailbox}, nil
+	})
+	duckRows, _, err := engine.ListConversationsSnapshot(ctx, TextFilter{})
+	require.NoError(err)
+	sqliteRows, _, err := NewSQLiteEngine(db).ListConversationsSnapshot(ctx, TextFilter{})
+	require.NoError(err)
+	assert.Equal(conversationLabelsByID(sqliteRows), conversationLabelsByID(duckRows))
+	assert.Equal("Avery Observed, blake@example.com", conversationLabelsByID(duckRows)[701])
 }
 
 func TestConversationParticipantLabelSummarizesExtraNames(t *testing.T) {

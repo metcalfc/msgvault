@@ -3104,6 +3104,12 @@ func (a *storeAPIAdapter) NotPersonParticipantsContext(
 	return a.store.NotPersonParticipantsContext(ctx)
 }
 
+func (a *storeAPIAdapter) NotPersonParticipantsForContext(
+	ctx context.Context, participantIDs []int64,
+) (map[int64]correspondentkind.Kind, error) {
+	return a.store.NotPersonParticipantsForContext(ctx, participantIDs)
+}
+
 func (a *storeAPIAdapter) SetCorrespondentKindContext(
 	ctx context.Context, input store.SetCorrespondentKindInput,
 ) (*store.SetCorrespondentKindResult, error) {

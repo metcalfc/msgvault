@@ -208,7 +208,7 @@ func (s *Store) participantLabels(ctx context.Context, ids []int64) (map[int64]s
 	// A participant in a cluster marked as not a person (an organization, a
 	// shared mailbox, or ignored) is not the person it may still be bound
 	// to, so it reads as its own name or address, never the person's name.
-	notPeople, err := s.NotPersonParticipantsContext(ctx)
+	notPeople, err := s.NotPersonParticipantsForContext(ctx, ids)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list participant labels: %w", err)
 	}

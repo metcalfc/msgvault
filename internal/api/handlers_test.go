@@ -8845,8 +8845,16 @@ type notPeopleMockStore struct {
 	notPeople map[int64]correspondentkind.Kind
 }
 
-func (s *notPeopleMockStore) NotPersonParticipantsContext(context.Context) (map[int64]correspondentkind.Kind, error) {
-	return s.notPeople, nil
+func (s *notPeopleMockStore) NotPersonParticipantsForContext(
+	_ context.Context, ids []int64,
+) (map[int64]correspondentkind.Kind, error) {
+	result := map[int64]correspondentkind.Kind{}
+	for _, id := range ids {
+		if kind, ok := s.notPeople[id]; ok {
+			result[id] = kind
+		}
+	}
+	return result, nil
 }
 
 // TestTextConversationLabelsNameNotAPersonParticipantsByTheirOwnName pins
