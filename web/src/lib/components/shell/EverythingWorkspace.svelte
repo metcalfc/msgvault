@@ -807,9 +807,8 @@
     <Button type="submit" label="Search" tone="info" surface="solid" />
   </form>
 
-  {#if visibleUnderstanding && visibleUnderstanding.suggestions.length > 0}
-    <QuerySuggestions suggestions={visibleUnderstanding.suggestions} onapply={applyQuerySuggestion} />
-  {/if}
+  <!-- Always mounted so its live region is present before suggestions arrive. -->
+  <QuerySuggestions suggestions={visibleUnderstanding?.suggestions ?? []} onapply={applyQuerySuggestion} />
 
   {#if modeFellBack}
     <p class="search-note" role="status">Searched full text because this query has only filters.</p>

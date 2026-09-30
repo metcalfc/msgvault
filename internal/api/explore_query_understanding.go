@@ -133,7 +133,7 @@ func (s *Server) handleExploreQueryUnderstanding(w http.ResponseWriter, r *http.
 	// Admit checks consent, the credential, and the budget before any
 	// archive read, so a disabled or unconsented feature costs nothing.
 	if admitter, ok := judge.(interface {
-		Admit(context.Context, jev.FeatureSpec, bool) (string, error)
+		Admit(ctx context.Context, spec jev.FeatureSpec, automatic bool) (string, error)
 	}); ok {
 		if _, err := admitter.Admit(ctx, queryunderstand.JevFeature(), false); err != nil {
 			skipped(jev.Skipped(err))

@@ -400,7 +400,7 @@ func profileDisplayLabel(profile store.Person, durableLabel string) string {
 func profileMatchesPeopleQuery(profile store.Person, durableLabel, queryText string) bool {
 	label := strings.ToLower(profileDisplayLabel(profile, durableLabel))
 	uid := strings.ToLower(profile.VCardUID)
-	for _, token := range strings.Fields(strings.ToLower(queryText)) {
+	for token := range strings.FieldsSeq(strings.ToLower(queryText)) {
 		if !strings.Contains(label, token) && !strings.Contains(uid, token) {
 			return false
 		}

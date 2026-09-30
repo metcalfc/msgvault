@@ -254,7 +254,7 @@ func parseCount(word string) (int, bool) {
 func rollingUnits(today time.Time, count int, unit string) (dayRange, bool) {
 	plural := func(name string) string {
 		if count == 1 {
-			return fmt.Sprintf("Past %s", name)
+			return "Past " + name
 		}
 		return fmt.Sprintf("Past %d %ss", count, name)
 	}

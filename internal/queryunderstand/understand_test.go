@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/jev"
-	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/testutil"
 )
 
@@ -89,7 +88,7 @@ func noul(probability float64) map[string]any {
 	return map[string]any{"type": "noul", "noul": probability}
 }
 
-func newService(t *testing.T, endpoint string, consent bool) (*jev.Service, *store.Store) {
+func newService(t *testing.T, endpoint string, consent bool) *jev.Service {
 	t.Helper()
 	st := testutil.NewTestStore(t)
 	cfg := jev.DefaultConfig()
@@ -110,7 +109,7 @@ func newService(t *testing.T, endpoint string, consent bool) (*jev.Service, *sto
 		_, _, err = st.GrantJevFeatureConsent(t.Context(), jev.FeatureQueryUnderstanding, policy.Fingerprint, "test")
 		require.NoError(t, err)
 	}
-	return service, st
+	return service
 }
 
 func sampleCandidates(t *testing.T) Candidates {
@@ -130,6 +129,8 @@ func sampleCandidates(t *testing.T) Candidates {
 }
 
 func TestUnderstandSendsOnlyQueryAndLabelsAndSuggestsConfidentFilters(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	fake := &fakeJev{answers: map[string]map[string]any{
 		QuestionMessageType:     choice(TypeTextMessage, 0.93, OptionNone),
 		QuestionTimeWindow:      choice(WindowKey(1), 0.85, WindowKey(0), OptionNone),
@@ -137,19 +138,19 @@ func TestUnderstandSendsOnlyQueryAndLabelsAndSuggestsConfidentFilters(t *testing
 		QuestionPersonRole:      choice(RoleSender, 0.91, RoleRecipient, RoleEither),
 		QuestionNaturalLanguage: noul(0.82),
 	}}
-	service, _ := newService(t, fake.server(t).URL, true)
+	service := newService(t, fake.server(t).URL, true)
 	addresses := func(_ context.Context, participantID int64) ([]string, error) {
-		assert.Equal(t, int64(7), participantID)
+		assert.Equal(int64(7), participantID)
 		return []string{"Jane.Doe@example.com", "jane@example.org"}, nil
 	}
 
 	outcome, asked, err := Understand(t.Context(), service, sampleCandidates(t), addresses, time.Now().Add(Budget))
-	require.NoError(t, err)
-	require.True(t, asked)
+	require.NoError(err)
+	require.True(asked)
 
 	bodies, raw := fake.requests()
-	require.Len(t, bodies, 1)
-	assert.Equal(t, map[string]any{
+	require.Len(bodies, 1)
+	assert.Equal(map[string]any{
 		"query": map[string]any{"text": "texts from Jane Doe about the lease last week, call [phone]"},
 		"time_windows": map[string]any{
 			"window_1": map[string]any{"label": "Previous calendar week (Sep 21 to Sep 27, 2026)"},
@@ -158,21 +159,21 @@ func TestUnderstandSendsOnlyQueryAndLabelsAndSuggestsConfidentFilters(t *testing
 		"people": map[string]any{"person_1": map[string]any{"label": "Jane Doe"}},
 	}, bodies[0]["state"], "only the redacted query and candidate labels leave the machine")
 	questions, ok := bodies[0]["questions"].(map[string]any)
-	require.True(t, ok)
+	require.True(ok)
 	askedIDs := make([]string, 0, len(questions))
 	for id := range questions {
 		askedIDs = append(askedIDs, id)
 	}
-	assert.ElementsMatch(t, []string{
+	assert.ElementsMatch([]string{
 		QuestionMessageType, QuestionTimeWindow, QuestionPerson, QuestionPersonRole, QuestionNaturalLanguage,
 	}, askedIDs, "no account question without account candidates")
-	assert.NotContains(t, raw[0], "example.com")
-	assert.NotContains(t, raw[0], "555")
+	assert.NotContains(raw[0], "example.com")
+	assert.NotContains(raw[0], "555")
 
-	require.NotNil(t, outcome.NaturalLanguage)
-	assert.InDelta(t, 0.82, *outcome.NaturalLanguage, 1e-9)
-	assert.True(t, outcome.OfferHybrid())
-	assert.Equal(t, []Suggestion{
+	require.NotNil(outcome.NaturalLanguage)
+	assert.InDelta(0.82, *outcome.NaturalLanguage, 1e-9)
+	assert.True(outcome.OfferHybrid())
+	assert.Equal([]Suggestion{
 		{
 			Kind: KindTimeWindow, Label: "Past 7 days (Sep 24 to Sep 30, 2026)", Span: "last week", Probability: 0.85,
 			Filters: []Filter{
@@ -192,6 +193,8 @@ func TestUnderstandSendsOnlyQueryAndLabelsAndSuggestsConfidentFilters(t *testing
 }
 
 func TestUnderstandDropsUnsureAndNoneAnswers(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	fake := &fakeJev{answers: map[string]map[string]any{
 		QuestionMessageType:     choice(TypeTextMessage, 0.79, OptionNone),
 		QuestionTimeWindow:      choice(OptionNone, 0.95, WindowKey(0)),
@@ -199,55 +202,61 @@ func TestUnderstandDropsUnsureAndNoneAnswers(t *testing.T) {
 		QuestionPersonRole:      choice(RoleSender, 0.60, RoleRecipient, RoleEither),
 		QuestionNaturalLanguage: noul(0.40),
 	}}
-	service, _ := newService(t, fake.server(t).URL, true)
+	service := newService(t, fake.server(t).URL, true)
 	outcome, _, err := Understand(t.Context(), service, sampleCandidates(t), nil, time.Now().Add(Budget))
-	require.NoError(t, err)
-	assert.False(t, outcome.OfferHybrid())
-	assert.Equal(t, []Suggestion{{
+	require.NoError(err)
+	assert.False(outcome.OfferHybrid())
+	assert.Equal([]Suggestion{{
 		Kind: KindPerson, Label: "With Jane Doe", Span: "from Jane Doe", Probability: 0.90,
 		Filters: []Filter{{Dimension: "participant", Values: []string{"7"}}},
 	}}, outcome.Suggestions, "an unsure role keeps the person filter in any role")
 }
 
 func TestUnderstandSendsNothingWithoutConsentOrCandidates(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	fake := &fakeJev{}
-	service, _ := newService(t, fake.server(t).URL, false)
+	service := newService(t, fake.server(t).URL, false)
 	_, asked, err := Understand(t.Context(), service, sampleCandidates(t), nil, time.Now().Add(Budget))
-	require.ErrorIs(t, err, jev.ErrConsentRequired)
-	assert.True(t, asked)
+	require.ErrorIs(err, jev.ErrConsentRequired)
+	assert.True(asked)
 
-	consented, _ := newService(t, fake.server(t).URL, true)
+	consented := newService(t, fake.server(t).URL, true)
 	candidates, err := Generate(t.Context(), Input{Query: "lease renewal", Now: now})
-	require.NoError(t, err)
+	require.NoError(err)
 	_, asked, err = Understand(t.Context(), consented, candidates, nil, time.Now().Add(Budget))
-	require.NoError(t, err)
-	assert.False(t, asked, "two keywords with no candidates ask nothing")
+	require.NoError(err)
+	assert.False(asked, "two keywords with no candidates ask nothing")
 
 	bodies, _ := fake.requests()
-	assert.Empty(t, bodies)
+	assert.Empty(bodies)
 }
 
 func TestUnderstandIsDroppedWhenLate(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	fake := &fakeJev{delay: 2 * time.Second, answers: map[string]map[string]any{
 		QuestionNaturalLanguage: noul(0.9),
 	}}
-	service, _ := newService(t, fake.server(t).URL, true)
+	service := newService(t, fake.server(t).URL, true)
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 	candidates, err := Generate(ctx, Input{Query: "what did the landlord say", Now: now})
-	require.NoError(t, err)
+	require.NoError(err)
 	_, asked, err := Understand(ctx, service, candidates, nil, time.Now().Add(50*time.Millisecond))
-	require.Error(t, err)
-	assert.True(t, asked)
-	assert.Equal(t, "timeout", jev.Skipped(err))
+	require.Error(err)
+	assert.True(asked)
+	assert.Equal("timeout", jev.Skipped(err))
 }
 
 func TestFeatureDisclosesOnlyQueryAndLabels(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	spec := JevFeature()
-	require.NoError(t, spec.Validate())
-	assert.Equal(t, jev.FeatureQueryUnderstanding, spec.Name)
-	assert.Equal(t, StateFields, spec.StateFields)
+	require.NoError(spec.Validate())
+	assert.Equal(jev.FeatureQueryUnderstanding, spec.Name)
+	assert.Equal(StateFields, spec.StateFields)
 	for _, field := range spec.StateFields {
-		assert.True(t, field == "query.text" || strings.HasSuffix(field, ".label"), field)
+		assert.True(field == "query.text" || strings.HasSuffix(field, ".label"), field)
 	}
 }

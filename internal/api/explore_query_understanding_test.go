@@ -34,7 +34,8 @@ func (j *recordingQueryJudge) JudgeQuestions(
 	ctx context.Context, _ jev.FeatureSpec, automatic bool, state any, questionIDs []string, _ time.Time,
 ) (jev.Response, error) {
 	j.mu.Lock()
-	j.states = append(j.states, state.(queryunderstand.State))
+	typed, _ := state.(queryunderstand.State)
+	j.states = append(j.states, typed)
 	j.questions = append(j.questions, questionIDs)
 	j.mu.Unlock()
 	if automatic {
@@ -105,6 +106,8 @@ func choiceAnswer(option string, probability float64) jev.Answer {
 }
 
 func TestExploreQueryUnderstandingSuggestsFilters(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	judge := &recordingQueryJudge{answers: map[string]jev.Answer{
 		queryunderstand.QuestionMessageType: choiceAnswer(queryunderstand.TypeEmail, 0.92),
 		queryunderstand.QuestionTimeWindow:  choiceAnswer(queryunderstand.WindowKey(0), 0.88),
@@ -119,13 +122,13 @@ func TestExploreQueryUnderstandingSuggestsFilters(t *testing.T) {
 
 	code, response, raw := postQueryUnderstanding(t, server,
 		`{"query":"emails from Jane Doe about the lease in my work account yesterday","timezone":"America/Los_Angeles"}`)
-	require.Equal(t, http.StatusOK, code, raw)
+	require.Equal(http.StatusOK, code, raw)
 
-	assert.Equal(t, "judged", response.Status)
-	assert.True(t, response.OfferHybrid)
-	require.NotNil(t, response.NaturalLanguage)
-	assert.InDelta(t, 0.75, *response.NaturalLanguage, 1e-9)
-	assert.Equal(t, []ExploreQuerySuggestion{
+	assert.Equal("judged", response.Status)
+	assert.True(response.OfferHybrid)
+	require.NotNil(response.NaturalLanguage)
+	assert.InDelta(0.75, *response.NaturalLanguage, 1e-9)
+	assert.Equal([]ExploreQuerySuggestion{
 		{
 			Kind: "time_window", Label: "Yesterday (Sep 29, 2026)", Span: "yesterday", Probability: 0.88,
 			Filters: []ExploreFilter{
@@ -145,49 +148,56 @@ func TestExploreQueryUnderstandingSuggestsFilters(t *testing.T) {
 		},
 	}, response.Suggestions, "the unsure account answer is not offered; days are read in the browser's zone")
 
-	require.Len(t, judge.states, 1)
+	require.Len(judge.states, 1)
 	state := judge.states[0]
-	assert.Equal(t, "emails from Jane Doe about the lease in my work account yesterday", state.Query.Text)
-	assert.Equal(t, map[string]queryunderstand.LabelState{"person_1": {Label: "Jane Doe"}}, state.People)
-	assert.Equal(t, map[string]queryunderstand.LabelState{
+	assert.Equal("emails from Jane Doe about the lease in my work account yesterday", state.Query.Text)
+	assert.Equal(map[string]queryunderstand.LabelState{"person_1": {Label: "Jane Doe"}}, state.People)
+	assert.Equal(map[string]queryunderstand.LabelState{
 		"account_1": {Label: "gmail account named Work at example.com"},
 	}, state.Accounts)
 }
 
 func TestExploreQueryUnderstandingSkipsAndDropsLateJudgments(t *testing.T) {
 	t.Run("disabled without a judge", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
 		code, response, raw := postQueryUnderstanding(t, newQueryUnderstandingServer(t, nil), `{"query":"lease from Jane Doe"}`)
-		require.Equal(t, http.StatusOK, code, raw)
-		assert.Equal(t, ExploreQueryUnderstandingResponse{
+		require.Equal(http.StatusOK, code, raw)
+		assert.Equal(ExploreQueryUnderstandingResponse{
 			Status: "skipped", Reason: "disabled", Suggestions: []ExploreQuerySuggestion{}, ElapsedMS: response.ElapsedMS,
 		}, response)
 	})
 
 	t.Run("nothing worth asking", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
 		judge := &recordingQueryJudge{}
 		code, response, raw := postQueryUnderstanding(t, newQueryUnderstandingServer(t, judge), `{"query":"lease renewal"}`)
-		require.Equal(t, http.StatusOK, code, raw)
-		assert.Equal(t, "skipped", response.Status)
-		assert.Equal(t, "no_candidates", response.Reason)
-		assert.Empty(t, judge.states)
+		require.Equal(http.StatusOK, code, raw)
+		assert.Equal("skipped", response.Status)
+		assert.Equal("no_candidates", response.Reason)
+		assert.Empty(judge.states)
 	})
 
 	t.Run("late judgments are dropped within the budget", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
 		judge := &recordingQueryJudge{block: true}
 		started := time.Now()
 		code, response, raw := postQueryUnderstanding(t, newQueryUnderstandingServer(t, judge),
 			`{"query":"what did the landlord say about the deposit"}`)
-		require.Equal(t, http.StatusOK, code, raw)
-		assert.Equal(t, "late", response.Status)
-		assert.Empty(t, response.Suggestions)
-		assert.Less(t, time.Since(started), 10*time.Second, "the request ends when the budget does")
+		require.Equal(http.StatusOK, code, raw)
+		assert.Equal("late", response.Status)
+		assert.Empty(response.Suggestions)
+		assert.Less(time.Since(started), 10*time.Second, "the request ends when the budget does")
 	})
 
 	t.Run("invalid input", func(t *testing.T) {
+		assert := assert.New(t)
 		server := newQueryUnderstandingServer(t, &recordingQueryJudge{})
 		code, _, _ := postQueryUnderstanding(t, server, `{"query":"   "}`)
-		assert.Equal(t, http.StatusBadRequest, code)
+		assert.Equal(http.StatusBadRequest, code)
 		code, _, _ = postQueryUnderstanding(t, server, `{"query":"lease","timezone":"Mars/Olympus"}`)
-		assert.Equal(t, http.StatusBadRequest, code)
+		assert.Equal(http.StatusBadRequest, code)
 	})
 }

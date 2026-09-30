@@ -59,13 +59,16 @@ func TestFindWindows(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.query, func(t *testing.T) {
+			assert := assert.New(t)
 			tokens := tokenize(tt.query)
-			assert.Equal(t, tt.want, findWindows(tt.query, tokens, make([]bool, len(tokens)), now))
+			assert.Equal(tt.want, findWindows(tt.query, tokens, make([]bool, len(tokens)), now))
 		})
 	}
 }
 
 func TestGenerateFindsTypesAccountsAndPeople(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	var lookups []string
 	people := func(_ context.Context, phrase string) ([]PersonMatch, error) {
 		lookups = append(lookups, phrase)
@@ -90,44 +93,47 @@ func TestGenerateFindsTypesAccountsAndPeople(t *testing.T) {
 		},
 		People: people,
 	})
-	require.NoError(t, err)
-	assert.Equal(t, []TypeCandidate{{Option: TypeEmail, Span: "emails"}}, candidates.Types)
-	assert.Equal(t, []AccountCandidate{
+	require.NoError(err)
+	assert.Equal([]TypeCandidate{{Option: TypeEmail, Span: "emails"}}, candidates.Types)
+	assert.Equal([]AccountCandidate{
 		{SourceID: 1, Label: "gmail account named Work at example.com", Span: "in my work account"},
 	}, candidates.Accounts)
-	assert.Equal(t, []PersonCandidate{
+	assert.Equal([]PersonCandidate{
 		{ParticipantID: 7, Label: "Jane Doe", Span: "from Jane Doe"},
 		{ParticipantID: 8, Label: "jane.roe", Span: "from Jane"},
 	}, candidates.People, "addresses and phone-number labels never become labels")
-	require.Len(t, candidates.Windows, 2)
-	assert.Equal(t, "last week", candidates.Windows[0].Span)
-	assert.Equal(t, []string{"jane doe", "budget", "jane", "doe"}, lookups,
+	require.Len(candidates.Windows, 2)
+	assert.Equal("last week", candidates.Windows[0].Span)
+	assert.Equal([]string{"jane doe", "budget", "jane", "doe"}, lookups,
 		"full names first; operator tokens, stopwords, and words claimed by other kinds are never looked up")
 }
 
 func TestGenerateNeedsTwoAccountsAndBoundsQueries(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	candidates, err := Generate(t.Context(), Input{
 		Query: "gmail receipts", Now: now,
 		Accounts: []AccountInput{{SourceID: 1, SourceType: "gmail", Identifier: "owner@example.com"}},
 	})
-	require.NoError(t, err)
-	assert.Empty(t, candidates.Accounts, "one account leaves nothing to choose")
+	require.NoError(err)
+	assert.Empty(candidates.Accounts, "one account leaves nothing to choose")
 
 	_, err = Generate(t.Context(), Input{Query: strings.Repeat("a", MaxQueryRunes+1), Now: now})
-	require.ErrorIs(t, err, ErrQueryTooLong)
+	require.ErrorIs(err, ErrQueryTooLong)
 
 	failure := errors.New("people index unavailable")
 	_, err = Generate(t.Context(), Input{
 		Query: "notes from Ana", Now: now,
 		People: func(context.Context, string) ([]PersonMatch, error) { return nil, failure },
 	})
-	require.ErrorIs(t, err, failure)
+	require.ErrorIs(err, failure)
 }
 
 func TestTypePhrasesAndMeetingAmbiguity(t *testing.T) {
+	assert := assert.New(t)
 	tokens := tokenize("text messages and meetings on slack")
 	used := make([]bool, len(tokens))
-	assert.Equal(t, []TypeCandidate{
+	assert.Equal([]TypeCandidate{
 		{Option: TypeTextMessage, Span: "text messages"},
 		{Option: TypeCalendarEvent, Span: "meetings"},
 		{Option: TypeMeetingTranscript, Span: "meetings"},

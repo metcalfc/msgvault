@@ -171,7 +171,7 @@ func accountKeywords(account AccountInput) map[string]bool {
 		keywords[sourceType] = true
 	}
 	if name := accountDisplayName(account); name != "" {
-		for _, word := range strings.Fields(strings.ToLower(name)) {
+		for word := range strings.FieldsSeq(strings.ToLower(name)) {
 			word = strings.Trim(word, `"'.,;:()`)
 			if utf8.RuneCountInString(word) >= 3 && !vector.IsStopword(word) {
 				keywords[word] = true
@@ -179,7 +179,7 @@ func accountKeywords(account AccountInput) map[string]bool {
 		}
 	}
 	if domain := accountDomain(account); domain != "" {
-		for _, label := range strings.Split(domain, ".") {
+		for label := range strings.SplitSeq(domain, ".") {
 			if utf8.RuneCountInString(label) >= 3 && !commonDomainLabels[label] {
 				keywords[label] = true
 			}

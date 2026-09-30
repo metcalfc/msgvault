@@ -96,10 +96,10 @@ func (s span) text(query string, tokens []token) string {
 	return query[tokens[s.first].start:tokens[s.last].end]
 }
 
-// extendBack widens a span over up to max preceding words from words, so
+// extendBack widens a span over up to limit preceding words from words, so
 // "from Ana" and "in March" are removed whole.
-func extendBack(tokens []token, used []bool, s span, words map[string]bool, max int) span {
-	for range max {
+func extendBack(tokens []token, used []bool, s span, words map[string]bool, limit int) span {
+	for range limit {
 		previous := s.first - 1
 		if previous < 0 || used[previous] || tokens[previous].blocked || !words[tokens[previous].lower] {
 			break

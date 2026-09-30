@@ -17,7 +17,7 @@
   );
 </script>
 
-<span class="kit-sr-only" role="status" aria-live="polite">{announcement}</span>
+<span class="kit-sr-only" role="status" aria-label="Suggested filters status" aria-live="polite">{announcement}</span>
 {#if suggestions.length > 0}
   <div class="query-suggestions" role="group" aria-label="Suggested filters">
     <span class="query-suggestions__lead" aria-hidden="true">Suggested</span>

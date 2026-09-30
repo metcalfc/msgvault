@@ -74,7 +74,7 @@ test('a typed query offers suggested filters that apply and remove their text', 
   await search(page, TYPED);
   const group = page.getByRole('group', { name: 'Suggested filters' });
   await expect(group).toBeVisible();
-  await expect(page.getByRole('status').filter({ hasText: '2 suggested filters for this search' })).toHaveCount(1);
+  await expect(page.getByRole('status', { name: 'Suggested filters status' })).toHaveText('2 suggested filters for this search');
   expect(captured.understood).toEqual([TYPED]);
   await assertNoViolations(page, 'Suggested filters');
 
