@@ -188,3 +188,54 @@ func TestHeaderSamplingRejectsHeadersWithoutTheirTerminator(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(t, correspondentkind.HeaderCounts{Sampled: 2}, evidence.Headers)
 }
+
+// headerSample stores one raw message from a fresh sender, lets fix adjust
+// the stored row, and returns the sender's sampled header counts.
+func headerSample(t *testing.T, raw []byte, fix func(f *storetest.Fixture, messageID int64)) correspondentkind.HeaderCounts {
+	t.Helper()
+	require := require.New(t)
+	f := storetest.New(t)
+	sender := f.EnsureParticipant("alerts@example.com", "Example Alerts", "example.com")
+	id := f.CreateMessage("sample")
+	_, err := f.Store.DB().ExecContext(t.Context(), f.Store.Rebind(`UPDATE messages SET sender_id = ? WHERE id = ?`), sender, id)
+	require.NoError(err)
+	require.NoError(f.Store.UpsertMessageRaw(id, raw))
+	fix(f, id)
+	evidence, err := f.Store.CorrespondentKindEvidenceContext(t.Context(), []int64{sender},
+		store.CorrespondentKindEvidenceOptions{HeaderSample: 5})
+	require.NoError(err)
+	return evidence.Headers
+}
+
+func TestHeaderSamplingReadsAnUncompressedHeaderBlockJustUnderTheCap(t *testing.T) {
+	var header bytes.Buffer
+	header.WriteString("From: alerts@example.com\r\nList-Unsubscribe: <mailto:leave@example.com>\r\n")
+	for header.Len() < 63<<10 {
+		header.WriteString("X-Padding: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n")
+	}
+	raw := append(header.Bytes(), []byte("\r\n")...)
+	raw = append(raw, make([]byte, 128<<10)...)
+	counts := headerSample(t, raw, func(f *storetest.Fixture, id int64) {
+		_, err := f.Store.DB().ExecContext(t.Context(), f.Store.Rebind(
+			`UPDATE message_raw SET raw_data = ?, compression = 'none' WHERE message_id = ?`), raw, id)
+		require.NoError(t, err)
+	})
+	assert.Equal(t, correspondentkind.HeaderCounts{Sampled: 1, ListUnsubscribe: 1}, counts)
+}
+
+func TestHeaderSamplingRejectsAShortMessageWithABadChecksum(t *testing.T) {
+	raw := []byte("From: alerts@example.com\r\nList-Unsubscribe: <mailto:leave@example.com>\r\n\r\nHello.\r\n")
+	counts := headerSample(t, raw, func(f *storetest.Fixture, id int64) {
+		var compressed bytes.Buffer
+		writer := zlib.NewWriter(&compressed)
+		_, err := writer.Write(raw)
+		require.NoError(t, err)
+		require.NoError(t, writer.Close())
+		damaged := compressed.Bytes()
+		damaged[len(damaged)-1] ^= 0xff // the trailing Adler-32 checksum
+		_, err = f.Store.DB().ExecContext(t.Context(), f.Store.Rebind(
+			`UPDATE message_raw SET raw_data = ?, compression = 'zlib' WHERE message_id = ?`), damaged, id)
+		require.NoError(t, err)
+	})
+	assert.Equal(t, correspondentkind.HeaderCounts{Sampled: 1}, counts, "a decoder error yields no signals")
+}

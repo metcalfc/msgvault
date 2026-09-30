@@ -796,8 +796,12 @@ func (s *Store) CorrespondentKindEvidenceContext(
 // message and decodes at most rawHeaderBytes, stopping at the blank line
 // that ends the header block. Attachments and bodies are never loaded.
 const (
-	rawHeaderCompressedBytes = 32 << 10
+	rawHeaderCompressedBytes = 64 << 10
 	rawHeaderBytes           = 64 << 10
+	// rawHeaderDrainBytes bounds how much of a short stored message is
+	// decoded after its header block, only to reach the stream's end and
+	// verify its checksum.
+	rawHeaderDrainBytes = 16 << 20
 )
 
 // messageRawHeaderContext returns the header block of one stored raw
@@ -827,10 +831,27 @@ func (s *Store) messageRawHeaderContext(ctx context.Context, messageID int64) ([
 	// failed sample with no signals.
 	header := make([]byte, 0, 8<<10)
 	chunk := make([]byte, 4<<10)
+	//
+	// A decoder error fails the sample even after the terminator was seen:
+	// only the end of the stream, or an unexpected end caused by our own
+	// prefix truncation, is acceptable. A stored message shorter than the
+	// prefix is decoded to its end so its checksum is verified.
+	truncated := len(prefix) >= rawHeaderCompressedBytes
+	acceptable := func(err error) bool {
+		return err == nil || errors.Is(err, io.EOF) || (truncated && errors.Is(err, io.ErrUnexpectedEOF))
+	}
 	for len(header) < rawHeaderBytes {
 		n, err := source.Read(chunk)
 		header = append(header, chunk[:n]...)
+		if !acceptable(err) {
+			return nil, fmt.Errorf("%w: decode header block: %w", ErrInvalidMessageRaw, err)
+		}
 		if end := headerBlockEnd(header); end >= 0 && end <= rawHeaderBytes {
+			if err == nil {
+				if _, drainErr := io.Copy(io.Discard, io.LimitReader(source, rawHeaderDrainBytes)); !acceptable(drainErr) {
+					return nil, fmt.Errorf("%w: decode message: %w", ErrInvalidMessageRaw, drainErr)
+				}
+			}
 			return header[:end], nil
 		}
 		if err != nil {
