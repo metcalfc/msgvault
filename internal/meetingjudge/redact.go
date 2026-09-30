@@ -256,6 +256,18 @@ func RedactText(text string) string {
 // address becomes its local part, other addresses and phone numbers are
 // removed, and an empty result becomes "attendee N".
 func AttendeeLabel(raw string, i int) string {
+	if label := IdentifierFreeLabel(raw); label != "" {
+		return label
+	}
+	return "attendee " + strconv.Itoa(i+1)
+}
+
+// IdentifierFreeLabel turns a stored display label into one that carries no
+// email address or phone number: an embedded "<address>" is dropped, a bare
+// address becomes its local part, other addresses and phone numbers are
+// removed, and a result without a letter is empty. Other features that send
+// a person's or account's label use it too.
+func IdentifierFreeLabel(raw string) string {
 	label := raw
 	normalized := normalizeWithSpans(label)
 	trimmed := strings.TrimSpace(normalized.text)
@@ -276,7 +288,7 @@ func AttendeeLabel(raw string, i int) string {
 	label = replaceSpans(label, normalized, spans, func(identifierKind) string { return " " })
 	label = strings.Trim(strings.Join(strings.Fields(label), " "), `"' ,;()`)
 	if !hasLetter(label) {
-		return "attendee " + strconv.Itoa(i+1)
+		return ""
 	}
 	return label
 }

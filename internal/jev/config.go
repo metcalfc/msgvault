@@ -65,6 +65,16 @@ type Config struct {
 	// by asking Jev which candidates answer the query. It never runs for
 	// full-text or automatic searches, so it has no automatic switch.
 	Rerank RerankConfig `toml:"rerank"`
+	// QueryUnderstanding is [jev.query_understanding]: suggesting Explore
+	// filters for a typed search. Only the Web UI asks, for a query the
+	// person typed, so it has no automatic switch.
+	QueryUnderstanding QueryUnderstandingConfig `toml:"query_understanding"`
+}
+
+// QueryUnderstandingConfig is [jev.query_understanding]. Enabled is off by
+// default.
+type QueryUnderstandingConfig struct {
+	Enabled bool `toml:"enabled"`
 }
 
 // CleanupSuggestionsConfig is [jev.cleanup_suggestions]. Beyond the feature

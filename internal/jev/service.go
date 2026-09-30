@@ -35,6 +35,9 @@ const FeatureSearchRerank = "search_rerank"
 // FeatureMeetingActionAssignee is the meeting action item assignee feature.
 const FeatureMeetingActionAssignee = "meeting_action_assignee"
 
+// FeatureQueryUnderstanding is the Explore query understanding feature.
+const FeatureQueryUnderstanding = "query_understanding"
+
 // Gate outcomes. Each is an expected administrative state, not a fault: the
 // caller falls back to its pre-Jev decision and reports the category.
 var (
@@ -66,6 +69,10 @@ func (c Config) FeatureConfigFor(name string) (FeatureConfig, bool) {
 		return c.MeetingEventKind, true
 	case FeatureMeetingActionAssignee:
 		return c.MeetingActionAssignee, true
+	case FeatureQueryUnderstanding:
+		// Only a person's own typed Explore search asks, so there is no
+		// automatic use.
+		return FeatureConfig{Enabled: c.QueryUnderstanding.Enabled}, true
 	default:
 		return FeatureConfig{}, false
 	}
