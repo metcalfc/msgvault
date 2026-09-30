@@ -1108,6 +1108,22 @@ export async function installDirectoryReviewArchive(page: Page) {
     });
   });
 
+  // Identities Jev could not classify wait in Reviews.
+  await page.route(/\/api\/v1\/identity\/correspondent-kinds(?:\?.*)?$/, (route) => {
+    const captured = capture(route.request());
+    requests.push(captured);
+    const unclear = new URL(route.request().url()).searchParams.get('kind') === 'unclear';
+    return route.fulfill({
+      json: {
+        records: unclear ? [{
+          canonical_id: 71, member_ids: [71], kind: 'unclear', source: 'jev', actor: 'jev:jev-1.13.0',
+          display_name: 'Front Desk', addresses: ['frontdesk@example.test'], classified_at: '2026-01-03T12:00:00Z',
+          confidence: 0.45, probabilities: { individual_person: 0.45, shared_role_or_team_mailbox: 0.4, unclear: 0.15 },
+        }] : [],
+      },
+    });
+  });
+
   // Marking an identity as not a person resolves its open candidates.
   await page.route(/\/api\/v1\/identity\/correspondent-kinds\/\d+$/, (route) => {
     const captured = capture(route.request());

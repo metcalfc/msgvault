@@ -702,26 +702,27 @@ func TestDuckDBEngine_AggregateBySender(t *testing.T) {
 }
 
 func TestDuckDBEngine_AggregateBySenderRestrictedToResolvedKind(t *testing.T) {
+	require := require.New(t)
 	engine := newParquetEngine(t)
 	ctx := context.Background()
 	opts := DefaultAggregateOptions()
 	opts.SenderKind = "automated"
 	opts.SenderParticipantIDs = []int64{2}
 	results, err := engine.Aggregate(ctx, ViewSenders, opts)
-	require.NoError(t, err)
+	require.NoError(err)
 	assertAggregateCounts(t, results, map[string]int64{"bob@company.org": 2})
 
 	opts.SenderParticipantIDs = []int64{}
 	results, err = engine.Aggregate(ctx, ViewSenders, opts)
-	require.NoError(t, err)
+	require.NoError(err)
 	assert.Empty(t, results, "a kind no sender has matches nothing")
 
 	opts.SenderParticipantIDs = nil
 	_, err = engine.Aggregate(ctx, ViewSenders, opts)
-	require.ErrorIs(t, err, ErrSenderKindUnresolved)
+	require.ErrorIs(err, ErrSenderKindUnresolved)
 	opts.SenderParticipantIDs = []int64{2}
 	_, err = engine.Aggregate(ctx, ViewDomains, opts)
-	require.Error(t, err, "a sender kind applies only to the senders view")
+	require.Error(err, "a sender kind applies only to the senders view")
 }
 
 func TestDuckDBEngine_AggregateBySenderName(t *testing.T) {

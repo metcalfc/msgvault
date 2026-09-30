@@ -60,26 +60,28 @@ func TestAddHeadersCountsPresenceOnly(t *testing.T) {
 }
 
 func TestNormalizeListIDAndShortCodes(t *testing.T) {
-	assert.Equal(t, "team.example.com", NormalizeListID(" Team List <Team.Example.com> "))
-	assert.Equal(t, "team.example.com", NormalizeListID("team.example.com"))
-	assert.True(t, IsShortCode("262-966"))
-	assert.False(t, IsShortCode("12"))
-	assert.False(t, IsShortCode("+72975"))
+	assert := assert.New(t)
+	assert.Equal("team.example.com", NormalizeListID(" Team List <Team.Example.com> "))
+	assert.Equal("team.example.com", NormalizeListID("team.example.com"))
+	assert.True(IsShortCode("262-966"))
+	assert.False(IsShortCode("12"))
+	assert.False(IsShortCode("+72975"))
 	local, domain := SplitEmail("Casey+news@Example.COM")
-	assert.Equal(t, "casey", local)
-	assert.Equal(t, "example.com", domain)
+	assert.Equal("casey", local)
+	assert.Equal("example.com", domain)
 }
 
 func TestKindPredicates(t *testing.T) {
-	assert.True(t, Unclear.IsPerson(), "an undecided judgment removes no one")
-	assert.False(t, Unclear.Valid(), "users never set unclear")
-	assert.True(t, Unclear.Known())
-	assert.True(t, Unclear.LeavesRankings())
-	assert.False(t, Unclear.LeavesPeopleLists())
+	assert := assert.New(t)
+	assert.True(Unclear.IsPerson(), "an undecided judgment removes no one")
+	assert.False(Unclear.Valid(), "users never set unclear")
+	assert.True(Unclear.Known())
+	assert.True(Unclear.LeavesRankings())
+	assert.False(Unclear.LeavesPeopleLists())
 	for _, kind := range []Kind{Automated, MailingList} {
-		assert.True(t, kind.Valid())
-		assert.True(t, kind.LeavesPeopleLists())
-		assert.False(t, kind.IsPerson())
+		assert.True(kind.Valid())
+		assert.True(kind.LeavesPeopleLists())
+		assert.False(kind.IsPerson())
 	}
-	assert.False(t, SharedMailbox.LeavesRankings(), "shared mailboxes stay as labelled rows")
+	assert.False(SharedMailbox.LeavesRankings(), "shared mailboxes stay as labelled rows")
 }
