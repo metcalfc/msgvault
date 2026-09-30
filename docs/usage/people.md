@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-15"
+last_edited: "2026-09-29"
 title: People and Profiles
 description: Find people across your archive, keep their details together, and understand your contact history.
 ---
@@ -20,6 +20,7 @@ contacts you have not saved yet. You can also use the
 | Look up public profile information | [External enrichment](/docs/usage/people-enrichment/) |
 | Sync contacts with an address book | [CardDAV contacts](/docs/usage/people-carddav/) |
 | Tell msgvault which accounts and aliases are mine | [Source identities](#discover-source-identities) |
+| Mark a business, shared mailbox, or unneeded record | [Records that aren't people](#records-that-arent-people) |
 
 Ordinary profile editing and identity discovery use your archive. Briefs,
 automatic fact extraction, semantic person search, and external enrichment
@@ -104,6 +105,69 @@ msgvault person directory --last-contact-after 2026-06-01 --cursor "<next_cursor
 ```
 
 `person list` continues to show the full unpaginated profile collection. Its `--json` output remains an array of profiles.
+
+## Records that aren't people
+
+Many archive contacts are not people: a store's order notices, a support desk
+several agents reply from, a newsletter. Mark such a record so People,
+Reviews, and matching stop treating it as a person. Its messages stay
+searchable, and you can undo the choice at any time.
+
+| Mark it as | Use it for | What changes |
+|---|---|---|
+| **Organization** | A business or institution | The record joins an organization, found by name or created. Its email addresses are added to that organization. |
+| **Shared mailbox** | An address several people write from, such as `support@` | Nothing is linked or merged through it. The people who wrote from it keep their own profiles. Sender lists show it with a **Shared mailbox** label. |
+| **Ignored** | A record you do not need as a contact | It leaves People and Reviews. |
+
+Every choice has the same effects:
+
+- The record leaves contact matching and profile enrichment.
+- Its open identity matches are resolved with reason `not_a_person` and are
+  not proposed again.
+- New identity matches for it are resolved as they are found.
+- Organizations and ignored records also leave relationship rankings. A saved
+  profile made only of such records leaves the People list.
+- Choosing **This is a person** restores everything, including the resolved
+  matches.
+
+The choice applies to the whole observed person, every address and handle
+linked to it. An address linked in later is covered too. Marking never
+deletes a saved profile. When a saved profile describes only this record, the
+Web UI asks whether to keep it. Deleting it is a separate confirmation.
+
+In the Web UI, use **Not a person…** in a person or contact page's **⋯** menu,
+or the **Not a person** menu on a review card. The People list's **Not people**
+filter lists marked records by kind, with **This is a person** on each.
+
+With the CLI, use the contact's participant ID:
+
+```bash
+msgvault person kind set 42 shared_mailbox
+msgvault person kind set 43 organization --organization-name "Example Shop"
+msgvault person kind set 44 ignored
+msgvault person kind set 42 person
+msgvault person kind list
+```
+
+### Shared mailbox suggestions
+
+Contact matching holds back an address that looks shared instead of offering
+to link or merge through it. An address looks shared when:
+
+- its local part is a role name: `support`, `help`, `info`, `hello`, `team`,
+  `contact`, `sales`, `billing`, `noreply`, `no-reply`, `notifications`,
+  `admin`, `office`, `service`, `customercare`, `care`, `feedback`, `orders`,
+  `receipts`, or `accounts`; or
+- messages from it carry two or more different people's names, or two or more
+  saved or imported profiles with different names list it.
+
+Case, quotes, a trailing "via …", name order, and initials or short forms do
+not count as different names. Message names and profile names are compared
+only among themselves, because a contact card may use a nickname.
+
+The review card says **Looks like a shared mailbox** and why, and
+**Link identities** is unavailable. Mark the address as not a person, or
+choose **This is a person** on the card to link it after all.
 
 ## Keep private notes
 

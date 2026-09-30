@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-27"
+last_edited: "2026-09-29"
 title: Changelog
 description: Release history for msgvault
 ---
@@ -8,6 +8,18 @@ All notable changes to msgvault, grouped by release.
 
 ## Unreleased
 
+- Mark records that aren't people. Use **Not a person…** on a person or
+  contact page, a review card's **Not a person** menu, or
+  `msgvault person kind set`. Choose **Organization** to group a business's
+  messages under an organization, **Shared mailbox** for an address several
+  people write from, or **Ignored**. Marked records leave contact matching,
+  enrichment, and open identity matches. Organizations and ignored records
+  also leave rankings and People. Messages stay searchable, and **This is a
+  person** restores everything. The People list's **Not people** filter
+  lists them. Contact matching now holds back addresses that look shared,
+  such as `support@` or an address used under several people's names,
+  instead of offering to link or merge through them. Requires API schema
+  2.35.0.
 - Confirm or reject enrichment identities the identity check could not
   decide. Reviews → Enrichment identities and `msgvault person enrichment
   review` show each uncertain lookup with what the provider returned and the

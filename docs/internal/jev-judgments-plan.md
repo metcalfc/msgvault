@@ -216,15 +216,35 @@ Site: `internal/query/relationships.go` reciprocity gate,
 `internal/identityindex/compact_sql.go`, `list-senders`, enrichment
 eligibility in `internal/store/person_enrichment_work.go`.
 
+> **User overrides already exist.** `correspondent_kinds` shipped with the
+> "Not a person" action: one row per participant and source (`user`,
+> `rule`, `jev`) with `kind`, `organization_id`, `confidence`,
+> `probabilities_json`, `identity_revision`, `actor`, and `classified_at`.
+> It is keyed by participant rather than `canonical_id`: a classification
+> writes every current cluster member, and readers resolve a cluster from
+> all members, because the canonical (smallest) ID changes on link and
+> unlink. A `user` row always outranks `rule` and `jev`; a `user` row of
+> kind `person` is the explicit "this is a person" override. The kind
+> vocabulary lives in `internal/correspondentkind` (`person`,
+> `organization`, `shared_mailbox`, `ignored`) and is validated in Go, so
+> this phase adds `automated` and `mailing_list` there without a table
+> rebuild. Enrichment already skips profiles made only of organization or
+> ignored identities with outcome `not_a_person`; rankings already leave
+> those clusters out unless `include_not_people` is set; `person kind set`
+> is the override CLI. The deterministic shared-mailbox rule
+> (`correspondentkind.DetectSharedMailbox`: role local parts or several
+> people's names) holds back contact matches. Tasks below now write
+> `rule`/`jev` rows into that table and read effective kinds through it.
+
 - [ ] **Task 2.1 Deterministic pre-classification.** New
   `internal/correspondentkind`: parse `List-Unsubscribe`, `Auto-Submitted`,
   `Precedence`, `list_id`, `CATEGORY_*` labels, provider bot flags, `noreply`
   local parts, SMS short codes (≤ 6 digits), and a freemail-domain list.
   Assign `automated` or `mailing_list` in code when signals are decisive.
-- [ ] **Task 2.2 Jev classification for the remainder.** Store table
-  `correspondent_kinds(canonical_id, kind, probabilities_json,
-  confidence, source ('rule'|'jev'|'user'), identity_revision,
-  classified_at)`. One Choice per identity, batched 10 per request as
+- [ ] **Task 2.2 Jev classification for the remainder.** Store results in
+  the existing `correspondent_kinds` table (see the note above) with
+  source `jev`, `probabilities_json`, `confidence`, and
+  `identity_revision`. One Choice per identity, batched 10 per request as
   `identities[i]`, options `individual_person`,
   `shared_role_or_team_mailbox`, `mailing_list_or_group`,
   `automated_notification_or_transactional`, `marketing_or_newsletter`,
@@ -236,7 +256,8 @@ eligibility in `internal/store/person_enrichment_work.go`.
   `individual_person ≥ 0.60` or user override; `--all` bypasses. Export the
   kind on the people parquet. `list-senders --kind`. Enrichment: skip
   non-persons with reason `not_a_person` instead of failing. `person kind
-  set <participant> <kind>` for overrides, and a review list for `unclear`.
+  set <participant> <kind>` for overrides already exists; add a review list
+  for `unclear`.
 - [ ] **Task 2.4 Scheduling.** `msgvault kinds build` one-time backfill over
   identities above a message floor; incremental at cache build only when
   `[jev.correspondent_kind].automatic = true`.

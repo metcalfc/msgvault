@@ -297,8 +297,10 @@ contact first. It combines two kinds of rows:
 
 Each row shows one identifier: the best email address, else a phone number,
 else a handle. Narrow the list with the search box and the **Saved**, **Not
-saved**, **Has name**, **Category**, and **Organization** filters. **Domains**
-opens the [domains view](#domains).
+saved**, **Has name**, **Category**, and **Organization** filters. **Not
+people** lists records marked as an organization, a shared mailbox, or
+ignored instead, with **This is a person** on each; the other views leave
+them out. **Domains** opens the [domains view](#domains).
 
 Every human has one page. Opening someone from the list, a message's name
 pill (**Open person**), or a search result lands on that page. An archive
@@ -315,7 +317,9 @@ overrides, and typed profile attributes are separate curated operations; see
 The header shows the person's name with their title, organization, and
 location. **Messages** opens their Timeline and **Edit** opens Profile. The
 **⋯** menu holds Rename, Same person…, Merge or split…, Publish to CardDAV…,
-Track for profile maintenance…, and Delete….
+Track for profile maintenance…, Not a person…, and Delete…. A record marked
+as not a person shows a banner with **Change** and **This is a person**; see
+[Records that aren't people](/docs/usage/people/#records-that-arent-people).
 
 | Tab | What it shows |
 |---|---|
@@ -352,7 +356,8 @@ identity there, or use **Same person…** to connect another one.
 ### An archive contact's page
 
 An archive contact's page uses the same header, with **Messages** and
-**Save to Directory**; **Same person…** is in the **⋯** menu. Its tabs are
+**Save to Directory**; **Same person…** and **Not a person…** are in the
+**⋯** menu. Its tabs are
 **Overview** (contact methods, last contact, recent items, and an activity
 calendar), **Timeline**, **Files**, and **Meetings**. Choose **Save to Directory**
 to keep the contact as a saved person. If saving fails, the reason appears
@@ -369,7 +374,11 @@ current context, including chronologically ordered related files.
 
 Open **Reviews** from the gear menu. It brings together identity matches,
 fact review, and imported relationships. Inspect the evidence before
-accepting or rejecting a candidate. Conflicts between existing profiles
+accepting or rejecting a candidate. A card's **Not a person** menu marks an
+archive identity as an organization, a shared mailbox, or ignored, which
+resolves its open matches. A contact match through an address that looks
+shared says **Looks like a shared mailbox** and cannot be linked until you
+choose **This is a person** on the card. Conflicts between existing profiles
 require an explicit merge decision. Merge history and reversal follow the
 boundaries documented in [People](/docs/usage/people/).
 

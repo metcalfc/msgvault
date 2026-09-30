@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-27"
+last_edited: "2026-09-29"
 title: CLI Reference
 description: Complete command reference for all msgvault commands.
 ---
@@ -2230,6 +2230,7 @@ msgvault person contact-matches build [--json]
 | `merge` | The archive identity already belongs to another profile. `accept` stops and prints the `person merge` command; choose the survivor, merge, then accept again. |
 | `ambiguous` | The archive identity spans several profiles. Resolve them before linking. |
 | `linked` | Already linked; accepting only records the decision. |
+| `shared_mailbox` | The address looks like a shared mailbox, so nothing is linked through it. Mark it with `person kind set`, or set it to `person` to allow the match. |
 
 `(blocked: published)` or `(blocked: carddav_conflict)` means a profile is
 published to CardDAV or has an unresolved CardDAV conflict, so the merge would
@@ -2237,10 +2238,42 @@ be refused. The owner's own identities are never proposed. `reject` keeps the
 decision, so the same pair is not proposed again. `accept` re-checks the
 match first and refuses when the archive identity has since become one of the
 owner's identities, another identity in its cluster was rejected for this
-profile, or the profile's addresses no longer match. `build` retires undecided
+profile, the profile's addresses no longer match, the archive identity is
+marked as not a person, or the address looks like a shared mailbox. `build`
+retires undecided
 matches that fail the same checks and refreshes matches now;
 the daemon also refreshes them after each successful CardDAV sync and in a daily
 `contact-matches` job at 04:41. Nothing is accepted automatically.
+
+---
+
+## person kind
+
+Mark an observed person as not a person, or as a person again. The choice
+applies to the participant's whole identity cluster. Every subcommand goes
+through the daemon.
+
+```bash
+msgvault person kind set <participant-id> organization|shared_mailbox|ignored|person \
+  [--organization <organization-id> | --organization-name <name>] [--json]
+msgvault person kind list [--kind organization|shared_mailbox|ignored] [--json]
+```
+
+| Kind | Meaning |
+|---|---|
+| `organization` | A business or institution. Its email addresses join the organization named by `--organization` or `--organization-name`. Without either, the organization is named after the identity's display name, then its email domain, and is reused when one with that name exists. |
+| `shared_mailbox` | An address several people write from. Nothing is linked or merged through it. |
+| `ignored` | A record you do not need as a contact. |
+| `person` | Clears the classification and returns resolved identity matches to review. |
+
+Any kind other than `person` removes the identity from contact matching,
+enrichment, and open identity matches. Organizations and ignored identities
+also leave relationship rankings and People lists. Messages stay searchable.
+`set` refuses your own identities and a name that matches several
+organizations; pass `--organization <id>` in that case. It never deletes a
+saved profile: when one describes only this identity, `set` prints the
+`person delete` command to use if you want it gone. See
+[Records that aren't people](usage/people.md#records-that-arent-people).
 
 ---
 
