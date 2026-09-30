@@ -474,16 +474,24 @@ func (s *Store) recordPersonEnrichmentReviewTx(
 	return nil
 }
 
-// refreshPersonEnrichmentRunCountsTx keeps a completed run's counters in
-// step with an attempt decided after the run finished.
-func refreshPersonEnrichmentRunCountsTx(ctx context.Context, tx *loggedTx, runID int64) error {
+// refreshPersonEnrichmentRunCountsTx keeps the run's counters in step with
+// an attempt decided by review. It locks the run row first, as CompleteRun
+// does, and recomputes whether the run is running or completed: whichever
+// of the two transactions takes the lock second counts the other's committed
+// attempt state, so neither can leave stale counts behind.
+func (s *Store) refreshPersonEnrichmentRunCountsTx(ctx context.Context, tx *loggedTx, runID int64) error {
+	var state string
+	if err := tx.QueryRowContext(ctx, `SELECT state FROM person_enrichment_runs WHERE id = ?`+
+		s.dialect.SelectForUpdate(), runID).Scan(&state); err != nil {
+		return fmt.Errorf("lock person enrichment run: %w", err)
+	}
 	outcome, err := derivePersonEnrichmentRunOutcomeTx(ctx, tx, runID)
 	if err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE person_enrichment_runs SET
 		succeeded_count = ?, failed_count = ?, suppressed_count = ?, identity_rejected_count = ?
-		WHERE id = ? AND state <> 'running'`,
+		WHERE id = ?`,
 		outcome.succeeded, outcome.failed, outcome.suppressed, outcome.rejected, runID); err != nil {
 		return fmt.Errorf("refresh person enrichment run counts: %w", err)
 	}
@@ -679,7 +687,7 @@ func (s *Store) confirmPersonEnrichmentIdentityTx(
 			return nil, err
 		}
 	}
-	if err := refreshPersonEnrichmentRunCountsTx(ctx, tx, attempt.RunID); err != nil {
+	if err := s.refreshPersonEnrichmentRunCountsTx(ctx, tx, attempt.RunID); err != nil {
 		return nil, err
 	}
 	key := applied.GenerationKey
@@ -772,7 +780,7 @@ func (s *Store) rejectPersonEnrichmentIdentityTx(
 			return nil, fmt.Errorf("record person enrichment identity rejection: %w", err)
 		}
 	}
-	if err := refreshPersonEnrichmentRunCountsTx(ctx, tx, attempt.RunID); err != nil {
+	if err := s.refreshPersonEnrichmentRunCountsTx(ctx, tx, attempt.RunID); err != nil {
 		return nil, err
 	}
 	return &PersonEnrichmentIdentityDecision{

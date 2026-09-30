@@ -301,3 +301,30 @@ func TestRejectedProviderIdentityIsNeverAppliedAgain(t *testing.T) {
 		})
 	}
 }
+
+func TestConfirmPersonEnrichmentIdentityRecountsARunStillRunning(t *testing.T) {
+	requirements := require.New(t)
+	checks := assert.New(t)
+	f := newEnrichmentResultFixture(t)
+	f.commit.IdentityAssessment = personenrichment.IdentityAssessment{
+		Reason: personenrichment.IdentityUncertainReason, Judgment: uncertainJudgment(),
+	}
+	f.reseal(t)
+	_, err := f.store.CommitEnrichmentClaims(t.Context(), f.commit)
+	requirements.NoError(err)
+
+	// The run has not completed yet. Confirmation locks the run row and
+	// recomputes its counts whatever its state, so a CompleteRun that
+	// derived counts before this commit cannot leave them stale: whichever
+	// transaction takes the run lock second recounts committed attempts.
+	_, err = f.store.ConfirmPersonEnrichmentIdentityContext(t.Context(), f.attempt.ID, "user")
+	requirements.NoError(err)
+	succeeded, rejected := runCounts(t, f)
+	checks.Equal(int64(1), succeeded)
+	checks.Equal(int64(0), rejected)
+
+	requirements.NoError(f.store.CompleteRun(t.Context(), f.commit.RunID, personenrichment.RunCompletion{}))
+	succeeded, rejected = runCounts(t, f)
+	checks.Equal(int64(1), succeeded)
+	checks.Equal(int64(0), rejected)
+}
