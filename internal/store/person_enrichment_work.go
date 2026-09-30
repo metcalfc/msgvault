@@ -2279,23 +2279,31 @@ func (s *Store) LoadRequestInput(
 	input := personenrichment.RequestInput{
 		PersonID: person.ID, PersonRevision: person.Revision, Catalog: catalog, Trigger: lease.Trigger,
 	}
-	if person.DisplayName != nil {
-		if value := strings.TrimSpace(*person.DisplayName); value != "" {
-			input.Names = append(input.Names, personenrichment.IdentityCandidate{
-				StableID: person.ID, Value: value, Primary: true, ActiveFrom: person.UpdatedAt.UTC(),
-			})
-		}
-	}
 	names, err := s.ListPersonNamesContext(ctx, person.ID, true)
 	if err != nil {
 		return input, err
 	}
+	preferredName := false
 	for _, name := range names {
 		if value := strings.TrimSpace(name.OriginalValue); value != "" {
+			primary := name.Envelope.Pref != nil && *name.Envelope.Pref == 1
+			preferredName = preferredName || primary
 			input.Names = append(input.Names, personenrichment.IdentityCandidate{
-				StableID: name.Envelope.ID, Value: value,
-				Primary:    name.Envelope.Pref != nil && *name.Envelope.Pref == 1,
+				StableID: name.Envelope.ID, Value: value, Primary: primary,
 				ActiveFrom: valueEnvelopeActiveFrom(name.Envelope),
+			})
+		}
+	}
+	// The display label is primary unless the person has a preferred (pref=1)
+	// name, which outranks it. The persons row has no timestamp for when the
+	// label was set: updated_at moves on every unrelated profile write, so
+	// ranking the label by it let a later employment or contact-point write,
+	// landing in a later second, switch the lookup name. created_at is stable.
+	if person.DisplayName != nil {
+		if value := strings.TrimSpace(*person.DisplayName); value != "" {
+			input.Names = append(input.Names, personenrichment.IdentityCandidate{
+				StableID: person.ID, Value: value, Primary: !preferredName,
+				ActiveFrom: person.CreatedAt.UTC(),
 			})
 		}
 	}

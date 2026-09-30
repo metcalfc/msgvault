@@ -1363,6 +1363,64 @@ func TestPersonEnrichmentRequestUsesPersonDisplayName(t *testing.T) {
 	checks.Equal("example labs", request.Identity.CurrentCompany)
 }
 
+// TestPersonEnrichmentRequestPrefersThePreferredNameOverTheDisplayLabel: a
+// preferred (pref=1) name outranks the display label no matter when the
+// person record was last written. The label used to take the person's
+// updated_at as its recency, so any later unrelated write (an employment, a
+// contact point) in a later second switched the lookup to the label. The
+// preferred name sorts after the label so an ID or value tie-break cannot
+// mask the choice.
+func TestPersonEnrichmentRequestPrefersThePreferredNameOverTheDisplayLabel(t *testing.T) {
+	requirements := require.New(t)
+	checks := assert.New(t)
+	f := newEnrichmentWorkFixture(t)
+	requirements.NotNil(f.person.DisplayName)
+	requirements.Equal("Work Person", *f.person.DisplayName)
+	_, err := f.store.AddPersonNameContext(t.Context(), f.person.ID, store.PersonNameInput{
+		NameKind: store.PersonNameFormatted, OriginalValue: "Zara Example",
+		Envelope: store.ValueEnvelopeInput{Source: store.ProvenanceUser, Pref: new(1)},
+	})
+	requirements.NoError(err)
+	organization, err := f.store.CreateOrganizationContext(t.Context(), store.OrganizationInput{
+		Name: "Example Labs", Kind: store.OrganizationKindCompany,
+	})
+	requirements.NoError(err)
+	_, err = f.store.AddEmploymentContext(t.Context(), store.EmploymentInput{
+		PersonID: f.person.ID, OrganizationID: organization.ID,
+		IsCurrent: new(true), IsPrimary: new(true), Source: store.ProvenanceUser,
+	})
+	requirements.NoError(err)
+	// The employment write moved the person's updated_at; place it an hour
+	// later so the check does not depend on crossing a second boundary.
+	_, err = f.store.DB().ExecContext(t.Context(), f.store.Rebind(
+		`UPDATE persons SET updated_at = ? WHERE id = ?`),
+		time.Now().UTC().Add(time.Hour), f.person.ID)
+	requirements.NoError(err)
+
+	input, err := f.store.LoadRequestInput(t.Context(), personenrichment.WorkLease{
+		PersonID: f.person.ID,
+		Trigger:  personenrichment.Trigger{Kind: personenrichment.TriggerManual, Generation: "manual:preferred-name"},
+	})
+	requirements.NoError(err)
+	var target personfacts.TargetDescriptor
+	for _, candidate := range input.Catalog.Targets {
+		if !candidate.Sensitive {
+			target = candidate
+			break
+		}
+	}
+	requirements.NotEmpty(target.Key)
+	profile := f.profile
+	profile.Kind = personenrichment.ProviderSixtyfour
+	profile.AllowedIdentifiers = []personenrichment.IdentifierClass{
+		personenrichment.IdentifierName, personenrichment.IdentifierCurrentCompany,
+	}
+	profile.Targets = []personfacts.TargetDescriptor{target}
+	request, _, err := personenrichment.BuildRequest(input, profile)
+	requirements.NoError(err)
+	checks.Equal("zara example", request.Identity.Name)
+}
+
 func TestPersonEnrichmentTerminalRefreshBecomesUnboundWork(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
