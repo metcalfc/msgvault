@@ -324,3 +324,25 @@ func TestParticipantMergeKeepsTheClassification(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(correspondentkind.SharedMailbox, record.Kind)
 }
+
+func TestParticipantMergeKeepsTheNewerClassification(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	absorbed := f.emailParticipant("older-desk@example.test", "Desk")
+	survivor := f.emailParticipant("newer-desk@example.test", "Desk")
+	_, err := f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: absorbed, Kind: correspondentkind.Ignored,
+	})
+	require.NoError(err)
+	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: survivor, Kind: correspondentkind.Person,
+	})
+	require.NoError(err)
+	require.NoError(f.st.MergeParticipants(absorbed, survivor))
+
+	record, err := f.st.GetCorrespondentKindContext(t.Context(), survivor)
+	require.NoError(err)
+	assert.Equal(correspondentkind.Person, record.Kind, "the survivor's newer person override wins")
+}

@@ -995,14 +995,15 @@ func participantsClassifiedNotPersonTx(
 }
 
 // rewriteCorrespondentKindsForMergeTx moves a merged-away participant's
-// classifications to the survivor. A survivor row from the same source is
-// kept only when it is at least as recent.
+// classifications to the survivor. Rows from different sources both move and
+// resolve by source precedence; for the same source the newer
+// classification wins, and a tie keeps the survivor's.
 func rewriteCorrespondentKindsForMergeTx(ctx context.Context, tx *loggedTx, oldID, newID int64) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM correspondent_kinds
 		WHERE participant_id = ? AND EXISTS (
-			SELECT 1 FROM correspondent_kinds survivor
-			WHERE survivor.participant_id = ? AND survivor.source = correspondent_kinds.source
-			  AND survivor.classified_at < correspondent_kinds.classified_at)`,
+			SELECT 1 FROM correspondent_kinds absorbed
+			WHERE absorbed.participant_id = ? AND absorbed.source = correspondent_kinds.source
+			  AND absorbed.classified_at > correspondent_kinds.classified_at)`,
 		newID, oldID); err != nil {
 		return fmt.Errorf("drop superseded survivor correspondent kinds: %w", err)
 	}
