@@ -1379,6 +1379,16 @@ text, and it is not recommended until the evaluation gate passes. See
 | `top` | `30` | How many leading hybrid results are reranked, 2 to 30. |
 | `message_types_excluded` | `[]` | Message types (for example `whatsapp`) whose text is never sent. Such results keep their fused position. |
 
+#### `[jev.meeting_event_kind]`
+
+Calendar event kind (feature `meeting_event_kind`). See
+[the feature description](/docs/usage/jev-judgments/#feature-meeting-event-kind).
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Let `msgvault meetings judge` ask Jev what kind of meeting each calendar series is. Without it, meeting weights come from the attendee count alone. |
+| `automatic` | `false` | Also judge up to 200 new calendar series at each analytics cache build. |
+
 ### `[activity]`
 
 Dated activity projection and per-person contact state (first and last

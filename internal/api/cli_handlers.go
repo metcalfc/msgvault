@@ -1681,6 +1681,9 @@ func cliRunCommandAllowed(args []string) bool {
 	if args[0] == "suggest-cleanup" {
 		return cliRunSuggestCleanupAllowed(args[1:])
 	}
+	if args[0] == "meetings" {
+		return cliRunMeetingsJudgeAllowed(args[1:])
+	}
 	if args[0] == cliRunPersonCommand {
 		if len(args) < 3 {
 			return false
@@ -1992,6 +1995,34 @@ func cliRunSuggestCleanupAllowed(args []string) bool {
 				return false
 			}
 		case "list-only", "rejudge", "json":
+			if _, err := strconv.ParseBool(value); err != nil {
+				return false
+			}
+		case "log-level", "verbose", "log-sql", "log-sql-slow-ms":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// cliRunMeetingsJudgeAllowed admits only `meetings judge`; the other
+// meetings commands call the HTTP API directly.
+func cliRunMeetingsJudgeAllowed(args []string) bool {
+	if len(args) == 0 || args[0] != "judge" {
+		return false
+	}
+	values, positionals, ok := cliRunStrictFlagValues(args[1:])
+	if !ok || len(positionals) != 0 {
+		return false
+	}
+	for name, value := range values {
+		switch name {
+		case "limit":
+			if parsed, err := strconv.ParseInt(value, 10, 64); err != nil || parsed < 0 {
+				return false
+			}
+		case "json":
 			if _, err := strconv.ParseBool(value); err != nil {
 				return false
 			}

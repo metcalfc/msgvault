@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-17"
+last_edited: "2026-09-30"
 title: Meeting Transcripts
 description: Archive AI meeting notes and transcripts from Granola, Circleback, and Notion into your searchable local archive.
 ---
@@ -118,6 +118,25 @@ Existing archives gain meeting projections from their stored raw evidence on
 upgrade, without a provider resync. Evidence absent from an older raw snapshot
 still appears as unavailable or partial. Upgrade the daemon as well as clients;
 meeting operations need daemon API schema 2.27.0 or newer.
+
+## How calendar events count as meetings
+
+Relationship rankings count shared meetings more than mail. A calendar event
+counts as a meeting with its attendees only when it is one, and a crowded
+meeting counts for less than a small one:
+
+| Event | Weight |
+|---|---|
+| Cancelled, declined by you, out of office, focus time, working location, or marked free (transparent) | 0: no contact at all, in rankings and in last-contact dates |
+| A series Jev judged with probability 0.60 or more | By kind: one-on-one and small working meeting 1, social 0.5, large group or all-hands 0.25, outside webinar and personal hold 0 |
+| Anything else | 1 up to 10 attendees, then 10 divided by the attendee count |
+
+Rooms and equipment are never attendees. Calendar sync records your RSVP and
+the attendee count; events synced before that need a resync to pick up a
+decline. The event kind judgment is optional, off by default, and described in
+[Jev judgments](jev-judgments.md#feature-meeting-event-kind). A meeting count
+(`meeting_count`) counts each event with a weight above 0 once; only the
+relationship score uses the weight itself.
 
 ## Source labels and account identity
 

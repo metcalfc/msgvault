@@ -50,6 +50,7 @@ func newMeetingsCommand(deps meetingCommandDeps) *cobra.Command {
 		newMeetingContextCommand(deps),
 		newMeetingActionsCommand(deps),
 		newMeetingMetricsCommand(deps),
+		newMeetingsJudgeCommand(),
 	)
 	return command
 }

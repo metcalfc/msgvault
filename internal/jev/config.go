@@ -49,6 +49,10 @@ type Config struct {
 	// archive identities are people, lists, shared mailboxes, or automated
 	// senders.
 	CorrespondentKind FeatureConfig `toml:"correspondent_kind"`
+	// MeetingEventKind is [jev.meeting_event_kind]: classifying a calendar
+	// series as a one-on-one, a working meeting, an all-hands, a webinar, a
+	// hold, or a social event, so relationship rankings weigh it fairly.
+	MeetingEventKind FeatureConfig `toml:"meeting_event_kind"`
 	// CleanupSuggestions is [jev.cleanup_suggestions]: judging junk and
 	// phishing candidates for `msgvault suggest-cleanup`. It only ever runs
 	// on request, so its automatic switch has no effect.

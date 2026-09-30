@@ -184,6 +184,8 @@ var settingsMetadata = map[string]settingMetadata{
 	"jev.rerank.mcp":                        {"Rerank assistant searches", "Also rerank hybrid searches from MCP clients. Off by default because an assistant may search without you watching.", sectionJevFeatures},
 	"jev.rerank.message_types_excluded":     {"Never rerank these message types", "Message types whose text is never sent. Such results keep their position.", sectionJevFeatures},
 	"jev.cleanup_suggestions.enabled":       {"Cleanup suggestions", "Ask Jev whether spam and promotional mail impersonates a sender, pressures you, or is personal or work mail, for msgvault suggest-cleanup and deletion review. It never stages or deletes anything.", sectionJevFeatures},
+	"jev.meeting_event_kind.enabled":        {"Meeting event kind", "Ask Jev whether a calendar series is a one-on-one, a working meeting, an all-hands, a webinar, a hold, or a social event, so rankings weigh it fairly.", sectionJevFeatures},
+	"jev.meeting_event_kind.automatic":      {"Automatic meeting event kinds", "Judge new calendar series when the analytics cache is built, without running msgvault meetings judge.", sectionJevFeatures},
 	"vector.people.enabled":                 {"Embed person fields", "Send the consented fields of each person to the text embedding provider. Semantic search must be on.", "people"},
 	"vector.people.retention_posture":       {"Provider retention statement", "Your statement of how long the provider keeps person data.", "people"},
 	"vector.people.training_posture":        {"Provider training statement", "Your statement of whether the provider trains on person data.", "people"},

@@ -24,6 +24,8 @@ const FeatureCorrespondentKind = "correspondent_kind"
 // FeatureCleanupSuggestions is the cleanup suggestion (junk and phishing)
 // feature.
 const FeatureCleanupSuggestions = "cleanup_suggestions"
+// FeatureMeetingEventKind is the calendar event kind feature.
+const FeatureMeetingEventKind = "meeting_event_kind"
 
 // FeatureSearchRerank is the hybrid search reranking feature. It sends
 // message text, so its consent disclosure says so.
@@ -56,6 +58,8 @@ func (c Config) FeatureConfigFor(name string) (FeatureConfig, bool) {
 	case FeatureSearchRerank:
 		// Reranking only ever runs for a person's own interactive search.
 		return FeatureConfig{Enabled: c.Rerank.Enabled}, true
+	case FeatureMeetingEventKind:
+		return c.MeetingEventKind, true
 	default:
 		return FeatureConfig{}, false
 	}

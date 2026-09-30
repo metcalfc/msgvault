@@ -463,10 +463,21 @@ bar.
   attendees plus `owner` and `none_or_unclear`, batched per meeting at
   import; store `assignee_participant_id` with confidence at ≥ 0.80 and a
   provenance of `inferred`; add `assignee_person_id` filter.
-- [ ] **Task 7.3 Event kind.** Choice over one_on_one, small_working_meeting,
+- [x] **Task 7.3 Event kind.** Choice over one_on_one, small_working_meeting,
   large_group_or_all_hands, external_webinar_or_marketing,
   personal_hold_or_logistics, social; recurring series asked once; weights
   meeting activity, confidence < 0.60 keeps count-based weight.
+  > `internal/meetingjudge`, feature `meeting_event_kind`, command
+  > `msgvault meetings judge` (daemon-run), automatic at cache build. A
+  > series is a calendar conversation; its newest event that is a meeting
+  > describes it, and one with none is stored by rule as `not_a_meeting`
+  > without a request. State is the title, length, recurrence, occurrence
+  > count, attendee and external-attendee counts, and whether the owner
+  > organized it; no names, addresses, or descriptions. Confidence is the
+  > probability of the chosen kind. Kind weights: one-on-one and working
+  > meeting 1, social 0.5, all-hands 0.25, webinar and hold 0. Rows live in
+  > `calendar_event_kinds`, are never replaced, and bump the meeting weight
+  > revision so a derived cache refresh republishes weights.
 
 ## Phase 8: sweep and remaining people items
 

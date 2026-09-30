@@ -52,6 +52,14 @@ All notable changes to msgvault, grouped by release.
   as an ID or vCard UID. The Web UI, CLI, and MCP tools use a shared name
   lookup (`GET /api/v1/entity-labels`), and employment listings name the
   organizations they reference. Requires API schema 2.37.0.
+- Relationship rankings count calendar events fairly. Cancelled and declined
+  events, out-of-office, focus-time, and working-location blocks, and events
+  marked free no longer count as meetings, rooms are no longer attendees,
+  and a meeting with more than 10 attendees counts for proportionally less.
+  With `[jev.meeting_event_kind]` enabled and consented, `msgvault meetings
+  judge` asks Jev once per calendar series whether it is a one-on-one, a
+  working meeting, an all-hands, a webinar, a hold, or a social event, and a
+  confident answer sets the series' weight. Rebuilds the analytics cache.
 - Classify which identities are people. `msgvault kinds build` marks
   automated senders and mailing lists with deterministic rules, and, when
   `[jev.correspondent_kind]` is enabled and consented, asks Jev about the

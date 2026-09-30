@@ -64,6 +64,10 @@ new `msgvault jev consent`.
 
    # [jev.rerank]       # sends message body text; not recommended until
    # enabled = true     # the evaluation gate passes (see below)
+
+   [jev.meeting_event_kind]
+   enabled = true
+   # automatic = true   # also judge new calendar series at each cache build
    ```
 
 2. Provide an API key. Either paste it in Settings under **Jev judgments**
@@ -79,8 +83,8 @@ new `msgvault jev consent`.
    ```
 
 Consent is per feature: run the same two `consent` commands with
-`organization_resolution`, `correspondent_kind`, `cleanup_suggestions`, or
-`search_rerank` for those features. `msgvault jev revoke enrichment_identity`
+`organization_resolution`, `correspondent_kind`, `cleanup_suggestions`,
+`search_rerank`, or `meeting_event_kind` for those features. `msgvault jev revoke enrichment_identity`
 or `msgvault jev revoke --all` stops the next request immediately.
 
 ## Budgets and safety
@@ -573,6 +577,80 @@ needs the archive owner's go-ahead. No results are recorded, so
 `enabled = false` remains the recommendation. TypeSafe's published gain was
 measured against BM25 alone, not against fused hybrid search.
 
+## Feature: meeting event kind
+
+Feature name: `meeting_event_kind`. Setting: `[jev.meeting_event_kind]`.
+Command: [`msgvault meetings judge`](../cli-reference.md#meetings-judge).
+
+Relationship rankings weigh a shared meeting more than a sent message.
+Without help, an all-hands with two hundred people, a vendor webinar,
+and a one-on-one all look alike. Code already sets the weight from the
+attendee count ([how calendar events count as meetings](meetings.md#how-calendar-events-count-as-meetings));
+this feature asks Jev what kind of event a calendar series is:
+
+1. **Rules, no Jev.** A series none of whose recent events is a meeting
+   (cancelled, declined by you, out of office, focus time, working location,
+   or marked free) is recorded as not a meeting and never sent.
+2. **Jev, only with consent.** Every other series is asked one Choice, ten
+   series per request. A recurring series is one question, asked once; a
+   standalone event is its own series. The newest event that is a meeting
+   describes the series.
+
+Code maps the answer when its probability is at least 0.60:
+
+| Answer | Meeting weight |
+|---|---|
+| `one_on_one` | 1 |
+| `small_working_meeting` | 1 |
+| `social` | 0.5 |
+| `large_group_or_all_hands` | 0.25 |
+| `external_webinar_or_marketing` | 0 |
+| `personal_hold_or_logistics` | 0 |
+
+Below 0.60 the attendee-count weight stays. The judgment is stored per series
+(`calendar_event_kinds`, with its probabilities and the model) and never
+revisited, and the next analytics cache build publishes the new weights.
+`meetings judge` runs by hand. With `automatic = true`, each analytics cache
+build also judges up to 200 new series first.
+
+### What leaves the machine
+
+Per series, under `events[i]`:
+
+- `title`: the event title, cut to 160 characters
+- `all_day` and `duration_minutes`: whether it is all day, and its length
+- `recurring` and `occurrences`: whether it repeats, and how many of its
+  events are archived
+- `attendee_count` and `external_attendee_count`: how many people were
+  invited, and how many of them have an address outside your calendar
+  account's domain
+- `organized_by_owner`: whether you organized it
+
+No attendee names or addresses, no descriptions or locations, no conference
+links, and nothing that identifies you.
+
+### The question, exactly as sent
+
+`event_kind_0` through `event_kind_9` (Choice), one per series in the
+request: "What kind of calendar event is `events[i]`? Judge from its title,
+length, recurrence, and attendee counts." The options are:
+
+- `one_on_one`: two people meeting: a one-on-one, a check-in, or an interview
+  with one other person.
+- `small_working_meeting`: a few people working together: a team sync, a
+  planning or design session, a customer or partner call.
+- `large_group_or_all_hands`: a large group: an all-hands, a town hall, a
+  department meeting, or a broadcast where most attendees listen.
+- `external_webinar_or_marketing`: a webinar, a marketing event, a product
+  demo for many registrants, or a conference session run by an outside
+  organizer.
+- `personal_hold_or_logistics`: not a meeting with others: a personal hold, a
+  reminder, travel, a commute, a meal block, or other logistics.
+- `social`: a social gathering: a team lunch, a party, drinks, or a
+  celebration.
+
+`msgvault jev consent meeting_event_kind` prints the same disclosure.
+
 ## Turn it off
 
 - `msgvault jev revoke --all` stops every feature at the next request without
@@ -589,12 +667,14 @@ probabilities and outcomes, not the compared values.
 ## Limitations
 
 - Only the enrichment identity check, organization resolution,
-  correspondent kind, cleanup suggestions, and hybrid search reranking exist
-  today. The other features in the engineering record
-  `docs/internal/jev-judgments-plan.md` are proposals.
+  correspondent kind, cleanup suggestions, hybrid search reranking, and
+  meeting event kind exist today. The other features in the engineering
+  record `docs/internal/jev-judgments-plan.md` are proposals.
 - Hybrid search reranking has not passed its evaluation gate. Its cached
   orders live in the daemon's memory, so a restart judges the next page of a
   search again.
+- Meeting event kind asks each calendar series once. A series whose nature
+  changes later keeps its first kind.
 - Correspondent kind does not revisit an identity once a rule or Jev
   classified it, even after links or new messages; mark it yourself with
   `msgvault person kind set`.

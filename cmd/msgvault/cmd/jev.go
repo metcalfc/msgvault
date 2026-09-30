@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/jev"
 	"go.kenn.io/msgvault/internal/kindclassify"
+	"go.kenn.io/msgvault/internal/meetingjudge"
 	"go.kenn.io/msgvault/internal/orgresolution"
 	"go.kenn.io/msgvault/internal/personenrichment"
 	"go.kenn.io/msgvault/internal/providercredentials"
@@ -32,6 +33,7 @@ var jevFeatureSpecs = func() []jev.FeatureSpec {
 		personenrichment.JevIdentityFeature(), orgresolution.Feature(), kindclassify.JevFeature(),
 		cleanupsuggest.JevFeature(),
 		rerank.JevFeature(),
+		meetingjudge.EventKindFeature(),
 	}
 }
 

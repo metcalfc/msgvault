@@ -79,6 +79,33 @@ JavaScript-safe integers. Locally deleted records are always excluded.
 Actions reflect the current archived source snapshot. Keep filters unchanged
 when continuing a page; refresh from page one to see newer evidence.
 
+### meetings judge
+
+Runs the meeting judgments inside the daemon. It visits calendar series (a
+recurring series or a standalone event) that have no kind yet, most recent
+first:
+
+1. A series none of whose events is a meeting (cancelled, declined by you, an
+   out-of-office, focus-time, or working-location block, or marked free) is
+   recorded as not a meeting. Nothing leaves the machine.
+2. When [`[jev.meeting_event_kind]`](configuration.md#jevmeeting_event_kind)
+   is enabled, an API key resolves, and `msgvault jev consent
+   meeting_event_kind` has been given, the rest are sent to Jev ten series per
+   request. Each series is asked once.
+
+```bash
+msgvault meetings judge [--limit N] [--json]
+```
+
+| Flag | Contract |
+|---|---|
+| `--limit` | Visit at most this many series; `0` (default) means all |
+| `--json` | Structured report: counts, Jev requests, and the skip category |
+
+A kind at or above 0.60 sets how much the series counts in relationship
+rankings; see [meeting event kind](usage/jev-judgments.md#feature-meeting-event-kind).
+The next analytics cache build publishes the new weights.
+
 ## Global Flags
 
 | Flag | Description |
@@ -1014,7 +1041,7 @@ msgvault add-calendar <email> [flags]
 
 ## sync-calendar
 
-Sync Google Calendar events for an account. The account is resolved from a `[[gcal]]` config entry (by name or email) or used directly as an email. The first run (or `--full`) does a full sync that registers calendars; later runs are incremental via the Calendar `syncToken`. Events are stored as searchable records (`message_type = calendar_event`) and become eligible for semantic search when the embedding worker runs. Cancelled events are retained and marked cancelled, never deleted. Sync is read-only.
+Sync Google Calendar events for an account. The account is resolved from a `[[gcal]]` config entry (by name or email) or used directly as an email. The first run (or `--full`) does a full sync that registers calendars; later runs are incremental via the Calendar `syncToken`. Events are stored as searchable records (`message_type = calendar_event`) and become eligible for semantic search when the embedding worker runs. Cancelled events are retained and marked cancelled, never deleted. Rooms and other resource attendees are not stored as participants. Each event records your RSVP and its attendee count, which decide how much it counts as a meeting in relationship rankings (see [how calendar events count as meetings](usage/meetings.md#how-calendar-events-count-as-meetings)). Sync is read-only.
 
 ```bash
 msgvault sync-calendar <name|email> [flags]
