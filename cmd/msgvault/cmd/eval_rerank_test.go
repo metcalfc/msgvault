@@ -144,7 +144,7 @@ func TestRunEvalReranksFTSCandidates(t *testing.T) {
 			assert.Equal("renewal", request.Query)
 			require.Len(t, request.Candidates, 2)
 			candidateText := strings.ToLower(strings.Join(request.Candidates, "\n"))
-			assert.Contains(request.Candidates, "Subject: Lease renewal terms\nFrom: \nDate: 2020-01-01\n\nSigned and returned.",
+			assert.Contains(request.Candidates, "Subject: Lease renewal terms\nFrom: unknown sender\nDate: 2020-01-01\n\nSigned and returned.",
 				"the eval sends the production candidate text")
 			assert.Contains(candidateText, "lease renewal terms")
 			assert.Contains(candidateText, "signed and returned")
