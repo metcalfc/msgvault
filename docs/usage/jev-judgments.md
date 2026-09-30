@@ -196,7 +196,8 @@ decides both questions once and stores the answer, so the exact lookup and
 employment projection get them right from then on.
 
 It runs before an enrichment result or a people sweep's facts are saved, for
-each organization a fact names without an ID:
+each organization a fact names without an ID. It writes nothing unless the
+run still holds its lease: each write first renews it. The steps are:
 
 1. **Exact lookup, no Jev.** A name and domain that already resolve to one
    organization are used as they are.
@@ -240,6 +241,10 @@ probability.
   provenance. When no separate organization exists, only the alias is added.
 - **Different organization** (`reject`) keeps that organization off the name's
   shortlist from now on.
+
+Merging organizations in the directory carries their reviews, rejections, and
+title mappings to the surviving organization, so a decision made before the
+merge keeps applying.
 
 Accepting fails when more than one organization has the proposed name, or
 when the merge would give a person two current jobs with the same title at
@@ -300,8 +305,6 @@ probabilities and outcomes, not the compared values.
 - Only the enrichment identity check and organization resolution exist
   today. The other features in the engineering record
   `docs/internal/jev-judgments-plan.md` are proposals.
-- Title mappings recorded against an organization are followed after it is
-  merged into another, one merge deep.
 - Facts from different saves for the same organization and role do not add
   up: the newest save for a role replaces the older one, as it always has.
 - Attempts decided before provider person IDs were kept can only be refused

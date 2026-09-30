@@ -51,7 +51,7 @@ func TestPreparerSendsTheConsentedWording(t *testing.T) {
 
 	_, err = f.preparer().Prepare(t.Context(), f.personID, []personfacts.ProposedClaim{
 		f.claim(`{"name":"Example Labs, Inc.","domain":"eu.labs.example"}`, "General Partner", "wording"),
-	})
+	}, nil)
 	require.NoError(err)
 	requests := fake.requests()
 	require.Len(requests, 1)
@@ -102,7 +102,7 @@ func TestPreparerAliasesNearNamesToTheExistingOrganization(t *testing.T) {
 			f.organization(t, "Northwind Traders", "")
 			claims := []personfacts.ProposedClaim{f.claim(`{"name":"`+name+`"}`, "Engineer", "alias")}
 
-			results, err := f.preparer().Prepare(t.Context(), f.personID, claims)
+			results, err := f.preparer().Prepare(t.Context(), f.personID, claims, nil)
 			require.NoError(err)
 			require.Len(results, 1)
 			assert.Equal(orgresolution.OutcomeAlias, results[0].Outcome)
@@ -139,7 +139,7 @@ func TestPreparerCreatesUnrelatedSimilarNamesAsBefore(t *testing.T) {
 	labs := f.organization(t, "Example Labs", "")
 	claims := []personfacts.ProposedClaim{f.claim(`{"name":"Example Logistics"}`, "Engineer", "new")}
 
-	results, err := f.preparer().Prepare(t.Context(), f.personID, claims)
+	results, err := f.preparer().Prepare(t.Context(), f.personID, claims, nil)
 	require.NoError(err)
 	require.Len(results, 1)
 	assert.Equal(orgresolution.OutcomeNew, results[0].Outcome)
@@ -167,7 +167,7 @@ func TestPreparerSendsMidConfidenceMatchesToReview(t *testing.T) {
 		f.claim(`{"name":"Example Labs Europe","domain":"eu.examplelabs.example"}`, "Engineer", "review"),
 	}
 
-	results, err := f.preparer().Prepare(t.Context(), f.personID, claims)
+	results, err := f.preparer().Prepare(t.Context(), f.personID, claims, nil)
 	require.NoError(err)
 	require.Len(results, 1)
 	assert.Equal(orgresolution.OutcomeReview, results[0].Outcome)
@@ -205,11 +205,11 @@ func TestPreparerAliasWriteIsIdempotentAndLaterLookupsNeedNoJudgment(t *testing.
 		f.claim(`{"name":"Example Labs, Inc.","domain":"labs.example"}`, "Engineer", "first"),
 	}
 
-	first, err := f.preparer().Prepare(t.Context(), f.personID, claims)
+	first, err := f.preparer().Prepare(t.Context(), f.personID, claims, nil)
 	require.NoError(err)
 	require.Len(first, 1)
 	assert.Equal(orgresolution.OutcomeAlias, first[0].Outcome)
-	second, err := f.preparer().Prepare(t.Context(), f.personID, claims)
+	second, err := f.preparer().Prepare(t.Context(), f.personID, claims, nil)
 	require.NoError(err)
 	require.Len(second, 1)
 	assert.Equal(orgresolution.OutcomeExact, second[0].Outcome, "the stored alias answers the second time")

@@ -11,9 +11,18 @@ import (
 // may record organization aliases that the deterministic organization lookup
 // then uses. It never changes a claim and never fails the commit: a
 // preparer that cannot decide leaves the lookup exactly as it was.
+//
+// hold is called immediately before every write and must confirm, renewing
+// if it can, that the caller still holds the lease the generation is
+// committed under. A hold error stops the preparer before that write, so no
+// alias lands for a lease that is already lost. A nil hold checks nothing.
 type OrganizationPreparer interface {
-	PrepareEmploymentOrganizations(ctx context.Context, personID int64, claims []ProposedClaim)
+	PrepareEmploymentOrganizations(ctx context.Context, personID int64, claims []ProposedClaim, hold LeaseHold)
 }
+
+// LeaseHold confirms the caller still holds its lease; see
+// OrganizationPreparer.
+type LeaseHold func(ctx context.Context) error
 
 type TargetKind string
 type ValueType string

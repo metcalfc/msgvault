@@ -15,21 +15,36 @@ import (
 // recordingOrganizations records what the worker hands organization
 // resolution, and when relative to the apply.
 type recordingOrganizations struct {
-	sink   *workerProductionSink
-	people []int64
-	claims [][]personfacts.ProposedClaim
-	before []int
+	sink    *workerProductionSink
+	people  []int64
+	claims  [][]personfacts.ProposedClaim
+	before  []int
+	holdErr []error
+	// loseLease makes the store report the lease gone at the hold's renewal.
+	loseLease *workerFailureStore
 }
 
 func (r *recordingOrganizations) PrepareEmploymentOrganizations(
-	_ context.Context, personID int64, claims []personfacts.ProposedClaim,
+	ctx context.Context, personID int64, claims []personfacts.ProposedClaim, hold personfacts.LeaseHold,
 ) {
 	r.people = append(r.people, personID)
 	r.claims = append(r.claims, claims)
 	r.before = append(r.before, len(r.sink.requests))
+	if r.loseLease != nil {
+		r.loseLease.failNextRenewal.Store(true)
+	}
+	r.holdErr = append(r.holdErr, hold(ctx))
 }
 
 func TestPersonSweepWorkerPreparesOrganizationsBeforeApplying(t *testing.T) {
+	for _, lost := range []bool{false, true} {
+		t.Run(fmt.Sprintf("lease lost %t", lost), func(t *testing.T) {
+			runSweepOrganizationsCase(t, lost)
+		})
+	}
+}
+
+func runSweepOrganizationsCase(t *testing.T, leaseLost bool) {
 	assert := assert.New(t)
 	require := require.New(t)
 	config, catalog := workerTestConfig(t)
@@ -65,6 +80,9 @@ func TestPersonSweepWorkerPreparesOrganizationsBeforeApplying(t *testing.T) {
 		Catalog:       workerFailureCatalog{catalog: catalog}, Clock: func() time.Time { return now },
 		NewID: func() string { return "attempt-organizations" }, WorkerID: "worker-fixture"}
 
+	if leaseLost {
+		organizations.loseLease = store
+	}
 	_, err := worker.RunPerson(t.Context(), "run-organizations", Lease{PersonID: 7,
 		WorkerID: "worker-fixture", Fence: 1, ExpiresAt: now.Add(time.Hour)}, RunIncremental)
 	require.NoError(err)
@@ -74,4 +92,10 @@ func TestPersonSweepWorkerPreparesOrganizationsBeforeApplying(t *testing.T) {
 	require.Len(organizations.claims, 1)
 	assert.Equal(sink.requests[0].Generation.Claims, organizations.claims[0])
 	assert.Equal([]int{0}, organizations.before, "organizations are prepared before the generation is applied")
+	require.Len(organizations.holdErr, 1)
+	if leaseLost {
+		require.ErrorIs(organizations.holdErr[0], ErrLeaseLost, "a lost lease stops any write")
+	} else {
+		require.NoError(organizations.holdErr[0], "the hold renews a held lease")
+	}
 }

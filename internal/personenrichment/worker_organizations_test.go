@@ -15,18 +15,20 @@ import (
 
 // recordingPreparer records what the worker hands organization resolution.
 type recordingPreparer struct {
-	mu     sync.Mutex
-	people []int64
-	claims [][]personfacts.ProposedClaim
+	mu      sync.Mutex
+	people  []int64
+	claims  [][]personfacts.ProposedClaim
+	holdErr []error
 }
 
 func (p *recordingPreparer) PrepareEmploymentOrganizations(
-	_ context.Context, personID int64, claims []personfacts.ProposedClaim,
+	ctx context.Context, personID int64, claims []personfacts.ProposedClaim, hold personfacts.LeaseHold,
 ) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.people = append(p.people, personID)
 	p.claims = append(p.claims, claims)
+	p.holdErr = append(p.holdErr, hold(ctx))
 }
 
 func TestWorkerPreparesOrganizationsBeforeCommittingAnAcceptedResult(t *testing.T) {
@@ -65,6 +67,8 @@ func TestWorkerPreparesOrganizationsBeforeCommittingAnAcceptedResult(t *testing.
 	require.Len(preparer.claims, 1)
 	require.Len(preparer.claims[0], 1)
 	assert.Equal(fixture.target.Key, preparer.claims[0][0].Target.Key)
+	require.Len(preparer.holdErr, 1)
+	require.NoError(preparer.holdErr[0], "the hold extends the attempt's own work lease")
 
 	attempts, err := fixture.store.ListPersonEnrichmentAttemptsContext(t.Context(), store.PersonEnrichmentAttemptFilter{
 		PersonID: fixture.person.ID, RunID: fixture.run.ID, Limit: 10,

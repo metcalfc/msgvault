@@ -3,6 +3,7 @@ package orgresolution
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -91,12 +92,12 @@ type ReferenceResult struct {
 
 // PrepareEmploymentOrganizations implements personfacts.OrganizationPreparer.
 func (p *Preparer) PrepareEmploymentOrganizations(
-	ctx context.Context, personID int64, claims []personfacts.ProposedClaim,
+	ctx context.Context, personID int64, claims []personfacts.ProposedClaim, hold personfacts.LeaseHold,
 ) {
 	if p == nil {
 		return
 	}
-	_, _ = p.Prepare(ctx, personID, claims)
+	_, _ = p.Prepare(ctx, personID, claims, hold)
 }
 
 // Prepare resolves every distinct organization the claims name without an
@@ -104,7 +105,7 @@ func (p *Preparer) PrepareEmploymentOrganizations(
 // lookup. Only a store failure is returned, after the references before it
 // were handled.
 func (p *Preparer) Prepare(
-	ctx context.Context, personID int64, claims []personfacts.ProposedClaim,
+	ctx context.Context, personID int64, claims []personfacts.ProposedClaim, hold personfacts.LeaseHold,
 ) ([]ReferenceResult, error) {
 	if p == nil {
 		return nil, nil
@@ -120,7 +121,7 @@ func (p *Preparer) Prepare(
 			results = append(results, ReferenceResult{Outcome: OutcomeSkipped, Skipped: "timeout"})
 			continue
 		}
-		result, err := p.resolve(ctx, personID, reference, deadline)
+		result, err := p.resolve(ctx, personID, reference, deadline, hold)
 		if err != nil {
 			p.logger.Warn("organization resolution failed",
 				"feature", jev.FeatureOrganizationResolution, "error", err.Error())
@@ -190,6 +191,7 @@ type titlePair struct {
 
 func (p *Preparer) resolve(
 	ctx context.Context, personID int64, reference employmentReference, deadline time.Time,
+	hold personfacts.LeaseHold,
 ) (ReferenceResult, error) {
 	shortlist, err := p.store.OrganizationShortlistContext(ctx, reference.ref)
 	if err != nil {
@@ -208,12 +210,12 @@ func (p *Preparer) resolve(
 		if len(pairs) == 0 {
 			return result, nil
 		}
-		return p.askTitlesOnly(ctx, result, pairs, deadline)
+		return p.askTitlesOnly(ctx, result, pairs, deadline, hold)
 	case store.OrganizationCreated:
 		if len(shortlist.Candidates) == 0 {
 			return ReferenceResult{Outcome: OutcomeNoMatch}, nil
 		}
-		return p.askOrganization(ctx, personID, reference, shortlist, deadline)
+		return p.askOrganization(ctx, personID, reference, shortlist, deadline, hold)
 	default:
 		return ReferenceResult{}, fmt.Errorf("unknown organization lookup status %q", shortlist.Status)
 	}
@@ -270,6 +272,7 @@ func (p *Preparer) titlePairs(
 
 func (p *Preparer) askTitlesOnly(
 	ctx context.Context, result ReferenceResult, pairs []titlePair, deadline time.Time,
+	hold personfacts.LeaseHold,
 ) (ReferenceResult, error) {
 	organizationName, err := p.organizationName(ctx, result.OrganizationID)
 	if err != nil {
@@ -285,7 +288,7 @@ func (p *Preparer) askTitlesOnly(
 		return result, nil
 	}
 	result.Asked = true
-	result.TitleAliases, err = p.applyTitles(ctx, response, pairs, result.OrganizationID)
+	result.TitleAliases, err = p.applyTitles(ctx, response, pairs, result.OrganizationID, hold)
 	p.logOutcome(result, response)
 	return result, err
 }
@@ -314,7 +317,7 @@ func addTitlePairs(state *State, pairs []titlePair, names map[int64]string) []st
 
 func (p *Preparer) askOrganization(
 	ctx context.Context, personID int64, reference employmentReference, shortlist *store.OrganizationShortlist,
-	deadline time.Time,
+	deadline time.Time, hold personfacts.LeaseHold,
 ) (ReferenceResult, error) {
 	state := State{
 		Reference:  &ReferenceState{Name: shortlist.Reference.Name, Domain: shortlist.Reference.Domain},
@@ -360,6 +363,9 @@ func (p *Preparer) askOrganization(
 	switch {
 	case result.Probability >= AliasThreshold:
 		result.Outcome, result.OrganizationID = OutcomeAlias, chosen
+		if err := holdLease(ctx, hold); err != nil {
+			return ReferenceResult{}, err
+		}
 		if _, err := p.store.RecordOrganizationResolutionAliasContext(ctx, store.OrganizationAliasInput{
 			OrganizationID: chosen, Name: shortlist.Reference.Name, Domain: shortlist.Reference.Domain,
 			Model: response.Model, Confidence: result.Probability,
@@ -384,12 +390,15 @@ func (p *Preparer) askOrganization(
 				indexes = append(indexes, i)
 			}
 		}
-		result.TitleAliases, err = p.applyTitlesAt(ctx, response, chosenPairs, indexes, chosen)
+		result.TitleAliases, err = p.applyTitlesAt(ctx, response, chosenPairs, indexes, chosen, hold)
 		if err != nil {
 			return ReferenceResult{}, err
 		}
 	case result.Probability >= ReviewThreshold:
 		result.Outcome, result.OrganizationID = OutcomeReview, chosen
+		if err := holdLease(ctx, hold); err != nil {
+			return ReferenceResult{}, err
+		}
 		if _, err := p.store.RecordOrganizationMatchReviewContext(ctx, store.OrganizationMatchReviewInput{
 			OrganizationID: chosen, Name: shortlist.Reference.Name, Domain: shortlist.Reference.Domain,
 			Model: response.Model, Probability: result.Probability,
@@ -403,24 +412,29 @@ func (p *Preparer) askOrganization(
 
 func (p *Preparer) applyTitles(
 	ctx context.Context, response jev.Response, pairs []titlePair, organizationID int64,
+	hold personfacts.LeaseHold,
 ) (int, error) {
 	indexes := make([]int, len(pairs))
 	for i := range pairs {
 		indexes[i] = i
 	}
-	return p.applyTitlesAt(ctx, response, pairs, indexes, organizationID)
+	return p.applyTitlesAt(ctx, response, pairs, indexes, organizationID, hold)
 }
 
 // applyTitlesAt records a title alias for every pair whose question (at the
 // matching index) cleared TitleThreshold.
 func (p *Preparer) applyTitlesAt(
 	ctx context.Context, response jev.Response, pairs []titlePair, indexes []int, organizationID int64,
+	hold personfacts.LeaseHold,
 ) (int, error) {
 	written := 0
 	for i, pair := range pairs {
 		answer, ok := response.Answers[TitleQuestion(indexes[i])]
 		if !ok || answer.Noul < TitleThreshold {
 			continue
+		}
+		if err := holdLease(ctx, hold); err != nil {
+			return written, err
 		}
 		added, err := p.store.RecordEmploymentTitleAliasContext(ctx, store.EmploymentTitleAliasInput{
 			OrganizationID: organizationID, Title: pair.title, CanonicalTitle: pair.other,
@@ -446,4 +460,18 @@ func (p *Preparer) logOutcome(result ReferenceResult, response jev.Response) {
 		"feature", jev.FeatureOrganizationResolution, "outcome", string(result.Outcome),
 		"probability", result.Probability, "title_aliases", result.TitleAliases,
 		"answers", jev.SafeAnswers(response.Answers))
+}
+
+// ErrLeaseLost wraps a LeaseHold failure: the caller's lease is gone, so the
+// preparer stopped before writing.
+var ErrLeaseLost = errors.New("organization resolution stopped: the caller's lease is no longer held")
+
+func holdLease(ctx context.Context, hold personfacts.LeaseHold) error {
+	if hold == nil {
+		return nil
+	}
+	if err := hold(ctx); err != nil {
+		return fmt.Errorf("%w: %w", ErrLeaseLost, err)
+	}
+	return nil
 }

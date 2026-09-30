@@ -30,7 +30,7 @@ func TestSameRoleTitlesCorroborateAtOneOrganization(t *testing.T) {
 				f.weakClaim(`{"name":"Example Labs"}`, "General Partner", "exa"),
 			}
 
-			results, err := f.preparer().Prepare(t.Context(), f.personID, claims)
+			results, err := f.preparer().Prepare(t.Context(), f.personID, claims, nil)
 			require.NoError(err)
 			require.Len(results, 1)
 			assert.Equal(orgresolution.OutcomeExact, results[0].Outcome)
@@ -82,7 +82,7 @@ func TestSameRoleTitleMatchesTheExistingEmployment(t *testing.T) {
 	require.Len(f.currentEmployments(t), 1)
 
 	later := []personfacts.ProposedClaim{f.claim(`{"name":"Example Labs"}`, "General Partner", "later")}
-	results, err := f.preparer().Prepare(t.Context(), f.personID, later)
+	results, err := f.preparer().Prepare(t.Context(), f.personID, later, nil)
 	require.NoError(err)
 	require.Len(results, 1)
 	assert.Equal(1, results[0].TitleAliases)
@@ -94,7 +94,7 @@ func TestSameRoleTitleMatchesTheExistingEmployment(t *testing.T) {
 	require.NotNil(employments[0].Title)
 	assert.Equal("Partner", *employments[0].Title)
 
-	again, err := f.preparer().Prepare(t.Context(), f.personID, later)
+	again, err := f.preparer().Prepare(t.Context(), f.personID, later, nil)
 	require.NoError(err)
 	require.Len(again, 1)
 	assert.False(again[0].Asked, "a title already mapped is never asked about again")

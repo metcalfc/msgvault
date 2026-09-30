@@ -918,7 +918,21 @@ func (w *Worker) runPerson(
 			ProviderPolicyFingerprint: profile.Fingerprint}, Claims: claims,
 		EvidenceStatusChanges: assembly.EvidenceStatusChanges}
 	if w.Organizations != nil && len(claims) > 0 {
-		w.Organizations.PrepareEmploymentOrganizations(ctx, lease.PersonID, claims)
+		// Organization aliases are written only while this attempt still holds
+		// the person's lease: each write first renews it, and a lost lease stops
+		// the preparer before anything lands.
+		w.Organizations.PrepareEmploymentOrganizations(ctx, lease.PersonID, claims,
+			func(holdCtx context.Context) error {
+				held, err := w.Store.RenewPersonSweep(holdCtx, lease, w.Config.LeaseDuration)
+				if err != nil {
+					return err
+				}
+				if held == nil {
+					return ErrLeaseLost
+				}
+				lease = *held
+				return nil
+			})
 	}
 	renewed, renewErr := w.Store.RenewPersonSweep(ctx, lease, w.Config.LeaseDuration)
 	if renewErr != nil {

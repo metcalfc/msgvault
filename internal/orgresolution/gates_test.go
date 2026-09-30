@@ -1,6 +1,8 @@
 package orgresolution_test
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -39,7 +41,7 @@ func TestPreparerNeverAsksWhenAGateIsClosedAndCreatesAsBefore(t *testing.T) {
 			test.close(t, f)
 			claims := []personfacts.ProposedClaim{f.claim(`{"name":"Example Labs, Inc."}`, "Engineer", "gate")}
 
-			results, err := f.preparer().Prepare(t.Context(), f.personID, claims)
+			results, err := f.preparer().Prepare(t.Context(), f.personID, claims, nil)
 			require.NoError(err)
 			require.Len(results, 1)
 			assert.Equal(orgresolution.OutcomeSkipped, results[0].Outcome)
@@ -69,7 +71,7 @@ func TestPreparerWithoutAKeyNeverAsks(t *testing.T) {
 	require.NoError(err)
 
 	results, err := orgresolution.NewPreparer(keyless, f.store, false, nil).Prepare(t.Context(), f.personID,
-		[]personfacts.ProposedClaim{f.claim(`{"name":"Example Labs, Inc."}`, "Engineer", "keyless")})
+		[]personfacts.ProposedClaim{f.claim(`{"name":"Example Labs, Inc."}`, "Engineer", "keyless")}, nil)
 	require.NoError(err)
 	require.Len(results, 1)
 	assert.Equal("credential_missing", results[0].Skipped)
@@ -85,14 +87,14 @@ func TestPreparerScheduledRunsNeedAutomaticUse(t *testing.T) {
 	claims := []personfacts.ProposedClaim{f.claim(`{"name":"Example Labs, Inc."}`, "Engineer", "scheduled")}
 	scheduled := orgresolution.NewPreparer(f.service, f.store, true, nil)
 
-	results, err := scheduled.Prepare(t.Context(), f.personID, claims)
+	results, err := scheduled.Prepare(t.Context(), f.personID, claims, nil)
 	require.NoError(err)
 	require.Len(results, 1)
 	assert.Equal("manual_only", results[0].Skipped)
 	assert.Empty(fake.requests())
 
 	f.config.OrganizationResolution.Automatic = true
-	results, err = scheduled.Prepare(t.Context(), f.personID, claims)
+	results, err = scheduled.Prepare(t.Context(), f.personID, claims, nil)
 	require.NoError(err)
 	require.Len(results, 1)
 	assert.Equal(orgresolution.OutcomeAlias, results[0].Outcome)
@@ -112,7 +114,7 @@ func TestPreparerStopsAtTheDailyRequestLimit(t *testing.T) {
 		f.claim(`{"name":"Northwind Trading"}`, "Engineer", "second"),
 	}
 
-	results, err := f.preparer().Prepare(t.Context(), f.personID, claims)
+	results, err := f.preparer().Prepare(t.Context(), f.personID, claims, nil)
 	require.NoError(err)
 	require.Len(results, 2)
 	assert.True(results[0].Asked)
@@ -130,7 +132,7 @@ func TestReplayWithAStoredAliasResolvesWithoutAJudgment(t *testing.T) {
 	f := newFixture(t, fake)
 	labs := f.organization(t, "Example Labs", "")
 	claims := []personfacts.ProposedClaim{f.claim(`{"name":"Example Labs, Inc."}`, "Engineer", "replay")}
-	_, err := f.preparer().Prepare(t.Context(), f.personID, claims)
+	_, err := f.preparer().Prepare(t.Context(), f.personID, claims, nil)
 	require.NoError(err)
 	require.Len(fake.requests(), 1)
 
@@ -148,4 +150,43 @@ func TestReplayWithAStoredAliasResolvesWithoutAJudgment(t *testing.T) {
 	require.Len(employments, 1)
 	assert.Equal(labs.ID, employments[0].OrganizationID)
 	assert.Len(fake.requests(), 1, "stored aliases, not live calls, feed resolution")
+}
+
+func TestPreparerWritesNothingOnceTheLeaseIsLost(t *testing.T) {
+	tests := []struct {
+		name   string
+		orgRef float64
+	}{
+		{"confident alias", 0.95},
+		{"review", 0.7},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			fake := newFakeJev(t, map[string]float64{"candidate_1": test.orgRef}, 0.95)
+			f := newFixture(t, fake)
+			labs := f.organization(t, "Example Labs", "")
+			lost := errors.New("lease expired")
+			holds := 0
+			hold := func(context.Context) error {
+				holds++
+				return lost
+			}
+
+			_, err := f.preparer().Prepare(t.Context(), f.personID,
+				[]personfacts.ProposedClaim{f.claim(`{"name":"Example Labs, Inc."}`, "Engineer", "lost")}, hold)
+			require.ErrorIs(err, orgresolution.ErrLeaseLost)
+			require.ErrorIs(err, lost)
+			assert.Equal(1, holds, "the hold runs before the write")
+			assert.Len(fake.requests(), 1, "asking is not a write")
+
+			profile, err := f.store.GetOrganizationProfileContext(t.Context(), labs.ID, false)
+			require.NoError(err)
+			assert.Empty(profile.Names, "no alias for a lost lease")
+			reviews, err := f.store.ListOrganizationMatchReviewsContext(t.Context(), 10)
+			require.NoError(err)
+			assert.Empty(reviews, "no review for a lost lease")
+		})
+	}
 }
