@@ -33,7 +33,7 @@ func (s *Store) RemoteImageBackfillMessageIDs(ctx context.Context, after, source
 	// Spam and trash never have their remote images fetched.
 	query := "SELECT m.id FROM messages m WHERE m.id > ? AND COALESCE(m.message_type, '') IN ('', 'email')" +
 		" AND m.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM message_labels ml JOIN labels l ON l.id = ml.label_id" +
-		" WHERE ml.message_id = m.id AND " + junkOrTrashLabelSQL("l") + ")"
+		" WHERE ml.message_id = m.id AND " + junkOrTrashLabelSQL() + ")"
 	args := []any{after}
 	if sourceID != 0 {
 		query += " AND m.source_id = ?"

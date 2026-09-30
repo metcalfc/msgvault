@@ -31,11 +31,12 @@ type RemoteImageRequest struct {
 	MessageID int64 `json:"message_id" minimum:"1" doc:"The message the image appears in (required). The URL must be an image of that message's stored body: otherwise 403 remote_image_not_referenced. Spam, junk, and trash messages are refused with 403 remote_images_blocked."`
 }
 
-// RemoteImagePolicyStore loads a message's remote image policy: whether its
-// folder blocks remote images and the bodies its images may come from.
-// Implemented by the serve daemon's store adapter.
+// RemoteImagePolicyStore reads a message's remote image policy: whether its
+// folder blocks remote images, its row version, and the bodies its images
+// may come from. Implemented by the serve daemon's store adapter.
 type RemoteImagePolicyStore interface {
-	RemoteImagePolicyContext(ctx context.Context, messageID int64) (store.RemoteImagePolicy, error)
+	RemoteImageStateContext(ctx context.Context, messageID int64) (store.RemoteImageState, error)
+	RemoteImageBodiesContext(ctx context.Context, messageID int64) (text, html string, err error)
 }
 
 // handleRemoteImage serves POST /api/v1/content/remote-image. Success passes
@@ -93,7 +94,7 @@ func (s *Server) remoteImageAllowed(ctx context.Context, w http.ResponseWriter, 
 			"This daemon cannot check whether the message allows remote images")
 		return false
 	}
-	policy, err := policies.RemoteImagePolicyContext(ctx, messageID)
+	state, err := policies.RemoteImageStateContext(ctx, messageID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "Message not found")
 		return false
@@ -103,14 +104,23 @@ func (s *Server) remoteImageAllowed(ctx context.Context, w http.ResponseWriter, 
 		writeError(w, http.StatusInternalServerError, "internal_error", "Remote image policy check failed")
 		return false
 	}
-	if policy.Blocked {
+	if state.Blocked {
 		writeError(w, http.StatusForbidden, "remote_images_blocked",
 			"Remote images are never loaded for spam, junk, or trash messages")
 		return false
 	}
 	// A URL no <img src> could name falls through to Fetch, whose own
 	// validation rejects it before any network use.
-	if remoteimage.Referenceable(target) && !remoteimage.Referenced(target, policy.BodyHTML, policy.BodyText) {
+	if !remoteimage.Referenceable(target) {
+		return true
+	}
+	refs, err := s.remoteImageRefs.get(ctx, policies, messageID, state.Version)
+	if err != nil {
+		s.logger.Error("remote image reference lookup failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Remote image policy check failed")
+		return false
+	}
+	if !refs.Contains(target) {
 		writeError(w, http.StatusForbidden, "remote_image_not_referenced",
 			"The message does not reference this image")
 		return false

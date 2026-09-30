@@ -145,6 +145,32 @@ func TestRemoteImagesAreBlockedForSpamAndTrash(t *testing.T) {
 	assert.Equal([]int64{inbox}, ids, "backfill never visits spam or trash")
 }
 
+func TestRemoteImageStateVersionsTheBodyAndBodiesAreBounded(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	a := newProtectionArchive(t)
+	st := a.f.Store
+	sender := a.f.EnsureParticipant("news@example.com", "Example News", "example.com")
+	id := a.message(sender, false, "SPAM")
+	require.NoError(st.UpsertMessageBody(id, sql.NullString{String: "text", Valid: true},
+		sql.NullString{String: `<img src="https://images.example/a.png">`, Valid: true}))
+
+	state, err := st.RemoteImageStateContext(t.Context(), id)
+	require.NoError(err)
+	assert.True(state.Blocked)
+	assert.NotEmpty(state.Version)
+	text, html, err := st.RemoteImageBodiesContext(t.Context(), id)
+	require.NoError(err)
+	assert.Equal("text", text)
+	assert.Equal(`<img src="https://images.example/a.png">`, html)
+
+	_, err = st.RemoteImageStateContext(t.Context(), 999999)
+	require.ErrorIs(err, sql.ErrNoRows)
+	text, html, err = st.RemoteImageBodiesContext(t.Context(), 999999)
+	require.NoError(err)
+	assert.Empty(text + html)
+}
+
 // IMAP servers mark junk and trash with RFC 6154 special-use attributes
 // under any name, and PST and mbox folders carry only names.
 func TestJunkAndTrashFoldersAreKnownByRoleOrCommonName(t *testing.T) {
@@ -158,10 +184,12 @@ func TestJunkAndTrashFoldersAreKnownByRoleOrCommonName(t *testing.T) {
 		"Deleted Items":     {Name: "Deleted Items", Type: "user"},
 		"Junk food recipes": {Name: "Junk food recipes", Type: "user"},
 		"INBOX":             {Name: "INBOX", Type: "system"},
+		// A provider-marked Sent folder that happens to be named Junk.
+		"Junk": {Name: "Junk", Type: "system", SystemRole: store.LabelSystemRoleSent},
 	})
 	require.NoError(err)
 	messages := map[string]int64{}
-	for i, label := range []string{"Junk Email", "Corbeille", "Deleted Items", "Junk food recipes", "INBOX"} {
+	for i, label := range []string{"Junk Email", "Corbeille", "Deleted Items", "Junk food recipes", "INBOX", "Junk"} {
 		id, err := st.UpsertMessage(&store.Message{
 			ConversationID: f.ConvID, SourceID: f.Source.ID, SourceMessageID: fmt.Sprintf("folder-%d", i),
 			MessageType: "email",
@@ -173,20 +201,21 @@ func TestJunkAndTrashFoldersAreKnownByRoleOrCommonName(t *testing.T) {
 
 	blocked, err := st.RemoteImagesBlockedMessagesContext(t.Context(), []int64{
 		messages["Junk Email"], messages["Corbeille"], messages["Deleted Items"],
-		messages["Junk food recipes"], messages["INBOX"],
+		messages["Junk food recipes"], messages["INBOX"], messages["Junk"],
 	})
 	require.NoError(err)
 	assert.Equal(map[int64]bool{
 		messages["Junk Email"]: true, messages["Corbeille"]: true, messages["Deleted Items"]: true,
 		messages["Junk food recipes"]: false, messages["INBOX"]: false,
-	}, blocked)
+		messages["Junk"]: false,
+	}, blocked, "a recorded role outranks the folder name")
 	one, err := st.MessageRemoteImagesBlockedContext(t.Context(), messages["Junk Email"])
 	require.NoError(err)
 	assert.True(one)
 
 	backfill, err := st.RemoteImageBackfillMessageIDs(t.Context(), 0, 0, 100)
 	require.NoError(err)
-	assert.Equal([]int64{messages["Junk food recipes"], messages["INBOX"]}, backfill)
+	assert.Equal([]int64{messages["Junk food recipes"], messages["INBOX"], messages["Junk"]}, backfill)
 
 	pool, err := st.CleanupCandidatesContext(t.Context(), store.CleanupCandidateQuery{Limit: 10})
 	require.NoError(err)

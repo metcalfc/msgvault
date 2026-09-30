@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"go.kenn.io/msgvault/internal/correspondentkind"
 )
@@ -255,7 +256,7 @@ func (s *Store) RemoteImagesBlockedMessagesContext(ctx context.Context, messageI
 		return queryInChunksContext(ctx, tx, ids, nil, `
 			SELECT m.id, CASE WHEN EXISTS (
 			    SELECT 1 FROM message_labels ml JOIN labels l ON l.id = ml.label_id
-			    WHERE ml.message_id = m.id AND `+junkOrTrashLabelSQL("l")+`)
+			    WHERE ml.message_id = m.id AND `+junkOrTrashLabelSQL()+`)
 			  THEN 1 ELSE 0 END
 			FROM messages m WHERE m.id IN (%s)`, func(rows *loggedRows) error {
 			var id int64
@@ -273,37 +274,57 @@ func (s *Store) RemoteImagesBlockedMessagesContext(ctx context.Context, messageI
 	return result, nil
 }
 
-// RemoteImagePolicy is what the image proxy needs to decide one fetch.
-type RemoteImagePolicy struct {
+// RemoteImageState is what the image proxy checks on every request: whether
+// the message's folder blocks remote images, and the version of its row,
+// which the database bumps whenever the message or its body changes.
+type RemoteImageState struct {
 	// Blocked is true for spam, junk, trash, and deleted-items messages.
 	Blocked bool
-	// BodyText and BodyHTML are bounded prefixes of the stored bodies, the
-	// only places a remote image the reader may request can come from.
-	BodyText string
-	BodyHTML string
+	// Version changes when the message or its body changes, so a cached
+	// reference set keyed on it is never served for an edited body.
+	Version string
 }
 
 // remoteImageBodyPrefixBytes matches the remote image archiver's HTML cap.
 const remoteImageBodyPrefixBytes = 8 << 20
 
-// RemoteImagePolicyContext loads one message's remote image policy by
-// primary key. A missing message is reported as sql.ErrNoRows.
-func (s *Store) RemoteImagePolicyContext(ctx context.Context, messageID int64) (RemoteImagePolicy, error) {
-	var policy RemoteImagePolicy
-	blocked, err := s.MessageRemoteImagesBlockedContext(ctx, messageID)
-	if err != nil {
-		return policy, err
+// RemoteImageStateContext reads one message's remote image state by primary
+// key; no body is read. A missing message is reported as sql.ErrNoRows.
+func (s *Store) RemoteImageStateContext(ctx context.Context, messageID int64) (RemoteImageState, error) {
+	var state RemoteImageState
+	var blocked int
+	var modified nullableTimestamp
+	err := s.db.QueryRowContext(ctx, `
+		SELECT CASE WHEN EXISTS (
+		    SELECT 1 FROM message_labels ml JOIN labels l ON l.id = ml.label_id
+		    WHERE ml.message_id = m.id AND `+junkOrTrashLabelSQL()+`)
+		  THEN 1 ELSE 0 END, m.last_modified
+		FROM messages m WHERE m.id = ?`, messageID).Scan(&blocked, &modified)
+	if errors.Is(err, sql.ErrNoRows) {
+		return state, err
 	}
-	policy.Blocked = blocked
-	var text, html sql.NullString
+	if err != nil {
+		return state, fmt.Errorf("check remote image policy: %w", err)
+	}
+	state.Blocked = blocked == 1
+	if modified.Valid {
+		state.Version = modified.Time.UTC().Format(time.RFC3339Nano)
+	}
+	return state, nil
+}
+
+// RemoteImageBodiesContext loads bounded prefixes of one message's stored
+// bodies by primary key: the only places an image the reader may request
+// can come from.
+func (s *Store) RemoteImageBodiesContext(ctx context.Context, messageID int64) (text, html string, err error) {
+	var bodyText, bodyHTML sql.NullString
 	err = s.db.QueryRowContext(ctx, `
 		SELECT substr(body_text, 1, ?), substr(body_html, 1, ?) FROM message_bodies WHERE message_id = ?`,
-		remoteImageBodyPrefixBytes, remoteImageBodyPrefixBytes, messageID).Scan(&text, &html)
+		remoteImageBodyPrefixBytes, remoteImageBodyPrefixBytes, messageID).Scan(&bodyText, &bodyHTML)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return policy, fmt.Errorf("load remote image references: %w", err)
+		return "", "", fmt.Errorf("load remote image references: %w", err)
 	}
-	policy.BodyText, policy.BodyHTML = text.String, html.String
-	return policy, nil
+	return bodyText.String, bodyHTML.String, nil
 }
 
 // MessageRemoteImagesBlockedContext reports whether one message is in a
@@ -316,7 +337,7 @@ func (s *Store) MessageRemoteImagesBlockedContext(ctx context.Context, messageID
 	err := s.db.QueryRowContext(ctx, `
 		SELECT CASE WHEN EXISTS (
 		    SELECT 1 FROM message_labels ml JOIN labels l ON l.id = ml.label_id
-		    WHERE ml.message_id = m.id AND `+junkOrTrashLabelSQL("l")+`)
+		    WHERE ml.message_id = m.id AND `+junkOrTrashLabelSQL()+`)
 		  THEN 1 ELSE 0 END
 		FROM messages m WHERE m.id = ?`, messageID).Scan(&blocked)
 	if errors.Is(err, sql.ErrNoRows) {

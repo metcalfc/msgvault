@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,6 +28,8 @@ type protectionStore struct {
 	blocked     map[int64]bool
 	keepQuery   []int64
 	keepMin     float64
+	version     string
+	bodyLoads   int
 }
 
 func (s *protectionStore) DeletionProtectionsContext(
@@ -41,16 +44,18 @@ func (s *protectionStore) DeletionProtectionsContext(
 	return result, nil
 }
 
-func (s *protectionStore) RemoteImagePolicyContext(_ context.Context, id int64) (store.RemoteImagePolicy, error) {
+func (s *protectionStore) RemoteImageStateContext(_ context.Context, id int64) (store.RemoteImageState, error) {
 	blocked, ok := s.blocked[id]
 	if !ok {
-		return store.RemoteImagePolicy{}, sql.ErrNoRows
+		return store.RemoteImageState{}, sql.ErrNoRows
 	}
-	return store.RemoteImagePolicy{
-		Blocked:  blocked,
-		BodyHTML: `<img src="http://images.example/pixel.png?a=1&amp;b=2">`,
-		BodyText: "Plain text with http://images.example/unlinked.png",
-	}, nil
+	return store.RemoteImageState{Blocked: blocked, Version: s.version}, nil
+}
+
+func (s *protectionStore) RemoteImageBodiesContext(context.Context, int64) (string, string, error) {
+	s.bodyLoads++
+	return "Plain text with http://images.example/unlinked.png",
+		`<img src="http://images.example/pixel.png?a=1&amp;b=2"><img src="http://images.example/b.png">`, nil
 }
 
 func (s *protectionStore) KeepCandidatesForSourceMessagesContext(
@@ -212,4 +217,69 @@ func TestRemoteImageRefusesSpamAndTrashMessagesBeforeAnyNetworkUse(t *testing.T)
 	allowed := post(`{"url": "HTTP://images.example:80/pixel.png?a=1&b=2", "message_id": 10}`)
 	require.Equal(http.StatusOK, allowed.Code, allowed.Body.String())
 	assert.Equal(fakePNG, allowed.Body.Bytes())
+}
+
+func TestRemoteImageProxyParsesEachMessageBodyOncePerVersion(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(fakePNG)
+	}))
+	defer upstream.Close()
+	seams := &remoteImageSeams{
+		answers:  map[string][]netip.Addr{"images.example": {netip.MustParseAddr("203.0.113.7")}},
+		upstream: upstream.Listener.Addr().String(),
+	}
+	srv := newRemoteImageTestServer(t, seams)
+	st := &protectionStore{blocked: map[int64]bool{10: false}, version: "v1"}
+	srv.store = st
+	post := func(target string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, remoteImagePath,
+			bytes.NewBufferString(`{"url": "`+target+`", "message_id": 10}`))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		srv.Router().ServeHTTP(resp, req)
+		return resp
+	}
+
+	for range 3 {
+		require.Equal(http.StatusOK, post("http://images.example/b.png").Code)
+		require.Equal(http.StatusOK, post("http://images.example/pixel.png?a=1&b=2").Code)
+	}
+	assert.Equal(1, st.bodyLoads, "six image requests for one message parse its body once")
+
+	st.version = "v2"
+	require.Equal(http.StatusOK, post("http://images.example/b.png").Code)
+	assert.Equal(2, st.bodyLoads, "a changed message is parsed again")
+
+	st.blocked[10] = true
+	blocked := post("http://images.example/b.png")
+	assert.Equal(http.StatusForbidden, blocked.Code, "folder state is never cached")
+	assert.Contains(blocked.Body.String(), "remote_images_blocked")
+}
+
+func TestRemoteImageReferenceCacheEvictsAndExpires(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	cache := newRemoteImageReferenceCache(2, time.Minute, func() time.Time { return now })
+	st := &protectionStore{}
+	get := func(id int64) {
+		_, err := cache.get(t.Context(), st, id, "v1")
+		assert.NoError(err)
+	}
+	get(1)
+	get(2)
+	get(1)
+	assert.Equal(2, st.bodyLoads)
+	get(3) // evicts 2, the least recently used
+	get(1)
+	assert.Equal(3, st.bodyLoads)
+	get(2)
+	assert.Equal(4, st.bodyLoads)
+	now = now.Add(2 * time.Minute)
+	get(2)
+	assert.Equal(5, st.bodyLoads, "an expired entry is reloaded")
 }

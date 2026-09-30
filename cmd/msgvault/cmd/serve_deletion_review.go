@@ -26,8 +26,12 @@ func (a *storeAPIAdapter) DeletionProtectionsContext(
 	return a.store.DeletionProtectionsContext(ctx, messageIDs)
 }
 
-func (a *storeAPIAdapter) RemoteImagePolicyContext(ctx context.Context, messageID int64) (store.RemoteImagePolicy, error) {
-	return a.store.RemoteImagePolicyContext(ctx, messageID)
+func (a *storeAPIAdapter) RemoteImageStateContext(ctx context.Context, messageID int64) (store.RemoteImageState, error) {
+	return a.store.RemoteImageStateContext(ctx, messageID)
+}
+
+func (a *storeAPIAdapter) RemoteImageBodiesContext(ctx context.Context, messageID int64) (string, string, error) {
+	return a.store.RemoteImageBodiesContext(ctx, messageID)
 }
 
 func (a *storeAPIAdapter) RemoteImagesBlockedMessagesContext(ctx context.Context, messageIDs []int64) (map[int64]bool, error) {

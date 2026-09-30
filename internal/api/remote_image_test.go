@@ -95,8 +95,12 @@ type referencingPolicyStore struct {
 	html string
 }
 
-func (s *referencingPolicyStore) RemoteImagePolicyContext(context.Context, int64) (store.RemoteImagePolicy, error) {
-	return store.RemoteImagePolicy{BodyHTML: s.html}, nil
+func (s *referencingPolicyStore) RemoteImageStateContext(context.Context, int64) (store.RemoteImageState, error) {
+	return store.RemoteImageState{Version: s.html}, nil
+}
+
+func (s *referencingPolicyStore) RemoteImageBodiesContext(context.Context, int64) (string, string, error) {
+	return "", s.html, nil
 }
 
 // referenceImage makes the test message reference target.

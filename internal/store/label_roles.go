@@ -33,18 +33,24 @@ func sqlStringList(values []string) string {
 	return strings.Join(quoted, ", ")
 }
 
-// labelMatchSQL matches a label by its recorded role, its Gmail system ID,
-// or, for sources without either, its name.
+// labelMatchSQL matches a label by its recorded role. A label with no
+// recorded role (older archives, and sources that mark nothing) falls back
+// to its Gmail system ID or its name; a label whose provider recorded some
+// other role, such as a \Sent folder named "Junk", never matches by name.
 func labelMatchSQL(alias string, roles, sourceIDs, names []string) string {
+	fallbacks := []string{}
+	if len(sourceIDs) > 0 {
+		fallbacks = append(fallbacks, alias+".source_label_id IN ("+sqlStringList(sourceIDs)+")")
+	}
+	if len(names) > 0 {
+		fallbacks = append(fallbacks, "LOWER(TRIM("+alias+".name)) IN ("+sqlStringList(names)+")")
+	}
 	parts := []string{}
 	if len(roles) > 0 {
 		parts = append(parts, alias+".system_role IN ("+sqlStringList(roles)+")")
 	}
-	if len(sourceIDs) > 0 {
-		parts = append(parts, alias+".source_label_id IN ("+sqlStringList(sourceIDs)+")")
-	}
-	if len(names) > 0 {
-		parts = append(parts, "LOWER(TRIM("+alias+".name)) IN ("+sqlStringList(names)+")")
+	if len(fallbacks) > 0 {
+		parts = append(parts, "(COALESCE("+alias+".system_role, '') = '' AND ("+strings.Join(fallbacks, " OR ")+"))")
 	}
 	return "(" + strings.Join(parts, " OR ") + ")"
 }
@@ -54,9 +60,10 @@ func junkLabelSQL(alias string) string {
 	return labelMatchSQL(alias, []string{LabelSystemRoleJunk}, []string{"SPAM"}, junkLabelNames)
 }
 
-// junkOrTrashLabelSQL matches spam, junk, trash, and deleted-items folders.
-func junkOrTrashLabelSQL(alias string) string {
-	return labelMatchSQL(alias,
+// junkOrTrashLabelSQL matches spam, junk, trash, and deleted-items folders
+// on a labels table aliased l.
+func junkOrTrashLabelSQL() string {
+	return labelMatchSQL("l",
 		[]string{LabelSystemRoleJunk, LabelSystemRoleTrash}, []string{"SPAM", "TRASH"},
 		append(append([]string{}, junkLabelNames...), trashLabelNames...))
 }

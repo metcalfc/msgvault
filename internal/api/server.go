@@ -413,9 +413,12 @@ type Server struct {
 	// inlineCache parses each message's raw MIME once and serves every cid: from
 	// that result, collapsing the per-cid fan-out (see inline_cache.go).
 	inlineCache *inlineParseCache
-	spaHandler  http.Handler
-	sessions    *sessionStore
-	agentGrants *agentgrant.Registry
+	// remoteImageRefs caches each message's image reference set so a
+	// newsletter's many image requests parse its body once.
+	remoteImageRefs *remoteImageReferenceCache
+	spaHandler      http.Handler
+	sessions        *sessionStore
+	agentGrants     *agentgrant.Registry
 	// trustedProxies contains only explicitly configured direct proxy peers.
 	// Forwarded scheme/host data is ignored for every other RemoteAddr.
 	trustedProxies   []netip.Prefix
@@ -637,6 +640,7 @@ func NewServerWithOptions(opts ServerOptions) *Server {
 		blobStore:              opts.BlobStore,
 		remoteImages:           remoteimage.NewFetcher(),
 		inlineCache:            newInlineParseCache(inlineCacheMaxEntries, inlineCacheMaxBytes),
+		remoteImageRefs:        newRemoteImageReferenceCache(remoteImageRefCacheEntries, remoteImageRefCacheTTL, nil),
 		spaHandler:             opts.SPAHandler,
 		sessions:               newSessionStore(defaultSessionTTL),
 		agentGrants: func() *agentgrant.Registry {
