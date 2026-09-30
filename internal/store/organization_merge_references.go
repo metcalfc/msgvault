@@ -46,7 +46,7 @@ func (s *Store) retargetOrganizationReferencesTx(
 			return fmt.Errorf("repoint correspondent kinds to the surviving organization: %w", err)
 		}
 	}
-	if err := retargetOrganizationMatchReviewsTx(ctx, tx, survivorID, losingID); err != nil {
+	if err := retargetOrganizationMatchReviewsTx(ctx, tx, s.dialect, survivorID, losingID); err != nil {
 		return err
 	}
 	if err := carryResolutionAliasesTx(ctx, tx, s.dialect, survivorID, losingID); err != nil {
@@ -79,13 +79,17 @@ type organizationMatchReviewMergeRow struct {
 	decidedAt   sql.NullTime
 }
 
+// loadOrganizationMatchReviewMergeRowsTx reads and locks an organization's
+// reviews, so a decision cannot commit between the read and the merge's
+// rewrite of them (SQLite already holds the writer lock).
 func loadOrganizationMatchReviewMergeRowsTx(
-	ctx context.Context, tx *loggedTx, organizationID int64,
+	ctx context.Context, tx *loggedTx, dialect Dialect, organizationID int64,
 ) ([]organizationMatchReviewMergeRow, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, proposed_name_normalized, proposed_domain, status, probability, model,
 		       decided_by, decided_at
-		FROM organization_match_reviews WHERE organization_id = ? ORDER BY id`, organizationID)
+		FROM organization_match_reviews WHERE organization_id = ? ORDER BY id`+dialect.SelectForUpdate(),
+		organizationID)
 	if err != nil {
 		return nil, fmt.Errorf("load organization match reviews for merge: %w", err)
 	}
@@ -141,9 +145,9 @@ func mergedOrganizationMatchReview(
 }
 
 func retargetOrganizationMatchReviewsTx(
-	ctx context.Context, tx *loggedTx, survivorID, losingID int64,
+	ctx context.Context, tx *loggedTx, dialect Dialect, survivorID, losingID int64,
 ) error {
-	survivorRows, err := loadOrganizationMatchReviewMergeRowsTx(ctx, tx, survivorID)
+	survivorRows, err := loadOrganizationMatchReviewMergeRowsTx(ctx, tx, dialect, survivorID)
 	if err != nil {
 		return err
 	}
@@ -151,7 +155,7 @@ func retargetOrganizationMatchReviewsTx(
 	for _, row := range survivorRows {
 		survivorByKey[row.key] = row
 	}
-	losingRows, err := loadOrganizationMatchReviewMergeRowsTx(ctx, tx, losingID)
+	losingRows, err := loadOrganizationMatchReviewMergeRowsTx(ctx, tx, dialect, losingID)
 	if err != nil {
 		return err
 	}
@@ -167,13 +171,23 @@ func retargetOrganizationMatchReviewsTx(
 		}
 		merged := mergedOrganizationMatchReview(survivor, losing)
 		if merged.id != survivor.id {
-			if _, err := tx.ExecContext(ctx, `
+			// Conditional on the state that was read: if a decision still
+			// landed in between, the merge fails rather than overwrite it.
+			result, err := tx.ExecContext(ctx, `
 				UPDATE organization_match_reviews
 				SET status = ?, probability = ?, model = ?, decided_by = ?, decided_at = ?
-				WHERE id = ?`,
+				WHERE id = ? AND status = ?`,
 				merged.status, merged.probability, merged.model, merged.decidedBy, merged.decidedAt,
-				survivor.id); err != nil {
+				survivor.id, survivor.status)
+			if err != nil {
 				return fmt.Errorf("carry organization match decision to the survivor: %w", err)
+			}
+			changed, err := result.RowsAffected()
+			if err != nil {
+				return fmt.Errorf("carry organization match decision to the survivor: %w", err)
+			}
+			if changed != 1 {
+				return ErrOrganizationMatchReviewStateChanged
 			}
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM organization_match_reviews WHERE id = ?`,
