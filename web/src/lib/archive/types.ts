@@ -66,8 +66,10 @@ export interface ArchiveMessageDetail extends ArchiveMessageSummary {
   isFromMe?: boolean;
   /** The provider's own message ID (a Gmail message's hex ID). */
   sourceMessageId?: string;
-  /** Label names. Spam and trash never load remote images. */
+  /** Label names. */
   labels?: string[];
+  /** The daemon marks spam, junk, and trash: their remote images never load. */
+  remoteImagesBlocked?: boolean;
   /** A calendar event's stored provider links, unvetted: EventCard applies
    * the host allowlist before offering either one. */
   eventLinks?: { joinURL?: string; calendarURL?: string };

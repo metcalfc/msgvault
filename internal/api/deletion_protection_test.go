@@ -41,12 +41,16 @@ func (s *protectionStore) DeletionProtectionsContext(
 	return result, nil
 }
 
-func (s *protectionStore) MessageRemoteImagesBlockedContext(_ context.Context, id int64) (bool, error) {
+func (s *protectionStore) RemoteImagePolicyContext(_ context.Context, id int64) (store.RemoteImagePolicy, error) {
 	blocked, ok := s.blocked[id]
 	if !ok {
-		return false, sql.ErrNoRows
+		return store.RemoteImagePolicy{}, sql.ErrNoRows
 	}
-	return blocked, nil
+	return store.RemoteImagePolicy{
+		Blocked:  blocked,
+		BodyHTML: `<img src="http://images.example/pixel.png?a=1&amp;b=2">`,
+		BodyText: "Plain text with http://images.example/unlinked.png",
+	}, nil
 }
 
 func (s *protectionStore) KeepCandidatesForSourceMessagesContext(
@@ -142,6 +146,8 @@ func TestStageDeletionWarnsAboutProtectedMessagesAndProtectLeavesThemOut(t *test
 	assert.True(protected.Protection.Skipped)
 	require.Len(st.saved, 2)
 	assert.Equal([]string{"gm-1", "gm-4"}, st.saved[1].GmailIDs)
+	assert.False(st.saved[0].Protect)
+	assert.True(st.saved[1].Protect, "execution rechecks protection for a protect batch")
 
 	w = postDeletions(t, srv, `{"message_ids": [2, 3], "protect": true}`)
 	assert.Equal(http.StatusConflict, w.Code, w.Body.String())
@@ -184,14 +190,26 @@ func TestRemoteImageRefusesSpamAndTrashMessagesBeforeAnyNetworkUse(t *testing.T)
 		return resp
 	}
 
-	blocked := post(`{"url": "http://images.example/pixel.png", "message_id": 11}`)
+	blocked := post(`{"url": "http://images.example/pixel.png?a=1&b=2", "message_id": 11}`)
 	assert.Equal(http.StatusForbidden, blocked.Code, blocked.Body.String())
 	assert.Contains(blocked.Body.String(), "remote_images_blocked")
-	missing := post(`{"url": "http://images.example/pixel.png", "message_id": 12}`)
+	missing := post(`{"url": "http://images.example/pixel.png?a=1&b=2", "message_id": 12}`)
 	assert.Equal(http.StatusNotFound, missing.Code, missing.Body.String())
-	assert.Zero(seams.dialCount(), "a refused message never reaches the network")
+	withoutMessage := post(`{"url": "http://images.example/pixel.png?a=1&b=2"}`)
+	assert.Equal(http.StatusBadRequest, withoutMessage.Code, withoutMessage.Body.String())
+	assert.Contains(withoutMessage.Body.String(), "missing_message_id")
+	for _, unrelated := range []string{
+		"http://images.example/other.png",
+		"http://images.example/unlinked.png",
+		"http://images.example/pixel.png?a=1",
+	} {
+		refused := post(`{"url": "` + unrelated + `", "message_id": 10}`)
+		assert.Equal(http.StatusForbidden, refused.Code, unrelated)
+		assert.Contains(refused.Body.String(), "remote_image_not_referenced", unrelated)
+	}
+	assert.Zero(seams.dialCount(), "a refused request never reaches the network")
 
-	allowed := post(`{"url": "http://images.example/pixel.png", "message_id": 10}`)
+	allowed := post(`{"url": "HTTP://images.example:80/pixel.png?a=1&b=2", "message_id": 10}`)
 	require.Equal(http.StatusOK, allowed.Code, allowed.Body.String())
 	assert.Equal(fakePNG, allowed.Body.Bytes())
 }

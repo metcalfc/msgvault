@@ -99,6 +99,7 @@ phishing. To act on them, stage explicitly with msgvault stage-delete --ids.
 				output.JevWired = judge != nil
 				report, err := cleanupsuggest.Run(command.Context(), st, cleanupsuggest.Options{
 					Limit: limit, Rejudge: rejudge, Judge: judge,
+					TrustedAuthservIDs: state.cfg.Jev.CleanupSuggestions.TrustedAuthservIDs,
 				})
 				if err != nil {
 					return err

@@ -8,6 +8,7 @@ export interface Execution {
   failed_ids?: string[];
   last_processed_index: number;
   method: string;
+  protected_ids?: string[];
   started_at: string;
   succeeded: number;
   tombstone_ids?: string[];

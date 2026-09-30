@@ -329,6 +329,9 @@ type MessageDetail struct {
 	ConversationType string `json:"conversation_type,omitempty" doc:"The message's conversation type as stored (for example email_thread, direct_chat, group_chat, or channel). Returned by GET /api/v1/messages/{id}; omitted when the message has no conversation."`
 	// EventLinks carries a calendar event's provider links.
 	EventLinks *EventLinks `json:"event_links,omitzero" nullable:"false" doc:"A calendar event's stored provider links. Present only on calendar_event messages that have one."`
+	// RemoteImagesBlocked marks spam, junk, and trash messages, whose remote
+	// images the reader must not offer to load.
+	RemoteImagesBlocked bool `json:"remote_images_blocked,omitzero" doc:"True for a spam, junk, or trash message: its remote images are never loaded and the image proxy refuses them."`
 }
 
 // AttachmentInfo represents attachment metadata in API responses.
@@ -743,6 +746,7 @@ func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 			detail.BodyHTML = s.archivedRemoteImageHTML(id, detail.BodyHTML)
 			details := []MessageDetail{detail}
 			s.attachEventLinks(r.Context(), details)
+			s.attachRemoteImagePolicy(r.Context(), details)
 			writeJSON(w, http.StatusOK, details[0])
 			return
 		}
@@ -786,6 +790,7 @@ func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 	detail.BodyHTML = s.archivedRemoteImageHTML(id, detail.BodyHTML)
 	details := []MessageDetail{detail}
 	s.attachEventLinks(r.Context(), details)
+	s.attachRemoteImagePolicy(r.Context(), details)
 
 	writeJSON(w, http.StatusOK, details[0])
 }

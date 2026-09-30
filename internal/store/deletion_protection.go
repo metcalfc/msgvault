@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"go.kenn.io/msgvault/internal/correspondentkind"
 )
@@ -73,17 +72,6 @@ const messageSenderSQL = `COALESCE(m.sender_id, (
 	SELECT MIN(mr.participant_id) FROM message_recipients mr
 	WHERE mr.message_id = m.id AND mr.recipient_type = 'from'))`
 
-// labelRoleSQL matches a label by its Gmail system ID or, for sources that
-// only carry names, by its upper-cased name.
-func labelRoleSQL(alias string, roles ...string) string {
-	quoted := make([]string, len(roles))
-	for i, role := range roles {
-		quoted[i] = "'" + role + "'"
-	}
-	in := strings.Join(quoted, ", ")
-	return "(" + alias + ".source_label_id IN (" + in + ") OR UPPER(" + alias + ".name) IN (" + in + "))"
-}
-
 // DeletionProtectionsContext returns the protection of each requested
 // message that has one. Messages with no reason are absent. Every lookup is
 // by message primary key; no body is read.
@@ -103,7 +91,7 @@ func (s *Store) DeletionProtectionsContext(
 			            THEN 1 ELSE 0 END,
 			       CASE WHEN EXISTS (
 			           SELECT 1 FROM message_labels ml JOIN labels l ON l.id = ml.label_id
-			           WHERE ml.message_id = m.id AND `+labelRoleSQL("l", "STARRED")+`)
+			           WHERE ml.message_id = m.id AND `+starredLabelSQL("l")+`)
 			            THEN 1 ELSE 0 END,
 			       `+messageSenderSQL+`
 			FROM messages m WHERE m.id IN (%s)`, func(rows *loggedRows) error {
@@ -210,16 +198,125 @@ func (s *Store) PersonClassifiedParticipantsContext(
 	return result, nil
 }
 
-// MessageRemoteImagesBlockedContext reports whether one message carries a
-// spam or trash label, which blocks fetching its remote images: a sender
-// of junk mail must never learn the message was opened. A missing message
-// is reported as sql.ErrNoRows.
+// DeletionProtectionsForSourceMessagesContext is DeletionProtectionsContext
+// keyed by the provider message IDs of one source, the form a deletion
+// manifest holds. Provider IDs with no live protected message are absent.
+func (s *Store) DeletionProtectionsForSourceMessagesContext(
+	ctx context.Context, sourceID int64, sourceMessageIDs []string,
+) (map[string]DeletionProtection, error) {
+	result := map[string]DeletionProtection{}
+	ids := slices.Clone(sourceMessageIDs)
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	if sourceID <= 0 || len(ids) == 0 {
+		return result, nil
+	}
+	byMessage := map[int64]string{}
+	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
+		return queryInChunksContext(ctx, tx, ids, []any{sourceID}, `
+			SELECT m.id, m.source_message_id FROM messages m
+			WHERE m.source_id = ? AND m.source_message_id IN (%s)`, func(rows *loggedRows) error {
+			var id int64
+			var providerID string
+			if err := rows.Scan(&id, &providerID); err != nil {
+				return fmt.Errorf("scan deletion target: %w", err)
+			}
+			byMessage[id] = providerID
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("resolve deletion targets: %w", err)
+	}
+	messageIDs := make([]int64, 0, len(byMessage))
+	for id := range byMessage {
+		messageIDs = append(messageIDs, id)
+	}
+	protections, err := s.DeletionProtectionsContext(ctx, messageIDs)
+	if err != nil {
+		return nil, err
+	}
+	for id, protection := range protections {
+		result[byMessage[id]] = protection
+	}
+	return result, nil
+}
+
+// RemoteImagesBlockedMessagesContext reports, for each requested message
+// that exists, whether its remote images are blocked (see
+// MessageRemoteImagesBlockedContext).
+func (s *Store) RemoteImagesBlockedMessagesContext(ctx context.Context, messageIDs []int64) (map[int64]bool, error) {
+	result := map[int64]bool{}
+	ids := sortedUniqueInt64s(messageIDs...)
+	if len(ids) == 0 {
+		return result, nil
+	}
+	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
+		return queryInChunksContext(ctx, tx, ids, nil, `
+			SELECT m.id, CASE WHEN EXISTS (
+			    SELECT 1 FROM message_labels ml JOIN labels l ON l.id = ml.label_id
+			    WHERE ml.message_id = m.id AND `+junkOrTrashLabelSQL("l")+`)
+			  THEN 1 ELSE 0 END
+			FROM messages m WHERE m.id IN (%s)`, func(rows *loggedRows) error {
+			var id int64
+			var blocked int
+			if err := rows.Scan(&id, &blocked); err != nil {
+				return fmt.Errorf("scan remote image policy: %w", err)
+			}
+			result[id] = blocked == 1
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("check remote image policy: %w", err)
+	}
+	return result, nil
+}
+
+// RemoteImagePolicy is what the image proxy needs to decide one fetch.
+type RemoteImagePolicy struct {
+	// Blocked is true for spam, junk, trash, and deleted-items messages.
+	Blocked bool
+	// BodyText and BodyHTML are bounded prefixes of the stored bodies, the
+	// only places a remote image the reader may request can come from.
+	BodyText string
+	BodyHTML string
+}
+
+// remoteImageBodyPrefixBytes matches the remote image archiver's HTML cap.
+const remoteImageBodyPrefixBytes = 8 << 20
+
+// RemoteImagePolicyContext loads one message's remote image policy by
+// primary key. A missing message is reported as sql.ErrNoRows.
+func (s *Store) RemoteImagePolicyContext(ctx context.Context, messageID int64) (RemoteImagePolicy, error) {
+	var policy RemoteImagePolicy
+	blocked, err := s.MessageRemoteImagesBlockedContext(ctx, messageID)
+	if err != nil {
+		return policy, err
+	}
+	policy.Blocked = blocked
+	var text, html sql.NullString
+	err = s.db.QueryRowContext(ctx, `
+		SELECT substr(body_text, 1, ?), substr(body_html, 1, ?) FROM message_bodies WHERE message_id = ?`,
+		remoteImageBodyPrefixBytes, remoteImageBodyPrefixBytes, messageID).Scan(&text, &html)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return policy, fmt.Errorf("load remote image references: %w", err)
+	}
+	policy.BodyText, policy.BodyHTML = text.String, html.String
+	return policy, nil
+}
+
+// MessageRemoteImagesBlockedContext reports whether one message is in a
+// spam, junk, trash, or deleted-items folder, which blocks fetching its
+// remote images: a sender of junk mail must never learn the message was
+// opened. Folders are matched by provider role first, then by a short list
+// of common names. A missing message is reported as sql.ErrNoRows.
 func (s *Store) MessageRemoteImagesBlockedContext(ctx context.Context, messageID int64) (bool, error) {
 	var blocked int
 	err := s.db.QueryRowContext(ctx, `
 		SELECT CASE WHEN EXISTS (
 		    SELECT 1 FROM message_labels ml JOIN labels l ON l.id = ml.label_id
-		    WHERE ml.message_id = m.id AND `+labelRoleSQL("l", "SPAM", "TRASH", "JUNK")+`)
+		    WHERE ml.message_id = m.id AND `+junkOrTrashLabelSQL("l")+`)
 		  THEN 1 ELSE 0 END
 		FROM messages m WHERE m.id = ?`, messageID).Scan(&blocked)
 	if errors.Is(err, sql.ErrNoRows) {

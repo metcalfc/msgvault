@@ -3895,6 +3895,7 @@ type Execution struct {
 	FailedIds          []string   `json:"failed_ids,omitempty"`
 	LastProcessedIndex int64      `json:"last_processed_index"`
 	Method             string     `json:"method" validate:"required"`
+	ProtectedIds       []string   `json:"protected_ids,omitempty"`
 	StartedAt          time.Time  `json:"started_at" validate:"required"`
 	Succeeded          int64      `json:"succeeded"`
 	TombstoneIds       []string   `json:"tombstone_ids,omitempty"`
@@ -5438,6 +5439,7 @@ type Manifest struct {
 	Filters     Filters          `json:"filters"`
 	GmailIds    []string         `json:"gmail_ids" validate:"required"`
 	ID          string           `json:"id" validate:"required"`
+	Protect     *bool            `json:"protect,omitempty"`
 	RawFilter   *jsontext.Value  `json:"raw_filter,omitzero"`
 	Source      *SourceReference `json:"source,omitempty"`
 	Status      string           `json:"status" validate:"required"`
@@ -5921,13 +5923,16 @@ type MessageDetail struct {
 	IsFromMe         *bool       `json:"is_from_me,omitempty"`
 	Labels           []string    `json:"labels" validate:"required"`
 	MessageType      *string     `json:"message_type,omitzero"`
-	SentAt           string      `json:"sent_at" validate:"required"`
-	SizeBytes        int64       `json:"size_bytes"`
-	Snippet          string      `json:"snippet" validate:"required"`
-	SourceID         *int64      `json:"source_id,omitempty"`
-	SourceMessageID  *string     `json:"source_message_id,omitzero"`
-	Subject          string      `json:"subject" validate:"required"`
-	To               []string    `json:"to" validate:"required"`
+
+	// RemoteImagesBlocked True for a spam, junk, or trash message: its remote images are never loaded and the image proxy refuses them.
+	RemoteImagesBlocked *bool    `json:"remote_images_blocked,omitempty"`
+	SentAt              string   `json:"sent_at" validate:"required"`
+	SizeBytes           int64    `json:"size_bytes"`
+	Snippet             string   `json:"snippet" validate:"required"`
+	SourceID            *int64   `json:"source_id,omitempty"`
+	SourceMessageID     *string  `json:"source_message_id,omitzero"`
+	Subject             string   `json:"subject" validate:"required"`
+	To                  []string `json:"to" validate:"required"`
 }
 
 func (m MessageDetail) Validate() error {
@@ -11177,8 +11182,8 @@ func (r RelationshipsHTTPResponse) Validate() error {
 }
 
 type RemoteImageRequest struct {
-	// MessageID The message the image appears in. The daemon refuses images of spam and trash messages with 403 remote_images_blocked.
-	MessageID *int64 `json:"message_id,omitempty"`
+	// MessageID The message the image appears in (required). The URL must be an image of that message's stored body: otherwise 403 remote_image_not_referenced. Spam, junk, and trash messages are refused with 403 remote_images_blocked.
+	MessageID int64 `json:"message_id" validate:"gte=1"`
 
 	// URL Absolute http(s) URL of the consented remote image
 	URL string `json:"url" validate:"required"`

@@ -147,7 +147,7 @@ func jevService(t *testing.T, endpoint string, st *store.Store) (*jev.Service, j
 	cfg := jev.DefaultConfig()
 	cfg.Enabled = true
 	cfg.Endpoint = endpoint
-	cfg.CleanupSuggestions = jev.FeatureConfig{Enabled: true}
+	cfg.CleanupSuggestions = jev.CleanupSuggestionsConfig{Enabled: true}
 	service, err := jev.NewService(jev.ServiceOptions{
 		Config:     func() (jev.Config, error) { return cfg, nil },
 		Consents:   st,
@@ -175,7 +175,8 @@ func keys(values map[string]any) []string {
 	return result
 }
 
-const phishHeaders = "Authentication-Results: mx.example.com; spf=fail smtp.mailfrom=bank.example;" +
+const phishHeaders = "Authentication-Results: attacker.example; spf=pass; dkim=pass; dmarc=pass\r\n" +
+	"Authentication-Results: mx.google.com; spf=fail smtp.mailfrom=bank.example;" +
 	" dkim=fail; dmarc=fail header.from=bank.example\r\nReply-To: <refunds@collector.example.org>\r\n"
 
 func TestRunJudgesThePoolAndOnlyListsSuggestions(t *testing.T) {
@@ -194,7 +195,7 @@ func TestRunJudgesThePoolAndOnlyListsSuggestions(t *testing.T) {
 	phish := a.send(mail{from: bank, subject: "Your account is locked", headers: phishHeaders,
 		body: "Verify now at https://login.bank-verify.example/unlock or lose access.", labels: []string{"SPAM", "Label_1"}})
 	promo := a.send(mail{from: shop, to: a.owner, subject: "Weekend sale",
-		headers: "Authentication-Results: mx.example.com; spf=pass; dkim=pass; dmarc=pass\r\n",
+		headers: "Authentication-Results: mx.google.com; spf=pass; dkim=pass; dmarc=pass\r\n",
 		body:    "See the sale at https://links.shop.example/sale " + strings.Repeat("deals ", 200),
 		labels:  []string{"CATEGORY_PROMOTIONS"}})
 	personalLooking := a.send(mail{from: shop, to: a.owner, subject: "Photos from the trip",

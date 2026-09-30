@@ -4309,6 +4309,10 @@ components:
           type: integer
         method:
           type: string
+        protected_ids:
+          items:
+            type: string
+          type: array
         started_at:
           format: date-time
           type: string
@@ -5928,6 +5932,8 @@ components:
           type: array
         id:
           type: string
+        protect:
+          type: boolean
         raw_filter:
           x-go-type: jsontext.Value
           x-go-type-import:
@@ -6369,6 +6375,9 @@ components:
           type: array
         message_type:
           type: string
+        remote_images_blocked:
+          description: "True for a spam, junk, or trash message: its remote images are never loaded and the image proxy refuses them."
+          type: boolean
         sent_at:
           type: string
         size_bytes:
@@ -11641,14 +11650,16 @@ components:
       additionalProperties: false
       properties:
         message_id:
-          description: The message the image appears in. The daemon refuses images of spam and trash messages with 403 remote_images_blocked.
+          description: "The message the image appears in (required). The URL must be an image of that message's stored body: otherwise 403 remote_image_not_referenced. Spam, junk, and trash messages are refused with 403 remote_images_blocked."
           format: int64
+          minimum: 1
           type: integer
         url:
           description: Absolute http(s) URL of the consented remote image
           type: string
       required:
         - url
+        - message_id
       type: object
     RemoveRequest:
       additionalProperties: false

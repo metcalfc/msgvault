@@ -26,6 +26,8 @@ export interface MessageDetail {
   is_from_me?: boolean;
   labels: string[];
   message_type?: string;
+  /** True for a spam, junk, or trash message: its remote images are never loaded and the image proxy refuses them. */
+  remote_images_blocked?: boolean;
   sent_at: string;
   size_bytes: number;
   snippet: string;

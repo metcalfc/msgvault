@@ -87,14 +87,18 @@ type SenderCount struct {
 
 // Execution tracks progress of a deletion operation.
 type Execution struct {
-	StartedAt          time.Time  `json:"started_at"`
-	CompletedAt        *time.Time `json:"completed_at,omitempty"`
-	Method             Method     `json:"method"`
-	Succeeded          int        `json:"succeeded"`
-	Failed             int        `json:"failed"`
-	FailedIDs          []string   `json:"failed_ids,omitempty"`
-	TombstoneIDs       []string   `json:"tombstone_ids,omitempty"`
-	LastProcessedIndex int        `json:"last_processed_index"` // For resumability
+	StartedAt    time.Time  `json:"started_at"`
+	CompletedAt  *time.Time `json:"completed_at,omitempty"`
+	Method       Method     `json:"method"`
+	Succeeded    int        `json:"succeeded"`
+	Failed       int        `json:"failed"`
+	FailedIDs    []string   `json:"failed_ids,omitempty"`
+	TombstoneIDs []string   `json:"tombstone_ids,omitempty"`
+	// ProtectedIDs are messages a protect batch left alone because they were
+	// starred, sent by the owner, or from a person when execution reached
+	// them.
+	ProtectedIDs       []string `json:"protected_ids,omitempty"`
+	LastProcessedIndex int      `json:"last_processed_index"` // For resumability
 }
 
 // SourceReference is the durable identity of the one source a deletion batch
@@ -124,6 +128,10 @@ type Manifest struct {
 	// recipient_name, source_id), so API and all-match TUI staging preserve the
 	// complete input here. It remains absent for explicit TUI/CLI selections.
 	RawFilter jsontext.Value `json:"raw_filter,omitzero"`
+	// Protect records that the batch was staged with protect: execution
+	// rechecks every message and skips any that became starred, sent by the
+	// owner, or from a person since staging.
+	Protect bool `json:"protect,omitzero"`
 }
 
 // NewManifestForSource creates a source-bound version-2 manifest.
@@ -304,6 +312,9 @@ func (m *Manifest) FormatSummary() string {
 		fmt.Fprintf(&sb, "  Method: %s\n", m.Execution.Method)
 		fmt.Fprintf(&sb, "  Succeeded: %d\n", m.Execution.Succeeded)
 		fmt.Fprintf(&sb, "  Failed: %d\n", m.Execution.Failed)
+		if len(m.Execution.ProtectedIDs) > 0 {
+			fmt.Fprintf(&sb, "  Skipped as protected: %d\n", len(m.Execution.ProtectedIDs))
+		}
 		if m.Execution.CompletedAt != nil {
 			fmt.Fprintf(&sb, "  Completed: %s\n", m.Execution.CompletedAt.Format(time.RFC3339))
 		}

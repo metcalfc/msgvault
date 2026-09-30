@@ -11,6 +11,7 @@ var (
 	_ api.DeletionProtectionStore    = (*storeAPIAdapter)(nil)
 	_ api.RemoteImagePolicyStore     = (*storeAPIAdapter)(nil)
 	_ api.DeletionKeepCandidateStore = (*storeAPIAdapter)(nil)
+	_ api.RemoteImageBlockStore      = (*storeAPIAdapter)(nil)
 )
 
 func (a *storeAPIAdapter) KeepCandidatesForSourceMessagesContext(
@@ -25,6 +26,10 @@ func (a *storeAPIAdapter) DeletionProtectionsContext(
 	return a.store.DeletionProtectionsContext(ctx, messageIDs)
 }
 
-func (a *storeAPIAdapter) MessageRemoteImagesBlockedContext(ctx context.Context, messageID int64) (bool, error) {
-	return a.store.MessageRemoteImagesBlockedContext(ctx, messageID)
+func (a *storeAPIAdapter) RemoteImagePolicyContext(ctx context.Context, messageID int64) (store.RemoteImagePolicy, error) {
+	return a.store.RemoteImagePolicyContext(ctx, messageID)
+}
+
+func (a *storeAPIAdapter) RemoteImagesBlockedMessagesContext(ctx context.Context, messageIDs []int64) (map[int64]bool, error) {
+	return a.store.RemoteImagesBlockedMessagesContext(ctx, messageIDs)
 }

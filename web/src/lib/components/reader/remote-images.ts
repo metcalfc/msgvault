@@ -42,13 +42,13 @@ async function fetchRemoteImage(
   url: string,
   budget: DecodedByteBudget,
   signal: AbortSignal,
-  messageId: number | undefined,
+  messageId: number,
 ): Promise<string> {
   throwIfAborted(signal);
-  // The message ID lets the daemon refuse spam and trash; it is sent only
-  // when known so an older daemon still accepts the request.
+  // The daemon fetches only images the named message references, and never
+  // for spam, junk, or trash.
   const { data, response } = await generatedGetRemoteImage(
-    messageId !== undefined && messageId > 0 ? { url, message_id: messageId } : { url },
+    { url, message_id: messageId },
     {
       ...client,
       signal,
@@ -81,7 +81,7 @@ async function fetchRemoteImage(
 export async function resolveArchivedRemoteImages(options: {
   html: string;
   remoteImages: string[];
-  messageId?: number;
+  messageId: number;
   client: APIClient | undefined;
   signal: AbortSignal;
   publicationLimits?: RemoteImagePublicationLimits;

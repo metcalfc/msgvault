@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,7 @@ import (
 
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/remoteimage"
+	"go.kenn.io/msgvault/internal/store"
 )
 
 // fakePNG is a minimal PNG signature — enough for a byte-identity check; the
@@ -82,15 +84,36 @@ func newRemoteImageTestServer(t *testing.T, seams *remoteImageSeams) *Server {
 	return srv
 }
 
+// remoteImageMessageID is the message every proxy test fetches for.
+const remoteImageMessageID = 1
+
+// referencingPolicyStore answers the remote image policy of an inbox
+// message whose body references the given image.
+type referencingPolicyStore struct {
+	MessageStore
+
+	html string
+}
+
+func (s *referencingPolicyStore) RemoteImagePolicyContext(context.Context, int64) (store.RemoteImagePolicy, error) {
+	return store.RemoteImagePolicy{BodyHTML: s.html}, nil
+}
+
+// referenceImage makes the test message reference target.
+func referenceImage(srv *Server, target string) {
+	srv.store = &referencingPolicyStore{MessageStore: srv.store, html: `<p><img src="` + html.EscapeString(target) + `"></p>`}
+}
+
 func remoteImageBody(t *testing.T, target string) []byte {
 	t.Helper()
-	body, err := json.Marshal(RemoteImageRequest{URL: target})
+	body, err := json.Marshal(RemoteImageRequest{URL: target, MessageID: remoteImageMessageID})
 	require.NoError(t, err)
 	return body
 }
 
 func postRemoteImage(t *testing.T, srv *Server, target string) *httptest.ResponseRecorder {
 	t.Helper()
+	referenceImage(srv, target)
 	req := httptest.NewRequest(http.MethodPost, remoteImagePath,
 		bytes.NewReader(remoteImageBody(t, target)))
 	req.Header.Set("Content-Type", "application/json")
@@ -168,6 +191,7 @@ func TestRemoteImageRejectsMissingOrInvalidBody(t *testing.T) {
 		{"malformed json", "{not json", "invalid_request"},
 		{"missing url field", "{}", "missing_url"},
 		{"empty url", `{"url":""}`, "missing_url"},
+		{"missing message id", `{"url":"http://images.example/chart.png"}`, "missing_message_id"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -263,6 +287,7 @@ func TestRemoteImageSessionCSRFEnforcement(t *testing.T) {
 			srv.remoteImages = remoteimage.NewFetcher()
 			srv.remoteImages.LookupNetIP = seams.lookup
 			srv.remoteImages.DialContext = seams.dial
+			referenceImage(srv, "http://images.example/chart.png")
 
 			login := performSessionRequest(t, srv, http.MethodPost, sessionLoginPath,
 				[]byte(`{"api_key":"`+testSessionAPIKey+`"}`), nil, false)

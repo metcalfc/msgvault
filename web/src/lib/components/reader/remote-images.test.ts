@@ -40,6 +40,7 @@ describe('resolveArchivedRemoteImages', () => {
     const fetchFn = vi.fn<typeof fetch>(async () => pngResponse(16));
 
     const html = await resolveArchivedRemoteImages({
+      messageId: 42,
       html: fixture(['Chart', 'Logo']),
       remoteImages: [
         'https://images.example/chart.png?token=synthetic',
@@ -75,6 +76,7 @@ describe('resolveArchivedRemoteImages', () => {
     const fetchFn = vi.fn<typeof fetch>(async () => pngResponse(16));
 
     const html = await resolveArchivedRemoteImages({
+      messageId: 42,
       html: fixture(['One', 'Two']),
       remoteImages: ['https://images.example/pixel.png', 'https://images.example/pixel.png'],
       client: createAPIClient(fetchFn),
@@ -89,6 +91,7 @@ describe('resolveArchivedRemoteImages', () => {
     const fetchFn = vi.fn<typeof fetch>(async () => pngResponse(16));
 
     const html = await resolveArchivedRemoteImages({
+      messageId: 42,
       html: fixture(['One', 'Two', 'Three']),
       remoteImages: Array.from({ length: 3 }, () => 'https://images.example/pixel.png'),
       client: createAPIClient(fetchFn),
@@ -111,6 +114,7 @@ describe('resolveArchivedRemoteImages', () => {
     const oneDataURLBudget = 'data:image/png;base64,'.length + Math.ceil(16 / 3) * 4 + 4;
 
     const html = await resolveArchivedRemoteImages({
+      messageId: 42,
       html: fixture(['One', 'Two']),
       remoteImages: ['https://images.example/pixel.png', 'https://images.example/pixel.png'],
       client: createAPIClient(fetchFn),
@@ -132,6 +136,7 @@ describe('resolveArchivedRemoteImages', () => {
     const fetchFn = vi.fn<typeof fetch>(async () => response);
 
     const html = await resolveArchivedRemoteImages({
+      messageId: 42,
       html: fixture(['Chart']),
       remoteImages: ['https://images.example/chart.png'],
       client: createAPIClient(fetchFn),
@@ -150,6 +155,7 @@ describe('resolveArchivedRemoteImages', () => {
     const fetchFn = vi.fn<typeof fetch>(async () => pngResponse(oversize));
 
     const html = await resolveArchivedRemoteImages({
+      messageId: 42,
       html: fixture(['Huge']),
       remoteImages: ['https://images.example/huge.png'],
       client: createAPIClient(fetchFn),
@@ -164,6 +170,7 @@ describe('resolveArchivedRemoteImages', () => {
 
   it('fetches nothing without a client and keeps URL-free placeholders', async () => {
     const html = await resolveArchivedRemoteImages({
+      messageId: 42,
       html: fixture(['Chart']),
       remoteImages: ['https://images.example/chart.png'],
       client: undefined,
@@ -181,6 +188,7 @@ describe('resolveArchivedRemoteImages', () => {
     const fetchFn = vi.fn<typeof fetch>(async () => pngResponse(16));
 
     const html = await resolveArchivedRemoteImages({
+      messageId: 42,
       html: '<span data-archived-remote-image="7" data-archived-remote-alt="Forged">x</span>' +
         '<span data-archived-remote-image="junk" data-archived-remote-alt="Junk">y</span>',
       remoteImages: ['https://images.example/chart.png'],
@@ -201,6 +209,7 @@ describe('resolveArchivedRemoteImages', () => {
     const fetchFn = vi.fn<typeof fetch>(async () => pngResponse(8));
 
     const html = await resolveArchivedRemoteImages({
+      messageId: 42,
       html: fixture(alts),
       remoteImages: urls,
       client: createAPIClient(fetchFn),
@@ -219,6 +228,7 @@ describe('resolveArchivedRemoteImages', () => {
     });
 
     await expect(resolveArchivedRemoteImages({
+      messageId: 42,
       html: fixture(['Chart']),
       remoteImages: ['https://images.example/chart.png'],
       client: createAPIClient(fetchFn),

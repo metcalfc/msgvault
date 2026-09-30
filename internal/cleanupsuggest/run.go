@@ -46,8 +46,11 @@ type Options struct {
 	// Rejudge includes messages that already have a suggestion.
 	Rejudge bool
 	// Judge is nil when Jev is off; the run then only reports the pool.
-	Judge  Judge
-	Logger *slog.Logger
+	Judge Judge
+	// TrustedAuthservIDs are the configured authserv-ids trusted for every
+	// source, beyond Gmail's own for Gmail sources.
+	TrustedAuthservIDs []string
+	Logger             *slog.Logger
 }
 
 // Report summarizes a run. It never contains message content.
@@ -156,7 +159,7 @@ func collect(ctx context.Context, st Store, options Options, report *Report) ([]
 			if err != nil {
 				return nil, fmt.Errorf("gather cleanup evidence: %w", err)
 			}
-			state := MessageState(evidence, kind)
+			state := MessageState(evidence, kind, TrustedAuthservIDs(evidence.SourceType, options.TrustedAuthservIDs))
 			if len(state.LinkHosts) == 0 {
 				report.NoLinks++
 				continue

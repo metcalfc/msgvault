@@ -48,7 +48,7 @@ func (c Config) FeatureConfigFor(name string) (FeatureConfig, bool) {
 	case FeatureCorrespondentKind:
 		return c.CorrespondentKind, true
 	case FeatureCleanupSuggestions:
-		return c.CleanupSuggestions, true
+		return c.CleanupSuggestions.Feature(), true
 	default:
 		return FeatureConfig{}, false
 	}

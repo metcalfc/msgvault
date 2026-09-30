@@ -80,6 +80,11 @@ messages** in the Web UI) to leave them out of the batch instead:
 msgvault stage-delete 'label:Promotions older_than:1y' --protect --dry-run
 ```
 
+A batch staged with `--protect` checks again when `delete-staged` runs: a
+message that became starred, was sent by you, or whose sender became a
+person since staging is left alone and counted under "Skipped as protected"
+in `show-deletion`.
+
 If every candidate is protected, staging with `--protect` fails with
 `all_messages_protected` and creates nothing.
 

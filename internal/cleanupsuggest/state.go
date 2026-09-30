@@ -7,6 +7,7 @@ import (
 	"net/textproto"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 
 	"go.kenn.io/msgvault/internal/mime"
@@ -63,11 +64,33 @@ type State struct {
 	Messages []Message `json:"messages"`
 }
 
+// GmailAuthservID is the authserv-id Gmail's receiving servers stamp on
+// Authentication-Results.
+const GmailAuthservID = "mx.google.com"
+
+// TrustedAuthservIDs returns the authserv-ids whose Authentication-Results
+// are believed for a source: Gmail's own for Gmail sources, plus the ones
+// the owner configured for any source. Nothing else is trusted, because a
+// sender can write an Authentication-Results header of its own.
+func TrustedAuthservIDs(sourceType string, configured []string) []string {
+	trusted := []string{}
+	if strings.EqualFold(sourceType, "gmail") {
+		trusted = append(trusted, GmailAuthservID)
+	}
+	for _, id := range configured {
+		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
+			trusted = append(trusted, id)
+		}
+	}
+	return trusted
+}
+
 // MessageState builds the state for one message from its evidence and its
 // sender's kind. Only system labels are sent; the owner's own label names
-// never leave the machine.
-func MessageState(evidence store.CleanupEvidence, senderKind string) Message {
-	replyTo, auth := parseHeaderBlock(evidence.HeaderBlock)
+// never leave the machine. Authentication results come only from a header
+// stamped by one of the trusted authserv-ids.
+func MessageState(evidence store.CleanupEvidence, senderKind string, trustedAuthservIDs []string) Message {
+	replyTo, auth := parseHeaderBlock(evidence.HeaderBlock, trustedAuthservIDs)
 	message := Message{
 		FromName:       truncateRunes(collapse(evidence.FromName), maxFromNameRunes),
 		FromDomain:     emailDomain(evidence.FromEmail),
@@ -93,10 +116,11 @@ func MessageState(evidence store.CleanupEvidence, senderKind string) Message {
 var authResultPattern = regexp.MustCompile(`(?i)\b(spf|dkim|dmarc)\s*=\s*([a-z]+)`)
 
 // parseHeaderBlock reads Reply-To and the topmost Authentication-Results
-// header, which the receiving server adds; lower ones may come from the
-// sender and are not trusted. A missing or unreadable block yields no
-// reply-to domain and unknown verdicts.
-func parseHeaderBlock(block []byte) (string, Authentication) {
+// header whose authserv-id is trusted. A receiving server removes forged
+// copies of its own authserv-id (RFC 8601 section 5), so any header with
+// another authserv-id may come from the sender and is ignored. A missing or
+// unreadable block, or no trusted header, yields unknown verdicts.
+func parseHeaderBlock(block []byte, trustedAuthservIDs []string) (string, Authentication) {
 	auth := Authentication{SPF: AuthUnknown, DKIM: AuthUnknown, DMARC: AuthUnknown}
 	if len(block) == 0 {
 		return "", auth
@@ -113,8 +137,8 @@ func parseHeaderBlock(block []byte) (string, Authentication) {
 			replyTo = emailDomain("x" + strings.Trim(value[at:], " <>\"'"))
 		}
 	}
-	if results := headers.Values("Authentication-Results"); len(results) > 0 {
-		for _, match := range authResultPattern.FindAllStringSubmatch(results[0], -1) {
+	if result, ok := trustedResult(headers.Values("Authentication-Results"), trustedAuthservIDs); ok {
+		for _, match := range authResultPattern.FindAllStringSubmatch(result, -1) {
 			method, verdict := strings.ToLower(match[1]), strings.ToLower(match[2])
 			switch method {
 			case "spf":
@@ -133,6 +157,25 @@ func parseHeaderBlock(block []byte) (string, Authentication) {
 		}
 	}
 	return replyTo, auth
+}
+
+// trustedResult returns the topmost header whose authserv-id, the token
+// before the first semicolon, is trusted. The results after it are returned.
+func trustedResult(values []string, trusted []string) (string, bool) {
+	for _, value := range values {
+		authserv, results, found := strings.Cut(value, ";")
+		if !found {
+			continue
+		}
+		fields := strings.Fields(authserv)
+		if len(fields) == 0 {
+			continue
+		}
+		if slices.Contains(trusted, strings.ToLower(fields[0])) {
+			return results, true
+		}
+	}
+	return "", false
 }
 
 var linkPattern = regexp.MustCompile(`(?i)https?://[^\s"'<>()\[\]{}]+`)

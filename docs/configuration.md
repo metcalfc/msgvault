@@ -1363,6 +1363,7 @@ Cleanup suggestions (feature `cleanup_suggestions`). See
 |---|---|---|
 | `enabled` | `false` | Let `msgvault suggest-cleanup` ask Jev about spam and promotional mail once consent is active. Without it, the command only reports the pool and lists stored suggestions. Nothing is ever staged or deleted. |
 | `automatic` | `false` | No effect: suggestions are only made on request. |
+| `trusted_authserv_ids` | `[]` | Receiving servers (authserv-ids such as `mx.example.net`) whose `Authentication-Results` headers are believed for any source. Gmail sources always trust `mx.google.com`; other sources report SPF, DKIM, and DMARC as `unknown` until their server is listed. |
 
 ### `[activity]`
 

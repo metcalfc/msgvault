@@ -8,22 +8,50 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-func TestParseHeaderBlockTrustsOnlyTheTopmostAuthenticationResults(t *testing.T) {
+func TestParseHeaderBlockTrustsOnlyTheReceivingServersAuthservID(t *testing.T) {
 	t.Parallel()
+	unknown := Authentication{SPF: AuthUnknown, DKIM: AuthUnknown, DMARC: AuthUnknown}
+	gmail := TrustedAuthservIDs("gmail", nil)
 	for _, tt := range []struct {
 		name    string
 		block   string
+		trusted []string
 		replyTo string
 		auth    Authentication
 	}{
 		{
-			name: "receiving server verdicts win over a forged lower header",
-			block: "Authentication-Results: mx.example.net;\r\n spf=softfail smtp.mailfrom=bank.example;\r\n" +
+			name: "the receiving server's verdicts win over a forged lower header",
+			block: "Authentication-Results: mx.google.com;\r\n spf=softfail smtp.mailfrom=bank.example;\r\n" +
 				" dkim=none; dmarc=fail header.from=bank.example\r\n" +
 				"Authentication-Results: forged.example; spf=pass; dkim=pass; dmarc=pass\r\n" +
 				"Reply-To: \"Support\" <help@collector.example.org>\r\n\r\n",
+			trusted: gmail,
 			replyTo: "collector.example.org",
 			auth:    Authentication{SPF: "softfail", DKIM: "none", DMARC: AuthFail},
+		},
+		{
+			name: "a spoofed topmost header from another authserv-id is skipped",
+			block: "Authentication-Results: attacker.example; spf=pass; dkim=pass; dmarc=pass\r\n" +
+				"Authentication-Results: MX.Google.com; spf=fail; dkim=fail; dmarc=fail\r\n\r\n",
+			trusted: gmail,
+			auth:    Authentication{SPF: AuthFail, DKIM: AuthFail, DMARC: AuthFail},
+		},
+		{
+			name:    "only a spoofed header is unknown",
+			block:   "Authentication-Results: attacker.example; spf=pass; dkim=pass; dmarc=pass\r\n\r\n",
+			trusted: gmail,
+			auth:    unknown,
+		},
+		{
+			name:  "an IMAP source trusts nothing by default",
+			block: "Authentication-Results: mx.google.com; spf=pass; dkim=pass; dmarc=pass\r\n\r\n",
+			auth:  unknown,
+		},
+		{
+			name:    "an IMAP source trusts its configured receiving server",
+			block:   "Authentication-Results: mx.mail.example.net 1; spf=pass; dkim=pass; dmarc=pass\r\n\r\n",
+			trusted: TrustedAuthservIDs("imap", []string{" MX.Mail.Example.net "}),
+			auth:    Authentication{SPF: AuthPass, DKIM: AuthPass, DMARC: AuthPass},
 		},
 		{
 			name:  "missing results are unknown",
@@ -43,7 +71,7 @@ func TestParseHeaderBlockTrustsOnlyTheTopmostAuthenticationResults(t *testing.T)
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			replyTo, auth := parseHeaderBlock([]byte(tt.block))
+			replyTo, auth := parseHeaderBlock([]byte(tt.block), tt.trusted)
 			assert.Equal(t, tt.replyTo, replyTo)
 			assert.Equal(t, tt.auth, auth)
 		})
@@ -59,7 +87,7 @@ func TestMessageStateSendsSystemLabelsHostsAndAtMost500Characters(t *testing.T) 
 		Subject: "Verify your account", Labels: []string{"SPAM", "Therapy notes", "CATEGORY_PROMOTIONS"},
 		BodyText: "Click https://login.bank-verify.example/now or http://login.bank-verify.example/again " + long,
 		BodyHTML: `<a href="https://tracker.example.net/p?id=1">x</a>`,
-	}, "")
+	}, "", nil)
 
 	assert.Equal("Example Bank", message.FromName)
 	assert.Equal("mail.bank.example", message.FromDomain)
@@ -69,7 +97,7 @@ func TestMessageStateSendsSystemLabelsHostsAndAtMost500Characters(t *testing.T) 
 	assert.Equal("unclassified", message.SenderKind)
 	assert.Len([]rune(message.BodyStart), BodyChars)
 
-	htmlOnly := MessageState(store.CleanupEvidence{BodyHTML: "<p>Hello <b>there</b></p>", AddressedToOwner: true}, "automated")
+	htmlOnly := MessageState(store.CleanupEvidence{BodyHTML: "<p>Hello <b>there</b></p>", AddressedToOwner: true}, "automated", nil)
 	assert.Equal("Hello there", htmlOnly.BodyStart)
 	assert.Equal(AddressedToOrCc, htmlOnly.AddressedAs)
 	assert.Empty(htmlOnly.LinkHosts)

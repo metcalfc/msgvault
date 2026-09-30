@@ -299,6 +299,7 @@ func (s *Server) handleStageDeletion(w http.ResponseWriter, r *http.Request) {
 	}
 	manifest := deletion.NewManifestForSource(description, gmailIDs, *source)
 	manifest.CreatedBy = "api"
+	manifest.Protect = req.Protect
 	manifest.Filters = manifestFiltersFromRequest(req.Filter)
 	// delete-staged selects the mailbox to execute against from
 	// Filters.Account; without it an API-staged manifest cannot be

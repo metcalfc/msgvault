@@ -72,13 +72,27 @@ embed the newly archived images into that EML file.
 
 A remote image tells its host that the message was opened, and junk senders
 are exactly the ones who should not learn that. msgvault therefore never
-fetches remote images for a message labeled `SPAM` or `TRASH` (or an IMAP
-`Junk` folder label):
+fetches remote images for a message in a spam, junk, trash, or
+deleted-items folder. A folder counts when:
 
-- Sync, import, and `archive-remote-images` skip those messages.
+- the provider marks it: Gmail's `SPAM` and `TRASH` labels, an IMAP folder
+  with the `\Junk` or `\Trash` special-use attribute under any name (such as
+  "Junk Email" or a localized name), or Microsoft 365's Junk Email and
+  Deleted Items folders; or
+- a source that marks nothing (mbox, PST) names it Spam, Junk, Junk Email,
+  Junk E-mail, Bulk Mail, Trash, Deleted Items, Deleted Messages, or Bin,
+  in any letter case.
+
+For those messages:
+
+- Sync, import, and `archive-remote-images` skip them.
 - The Web UI reader shows the image count but no **Load images** button.
-- The daemon's image proxy refuses a request naming such a message with
-  `403 remote_images_blocked`.
+- The daemon's image proxy refuses them with `403 remote_images_blocked`.
+
+The proxy also requires the message ID and fetches only an image that
+message's stored body references (`403 remote_image_not_referenced`
+otherwise), so it cannot be used to fetch arbitrary URLs. IMAP folder roles
+are recorded at the next sync of each folder.
 
 Moving a message out of spam or trash lifts the block for later reads and
 backfills.

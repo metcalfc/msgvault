@@ -57,9 +57,13 @@
   const gmailURL = $derived(sourceType === 'gmail' ? gmailMessageURL(message.sourceMessageId, sourceIdentifier) : undefined);
   const isEvent = $derived(message.messageType === 'calendar_event');
   const fromAddress = $derived(message.isFromMe ? '' : (message.from ?? ''));
-  // Spam and trash never load remote images; the daemon refuses them too.
+  // Spam, junk, and trash never load remote images. The daemon decides by
+  // folder role and refuses the proxy request too; the label names are a
+  // fallback for an older daemon that does not send the flag.
+  const blockedFolderNames = ['spam', 'junk', 'junk email', 'junk e-mail', 'bulk mail', 'trash', 'deleted items', 'deleted messages', 'bin'];
   const remoteImagesBlocked = $derived(
-    (message.labels ?? []).some((label) => ['SPAM', 'TRASH', 'JUNK'].includes(label.trim().toUpperCase()))
+    message.remoteImagesBlocked === true ||
+      (message.labels ?? []).some((label) => blockedFolderNames.includes(label.trim().toLowerCase()))
   );
 
   let menuOpen = $state(false);

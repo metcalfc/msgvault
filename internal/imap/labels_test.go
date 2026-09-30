@@ -5,6 +5,7 @@ import (
 
 	imap "github.com/emersion/go-imap/v2"
 	"github.com/stretchr/testify/assert"
+	"go.kenn.io/msgvault/internal/store"
 )
 
 func TestClassifyLabelType(t *testing.T) {
@@ -101,6 +102,9 @@ func TestClassifyLabelType(t *testing.T) {
 }
 
 func TestSystemRoleForMailboxTrustsSpecialUseNotName(t *testing.T) {
-	assert.Equal(t, "sent", systemRoleForMailbox([]imap.MailboxAttr{imap.MailboxAttrSent}))
-	assert.Empty(t, systemRoleForMailbox(nil), "a folder name is not part of role classification")
+	assert := assert.New(t)
+	assert.Equal(store.LabelSystemRoleSent, systemRoleForMailbox([]imap.MailboxAttr{imap.MailboxAttrSent}))
+	assert.Equal(store.LabelSystemRoleJunk, systemRoleForMailbox([]imap.MailboxAttr{imap.MailboxAttrJunk}))
+	assert.Equal(store.LabelSystemRoleTrash, systemRoleForMailbox([]imap.MailboxAttr{imap.MailboxAttrTrash}))
+	assert.Empty(systemRoleForMailbox(nil), "a folder name is not part of role classification")
 }

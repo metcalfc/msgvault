@@ -52,7 +52,24 @@ type Config struct {
 	// CleanupSuggestions is [jev.cleanup_suggestions]: judging junk and
 	// phishing candidates for `msgvault suggest-cleanup`. It only ever runs
 	// on request, so its automatic switch has no effect.
-	CleanupSuggestions FeatureConfig `toml:"cleanup_suggestions"`
+	CleanupSuggestions CleanupSuggestionsConfig `toml:"cleanup_suggestions"`
+}
+
+// CleanupSuggestionsConfig is [jev.cleanup_suggestions]. Beyond the feature
+// switches it names the receiving servers whose Authentication-Results are
+// trusted for non-Gmail sources.
+type CleanupSuggestionsConfig struct {
+	Enabled   bool `toml:"enabled"`
+	Automatic bool `toml:"automatic"`
+	// TrustedAuthservIDs are authserv-ids (for example mx.example.com) whose
+	// Authentication-Results headers are believed for any source. Gmail
+	// sources always trust mx.google.com; everything else is unknown.
+	TrustedAuthservIDs []string `toml:"trusted_authserv_ids"`
+}
+
+// Feature returns the feature switches.
+func (c CleanupSuggestionsConfig) Feature() FeatureConfig {
+	return FeatureConfig{Enabled: c.Enabled, Automatic: c.Automatic}
 }
 
 // FeatureConfig gates one Jev-backed feature. Automatic additionally allows

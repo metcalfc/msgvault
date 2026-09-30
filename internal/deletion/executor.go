@@ -150,6 +150,52 @@ func (e *Executor) deleteOne(ctx context.Context, sourceID int64, gmailID string
 	return resultFailed, err
 }
 
+// protectedTargets rechecks, immediately before deletion, which of ids a
+// protect batch must leave alone: starred, owner-sent, or person-sent now,
+// whatever they were at staging. A batch staged without protect checks
+// nothing.
+func (e *Executor) protectedTargets(
+	ctx context.Context, manifest *Manifest, sourceID int64, ids []string,
+) (map[string]bool, error) {
+	if !manifest.Protect || len(ids) == 0 {
+		return map[string]bool{}, nil
+	}
+	protections, err := e.store.DeletionProtectionsForSourceMessagesContext(ctx, sourceID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("recheck deletion protection: %w", err)
+	}
+	protected := make(map[string]bool, len(protections))
+	for id, protection := range protections {
+		if protection.Protected() {
+			protected[id] = true
+		}
+	}
+	return protected, nil
+}
+
+// recordProtected notes a message the batch skipped as protected.
+func recordProtected(manifest *Manifest, gmailID string) {
+	if !slices.Contains(manifest.Execution.ProtectedIDs, gmailID) {
+		manifest.Execution.ProtectedIDs = append(manifest.Execution.ProtectedIDs, gmailID)
+	}
+}
+
+// withoutProtected drops protected IDs from ids, recording each.
+func withoutProtected(manifest *Manifest, ids []string, protected map[string]bool) []string {
+	if len(protected) == 0 {
+		return ids
+	}
+	kept := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if protected[id] {
+			recordProtected(manifest, id)
+			continue
+		}
+		kept = append(kept, id)
+	}
+	return kept
+}
+
 func (e *Executor) manifestSourceID(manifest *Manifest) (int64, error) {
 	if err := manifest.ValidateVersion(); err != nil {
 		return 0, err
@@ -392,6 +438,13 @@ func (e *Executor) Execute(ctx context.Context, manifestID string, opts *Execute
 	tombstoneIDs = nil
 	manifest.Execution.TombstoneIDs = nil
 
+	protectedRetries, err := e.protectedTargets(ctx, manifest, sourceID, retryIDs)
+	if err != nil {
+		e.saveCheckpoint(manifest, manifestID, startIndex, succeeded, len(retryIDs), retryIDs)
+		return err
+	}
+	retryIDs = withoutProtected(manifest, retryIDs, protectedRetries)
+
 	// Retry previously failed IDs before continuing with remaining messages
 	for ri, gmailID := range retryIDs {
 		select {
@@ -434,6 +487,12 @@ func (e *Executor) Execute(ctx context.Context, manifestID string, opts *Execute
 		}
 	}
 
+	checkWindow := opts.BatchSize
+	if checkWindow <= 0 {
+		checkWindow = DefaultExecuteOptions().BatchSize
+	}
+	var protected map[string]bool
+	checkedUntil := startIndex
 	for i := startIndex; i < len(manifest.GmailIDs); i++ {
 		select {
 		case <-ctx.Done():
@@ -448,6 +507,22 @@ func (e *Executor) Execute(ctx context.Context, manifestID string, opts *Execute
 		if e.manifestCancelled(manifestID) {
 			e.logger.Info("deletion cancelled; stopping", "manifest", manifestID, "processed", i)
 			return ErrManifestCancelled
+		}
+
+		// A protect batch rechecks each window of messages just before
+		// deleting it, so a message starred after staging is left alone.
+		if i >= checkedUntil {
+			end := min(i+checkWindow, len(manifest.GmailIDs))
+			protected, err = e.protectedTargets(ctx, manifest, sourceID, manifest.GmailIDs[i:end])
+			if err != nil {
+				e.saveCheckpoint(manifest, manifestID, i, succeeded, failed, failedIDs)
+				return err
+			}
+			checkedUntil = end
+		}
+		if protected[manifest.GmailIDs[i]] {
+			recordProtected(manifest, manifest.GmailIDs[i])
+			continue
 		}
 
 		result, delErr := e.deleteOne(ctx, sourceID, manifest.GmailIDs[i], opts.Method)
@@ -579,6 +654,13 @@ func (e *Executor) ExecuteBatch(ctx context.Context, manifestID string) error {
 	tombstoneIDs = nil
 	manifest.Execution.TombstoneIDs = nil
 
+	protectedRetries, err := e.protectedTargets(ctx, manifest, sourceID, retryIDs)
+	if err != nil {
+		e.saveCheckpoint(manifest, manifestID, startIndex, succeeded, len(retryIDs), retryIDs)
+		return err
+	}
+	retryIDs = withoutProtected(manifest, retryIDs, protectedRetries)
+
 	// Retry previously failed IDs before continuing with remaining messages
 	if len(retryIDs) > 0 {
 		e.logger.Debug("retrying previously failed messages", "count", len(retryIDs))
@@ -643,7 +725,16 @@ func (e *Executor) ExecuteBatch(ctx context.Context, manifestID string) error {
 
 		end := min(i+batchSize, len(manifest.GmailIDs))
 
-		batch := manifest.GmailIDs[i:end]
+		protected, err := e.protectedTargets(ctx, manifest, sourceID, manifest.GmailIDs[i:end])
+		if err != nil {
+			e.saveCheckpoint(manifest, manifestID, i, succeeded, failed, failedIDs)
+			return err
+		}
+		batch := withoutProtected(manifest, manifest.GmailIDs[i:end], protected)
+		if len(batch) == 0 {
+			e.progress.OnProgress(end, succeeded, failed)
+			continue
+		}
 
 		e.logger.Debug("deleting batch", "start", i, "end", end, "size", len(batch))
 

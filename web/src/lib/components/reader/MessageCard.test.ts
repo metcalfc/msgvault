@@ -146,6 +146,19 @@ describe('MessageCard', () => {
     expect(onToggle).toHaveBeenCalledWith(42);
   });
 
+  it('never offers remote images for a message the daemon marks as junk or trash', async () => {
+    const html = '<img src="https://images.example/pixel.png" alt="Pixel">';
+    for (const message of [
+      detail({ bodyHtml: html, remoteImagesBlocked: true, labels: ['Corbeille'] }),
+      detail({ bodyHtml: html, labels: ['Junk Email'] }),
+    ]) {
+      const { unmount } = render(MessageCard, { props: { message, expanded: true } });
+      expect(await screen.findByText(/Remote images never load for spam or trash\./)).toBeDefined();
+      expect(screen.queryByRole('button', { name: /remote image/ })).toBeNull();
+      unmount();
+    }
+  });
+
   it('renders the expanded header directly: sender, recipients, date, subject, then the body', async () => {
     const { container } = render(MessageCard, {
       props: { message: detail({ bodyHtml: '<p>Formatted body</p>' }), expanded: true, anchor: true }

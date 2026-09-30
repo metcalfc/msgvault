@@ -41,7 +41,7 @@ type CleanupCandidate struct {
 // The pool: live email the owner did not send, labeled spam or Promotions,
 // in a conversation the owner never wrote in. Sender kind and links are
 // checked per message by the caller.
-const cleanupPoolSQL = `
+var cleanupPoolSQL = `
 	SELECT m.id, ` + messageSenderSQL + `
 	FROM messages m
 	WHERE m.deleted_at IS NULL AND m.deleted_from_source_at IS NULL
@@ -50,8 +50,7 @@ const cleanupPoolSQL = `
 	  AND EXISTS (
 	      SELECT 1 FROM message_labels ml JOIN labels l ON l.id = ml.label_id
 	      WHERE ml.message_id = m.id
-	        AND (` + "l.source_label_id = 'CATEGORY_PROMOTIONS' OR " + `
-	             (l.source_label_id IN ('SPAM', 'JUNK') OR UPPER(l.name) IN ('SPAM', 'JUNK'))))
+	        AND (l.source_label_id = 'CATEGORY_PROMOTIONS' OR ` + junkLabelSQL("l") + `))
 	  AND NOT EXISTS (
 	      SELECT 1 FROM messages r
 	      WHERE r.conversation_id = m.conversation_id
@@ -137,10 +136,13 @@ const cleanupBodyPrefixBytes = 256 << 10
 type CleanupEvidence struct {
 	MessageID int64
 	SenderID  int64
-	FromName  string
-	FromEmail string
-	Subject   string
-	Labels    []string
+	// SourceType is the message's source type, such as gmail or imap: it
+	// decides which receiving server's Authentication-Results are trusted.
+	SourceType string
+	FromName   string
+	FromEmail  string
+	Subject    string
+	Labels     []string
 	// AddressedToOwner is true when an owner address is a To or Cc
 	// recipient; otherwise the owner got the message by Bcc or through an
 	// undisclosed-recipients list.
@@ -160,10 +162,10 @@ func (s *Store) CleanupEvidenceContext(ctx context.Context, messageID int64) (Cl
 	evidence := CleanupEvidence{MessageID: messageID, Labels: []string{}}
 	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
 		var sender sql.NullInt64
-		var subject, fromName, fromEmail sql.NullString
+		var subject, sourceType, fromName, fromEmail sql.NullString
 		var addressed, replied int
 		if err := tx.QueryRowContext(ctx, `
-			SELECT m.subject, `+messageSenderSQL+`,
+			SELECT m.subject, (SELECT src.source_type FROM sources src WHERE src.id = m.source_id), `+messageSenderSQL+`,
 			       CASE WHEN EXISTS (
 			           SELECT 1 FROM message_recipients mr
 			           JOIN participants p ON p.id = mr.participant_id
@@ -175,10 +177,11 @@ func (s *Store) CleanupEvidenceContext(ctx context.Context, messageID int64) (Cl
 			           WHERE r.conversation_id = m.conversation_id AND r.id <> m.id
 			             AND (COALESCE(r.is_from_me, FALSE) = TRUE OR r.identity_is_from_me = TRUE))
 			            THEN 1 ELSE 0 END
-			FROM messages m WHERE m.id = ?`, messageID).Scan(&subject, &sender, &addressed, &replied); err != nil {
+			FROM messages m WHERE m.id = ?`, messageID).Scan(&subject, &sourceType, &sender, &addressed, &replied); err != nil {
 			return fmt.Errorf("load cleanup message: %w", err)
 		}
 		evidence.Subject = subject.String
+		evidence.SourceType = sourceType.String
 		evidence.SenderID = sender.Int64
 		evidence.AddressedToOwner = addressed == 1
 		evidence.ThreadReplied = replied == 1

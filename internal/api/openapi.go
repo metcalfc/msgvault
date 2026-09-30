@@ -375,8 +375,11 @@ import (
 // 2.41.0 adds deletion protection: POST /deletions reports starred,
 // owner-sent, and person-sent candidates in protection and accepts protect
 // to leave them out (409 all_messages_protected when nothing is left).
-// POST /content/remote-image accepts message_id and refuses spam and trash
-// messages with 403 remote_images_blocked. GET /deletions/{id} gains
+// POST /content/remote-image requires message_id (400 missing_message_id),
+// refuses spam, junk, and trash messages with 403 remote_images_blocked,
+// and refuses a URL the message's stored body does not reference with 403
+// remote_image_not_referenced; the Web UI is its only caller and always
+// names the message. Message details gain remote_images_blocked. GET /deletions/{id} gains
 // possibly_worth_keeping and possibly_worth_keeping_count: staged messages
 // whose stored cleanup suggestion scored personal plus work at least 0.50.
 // Settings gain jev.cleanup_suggestions.enabled. Additive (minor bump).

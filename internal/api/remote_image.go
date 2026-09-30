@@ -11,6 +11,7 @@ import (
 
 	"go.kenn.io/msgvault/internal/netguard"
 	"go.kenn.io/msgvault/internal/remoteimage"
+	"go.kenn.io/msgvault/internal/store"
 )
 
 const (
@@ -25,15 +26,16 @@ func prohibitedRemoteIP(addr netip.Addr) bool { return netguard.ProhibitedIP(add
 // RemoteImageRequest is the JSON body of POST /api/v1/content/remote-image.
 type RemoteImageRequest struct {
 	URL string `json:"url" doc:"Absolute http(s) URL of the consented remote image"`
-	// MessageID names the message the image belongs to so the daemon can
-	// refuse spam and trash. The Web UI always sends it.
-	MessageID int64 `json:"message_id,omitzero" doc:"The message the image appears in. The daemon refuses images of spam and trash messages with 403 remote_images_blocked."`
+	// MessageID names the message the image appears in. The proxy fetches
+	// only images that message references and never for junk or trash.
+	MessageID int64 `json:"message_id" minimum:"1" doc:"The message the image appears in (required). The URL must be an image of that message's stored body: otherwise 403 remote_image_not_referenced. Spam, junk, and trash messages are refused with 403 remote_images_blocked."`
 }
 
-// RemoteImagePolicyStore reports whether a message's remote images must
-// never be fetched. Implemented by the serve daemon's store adapter.
+// RemoteImagePolicyStore loads a message's remote image policy: whether its
+// folder blocks remote images and the bodies its images may come from.
+// Implemented by the serve daemon's store adapter.
 type RemoteImagePolicyStore interface {
-	MessageRemoteImagesBlockedContext(ctx context.Context, messageID int64) (bool, error)
+	RemoteImagePolicyContext(ctx context.Context, messageID int64) (store.RemoteImagePolicy, error)
 }
 
 // handleRemoteImage serves POST /api/v1/content/remote-image. Success passes
@@ -53,11 +55,12 @@ func (s *Server) handleRemoteImage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing_url", "Missing 'url' in request body")
 		return
 	}
-	if req.MessageID < 0 {
-		writeError(w, http.StatusBadRequest, "invalid_request", "message_id must be positive")
+	if req.MessageID <= 0 {
+		writeError(w, http.StatusBadRequest, "missing_message_id",
+			"Missing 'message_id': remote images are fetched only for the message that references them")
 		return
 	}
-	if req.MessageID > 0 && !s.remoteImagesAllowed(r.Context(), w, req.MessageID) {
+	if !s.remoteImageAllowed(r.Context(), w, req.MessageID, req.URL) {
 		return
 	}
 	fetcher := s.remoteImages
@@ -80,16 +83,17 @@ func (s *Server) handleRemoteImage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-// remoteImagesAllowed refuses a message whose labels block remote images.
-// It fails closed: a daemon that cannot check never fetches for a message.
-func (s *Server) remoteImagesAllowed(ctx context.Context, w http.ResponseWriter, messageID int64) bool {
-	policy, ok := s.store.(RemoteImagePolicyStore)
+// remoteImageAllowed refuses a message whose folder blocks remote images and
+// a URL the message does not reference. It fails closed: a daemon that
+// cannot check never fetches.
+func (s *Server) remoteImageAllowed(ctx context.Context, w http.ResponseWriter, messageID int64, target string) bool {
+	policies, ok := s.store.(RemoteImagePolicyStore)
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "remote_image_policy_unavailable",
 			"This daemon cannot check whether the message allows remote images")
 		return false
 	}
-	blocked, err := policy.MessageRemoteImagesBlockedContext(ctx, messageID)
+	policy, err := policies.RemoteImagePolicyContext(ctx, messageID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "not_found", "Message not found")
 		return false
@@ -99,9 +103,16 @@ func (s *Server) remoteImagesAllowed(ctx context.Context, w http.ResponseWriter,
 		writeError(w, http.StatusInternalServerError, "internal_error", "Remote image policy check failed")
 		return false
 	}
-	if blocked {
+	if policy.Blocked {
 		writeError(w, http.StatusForbidden, "remote_images_blocked",
-			"Remote images are never loaded for spam or trash messages")
+			"Remote images are never loaded for spam, junk, or trash messages")
+		return false
+	}
+	// A URL no <img src> could name falls through to Fetch, whose own
+	// validation rejects it before any network use.
+	if remoteimage.Referenceable(target) && !remoteimage.Referenced(target, policy.BodyHTML, policy.BodyText) {
+		writeError(w, http.StatusForbidden, "remote_image_not_referenced",
+			"The message does not reference this image")
 		return false
 	}
 	return true

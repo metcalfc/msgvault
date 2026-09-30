@@ -419,10 +419,13 @@ the feature only runs when you ask.
 
 To act on a suspected message, stage it yourself with
 `msgvault stage-delete --ids`, review it, and run `delete-staged`.
-Authentication results come from the topmost `Authentication-Results`
-header, the one your receiving server adds; lower copies could come from the
-sender and are ignored. Only the header block of the stored raw message is
-read, and a message whose header block cannot be decoded sends `unknown`.
+Authentication results come only from an `Authentication-Results` header
+stamped by a receiving server you trust: `mx.google.com` for Gmail sources,
+plus any authserv-ids listed in `trusted_authserv_ids`. The topmost such
+header wins. A header with any other authserv-id could have been written by
+the sender and is ignored, so an IMAP source reports `unknown` until you list
+its server. Only the header block of the stored raw message is read, and a
+message whose header block cannot be decoded sends `unknown`.
 
 ### What leaves the machine
 

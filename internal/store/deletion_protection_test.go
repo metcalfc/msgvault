@@ -144,3 +144,52 @@ func TestRemoteImagesAreBlockedForSpamAndTrash(t *testing.T) {
 	require.NoError(err)
 	assert.Equal([]int64{inbox}, ids, "backfill never visits spam or trash")
 }
+
+// IMAP servers mark junk and trash with RFC 6154 special-use attributes
+// under any name, and PST and mbox folders carry only names.
+func TestJunkAndTrashFoldersAreKnownByRoleOrCommonName(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := storetest.New(t)
+	st := f.Store
+	labels, err := st.EnsureLabelsBatch(f.Source.ID, map[string]store.LabelInfo{
+		"Junk Email":        {Name: "Junk Email", Type: "system", SystemRole: store.LabelSystemRoleJunk},
+		"Corbeille":         {Name: "Corbeille", Type: "system", SystemRole: store.LabelSystemRoleTrash},
+		"Deleted Items":     {Name: "Deleted Items", Type: "user"},
+		"Junk food recipes": {Name: "Junk food recipes", Type: "user"},
+		"INBOX":             {Name: "INBOX", Type: "system"},
+	})
+	require.NoError(err)
+	messages := map[string]int64{}
+	for i, label := range []string{"Junk Email", "Corbeille", "Deleted Items", "Junk food recipes", "INBOX"} {
+		id, err := st.UpsertMessage(&store.Message{
+			ConversationID: f.ConvID, SourceID: f.Source.ID, SourceMessageID: fmt.Sprintf("folder-%d", i),
+			MessageType: "email",
+		})
+		require.NoError(err)
+		require.NoError(st.AddMessageLabels(id, []int64{labels[label]}))
+		messages[label] = id
+	}
+
+	blocked, err := st.RemoteImagesBlockedMessagesContext(t.Context(), []int64{
+		messages["Junk Email"], messages["Corbeille"], messages["Deleted Items"],
+		messages["Junk food recipes"], messages["INBOX"],
+	})
+	require.NoError(err)
+	assert.Equal(map[int64]bool{
+		messages["Junk Email"]: true, messages["Corbeille"]: true, messages["Deleted Items"]: true,
+		messages["Junk food recipes"]: false, messages["INBOX"]: false,
+	}, blocked)
+	one, err := st.MessageRemoteImagesBlockedContext(t.Context(), messages["Junk Email"])
+	require.NoError(err)
+	assert.True(one)
+
+	backfill, err := st.RemoteImageBackfillMessageIDs(t.Context(), 0, 0, 100)
+	require.NoError(err)
+	assert.Equal([]int64{messages["Junk food recipes"], messages["INBOX"]}, backfill)
+
+	pool, err := st.CleanupCandidatesContext(t.Context(), store.CleanupCandidateQuery{Limit: 10})
+	require.NoError(err)
+	require.Len(pool, 1, "only the junk folder, not trash or a user label, is in the cleanup pool")
+	assert.Equal(messages["Junk Email"], pool[0].MessageID)
+}

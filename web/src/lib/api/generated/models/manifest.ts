@@ -14,6 +14,7 @@ export interface Manifest {
   filters: Filters;
   gmail_ids: string[];
   id: string;
+  protect?: boolean;
   raw_filter?: unknown;
   source?: SourceReference;
   status: string;
