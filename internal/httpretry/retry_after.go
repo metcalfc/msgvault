@@ -34,8 +34,8 @@ func RetryAfterAt(header string, attempt int, maximum time.Duration, now time.Ti
 	if maximum <= 0 {
 		maximum = DefaultMaxRetryAfter
 	}
-	if delay, ok := parsedRetryAfterAt(header, maximum, now); ok {
-		return delay
+	if delay, ok := ParseRetryAfterAt(header, now); ok {
+		return capDelay(delay, maximum)
 	}
 
 	return capDelay(exponentialBackoff(attempt), maximum)
@@ -53,13 +53,16 @@ func RetryAfterAtWithBase(
 	if maximum <= 0 {
 		maximum = DefaultMaxRetryAfter
 	}
-	if delay, ok := parsedRetryAfterAt(header, maximum, now); ok {
-		return delay
+	if delay, ok := ParseRetryAfterAt(header, now); ok {
+		return capDelay(delay, maximum)
 	}
 	return exponentialBackoffWithBase(attempt, base, maximum)
 }
 
-func parsedRetryAfterAt(header string, maximum time.Duration, now time.Time) (time.Duration, bool) {
+// ParseRetryAfterAt parses a provider delay without imposing a cap or fallback.
+// The boolean distinguishes an absent, malformed, or overflowing header from
+// a valid zero delay. Callers retain their own retry and maximum-delay policies.
+func ParseRetryAfterAt(header string, now time.Time) (time.Duration, bool) {
 	if header == "" {
 		return 0, false
 	}
@@ -67,12 +70,12 @@ func parsedRetryAfterAt(header string, maximum time.Duration, now time.Time) (ti
 	secs, err := strconv.ParseUint(trimmed, 10, 64)
 	if err == nil {
 		if delay, ok := secondsToDuration(secs); ok {
-			return capDelay(delay, maximum), true
+			return delay, true
 		}
 	}
 	if retryAt, parseErr := http.ParseTime(trimmed); parseErr == nil {
 		delay := max(retryAt.Sub(now), time.Duration(0))
-		return capDelay(delay, maximum), true
+		return delay, true
 	}
 	return 0, false
 }

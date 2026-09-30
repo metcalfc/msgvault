@@ -19,6 +19,7 @@ import (
 
 	"github.com/icholy/digest"
 
+	"go.kenn.io/msgvault/internal/httpretry"
 	"go.kenn.io/msgvault/internal/netguard"
 )
 
@@ -460,11 +461,8 @@ func isDAVMutation(method string) bool {
 
 func retryAfter(value string, now time.Time) time.Duration {
 	const maximum = time.Hour
-	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil && seconds >= 0 {
-		return min(time.Duration(seconds)*time.Second, maximum)
-	}
-	if deadline, err := http.ParseTime(value); err == nil && deadline.After(now) {
-		return min(time.Until(deadline), maximum)
+	if delay, ok := httpretry.ParseRetryAfterAt(value, now); ok {
+		return min(delay, maximum)
 	}
 	return 0
 }

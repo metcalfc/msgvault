@@ -75,3 +75,30 @@ func TestRetryAfterFallbackAttemptBounds(t *testing.T) {
 		})
 	}
 }
+
+func TestParseRetryAfterAt(t *testing.T) {
+	now := time.Date(2035, 1, 2, 3, 4, 5, 0, time.UTC)
+	tests := []struct {
+		name, header string
+		want         time.Duration
+		valid        bool
+	}{
+		{name: "absent"},
+		{name: "invalid", header: "tomorrow"},
+		{name: "negative", header: "-1"},
+		{name: "duration overflow", header: "9223372037"},
+		{name: "integer overflow", header: "18446744073709551616"},
+		{name: "zero", header: "0", valid: true},
+		{name: "whitespace", header: " 120 ", want: 2 * time.Minute, valid: true},
+		{name: "uncapped", header: "7200", want: 2 * time.Hour, valid: true},
+		{name: "future date", header: now.Add(37 * time.Second).Format(http.TimeFormat), want: 37 * time.Second, valid: true},
+		{name: "past date", header: now.Add(-time.Second).Format(http.TimeFormat), valid: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, valid := ParseRetryAfterAt(tt.header, now)
+			assert.Equal(t, tt.valid, valid)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

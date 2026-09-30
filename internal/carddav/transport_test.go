@@ -861,3 +861,25 @@ func TestClientLogsExpectedFailuresAtDebug(t *testing.T) {
 		})
 	}
 }
+
+func TestRetryAfterPreservesCardDAVPolicy(t *testing.T) {
+	now := time.Date(2035, 1, 2, 3, 4, 5, 0, time.UTC)
+	tests := []struct {
+		name, header string
+		want         time.Duration
+	}{
+		{name: "absent"},
+		{name: "invalid", header: "later"},
+		{name: "negative", header: "-1"},
+		{name: "overflow", header: "9223372036854775807"},
+		{name: "zero", header: "0"},
+		{name: "seconds", header: "120", want: 2 * time.Minute},
+		{name: "capped", header: "7200", want: time.Hour},
+		{name: "injected clock", header: now.Add(30 * time.Second).Format(http.TimeFormat), want: 30 * time.Second},
+		{name: "date capped", header: now.Add(2 * time.Hour).Format(http.TimeFormat), want: time.Hour},
+		{name: "past date", header: now.Add(-time.Second).Format(http.TimeFormat)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) { assert.Equal(t, tt.want, retryAfter(tt.header, now)) })
+	}
+}

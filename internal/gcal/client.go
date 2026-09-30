@@ -16,6 +16,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"go.kenn.io/msgvault/internal/gmail"
+	"go.kenn.io/msgvault/internal/httpretry"
 )
 
 const (
@@ -117,10 +118,6 @@ func (e *GoneError) Error() string { return "gone (410, sync token expired): " +
 // full-jitter exponential backoff; it does not retry permission-403, 401, 404,
 // 410, or other 4xx. The op selects the quota cost on the shared limiter.
 func (c *Client) request(ctx context.Context, op gmail.Operation, method, path string) ([]byte, error) {
-	if err := c.rateLimiter.Acquire(ctx, op); err != nil {
-		return nil, fmt.Errorf("rate limit: %w", err)
-	}
-
 	reqURL := c.baseURL + path
 
 	var lastErr error
@@ -133,6 +130,11 @@ func (c *Client) request(ctx context.Context, op gmail.Operation, method, path s
 				return nil, ctx.Err()
 			case <-time.After(backoff):
 			}
+		}
+
+		// Every concrete attempt consumes quota and honors shared throttling.
+		if err := c.rateLimiter.Acquire(ctx, op); err != nil {
+			return nil, fmt.Errorf("rate limit: %w", err)
 		}
 
 		req, err := http.NewRequestWithContext(ctx, method, reqURL, io.Reader(nil))
@@ -170,15 +172,17 @@ func (c *Client) request(ctx context.Context, op gmail.Operation, method, path s
 
 		switch resp.StatusCode {
 		case http.StatusTooManyRequests:
-			c.logger.Debug("calendar rate limited, backing off 30s", "path", path, "attempt", attempt)
-			c.rateLimiter.Throttle(30 * time.Second)
+			pause := calendarQuotaPause(resp.Header.Get("Retry-After"), 30*time.Second)
+			c.logger.Debug("calendar rate limited", "path", path, "attempt", attempt, "pause", pause)
+			c.rateLimiter.Throttle(pause)
 			lastErr = errors.New("rate limited (429)")
 			continue
 
 		case http.StatusForbidden:
 			if isRateLimitError(respBody) {
-				c.logger.Debug("calendar quota exceeded, backing off 60s", "path", path, "attempt", attempt)
-				c.rateLimiter.Throttle(60 * time.Second)
+				pause := calendarQuotaPause(resp.Header.Get("Retry-After"), time.Minute)
+				c.logger.Debug("calendar quota exceeded", "path", path, "attempt", attempt, "pause", pause)
+				c.rateLimiter.Throttle(pause)
 				lastErr = errors.New("quota exceeded (403)")
 				continue
 			}
@@ -204,6 +208,13 @@ func (c *Client) request(ctx context.Context, op gmail.Operation, method, path s
 	}
 
 	return nil, fmt.Errorf("max retries exceeded: %w", lastErr)
+}
+
+// calendarQuotaPause retains Calendar's minimum quota pause. A provider's
+// longer Retry-After is bounded by the caller's context, not shortened locally.
+func calendarQuotaPause(header string, minimum time.Duration) time.Duration {
+	delay, _ := httpretry.ParseRetryAfterAt(header, time.Now())
+	return max(minimum, delay)
 }
 
 // calculateBackoff returns full-jitter exponential backoff for a retry attempt.

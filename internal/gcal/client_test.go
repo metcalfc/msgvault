@@ -2,10 +2,13 @@ package gcal
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -195,57 +198,75 @@ func TestClient_GetEvent_NotFound404(t *testing.T) {
 	require.ErrorAs(t, err, &nf, "expected *NotFoundError, got %v", err)
 }
 
-func TestClient_Retry429ThenSuccess(t *testing.T) {
-	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		if calls.Add(1) == 1 {
-			w.WriteHeader(http.StatusTooManyRequests)
-			_, _ = w.Write([]byte(`{"error":{"code":429}}`))
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"items":[],"nextSyncToken":"OK"}`))
-	}))
-	defer srv.Close()
+// RoundTripper keeps retries inside the synctest clock while exercising the
+// production HTTP client, quota limiter, status handling, and response parser.
+type retryTransportFunc func(*http.Request) (*http.Response, error)
 
-	page, err := testClient(t, srv).ListEvents(context.Background(), "primary", EventsListParams{})
-	require.NoError(t, err)
-	assert.Equal(t, "OK", page.NextSyncToken)
-	assert.GreaterOrEqual(t, calls.Load(), int32(2), "should have retried")
+func (f retryTransportFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
 }
 
-func TestClient_QuotaForbiddenRetries_PermissionForbiddenTerminal(t *testing.T) {
-	t.Run("quota 403 retries", func(t *testing.T) {
-		var calls atomic.Int32
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			if calls.Add(1) == 1 {
-				w.WriteHeader(http.StatusForbidden)
-				_, _ = w.Write([]byte(`{"error":{"code":403,"errors":[{"reason":"rateLimitExceeded","domain":"usageLimits"}]}}`))
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"items":[],"nextSyncToken":"OK"}`))
-		}))
-		defer srv.Close()
+func TestClient_QuotaRetriesHonorSharedPause(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		header  string
+		body    string
+		minimum time.Duration
+	}{
+		{name: "429 default", status: 429, minimum: 30 * time.Second},
+		{name: "quota 403 default", status: 403, body: `{"error":{"errors":[{"reason":"rateLimitExceeded"}]}}`, minimum: time.Minute},
+		{name: "429 provider delay", status: 429, header: "120", minimum: 2 * time.Minute},
+		{name: "quota 403 provider delay", status: 403, header: "120", body: `{"error":{"errors":[{"reason":"rateLimitExceeded"}]}}`, minimum: 2 * time.Minute},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				calls := 0
+				started := time.Now()
+				client := NewClient(nil, WithHTTPClient(&http.Client{Transport: retryTransportFunc(func(request *http.Request) (*http.Response, error) {
+					calls++
+					if calls == 1 {
+						return &http.Response{StatusCode: tt.status, Header: http.Header{"Retry-After": []string{tt.header}}, Body: io.NopCloser(strings.NewReader(tt.body)), Request: request}, nil
+					}
+					assert.GreaterOrEqual(t, time.Since(started), tt.minimum)
+					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"items":[],"nextSyncToken":"OK"}`)), Request: request}, nil
+				})}), WithRateLimiter(gmail.NewRateLimiterWithCapacity(100, 100)))
+				page, err := client.ListEvents(context.Background(), "primary", EventsListParams{})
+				require.NoError(t, err)
+				assert.Equal(t, "OK", page.NextSyncToken)
+				assert.Equal(t, 2, calls)
+			})
+		})
+	}
+}
 
-		_, err := testClient(t, srv).ListEvents(context.Background(), "primary", EventsListParams{})
-		require.NoError(t, err)
-		assert.GreaterOrEqual(t, calls.Load(), int32(2))
+func TestClient_CancellationDuringQuotaPause(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		calls := 0
+		client := NewClient(nil, WithHTTPClient(&http.Client{Transport: retryTransportFunc(func(request *http.Request) (*http.Response, error) {
+			calls++
+			return &http.Response{StatusCode: 429, Header: http.Header{"Retry-After": []string{"120"}}, Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
+		})}))
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, err := client.ListCalendars(ctx, "")
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		assert.Equal(t, 1, calls)
 	})
+}
 
-	t.Run("permission 403 is terminal", func(t *testing.T) {
-		var calls atomic.Int32
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			calls.Add(1)
-			w.WriteHeader(http.StatusForbidden)
-			_, _ = w.Write([]byte(`{"error":{"code":403,"errors":[{"reason":"insufficientPermissions"}]}}`))
-		}))
-		defer srv.Close()
-
-		_, err := testClient(t, srv).ListEvents(context.Background(), "primary", EventsListParams{})
-		require.Error(t, err)
-		assert.Equal(t, int32(1), calls.Load(), "permission error must not retry")
-	})
+func TestClient_PermissionForbiddenTerminal(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":{"code":403,"errors":[{"reason":"insufficientPermissions"}]}}`))
+	}))
+	defer srv.Close()
+	_, err := testClient(t, srv).ListEvents(t.Context(), "primary", EventsListParams{})
+	require.Error(t, err)
+	assert.Equal(t, int32(1), calls.Load(), "permission error must not retry")
 }
 
 func TestClient_ContextCancelled(t *testing.T) {

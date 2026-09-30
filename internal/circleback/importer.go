@@ -216,7 +216,7 @@ func pendingTranscriptSlice(pendingByID map[string]pendingTranscript) []pendingT
 }
 
 // Import runs a full or incremental import for the configured account.
-func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportSummary, error) {
+func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (summary *ImportSummary, retErr error) {
 	start := imp.now()
 	src, err := imp.store.GetOrCreateSource(SourceType, opts.Identifier)
 	if err != nil {
@@ -249,8 +249,8 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportSum
 	imp = &scoped
 	var hardErrors []error
 	defer func() {
-		if err != nil {
-			_ = imp.store.FailSyncWithCheckpoint(syncID, err.Error(), &store.Checkpoint{
+		if retErr != nil {
+			retErr = imp.store.FinalizeSyncFailure(syncID, retErr, &store.Checkpoint{
 				MessagesProcessed: sum.MeetingsProcessed,
 				MessagesAdded:     sum.MeetingsAdded,
 				MessagesUpdated:   sum.MeetingsUpdated,

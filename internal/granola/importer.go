@@ -70,7 +70,7 @@ func (s syncState) marshal() string {
 }
 
 // Import runs a full or incremental import for the configured account.
-func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportSummary, error) {
+func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (summary *ImportSummary, retErr error) {
 	start := time.Now()
 	src, err := imp.store.GetOrCreateSource(SourceType, opts.Identifier)
 	if err != nil {
@@ -103,8 +103,8 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportSum
 	scoped.store = imp.store.ScopedToSync(src.ID, syncID)
 	imp = &scoped
 	defer func() {
-		if err != nil {
-			_ = imp.store.FailSyncWithCheckpoint(syncID, err.Error(), &store.Checkpoint{
+		if retErr != nil {
+			retErr = imp.store.FinalizeSyncFailure(syncID, retErr, &store.Checkpoint{
 				MessagesProcessed: sum.NotesProcessed,
 				MessagesAdded:     sum.NotesAdded,
 				MessagesUpdated:   sum.NotesUpdated,

@@ -109,12 +109,7 @@ func (i *Importer) Import(ctx context.Context, req Request) (result Result, retE
 	i = &scoped
 	checkpoint := &store.Checkpoint{}
 	defer func() {
-		if retErr == nil {
-			return
-		}
-		if failErr := i.store.FailSyncWithCheckpoint(syncID, retErr.Error(), checkpoint); failErr != nil {
-			retErr = errors.Join(retErr, fmt.Errorf("record failed meeting import sync: %w", failErr))
-		}
+		retErr = i.store.FinalizeSyncFailure(syncID, retErr, checkpoint)
 	}()
 
 	var organizer *meetingarchive.Person

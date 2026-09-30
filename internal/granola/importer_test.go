@@ -950,3 +950,22 @@ func TestSnippetPreservesUTF8(t *testing.T) {
 	assert.True(utf8.ValidString(got))
 	assert.Equal(strings.Repeat("a", 199)+"é", got)
 }
+
+func TestImportReportsFailureToRecordFailedSync(t *testing.T) {
+	assert, require := assert.New(t), require.New(t)
+	testutil.SkipIfPostgres(t, "uses a SQLite trigger to reject terminal sync writes")
+	raw := loadFixture(t, "note_full.json")
+	var note Note
+	require.NoError(json.Unmarshal(raw, &note))
+	api := &fakeAPI{notes: map[string][]byte{note.ID: raw}, fail: map[string]bool{note.ID: true}}
+	imp, st := newTestImporter(t, api)
+	_, err := st.DB().Exec(`CREATE TRIGGER reject_granola_failure BEFORE UPDATE ON sync_runs
+ WHEN NEW.status = 'failed' BEGIN SELECT RAISE(ABORT, 'synthetic terminal write failure'); END`)
+	require.NoError(err)
+	summary, err := imp.Import(t.Context(), ImportOptions{Identifier: "failure@example.test"})
+	require.Error(err)
+	assert.ErrorContains(err, "partial Granola sync")
+	assert.ErrorContains(err, "synthetic terminal write failure")
+	require.NotNil(summary)
+	assert.EqualValues(1, summary.Errors)
+}

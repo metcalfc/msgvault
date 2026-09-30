@@ -177,7 +177,7 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (sum *Impor
 	scopedStore := imp.store.ScopedToSync(source.ID, syncID)
 	defer func() {
 		if retErr != nil {
-			_ = scopedStore.FailSyncWithCheckpoint(syncID, retErr.Error(), &store.Checkpoint{
+			retErr = scopedStore.FinalizeSyncFailure(syncID, retErr, &store.Checkpoint{
 				MessagesProcessed: sum.MeetingsProcessed,
 				MessagesAdded:     sum.MeetingsAdded,
 				MessagesUpdated:   sum.MeetingsUpdated,
