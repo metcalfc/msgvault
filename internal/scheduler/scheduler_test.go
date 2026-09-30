@@ -30,7 +30,7 @@ func TestNew(t *testing.T) {
 
 	require.NotNil(t, s, "New()")
 	assert.NotNil(t, s.cron, "cron")
-	assert.NotNil(t, s.jobs, "jobs map")
+	assert.NotNil(t, s.accounts, "account state map")
 }
 
 func TestAddAccount(t *testing.T) {
@@ -42,9 +42,7 @@ func TestAddAccount(t *testing.T) {
 	require.NoError(t, s.AddAccount("test@gmail.com", "0 2 * * *"), "AddAccount() with valid cron")
 
 	// Check job was added
-	s.mu.RLock()
-	_, exists := s.jobs["test@gmail.com"]
-	s.mu.RUnlock()
+	exists := s.IsScheduled("test@gmail.com")
 
 	assert.True(t, exists, "job was not added to jobs map")
 }
@@ -67,14 +65,14 @@ func TestAddAccountReplacesExisting(t *testing.T) {
 	require.NoError(t, s.AddAccount("test@gmail.com", "0 2 * * *"), "AddAccount()")
 
 	s.mu.RLock()
-	firstID := s.jobs["test@gmail.com"]
+	firstID := s.accounts["test@gmail.com"].entryID
 	s.mu.RUnlock()
 
 	// Replace with new schedule
 	require.NoError(t, s.AddAccount("test@gmail.com", "0 3 * * *"), "AddAccount() replacement")
 
 	s.mu.RLock()
-	secondID := s.jobs["test@gmail.com"]
+	secondID := s.accounts["test@gmail.com"].entryID
 	s.mu.RUnlock()
 
 	assert.NotEqual(t, firstID, secondID, "job ID was not updated after replacement")
@@ -88,36 +86,48 @@ func TestRemoveAccount(t *testing.T) {
 	require.NoError(t, s.AddAccount("test@gmail.com", "0 2 * * *"), "AddAccount")
 	s.RemoveAccount("test@gmail.com")
 
-	s.mu.RLock()
-	_, exists := s.jobs["test@gmail.com"]
-	s.mu.RUnlock()
+	exists := s.IsScheduled("test@gmail.com")
 
 	assert.False(t, exists, "job still exists after RemoveAccount()")
 }
 
 func TestRemoveAccountClearsPendingFollowup(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	s := New(func(context.Context, string) error { return nil })
-	email := "pending@example.com"
-	require.NoError(s.AddAccount(email, "0 2 * * *"))
-
-	s.mu.Lock()
-	s.running[email] = true
-	s.pending[email] = true
-	s.mu.Unlock()
-
-	s.RemoveAccount(email)
-
-	s.mu.RLock()
-	pending := s.pending[email]
-	s.mu.RUnlock()
-	assert.False(pending, "removing an account cancels its queued follow-up")
-	s.finishAccountRun(email)
-	s.mu.RLock()
-	running := s.running[email]
-	s.mu.RUnlock()
-	assert.False(running, "finishing the active run must not start the removed account's follow-up")
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
+		var runs atomic.Int32
+		release := make(chan struct{})
+		s := New(func(ctx context.Context, _ string) error {
+			runs.Add(1)
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		})
+		defer func() { <-s.Stop().Done() }()
+		const email = "pending@example.com"
+		require.NoError(s.AddAccount(email, "0 2 * * *"))
+		require.NoError(s.TriggerSync(email))
+		synctest.Wait()
+		s.onAccountTick(email)
+		assert.True(s.Status()[0].Pending)
+		s.RemoveAccount(email)
+		assert.Empty(s.Status())
+		require.NoError(s.AddAccount(email, "0 2 * * *"))
+		assert.True(s.Status()[0].Running, "re-registration retains the active reservation")
+		assert.False(s.Status()[0].Pending)
+		require.Error(s.TriggerSync(email), "manual starts cannot overlap the existing run")
+		close(release)
+		synctest.Wait()
+		assert.Equal(int32(1), runs.Load(), "removal cancels the old follow-up even after re-registration")
+		assert.False(s.Status()[0].Running)
+		assert.False(s.Status()[0].LastRun.IsZero())
+		require.NoError(s.TriggerSync(email))
+		synctest.Wait()
+		assert.Equal(int32(2), runs.Load())
+	})
 }
 
 func TestRemoveAccountNonExistent(t *testing.T) {
@@ -150,13 +160,10 @@ func TestAddAccountsFromConfig(t *testing.T) {
 	assert.Equal(2, scheduled, "AddAccountsFromConfig() scheduled")
 
 	// Check only enabled accounts with schedules were added
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	assert.Contains(s.jobs, "user1@gmail.com", "user1@gmail.com should be scheduled")
-	assert.Contains(s.jobs, "user2@gmail.com", "user2@gmail.com should be scheduled")
-	assert.NotContains(s.jobs, "disabled@gmail.com", "disabled@gmail.com should not be scheduled")
-	assert.NotContains(s.jobs, "noschedule@gmail.com", "noschedule@gmail.com should not be scheduled")
+	assert.True(s.IsScheduled("user1@gmail.com"), "user1@gmail.com should be scheduled")
+	assert.True(s.IsScheduled("user2@gmail.com"), "user2@gmail.com should be scheduled")
+	assert.False(s.IsScheduled("disabled@gmail.com"), "disabled@gmail.com should not be scheduled")
+	assert.False(s.IsScheduled("noschedule@gmail.com"), "noschedule@gmail.com should not be scheduled")
 }
 
 func TestAddAccountsFromConfigWithErrors(t *testing.T) {
@@ -2237,7 +2244,7 @@ func TestRegistrationPathsRejectWhatTheValidatorRejects(t *testing.T) {
 	for _, expr := range []string{"CRON_TZ=UTC", ", * * * *", "0 3 * * ,,"} {
 		s := New(func(context.Context, string) error { return nil })
 		requirements.Error(s.AddAccount("user-a@example.com", expr), "AddAccount(%q)", expr)
-		assertions.Empty(s.schedules, "AddAccount(%q) must not register", expr)
+		assertions.Empty(s.Status(), "AddAccount(%q) must not register", expr)
 		requirements.Error(s.AddJob(Job{Name: "job", Schedule: expr, Run: func(context.Context) error { return nil }}), "AddJob(%q)", expr)
 	}
 }
@@ -3157,5 +3164,94 @@ func TestJobFollowUpRunsReregisteredFunction(t *testing.T) {
 
 		assert.Equal(int32(1), oldRuns.Load())
 		assert.Equal(int32(1), newRuns.Load(), "the follow-up runs the job as currently registered")
+	})
+}
+
+func TestRemoveAndReAddRunningJobKeepsReservation(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
+		var oldRuns, newRuns atomic.Int32
+		release := make(chan struct{})
+		s := New(func(ctx context.Context, _ string) error { return nil })
+		defer func() { <-s.Stop().Done() }()
+		require.NoError(s.AddJob(Job{Name: "job", Schedule: "0 0 1 1 *", Run: func(ctx context.Context) error {
+			oldRuns.Add(1)
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}}))
+		require.NoError(s.StartJob("job"))
+		synctest.Wait()
+		s.onJobTick("job")
+		assert.True(s.JobStatus()[0].Pending)
+		s.RemoveJob("job")
+		assert.Empty(s.JobStatus())
+		require.NoError(s.AddJob(Job{Name: "job", Schedule: "0 0 1 1 *", Run: func(ctx context.Context) error {
+			newRuns.Add(1)
+			return nil
+		}}))
+		status := s.JobStatus()[0]
+		assert.True(status.Running, "re-registration keeps the active reservation")
+		assert.False(status.Pending, "removal drops the old pending run")
+		require.NoError(s.StartJob("job"))
+		synctest.Wait()
+		assert.Zero(newRuns.Load(), "manual starts while active stay a no-op")
+		// A fresh tick should enqueue the newly registered callback.
+		s.onJobTick("job")
+		close(release)
+		synctest.Wait()
+		assert.Equal(int32(1), oldRuns.Load())
+		assert.Equal(int32(1), newRuns.Load())
+		assert.False(s.JobStatus()[0].Running)
+	})
+}
+
+func TestAccountAndJobWithSameNameHaveIndependentReservations(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
+		const name = "same@example.com"
+		var accounts, jobs atomic.Int32
+		release := make(chan struct{})
+		s := New(func(ctx context.Context, _ string) error {
+			accounts.Add(1)
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		})
+		defer func() { <-s.Stop().Done() }()
+		require.NoError(s.AddAccount(name, "0 0 1 1 *"))
+		require.NoError(s.AddJob(Job{Name: name, Schedule: "0 0 1 1 *", Run: func(ctx context.Context) error {
+			jobs.Add(1)
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}}))
+		require.NoError(s.TriggerSync(name))
+		require.NoError(s.StartJob(name))
+		synctest.Wait()
+		assert.Equal(int32(1), accounts.Load())
+		assert.Equal(int32(1), jobs.Load())
+		s.onAccountTick(name)
+		assert.True(s.Status()[0].Pending)
+		assert.False(s.JobStatus()[0].Pending)
+		s.RemoveJob(name)
+		assert.True(s.IsScheduled(name))
+		close(release)
+		synctest.Wait()
+		assert.Equal(int32(2), accounts.Load())
+		assert.Equal(int32(1), jobs.Load())
+		assert.False(s.Status()[0].Running)
+		assert.Empty(s.JobStatus())
 	})
 }

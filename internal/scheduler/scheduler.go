@@ -84,6 +84,23 @@ type JobStatus struct {
 	StartedAt time.Time `json:"started_at,omitzero"`
 }
 
+// scheduledJob keeps a registration and its run state together. Records stay
+// stable across removal and re-registration so an active run keeps its
+// reservation and can hand it to the current callback. All fields use s.mu.
+type scheduledJob struct {
+	entryID     cron.EntryID
+	schedule    string
+	registered  bool
+	run         func(context.Context) error // generic jobs only
+	preemptible bool
+	running     bool
+	queued      bool
+	pending     bool
+	startedAt   time.Time
+	lastRun     time.Time
+	lastErr     error
+}
+
 // Scheduler manages cron-based email sync scheduling.
 type Scheduler struct {
 	cron                    *cron.Cron
@@ -92,26 +109,9 @@ type Scheduler struct {
 	work                    WorkTracker
 	accountPreemptionPolicy func(string) bool
 
-	mu        sync.RWMutex
-	jobs      map[string]cron.EntryID // email -> cron entry ID
-	schedules map[string]string       // email -> cron expression
-	running   map[string]bool         // email -> currently syncing
-	lastRun   map[string]time.Time    // email -> last successful run
-	lastErr   map[string]error        // email -> last error
-	queued    map[string]bool         // email -> run waiting for the gate
-	pending   map[string]bool         // email -> follow-up requested by a tick or yield
-	startedAt map[string]time.Time    // email -> current run began executing
-
-	genericJobs        map[string]cron.EntryID
-	genericSchedules   map[string]string
-	genericRunning     map[string]bool
-	genericLastRun     map[string]time.Time
-	genericLastErr     map[string]error
-	genericFuncs       map[string]func(context.Context) error
-	genericPreemptible map[string]bool
-	genericQueued      map[string]bool
-	genericPending     map[string]bool
-	genericStartedAt   map[string]time.Time
+	mu          sync.RWMutex
+	accounts    map[string]*scheduledJob
+	genericJobs map[string]*scheduledJob
 
 	// queuedRuns counts runs blocked waiting for the work gate.
 	queuedRuns int
@@ -152,28 +152,12 @@ func New(syncFunc SyncFunc) *Scheduler {
 		cron: cron.New(cron.WithParser(cron.NewParser(
 			cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow,
 		))),
-		syncFunc:           syncFunc,
-		logger:             slog.Default(),
-		jobs:               make(map[string]cron.EntryID),
-		schedules:          make(map[string]string),
-		running:            make(map[string]bool),
-		lastRun:            make(map[string]time.Time),
-		lastErr:            make(map[string]error),
-		queued:             make(map[string]bool),
-		pending:            make(map[string]bool),
-		startedAt:          make(map[string]time.Time),
-		genericJobs:        make(map[string]cron.EntryID),
-		genericSchedules:   make(map[string]string),
-		genericRunning:     make(map[string]bool),
-		genericLastRun:     make(map[string]time.Time),
-		genericLastErr:     make(map[string]error),
-		genericFuncs:       make(map[string]func(context.Context) error),
-		genericPreemptible: make(map[string]bool),
-		genericQueued:      make(map[string]bool),
-		genericPending:     make(map[string]bool),
-		genericStartedAt:   make(map[string]time.Time),
-		ctx:                ctx,
-		cancel:             cancel,
+		syncFunc:    syncFunc,
+		logger:      slog.Default(),
+		accounts:    make(map[string]*scheduledJob),
+		genericJobs: make(map[string]*scheduledJob),
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 }
 
@@ -207,10 +191,11 @@ func (s *Scheduler) AddAccount(email, cronExpr string) error {
 	defer s.mu.Unlock()
 
 	// Remove existing schedule if present
-	if entryID, exists := s.jobs[email]; exists {
-		s.cron.Remove(entryID)
-		delete(s.jobs, email)
-		delete(s.schedules, email)
+	state := s.accountStateLocked(email)
+	if state.registered {
+		s.cron.Remove(state.entryID)
+		state.registered = false
+		state.schedule = ""
 	}
 
 	// Validate and add the cron job
@@ -221,8 +206,9 @@ func (s *Scheduler) AddAccount(email, cronExpr string) error {
 		return fmt.Errorf("invalid cron expression %q: %w", cronExpr, err)
 	}
 
-	s.jobs[email] = entryID
-	s.schedules[email] = cronExpr
+	state.entryID = entryID
+	state.schedule = cronExpr
+	state.registered = true
 	s.logger.Info("scheduled sync",
 		"email", email,
 		"schedule", cronExpr,
@@ -240,28 +226,25 @@ func (s *Scheduler) onAccountTick(email string) {
 		s.mu.Unlock()
 		return
 	}
-	if s.running[email] {
-		s.coalesceTickLocked("email", email, s.queued, s.pending)
+	if !s.reserveRunLocked(s.accountStateLocked(email), "email", email, true) {
 		s.mu.Unlock()
 		return
 	}
-	s.running[email] = true
-	s.wg.Add(1)
 	s.mu.Unlock()
 	s.runSync(email)
 }
 
 // coalesceTickLocked records a tick that arrived while its job was active.
 // The caller holds s.mu.
-func (s *Scheduler) coalesceTickLocked(kind, name string, queued, pending map[string]bool) {
-	if queued[name] {
+func (s *Scheduler) coalesceTickLocked(state *scheduledJob, kind, name string) {
+	if state.queued {
 		s.logger.Debug("scheduled tick dropped: previous run is still waiting to start", kind, name)
 		return
 	}
-	if pending[name] {
+	if state.pending {
 		return
 	}
-	pending[name] = true
+	state.pending = true
 	s.logger.Info("scheduled sync skipped: previous run still active; queued one follow-up run", kind, name)
 }
 
@@ -297,13 +280,19 @@ func (s *Scheduler) AddJob(job Job) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if old, exists := s.genericJobs[job.Name]; exists {
-		s.cron.Remove(old)
+	state := s.genericJobs[job.Name]
+	if state == nil {
+		state = &scheduledJob{}
+		s.genericJobs[job.Name] = state
 	}
-	s.genericJobs[job.Name] = entryID
-	s.genericSchedules[job.Name] = job.Schedule
-	s.genericFuncs[job.Name] = job.Run
-	s.genericPreemptible[job.Name] = job.Preemptible
+	if state.registered {
+		s.cron.Remove(state.entryID)
+	}
+	state.entryID = entryID
+	state.schedule = job.Schedule
+	state.registered = true
+	state.run = job.Run
+	state.preemptible = job.Preemptible
 	s.logger.Info("scheduled job", "job", job.Name, "schedule", job.Schedule, "next_run", s.nextRun(entryID))
 	return nil
 }
@@ -314,16 +303,18 @@ func (s *Scheduler) AddJob(job Job) error {
 func (s *Scheduler) RemoveJob(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if entryID, exists := s.genericJobs[name]; exists {
-		s.cron.Remove(entryID)
+	if state := s.genericJobs[name]; state != nil {
+		if state.registered {
+			s.cron.Remove(state.entryID)
+		}
+		state.registered = false
+		state.schedule = ""
+		state.run = nil
+		state.preemptible = false
+		state.lastRun = time.Time{}
+		state.lastErr = nil
+		state.pending = false
 	}
-	delete(s.genericJobs, name)
-	delete(s.genericSchedules, name)
-	delete(s.genericFuncs, name)
-	delete(s.genericPreemptible, name)
-	delete(s.genericLastRun, name)
-	delete(s.genericLastErr, name)
-	delete(s.genericPending, name)
 	s.logger.Info("removed scheduled job", "job", name)
 }
 
@@ -331,14 +322,15 @@ func (s *Scheduler) RemoveJob(name string) {
 func (s *Scheduler) RemoveAccount(email string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	if entryID, exists := s.jobs[email]; exists {
-		s.cron.Remove(entryID)
-		delete(s.jobs, email)
-		delete(s.schedules, email)
-		s.logger.Info("removed schedule", "email", email)
+	if state := s.accounts[email]; state != nil {
+		if state.registered {
+			s.cron.Remove(state.entryID)
+			state.registered = false
+			state.schedule = ""
+			s.logger.Info("removed schedule", "email", email)
+		}
+		state.pending = false
 	}
-	delete(s.pending, email)
 }
 
 // SetEmbedJob registers the embed job on a cron schedule. If schedule
@@ -460,10 +452,16 @@ func (s *Scheduler) Start() {
 	s.mu.Lock()
 	s.started = true
 	s.stopped = false
+	accounts := 0
+	for _, state := range s.accounts {
+		if state.registered {
+			accounts++
+		}
+	}
 	s.mu.Unlock()
 
 	s.cron.Start()
-	s.logger.Info("scheduler started", "jobs", len(s.jobs))
+	s.logger.Info("scheduler started", "jobs", accounts)
 }
 
 // IsRunning returns true if the scheduler has been started and not yet stopped.
@@ -503,21 +501,15 @@ func (s *Scheduler) Stop() context.Context {
 }
 
 // runSync executes sync for an account (called by cron or TriggerSync).
-// The caller must have already called wg.Add(1) and set running[email] = true.
+// The caller must have reserved the account with reserveRunLocked.
 func (s *Scheduler) runSync(email string) {
 	defer s.wg.Done()
 	defer s.finishAccountRun(email)
 
-	s.mu.Lock()
-	s.queued[email] = true
-	s.mu.Unlock()
-	done, ok := s.beginWork()
-	s.mu.Lock()
-	delete(s.queued, email)
-	if ok {
-		s.startedAt[email] = time.Now()
-	}
-	s.mu.Unlock()
+	s.mu.RLock()
+	state := s.accounts[email]
+	s.mu.RUnlock()
+	done, ok := s.beginJobWork(state)
 	if !ok {
 		s.logger.Info("scheduled sync skipped: daemon is draining", "email", email)
 		return
@@ -539,21 +531,21 @@ func (s *Scheduler) runSync(email string) {
 	s.mu.Lock()
 	if yielded {
 		if callbackErr := callbackErrorAfterYield(runCtx, err); callbackErr != nil {
-			s.lastErr[email] = callbackErr
+			state.lastErr = callbackErr
 			logScheduledSyncError(s.logger, email, time.Since(start), callbackErr)
 		}
-		if _, scheduled := s.jobs[email]; scheduled {
-			s.pending[email] = true
+		if state.registered {
+			state.pending = true
 		}
 		s.logger.Info("scheduled sync yielded to a waiting operation; queued follow-up",
 			"email", email,
 			"duration", time.Since(start))
 	} else if err != nil {
-		s.lastErr[email] = err
+		state.lastErr = err
 		logScheduledSyncError(s.logger, email, time.Since(start), err)
 	} else {
-		s.lastRun[email] = time.Now()
-		s.lastErr[email] = nil
+		state.lastRun = time.Now()
+		state.lastErr = nil
 		s.logger.Info("scheduled sync completed",
 			"email", email,
 			"duration", time.Since(start))
@@ -683,15 +675,7 @@ func logScheduledSyncError(logger *slog.Logger, email string, duration time.Dura
 func (s *Scheduler) finishAccountRun(email string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.startedAt, email)
-	if s.pending[email] && !s.stopped {
-		delete(s.pending, email)
-		s.wg.Add(1)
-		go s.runSync(email)
-		return
-	}
-	delete(s.pending, email)
-	s.running[email] = false
+	s.finishRunLocked(s.accounts[email], func() { s.runSync(email) })
 }
 
 // startVisualPostSync queues hosted multimodal work after the source sync has
@@ -745,8 +729,8 @@ func (s *Scheduler) startVisualPostSync() {
 func (s *Scheduler) IsScheduled(email string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	_, exists := s.jobs[email]
-	return exists
+	state := s.accounts[email]
+	return state != nil && state.registered
 }
 
 // TriggerSync manually triggers a sync for an account (outside of schedule).
@@ -760,15 +744,13 @@ func (s *Scheduler) TriggerSync(email string) error {
 		return errors.New("scheduler is stopped")
 	}
 
-	if _, exists := s.jobs[email]; !exists {
+	state := s.accounts[email]
+	if state == nil || !state.registered {
 		return fmt.Errorf("account %s is not scheduled", email)
 	}
-	if s.running[email] {
+	if !s.reserveRunLocked(state, "email", email, false) {
 		return fmt.Errorf("sync already running for %s", email)
 	}
-
-	s.running[email] = true
-	s.wg.Add(1)
 	go s.runSync(email)
 	return nil
 }
@@ -776,8 +758,8 @@ func (s *Scheduler) TriggerSync(email string) error {
 func (s *Scheduler) IsJobScheduled(name string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	_, ok := s.genericJobs[name]
-	return ok
+	state := s.genericJobs[name]
+	return state != nil && state.registered
 }
 
 // TriggerJob synchronously reserves and runs the named generic job. It is
@@ -832,42 +814,31 @@ func (s *Scheduler) reserveGenericJob(name string, coalesce bool) (run func(cont
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	run = s.genericFuncs[name]
-	if run == nil {
+	state := s.genericJobs[name]
+	if state == nil || state.run == nil {
 		return nil, false, fmt.Errorf("job %q is not scheduled", name)
 	}
 	if s.stopped {
 		return nil, false, errors.New("scheduler is stopped")
 	}
-	if s.genericRunning[name] {
-		if coalesce {
-			s.coalesceTickLocked("job", name, s.genericQueued, s.genericPending)
-		}
+	if !s.reserveRunLocked(state, "job", name, coalesce) {
 		return nil, false, nil
 	}
-	s.genericRunning[name] = true
-	s.wg.Add(1)
+	run = state.run
 	return run, true, nil
 }
 
 // runJob executes an already-reserved generic job and records the result.
-// The caller must have set genericRunning[name] = true and called
-// s.wg.Add(1) before invoking runJob.
+// The caller must have reserved the job with reserveRunLocked.
 func (s *Scheduler) runJob(name string, run func(context.Context) error) error {
 	defer s.wg.Done()
 	defer s.finishGenericRun(name)
 
-	s.mu.Lock()
-	s.genericQueued[name] = true
-	preemptible := s.genericPreemptible[name]
-	s.mu.Unlock()
-	done, ok := s.beginWork()
-	s.mu.Lock()
-	delete(s.genericQueued, name)
-	if ok {
-		s.genericStartedAt[name] = time.Now()
-	}
-	s.mu.Unlock()
+	s.mu.RLock()
+	state := s.genericJobs[name]
+	preemptible := state.preemptible
+	s.mu.RUnlock()
+	done, ok := s.beginJobWork(state)
 	if !ok {
 		return nil
 	}
@@ -880,15 +851,15 @@ func (s *Scheduler) runJob(name string, run func(context.Context) error) error {
 	defer s.mu.Unlock()
 	yielded := yieldedToWaiter(runCtx) || jobctx.PreemptionRequested(runCtx)
 	if errors.Is(err, ErrReschedule) {
-		s.genericPending[name] = true
+		state.pending = true
 		s.logger.Info("scheduled job has remaining work; queued follow-up",
 			"job", name)
 		return nil
 	}
 	if yielded {
-		s.genericPending[name] = true
+		state.pending = true
 		if callbackErr := callbackErrorAfterYield(runCtx, err); callbackErr != nil {
-			s.genericLastErr[name] = callbackErr
+			state.lastErr = callbackErr
 			s.logger.Error("scheduled job yielded after callback error; queued follow-up",
 				"job", name,
 				"error", callbackErr)
@@ -899,11 +870,11 @@ func (s *Scheduler) runJob(name string, run func(context.Context) error) error {
 		return nil
 	}
 	if err != nil {
-		s.genericLastErr[name] = err
+		state.lastErr = err
 		return err
 	}
-	s.genericLastRun[name] = time.Now()
-	delete(s.genericLastErr, name)
+	state.lastRun = time.Now()
+	state.lastErr = nil
 	return nil
 }
 
@@ -912,18 +883,67 @@ func (s *Scheduler) runJob(name string, run func(context.Context) error) error {
 func (s *Scheduler) finishGenericRun(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.genericStartedAt, name)
-	// Run the job as currently registered: AddJob may have replaced it while
-	// this run executed, and RemoveJob drops the follow-up.
-	current := s.genericFuncs[name]
-	if s.genericPending[name] && !s.stopped && current != nil {
-		delete(s.genericPending, name)
+	state := s.genericJobs[name]
+	// Use the current registration after replacement; removal drops a rerun.
+	var rerun func()
+	if current := state.run; current != nil {
+		rerun = func() { _ = s.runJob(name, current) }
+	}
+	s.finishRunLocked(state, rerun)
+}
+
+// accountStateLocked preserves account history even if its schedule is removed.
+func (s *Scheduler) accountStateLocked(email string) *scheduledJob {
+	state := s.accounts[email]
+	if state == nil {
+		state = &scheduledJob{}
+		s.accounts[email] = state
+	}
+	return state
+}
+
+// reserveRunLocked makes every entry point reserve work before launching it.
+// Validation and duplicate-manual-trigger behavior remain with the caller.
+func (s *Scheduler) reserveRunLocked(state *scheduledJob, kind, name string, coalesce bool) bool {
+	if state.running {
+		if coalesce {
+			s.coalesceTickLocked(state, kind, name)
+		}
+		return false
+	}
+	state.running = true
+	s.wg.Add(1)
+	return true
+}
+
+// finishRunLocked transfers a pending reservation before the current run calls
+// wg.Done, so Stop cannot return in the gap between consecutive runs.
+func (s *Scheduler) finishRunLocked(state *scheduledJob, rerun func()) {
+	state.startedAt = time.Time{}
+	pending := state.pending
+	state.pending = false
+	if pending && !s.stopped && rerun != nil {
 		s.wg.Add(1)
-		go func() { _ = s.runJob(name, current) }()
+		go rerun()
 		return
 	}
-	delete(s.genericPending, name)
-	s.genericRunning[name] = false
+	state.running = false
+}
+
+// beginJobWork exposes the same gate-wait and execution states for both kinds
+// of jobs. Gate release remains deferred by the caller before finalization.
+func (s *Scheduler) beginJobWork(state *scheduledJob) (func(), bool) {
+	s.mu.Lock()
+	state.queued = true
+	s.mu.Unlock()
+	done, ok := s.beginWork()
+	s.mu.Lock()
+	state.queued = false
+	if ok {
+		state.startedAt = time.Now()
+	}
+	s.mu.Unlock()
+	return done, ok
 }
 
 func (s *Scheduler) beginWork() (func(), bool) {
@@ -1020,21 +1040,23 @@ func yieldedToWaiter(ctx context.Context) bool {
 func (s *Scheduler) Status() []AccountStatus {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
 	var statuses []AccountStatus
-	for email, entryID := range s.jobs {
+	for email, state := range s.accounts {
+		if !state.registered {
+			continue
+		}
 		status := AccountStatus{
 			Email:     email,
-			Running:   s.running[email],
-			LastRun:   s.lastRun[email],
-			NextRun:   s.nextRun(entryID),
-			Schedule:  s.schedules[email],
-			Queued:    s.queued[email],
-			Pending:   s.pending[email],
-			StartedAt: s.startedAt[email],
+			Running:   state.running,
+			LastRun:   state.lastRun,
+			NextRun:   s.nextRun(state.entryID),
+			Schedule:  state.schedule,
+			Queued:    state.queued,
+			Pending:   state.pending,
+			StartedAt: state.startedAt,
 		}
-		if err := s.lastErr[email]; err != nil {
-			status.LastError = err.Error()
+		if state.lastErr != nil {
+			status.LastError = state.lastErr.Error()
 		}
 		statuses = append(statuses, status)
 	}
@@ -1045,21 +1067,24 @@ func (s *Scheduler) JobStatus() []JobStatus {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]JobStatus, 0, len(s.genericJobs))
-	for name, entryID := range s.genericJobs {
+	for name, state := range s.genericJobs {
+		if !state.registered {
+			continue
+		}
 		var lastErr string
-		if err := s.genericLastErr[name]; err != nil {
-			lastErr = err.Error()
+		if state.lastErr != nil {
+			lastErr = state.lastErr.Error()
 		}
 		out = append(out, JobStatus{
 			Name:      name,
-			Running:   s.genericRunning[name],
-			LastRun:   s.genericLastRun[name],
-			NextRun:   s.nextRun(entryID),
-			Schedule:  s.genericSchedules[name],
+			Running:   state.running,
+			LastRun:   state.lastRun,
+			NextRun:   s.nextRun(state.entryID),
+			Schedule:  state.schedule,
 			LastError: lastErr,
-			Queued:    s.genericQueued[name],
-			Pending:   s.genericPending[name],
-			StartedAt: s.genericStartedAt[name],
+			Queued:    state.queued,
+			Pending:   state.pending,
+			StartedAt: state.startedAt,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
