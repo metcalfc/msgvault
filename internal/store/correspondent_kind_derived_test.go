@@ -110,3 +110,46 @@ func TestUnclearJudgmentNeverHoldsBackAnOwnerIdentity(t *testing.T) {
 	require.NoError(err)
 	assert.Empty(hidden)
 }
+
+// Only a user decision resolves or refuses identity matches; a rule or Jev
+// classification changes rankings and enrichment but leaves matching alone.
+func TestDerivedKindsNeverSuppressContactMatches(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+	participant := f.emailParticipant("sam@example.test", "Sam")
+	people := f.importCards(f.card("card-sam", "Sam Contact", []string{"sam@example.test"}, nil))
+	_, err := f.st.WriteDerivedCorrespondentKindsContext(t.Context(), []store.DerivedCorrespondentKind{{
+		ParticipantID: participant, Source: correspondentkind.SourceRule, Kind: correspondentkind.Automated,
+	}})
+	require.NoError(err)
+
+	matches, err := f.st.FindContactMatchesContext(t.Context())
+	require.NoError(err)
+	assert.Len(matches, 1, "a rule classification does not hold the match back")
+	candidate := f.buildCandidate(people["card-sam"])
+	_, _, err = f.st.AcceptIdentityMatchCandidateContext(t.Context(), candidate.ID, "user", nil)
+	assert.NotErrorIs(err, store.ErrContactMatchNotAPerson)
+}
+
+func TestHeaderSamplingReadsOnlyTheHeaderBlockOfLargeMessages(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := storetest.New(t)
+	sender := f.EnsureParticipant("news@letters.example.com", "Example Letters", "letters.example.com")
+	id := f.CreateMessage("large-news")
+	_, err := f.Store.DB().ExecContext(t.Context(), f.Store.Rebind(`UPDATE messages SET sender_id = ? WHERE id = ?`), sender, id)
+	require.NoError(err)
+	body := make([]byte, 4<<20)
+	for i := range body {
+		body[i] = byte('a' + i%26)
+	}
+	raw := append([]byte("From: news@letters.example.com\r\nList-Unsubscribe: <mailto:leave@letters.example.com>\r\n"+
+		"Precedence: bulk\r\n\r\n"), body...)
+	require.NoError(f.Store.UpsertMessageRaw(id, raw))
+
+	evidence, err := f.Store.CorrespondentKindEvidenceContext(t.Context(), []int64{sender},
+		store.CorrespondentKindEvidenceOptions{HeaderSample: 5})
+	require.NoError(err)
+	assert.Equal(correspondentkind.HeaderCounts{Sampled: 1, ListUnsubscribe: 1, PrecedenceBulk: 1}, evidence.Headers)
+}

@@ -2272,7 +2272,8 @@ Any kind other than `person` removes the identity from contact matching,
 enrichment, and open identity matches. Every kind except `shared_mailbox`
 also leaves relationship rankings and People lists. Messages stay searchable.
 Your decision always outranks the rule and Jev classifications that
-[`kinds build`](#kinds-build) writes. `list` shows who classified each
+[`kinds build`](#kinds-build) writes; those change rankings, People lists,
+and enrichment, but never resolve or refuse identity matches. `list` shows who classified each
 record (`user`, `rule`, or `jev`); `list --kind unclear` is the review list
 of identities Jev could not classify, with the probability it gave
 `individual_person`. Decide them with `set`.
@@ -2625,20 +2626,26 @@ msgvault kinds build [--min-messages N] [--limit N] [--rules-only] [--json]
 | Flag | Description |
 |---|---|
 | `--min-messages N` | Only identities with at least N messages, counting messages they sent and messages you sent them (default: 5) |
-| `--limit N` | Classify at most N identities, most active first (default: 0, all) |
+| `--limit N` | Classify at most N identities per run (default: 0, all). Identities never evaluated go first, most active first. |
 | `--rules-only` | Apply the deterministic rules only; never ask Jev |
 | `--json` | Output the run report as JSON |
 
 The command visits identity clusters that no user, rule, or Jev judgment has
-classified, so a rerun only visits new ones. Your own identities are never
-classified or sent. It runs in the daemon:
+classified. It records the ones it leaves unclassified; a later run visits
+never-evaluated identities first and, without Jev, revisits an evaluated one
+only after its membership changes or its message count grows by half (at
+least five messages). Your own identities are never classified or sent, and
+an identity that becomes yours, gains your decision, or is linked to another
+while a run is reading it is dropped before anything is sent or written. It
+runs in the daemon:
 
 1. Rules decide from message metadata and the header block of up to five
    sampled messages per identity: a chat provider's bot flag, an SMS short
    code, a no-reply address, the list's own posting address (its List-Id),
    `Auto-Submitted: auto-generated`, and, when you never wrote to the sender,
    bulk headers (`List-Unsubscribe`, `Precedence: bulk`) or the Gmail
-   Promotions category. Rules write `automated` or `mailing_list`.
+   Promotions category backed by a bulk header. Only each sampled message's
+   header block is read. Rules write `automated` or `mailing_list`.
 2. When `[jev]` and [`[jev.correspondent_kind]`](configuration.md#jevcorrespondent_kind)
    are enabled, an API key resolves, and `jev consent correspondent_kind --yes`
    has been given, the rest are sent to Jev ten per request. See

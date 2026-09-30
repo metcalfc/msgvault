@@ -4094,6 +4094,20 @@ CREATE TABLE IF NOT EXISTS correspondent_kinds (
 );
 CREATE INDEX IF NOT EXISTS idx_correspondent_kinds_kind
     ON correspondent_kinds(source, kind);
+
+-- Progress of `msgvault kinds build`: an identity cluster the rules
+-- evaluated without a decision (and Jev did not judge), with the cluster's
+-- activity and size at the time. Rows are participant-local like
+-- correspondent_kinds. A cluster is visited again only once its activity or
+-- membership changed materially or a Jev pass can still judge it, and
+-- never-evaluated clusters go first, so every cluster above the floor is
+-- eventually evaluated.
+CREATE TABLE IF NOT EXISTS correspondent_kind_evaluations (
+    participant_id INTEGER PRIMARY KEY REFERENCES participants(id) ON DELETE CASCADE,
+    activity       INTEGER NOT NULL CHECK (activity >= 0),
+    member_count   INTEGER NOT NULL CHECK (member_count >= 1),
+    evaluated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE INDEX IF NOT EXISTS idx_correspondent_kinds_organization
     ON correspondent_kinds(organization_id)
     WHERE organization_id IS NOT NULL;

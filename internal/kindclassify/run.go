@@ -22,6 +22,10 @@ type Store interface {
 		ctx context.Context, members []int64, options store.CorrespondentKindEvidenceOptions,
 	) (store.CorrespondentKindEvidence, error)
 	WriteDerivedCorrespondentKindsContext(ctx context.Context, kinds []store.DerivedCorrespondentKind) (int, error)
+	CorrespondentKindCandidatesCurrentContext(
+		ctx context.Context, candidates []store.CorrespondentKindCandidate,
+	) (map[int64]bool, error)
+	RecordCorrespondentKindEvaluationsContext(ctx context.Context, candidates []store.CorrespondentKindCandidate) error
 }
 
 // Judge asks a subset of a feature's consented questions. *jev.Service
@@ -97,7 +101,8 @@ func Run(ctx context.Context, st Store, options Options) (Report, error) {
 	}
 	candidates, err := st.CorrespondentKindCandidatesContext(ctx, store.CorrespondentKindCandidateQuery{
 		MinMessages: options.MinMessages, Limit: options.Limit,
-		SkipSources: []correspondentkind.Source{correspondentkind.SourceRule, correspondentkind.SourceJev},
+		SkipSources:      []correspondentkind.Source{correspondentkind.SourceRule, correspondentkind.SourceJev},
+		RevisitUnchanged: options.Judge != nil,
 	})
 	if err != nil {
 		return report, fmt.Errorf("list correspondent kind candidates: %w", err)
@@ -122,7 +127,7 @@ func Run(ctx context.Context, st Store, options Options) (Report, error) {
 		}
 		decided = append(decided, store.DerivedCorrespondentKind{
 			ParticipantID: candidate.CanonicalID, Source: correspondentkind.SourceRule,
-			Kind: decision.Kind, Actor: "rule:" + string(decision.Reason),
+			Kind: decision.Kind, Actor: "rule:" + string(decision.Reason), ExpectedMembers: candidate.MemberIDs,
 		})
 		report.Rule[decision.Kind]++
 		report.RuleByWhy[decision.Reason]++
@@ -130,23 +135,30 @@ func Run(ctx context.Context, st Store, options Options) (Report, error) {
 	if _, err := st.WriteDerivedCorrespondentKindsContext(ctx, decided); err != nil {
 		return report, fmt.Errorf("write rule correspondent kinds: %w", err)
 	}
-	report.Undecided = len(remaining)
-	if options.Judge == nil || len(remaining) == 0 {
-		return report, nil
-	}
-	for start := 0; start < len(remaining); start += BatchSize {
-		batch := remaining[start:min(start+BatchSize, len(remaining))]
-		judged, err := judgeBatch(ctx, st, options, batch, &report.Jev)
-		report.Undecided -= judged
-		if err != nil {
-			if isStoreError(err) {
-				return report, err
+	judged := map[int64]struct{}{}
+	if options.Judge != nil {
+		for start := 0; start < len(remaining); start += BatchSize {
+			batch := remaining[start:min(start+BatchSize, len(remaining))]
+			if err := judgeBatch(ctx, st, options, batch, &report.Jev, judged); err != nil {
+				if isStoreError(err) {
+					return report, err
+				}
+				report.Jev.Skipped = jev.Skipped(err)
+				options.Logger.Info("correspondent kind: jev skipped",
+					"feature", jev.FeatureCorrespondentKind, "category", report.Jev.Skipped)
+				break
 			}
-			report.Jev.Skipped = jev.Skipped(err)
-			options.Logger.Info("correspondent kind: jev skipped",
-				"feature", jev.FeatureCorrespondentKind, "category", report.Jev.Skipped)
-			break
 		}
+	}
+	undecided := make([]store.CorrespondentKindCandidate, 0, len(remaining))
+	for _, item := range remaining {
+		if _, ok := judged[item.candidate.CanonicalID]; !ok {
+			undecided = append(undecided, item.candidate)
+		}
+	}
+	report.Undecided = len(undecided)
+	if err := st.RecordCorrespondentKindEvaluationsContext(ctx, undecided); err != nil {
+		return report, fmt.Errorf("record correspondent kind evaluations: %w", err)
 	}
 	return report, nil
 }
@@ -164,41 +176,70 @@ func isStoreError(err error) bool {
 
 // judgeBatch asks about one batch and stores the answers. A batch the
 // client rejects as too large is halved until it fits.
-func judgeBatch(ctx context.Context, st Store, options Options, batch []pending, report *JevReport) (int, error) {
+func judgeBatch(
+	ctx context.Context, st Store, options Options, batch []pending, report *JevReport, judged map[int64]struct{},
+) error {
+	batch, err := stillCurrent(ctx, st, batch)
+	if err != nil || len(batch) == 0 {
+		return err
+	}
 	state, ids := stateFor(batch)
 	response, err := options.Judge.JudgeQuestions(ctx, JevFeature(), options.Automatic, state, ids, time.Time{})
 	if errors.Is(err, jev.ErrRequestBounds) && len(batch) > 1 {
 		half := len(batch) / 2
-		left, err := judgeBatch(ctx, st, options, batch[:half], report)
-		if err != nil {
-			return left, err
+		if err := judgeBatch(ctx, st, options, batch[:half], report, judged); err != nil {
+			return err
 		}
-		right, err := judgeBatch(ctx, st, options, batch[half:], report)
-		return left + right, err
+		return judgeBatch(ctx, st, options, batch[half:], report, judged)
 	}
 	report.Requests++
 	if err != nil {
-		return 0, err
+		return err
 	}
 	results := make([]store.DerivedCorrespondentKind, 0, len(batch))
 	for i, item := range batch {
 		answer, ok := response.Answers[QuestionID(i)]
 		if !ok {
-			return 0, fmt.Errorf("%w: answer %d missing", jev.ErrInvalidResponse, i)
+			return fmt.Errorf("%w: answer %d missing", jev.ErrInvalidResponse, i)
 		}
 		kind := KindForAnswer(answer)
 		confidence := answer.Confidence
 		results = append(results, store.DerivedCorrespondentKind{
 			ParticipantID: item.candidate.CanonicalID, Source: correspondentkind.SourceJev, Kind: kind,
 			Confidence: &confidence, Probabilities: answer.Probabilities, Actor: "jev:" + response.Model,
+			ExpectedMembers: item.candidate.MemberIDs,
 		})
 		report.Kinds[kind]++
 	}
 	if _, err := st.WriteDerivedCorrespondentKindsContext(ctx, results); err != nil {
-		return 0, storeError{fmt.Errorf("write jev correspondent kinds: %w", err)}
+		return storeError{fmt.Errorf("write jev correspondent kinds: %w", err)}
+	}
+	for _, item := range batch {
+		judged[item.candidate.CanonicalID] = struct{}{}
 	}
 	report.Judged += len(results)
-	return len(results), nil
+	return nil
+}
+
+// stillCurrent drops identities that became the owner's, gained a user
+// decision, or changed membership since their evidence was read. It runs
+// right before a batch leaves the machine.
+func stillCurrent(ctx context.Context, st Store, batch []pending) ([]pending, error) {
+	candidates := make([]store.CorrespondentKindCandidate, len(batch))
+	for i, item := range batch {
+		candidates[i] = item.candidate
+	}
+	current, err := st.CorrespondentKindCandidatesCurrentContext(ctx, candidates)
+	if err != nil {
+		return nil, storeError{fmt.Errorf("recheck correspondent kind candidates: %w", err)}
+	}
+	kept := make([]pending, 0, len(batch))
+	for _, item := range batch {
+		if current[item.candidate.CanonicalID] {
+			kept = append(kept, item)
+		}
+	}
+	return kept, nil
 }
 
 func signalsFor(candidate store.CorrespondentKindCandidate, evidence store.CorrespondentKindEvidence) correspondentkind.Signals {

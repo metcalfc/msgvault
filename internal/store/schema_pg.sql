@@ -2241,6 +2241,14 @@ CREATE TABLE IF NOT EXISTS correspondent_kinds (
 );
 CREATE INDEX IF NOT EXISTS idx_correspondent_kinds_kind
     ON correspondent_kinds(source, kind);
+
+-- Progress of `msgvault kinds build`; see schema.sql.
+CREATE TABLE IF NOT EXISTS correspondent_kind_evaluations (
+    participant_id BIGINT PRIMARY KEY REFERENCES participants(id) ON DELETE CASCADE,
+    activity       BIGINT NOT NULL CHECK (activity >= 0),
+    member_count   BIGINT NOT NULL CHECK (member_count >= 1),
+    evaluated_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE INDEX IF NOT EXISTS idx_correspondent_kinds_organization
     ON correspondent_kinds(organization_id)
     WHERE organization_id IS NOT NULL;

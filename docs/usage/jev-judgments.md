@@ -310,9 +310,11 @@ steps:
 1. **Rules, no Jev.** A chat provider's bot flag, an SMS short code, a
    no-reply address, the list's own posting address, or `Auto-Submitted:
    auto-generated` decides on its own. Bulk headers (`List-Unsubscribe`,
-   `Precedence: bulk`) or the Gmail Promotions category decide only for a
-   sender you never wrote to, with at least three messages, whose messages
-   were not relayed by a list. Rules write `automated` or `mailing_list`.
+   `Precedence: bulk`) decide only for a sender you never wrote to, with at
+   least three messages, whose messages were not relayed by a list. The
+   Gmail Promotions category also needs a bulk header, ten messages, and a
+   non-freemail address, so a person Gmail files under Promotions is left
+   for Jev. Rules write `automated` or `mailing_list`.
 2. **Jev, only with consent.** The rest are asked one Choice each, ten
    identities per request. Code maps the answer:
 

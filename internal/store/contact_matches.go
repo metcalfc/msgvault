@@ -176,7 +176,9 @@ func (s *Store) findContactMatchesTx(ctx context.Context, tx *loggedTx) ([]Conta
 	if err != nil {
 		return nil, err
 	}
-	notPeople, err := s.hiddenCorrespondentParticipantsTx(ctx, tx)
+	// Only a user decision holds a cluster back from contact matching; a
+	// rule or Jev classification never resolves an identity match.
+	notPeople, err := s.userHiddenCorrespondentParticipantsTx(ctx, tx)
 	if err != nil {
 		return nil, err
 	}

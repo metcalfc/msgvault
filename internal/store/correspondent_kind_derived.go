@@ -1,12 +1,15 @@
 package store
 
 import (
+	"bytes"
 	"cmp"
+	"compress/zlib"
 	"context"
 	"database/sql"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"time"
@@ -70,6 +73,9 @@ type DerivedCorrespondentKind struct {
 	ParticipantID int64
 	Source        correspondentkind.Source
 	Kind          correspondentkind.Kind
+	// ExpectedMembers, when set, is the cluster the evidence described. A
+	// cluster whose members changed since is left unclassified.
+	ExpectedMembers []int64
 	// Confidence and Probabilities are recorded for Jev judgments.
 	Confidence    *float64
 	Probabilities map[string]float64
@@ -178,6 +184,9 @@ func (s *Store) WriteDerivedCorrespondentKindsContext(
 				if _, repeated := done[root]; repeated {
 					continue
 				}
+				if kind.ExpectedMembers != nil && !slices.Equal(members, kind.ExpectedMembers) {
+					continue
+				}
 				if slices.ContainsFunc(members, func(id int64) bool {
 					_, owner := owners[id]
 					_, decided := userDecided[id]
@@ -259,6 +268,50 @@ func participantsWithSourceTx(
 	return result, rows.Err()
 }
 
+// CorrespondentKindCandidatesCurrentContext reports, per candidate, whether
+// it may still be classified and sent: its cluster has exactly the members
+// its evidence described, none of them is one of the owner's identities,
+// and none carries a user decision. Callers recheck right before anything
+// leaves the machine, so an address confirmed as the owner's, or a link
+// made, after the candidates were read is never sent or written.
+func (s *Store) CorrespondentKindCandidatesCurrentContext(
+	ctx context.Context, candidates []CorrespondentKindCandidate,
+) (map[int64]bool, error) {
+	current := make(map[int64]bool, len(candidates))
+	if len(candidates) == 0 {
+		return current, nil
+	}
+	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
+		edges, err := s.loadLinkEdgesTxContext(ctx, tx)
+		if err != nil {
+			return err
+		}
+		index := newClusterIndex(edges)
+		owners, err := ownerParticipantIDsTx(ctx, tx)
+		if err != nil {
+			return err
+		}
+		userDecided, err := participantsWithSourceTx(ctx, tx, correspondentkind.SourceUser)
+		if err != nil {
+			return err
+		}
+		for _, candidate := range candidates {
+			members := index.membersOf(candidate.CanonicalID)
+			current[candidate.CanonicalID] = slices.Equal(members, candidate.MemberIDs) &&
+				!slices.ContainsFunc(members, func(id int64) bool {
+					_, owner := owners[id]
+					_, decided := userDecided[id]
+					return owner || decided
+				})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return current, nil
+}
+
 // CorrespondentKindCandidateQuery selects clusters for `kinds build`.
 type CorrespondentKindCandidateQuery struct {
 	// MinMessages is the activity floor: messages the cluster sent plus
@@ -270,6 +323,87 @@ type CorrespondentKindCandidateQuery struct {
 	// rerun only visits clusters that source has not classified. Clusters
 	// with a user decision are always left out.
 	SkipSources []correspondentkind.Source
+	// RevisitUnchanged keeps clusters an earlier run evaluated without a
+	// decision even when nothing about them changed materially; a run that
+	// can ask Jev sets it. Either way, never-evaluated clusters come first
+	// and evaluated ones follow least recently evaluated first.
+	RevisitUnchanged bool
+}
+
+// correspondentKindEvaluation is the recorded evaluation of one cluster.
+type correspondentKindEvaluation struct {
+	activity    int64
+	memberCount int64
+	at          time.Time
+}
+
+// changedMaterially reports whether a cluster moved enough since its last
+// evaluation to evaluate it again: its membership changed, or its activity
+// grew by half or by five messages, whichever is more.
+func (e correspondentKindEvaluation) changedMaterially(activity int64, memberCount int) bool {
+	return int64(memberCount) != e.memberCount || activity >= e.activity+max(5, e.activity/2)
+}
+
+// clusterEvaluationsTx maps each cluster root to its latest evaluation.
+// An archive opened before the table existed has none.
+func (s *Store) clusterEvaluationsTx(
+	ctx context.Context, tx *loggedTx, index clusterIndex,
+) (map[int64]correspondentKindEvaluation, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT participant_id, activity, member_count, evaluated_at
+		FROM correspondent_kind_evaluations`)
+	if err != nil {
+		if s.dialect.IsNoSuchTableError(err) {
+			return map[int64]correspondentKindEvaluation{}, nil
+		}
+		return nil, fmt.Errorf("load correspondent kind evaluations: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	result := map[int64]correspondentKindEvaluation{}
+	for rows.Next() {
+		var id int64
+		var evaluation correspondentKindEvaluation
+		var at nullableTimestamp
+		if err := rows.Scan(&id, &evaluation.activity, &evaluation.memberCount, &at); err != nil {
+			return nil, fmt.Errorf("scan correspondent kind evaluation: %w", err)
+		}
+		evaluation.at = at.Time
+		root := index.rootOf(id)
+		if prior, ok := result[root]; !ok || evaluation.at.After(prior.at) {
+			result[root] = evaluation
+		}
+	}
+	return result, rows.Err()
+}
+
+// RecordCorrespondentKindEvaluationsContext records that these clusters
+// were evaluated and left unclassified, so later runs visit other clusters
+// first and revisit these only after a material change.
+func (s *Store) RecordCorrespondentKindEvaluationsContext(
+	ctx context.Context, candidates []CorrespondentKindCandidate,
+) error {
+	if len(candidates) == 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	return retryBusyWriteErr(ctx, s, "record correspondent kind evaluations", func() error {
+		return s.withTxContext(ctx, func(tx *loggedTx) error {
+			for _, candidate := range candidates {
+				for _, member := range candidate.MemberIDs {
+					if _, err := tx.ExecContext(ctx, `
+						INSERT INTO correspondent_kind_evaluations (participant_id, activity, member_count, evaluated_at)
+						SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM participants WHERE id = ?)
+						ON CONFLICT (participant_id) DO UPDATE SET
+							activity = excluded.activity, member_count = excluded.member_count,
+							evaluated_at = excluded.evaluated_at`,
+						member, candidate.Sent+candidate.Received, len(candidate.MemberIDs), now, member,
+					); err != nil {
+						return fmt.Errorf("record correspondent kind evaluation: %w", err)
+					}
+				}
+			}
+			return nil
+		})
+	})
 }
 
 // CorrespondentKindCandidate is one cluster eligible for classification.
@@ -361,7 +495,16 @@ func (s *Store) CorrespondentKindCandidatesContext(
 		add(sent, func(c *CorrespondentKindCandidate) *int64 { return &c.Sent })
 		add(received, func(c *CorrespondentKindCandidate) *int64 { return &c.Received })
 		add(meetings, func(c *CorrespondentKindCandidate) *int64 { return &c.Meetings })
+		evaluations, err := s.clusterEvaluationsTx(ctx, tx, index)
+		if err != nil {
+			return err
+		}
 		for root, candidate := range byRoot {
+			if evaluation, ok := evaluations[root]; ok && !query.RevisitUnchanged &&
+				!evaluation.changedMaterially(candidate.Sent+candidate.Received, len(candidate.MemberIDs)) {
+				delete(byRoot, root)
+				continue
+			}
 			if candidate.Sent+candidate.Received < max(query.MinMessages, 1) ||
 				slices.ContainsFunc(candidate.MemberIDs, func(id int64) bool {
 					_, owner := owners[id]
@@ -375,7 +518,21 @@ func (s *Store) CorrespondentKindCandidatesContext(
 		for _, candidate := range byRoot {
 			selected = append(selected, candidate)
 		}
+		// Never-evaluated clusters first, most active first; then evaluated
+		// ones, least recently evaluated first. A capped run therefore
+		// reaches every cluster above the floor over successive runs.
 		slices.SortFunc(selected, func(a, b *CorrespondentKindCandidate) int {
+			evaluationA, evaluatedA := evaluations[a.CanonicalID]
+			evaluationB, evaluatedB := evaluations[b.CanonicalID]
+			if evaluatedA != evaluatedB {
+				if evaluatedA {
+					return 1
+				}
+				return -1
+			}
+			if evaluatedA && !evaluationA.at.Equal(evaluationB.at) {
+				return evaluationA.at.Compare(evaluationB.at)
+			}
 			if c := cmp.Compare(b.Sent+b.Received, a.Sent+a.Received); c != 0 {
 				return c
 			}
@@ -602,7 +759,7 @@ func (s *Store) CorrespondentKindEvidenceContext(
 		return evidence, err
 	}
 	for _, id := range sampled {
-		raw, err := s.GetMessageRawContext(ctx, id)
+		raw, err := s.messageRawHeaderContext(ctx, id)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			continue
@@ -615,6 +772,57 @@ func (s *Store) CorrespondentKindEvidenceContext(
 		evidence.Headers.AddHeaders(raw)
 	}
 	return evidence, nil
+}
+
+// Header sampling reads at most rawHeaderCompressedBytes of a stored raw
+// message and decodes at most rawHeaderBytes, stopping at the blank line
+// that ends the header block. Attachments and bodies are never loaded.
+const (
+	rawHeaderCompressedBytes = 32 << 10
+	rawHeaderBytes           = 64 << 10
+)
+
+// messageRawHeaderContext returns the header block of one stored raw
+// message, by primary key, without loading the whole blob: the database
+// returns only a bounded prefix, and a zlib prefix is stream-decoded until
+// the header block ends. A truncated stream is expected and not an error.
+func (s *Store) messageRawHeaderContext(ctx context.Context, messageID int64) ([]byte, error) {
+	var prefix []byte
+	var compression sql.NullString
+	if err := s.db.QueryRowContext(ctx, s.Rebind(`
+		SELECT substr(raw_data, 1, ?), compression FROM message_raw WHERE message_id = ?`),
+		rawHeaderCompressedBytes, messageID).Scan(&prefix, &compression); err != nil {
+		return nil, err
+	}
+	var source io.Reader = bytes.NewReader(prefix)
+	if compression.Valid && compression.String == "zlib" {
+		reader, err := zlib.NewReader(source)
+		if err != nil {
+			return nil, fmt.Errorf("%w: zlib reader: %w", ErrInvalidMessageRaw, err)
+		}
+		defer func() { _ = reader.Close() }()
+		source = reader
+	}
+	header := make([]byte, 0, 8<<10)
+	chunk := make([]byte, 4<<10)
+	for len(header) < rawHeaderBytes {
+		n, err := source.Read(chunk)
+		header = append(header, chunk[:n]...)
+		if bytes.Contains(header, []byte("\r\n\r\n")) || bytes.Contains(header, []byte("\n\n")) {
+			break
+		}
+		if err != nil {
+			// The prefix ends mid-stream by design; keep what decoded.
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				break
+			}
+			if len(header) > 0 {
+				break
+			}
+			return nil, fmt.Errorf("%w: %w", ErrInvalidMessageRaw, err)
+		}
+	}
+	return header, nil
 }
 
 // maxSubjectRunes bounds each subject kept as evidence.

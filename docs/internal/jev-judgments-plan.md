@@ -247,7 +247,11 @@ eligibility in `internal/store/person_enrichment_work.go`.
   > identifier types. `list_id` alone never decides (people post through
   > lists): `mailing_list` needs the sender to be the List-Id's own posting
   > address, and the bulk-header and Promotions rules apply only to senders
-  > the owner never wrote to. Freemail is counter-evidence for Promotions.
+  > the owner never wrote to. Promotions also needs a bulk header and ten
+  > messages; freemail is counter-evidence. Only a user decision suppresses
+  > identity matches; rule and jev rows never do. Runs record clusters they
+  > leave undecided (`correspondent_kind_evaluations`) and visit
+  > never-evaluated clusters first, so capped cache-build passes progress.
   > `unclear` joined the vocabulary as a Jev-only kind; `automated` and
   > `mailing_list` are also user-settable.
 - [x] **Task 2.2 Jev classification for the remainder.** Store results in

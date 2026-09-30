@@ -98,12 +98,19 @@ func Classify(signals Signals) (Decision, bool) {
 		headers.PrecedenceBulk*5 >= headers.Sampled*4) {
 		return Decision{Kind: Automated, Reason: ReasonBulkUnsubscribe}, true
 	}
+	// Gmail's Promotions label alone can be wrong about a person on a
+	// custom domain, so it decides only with bulk-sending evidence in the
+	// sampled headers and a sustained volume.
 	if !slices.ContainsFunc(signals.Emails, func(email string) bool { return IsFreemailDomain(emailDomain(email)) }) &&
-		signals.Categories["CATEGORY_PROMOTIONS"]*5 >= signals.Sent*4 {
+		signals.Sent >= promotionsMinimumSent && signals.Categories["CATEGORY_PROMOTIONS"]*5 >= signals.Sent*4 &&
+		headers.ListUnsubscribe+headers.PrecedenceBulk > 0 {
 		return Decision{Kind: Automated, Reason: ReasonPromotionsCategory}, true
 	}
 	return Decision{}, false
 }
+
+// promotionsMinimumSent is the volume the Promotions rule needs.
+const promotionsMinimumSent = 10
 
 // noReplyPrefixes start local parts that never reach a person.
 var noReplyPrefixes = []string{"noreply", "no-reply", "no_reply", "donotreply", "do-not-reply", "do_not_reply", "bounce"}

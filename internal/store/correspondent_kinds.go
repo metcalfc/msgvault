@@ -180,9 +180,33 @@ func loadCorrespondentKindRowsTx(ctx context.Context, tx *loggedTx) ([]correspon
 func (s *Store) correspondentKindClustersTx(
 	ctx context.Context, tx *loggedTx,
 ) ([]correspondentKindCluster, error) {
+	return s.correspondentKindClustersFromTx(ctx, tx, false)
+}
+
+// userCorrespondentKindClustersTx resolves clusters from user decisions
+// alone. Identity matching reads it: a rule or Jev classification changes
+// rankings, lists, and enrichment, but only the user resolves or refuses
+// identity matches.
+func (s *Store) userCorrespondentKindClustersTx(
+	ctx context.Context, tx *loggedTx,
+) ([]correspondentKindCluster, error) {
+	return s.correspondentKindClustersFromTx(ctx, tx, true)
+}
+
+func (s *Store) correspondentKindClustersFromTx(
+	ctx context.Context, tx *loggedTx, userOnly bool,
+) ([]correspondentKindCluster, error) {
 	rows, err := loadCorrespondentKindRowsTx(ctx, tx)
-	if err != nil || len(rows) == 0 {
+	if err != nil {
 		return nil, err
+	}
+	if userOnly {
+		rows = slices.DeleteFunc(rows, func(row correspondentKindRow) bool {
+			return row.source != correspondentkind.SourceUser
+		})
+	}
+	if len(rows) == 0 {
+		return nil, nil
 	}
 	edges, err := s.loadLinkEdgesTxContext(ctx, tx)
 	if err != nil {
@@ -434,6 +458,22 @@ func (s *Store) hiddenCorrespondentParticipantsTx(
 	if err != nil {
 		return nil, err
 	}
+	return hiddenMembers(clusters), nil
+}
+
+// userHiddenCorrespondentParticipantsTx is hiddenCorrespondentParticipantsTx
+// for user decisions only; identity matching reads it.
+func (s *Store) userHiddenCorrespondentParticipantsTx(
+	ctx context.Context, tx *loggedTx,
+) (map[int64]correspondentKindRow, error) {
+	clusters, err := s.userCorrespondentKindClustersTx(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	return hiddenMembers(clusters), nil
+}
+
+func hiddenMembers(clusters []correspondentKindCluster) map[int64]correspondentKindRow {
 	hidden := map[int64]correspondentKindRow{}
 	for _, cluster := range clusters {
 		if cluster.effective.kind.IsPerson() {
@@ -443,7 +483,7 @@ func (s *Store) hiddenCorrespondentParticipantsTx(
 			hidden[member] = cluster.effective
 		}
 	}
-	return hidden, nil
+	return hidden
 }
 
 // NotPersonParticipantsContext maps every participant in a cluster that is
@@ -1277,8 +1317,8 @@ func (s *Store) restoreNotAPersonCandidatesTx(
 		return 0, nil
 	}
 	// A candidate returns to review only when neither endpoint is still not
-	// a person; the other side may carry its own classification.
-	hidden, err := s.hiddenCorrespondentParticipantsTx(ctx, tx)
+	// a person by a user decision; the other side may carry its own.
+	hidden, err := s.userHiddenCorrespondentParticipantsTx(ctx, tx)
 	if err != nil {
 		return 0, err
 	}
@@ -1368,7 +1408,7 @@ func (s *Store) participantsClassifiedNotPersonTx(
 	if !classified {
 		return false, nil
 	}
-	hidden, err := s.hiddenCorrespondentParticipantsTx(ctx, tx)
+	hidden, err := s.userHiddenCorrespondentParticipantsTx(ctx, tx)
 	if err != nil {
 		return false, err
 	}

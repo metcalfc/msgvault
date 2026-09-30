@@ -1,6 +1,7 @@
 package kindclassify_test
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -132,7 +133,84 @@ func TestRunAppliesDeterministicRulesWithoutJev(t *testing.T) {
 
 	again, err := kindclassify.Run(t.Context(), a.f.Store, kindclassify.Options{})
 	require.NoError(err)
-	assert.Equal(1, again.Candidates, "a rerun visits only unclassified clusters")
+	assert.Zero(again.Candidates, "a rules-only rerun skips clusters it evaluated that did not change")
+
+	a.sendMany(5, mail{from: casey, to: a.owner, subject: "More lunch"})
+	again, err = kindclassify.Run(t.Context(), a.f.Store, kindclassify.Options{})
+	require.NoError(err)
+	assert.Equal(1, again.Candidates, "a material change brings the cluster back")
+}
+
+func TestCappedRunsReachEveryClusterAboveTheFloor(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	a := newArchive(t)
+	busy := a.participant("busy@example.com", "Busy Example")
+	quieter := a.participant("quieter@example.com", "Quieter Example")
+	a.sendMany(12, mail{from: busy, to: a.owner, subject: "Update"})
+	a.sendMany(6, mail{from: quieter, to: a.owner, subject: "Note"})
+	visited := []int64{}
+	for range 3 {
+		evidence := &recordingStore{Store: a.f.Store}
+		_, err := kindclassify.Run(t.Context(), evidence, kindclassify.Options{Limit: 1})
+		require.NoError(err)
+		visited = append(visited, evidence.visited...)
+	}
+	assert.Equal([]int64{busy, quieter}, visited, "the busiest cluster no longer starves the rest")
+}
+
+// recordingStore is the real store with hooks around evidence gathering, so
+// tests can change the archive between reading a cluster and sending it.
+type recordingStore struct {
+	*store.Store
+	visited       []int64
+	afterEvidence func(members []int64)
+}
+
+func (s *recordingStore) CorrespondentKindEvidenceContext(
+	ctx context.Context, members []int64, options store.CorrespondentKindEvidenceOptions,
+) (store.CorrespondentKindEvidence, error) {
+	s.visited = append(s.visited, members[0])
+	evidence, err := s.Store.CorrespondentKindEvidenceContext(ctx, members, options)
+	if s.afterEvidence != nil {
+		s.afterEvidence(members)
+	}
+	return evidence, err
+}
+
+func TestJevNeverSendsAnIdentityThatChangedAfterItWasRead(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	a := newArchive(t)
+	mine := a.participant("second-inbox@example.com", "Second Inbox")
+	team := a.participant("team@example.com", "Example Team")
+	a.sendMany(8, mail{from: mine, to: a.owner, subject: "Forwarded"})
+	a.sendMany(6, mail{from: team, to: a.owner, subject: "Standup"})
+	fake := &fakeJev{answer: func(map[string]any) (string, map[string]float64) {
+		return kindclassify.OptionMailingList, map[string]float64{kindclassify.OptionMailingList: 0.9, kindclassify.OptionUnclear: 0.1}
+	}}
+	service, cfg := jevService(t, fake.server(t).URL, a.f.Store)
+	grantConsent(t, a.f.Store, cfg)
+	alias := a.participant("team-alias@example.com", "")
+
+	// While the run reads evidence, the owner confirms the second inbox as
+	// their own and links a new alias into the team cluster.
+	hooked := &recordingStore{Store: a.f.Store, afterEvidence: func(members []int64) {
+		switch members[0] {
+		case mine:
+			require.NoError(a.f.Store.AddAccountIdentity(a.f.Source.ID, "second-inbox@example.com", "manual"))
+		case team:
+			_, err := a.f.Store.LinkParticipants(team, alias)
+			require.NoError(err)
+		}
+	}}
+	report, err := kindclassify.Run(t.Context(), hooked, kindclassify.Options{Judge: service})
+	require.NoError(err)
+	assert.Equal([]int64{mine, team}, hooked.visited)
+	assert.Empty(fake.requests(), "neither identity leaves the machine")
+	assert.Zero(report.Jev.Judged)
+	assert.Nil(a.kind(mine).Source)
+	assert.Nil(a.kind(team).Source)
 }
 
 type fakeJev struct {
