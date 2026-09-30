@@ -228,11 +228,45 @@ func TestContextAwareReadsHonorCancellation(t *testing.T) {
 	_, err = st.GetMessagesSummariesByIDsContext(ctx, []int64{msgID})
 	require.ErrorIs(err, context.Canceled, "GetMessagesSummariesByIDsContext must honor a cancelled context")
 
+	_, err = st.GetMessagesWithBodiesByIDsContext(ctx, []int64{msgID})
+	require.ErrorIs(err, context.Canceled, "GetMessagesWithBodiesByIDsContext must honor a cancelled context")
+
 	_, err = st.GetStatsContext(ctx)
 	require.ErrorIs(err, context.Canceled, "GetStatsContext must honor a cancelled context")
 
 	_, _, err = st.SearchMessagesQueryContext(ctx, &search.Query{TextTerms: []string{"ctx"}}, 0, 10)
 	require.ErrorIs(err, context.Canceled, "SearchMessagesQueryContext must honor a cancelled context")
+}
+
+func TestGetMessagesWithBodiesByIDsKeepsOrderAndLiveMessages(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := openTestStore(t)
+	source, err := st.GetOrCreateSource("gmail", "test@example.com")
+	require.NoError(err)
+	convID, err := st.EnsureConversation(source.ID, "thread-1", "Thread")
+	require.NoError(err)
+	plain := seedMessage(t, st, source.ID, convID, "plain", "Plain", "snippet")
+	html := seedMessage(t, st, source.ID, convID, "html", "HTML", "snippet")
+	gone := seedMessage(t, st, source.ID, convID, "gone", "Gone", "snippet")
+	bare := seedMessage(t, st, source.ID, convID, "bare", "Bare", "snippet")
+	require.NoError(st.UpsertMessageBody(plain, sql.NullString{String: "plain body", Valid: true}, sql.NullString{}))
+	require.NoError(st.UpsertMessageBody(html, sql.NullString{}, sql.NullString{String: "<p>html body</p>", Valid: true}))
+	require.NoError(st.UpsertMessageBody(gone, sql.NullString{String: "deleted body", Valid: true}, sql.NullString{}))
+	require.NoError(st.MarkMessageDeleted(source.ID, "gone"))
+
+	messages, err := st.GetMessagesWithBodiesByIDsContext(t.Context(), []int64{html, gone, 999_999, bare, plain})
+	require.NoError(err)
+	require.Len(messages, 3, "missing and source-deleted messages are dropped")
+	assert.Equal([]int64{html, bare, plain}, []int64{messages[0].ID, messages[1].ID, messages[2].ID})
+	assert.Equal("<p>html body</p>", messages[0].BodyHTML)
+	assert.Empty(messages[1].BodyText, "a message without a body row loads without one")
+	assert.Equal("plain body", messages[2].BodyText)
+	assert.Equal("Plain", messages[2].Subject)
+
+	empty, err := st.GetMessagesWithBodiesByIDsContext(t.Context(), nil)
+	require.NoError(err)
+	assert.Empty(empty)
 }
 
 func TestGetMessageCcBcc(t *testing.T) {

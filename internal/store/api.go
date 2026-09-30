@@ -436,6 +436,26 @@ func (s *Store) GetMessagesSummariesByIDsContext(ctx context.Context, ids []int6
 	return ordered, nil
 }
 
+// GetMessagesWithBodiesByIDsContext returns the summaries of live messages
+// among ids, in ids order, with BodyText and BodyHTML filled. Bodies are read
+// by one batched primary-key lookup (message_id IN (...)), never a scan, so
+// it suits a bounded candidate list such as search reranking; attachments
+// are not loaded.
+func (s *Store) GetMessagesWithBodiesByIDsContext(ctx context.Context, ids []int64) ([]APIMessage, error) {
+	messages, err := s.GetMessagesSummariesByIDsContext(ctx, ids)
+	if err != nil || len(messages) == 0 {
+		return messages, err
+	}
+	found := make([]int64, len(messages))
+	for i := range messages {
+		found[i] = messages[i].ID
+	}
+	if err := s.batchPopulateBodies(ctx, messages, found); err != nil {
+		return nil, fmt.Errorf("get message bodies: %w", err)
+	}
+	return messages, nil
+}
+
 // SearchMessages searches messages using full-text search, with
 // batch-loaded recipients and labels. The raw query string is split on
 // whitespace into TextTerms and the work is delegated to
