@@ -8,6 +8,21 @@ All notable changes to msgvault, grouped by release.
 
 ## Unreleased
 
+- Suggested filters for Web UI searches. With `[jev.query_understanding]`
+  enabled and consented, a query you type such as "texts from Ana last week"
+  offers chips for a time period, a person, a message type, or an account;
+  applying one removes its words and adds the filter. Code finds the
+  candidates (a date-phrase dictionary, type words, account names, and the
+  people index) and Jev decides which the query means, beside the search and
+  within 800 ms. Only the query and candidate labels are sent, without email
+  addresses or phone numbers. An empty full-text search for a question offers
+  hybrid search. Requires API schema 2.43.0.
+- Hybrid search ranks better on natural questions. The subject boost ignores
+  stopwords and matches whole words, and when no message contains every query
+  word, the full-text signal matches any of the query's words instead.
+- MCP account arguments match ignoring case, and an unknown account's error
+  lists the valid ones. The search operator documentation names
+  `message_type:`.
 - Optionally rerank the leading results of your own hybrid searches with Jev.
   With `[jev.rerank]` enabled and `search_rerank` consent recorded, up to 30
   leading results are reordered by Jev's judgment of whether each message

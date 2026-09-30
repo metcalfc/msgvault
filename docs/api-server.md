@@ -1873,6 +1873,57 @@ and `scheduler_started_at`.
 
 ---
 
+### Suggest filters for a typed query {#post-apiv1explorequery-understanding}
+
+**Endpoint:** `POST /api/v1/explore/query-understanding`
+
+Returns suggested Explore filters for a query a person typed: a time window,
+a person, a message type, or an account, plus whether an empty full-text
+search should offer hybrid search. Call it alongside `POST /api/v1/explore`;
+it never runs the search. It needs
+[`[jev.query_understanding]`](configuration.md#jevquery_understanding)
+enabled and `query_understanding` consent; otherwise it answers
+`status: "skipped"` with a `reason`. The whole exchange is bounded to
+800 ms, and a late judgment is dropped (`status: "late"`). Delegated agent
+callers are always skipped. Requires API schema 2.43.0. What is sent and the
+thresholds are in [Jev judgments](/docs/usage/jev-judgments/#feature-explore-query-understanding).
+
+**Request:**
+
+```json
+{ "query": "texts from Ana Example last week", "timezone": "America/Los_Angeles" }
+```
+
+**Response:**
+
+```json
+{
+  "status": "judged",
+  "model": "jev-1.13.0",
+  "suggestions": [
+    {
+      "kind": "time_window",
+      "label": "Past 7 days (Sep 24 to Sep 30, 2026)",
+      "span": "last week",
+      "probability": 0.88,
+      "filters": [
+        { "dimension": "after", "values": ["2026-09-24T00:00:00-07:00"] },
+        { "dimension": "before", "values": ["2026-09-30T23:59:59.999-07:00"] }
+      ],
+      "query_operators": []
+    }
+  ],
+  "natural_language": 0.12,
+  "offer_hybrid": false,
+  "elapsed_ms": 412
+}
+```
+
+Applying a suggestion removes `span` from the query, adds `query_operators`
+to it, and adds `filters` to the Explore request.
+
+---
+
 ### Preflight an analytical selection {#post-apiv1explorepreflight}
 
 **Endpoint:** `POST /api/v1/explore/preflight`

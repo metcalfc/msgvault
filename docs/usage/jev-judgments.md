@@ -72,6 +72,9 @@ new `msgvault jev consent`.
    [jev.meeting_action_assignee]
    enabled = true
    # automatic = true   # also infer assignees for new meetings at each cache build
+
+   [jev.query_understanding]
+   enabled = true      # searches you type in the Web UI only; never automatic
    ```
 
 2. Provide an API key. Either paste it in Settings under **Jev judgments**
@@ -88,8 +91,8 @@ new `msgvault jev consent`.
 
 Consent is per feature: run the same two `consent` commands with
 `organization_resolution`, `correspondent_kind`, `cleanup_suggestions`,
-`search_rerank`, `meeting_event_kind`, or `meeting_action_assignee` for those
-features. `msgvault jev revoke enrichment_identity`
+`search_rerank`, `meeting_event_kind`, `meeting_action_assignee`, or
+`query_understanding` for those features. `msgvault jev revoke enrichment_identity`
 or `msgvault jev revoke --all` stops the next request immediately.
 
 ## Budgets and safety
@@ -739,6 +742,106 @@ are:
 A request with fewer than eight items sends only their questions.
 `msgvault jev consent meeting_action_assignee` prints the same disclosure.
 
+## Feature: Explore query understanding
+
+Feature name: `query_understanding`. Setting:
+[`[jev.query_understanding]`](../configuration.md#jevquery_understanding).
+Off by default.
+
+A search such as "texts from Ana last week" mixes words to match with
+filters: a message type, a person, and a time period. Full-text search
+requires every word, so it finds nothing. This feature suggests the filters
+the query asks for, as chips under the Web UI's search bar.
+
+1. **Only searches you type.** The Web UI asks after you submit a query in
+   the Search bar or the header search field. Restored links, Saved Views,
+   refreshes, applied suggestions, MCP, the CLI, and delegated agent tokens
+   never ask, so the feature has no `automatic` switch.
+2. **Beside the search, never in front of it.** The request
+   (`POST /api/v1/explore/query-understanding`) runs alongside the search.
+   Candidate lookup and the judgment together have 800 ms; a judgment that is
+   not back by then is dropped (status `late`) and no chips appear. Any
+   failure only means no chips; the search is never slower or failed by it.
+3. **Candidates come from code.** Before anything is sent:
+   - A date-phrase dictionary turns phrases such as "today", "last week",
+     "past 3 days", "this month", "in 2025", "Q3", month names, and "since
+     March 2026" into local calendar days in your browser's time zone.
+     Ambiguous phrases offer both readings (for example "last week" is the
+     previous Monday-to-Sunday week or the past 7 days). At most 4 windows.
+   - Words such as "emails", "texts", "on slack", "meeting notes", or
+     "invites" name message types.
+   - With two or more accounts, a word matching an account's type, its
+     display name, or its domain name offers that account. At most 6.
+   - Other words are looked up in the people index, full names first, at
+     most 6 lookups and 8 people.
+   Nothing is sent when there are no candidates and the query has fewer than
+   three words.
+4. **One request.** Jev answers Choices `message_type`, `time_window`,
+   `person`, `person_role`, and `account`, and the Noul `natural_language`.
+   A request asks only the questions its candidates need.
+5. **Thresholds.** A chosen option at 0.80 or more becomes a chip; `none`
+   never does. A message type is only offered when a query word named it.
+   A person is a participant filter; when `person_role` is `sender` or
+   `recipient` at 0.80 or more and the person has email addresses, the chip
+   uses `from:` or `to:` operators on those addresses instead, which keep the
+   direction but only match email. When a full-text search returns nothing
+   and `natural_language` is 0.70 or more, the search note offers **Try
+   hybrid search**.
+6. **You apply it.** A chip removes the words it came from (with a leading
+   "from", "in", or "on") and adds its filter: a person narrows the existing
+   people, and a date bound, message type, or account replaces the current
+   one. The other chips stay offered for the rewritten query.
+
+The endpoint answers `status` (`judged`, `skipped`, or `late`), `reason` for
+a skip (for example `disabled`, `consent_required`, `no_candidates`,
+`request_limit`), `suggestions`, `natural_language`, and `offer_hybrid`.
+
+### What leaves the machine
+
+- `query.text`: the query as typed, with email addresses replaced by
+  `[email]` and phone numbers by `[phone]` (the redaction meeting action
+  assignee uses)
+- `time_windows.window_N.label`: a window's description and dates, such as
+  "Past 7 days (Sep 24 to Sep 30, 2026)"
+- `people.person_N.label`: each candidate's name from the people index, cut
+  to 120 characters. An address or phone number inside a name is dropped, a
+  name that is only an address becomes its local part, and a person with
+  nothing left is not offered.
+- `accounts.account_N.label`: the account's type, its display name when that
+  is a name, and its domain, such as "gmail account named Work at
+  example.com". Never the address.
+
+No messages, bodies, participant IDs, or addresses leave the machine.
+
+### The questions, exactly as sent
+
+- `message_type` (Choice): "Does `query.text` ask only for one kind of
+  message? Choose the kind it asks for." Options: `email`, `text_message`
+  (SMS, MMS, iMessage, or RCS), `whatsapp`, `slack`, `discord`, `teams`,
+  `google_chat`, `facebook_messenger`, `calendar_event`,
+  `meeting_transcript`, and `none` (the query does not limit the kind, or
+  names a kind only as its topic).
+- `time_window` (Choice): "Does `query.text` limit results to a time period?
+  Choose the entry of `time_windows` that means what the query means. An
+  option whose key is absent from `time_windows` never applies." Options
+  `window_1` to `window_4` and `none` (no time limit, or the date words are
+  part of the topic).
+- `person` (Choice): "Does `query.text` ask for messages with a specific
+  person listed in `people`? Choose that person. An option whose key is
+  absent from `people` never applies." Options `person_1` to `person_8` and
+  `none`.
+- `person_role` (Choice): "If `query.text` asks for messages with a person,
+  did that person send them, receive them, or either?" Options `sender`,
+  `recipient`, `either`.
+- `account` (Choice): "Does `query.text` ask for messages in one of the
+  user's own accounts listed in `accounts`? Choose that account. An option
+  whose key is absent from `accounts` never applies." Options `account_1` to
+  `account_6` and `none`.
+- `natural_language` (Noul): "Is `query.text` a natural-language question or
+  description rather than keywords to match exactly?"
+
+`msgvault jev consent query_understanding` prints the same disclosure.
+
 ## Turn it off
 
 - `msgvault jev revoke --all` stops every feature at the next request without
@@ -756,13 +859,17 @@ probabilities and outcomes, not the compared values.
 
 - Only the enrichment identity check, organization resolution,
   correspondent kind, cleanup suggestions, hybrid search reranking, meeting
-  event kind, and meeting action assignee exist today. The other features in
+  event kind, meeting action assignee, and Explore query understanding exist
+  today. The other features in
   the engineering record `docs/internal/jev-judgments-plan.md` are proposals.
 - Hybrid search reranking has not passed its evaluation gate. Its cached
   orders live in the daemon's memory, so a restart judges the next page of a
   search again.
 - Meeting event kind asks each calendar series once. A series whose nature
   changes later keeps its first kind.
+- Query understanding reads English date phrases and type words only, and
+  its from:/to: chips match email, not chats. A search whose 800 ms budget
+  runs out simply shows no chips.
 - There is no way yet to set or correct an action item's assignee yourself;
   an inferred assignee you disagree with stays until the item changes.
 - Correspondent kind does not revisit an identity once a rule or Jev

@@ -1399,6 +1399,15 @@ Meeting action assignee (feature `meeting_action_assignee`). See
 | `enabled` | `false` | Let `msgvault meetings judge` ask Jev which attendee owns an action item the meeting tool left unassigned. Without it, only the tool's own assignees exist. |
 | `automatic` | `false` | Also infer assignees for up to 200 newly imported meetings at each analytics cache build, such as the one after a scheduled sync. |
 
+#### `[jev.query_understanding]`
+
+Explore query understanding (feature `query_understanding`). See
+[the feature description](/docs/usage/jev-judgments/#feature-explore-query-understanding).
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Let the Web UI ask Jev which filters (time period, person, message type, account) a search you typed means, and whether it reads as a question, within 800 ms and beside the search. Only the query and candidate labels are sent. There is no `automatic` key. |
+
 ### `[activity]`
 
 Dated activity projection and per-person contact state (first and last

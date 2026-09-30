@@ -434,14 +434,33 @@ Site: `cmd/msgvault/cmd/stage_delete.go`, `internal/api/deletions.go`,
 Site: `internal/api/explore.go` (`prepareExploreRequest`), Svelte search
 bar.
 
-- [ ] **Task 6.1 Option generation in code.** Date-phrase dictionary to
+- [x] **Task 6.1 Option generation in code.** Date-phrase dictionary to
   windows, directory matches to person candidates, accounts, message types.
-- [ ] **Task 6.2 Batched judgment.** Choices `message_type`, `time_window`,
+  > `internal/queryunderstand`. Date phrases become local-day windows in the
+  > browser's zone (ambiguous ones offer both readings, at most 4); type
+  > words name fixed message type options; with two or more accounts, a word
+  > matching an account's type, display name, or domain offers it; name
+  > words are looked up in the people completion index (observed people
+  > merged with curated profiles), full names first, at most 6 lookups and
+  > 8 people. Each candidate keeps the exact query text it came from.
+- [x] **Task 6.2 Batched judgment.** Choices `message_type`, `time_window`,
   `person`, `person_role`, `account`; Noul `natural_language`. Runs in
   parallel with the search, 800 ms budget, dropped if late.
-- [ ] **Task 6.3 UI.** Suggested chips at confidence ≥ 0.80; click applies
+  > Feature `query_understanding`, `[jev.query_understanding]` (no automatic
+  > switch), endpoint `POST /explore/query-understanding` (API 2.43.0). It is
+  > a separate request the Web UI sends beside `POST /explore`, so the search
+  > never waits; the endpoint bounds candidates and judgment to 800 ms and
+  > answers `late` otherwise. Slots (`window_N`, `person_N`, `account_N`)
+  > keep the consented wording fixed; a request asks only the questions its
+  > candidates need. Labels go through meetingjudge's identifier redaction.
+  > A confident sender or recipient with email addresses becomes from:/to:
+  > operators; otherwise a participant filter. Delegated agents are skipped.
+- [x] **Task 6.3 UI.** Suggested chips at confidence ≥ 0.80; click applies
   and removes the source span. Offer hybrid when `natural_language ≥ 0.70`
   and full-text returns zero rows. Only the query and option labels leave.
+  > Only a query typed in the Search bar or header field asks; restores,
+  > Saved Views, and applied chips do not. Remaining chips stay offered for
+  > the rewritten query.
 
 ## Phase 7: meetings and calendar
 
