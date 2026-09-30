@@ -463,20 +463,19 @@ func (s *Store) RenewLease(
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
 		// An expired lease is lost even before another worker reclaims it:
 		// renewing must not revive it, because anything fenced by it may
-		// already have been refused.
-		var live bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
-			SELECT 1 FROM person_enrichment_work
+		// already have been refused. The expiry is a condition of the
+		// renewing UPDATE itself, so the statement takes the write lock first
+		// and waits behind a concurrent commit.
+		result, err := tx.ExecContext(ctx, `UPDATE person_enrichment_work SET lease_until = ?
 			WHERE person_id = ? AND profile_fingerprint = ? AND run_id = ?
 			  AND lease_owner = ? AND lease_fence = ? AND lease_until > ?
-		)`, token.WorkPersonID, token.ProfileFingerprint, token.RunID, token.Owner, token.Fence,
-			s.personEnrichmentTime()).Scan(&live); err != nil {
-			return fmt.Errorf("check person enrichment lease expiry: %w", err)
+			  AND ((? = 0 AND active_attempt_id IS NULL) OR active_attempt_id = ?)`,
+			until.UTC(), token.WorkPersonID, token.ProfileFingerprint, token.RunID,
+			token.Owner, token.Fence, s.personEnrichmentTime(), token.AttemptID, token.AttemptID)
+		if err != nil {
+			return fmt.Errorf("update person enrichment work lease: %w", err)
 		}
-		if !live {
-			return ErrStaleLease
-		}
-		if err := updateEnrichmentWorkLeaseTx(ctx, tx, token, `lease_until = ?`, until.UTC()); err != nil {
+		if err := requireOneLeaseRow(result); err != nil {
 			return err
 		}
 		if token.AttemptID > 0 {

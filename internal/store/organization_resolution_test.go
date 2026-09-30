@@ -59,8 +59,13 @@ func TestOrganizationResolutionAliasMakesTheExactLookupResolveAndIsIdempotent(t 
 	_, err = st.MergeOrganizationsContext(t.Context(), labs.ID, reloaded.Revision, merged.ID, merged.Revision)
 	require.NoError(err)
 	input.OrganizationID = merged.ID
+	input.Name = "Example Labs Old Co"
 	_, err = st.RecordOrganizationResolutionAliasContext(t.Context(), input)
-	require.ErrorIs(err, store.ErrOrganizationInvalid, "a merged redirect never gains aliases")
+	require.NoError(err)
+	redirected, err := st.OrganizationShortlistContext(t.Context(),
+		personfacts.OrganizationReference{Name: "Example Labs Old Co"})
+	require.NoError(err)
+	assert.Equal([]int64{labs.ID}, redirected.MatchedIDs, "an alias aimed at a merged redirect lands on the survivor")
 }
 
 func TestEmploymentTitleAliasesResolveToOneCanonicalTitle(t *testing.T) {
