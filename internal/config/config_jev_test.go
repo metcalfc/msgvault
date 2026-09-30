@@ -28,6 +28,8 @@ func TestLoadJevSectionDefaultsAndOverrides(t *testing.T) {
 	assert.Equal(jev.DefaultRequestTimeout, cfg.Jev.RequestTimeout)
 	assert.False(cfg.Jev.IdentityVerification.Enabled)
 	assert.False(cfg.Jev.OrganizationResolution.Enabled)
+	assert.False(cfg.Jev.CorrespondentKind.Enabled)
+	assert.False(cfg.Jev.CorrespondentKind.Automatic)
 
 	require.NoError(os.WriteFile(configPath, []byte(`
 [jev]
@@ -45,6 +47,9 @@ automatic = true
 
 [jev.organization_resolution]
 enabled = true
+
+[jev.correspondent_kind]
+enabled = true
 `), 0o644))
 	cfg, err = Load(configPath, "")
 	require.NoError(err)
@@ -57,6 +62,8 @@ enabled = true
 	assert.True(cfg.Jev.IdentityVerification.Automatic)
 	assert.True(cfg.Jev.OrganizationResolution.Enabled)
 	assert.False(cfg.Jev.OrganizationResolution.Automatic, "automatic use stays off unless set")
+	assert.True(cfg.Jev.CorrespondentKind.Enabled)
+	assert.False(cfg.Jev.CorrespondentKind.Automatic, "automatic stays off unless set")
 
 	require.NoError(os.WriteFile(configPath, []byte(`
 [jev]

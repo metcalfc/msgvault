@@ -17,6 +17,8 @@ const FeatureEnrichmentIdentity = "enrichment_identity"
 // FeatureOrganizationResolution is the organization resolution and job
 // title equivalence feature.
 const FeatureOrganizationResolution = "organization_resolution"
+// FeatureCorrespondentKind is the correspondent kind classification feature.
+const FeatureCorrespondentKind = "correspondent_kind"
 
 // Gate outcomes. Each is an expected administrative state, not a fault: the
 // caller falls back to its pre-Jev decision and reports the category.
@@ -38,6 +40,8 @@ func (c Config) FeatureConfigFor(name string) (FeatureConfig, bool) {
 		return c.IdentityVerification, true
 	case FeatureOrganizationResolution:
 		return c.OrganizationResolution, true
+	case FeatureCorrespondentKind:
+		return c.CorrespondentKind, true
 	default:
 		return FeatureConfig{}, false
 	}

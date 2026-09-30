@@ -8,9 +8,9 @@ import "fmt"
 // the cap is halved until every request fits; a single item that cannot fit
 // fails with ErrRequestBounds.
 //
-// No feature calls it yet: it is the batching primitive Phase 2
-// (correspondent kind, ten identities per request) is planned to use, per
-// docs/internal/jev-judgments-plan.md. It stays exported for that consumer.
+// Features that go through Service split their own batches (the
+// correspondent kind classifier halves a batch the client rejects with
+// ErrRequestBounds); this primitive is for callers that hold a Client.
 func BatchRequests[T any](client *Client, items []T, build func(chunk []T, offset int) Request) ([]Request, error) {
 	if client == nil {
 		return nil, fmt.Errorf("%w: client is required", ErrRequestBounds)

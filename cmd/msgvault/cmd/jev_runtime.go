@@ -8,6 +8,7 @@ import (
 
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/jev"
+	"go.kenn.io/msgvault/internal/kindclassify"
 	"go.kenn.io/msgvault/internal/orgresolution"
 	"go.kenn.io/msgvault/internal/personenrichment"
 	"go.kenn.io/msgvault/internal/personfacts"
@@ -115,4 +116,19 @@ func newJevOrganizationPreparer(
 		return nil, err
 	}
 	return orgresolution.NewPreparer(service, st, automatic, nil), nil
+}
+
+// newJevKindJudge wires the correspondent kind classifier's Jev door, or
+// returns nil when Jev or the feature is off so `kinds build` applies the
+// deterministic rules alone. Consent, the credential, and the automatic
+// switch are rechecked by the service on every request.
+func newJevKindJudge(cfg *config.Config, st jevRuntimeStore) (kindclassify.Judge, error) {
+	if cfg == nil || !cfg.Jev.Enabled || !cfg.Jev.CorrespondentKind.Enabled {
+		return nil, nil //nolint:nilnil // nil means "rules only".
+	}
+	service, err := newJevService(cfg, st)
+	if err != nil || service == nil {
+		return nil, err
+	}
+	return service, nil
 }

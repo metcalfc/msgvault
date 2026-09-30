@@ -174,6 +174,8 @@ var settingsMetadata = map[string]settingMetadata{
 	"jev.identity_verification.automatic":   {"Automatic identity checks", "Let scheduled enrichment runs use the identity check without a manual run.", "features"},
 	"jev.organization_resolution.enabled":   {"Organization resolution", "Ask Jev whether an organization name that matches no existing organization is one of a few similar ones, and whether two job titles at one organization are the same role.", "features"},
 	"jev.organization_resolution.automatic": {"Automatic organization resolution", "Let scheduled enrichment and people sweep runs use organization resolution without a manual run.", "features"},
+	"jev.correspondent_kind.enabled":        {"Correspondent kind", "Ask Jev whether an identity the rules could not classify is a person, a shared mailbox, a mailing list, or an automated sender.", "features"},
+	"jev.correspondent_kind.automatic":      {"Automatic correspondent kinds", "Classify new identities when the analytics cache is built, without running msgvault kinds build.", "features"},
 	"vector.people.enabled":                 {"Embed person fields", "Send the consented fields of each person to the text embedding provider. Semantic search must be on.", "people"},
 	"vector.people.retention_posture":       {"Provider retention statement", "Your statement of how long the provider keeps person data.", "people"},
 	"vector.people.training_posture":        {"Provider training statement", "Your statement of whether the provider trains on person data.", "people"},

@@ -16,9 +16,10 @@ func TestJevFeatureRegistryListsEveryFeature(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	specs := jevFeatureSpecs()
-	require.Len(specs, 2)
+	require.Len(specs, 3)
 	assert.Equal(jev.FeatureEnrichmentIdentity, specs[0].Name)
 	assert.Equal(jev.FeatureOrganizationResolution, specs[1].Name)
+	assert.Equal(jev.FeatureCorrespondentKind, specs[2].Name)
 	cfg := config.NewDefaultConfig()
 	for _, spec := range specs {
 		require.NoError(spec.Validate())
@@ -29,6 +30,27 @@ func TestJevFeatureRegistryListsEveryFeature(t *testing.T) {
 		_, known := cfg.Jev.FeatureConfigFor(spec.Name)
 		assert.True(known, "every registered feature has a [jev] section")
 	}
+}
+
+func TestNewJevKindJudgeIsNilUntilJevAndTheFeatureAreOn(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	cfg := config.NewDefaultConfig()
+	cfg.HomeDir = t.TempDir()
+	cfg.Data.DataDir = cfg.HomeDir
+
+	judge, err := newJevKindJudge(cfg, st)
+	require.NoError(err)
+	assert.Nil(judge, "everything off means rules only")
+	cfg.Jev.Enabled = true
+	judge, err = newJevKindJudge(cfg, st)
+	require.NoError(err)
+	assert.Nil(judge, "the feature switch is separate from the [jev] switch")
+	cfg.Jev.CorrespondentKind.Enabled = true
+	judge, err = newJevKindJudge(cfg, st)
+	require.NoError(err)
+	assert.NotNil(judge)
 }
 
 func TestNewJevOrganizationPreparerIsNilUntilJevAndTheFeatureAreOn(t *testing.T) {

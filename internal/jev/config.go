@@ -45,6 +45,10 @@ type Config struct {
 	// missed organization name to an existing organization and deciding
 	// whether two job titles name the same role.
 	OrganizationResolution FeatureConfig `toml:"organization_resolution"`
+	// CorrespondentKind is [jev.correspondent_kind]: classifying which
+	// archive identities are people, lists, shared mailboxes, or automated
+	// senders.
+	CorrespondentKind FeatureConfig `toml:"correspondent_kind"`
 }
 
 // FeatureConfig gates one Jev-backed feature. Automatic additionally allows
