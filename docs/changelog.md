@@ -23,6 +23,25 @@ All notable changes to msgvault, grouped by release.
 - MCP account arguments match ignoring case, and an unknown account's error
   lists the valid ones. The search operator documentation names
   `message_type:`.
+- Find people who write from several addresses. With
+  `[jev.person_duplicates]` enabled and consented, `msgvault person judge`
+  proposes identities that share a display name or a distinctive address
+  name and asks Jev how likely each pair is one person, sending their display
+  names and email addresses. Likely pairs appear under Reviews → Possible
+  duplicate people; nothing is linked or merged until you accept one.
+  Requires API schema 2.44.0.
+- Settle small profile choices with `[jev.person_profile_choices]`: which of
+  several automatically found current roles is primary, which name a newly
+  saved person shows when their addresses use different names, and whether
+  two values left by a person merge say the same thing. Your own values,
+  choices, and pins are never changed.
+- The people sweep can ask Jev which retrieved older messages bear on a fact
+  before its chat model reads them (`[jev.sweep_evidence_rerank]`), and can
+  score each proposed fact by whether the cited messages state it and whether
+  it is still current instead of trusting the chat model's own confidence
+  (`[jev.sweep_claim_grounding]`). Both send excerpts of messages the person
+  wrote. The sweep also keeps the signature block of the person's own
+  messages as evidence, where titles and employers are usually stated.
 - Optionally rerank the leading results of your own hybrid searches with Jev.
   With `[jev.rerank]` enabled and `search_rerank` consent recorded, up to 30
   leading results are reordered by Jev's judgment of whether each message
