@@ -152,28 +152,31 @@ func (g *Grounder) GroundClaims(
 	}
 	spec := ClaimGroundingFeature()
 	grounded := 0
-	for start := 0; start < len(judgeable); start += ClaimsPerRequest {
-		chunk := judgeable[start:min(start+ClaimsPerRequest, len(judgeable))]
-		state := groundingState{Claims: make(map[string]ClaimState, len(chunk))}
-		ids := make([]string, 0, 2*len(chunk))
-		for i, entry := range chunk {
+	build := func(start, end int) any {
+		state := groundingState{Claims: make(map[string]ClaimState, end-start)}
+		for i, entry := range judgeable[start:end] {
 			state.Claims[ClaimKey(i)] = entry.state
+		}
+		return state
+	}
+	// Up to ClaimsPerRequest claims per request, fewer when their excerpts
+	// are dense enough to overrun the shared Jev token budget.
+	err := jev.JudgeSpans(len(judgeable), ClaimsPerRequest, spec.Questions, build, func(span jev.Span) error {
+		chunk := judgeable[span.Start:span.End]
+		ids := make([]string, 0, 2*len(chunk))
+		for i := range chunk {
 			ids = append(ids, StatedQuestionID(i), CurrentQuestionID(i))
 		}
-		response, err := g.judge.JudgeQuestions(ctx, spec, g.automatic, state, ids, time.Time{})
+		response, err := g.judge.JudgeQuestions(ctx, spec, g.automatic, build(span.Start, span.End), ids, time.Time{})
 		if err != nil {
-			g.logger.Info("people sweep claim grounding: jev skipped",
-				"feature", jev.FeatureSweepClaimGrounding, "category", jev.Skipped(err), "grounded", grounded)
-			return out
+			return err
 		}
 		scores := make([]int, len(chunk))
 		for i := range chunk {
 			stated, statedOK := response.Answers[StatedQuestionID(i)]
 			current, currentOK := response.Answers[CurrentQuestionID(i)]
 			if !statedOK || !currentOK {
-				g.logger.Info("people sweep claim grounding: jev skipped",
-					"feature", jev.FeatureSweepClaimGrounding, "category", "invalid_response", "grounded", grounded)
-				return out
+				return fmt.Errorf("%w: answer %d missing", jev.ErrInvalidResponse, i)
 			}
 			scores[i] = GroundedScore(stated.Noul, current.Noul)
 		}
@@ -181,6 +184,12 @@ func (g *Grounder) GroundClaims(
 			out[entry.index].Confidence = personfacts.ConfidenceInputs{ReportedScore: scores[i]}
 			grounded++
 		}
+		return nil
+	})
+	if err != nil {
+		g.logger.Info("people sweep claim grounding: jev skipped",
+			"feature", jev.FeatureSweepClaimGrounding, "category", jev.Skipped(err), "grounded", grounded)
+		return out
 	}
 	if grounded > 0 {
 		g.logger.Debug("people sweep claims grounded", "feature", jev.FeatureSweepClaimGrounding,

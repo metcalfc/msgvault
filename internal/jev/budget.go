@@ -70,7 +70,8 @@ type Budget struct {
 //     or outcome; inFlight counts the unsettled ones.
 //  3. release is for a request that never left the process; it also returns
 //     the in-process attempt. The client pairs it with releasing the day.
-//  4. Caller cancellation never counts toward the breaker.
+//  4. Caller cancellation and a provider max_tokens_exceeded answer never
+//     count toward the breaker.
 //  5. Prices are read under the lock.
 //  6. Only the probe, or a request admitted since the breaker last opened,
 //     changes breaker state on an answer. A stale answer that was in flight
@@ -289,9 +290,13 @@ func (b *Budget) record(admitted reservation, usage Usage) {
 // the reservation, which ends the half-open probe if it was one. The client's
 // per-request timeout does count: the provider did not answer in the time the
 // operator allowed it.
+//
+// A max_tokens_exceeded answer (ErrStateTooLarge) is about that request's
+// size, not the provider's health: it settles without counting toward the
+// breaker or halting a per-run budget, so the caller can split and retry.
 func (b *Budget) outcome(ctx context.Context, admitted reservation, err error, callerBound bool) {
 	cancelled := errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
-	if cancelled && (ctx.Err() != nil || callerBound) {
+	if errors.Is(err, ErrStateTooLarge) || cancelled && (ctx.Err() != nil || callerBound) {
 		b.mu.Lock()
 		b.settle(admitted)
 		b.mu.Unlock()

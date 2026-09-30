@@ -154,6 +154,8 @@ func Skipped(err error) string {
 		return "cost_limit"
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		return "timeout"
+	case errors.Is(err, ErrStateTooLarge):
+		return "state_too_large"
 	case errors.Is(err, ErrRequestBounds):
 		return "request_bounds"
 	case errors.Is(err, ErrInvalidResponse):
@@ -382,7 +384,7 @@ func (s *Service) JudgeQuestions(
 	latency := s.options.Now().Sub(started)
 	if err != nil {
 		s.options.Logger.Debug("jev judgment failed",
-			"feature", spec.Name, "category", Skipped(err), "latency_ms", latency.Milliseconds(),
+			"feature", spec.Name, "category", Skipped(err), "error_type", ProviderErrorType(err), "latency_ms", latency.Milliseconds(),
 			"budget", client.BudgetState())
 		return response, err
 	}
@@ -445,7 +447,7 @@ func (s *Service) JudgeAll(
 	latency := s.options.Now().Sub(started)
 	if err != nil {
 		s.options.Logger.Debug("jev judgments failed",
-			"feature", spec.Name, "category", Skipped(err), "requests", result.Usage.Requests,
+			"feature", spec.Name, "category", Skipped(err), "error_type", ProviderErrorType(err), "requests", result.Usage.Requests,
 			"latency_ms", latency.Milliseconds(), "budget", client.BudgetState())
 		return result, err
 	}

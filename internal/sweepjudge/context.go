@@ -104,28 +104,38 @@ func (j *ContextJudge) JudgeContext(
 		return nil, fmt.Errorf("%w: target has no description", jev.ErrRequestBounds)
 	}
 	spec := EvidenceRerankFeature()
-	scores := make([]float64, 0, len(items))
-	for start := 0; start < len(items); start += ContextCandidatesPerRequest {
-		chunk := items[start:min(start+ContextCandidatesPerRequest, len(items))]
-		state := contextState{Query: query, Candidates: make([]string, len(chunk))}
-		ids := make([]string, len(chunk))
-		for i, item := range chunk {
-			state.Candidates[i] = contextCandidate(item)
+	candidates := make([]string, len(items))
+	for i, item := range items {
+		candidates[i] = contextCandidate(item)
+	}
+	build := func(start, end int) any {
+		return contextState{Query: query, Candidates: candidates[start:end]}
+	}
+	scores := make([]float64, len(items))
+	// Up to ContextCandidatesPerRequest per request, fewer when the excerpts
+	// are dense enough to overrun the shared Jev token budget.
+	err := jev.JudgeSpans(len(items), ContextCandidatesPerRequest, spec.Questions, build, func(span jev.Span) error {
+		ids := make([]string, span.Len())
+		for i := range ids {
 			ids[i] = rerank.BatchedQuestionID(i)
 		}
-		response, err := j.judge.JudgeQuestions(ctx, spec, j.automatic, state, ids, time.Time{})
+		response, err := j.judge.JudgeQuestions(ctx, spec, j.automatic, build(span.Start, span.End), ids, time.Time{})
 		if err != nil {
-			j.logger.Info("people sweep context relevance: jev skipped",
-				"feature", jev.FeatureSweepEvidenceRerank, "category", jev.Skipped(err))
-			return nil, err
+			return err
 		}
-		for i := range chunk {
+		for i := range span.Len() {
 			answer, ok := response.Answers[rerank.BatchedQuestionID(i)]
 			if !ok {
-				return nil, fmt.Errorf("%w: answer %d missing", jev.ErrInvalidResponse, i)
+				return fmt.Errorf("%w: answer %d missing", jev.ErrInvalidResponse, i)
 			}
-			scores = append(scores, min(1, max(0, answer.Noul)))
+			scores[span.Start+i] = min(1, max(0, answer.Noul))
 		}
+		return nil
+	})
+	if err != nil {
+		j.logger.Info("people sweep context relevance: jev skipped",
+			"feature", jev.FeatureSweepEvidenceRerank, "category", jev.Skipped(err))
+		return nil, err
 	}
 	return scores, nil
 }

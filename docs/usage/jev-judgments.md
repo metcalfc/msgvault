@@ -127,12 +127,32 @@ or `msgvault jev revoke --all` stops the next request immediately.
   (`https://api.typesafe.ai/v1/systemone`, `jev-1.13.0`), refuse redirects,
   require a JSON response from the same model, and cap request and response
   sizes. Each request has a timeout (`request_timeout`, default 10s).
+- **Token budget.** TypeSafe accepts at most 32,000 tokens of state plus the
+  longest question, and 64,000 tokens per request; it answers a larger request
+  with HTTP 400 `max_tokens_exceeded`. msgvault cannot run the provider's
+  tokenizer, so it estimates tokens pessimistically: one per four letters,
+  one per digit or symbol, and more for non-ASCII text, never under one per
+  four bytes. Before sending, every request must estimate at most 30,000
+  tokens of state plus longest question and 60,000 tokens overall.
+- **Packing.** Features that put several items in one request (search
+  reranking's batched shape, people sweep evidence relevance and claim
+  grounding, duplicate people, meeting action assignee, correspondent kind,
+  meeting event kind, and cleanup suggestions) send fewer items per request
+  when the items are dense, instead of failing. If TypeSafe still answers
+  `max_tokens_exceeded`, the request is split once more and resent; a
+  single search candidate that cannot fit is cut to fit. A
+  `max_tokens_exceeded` answer does not count toward the circuit breaker.
+- **Provider errors.** On a failed request, msgvault reads at most 4 KiB of
+  the response and keeps only its `error_type` token (for example
+  `provider returned HTTP 400 (max_tokens_exceeded)`). No other response
+  text is logged or reported.
 - **Logging.** Logs carry question IDs, answer types, probabilities,
   confidence, latency, token counts, and budget state. They never carry the
   state that was sent.
 - **Failure never fails the user-facing operation.** When a judgment cannot
   run, the caller uses its pre-Jev decision and reports the category, such as
-  `consent_required`, `breaker_open`, `request_limit`, or `timeout`.
+  `consent_required`, `breaker_open`, `request_limit`, `state_too_large`, or
+  `timeout`.
 
 ## Feature: enrichment identity check
 
@@ -573,8 +593,9 @@ CLI's `--explain` table adds a `JEV` column and a `Jev rerank:` line.
     in 2 KiB
 
 **Message body text leaves the machine.** The batched shape sends up to 30
-such texts as `candidates[]` in one request; the per-candidate shape sends one
-as `candidate` per request. No attachments, recipients, labels, or
+such texts as `candidates[]` in one request, or splits them across several
+requests when they would exceed the [token budget](#budgets-and-safety); the
+per-candidate shape sends one as `candidate` per request. No attachments, recipients, labels, or
 identifiers are sent. `msgvault jev consent search_rerank` prints this
 disclosure, including a line that says message body text is sent.
 
@@ -584,7 +605,8 @@ disclosure, including a line that says message body text is sent.
   the best answer to `query`?" Yes means "The `candidates[i]` contains the
   specific information needed to answer the query." No means "The
   `candidates[i]` is only topically similar or does not contain the needed
-  evidence." A request asks only as many as it has results.
+  evidence." A request asks only as many as it has results; when the results
+  are split across requests, each request numbers its own candidates from 0.
 - Per candidate: `matches` (Noul): "Could `candidate` be the best answer to
   `query`?", with the same yes and no wording for `candidate`.
 

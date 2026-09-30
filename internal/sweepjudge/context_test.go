@@ -127,3 +127,33 @@ func TestContextJudgeSplitsLongItemListsAcrossRequests(t *testing.T) {
 	assert.InDelta(t, 0.92, scores[len(scores)-1], 1e-9)
 	assert.Len(t, server.Requests(), 2)
 }
+
+func TestContextJudgePacksDenseExcerptsWithinTheTokenBudget(t *testing.T) {
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	server := jevtest.NewServer(t, relevanceByKeyword)
+	service, cfg := server.Service(t, st, func(cfg *jev.Config) {
+		cfg.SweepEvidenceRerank = jev.FeatureConfig{Enabled: true}
+	})
+	jevtest.GrantConsent(t, st, cfg, sweepjudge.EvidenceRerankFeature())
+	// Thirty full-size excerpts of text that tokenizes densely do not fit
+	// one request's token budget.
+	items := make([]peoplesweep.EvidenceItem, sweepjudge.ContextCandidatesPerRequest)
+	for i := range items {
+		items[i] = contextItem(int64(i%27+1), strings.Repeat("🧾", 500))
+	}
+	items[len(items)-1].Excerpt = "I joined Example Labs. " + strings.Repeat("🧾", 490)
+
+	scores, err := sweepjudge.NewContextJudge(service, false, nil).JudgeContext(t.Context(), employmentTarget(), items)
+	require.NoError(err)
+	require.Len(scores, len(items))
+	assert.InDelta(t, 0.92, scores[len(scores)-1], 1e-9)
+	assert.InDelta(t, 0.05, scores[0], 1e-9)
+	requests := server.Requests()
+	require.Greater(len(requests), 1)
+	for _, request := range requests {
+		tokens, err := jev.EstimateStateTokens(request["state"], sweepjudge.EvidenceRerankFeature().Questions)
+		require.NoError(err)
+		assert.LessOrEqual(t, tokens, jev.MaxStateTokens)
+	}
+}

@@ -120,6 +120,36 @@ func TestGrounderReplacesReportedConfidenceWithStatedTimesCurrent(t *testing.T) 
 	assert.Len(questions, 6, "two questions per sent claim")
 }
 
+func TestGrounderPacksDenseClaimsWithinTheTokenBudget(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	server := jevtest.NewServer(t, groundingByValue)
+	service, cfg := server.Service(t, st, func(cfg *jev.Config) {
+		cfg.SweepClaimGrounding = jev.FeatureConfig{Enabled: true}
+	})
+	jevtest.GrantConsent(t, st, cfg, sweepjudge.ClaimGroundingFeature())
+	// Eight claims with three full-length excerpts of densely tokenizing
+	// text each do not fit one request's token budget.
+	dense := strings.Repeat("🧾", 990)
+	claims := make([]personfacts.ProposedClaim, sweepjudge.ClaimsPerRequest)
+	for i := range claims {
+		claims[i] = groundingClaim(`"Designer"`, 900, "Designer "+dense, dense, dense)
+	}
+
+	grounded := sweepjudge.NewGrounder(service, false, nil).GroundClaims(t.Context(), 7, claims)
+	for i := range grounded {
+		assert.Equal(720, grounded[i].Confidence.ReportedScore, "claim %d is grounded", i)
+	}
+	requests := server.Requests()
+	require.Greater(len(requests), 1)
+	for _, request := range requests {
+		tokens, err := jev.EstimateStateTokens(request["state"], sweepjudge.ClaimGroundingFeature().Questions)
+		require.NoError(err)
+		assert.LessOrEqual(tokens, jev.MaxStateTokens)
+	}
+}
+
 func TestGrounderKeepsReportedConfidenceWhenJevIsUnavailable(t *testing.T) {
 	st := testutil.NewTestStore(t)
 	server := jevtest.NewServer(t, groundingByValue)

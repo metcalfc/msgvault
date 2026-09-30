@@ -12,8 +12,9 @@ import (
 // JevFeature is the exact policy the search_rerank feature consents to. It
 // holds both request shapes' wording: one "matches" question per candidate
 // for per_candidate, and candidate_0..candidate_29 for batched, each worded
-// exactly as encodeJevCalls sends it. A request asks only the questions its
-// candidates need. Changing any wording or field changes the fingerprint and
+// exactly as planJevCalls sends it. A request asks only the questions its
+// candidates need; a batched rerank too large for one request's token
+// budget is split, and each request numbers its own candidates from 0. Changing any wording or field changes the fingerprint and
 // requires new consent.
 func JevFeature() jev.FeatureSpec {
 	questions := make([]jev.Question, 0, MaxCandidates+1)
@@ -86,19 +87,16 @@ func (s *ServiceScorer) Admit(ctx context.Context) (string, error) {
 // Rerank scores every candidate against the query. On failure the returned
 // usage still counts every attempted request.
 func (s *ServiceScorer) Rerank(ctx context.Context, request Request) (Result, error) {
-	calls, err := encodeJevCalls(request.Query, request.Candidates, s.shape)
-	if err != nil {
-		return emptyJevResult(), err
-	}
-	judgments := make([]jev.Judgment, len(calls))
-	for i, call := range calls {
-		ids := make([]string, len(call.Questions))
-		for k, question := range call.Questions {
-			ids[k] = question.ID
+	return scoreCandidates(ctx, request, s.shape, func(ctx context.Context, calls []jev.Request) (jev.BatchResult, error) {
+		judgments := make([]jev.Judgment, len(calls))
+		for i, call := range calls {
+			ids := make([]string, len(call.Questions))
+			for k, question := range call.Questions {
+				ids[k] = question.ID
+			}
+			judgments[i] = jev.Judgment{State: call.State, QuestionIDs: ids}
 		}
-		judgments[i] = jev.Judgment{State: call.State, QuestionIDs: ids}
-	}
-	deadline, _ := ctx.Deadline()
-	batch, err := s.judge.JudgeAll(ctx, s.spec, false, judgments, deadline)
-	return resultFromBatch(batch, err, s.shape, len(request.Candidates))
+		deadline, _ := ctx.Deadline()
+		return s.judge.JudgeAll(ctx, s.spec, false, judgments, deadline)
+	})
 }

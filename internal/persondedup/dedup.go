@@ -7,6 +7,7 @@ package persondedup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -143,43 +144,72 @@ func Run(ctx context.Context, st Store, options Options) (Report, error) {
 		return report, nil
 	}
 	spec := Feature()
-	for start := 0; start < len(proposals); start += PairsPerRequest {
-		chunk := proposals[start:min(start+PairsPerRequest, len(proposals))]
-		state := requestState{Pairs: make(map[string]PairState, len(chunk))}
+	pairs := make([]PairState, len(proposals))
+	for i, proposal := range proposals {
+		pairs[i] = pairState(proposal)
+	}
+	build := func(start, end int) any {
+		state := requestState{Pairs: make(map[string]PairState, end-start)}
+		for i, pair := range pairs[start:end] {
+			state.Pairs[PairKey(i)] = pair
+		}
+		return state
+	}
+	// Up to PairsPerRequest pairs per request, fewer when identities carry
+	// enough names and addresses to overrun the shared Jev token budget.
+	var storeErr error
+	jevErr := jev.JudgeSpans(len(proposals), PairsPerRequest, spec.Questions, build, func(span jev.Span) error {
+		chunk := proposals[span.Start:span.End]
 		ids := make([]string, len(chunk))
-		for i, proposal := range chunk {
-			state.Pairs[PairKey(i)] = pairState(proposal)
+		for i := range chunk {
 			ids[i] = QuestionID(i)
 		}
-		response, err := options.Judge.JudgeQuestions(ctx, spec, options.Automatic, state, ids, time.Time{})
-		report.Requests++
+		response, err := options.Judge.JudgeQuestions(ctx, spec, options.Automatic, build(span.Start, span.End), ids, time.Time{})
+		if !errors.Is(err, jev.ErrRequestBounds) {
+			// A request refused before sending is not counted.
+			report.Requests++
+		}
 		if err == nil {
 			err = checkAnswers(response, len(chunk))
 		}
 		if err != nil {
-			report.Skipped = jev.Skipped(err)
-			options.Logger.Info("duplicate people: jev skipped",
-				"feature", jev.FeatureDuplicatePeople, "category", report.Skipped)
-			break
+			return err
 		}
-		judgments := make([]store.PersonDuplicateJudgment, len(chunk))
-		for i, proposal := range chunk {
-			probability := min(1, max(0, response.Answers[QuestionID(i)].Noul))
-			judgments[i] = store.PersonDuplicateJudgment{
-				Proposal: proposal, Probability: probability, Model: response.Model,
-				Propose: probability >= CandidateThreshold,
-			}
-		}
-		written, err := st.RecordPersonDuplicateJudgmentsContext(ctx, judgments)
-		if err != nil {
-			return report, fmt.Errorf("record duplicate people judgments: %w", err)
-		}
-		report.Judged += written.Recorded
-		report.Candidates += written.Candidates
-		report.Existing += written.Existing
-		report.Dropped += written.Dropped
+		storeErr = recordJudgments(ctx, st, chunk, response, &report)
+		return storeErr
+	})
+	if storeErr != nil {
+		return report, storeErr
+	}
+	if jevErr != nil {
+		report.Skipped = jev.Skipped(jevErr)
+		options.Logger.Info("duplicate people: jev skipped",
+			"feature", jev.FeatureDuplicatePeople, "category", report.Skipped)
 	}
 	return report, nil
+}
+
+// recordJudgments stores one request's answers.
+func recordJudgments(
+	ctx context.Context, st Store, chunk []store.PersonDuplicateProposal, response jev.Response, report *Report,
+) error {
+	judgments := make([]store.PersonDuplicateJudgment, len(chunk))
+	for i, proposal := range chunk {
+		probability := min(1, max(0, response.Answers[QuestionID(i)].Noul))
+		judgments[i] = store.PersonDuplicateJudgment{
+			Proposal: proposal, Probability: probability, Model: response.Model,
+			Propose: probability >= CandidateThreshold,
+		}
+	}
+	written, err := st.RecordPersonDuplicateJudgmentsContext(ctx, judgments)
+	if err != nil {
+		return fmt.Errorf("record duplicate people judgments: %w", err)
+	}
+	report.Judged += written.Recorded
+	report.Candidates += written.Candidates
+	report.Existing += written.Existing
+	report.Dropped += written.Dropped
+	return nil
 }
 
 func checkAnswers(response jev.Response, count int) error {

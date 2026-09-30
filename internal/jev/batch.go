@@ -5,12 +5,13 @@ import "fmt"
 // BatchRequests turns items into as few requests as fit under the client's
 // request cap. build receives a contiguous chunk and its offset into items and
 // returns the request for that chunk. A chunk whose encoded request exceeds
-// the cap is halved until every request fits; a single item that cannot fit
-// fails with ErrRequestBounds.
+// the byte cap or the token budget (MaxStateTokens, MaxRequestTokens) is
+// halved until every request fits; a single item that cannot fit fails with
+// ErrRequestBounds.
 //
-// Features that go through Service split their own batches (the
-// correspondent kind classifier halves a batch the client rejects with
-// ErrRequestBounds); this primitive is for callers that hold a Client.
+// Features that go through Service split their own batches, with JudgeSpans
+// or by halving a batch that Oversize reports as too large; this primitive
+// is for callers that hold a Client.
 func BatchRequests[T any](client *Client, items []T, build func(chunk []T, offset int) Request) ([]Request, error) {
 	if client == nil {
 		return nil, fmt.Errorf("%w: client is required", ErrRequestBounds)

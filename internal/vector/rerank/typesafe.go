@@ -108,84 +108,223 @@ func rankingQuestion(id, name string) jev.Question {
 	}
 }
 
-func encodeJevCalls(query string, candidates []string, shape string) ([]jev.Request, error) {
+// jevCall is one request and the candidates [Start, End) it scores. A
+// batched request asks candidate_0..candidate_{n-1} about its own
+// candidates[0..n-1]; its answers map back through the span.
+type jevCall struct {
+	request jev.Request
+	span    jev.Span
+}
+
+func validateJevInput(query string, candidates []string) error {
 	if strings.TrimSpace(query) == "" || !utf8.ValidString(query) || len([]byte(query)) > typesafeMaxQuery {
-		return nil, fmt.Errorf("%w: query exceeds the 4096-byte Jev limit or is empty", ErrRequestBounds)
+		return fmt.Errorf("%w: query exceeds the 4096-byte Jev limit or is empty", ErrRequestBounds)
 	}
 	if len(candidates) == 0 || len(candidates) > MaxCandidates {
-		return nil, fmt.Errorf("%w: candidate count must be between 1 and %d", ErrRequestBounds, MaxCandidates)
+		return fmt.Errorf("%w: candidate count must be between 1 and %d", ErrRequestBounds, MaxCandidates)
 	}
 	for i, candidate := range candidates {
 		if !utf8.ValidString(candidate) || len([]byte(candidate)) > MaxCandidateBytes {
-			return nil, fmt.Errorf("%w: candidate %d exceeds the 2048-byte Jev limit", ErrRequestBounds, i)
+			return fmt.Errorf("%w: candidate %d exceeds the 2048-byte Jev limit", ErrRequestBounds, i)
 		}
+	}
+	return nil
+}
+
+// planJevCalls turns one rerank into requests that each fit within budget
+// estimated tokens (see jev.EstimateTokens). The per-candidate shape sends
+// one request per candidate. The batched shape packs as many consecutive
+// candidates into one request as fit, up to MaxCandidates, so dense
+// candidates split into several requests instead of overrunning the
+// provider. A candidate too large to fit even alone is cut to the longest
+// prefix that fits.
+func planJevCalls(query string, candidates []string, shape string, budget int) ([]jevCall, error) {
+	if err := validateJevInput(query, candidates); err != nil {
+		return nil, err
 	}
 	switch shape {
 	case ShapePerCandidate:
-		requests := make([]jev.Request, len(candidates))
+		questions := []jev.Question{rankingQuestion(perCandidateQuestionID, "candidate")}
+		calls := make([]jevCall, len(candidates))
 		for i, candidate := range candidates {
-			requests[i] = jev.Request{
-				State:     jevPerCandidateState{Query: query, Candidate: candidate},
-				Questions: []jev.Question{rankingQuestion(perCandidateQuestionID, "candidate")},
+			fitted, err := fitCandidate(candidate, budget, questions, func(text string) any {
+				return jevPerCandidateState{Query: query, Candidate: text}
+			})
+			if err != nil {
+				return nil, err
+			}
+			calls[i] = jevCall{
+				request: jev.Request{State: jevPerCandidateState{Query: query, Candidate: fitted}, Questions: questions},
+				span:    jev.Span{Start: i, End: i + 1},
 			}
 		}
-		return requests, nil
+		return calls, nil
 	case ShapeBatched:
-		questions := make([]jev.Question, len(candidates))
-		for i := range candidates {
-			questions[i] = rankingQuestion(batchedQuestionID(i), fmt.Sprintf("candidates[%d]", i))
+		// The longest batched question bounds every subset a request asks.
+		all := BatchedQuestions()
+		spans := jev.PackSpans(len(candidates), MaxCandidates, budget, all, func(start, end int) any {
+			return jevBatchedState{Query: query, Candidates: candidates[start:end]}
+		})
+		calls := make([]jevCall, 0, len(spans))
+		for _, span := range spans {
+			chunk := slices.Clone(candidates[span.Start:span.End])
+			if len(chunk) == 1 {
+				fitted, err := fitCandidate(chunk[0], budget, all, func(text string) any {
+					return jevBatchedState{Query: query, Candidates: []string{text}}
+				})
+				if err != nil {
+					return nil, err
+				}
+				chunk[0] = fitted
+			}
+			questions := make([]jev.Question, len(chunk))
+			for i := range chunk {
+				questions[i] = rankingQuestion(batchedQuestionID(i), fmt.Sprintf("candidates[%d]", i))
+			}
+			calls = append(calls, jevCall{
+				request: jev.Request{State: jevBatchedState{Query: query, Candidates: chunk}, Questions: questions},
+				span:    span,
+			})
 		}
-		return []jev.Request{{
-			State:     jevBatchedState{Query: query, Candidates: slices.Clone(candidates)},
-			Questions: questions,
-		}}, nil
+		return calls, nil
 	default:
 		return nil, fmt.Errorf("unknown Jev request shape %q", shape)
+	}
+}
+
+// fitCandidate returns candidate, or its longest prefix whose state fits
+// budget when the whole one does not.
+func fitCandidate(candidate string, budget int, questions []jev.Question, state func(string) any) (string, error) {
+	if jev.FitsStateBudget(state(candidate), questions, budget) {
+		return candidate, nil
+	}
+	if !jev.FitsStateBudget(state(""), questions, budget) {
+		return "", fmt.Errorf("%w: %w: the query alone exceeds the token budget", ErrRequestBounds, jev.ErrStateTooLarge)
+	}
+	fits, over := 0, len(candidate)
+	for over-fits > 1 {
+		mid := fits + (over-fits)/2
+		if jev.FitsStateBudget(state(TruncateUTF8Bytes(candidate, mid)), questions, budget) {
+			fits = mid
+		} else {
+			over = mid
+		}
+	}
+	return TruncateUTF8Bytes(candidate, fits), nil
+}
+
+// askFunc sends independent requests and reports each one's response, as
+// jev.Client.AskAll does.
+type askFunc func(ctx context.Context, requests []jev.Request) (jev.BatchResult, error)
+
+// scoreCandidates plans the rerank within jev.MaxStateTokens, sends it, and
+// reads one Noul per candidate. If the provider still answers
+// max_tokens_exceeded, every unanswered request is replanned once at half
+// its own estimated size (split, or cut for a single candidate) and resent;
+// a second failure is returned. Usage covers every attempt on every path.
+func scoreCandidates(ctx context.Context, request Request, shape string, ask askFunc) (Result, error) {
+	pending, err := planJevCalls(request.Query, request.Candidates, shape, jev.MaxStateTokens)
+	if err != nil {
+		return emptyJevResult(), err
+	}
+	result := emptyJevResult()
+	result.Scores = make([]float64, len(request.Candidates))
+	for retried := false; ; retried = true {
+		requests := make([]jev.Request, len(pending))
+		for i, call := range pending {
+			requests[i] = call.request
+		}
+		batch, askErr := ask(ctx, requests)
+		addUsage(&result.Usage, batch.Usage)
+		var unanswered []jevCall
+		for i, call := range pending {
+			if i >= len(batch.Responses) || batch.Responses[i] == nil {
+				unanswered = append(unanswered, call)
+				continue
+			}
+			if err := readScores(*batch.Responses[i], call, shape, result.Scores); err != nil {
+				return result, err
+			}
+		}
+		if askErr == nil {
+			if len(unanswered) > 0 {
+				return result, fmt.Errorf("%w: missing response", ErrInvalidResponse)
+			}
+			return result, nil
+		}
+		if retried || !errors.Is(askErr, jev.ErrStateTooLarge) || ctx.Err() != nil {
+			return result, fmt.Errorf("rerank requests failed: %w", askErr)
+		}
+		pending, err = replanSmaller(request, shape, unanswered)
+		if err != nil {
+			return result, fmt.Errorf("rerank requests failed: %w", askErr)
+		}
+	}
+}
+
+// replanSmaller replans each unanswered call at half its own estimated size,
+// keeping every piece's span in the original candidate order.
+func replanSmaller(request Request, shape string, unanswered []jevCall) ([]jevCall, error) {
+	var pending []jevCall
+	for _, call := range unanswered {
+		estimate, err := jev.EstimateStateTokens(call.request.State, call.request.Questions)
+		if err != nil {
+			return nil, err
+		}
+		smaller, err := planJevCalls(request.Query, request.Candidates[call.span.Start:call.span.End],
+			shape, min(jev.MaxStateTokens, estimate)/2)
+		if err != nil {
+			return nil, err
+		}
+		for _, piece := range smaller {
+			piece.span = jev.Span{Start: call.span.Start + piece.span.Start, End: call.span.Start + piece.span.End}
+			pending = append(pending, piece)
+		}
+	}
+	return pending, nil
+}
+
+// readScores copies one response's Nouls into scores through its span.
+func readScores(response jev.Response, call jevCall, shape string, scores []float64) error {
+	if shape == ShapeBatched {
+		for k := range call.span.Len() {
+			answer, ok := response.Answers[batchedQuestionID(k)]
+			if !ok {
+				return fmt.Errorf("%w: missing answer", ErrInvalidResponse)
+			}
+			scores[call.span.Start+k] = answer.Noul
+		}
+		return nil
+	}
+	answer, ok := response.Answers[perCandidateQuestionID]
+	if !ok {
+		return fmt.Errorf("%w: missing answer", ErrInvalidResponse)
+	}
+	scores[call.span.Start] = answer.Noul
+	return nil
+}
+
+// addUsage folds one attempt's usage into a running total. A missing token
+// count, on either side, makes the total incomplete.
+func addUsage(total *Usage, usage Usage) {
+	total.Requests += usage.Requests
+	if !usage.Complete || usage.InputTokens == nil || usage.OutputTokens == nil {
+		total.Complete = false
+	}
+	if usage.InputTokens != nil && total.InputTokens != nil {
+		sum := *total.InputTokens + *usage.InputTokens
+		total.InputTokens = &sum
+	}
+	if usage.OutputTokens != nil && total.OutputTokens != nil {
+		sum := *total.OutputTokens + *usage.OutputTokens
+		total.OutputTokens = &sum
 	}
 }
 
 // Rerank scores every candidate against the query. On failure the returned
 // usage still counts every attempted request so callers can account for it.
 func (j *Jev) Rerank(ctx context.Context, request Request) (Result, error) {
-	calls, err := encodeJevCalls(request.Query, request.Candidates, j.shape)
-	if err != nil {
-		return emptyJevResult(), err
-	}
-	batch, err := j.client.AskAll(ctx, calls)
-	return resultFromBatch(batch, err, j.shape, len(request.Candidates))
-}
-
-// resultFromBatch reads one Noul per candidate out of the responses to
-// encodeJevCalls' requests. Usage is kept on every path.
-func resultFromBatch(batch jev.BatchResult, err error, shape string, candidates int) (Result, error) {
-	result := Result{Scores: make([]float64, candidates), Usage: batch.Usage}
-	if err != nil {
-		return result, fmt.Errorf("rerank requests failed: %w", err)
-	}
-	if len(batch.Responses) == 0 {
-		return result, fmt.Errorf("%w: missing response", ErrInvalidResponse)
-	}
-	for i, response := range batch.Responses {
-		if response == nil {
-			return result, fmt.Errorf("%w: missing response", ErrInvalidResponse)
-		}
-		if shape == ShapeBatched {
-			for k := range candidates {
-				answer, ok := response.Answers[batchedQuestionID(k)]
-				if !ok {
-					return result, fmt.Errorf("%w: missing answer", ErrInvalidResponse)
-				}
-				result.Scores[k] = answer.Noul
-			}
-			continue
-		}
-		answer, ok := response.Answers[perCandidateQuestionID]
-		if !ok {
-			return result, fmt.Errorf("%w: missing answer", ErrInvalidResponse)
-		}
-		result.Scores[i] = answer.Noul
-	}
-	return result, nil
+	return scoreCandidates(ctx, request, j.shape, j.client.AskAll)
 }
 
 func emptyJevResult() Result {

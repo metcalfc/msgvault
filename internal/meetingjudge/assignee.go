@@ -216,18 +216,26 @@ func judgeMeetingAssignees(
 		attendees[AttendeeKey(i)] = AttendeeState{Label: truncateRunes(AttendeeLabel(attendee.Label, i), maxAttendeeLabelRunes)}
 	}
 	meeting := MeetingState{Title: truncateRunes(RedactText(candidate.Title), maxTitleRunes)}
-	for start := 0; start < len(candidate.Actions); start += AssigneeItemsPerRequest {
-		chunk := candidate.Actions[start:min(start+AssigneeItemsPerRequest, len(candidate.Actions))]
+	build := func(start, end int) any {
 		state := AssigneeState{Meeting: meeting, Attendees: attendees, ActionItems: map[string]ActionItemState{}}
-		ids := make([]string, 0, len(chunk))
-		for i, action := range chunk {
+		for i, action := range candidate.Actions[start:end] {
 			state.ActionItems[ItemKey(i)] = ActionItemState{
 				Title:       truncateRunes(RedactText(action.Title), maxActionTitleRunes),
 				Description: truncateRunes(RedactText(action.Description), maxActionDescriptionRunes),
 			}
+		}
+		return state
+	}
+	spec := AssigneeFeature()
+	// Up to AssigneeItemsPerRequest items per request, fewer when the
+	// meeting's text would overrun the shared Jev token budget.
+	return jev.JudgeSpans(len(candidate.Actions), AssigneeItemsPerRequest, spec.Questions, build, func(span jev.Span) error {
+		chunk := candidate.Actions[span.Start:span.End]
+		ids := make([]string, 0, len(chunk))
+		for i := range chunk {
 			ids = append(ids, AssigneeQuestionID(i))
 		}
-		response, err := options.Judge.JudgeQuestions(ctx, AssigneeFeature(), options.Automatic, state, ids, time.Time{})
+		response, err := options.Judge.JudgeQuestions(ctx, spec, options.Automatic, build(span.Start, span.End), ids, time.Time{})
 		report.Requests++
 		if err != nil {
 			return err
@@ -257,8 +265,8 @@ func judgeMeetingAssignees(
 				report.Unclear++
 			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 // assigneeFor maps one answer: an attendee or the owner at or above

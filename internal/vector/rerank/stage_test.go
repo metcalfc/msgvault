@@ -336,3 +336,39 @@ func TestStageAdmitFollowsConsentLive(t *testing.T) {
 	assert.Equal("consent_required", reasoner.RerankReason())
 	assert.Empty(fake.requests(), "admission sends nothing")
 }
+
+func TestServiceScorerSplitsDenseBatchesWithinTheTokenBudget(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := storetest.New(t).Store
+	fake := &fakeJev{}
+	service, cfg := rerankService(t, fake.server(t).URL, st)
+	grantRerankConsent(t, st, cfg)
+	scorer, err := rerank.NewServiceScorer(service, rerank.ShapeBatched)
+	require.NoError(err)
+	candidates := make([]string, rerank.MaxCandidates)
+	want := make([]float64, len(candidates))
+	for i := range candidates {
+		text := "Order confirmation "
+		want[i] = 0.2
+		if i%3 == 0 {
+			text, want[i] = "Lease deposit receipt ", 0.9
+		}
+		for len(text) < rerank.MaxCandidateBytes-60 {
+			text += fmt.Sprintf("#%d-%04d $%d.49 https://shop.example.com/o?id=%d ", i, len(text), i, len(text))
+		}
+		candidates[i] = text
+	}
+
+	result, err := scorer.Rerank(t.Context(), rerank.Request{Query: "lease deposit", Candidates: candidates})
+	require.NoError(err)
+	assert.Equal(want, result.Scores, "splitting keeps every candidate's score in order")
+	requests := fake.requests()
+	require.Greater(len(requests), 1)
+	assert.Equal(len(requests), result.Usage.Requests)
+	for _, request := range requests {
+		tokens, err := jev.EstimateStateTokens(request["state"], rerank.BatchedQuestions())
+		require.NoError(err)
+		assert.LessOrEqual(tokens, jev.MaxStateTokens)
+	}
+}

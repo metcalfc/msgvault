@@ -364,7 +364,7 @@ func TestSkippedClassifiesEveryGateAndBudgetOutcome(t *testing.T) {
 		{context.DeadlineExceeded, "timeout"},
 		{ErrRequestBounds, "request_bounds"},
 		{ErrInvalidResponse, "invalid_response"},
-		{httpStatusError(503), "provider_error"},
+		{httpStatusError{status: 503}, "provider_error"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.err.Error(), func(t *testing.T) {

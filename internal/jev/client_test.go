@@ -373,7 +373,7 @@ func TestSafeFailureCategories(t *testing.T) {
 		{ErrUsageUnknown, "provider usage unavailable"},
 		{context.DeadlineExceeded, "provider timeout or cancellation"},
 		{context.Canceled, "provider timeout or cancellation"},
-		{httpStatusError(503), "provider returned HTTP 503"},
+		{httpStatusError{status: 503}, "provider returned HTTP 503"},
 		{ErrInvalidResponse, "invalid provider response"},
 		{ErrRequestBounds, "request bounds exceeded"},
 		{ErrBreakerOpen, "provider circuit breaker open"},

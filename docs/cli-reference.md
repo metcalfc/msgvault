@@ -3078,7 +3078,14 @@ does: `Subject:`, `From:` (the sender's name, or the address when there is no
 name), `Date:`, and the body after the cleanup used for embeddings. It loads
 the candidates in one batched lookup and sends only the query and that text.
 Candidate text is capped at 2048 UTF-8 bytes, query text at 4096 bytes, each
-request at 128 KiB, and each response at 64 KiB. Per-candidate requests use at
+request at 128 KiB, and each response at 64 KiB. Each request must also fit
+the [Jev token budget](/docs/usage/jev-judgments/#budgets-and-safety): the
+batched shape splits candidates that tokenize densely (order numbers, URLs,
+SKUs) across several requests, so it can use more than one request per
+ranking. If TypeSafe still answers `max_tokens_exceeded`, the unanswered
+requests are split once more and resent. The up-front
+`--rerank-max-requests` check counts one batched request per ranking; the
+limit itself is enforced as requests are sent. Per-candidate requests use at
 most eight concurrent calls. Each HTTP call has a 10-second deadline, including
 reading the response. A ranking can take longer when requests run in several
 waves; its full elapsed time contributes to the reported latency. The
@@ -3096,6 +3103,10 @@ subtotals, which may be zero. `usage_complete=false` marks them as partial.
 Unknown cost prints `unknown` in the table and `null` in JSON. Provider
 failures stop further provider calls because failed requests may have unreported
 usage. They leave the baseline in the report and return a nonzero command result.
+A `max_tokens_exceeded` answer is the exception: it only means that request was
+too large, so the run splits and continues. The failure message and the arm's
+`error` carry the provider's `error_type` token when there is one, for example
+`provider returned HTTP 400 (max_tokens_exceeded)`, and no other response text.
 
 Example with placeholder prices:
 

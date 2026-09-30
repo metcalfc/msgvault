@@ -185,7 +185,8 @@ func isStoreError(err error) bool {
 }
 
 // judgeBatch asks about one batch and stores the suggestions. A batch the
-// client rejects as too large is halved until it fits.
+// client or the provider rejects as too large (over the shared Jev token
+// budget) is halved until it fits.
 func judgeBatch(ctx context.Context, st Store, options Options, batch []pending, report *Report) error {
 	state := State{Messages: make([]Message, len(batch))}
 	ids := make([]string, 0, len(batch)*3)
@@ -194,7 +195,11 @@ func judgeBatch(ctx context.Context, st Store, options Options, batch []pending,
 		ids = append(ids, ImpersonationID(i), PressureID(i), CategoryID(i))
 	}
 	response, err := options.Judge.JudgeQuestions(ctx, JevFeature(), false, state, ids, time.Time{})
-	if errors.Is(err, jev.ErrRequestBounds) && len(batch) > 1 {
+	if jev.Oversize(err) && len(batch) > 1 {
+		if !errors.Is(err, jev.ErrRequestBounds) {
+			// The provider refused a request that was sent (max_tokens_exceeded).
+			report.Requests++
+		}
 		half := len(batch) / 2
 		if err := judgeBatch(ctx, st, options, batch[:half], report); err != nil {
 			return err

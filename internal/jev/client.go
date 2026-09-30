@@ -34,7 +34,9 @@ const (
 	DefaultModel = "jev-1.13.0"
 	// DefaultRequestTimeout bounds one HTTP exchange.
 	DefaultRequestTimeout = 10 * time.Second
-	// DefaultMaxRequestBytes caps one encoded request body.
+	// DefaultMaxRequestBytes caps one encoded request body. The provider's
+	// real limit is in tokens; Encode also enforces MaxStateTokens and
+	// MaxRequestTokens.
 	DefaultMaxRequestBytes = 128 << 10
 	// DefaultMaxResponseBytes caps one response body.
 	DefaultMaxResponseBytes = 64 << 10
@@ -64,9 +66,99 @@ var (
 	ErrInvalidResponse = errors.New("invalid provider response")
 )
 
-type httpStatusError int
+// httpStatusError is a non-2xx answer. errorType is the provider's
+// machine-readable error_type token when the body carried one; nothing else
+// from the body is kept, so the error never repeats provider content.
+type httpStatusError struct {
+	status    int
+	errorType string
+}
 
-func (e httpStatusError) Error() string { return fmt.Sprintf("provider returned HTTP %d", int(e)) }
+func (e httpStatusError) Error() string {
+	if e.errorType != "" {
+		return fmt.Sprintf("provider returned HTTP %d (%s)", e.status, e.errorType)
+	}
+	return fmt.Sprintf("provider returned HTTP %d", e.status)
+}
+
+// Unwrap maps a max_tokens_exceeded answer to ErrStateTooLarge so callers
+// that pack items can split and retry.
+func (e httpStatusError) Unwrap() error {
+	if e.errorType == providerMaxTokensExceeded {
+		return ErrStateTooLarge
+	}
+	return nil
+}
+
+// ErrorType is the provider's error_type token, or "" when the body had none.
+func (e httpStatusError) ErrorType() string { return e.errorType }
+
+// ProviderErrorType returns the provider's error_type token carried by err,
+// or "" when there is none. The token is validated to be a short identifier,
+// so it is safe to log and report.
+func ProviderErrorType(err error) string {
+	if status, ok := errors.AsType[httpStatusError](err); ok {
+		return status.errorType
+	}
+	return ""
+}
+
+const (
+	providerMaxTokensExceeded = "max_tokens_exceeded" //nolint:gosec // a provider error type name, not a credential.
+	// maxErrorBodyBytes bounds how much of a non-2xx body is read to find
+	// its error_type.
+	maxErrorBodyBytes = 4 << 10
+	maxErrorTypeBytes = 64
+)
+
+type wireErrorBody struct {
+	Detail *struct {
+		ErrorType string `json:"error_type"`
+	} `json:"detail"`
+	Error *struct {
+		Type string `json:"type"`
+	} `json:"error"`
+}
+
+// providerErrorType reads at most maxErrorBodyBytes of a failed response
+// and returns only its error_type token (detail.error_type, or error.type).
+// Anything that is not a short lowercase identifier is dropped, so no
+// provider prose, echoed state, or credential can reach a log or a report.
+func providerErrorType(body io.Reader) string {
+	raw, err := io.ReadAll(io.LimitReader(body, maxErrorBodyBytes))
+	if err != nil || len(raw) == 0 {
+		return ""
+	}
+	var wire wireErrorBody
+	// A body that is not an object (FastAPI sends a string detail for some
+	// errors) simply yields no token.
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		return ""
+	}
+	token := ""
+	if wire.Detail != nil {
+		token = wire.Detail.ErrorType
+	}
+	if token == "" && wire.Error != nil {
+		token = wire.Error.Type
+	}
+	if !validErrorType(token) {
+		return ""
+	}
+	return token
+}
+
+func validErrorType(token string) bool {
+	if token == "" || len(token) > maxErrorTypeBytes {
+		return false
+	}
+	for _, r := range token {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' && r != '.' && r != '-' {
+			return false
+		}
+	}
+	return true
+}
 
 // Question is one typed question keyed by ID inside a request. Instructions
 // and Criteria accept a string, an object, or an array exactly as the API
@@ -361,6 +453,18 @@ func (c *Client) Encode(request Request) ([]byte, error) {
 	if len(body) > c.maxRequest {
 		return nil, fmt.Errorf("%w: encoded Jev request exceeds %d bytes", ErrRequestBounds, c.maxRequest)
 	}
+	// The provider counts tokens, not bytes: refuse a request its estimate
+	// puts over the state or whole-request budget before anything is sent.
+	stateTokens, err := EstimateStateTokens(request.State, request.Questions)
+	if err != nil {
+		return nil, err
+	}
+	if stateTokens > MaxStateTokens {
+		return nil, stateTooLarge(stateTokens, MaxStateTokens)
+	}
+	if total := EstimateTokens(string(body)); total > MaxRequestTokens {
+		return nil, stateTooLarge(total, MaxRequestTokens)
+	}
 	return body, nil
 }
 
@@ -526,9 +630,14 @@ func emptyBatch() BatchResult {
 
 // SafeFailure reports a known error category without including state, message
 // text, credentials, or provider response bodies.
+// A provider status carries only its validated error_type token, such as
+// "provider returned HTTP 400 (max_tokens_exceeded)".
 func SafeFailure(err error) string {
+	if status, ok := errors.AsType[httpStatusError](err); ok {
+		return status.Error()
+	}
 	for _, category := range []error{
-		ErrRequestLimit, ErrCostStop, ErrUsageUnknown, ErrRequestBounds, ErrInvalidResponse,
+		ErrRequestLimit, ErrCostStop, ErrUsageUnknown, ErrStateTooLarge, ErrRequestBounds, ErrInvalidResponse,
 		ErrBreakerOpen, ErrRunHalted, ErrDayRequestLimit, ErrDayCostStop,
 	} {
 		if errors.Is(err, category) {
@@ -537,9 +646,6 @@ func SafeFailure(err error) string {
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return "provider timeout or cancellation"
-	}
-	if status, ok := errors.AsType[httpStatusError](err); ok {
-		return status.Error()
 	}
 	return "provider request failed"
 }
@@ -582,7 +688,7 @@ func (c *Client) send(ctx context.Context, deadline time.Time, body []byte, ques
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
-		return Response{}, httpStatusError(response.StatusCode)
+		return Response{}, httpStatusError{status: response.StatusCode, errorType: providerErrorType(response.Body)}
 	}
 	mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if parseErr != nil || (mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json")) {

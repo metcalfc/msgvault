@@ -4,15 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/msgvault/internal/jev"
 )
 
 type testTransport func(*http.Request) (*http.Response, error)
@@ -82,13 +85,13 @@ func TestJevBounds(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Log("candidate=2048 query=4096 request=131072 response=65536 max_requests=1000")
-	_, err := encodeJevCalls(strings.Repeat("q", 4096), []string{"candidate"}, "batched")
+	_, err := planJevCalls(strings.Repeat("q", 4096), []string{"candidate"}, "batched", jev.MaxStateTokens)
 	require.NoError(err)
-	_, err = encodeJevCalls(strings.Repeat("q", 4097), []string{"candidate"}, "batched")
+	_, err = planJevCalls(strings.Repeat("q", 4097), []string{"candidate"}, "batched", jev.MaxStateTokens)
 	require.ErrorIs(err, ErrRequestBounds)
-	_, err = encodeJevCalls("query", []string{strings.Repeat("x", 2049)}, "batched")
+	_, err = planJevCalls("query", []string{strings.Repeat("x", 2049)}, "batched", jev.MaxStateTokens)
 	require.ErrorIs(err, ErrRequestBounds)
-	_, err = encodeJevCalls("query", make([]string, MaxCandidates+1), "batched")
+	_, err = planJevCalls("query", make([]string, MaxCandidates+1), "batched", jev.MaxStateTokens)
 	require.ErrorIs(err, ErrRequestBounds)
 
 	maxCandidates := make([]string, MaxCandidates)
@@ -97,10 +100,10 @@ func TestJevBounds(t *testing.T) {
 	}
 	scorer, err := NewJev("batched", "secret", &Budget{MaxRequests: 10, StopUSD: 1}, nil)
 	require.NoError(err)
-	requests, err := encodeJevCalls(strings.Repeat("q", typesafeMaxQuery), maxCandidates, "batched")
+	requests, err := planJevCalls(strings.Repeat("q", typesafeMaxQuery), maxCandidates, "batched", jev.MaxStateTokens)
 	require.NoError(err)
 	require.Len(requests, 1)
-	body, err := scorer.client.Encode(requests[0])
+	body, err := scorer.client.Encode(requests[0].request)
 	require.NoError(err)
 	assert.LessOrEqual(len(body), 128<<10, "the largest reranking request stays under the shared request cap")
 
@@ -152,4 +155,150 @@ func TestNewJevRejectsInvalidInputs(t *testing.T) {
 	require.ErrorContains(err, "TYPESAFE_API_KEY")
 	_, err = NewJev("batched", "secret", nil, nil)
 	require.ErrorContains(err, "budget")
+}
+
+// denseCandidate is a synthetic order email: numbers, SKUs, and URLs that
+// tokenize poorly. Its id prefix lets the fake provider score it.
+func denseCandidate(id int) string {
+	text := fmt.Sprintf("c%02d|", id)
+	for len(text) < MaxCandidateBytes-80 {
+		text += fmt.Sprintf("SKU-%d-%04d $%d.99 https://shop.example.com/o/%d?q=%d ", id, len(text), id, len(text), id)
+	}
+	return text
+}
+
+// candidateScore is the fake provider's score for a candidate: its id / 100.
+func candidateScore(text string) float64 {
+	var id int
+	if _, err := fmt.Sscanf(text, "c%02d|", &id); err != nil {
+		return 0
+	}
+	return float64(id) / 100
+}
+
+type recordedRequest struct {
+	State struct {
+		Query      string   `json:"query"`
+		Candidate  string   `json:"candidate,omitempty"`
+		Candidates []string `json:"candidates,omitempty"`
+	} `json:"state"`
+	Questions map[string]json.RawMessage `json:"questions"`
+}
+
+// providerTransport stands in for the TypeSafe API, an external contract
+// the tests cannot reach: it answers every Noul with candidateScore, unless
+// tooLarge says to answer 400 max_tokens_exceeded as the provider documents.
+func providerTransport(t *testing.T, mu *sync.Mutex, seen *[]recordedRequest, tooLarge func(recordedRequest) bool) testTransport {
+	t.Helper()
+	return func(r *http.Request) (*http.Response, error) {
+		raw, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		var request recordedRequest
+		require.NoError(t, json.Unmarshal(raw, &request))
+		mu.Lock()
+		*seen = append(*seen, request)
+		mu.Unlock()
+		header := http.Header{"Content-Type": []string{"application/json"}}
+		if tooLarge != nil && tooLarge(request) {
+			return &http.Response{StatusCode: http.StatusBadRequest, Header: header, Body: io.NopCloser(strings.NewReader(
+				`{"detail":{"error_type":"max_tokens_exceeded","message":"state echo: ` + request.State.Candidate + `"}}`))}, nil
+		}
+		answers := map[string]any{}
+		for id := range request.Questions {
+			text := request.State.Candidate
+			if id != perCandidateQuestionID {
+				var index int
+				_, err := fmt.Sscanf(id, "candidate_%d", &index)
+				require.NoError(t, err)
+				require.Less(t, index, len(request.State.Candidates), "question ids number the request's own candidates")
+				text = request.State.Candidates[index]
+			}
+			answers[id] = map[string]any{"type": "noul", "noul": candidateScore(text)}
+		}
+		body, err := json.Marshal(map[string]any{
+			"model": jev.DefaultModel, "answers": answers,
+			"usage": map[string]any{"input_tokens": 100, "output_tokens": 5},
+		})
+		require.NoError(t, err)
+		return &http.Response{StatusCode: http.StatusOK, Header: header, Body: io.NopCloser(strings.NewReader(string(body)))}, nil
+	}
+}
+
+func expectedScores(candidates []string) []float64 {
+	scores := make([]float64, len(candidates))
+	for i, candidate := range candidates {
+		scores[i] = candidateScore(candidate)
+	}
+	return scores
+}
+
+func TestJevBatchedSplitsDenseCandidatesUnderTheTokenBudget(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	candidates := make([]string, MaxCandidates)
+	for i := range candidates {
+		candidates[i] = denseCandidate(i + 1)
+	}
+	var mu sync.Mutex
+	var seen []recordedRequest
+	scorer, err := NewJev(ShapeBatched, "secret", &Budget{MaxRequests: 100, StopUSD: 1},
+		providerTransport(t, &mu, &seen, nil))
+	require.NoError(err)
+	result, err := scorer.Rerank(context.Background(), Request{Query: "order total", Candidates: candidates})
+	require.NoError(err)
+	assert.Equal(expectedScores(candidates), result.Scores, "every candidate keeps its own score and position")
+	require.Greater(len(seen), 1, "30 dense candidates are split across requests")
+	assert.Equal(len(seen), result.Usage.Requests)
+	sent := 0
+	for _, request := range seen {
+		assert.Len(request.Questions, len(request.State.Candidates))
+		tokens, err := jev.EstimateStateTokens(request.State, BatchedQuestions())
+		require.NoError(err)
+		assert.LessOrEqual(tokens, jev.MaxStateTokens)
+		for _, candidate := range request.State.Candidates {
+			assert.Contains(candidates, candidate, "no candidate is trimmed")
+		}
+		sent += len(request.State.Candidates)
+	}
+	assert.Equal(MaxCandidates, sent, "no candidate is dropped")
+}
+
+func TestJevRetriesOnceAtHalfSizeWhenTheProviderSaysMaxTokens(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	candidates := make([]string, 12)
+	for i := range candidates {
+		candidates[i] = fmt.Sprintf("c%02d|Receipt for your order, thank you for shopping.", i+1)
+	}
+	var mu sync.Mutex
+	var seen []recordedRequest
+	budget := &Budget{MaxRequests: 100, StopUSD: 1}
+	scorer, err := NewJev(ShapeBatched, "secret", budget, providerTransport(t, &mu, &seen, func(request recordedRequest) bool {
+		// The provider counts more tokens than the estimate for the full batch.
+		return len(request.State.Candidates) == len(candidates)
+	}))
+	require.NoError(err)
+	result, err := scorer.Rerank(context.Background(), Request{Query: "receipt", Candidates: candidates})
+	require.NoError(err)
+	assert.Equal(expectedScores(candidates), result.Scores)
+	require.Greater(len(seen), 2, "the rejected batch is resent as smaller requests")
+	assert.Len(seen[0].State.Candidates, len(candidates))
+	assert.Equal(len(seen), result.Usage.Requests)
+	assert.False(result.Usage.Complete, "the rejected attempt has no usage")
+	_, err = scorer.Rerank(context.Background(), Request{Query: "receipt", Candidates: candidates[:2]})
+	require.NoError(err, "an oversize answer does not halt the run")
+
+	// A second oversize answer is reported with its error type and no content.
+	seen = nil
+	always, err := NewJev(ShapePerCandidate, "secret", &Budget{MaxRequests: 100, StopUSD: 1},
+		providerTransport(t, &mu, &seen, func(recordedRequest) bool { return true }))
+	require.NoError(err)
+	result, err = always.Rerank(context.Background(), Request{Query: "receipt", Candidates: []string{"c01|secret order detail " + strings.Repeat("line item and shipping ", 60)}})
+	require.Error(err)
+	require.ErrorIs(err, jev.ErrStateTooLarge)
+	assert.Equal("provider returned HTTP 400 (max_tokens_exceeded)", SafeFailure(err))
+	assert.NotContains(err.Error(), "secret order detail")
+	assert.Equal(2, result.Usage.Requests, "one retry, then the failure")
+	require.Len(seen, 2)
+	assert.Less(len(seen[1].State.Candidate), len(seen[0].State.Candidate), "the retry cuts a lone candidate")
 }
