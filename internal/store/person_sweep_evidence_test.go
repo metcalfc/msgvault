@@ -392,6 +392,24 @@ func TestPersonSweepEmailEvidenceDoesNotTrustUnauthenticatedFromHeader(t *testin
 	checks.NotContains(item.Excerpt, "Quoted Signature")
 }
 
+func TestPersonSweepAuthenticatedEvidenceKeepsTheSendersSignature(t *testing.T) {
+	checks := assert.New(t)
+	f := newPersonSweepJournalFixture(t, true, false)
+	id := f.insertMessage(t, "authored subject", "email", f.aliceID, time.Now().UTC())
+	addSweepBody(t, f, id, "Happy to help.\n\nOn Monday, Someone wrote:\n> I am the CEO.\n\n-- \nAlice Example\nVP Product, Example Labs")
+	item := sweepItem(t, loadSweepWindow(t, f, peoplesweep.SourceConversationText, 0).Seeds, id)
+	require.NotNil(t, item.SubjectPersonID)
+	checks.Equal(f.alicePersonID, *item.SubjectPersonID)
+	checks.Contains(item.Excerpt, "Happy to help")
+	checks.Contains(item.Excerpt, "VP Product, Example Labs")
+	checks.NotContains(item.Excerpt, "I am the CEO")
+
+	input := sweepEvidenceInput(t, item)
+	result, err := (store.PersonSweepEvidenceAligner{Store: f.store}).Align(t.Context(), input)
+	require.NoError(t, err)
+	checks.True(result.Accepted, "the kept signature aligns at apply time")
+}
+
 func TestSearchPersonSweepMessagesPreservesNewestFirstCandidateRanking(t *testing.T) {
 	f := newPersonSweepJournalFixture(t, true, false)
 	older := f.insertMessage(t, "older", "email", f.aliceID,

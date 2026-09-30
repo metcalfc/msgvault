@@ -499,8 +499,14 @@ func (s *Store) hydratePersonSweepMessageSet(
 			personSweepSourceAuthenticatesSender(row.sourceType))
 		text := canonicalSweepMessageText(row.subject, row.body, row.snippet)
 		if slices.Contains(prov.Roles, personscope.RoleFrom) {
+			// A message the person authenticated as sender keeps its
+			// signature block: it is the person's own statement of their
+			// title and employer, which is what employment claims cite.
+			// Quoted replies are always dropped, and so is the signature of
+			// a sender the source does not authenticate.
+			ownMessage := subjectPersonID != nil && *subjectPersonID == personID
 			body, _ := preprocess.Preprocess("", row.body, 0, preprocess.Config{
-				StripQuotes: true, StripSignatures: true, StripHTML: true,
+				StripQuotes: true, StripSignatures: !ownMessage, StripHTML: true,
 				StripBase64: true, CollapseWhitespace: true,
 			})
 			text = canonicalSweepMessageText(row.subject, body, row.snippet)

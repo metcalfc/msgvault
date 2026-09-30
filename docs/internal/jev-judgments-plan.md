@@ -542,7 +542,12 @@ bar.
 - [x] `getAccountID` case-insensitive with valid accounts in the error;
   document the `message_type:` operator in the MCP catalog; tokenised AND
   matching in `profileMatchesPeopleQuery`.
-- [ ] Keep signature blocks in the employment evidence lane.
+- [x] Keep signature blocks in the employment evidence lane.
+  > The people sweep keeps the signature block of a message the person
+  > authenticated as sender (the only messages admitted as their own
+  > evidence), since a signature is where a title and employer are stated.
+  > Quoted replies are still dropped, and an unauthenticated sender's
+  > signature is still stripped.
 
 ## Out of scope
 
