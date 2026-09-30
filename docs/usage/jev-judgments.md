@@ -279,8 +279,8 @@ missed, and one `title_same_role_N` per title pair.
   clearly different seniority, or unrelated positions.
 
 `msgvault jev consent organization_resolution` prints the same disclosure.
-At most eight organizations are asked about per saved set of facts; the rest
-resolve as before.
+At most eight organizations are asked about per saved set of facts, within one
+minute; the rest resolve as before.
 
 ## Turn it off
 

@@ -19,6 +19,11 @@ import (
 // once. The rest resolve exactly as before Jev.
 const maxReferencesPerPreparation = 8
 
+// maxPreparationTime bounds how long one generation waits for judgments
+// before it is committed, so a slow provider cannot hold a worker's lease.
+// References left when it runs out resolve exactly as before Jev.
+const maxPreparationTime = time.Minute
+
 // Store is the archive authority the preparer reads shortlists from and
 // writes aliases and reviews to. *store.Store implements it.
 type Store interface {
@@ -109,8 +114,13 @@ func (p *Preparer) Prepare(
 		references = references[:maxReferencesPerPreparation]
 	}
 	results := make([]ReferenceResult, 0, len(references))
+	deadline := time.Now().Add(maxPreparationTime)
 	for _, reference := range references {
-		result, err := p.resolve(ctx, personID, reference)
+		if !time.Now().Before(deadline) {
+			results = append(results, ReferenceResult{Outcome: OutcomeSkipped, Skipped: "timeout"})
+			continue
+		}
+		result, err := p.resolve(ctx, personID, reference, deadline)
 		if err != nil {
 			p.logger.Warn("organization resolution failed",
 				"feature", jev.FeatureOrganizationResolution, "error", err.Error())
@@ -179,7 +189,7 @@ type titlePair struct {
 }
 
 func (p *Preparer) resolve(
-	ctx context.Context, personID int64, reference employmentReference,
+	ctx context.Context, personID int64, reference employmentReference, deadline time.Time,
 ) (ReferenceResult, error) {
 	shortlist, err := p.store.OrganizationShortlistContext(ctx, reference.ref)
 	if err != nil {
@@ -198,12 +208,12 @@ func (p *Preparer) resolve(
 		if len(pairs) == 0 {
 			return result, nil
 		}
-		return p.askTitlesOnly(ctx, result, pairs)
+		return p.askTitlesOnly(ctx, result, pairs, deadline)
 	case store.OrganizationCreated:
 		if len(shortlist.Candidates) == 0 {
 			return ReferenceResult{Outcome: OutcomeNoMatch}, nil
 		}
-		return p.askOrganization(ctx, personID, reference, shortlist)
+		return p.askOrganization(ctx, personID, reference, shortlist, deadline)
 	default:
 		return ReferenceResult{}, fmt.Errorf("unknown organization lookup status %q", shortlist.Status)
 	}
@@ -259,7 +269,7 @@ func (p *Preparer) titlePairs(
 }
 
 func (p *Preparer) askTitlesOnly(
-	ctx context.Context, result ReferenceResult, pairs []titlePair,
+	ctx context.Context, result ReferenceResult, pairs []titlePair, deadline time.Time,
 ) (ReferenceResult, error) {
 	organizationName, err := p.organizationName(ctx, result.OrganizationID)
 	if err != nil {
@@ -268,7 +278,7 @@ func (p *Preparer) askTitlesOnly(
 	state := State{TitlePairs: make(map[string]TitlePairState, len(pairs))}
 	names := map[int64]string{result.OrganizationID: organizationName}
 	questions := addTitlePairs(&state, pairs, names)
-	response, err := p.judge.JudgeQuestions(ctx, Feature(), p.automatic, state, questions, time.Time{})
+	response, err := p.judge.JudgeQuestions(ctx, Feature(), p.automatic, state, questions, deadline)
 	if err != nil {
 		result.Skipped = jev.Skipped(err)
 		p.logSkipped(result.Skipped)
@@ -304,6 +314,7 @@ func addTitlePairs(state *State, pairs []titlePair, names map[int64]string) []st
 
 func (p *Preparer) askOrganization(
 	ctx context.Context, personID int64, reference employmentReference, shortlist *store.OrganizationShortlist,
+	deadline time.Time,
 ) (ReferenceResult, error) {
 	state := State{
 		Reference:  &ReferenceState{Name: shortlist.Reference.Name, Domain: shortlist.Reference.Domain},
@@ -329,7 +340,7 @@ func (p *Preparer) askOrganization(
 	if len(pairs) == 0 {
 		state.TitlePairs = nil
 	}
-	response, err := p.judge.JudgeQuestions(ctx, Feature(), p.automatic, state, questions, time.Time{})
+	response, err := p.judge.JudgeQuestions(ctx, Feature(), p.automatic, state, questions, deadline)
 	if err != nil {
 		result := ReferenceResult{Outcome: OutcomeSkipped, Skipped: jev.Skipped(err)}
 		p.logSkipped(result.Skipped)
