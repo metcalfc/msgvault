@@ -86,4 +86,27 @@ describe('OrganizationMatchReviewQueue', () => {
     await waitFor(() =>
       expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Organization matches to confirm' })));
   });
+  it('offers retry when refilling the exhausted batch fails without repeating the decision', async () => {
+    let reads = 0;
+    let decisions = 0;
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      if (request.method === 'POST') {
+        decisions++;
+        return Response.json({ review_id: 4, decision: 'rejected', organization_id: 40 });
+      }
+      reads++;
+      if (reads === 2) return Response.json({ message: 'Refill unavailable' }, { status: 503 });
+      return Response.json({ reviews: reads === 1 ? [review] : [{ ...review, id: 99 }], limit: 50 });
+    });
+    const controller = new OrganizationReviewController(createAPIClient(fetchFn));
+    render(OrganizationMatchReviewQueue, { controller });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Different organization' }));
+    expect(await screen.findByText('Refill unavailable')).toBeDefined();
+    expect(screen.queryByText('No organization matches to confirm.')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry organization matches' }));
+    expect(await screen.findByRole('button', { name: 'Different organization' })).toBeDefined();
+    expect(decisions).toBe(1);
+    expect(reads).toBe(3);
+  });
 });

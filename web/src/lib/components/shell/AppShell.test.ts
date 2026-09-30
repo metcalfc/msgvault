@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { appShortcuts } from '@kenn-io/kit-ui';
 import { describe, expect, it, vi } from 'vitest';
 import { createRawSnippet } from 'svelte';
@@ -1102,6 +1102,76 @@ describe('AppShell', () => {
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Timeline' }).getAttribute('aria-selected')).toBe('true'));
 
     rendered.unmount();
+    state.destroy();
+  });
+
+  async function pendingRecentMessages() {
+    window.history.replaceState(null, '', '/people/7');
+    const baseline = directoryPersonFetch([3], { 3: { canonical: 3, members: [3], label: 'Synthetic Person', activity: 2 } });
+    // Resolve even after abort so stale-response handling is exercised too.
+    const pending = new Map<number, { request: Request; resolve: (response: Response) => void }>();
+    const message = (id: number) => ({ id, source_id: 3, source_message_id: `source-${id}`, conversation_id: id,
+      subject: `Recent ${id}`, message_type: 'email', from: 'reader@example.test', to: [],
+      sent_at: '2026-08-01T12:00:00Z', snippet: '', labels: [], attachments: [], body: '' });
+    const fetchFn = vi.fn<typeof fetch>(async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === '/api/v1/relationships/3/timeline') return Response.json({ canonical_id: 3, identity_revision: 1, cache_revision: 'c', rows: [41, 42].map((id) => ({
+        key: `message:${id}`, kind: 'email', message_type: 'email', title: `Recent ${id}`, occurred_at: '2026-08-01T12:00:00Z', anchor_message_id: id, message_count: 1,
+      })), total_count: 2 });
+      const detail = /^\/api\/v1\/messages\/(41|42)$/.exec(path);
+      if (detail) return new Promise<Response>(resolve => pending.set(Number(detail[1]), { request, resolve }));
+      return baseline.fetchFn(input, init);
+    });
+    const state = new ExploreState(window);
+    const rendered = render(AppShell, { client: createAPIClient(withEntityLabels(fetchFn, syntheticNames)), state, enabled: false });
+    await screen.findByRole('button', { name: /Recent 41/ });
+    return { state, rendered, pending, message };
+  }
+
+  it.each(['success', 'error'])('ignores an older Recent message %s after a newer click', async (outcome) => {
+    const { state, rendered, pending, message } = await pendingRecentMessages();
+    try {
+      await fireEvent.click(screen.getByRole('button', { name: /Recent 41/ }));
+      await fireEvent.click(screen.getByRole('button', { name: /Recent 42/ }));
+      expect([...pending.keys()]).toEqual([41, 42]);
+      expect(pending.get(41)!.request.signal.aborted).toBe(true);
+      await act(() => pending.get(41)!.resolve(outcome === 'success'
+        ? Response.json(message(41))
+        : Response.json({ error: 'not_found', message: 'Missing message' }, { status: 404 })));
+      expect(state.current.workspace).toBe('directory');
+      expect(screen.getByRole('status', { name: 'Operation status' }).textContent).toBe('');
+      await act(() => pending.get(42)!.resolve(Response.json(message(42))));
+      await waitFor(() => expect(state.current.conversationAnchor).toBe('42'));
+    } finally {
+      rendered.unmount();
+      state.destroy();
+    }
+  });
+
+  it('cancels a pending Recent message when navigating away, even if the person is revisited', async () => {
+    const { state, rendered, pending, message } = await pendingRecentMessages();
+    try {
+      await fireEvent.click(screen.getByRole('button', { name: /Recent 41/ }));
+      const origin = { ...state.current };
+      await act(() => state.commitWorkspace('files'));
+      expect(pending.get(41)!.request.signal.aborted).toBe(true);
+      await act(() => state.commitNavigation(origin));
+      await act(() => pending.get(41)!.resolve(Response.json(message(41))));
+      expect(state.current).toMatchObject({ workspace: 'directory', directoryPersonID: 7, conversationAnchor: null });
+    } finally {
+      rendered.unmount();
+      state.destroy();
+    }
+  });
+
+  it('cancels pending Recent message navigation when the shell is destroyed', async () => {
+    const { state, rendered, pending, message } = await pendingRecentMessages();
+    await fireEvent.click(screen.getByRole('button', { name: /Recent 41/ }));
+    rendered.unmount();
+    expect(pending.get(41)!.request.signal.aborted).toBe(true);
+    await act(() => pending.get(41)!.resolve(Response.json(message(41))));
+    expect(state.current.workspace).toBe('directory');
     state.destroy();
   });
 

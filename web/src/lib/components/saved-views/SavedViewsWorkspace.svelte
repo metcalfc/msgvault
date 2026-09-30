@@ -41,6 +41,7 @@
   let editing = $state<SavedView>();
   let editName = $state('');
   let editDescription = $state('');
+  let editGeneration = 0;
   let deleting = $state<SavedView>();
   onMount(() => void load());
   async function load(): Promise<void> {
@@ -84,15 +85,19 @@
     }
   }
   function beginEdit(view: SavedView): void {
+    editGeneration += 1;
     editing = view;
     editName = view.name;
     editDescription = view.description ?? '';
   }
   async function saveEdit(): Promise<void> {
-    if (!editing || !editName.trim()) return;
+    if (saving || !editing || !editName.trim()) return;
     saving = true;
     error = '';
     const target = editing;
+    const generation = editGeneration;
+    const submittedName = editName;
+    const submittedDescription = editDescription;
     try {
       const {
         data,
@@ -101,8 +106,8 @@
       } = await generatedPatchSavedView(
         { id: target.id },
         {
-          name: editName.trim(),
-          description: editDescription.trim(),
+          name: submittedName.trim(),
+          description: submittedDescription.trim(),
         },
         {
           ...client,
@@ -115,7 +120,13 @@
         throw new Error(messageFor(responseError, 'Unable to update this view.'));
       }
       views = views.map((view) => (view.id === data.id ? data : view));
-      editing = undefined;
+      if (editing?.id === target.id) {
+        // Keep newer drafts, including a reopened editor, on the saved revision.
+        editing = data;
+        if (generation === editGeneration && editName === submittedName && editDescription === submittedDescription) {
+          editing = undefined;
+        }
+      }
     } catch (cause) {
       error = cause instanceof Error ? cause.message : 'Unable to update this view.';
     } finally {

@@ -496,6 +496,49 @@ describe('ConversationView', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  it.each(['resolve', 'reject'] as const)('keeps the current body request pending when an older request %ss', async (completion) => {
+    const bodies: Array<{ resolve: (response: Response) => void; reject: (cause: Error) => void }> = [];
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      if (path === '/api/v1/messages/1') {
+        return await new Promise<Response>((resolve, reject) => { bodies.push({ resolve, reject }); });
+      }
+      const away = path === '/api/v1/conversations/8';
+      return Response.json({
+        id: away ? 8 : 7, anchor_id: away ? 8 : 1,
+        messages: [away ? { ...message(8), conversation_id: 8 } : omittedMessage(1)],
+        has_before: false, has_after: false, total: 1
+      });
+    });
+    const client = createAPIClient(fetchFn);
+    const rendered = render(ConversationView, { props: { client, conversationId: 7, anchorId: 1 } });
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    await rendered.rerender({ client, conversationId: 8, anchorId: 8 });
+    await screen.findByRole('article', { name: 'Message 8' });
+    await rendered.rerender({ client, conversationId: 7, anchorId: 1 });
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(screen.getByText('Loading message…')).toBeDefined();
+
+    if (completion === 'resolve') bodies[0]!.resolve(Response.json({ ...message(1), body: 'Stale body', body_html: '' }));
+    else bodies[0]!.reject(new TypeError('Stale network failure'));
+    // Let the obsolete fetch and its response handling settle before checking
+    // the still-pending current request and its expansion deduplication.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.getByText('Loading message…')).toBeDefined();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('Stale body')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: /Collapse message 1/ }));
+    await fireEvent.click(screen.getByRole('button', { name: /Expand message 1/ }));
+    expect(bodies).toHaveLength(2);
+    expect(screen.getByText('Loading message…')).toBeDefined();
+
+    bodies[1]!.resolve(Response.json({ ...message(1), body: 'Current body', body_html: '' }));
+    expect(await screen.findByText('Current body')).toBeDefined();
+    expect(screen.queryByText('Loading message…')).toBeNull();
+  });
+
   it('notes bounded windows with quiet notices instead of chrome', async () => {
     const fetchFn = vi.fn<typeof fetch>(async () => Response.json({
       id: 7, anchor_id: 2, messages: [message(2)], has_before: true, has_after: true, total: 40

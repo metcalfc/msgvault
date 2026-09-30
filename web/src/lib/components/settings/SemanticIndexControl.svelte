@@ -59,12 +59,12 @@
 >
   <div class="semantic-index">
     <p role="status" aria-live="polite">
-      {#if coverage}
-        {semanticCoverageSummary(coverage)}.{#if coverage.detail}{' '}{coverage.detail}{/if}
+      {#if checking}
+        Checking semantic index status…
       {:else if loadError}
         {loadError}
-      {:else if checking}
-        Checking semantic index status…
+      {:else if coverage}
+        {semanticCoverageSummary(coverage)}.{#if coverage.detail}{' '}{coverage.detail}{/if}
       {:else}
         Check the index to see how much of the archive is embedded.
       {/if}

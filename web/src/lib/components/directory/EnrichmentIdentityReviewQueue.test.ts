@@ -93,4 +93,27 @@ describe('EnrichmentIdentityReviewQueue', () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('article', { name: 'Second Reviewee' })));
     expect(onOpenPerson).not.toHaveBeenCalled();
   });
+  it('offers retry when refilling the exhausted batch fails without repeating the decision', async () => {
+    let reads = 0;
+    let decisions = 0;
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      if (request.method === 'POST') {
+        decisions++;
+        return Response.json({ attempt_id: 7, person_id: 70, decision: 'rejected', projections: 0 });
+      }
+      reads++;
+      if (reads === 2) return Response.json({ message: 'Refill unavailable' }, { status: 503 });
+      return Response.json({ reviews: reads === 1 ? [review] : [{ ...review, attempt_id: 99 }], limit: 50 });
+    });
+    const controller = new EnrichmentReviewController(createAPIClient(fetchFn));
+    render(EnrichmentIdentityReviewQueue, { controller });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Not this person' }));
+    expect(await screen.findByText('Refill unavailable')).toBeDefined();
+    expect(screen.queryByText('No enrichment identities to confirm.')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry enrichment identities' }));
+    expect(await screen.findByRole('button', { name: 'Not this person' })).toBeDefined();
+    expect(decisions).toBe(1);
+    expect(reads).toBe(3);
+  });
 });

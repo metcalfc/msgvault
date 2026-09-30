@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
@@ -9,6 +9,36 @@ function pathOf(input: RequestInfo | URL): string {
 }
 
 describe('SemanticIndexControl', () => {
+  it('shows refresh progress and failure instead of stale coverage, then recovers on retry', async () => {
+    let rejectRefresh!: (cause: Error) => void;
+    const refresh = new Promise<Response>((_resolve, reject) => { rejectRefresh = reject; });
+    const fetchFn = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({
+        status: 'ready', eligible_count: 2, embedded_count: 2, percentage: 100,
+        cache_revision: 'cache-1', actions: []
+      }))
+      .mockReturnValueOnce(refresh)
+      .mockResolvedValueOnce(Response.json({
+        status: 'incomplete', eligible_count: 4, embedded_count: 2, percentage: 50,
+        cache_revision: 'cache-2', actions: []
+      }));
+    render(SemanticIndexControl, { client: createAPIClient(fetchFn) });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Check index status' }));
+    await screen.findByText('Semantic index: 100% of 2 items.');
+    await fireEvent.click(screen.getByRole('button', { name: 'Check index status' }));
+    await waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('status').textContent).toContain('Checking semantic index status');
+    expect(screen.queryByText('Semantic index: 100% of 2 items.')).toBeNull();
+
+    rejectRefresh(new TypeError('network unreachable'));
+    await screen.findByText('network unreachable');
+    expect(screen.queryByText('Semantic index: 100% of 2 items.')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Check index status' }));
+    await screen.findByText('Semantic index: 50% of 4 items.');
+    expect(screen.queryByText('network unreachable')).toBeNull();
+  });
+
   it('loads nothing until asked, then names the index status', async () => {
     const fetchFn = vi.fn<typeof fetch>(async () => Response.json({
       status: 'incomplete', eligible_count: 2, embedded_count: 1, percentage: 50,

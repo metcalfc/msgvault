@@ -36,6 +36,8 @@ export class EnrichmentReviewController {
   private readonly client: APIClient;
   private abort: AbortController | undefined;
   private disposed = false;
+  // A list read may have started before a successful decision committed.
+  private readonly decided = new Set<number>();
 
   constructor(client: APIClient) {
     this.client = client;
@@ -60,7 +62,7 @@ export class EnrichmentReviewController {
       );
       if (this.disposed || abort.signal.aborted) return;
       if (response.data) {
-        this.rows = response.data.reviews ?? [];
+        this.rows = (response.data.reviews ?? []).filter((row) => !this.decided.has(row.attempt_id));
         this.loaded = true;
         return;
       }
@@ -105,6 +107,7 @@ export class EnrichmentReviewController {
         const who = row?.person_display_name?.trim() ||
           await this.names.settledLabel('person', response.data.person_id, 'the person');
         if (this.disposed) return { ok: false, message: 'Review closed.' };
+        this.decided.add(attemptID);
         this.rows = this.rows.filter((candidate) => candidate.attempt_id !== attemptID);
         this.status = confirm
           ? `Identity confirmed for ${who}. ${response.data.projections} value(s) applied.`
@@ -120,6 +123,12 @@ export class EnrichmentReviewController {
       return { ok: false, message };
     } finally {
       this.pending.delete(attemptID);
+      // Wait for concurrent decisions, then refill before showing an empty queue.
+      // load() keeps refill errors separate from the committed decision and
+      // the queue's existing Retry control can recover without repeating it.
+      if (!this.disposed && this.decided.has(attemptID) && this.pending.size === 0 && this.rows.length === 0) {
+        await this.load();
+      }
     }
   }
 }

@@ -885,21 +885,36 @@
       [ARCHIVE_MEETING_HISTORY_KEY]: { id: message.id, returnSelectedRow }
     }, '', window.location.href);
   }
+  let messageNavigation: { origin: string; controller: AbortController } | undefined;
+  function cancelMessageNavigation(): void {
+    messageNavigation?.controller.abort();
+    messageNavigation = undefined;
+  }
+  $effect(() => {
+    const current = archiveNavigationFingerprint;
+    untrack(() => {
+      if (messageNavigation && messageNavigation.origin !== current) cancelMessageNavigation();
+    });
+  });
   /** Opens a message known only by id (a Directory contact-state ref) in
    * the Everything reading pane: a fresh table view bounded to the day it
    * was sent, with the message's row selected and the thread anchored on
    * it. The explore loader restores a selected key across pages, so the
    * row is found without a dedicated message route. */
   async function openMessageByID(messageID: number): Promise<void> {
+    cancelMessageNavigation();
     const origin = canonicalFingerprint(exploreState.current);
+    const controller = new AbortController();
+    messageNavigation = { origin, controller };
     let data: MessageDetail | undefined;
     let status: number | undefined;
     try {
-      ({ data, response: { status } } = await getMessage({ id: messageID }, { ...client }));
+      ({ data, response: { status } } = await getMessage({ id: messageID }, { ...client, signal: controller.signal }));
     } catch {
       data = undefined;
     }
-    if (origin !== canonicalFingerprint(exploreState.current)) return;
+    if (controller.signal.aborted || origin !== canonicalFingerprint(exploreState.current)) return;
+    messageNavigation = undefined;
     if (!data) {
       announceOperation(status === 404
         ? 'Couldn\'t open that message: it is no longer in the archive.'
@@ -1386,6 +1401,7 @@
     };
   });
   onDestroy(() => {
+    cancelMessageNavigation();
     pendingReviews.stop();
     debouncedSearchPatch.cancel();
     loader.destroy();

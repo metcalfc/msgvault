@@ -50,6 +50,70 @@ function savedView(overrides: Record<string, unknown> = {}) {
 }
 
 describe('SavedViewsWorkspace', () => {
+  it('keeps another view’s draft open when an earlier save completes', async () => {
+    let resolveSave!: (response: Response) => void;
+    const pendingSave = new Promise<Response>((resolve) => { resolveSave = resolve; });
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      if (request.method === 'GET') {
+        return Response.json({ saved_views: [savedView(), savedView({ id: 8, name: 'Receipts' })] });
+      }
+      return pendingSave;
+    });
+    render(SavedViewsWorkspace, { client: createAPIClient(fetchFn), currentState });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Edit Invoices' }));
+    await fireEvent.input(screen.getByLabelText('Edit name'), { target: { value: 'Invoices 2026' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(2));
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit Receipts' }));
+    await fireEvent.input(screen.getByLabelText('Edit name'), { target: { value: 'Unsaved receipt draft' } });
+
+    resolveSave(Response.json(savedView({ name: 'Invoices 2026', revision: 4 })));
+    await screen.findByRole('heading', { name: 'Invoices 2026' });
+    expect((screen.getByLabelText('Edit name') as HTMLInputElement).value).toBe('Unsaved receipt draft');
+  });
+
+  it.each(['continue editing', 'cancel and reopen'] as const)(
+    'preserves a newer draft and advances its revision when users %s during a save', async (action) => {
+      let resolveSave!: (response: Response) => void;
+      const pendingSave = new Promise<Response>((resolve) => { resolveSave = resolve; });
+      const patches: Request[] = [];
+      const fetchFn = vi.fn<typeof fetch>(async (input) => {
+        const request = input instanceof Request ? input : new Request(input);
+        if (request.method === 'GET') return Response.json({ saved_views: [savedView()] });
+        patches.push(request);
+        if (patches.length === 1) return pendingSave;
+        return Response.json(savedView({ name: 'Next draft', description: 'New notes', revision: 5 }));
+      });
+      render(SavedViewsWorkspace, { client: createAPIClient(fetchFn), currentState });
+
+      await fireEvent.click(await screen.findByRole('button', { name: 'Edit Invoices' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      await waitFor(() => expect(patches).toHaveLength(1));
+      if (action === 'cancel and reopen') {
+        await fireEvent.click(screen.getByRole('button', { name: 'Cancel edit' }));
+        await fireEvent.click(screen.getByRole('button', { name: 'Edit Invoices' }));
+      } else {
+        await fireEvent.input(screen.getByLabelText('Edit name'), { target: { value: 'Next draft' } });
+        await fireEvent.input(screen.getByLabelText('Edit description'), { target: { value: 'New notes' } });
+      }
+
+      resolveSave(Response.json(savedView({ revision: 4 })));
+      await waitFor(() => expect((screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled).toBe(false));
+      expect((screen.getByLabelText('Edit name') as HTMLInputElement).value)
+        .toBe(action === 'continue editing' ? 'Next draft' : 'Invoices');
+      expect((screen.getByLabelText('Edit description') as HTMLInputElement).value)
+        .toBe(action === 'continue editing' ? 'New notes' : 'Quarterly review');
+      await fireEvent.input(screen.getByLabelText('Edit name'), { target: { value: 'Next draft' } });
+      await fireEvent.input(screen.getByLabelText('Edit description'), { target: { value: 'New notes' } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      await screen.findByRole('heading', { name: 'Next draft' });
+      expect(patches[1]!.headers.get('If-Match')).toBe('"saved-view-7-r4"');
+      await expect(patches[1]!.clone().json()).resolves.toEqual({ name: 'Next draft', description: 'New notes' });
+    }
+  );
+
   it.each(['semantic', 'hybrid'] as const)('saves filter-only views without a %s search mode', async (searchMode) => {
     for (const query of ['', ' \t\n ']) {
       const requests: Request[] = [];
