@@ -170,7 +170,7 @@ func (s *Store) ListPersonEnrichmentIdentityReviewsContext(
 				}
 				profiles[item.fingerprint] = profile
 			}
-			review.ProviderName, review.ProviderKind = profile.Name, string(profile.Kind)
+			review.ProviderName, review.ProviderKind = profile.Name, profile.Kind
 			person, err := s.getPersonTx(ctx, tx, review.PersonID)
 			if err != nil {
 				return err

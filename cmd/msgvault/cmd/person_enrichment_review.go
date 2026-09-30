@@ -4,6 +4,7 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -72,7 +73,7 @@ func writePersonEnrichmentReviews(cmd *cobra.Command, reviews []generated.Person
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "ATTEMPT\tPERSON\tPROVIDER\tRETURNED\tNAME\tCOMPANY\tCONFLICT")
 	for _, review := range reviews {
-		person := fmt.Sprintf("%d", review.PersonID)
+		person := strconv.FormatInt(review.PersonID, 10)
 		if review.PersonDisplayName != nil && strings.TrimSpace(*review.PersonDisplayName) != "" {
 			person += " " + strings.TrimSpace(*review.PersonDisplayName)
 		}
