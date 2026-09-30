@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/peoplebrowser"
 	"go.kenn.io/msgvault/internal/query"
 	"go.kenn.io/msgvault/internal/store"
@@ -246,10 +247,15 @@ func (h *handlers) prepareCuratedPeopleSearch(
 		summary := query.PersonSummary{
 			Identifiers: []query.PersonIdentifier{}, SourceCounts: []query.SourceCount{},
 		}
+		ignored := len(profile.ParticipantIDs) > 0
 		for _, participantID := range profile.ParticipantIDs {
 			contact, contactErr := h.peopleBackend.GetContact(ctx, participantID)
 			if contactErr != nil || contact == nil {
+				ignored = false
 				continue
+			}
+			if contact.CorrespondentKind == nil || contact.CorrespondentKind.Kind != correspondentkind.Ignored {
+				ignored = false
 			}
 			if summary.ID == 0 {
 				summary = *contact
@@ -261,6 +267,11 @@ func (h *handlers) prepareCuratedPeopleSearch(
 			if personSummaryMatchesPeopleQuery(*contact, queryText) {
 				prepared.excludedIDs[canonicalID] = struct{}{}
 			}
+		}
+		if ignored {
+			// Every identity of this profile is marked ignored: leave it out
+			// of people results like the observed contacts it covers.
+			continue
 		}
 		if summary.ID == 0 && len(profile.ParticipantIDs) > 0 {
 			summary.ID = slices.Min(profile.ParticipantIDs)
@@ -289,6 +300,12 @@ func (h *handlers) searchObservedPeoplePage(
 		rows := make([]searchPeopleRow, 0, len(page.Rows))
 		for _, summary := range page.Rows {
 			if _, excluded := prepared.excludedIDs[summary.ID]; excluded {
+				continue
+			}
+			// The user said these records are not needed as people; their
+			// messages stay reachable through message search.
+			if summary.CorrespondentKind != nil &&
+				summary.CorrespondentKind.Kind == correspondentkind.Ignored {
 				continue
 			}
 			row := searchPeopleRow{PersonSummary: summary}

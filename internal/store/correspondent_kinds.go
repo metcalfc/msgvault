@@ -52,17 +52,17 @@ type CorrespondentKindPerson struct {
 
 // CorrespondentKindRecord is one classified identity cluster.
 type CorrespondentKindRecord struct {
-	CanonicalID      int64                    `json:"canonical_id" doc:"The cluster's smallest participant ID."`
-	MemberIDs        []int64                  `json:"member_ids"`
-	Kind             correspondentkind.Kind   `json:"kind" enum:"person,organization,shared_mailbox,ignored"`
-	Source           correspondentkind.Source `json:"source" enum:"user,rule,jev"`
-	DisplayName      *string                  `json:"display_name,omitzero" nullable:"false"`
-	Addresses        []string                 `json:"addresses"`
-	OrganizationID   *int64                   `json:"organization_id,omitzero" nullable:"false"`
-	OrganizationName *string                  `json:"organization_name,omitzero" nullable:"false"`
-	Person           *CorrespondentKindPerson `json:"person,omitzero" nullable:"false" doc:"The saved Directory person bound to this cluster, if any."`
-	Actor            *string                  `json:"actor,omitzero" nullable:"false"`
-	ClassifiedAt     time.Time                `json:"classified_at"`
+	CanonicalID      int64                     `json:"canonical_id" doc:"The cluster's smallest participant ID."`
+	MemberIDs        []int64                   `json:"member_ids"`
+	Kind             correspondentkind.Kind    `json:"kind" enum:"person,organization,shared_mailbox,ignored"`
+	Source           *correspondentkind.Source `json:"source,omitzero" nullable:"false" enum:"user,rule,jev" doc:"Who classified the cluster; absent when it was never classified."`
+	DisplayName      *string                   `json:"display_name,omitzero" nullable:"false"`
+	Addresses        []string                  `json:"addresses"`
+	OrganizationID   *int64                    `json:"organization_id,omitzero" nullable:"false"`
+	OrganizationName *string                   `json:"organization_name,omitzero" nullable:"false"`
+	Person           *CorrespondentKindPerson  `json:"person,omitzero" nullable:"false" doc:"The saved Directory person bound to this cluster, if any."`
+	Actor            *string                   `json:"actor,omitzero" nullable:"false"`
+	ClassifiedAt     *time.Time                `json:"classified_at,omitempty"`
 }
 
 // CorrespondentKindAssignment is the effective kind of one cluster.
@@ -114,17 +114,17 @@ type correspondentKindCluster struct {
 	effective correspondentKindRow
 }
 
-// rowWins reports whether candidate outranks current: the higher source
+// rowWins reports whether row outranks current: the higher source
 // precedence wins, then the later classification, then the lower
 // participant ID so the choice is deterministic.
-func (candidate correspondentKindRow) rowWins(current correspondentKindRow) bool {
-	if a, b := candidate.source.Precedence(), current.source.Precedence(); a != b {
+func (row correspondentKindRow) rowWins(current correspondentKindRow) bool {
+	if a, b := row.source.Precedence(), current.source.Precedence(); a != b {
 		return a > b
 	}
-	if !candidate.classifiedAt.Equal(current.classifiedAt) {
-		return candidate.classifiedAt.After(current.classifiedAt)
+	if !row.classifiedAt.Equal(current.classifiedAt) {
+		return row.classifiedAt.After(current.classifiedAt)
 	}
-	return candidate.participantID < current.participantID
+	return row.participantID < current.participantID
 }
 
 func loadCorrespondentKindRowsTx(ctx context.Context, tx *loggedTx) ([]correspondentKindRow, error) {
@@ -336,8 +336,8 @@ func (s *Store) ListCorrespondentKindsContext(
 		return nil, err
 	}
 	slices.SortStableFunc(records, func(a, b CorrespondentKindRecord) int {
-		if !a.ClassifiedAt.Equal(b.ClassifiedAt) {
-			if a.ClassifiedAt.After(b.ClassifiedAt) {
+		if !a.ClassifiedAt.Equal(*b.ClassifiedAt) {
+			if a.ClassifiedAt.After(*b.ClassifiedAt) {
 				return -1
 			}
 			return 1
@@ -386,6 +386,7 @@ func (s *Store) clusterCorrespondentKindTx(
 		root: members[0], members: members,
 		effective: correspondentKindRow{participantID: members[0], kind: correspondentkind.Person},
 	}
+	// An unclassified cluster has no source and no classification time.
 	rows, err := loadCorrespondentKindRowsTx(ctx, tx)
 	if err != nil {
 		return cluster, err
@@ -421,9 +422,13 @@ func (s *Store) correspondentKindRecordTx(
 	effective := cluster.effective
 	record := CorrespondentKindRecord{
 		CanonicalID: cluster.root, MemberIDs: slices.Clone(cluster.members),
-		Kind: effective.kind, Source: effective.source,
+		Kind:           effective.kind,
 		OrganizationID: effective.organizationID, OrganizationName: effective.organizationName,
-		Actor: effective.actor, ClassifiedAt: effective.classifiedAt, Addresses: []string{},
+		Actor: effective.actor, Addresses: []string{},
+	}
+	if effective.source != "" {
+		source, classifiedAt := effective.source, effective.classifiedAt
+		record.Source, record.ClassifiedAt = &source, &classifiedAt
 	}
 	name, err := clusterBestDisplayNameTx(ctx, tx, cluster.members)
 	if err != nil {

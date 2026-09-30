@@ -100,6 +100,8 @@ type GroupFilesBody = FileGroupsHTTPRequest
 
 type SearchFilesBody = FileSearchHTTPRequest
 
+type SetCorrespondentKindBody = SetCorrespondentKindRequest
+
 type LinkIdentityParticipantsBody = IdentityLinkRequest
 
 type AcceptIdentityMatchCandidateBody = DecideIdentityMatchRequest

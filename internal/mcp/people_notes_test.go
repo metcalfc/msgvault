@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/peoplebrowser"
 	"go.kenn.io/msgvault/internal/query"
 	"go.kenn.io/msgvault/internal/query/querytest"
@@ -246,6 +247,45 @@ func TestMCPSearchPeopleForwardsArgumentsAndReturnsStructuredPage(t *testing.T) 
 	require.True(t, ok)
 	assert.Equal("Test Person", row["display_label"])
 	assert.InDelta(float64(0), row["current_relationship_temperature"], 0)
+}
+
+func TestMCPSearchPeopleLeavesOutIgnoredRecords(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 8, 20, 12, 30, 0, 0, time.UTC)
+	row := func(id int64, label string, kind *store.CorrespondentKindAssignment) query.PersonSummary {
+		return query.PersonSummary{
+			ID: id, DisplayLabel: label, Identifiers: []query.PersonIdentifier{},
+			SourceCounts: []query.SourceCount{}, FirstAt: now, LastAt: now, CacheRevision: "cache-7",
+			CorrespondentKind: kind,
+		}
+	}
+	backend := &recordingPeopleBackend{searchPage: &peoplebrowser.SearchPage{
+		Rows: []query.PersonSummary{
+			row(11, "Test Person", nil),
+			row(12, "Test Newsletter", &store.CorrespondentKindAssignment{
+				Kind: correspondentkind.Ignored, Source: correspondentkind.SourceUser,
+			}),
+			row(13, "Test Help Desk", &store.CorrespondentKindAssignment{
+				Kind: correspondentkind.SharedMailbox, Source: correspondentkind.SourceUser,
+			}),
+		},
+		TotalCount: 3, CacheRevision: "cache-7",
+	}}
+	result := rawCallTool(t, peopleToolOptions(backend), ToolSearchPeople, map[string]any{"query": "test"})
+	assert.NotEqual(true, result["isError"], "result: %#v", result)
+	rows, ok := toolStructuredContent(t, result)["rows"].([]any)
+	require.True(ok)
+	labels := []string{}
+	for _, raw := range rows {
+		entry, ok := raw.(map[string]any)
+		require.True(ok)
+		label, ok := entry["display_label"].(string)
+		require.True(ok)
+		labels = append(labels, label)
+	}
+	assert.Equal([]string{"Test Person", "Test Help Desk"}, labels,
+		"ignored records leave people results; a shared mailbox stays with its label")
 }
 
 func TestMCPSearchPeopleIncludesCuratedOnlyDisplayNameAndProfileID(t *testing.T) {

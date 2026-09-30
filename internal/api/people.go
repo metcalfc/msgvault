@@ -278,6 +278,7 @@ func (s *Server) handleGetParticipant(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.attachPersonProfile(r.Context(), person, id, members)
+	s.attachCorrespondentKinds(r.Context(), []*querySummaryRef{{id: id, target: &person.CorrespondentKind}})
 	writeJSON(w, http.StatusOK, person)
 }
 
@@ -320,6 +321,11 @@ func (s *Server) attachSearchRowProfiles(ctx context.Context, rows []query.Perso
 	if len(rows) == 0 {
 		return
 	}
+	refs := make([]*querySummaryRef, 0, len(rows))
+	for i := range rows {
+		refs = append(refs, &querySummaryRef{id: rows[i].ID, target: &rows[i].CorrespondentKind})
+	}
+	s.attachCorrespondentKinds(ctx, refs)
 	ids := make([]int64, len(rows))
 	for i := range rows {
 		ids[i] = rows[i].ID

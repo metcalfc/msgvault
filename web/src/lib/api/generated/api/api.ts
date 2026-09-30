@@ -62,6 +62,7 @@ import type {
   Catalog,
   ChangesResponse,
   CheckSettingsPeopleInferenceProviderPathParameters,
+  ClearCorrespondentKindPathParameters,
   ClearOrganizationAttributeParams,
   ClearOrganizationAttributePathParameters,
   ClearPersonAttributeParams,
@@ -81,6 +82,8 @@ import type {
   ContactMatchBuildResult,
   ContactState,
   ConversationResponse,
+  CorrespondentKindRecord,
+  CorrespondentKindsResponse,
   CreateAttributeDefinitionRequest,
   CreateCommunicationServiceRequest,
   CreateDailyNoteEntryRequest,
@@ -145,6 +148,7 @@ import type {
   GetCardDAVPublicationPathParameters,
   GetConversationParams,
   GetConversationPathParameters,
+  GetCorrespondentKindPathParameters,
   GetDeletionPathParameters,
   GetDocumentIndexStatusParams,
   GetDocumentVectorStatusParams,
@@ -200,6 +204,7 @@ import type {
   ListCardDAVRunsParams,
   ListChangedMessagesParams,
   ListCommunicationServicesParams,
+  ListCorrespondentKindsParams,
   ListDayEntriesParams,
   ListDayEntriesPathParameters,
   ListDeletionsParams,
@@ -372,6 +377,9 @@ import type {
   SearchMessagesParams,
   SearchResult,
   SearchTextMessagesParams,
+  SetCorrespondentKindPathParameters,
+  SetCorrespondentKindRequest,
+  SetCorrespondentKindResult,
   SetOrganizationAttributeBody,
   SetOrganizationAttributePathParameters,
   SetPersonAttributeParams,
@@ -1672,6 +1680,70 @@ export const buildContactMatchCandidates = (
 ) => {
   return orvalFetch<ContactMatchBuildResult>(
     { url: `/api/v1/identity/contact-matches/build`, method: "POST" },
+    options,
+  );
+};
+/**
+ * Lists every identity cluster classified as an organization, a shared mailbox, or ignored, newest first, with its addresses, organization, and any saved person bound to it. A correspondent kind says whether an archive identity cluster is a person. organization groups its messages under an Organization and attaches its email addresses as organization contact points; shared_mailbox keeps it for messages while the people who wrote from it keep their own profiles; ignored hides a record the user does not need. Every kind other than person leaves the cluster out of People lists, relationship rankings, contact matching, and enrichment, and resolves its open identity match candidates with reason not_a_person. Messages stay searchable. Setting person restores everything. Saved people are never deleted here: the response names a profile that exists only for this cluster so a client can offer an explicit delete.
+ * @summary List identity clusters marked as not a person
+ */
+export const listCorrespondentKinds = (
+  params?: ListCorrespondentKindsParams,
+  options?: SecondParameter<typeof orvalFetch<CorrespondentKindsResponse>>,
+) => {
+  return orvalFetch<CorrespondentKindsResponse>(
+    { url: `/api/v1/identity/correspondent-kinds`, method: "GET", params },
+    options,
+  );
+};
+/**
+ * Equivalent to setting kind person: the cluster returns to People lists, rankings, matching, and enrichment, and candidates resolved as not a person return to review.
+ * @summary Mark a participant's cluster as a person again
+ */
+export const clearCorrespondentKind = (
+  { id }: ClearCorrespondentKindPathParameters,
+  options?: SecondParameter<typeof orvalFetch<SetCorrespondentKindResult>>,
+) => {
+  return orvalFetch<SetCorrespondentKindResult>(
+    {
+      url: `/api/v1/identity/correspondent-kinds/${encodeURIComponent(String(id))}`,
+      method: "DELETE",
+    },
+    options,
+  );
+};
+/**
+ * Returns the effective classification of the cluster containing the participant; kind person with no source means it was never classified.
+ * @summary Get the correspondent kind of a participant's cluster
+ */
+export const getCorrespondentKind = (
+  { id }: GetCorrespondentKindPathParameters,
+  options?: SecondParameter<typeof orvalFetch<CorrespondentKindRecord>>,
+) => {
+  return orvalFetch<CorrespondentKindRecord>(
+    {
+      url: `/api/v1/identity/correspondent-kinds/${encodeURIComponent(String(id))}`,
+      method: "GET",
+    },
+    options,
+  );
+};
+/**
+ * A correspondent kind says whether an archive identity cluster is a person. organization groups its messages under an Organization and attaches its email addresses as organization contact points; shared_mailbox keeps it for messages while the people who wrote from it keep their own profiles; ignored hides a record the user does not need. Every kind other than person leaves the cluster out of People lists, relationship rankings, contact matching, and enrichment, and resolves its open identity match candidates with reason not_a_person. Messages stay searchable. Setting person restores everything. Saved people are never deleted here: the response names a profile that exists only for this cluster so a client can offer an explicit delete.
+ * @summary Mark a participant's cluster as a person or not a person
+ */
+export const setCorrespondentKind = (
+  { id }: SetCorrespondentKindPathParameters,
+  setCorrespondentKindRequest: SetCorrespondentKindRequest,
+  options?: SecondParameter<typeof orvalFetch<SetCorrespondentKindResult>>,
+) => {
+  return orvalFetch<SetCorrespondentKindResult>(
+    {
+      url: `/api/v1/identity/correspondent-kinds/${encodeURIComponent(String(id))}`,
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      data: setCorrespondentKindRequest,
+    },
     options,
   );
 };

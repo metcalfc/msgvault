@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/identityindex"
 	"go.kenn.io/msgvault/internal/peoplebrowser"
 	"go.kenn.io/msgvault/internal/query"
@@ -613,6 +614,12 @@ func personSummaryFromGenerated(person generated.PersonSummary) query.PersonSumm
 		out.Profile = &query.PersonProfile{
 			ID: person.Profile.ID, DisplayName: copyString(person.Profile.DisplayName),
 			Revision: person.Profile.Revision,
+		}
+	}
+	if kind := person.CorrespondentKind; kind != nil {
+		out.CorrespondentKind = &store.CorrespondentKindAssignment{
+			Kind: correspondentkind.Kind(kind.Kind), Source: correspondentkind.Source(kind.Source),
+			OrganizationID: kind.OrganizationID, OrganizationName: copyString(kind.OrganizationName),
 		}
 	}
 	return out

@@ -283,6 +283,21 @@ type GetFileContentPath struct {
 	ID int64 `json:"id"`
 }
 
+type ClearCorrespondentKindPath struct {
+	// ID Any participant ID in the identity cluster
+	ID int64 `json:"id"`
+}
+
+type GetCorrespondentKindPath struct {
+	// ID Any participant ID in the identity cluster
+	ID int64 `json:"id"`
+}
+
+type SetCorrespondentKindPath struct {
+	// ID Any participant ID in the identity cluster
+	ID int64 `json:"id"`
+}
+
 type AcceptIdentityMatchCandidatePath struct {
 	// ID Identity match candidate ID
 	ID int64 `json:"id"`

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.kenn.io/msgvault/internal/identityindex"
+	"go.kenn.io/msgvault/internal/store"
 )
 
 const (
@@ -120,6 +121,9 @@ type PersonSummary struct {
 	CacheRevision                  string             `json:"cache_revision"`
 	Cluster                        *PersonCluster     `json:"cluster,omitzero" nullable:"false"`
 	Profile                        *PersonProfile     `json:"profile,omitzero" nullable:"false"`
+	// CorrespondentKind is set by the API when the user marked the
+	// identity cluster as not a person; the analytical engine never fills it.
+	CorrespondentKind *store.CorrespondentKindAssignment `json:"correspondent_kind,omitzero" nullable:"false" doc:"Present when the identity cluster is marked as an organization, a shared mailbox, or ignored."`
 }
 
 type PersonSearchResponse struct {

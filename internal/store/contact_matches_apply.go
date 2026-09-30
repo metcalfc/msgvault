@@ -150,6 +150,9 @@ func (s *Store) acceptParticipantPersonMatchTx(
 			return nil, err
 		}
 	case ContactMatchLinked:
+	case ContactMatchSharedMailbox:
+		// classifyContactMatch never returns it; the signal is checked above.
+		return nil, ErrContactMatchSharedMailbox
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE identity_match_candidates SET
 		state = ?, decided_by = ?, decided_at = `+s.dialect.Now()+`, notes = ?,

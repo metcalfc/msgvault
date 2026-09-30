@@ -24,6 +24,7 @@ import (
 	"go.kenn.io/msgvault/internal/carddavserver"
 	"go.kenn.io/msgvault/internal/circleback"
 	"go.kenn.io/msgvault/internal/config"
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/deletion"
 	"go.kenn.io/msgvault/internal/discord"
 	"go.kenn.io/msgvault/internal/gmail"
@@ -1578,6 +1579,10 @@ var _ api.ContextCLIDedupDeleteStore = (*storeAPIAdapter)(nil)
 var _ api.IdentityLinkStore = (*storeAPIAdapter)(nil)
 var _ api.IdentityMatchStore = (*storeAPIAdapter)(nil)
 var _ api.PersonProfileStore = (*storeAPIAdapter)(nil)
+var _ api.PersonProfileBatchStore = (*storeAPIAdapter)(nil)
+var _ api.BoundParticipantStore = (*storeAPIAdapter)(nil)
+var _ api.NotPersonParticipantStore = (*storeAPIAdapter)(nil)
+var _ api.CorrespondentKindStore = (*storeAPIAdapter)(nil)
 var _ api.PersonCompletionStore = (*storeAPIAdapter)(nil)
 var _ api.PersonTrackingStore = (*storeAPIAdapter)(nil)
 var _ api.PersonNetworkStore = (*storeAPIAdapter)(nil)
@@ -3079,6 +3084,46 @@ func (a *storeAPIAdapter) PersonForParticipantsContext(
 	ctx context.Context, participantIDs []int64,
 ) (*store.Person, error) {
 	return a.store.PersonForParticipantsContext(ctx, participantIDs)
+}
+
+func (a *storeAPIAdapter) PersonsForParticipantsContext(
+	ctx context.Context, participantIDs []int64,
+) (map[int64]*store.Person, error) {
+	return a.store.PersonsForParticipantsContext(ctx, participantIDs)
+}
+
+func (a *storeAPIAdapter) BoundParticipantIDsContext(ctx context.Context) ([]int64, error) {
+	return a.store.BoundParticipantIDsContext(ctx)
+}
+
+func (a *storeAPIAdapter) NotPersonParticipantsContext(
+	ctx context.Context,
+) (map[int64]correspondentkind.Kind, error) {
+	return a.store.NotPersonParticipantsContext(ctx)
+}
+
+func (a *storeAPIAdapter) SetCorrespondentKindContext(
+	ctx context.Context, input store.SetCorrespondentKindInput,
+) (*store.SetCorrespondentKindResult, error) {
+	return a.store.SetCorrespondentKindContext(ctx, input)
+}
+
+func (a *storeAPIAdapter) GetCorrespondentKindContext(
+	ctx context.Context, participantID int64,
+) (*store.CorrespondentKindRecord, error) {
+	return a.store.GetCorrespondentKindContext(ctx, participantID)
+}
+
+func (a *storeAPIAdapter) ListCorrespondentKindsContext(
+	ctx context.Context, filter store.CorrespondentKindListFilter,
+) ([]store.CorrespondentKindRecord, error) {
+	return a.store.ListCorrespondentKindsContext(ctx, filter)
+}
+
+func (a *storeAPIAdapter) CorrespondentKindsForParticipantsContext(
+	ctx context.Context, participantIDs []int64,
+) (map[int64]store.CorrespondentKindAssignment, error) {
+	return a.store.CorrespondentKindsForParticipantsContext(ctx, participantIDs)
 }
 
 func (a *storeAPIAdapter) MergePersonsContext(

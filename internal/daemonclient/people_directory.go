@@ -37,6 +37,10 @@ func (b *PeopleBrowser) ListDirectoryPeople(
 		sort := generated.ListDirectoryPeopleQuerySort(query.Sort)
 		options.Query.Sort = &sort
 	}
+	if query.NotPeople != "" {
+		notPeople := generated.ListDirectoryPeopleQueryNotPeople(query.NotPeople)
+		options.Query.NotPeople = &notPeople
+	}
 
 	resp, err := APIResponse(b.engine.store,
 		func(client *apiclient.Client) (*generated.ListDirectoryPeopleResp, error) {

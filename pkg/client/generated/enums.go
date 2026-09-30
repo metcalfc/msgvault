@@ -461,6 +461,81 @@ func (c ContactMatchStatusClassification) Validate() error {
 	}
 }
 
+type CorrespondentKindAssignmentKind string
+
+const (
+	CorrespondentKindAssignmentKindOrganization  CorrespondentKindAssignmentKind = "organization"
+	CorrespondentKindAssignmentKindPerson        CorrespondentKindAssignmentKind = "person"
+	CorrespondentKindAssignmentKindSharedMailbox CorrespondentKindAssignmentKind = "shared_mailbox"
+	Ignored                                      CorrespondentKindAssignmentKind = "ignored"
+)
+
+// Validate checks if the CorrespondentKindAssignmentKind value is valid
+func (c CorrespondentKindAssignmentKind) Validate() error {
+	switch c {
+	case CorrespondentKindAssignmentKindOrganization, CorrespondentKindAssignmentKindPerson, CorrespondentKindAssignmentKindSharedMailbox, Ignored:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid CorrespondentKindAssignmentKind value, got: %v", c))
+	}
+}
+
+type CorrespondentKindAssignmentSource string
+
+const (
+	Jev  CorrespondentKindAssignmentSource = "jev"
+	Rule CorrespondentKindAssignmentSource = "rule"
+	User CorrespondentKindAssignmentSource = "user"
+)
+
+// Validate checks if the CorrespondentKindAssignmentSource value is valid
+func (c CorrespondentKindAssignmentSource) Validate() error {
+	switch c {
+	case Jev, Rule, User:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid CorrespondentKindAssignmentSource value, got: %v", c))
+	}
+}
+
+type CorrespondentKindRecordKind string
+
+const (
+	CorrespondentKindRecordKindIgnored       CorrespondentKindRecordKind = "ignored"
+	CorrespondentKindRecordKindOrganization  CorrespondentKindRecordKind = "organization"
+	CorrespondentKindRecordKindPerson        CorrespondentKindRecordKind = "person"
+	CorrespondentKindRecordKindSharedMailbox CorrespondentKindRecordKind = "shared_mailbox"
+)
+
+// Validate checks if the CorrespondentKindRecordKind value is valid
+func (c CorrespondentKindRecordKind) Validate() error {
+	switch c {
+	case CorrespondentKindRecordKindIgnored, CorrespondentKindRecordKindOrganization, CorrespondentKindRecordKindPerson, CorrespondentKindRecordKindSharedMailbox:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid CorrespondentKindRecordKind value, got: %v", c))
+	}
+}
+
+// CorrespondentKindRecordSource Who classified the cluster; absent when it was never classified.
+type CorrespondentKindRecordSource string
+
+const (
+	CorrespondentKindRecordSourceJev  CorrespondentKindRecordSource = "jev"
+	CorrespondentKindRecordSourceRule CorrespondentKindRecordSource = "rule"
+	CorrespondentKindRecordSourceUser CorrespondentKindRecordSource = "user"
+)
+
+// Validate checks if the CorrespondentKindRecordSource value is valid
+func (c CorrespondentKindRecordSource) Validate() error {
+	switch c {
+	case CorrespondentKindRecordSourceJev, CorrespondentKindRecordSourceRule, CorrespondentKindRecordSourceUser:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid CorrespondentKindRecordSource value, got: %v", c))
+	}
+}
+
 type CreateAttributeDefinitionRequestCardinality string
 
 const (
@@ -572,19 +647,19 @@ func (d DiscoverEventType) Validate() error {
 type EmploymentBodySource string
 
 const (
-	ArchiveObservation EmploymentBodySource = "archive_observation"
-	CarddavImport      EmploymentBodySource = "carddav_import"
-	Enrichment         EmploymentBodySource = "enrichment"
-	Extraction         EmploymentBodySource = "extraction"
-	System             EmploymentBodySource = "system"
-	User               EmploymentBodySource = "user"
-	VcardImport        EmploymentBodySource = "vcard_import"
+	ArchiveObservation       EmploymentBodySource = "archive_observation"
+	CarddavImport            EmploymentBodySource = "carddav_import"
+	EmploymentBodySourceUser EmploymentBodySource = "user"
+	Enrichment               EmploymentBodySource = "enrichment"
+	Extraction               EmploymentBodySource = "extraction"
+	System                   EmploymentBodySource = "system"
+	VcardImport              EmploymentBodySource = "vcard_import"
 )
 
 // Validate checks if the EmploymentBodySource value is valid
 func (e EmploymentBodySource) Validate() error {
 	switch e {
-	case ArchiveObservation, CarddavImport, Enrichment, Extraction, System, User, VcardImport:
+	case ArchiveObservation, CarddavImport, EmploymentBodySourceUser, Enrichment, Extraction, System, VcardImport:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid EmploymentBodySource value, got: %v", e))
@@ -2364,6 +2439,26 @@ func (s SessionStatusAuthMode) Validate() error {
 	}
 }
 
+// SetCorrespondentKindRequestKind person clears the classification ("this is a person"); organization, shared_mailbox, and ignored mark the cluster as not a person.
+type SetCorrespondentKindRequestKind string
+
+const (
+	SetCorrespondentKindRequestKindIgnored       SetCorrespondentKindRequestKind = "ignored"
+	SetCorrespondentKindRequestKindOrganization  SetCorrespondentKindRequestKind = "organization"
+	SetCorrespondentKindRequestKindPerson        SetCorrespondentKindRequestKind = "person"
+	SetCorrespondentKindRequestKindSharedMailbox SetCorrespondentKindRequestKind = "shared_mailbox"
+)
+
+// Validate checks if the SetCorrespondentKindRequestKind value is valid
+func (s SetCorrespondentKindRequestKind) Validate() error {
+	switch s {
+	case SetCorrespondentKindRequestKindIgnored, SetCorrespondentKindRequestKindOrganization, SetCorrespondentKindRequestKindPerson, SetCorrespondentKindRequestKindSharedMailbox:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid SetCorrespondentKindRequestKind value, got: %v", s))
+	}
+}
+
 type SetOrganizationAttributeBodySource string
 
 const (
@@ -2417,11 +2512,11 @@ const (
 	Backup                  SettingGroup0 = "backup"
 	Browser                 SettingGroup0 = "browser"
 	Integrations            SettingGroup0 = "integrations"
-	Jev                     SettingGroup0 = "jev"
 	Logging                 SettingGroup0 = "logging"
 	Search                  SettingGroup0 = "search"
 	Server                  SettingGroup0 = "server"
 	SettingGroup0Enrichment SettingGroup0 = "enrichment"
+	SettingGroup0Jev        SettingGroup0 = "jev"
 	Sources                 SettingGroup0 = "sources"
 	Sync                    SettingGroup0 = "sync"
 )
@@ -2429,7 +2524,7 @@ const (
 // Validate checks if the SettingGroup0 value is valid
 func (s SettingGroup0) Validate() error {
 	switch s {
-	case Activity, Archive, Attachments, Backup, Browser, Integrations, Jev, Logging, Search, Server, SettingGroup0Enrichment, Sources, Sync:
+	case Activity, Archive, Attachments, Backup, Browser, Integrations, Logging, Search, Server, SettingGroup0Enrichment, SettingGroup0Jev, Sources, Sync:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid SettingGroup0 value, got: %v", s))
@@ -2513,6 +2608,24 @@ func (t TaskIntegrationStatusResponseState) Validate() error {
 	}
 }
 
+type ListCorrespondentKindsQueryKind string
+
+const (
+	ListCorrespondentKindsQueryKindIgnored       ListCorrespondentKindsQueryKind = "ignored"
+	ListCorrespondentKindsQueryKindOrganization  ListCorrespondentKindsQueryKind = "organization"
+	ListCorrespondentKindsQueryKindSharedMailbox ListCorrespondentKindsQueryKind = "shared_mailbox"
+)
+
+// Validate checks if the ListCorrespondentKindsQueryKind value is valid
+func (l ListCorrespondentKindsQueryKind) Validate() error {
+	switch l {
+	case ListCorrespondentKindsQueryKindIgnored, ListCorrespondentKindsQueryKindOrganization, ListCorrespondentKindsQueryKindSharedMailbox:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid ListCorrespondentKindsQueryKind value, got: %v", l))
+	}
+}
+
 type ListOperationRunsQueryKind string
 
 const (
@@ -2575,6 +2688,23 @@ func (l ListOperationRunsQueryState) Validate() error {
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid ListOperationRunsQueryState value, got: %v", l))
+	}
+}
+
+type ListDirectoryPeopleQueryNotPeople string
+
+const (
+	Include ListDirectoryPeopleQueryNotPeople = "include"
+	Only    ListDirectoryPeopleQueryNotPeople = "only"
+)
+
+// Validate checks if the ListDirectoryPeopleQueryNotPeople value is valid
+func (l ListDirectoryPeopleQueryNotPeople) Validate() error {
+	switch l {
+	case Include, Only:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid ListDirectoryPeopleQueryNotPeople value, got: %v", l))
 	}
 }
 

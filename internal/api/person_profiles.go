@@ -354,6 +354,7 @@ func directoryPeopleQuery(values url.Values) (store.DirectoryPeopleQuery, error)
 		Organization:   values.Get("organization"),
 		PrimaryChannel: values.Get("primary_channel"),
 		Sort:           values.Get("sort"),
+		NotPeople:      values.Get("not_people"),
 	}
 	for _, field := range []struct {
 		name   string
@@ -525,7 +526,12 @@ func addDirectoryPeopleParameters(operation *huma.Operation) {
 		store.DirectoryPeopleSortLastContactDesc,
 		store.DirectoryPeopleSortLastContactAsc,
 	}
+	notPeople := queryStringParam("not_people", "People whose every archive identity is marked as an "+
+		"organization or ignored are hidden by default; include lists them with everyone else and only "+
+		"lists just them", false)
+	notPeople.Schema.Enum = []any{store.DirectoryNotPeopleInclude, store.DirectoryNotPeopleOnly}
 	operation.Parameters = append(operation.Parameters,
+		notPeople,
 		queryStringParam("q", "Lexical query over person names, contact points, and organizations", false),
 		queryStringParam("cursor", "Opaque cursor returned by the previous Directory page", false),
 		queryIntegerParam("limit", "Maximum rows to return (default 50, max 100)"),

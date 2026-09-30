@@ -304,6 +304,7 @@ func (s *Server) registerHumaRoutes(api huma.API, apiV1 huma.API) {
 	s.registerPersonRelationshipRoutes(apiV1)
 	s.registerIdentityLinkRoutes(apiV1)
 	s.registerIdentityMatchRoutes(apiV1)
+	s.registerCorrespondentKindRoutes(apiV1)
 	s.registerPersonEnrichmentIdentityReviewRoutes(apiV1)
 	s.registerTaskIntegrationRoutes(apiV1)
 	s.registerTaskLinkRoutes(apiV1)
@@ -873,6 +874,15 @@ func rawRouteParameters(operationID string) []*huma.Param {
 		return []*huma.Param{pathIntegerParam("Enrichment attempt ID")}
 	case "acceptIdentityMatchCandidate", "rejectIdentityMatchCandidate":
 		return []*huma.Param{pathIntegerParam("Identity match candidate ID")}
+	case "listCorrespondentKinds":
+		kind := queryStringParam("kind", "Only records of this kind", false)
+		kind.Schema.Enum = []any{"organization", "shared_mailbox", "ignored"}
+		return []*huma.Param{
+			kind,
+			queryIntegerParam("organization_id", "Only records grouped under this organization"),
+		}
+	case "getCorrespondentKind", "setCorrespondentKind", "clearCorrespondentKind":
+		return []*huma.Param{pathIntegerParam("Any participant ID in the identity cluster")}
 	case "searchIntegrationTasks":
 		return []*huma.Param{queryStringParam("q", "Task title search within the configured project", true)}
 	case "unlinkMessageTask":

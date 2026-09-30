@@ -444,6 +444,29 @@ type GetDocumentVectorStatusQuery struct {
 	Limit *int64 `json:"limit,omitempty"`
 }
 
+type ListCorrespondentKindsQuery struct {
+	// Kind Only records of this kind
+	Kind *ListCorrespondentKindsQueryKind `json:"kind,omitempty"`
+
+	// OrganizationID Only records grouped under this organization
+	OrganizationID *int64 `json:"organization_id,omitempty"`
+}
+
+func (l ListCorrespondentKindsQuery) Validate() error {
+	var errors runtime.ValidationErrors
+	if l.Kind != nil {
+		if v, ok := any(l.Kind).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("Kind", err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
 type ListIdentityMatchCandidatesQuery struct {
 	// State Candidate state filter (candidate, accepted, rejected, conflict); repeat or comma-separate for multiple values
 	State *string `json:"state,omitempty"`
@@ -742,6 +765,9 @@ type ListOrganizationEmploymentsQuery struct {
 }
 
 type ListDirectoryPeopleQuery struct {
+	// NotPeople People whose every archive identity is marked as an organization or ignored are hidden by default; include lists them with everyone else and only lists just them
+	NotPeople *ListDirectoryPeopleQueryNotPeople `json:"not_people,omitempty"`
+
 	// Q Lexical query over person names, contact points, and organizations
 	Q *string `json:"q,omitempty"`
 
@@ -781,6 +807,13 @@ type ListDirectoryPeopleQuery struct {
 
 func (l ListDirectoryPeopleQuery) Validate() error {
 	var errors runtime.ValidationErrors
+	if l.NotPeople != nil {
+		if v, ok := any(l.NotPeople).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("NotPeople", err)
+			}
+		}
+	}
 	if l.Sort != nil {
 		if v, ok := any(l.Sort).(runtime.Validator); ok {
 			if err := v.Validate(); err != nil {

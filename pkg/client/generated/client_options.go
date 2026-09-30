@@ -4349,6 +4349,191 @@ func (o *GetFileContentRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
+// ListCorrespondentKindsRequestOptions is the options needed to make a request to ListCorrespondentKinds.
+type ListCorrespondentKindsRequestOptions struct {
+	Query *ListCorrespondentKindsQuery
+}
+
+// Validate validates all the fields in the options.
+// Use it if fields validation was not run.
+func (o *ListCorrespondentKindsRequestOptions) Validate() error {
+	var errors runtime.ValidationErrors
+
+	if o.Query != nil {
+		if v, ok := any(o.Query).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("Query", err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+
+	return errors
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ListCorrespondentKindsRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ListCorrespondentKindsRequestOptions) GetQuery() (map[string]any, error) {
+	return runtime.AsMap[any](o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ListCorrespondentKindsRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *ListCorrespondentKindsRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// ClearCorrespondentKindRequestOptions is the options needed to make a request to ClearCorrespondentKind.
+type ClearCorrespondentKindRequestOptions struct {
+	PathParams *ClearCorrespondentKindPath
+}
+
+// Validate validates all the fields in the options.
+// Use it if fields validation was not run.
+func (o *ClearCorrespondentKindRequestOptions) Validate() error {
+	var errors runtime.ValidationErrors
+
+	if o.PathParams != nil {
+		if v, ok := any(o.PathParams).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("PathParams", err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+
+	return errors
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ClearCorrespondentKindRequestOptions) GetPathParams() (map[string]any, error) {
+	return runtime.AsMap[any](o.PathParams)
+}
+
+// GetQuery returns the query params as a map.
+func (o *ClearCorrespondentKindRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ClearCorrespondentKindRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *ClearCorrespondentKindRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// GetCorrespondentKindRequestOptions is the options needed to make a request to GetCorrespondentKind.
+type GetCorrespondentKindRequestOptions struct {
+	PathParams *GetCorrespondentKindPath
+}
+
+// Validate validates all the fields in the options.
+// Use it if fields validation was not run.
+func (o *GetCorrespondentKindRequestOptions) Validate() error {
+	var errors runtime.ValidationErrors
+
+	if o.PathParams != nil {
+		if v, ok := any(o.PathParams).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("PathParams", err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+
+	return errors
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetCorrespondentKindRequestOptions) GetPathParams() (map[string]any, error) {
+	return runtime.AsMap[any](o.PathParams)
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetCorrespondentKindRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetCorrespondentKindRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetCorrespondentKindRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// SetCorrespondentKindRequestOptions is the options needed to make a request to SetCorrespondentKind.
+type SetCorrespondentKindRequestOptions struct {
+	PathParams *SetCorrespondentKindPath
+	Body       *SetCorrespondentKindBody
+}
+
+// Validate validates all the fields in the options.
+// Use it if fields validation was not run.
+func (o *SetCorrespondentKindRequestOptions) Validate() error {
+	var errors runtime.ValidationErrors
+
+	if o.PathParams != nil {
+		if v, ok := any(o.PathParams).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("PathParams", err)
+			}
+		}
+	}
+
+	if o.Body != nil {
+		if v, ok := any(o.Body).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("Body", err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+
+	return errors
+}
+
+// GetPathParams returns the path params as a map.
+func (o *SetCorrespondentKindRequestOptions) GetPathParams() (map[string]any, error) {
+	return runtime.AsMap[any](o.PathParams)
+}
+
+// GetQuery returns the query params as a map.
+func (o *SetCorrespondentKindRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *SetCorrespondentKindRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *SetCorrespondentKindRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // LinkIdentityParticipantsRequestOptions is the options needed to make a request to LinkIdentityParticipants.
 type LinkIdentityParticipantsRequestOptions struct {
 	Body *LinkIdentityParticipantsBody

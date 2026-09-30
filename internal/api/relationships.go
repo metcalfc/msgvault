@@ -200,7 +200,7 @@ func (s *Server) handleRelationships(w http.ResponseWriter, r *http.Request) {
 	}
 	notPeople := ""
 	if !request.IncludeNotPeople {
-		hidden, fingerprint, ok := s.notPersonParticipantSet(w, r.Context())
+		hidden, fingerprint, ok := s.notPersonParticipantSet(r.Context(), w)
 		if !ok {
 			return
 		}
@@ -242,6 +242,13 @@ func (s *Server) handleRelationships(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.attachRelationshipRowProfiles(r.Context(), result.Rows)
+	if request.IncludeNotPeople {
+		refs := make([]*querySummaryRef, 0, len(result.Rows))
+		for i := range result.Rows {
+			refs = append(refs, &querySummaryRef{id: result.Rows[i].CanonicalID, target: &result.Rows[i].CorrespondentKind})
+		}
+		s.attachCorrespondentKinds(r.Context(), refs)
+	}
 	response := RelationshipsHTTPResponse{
 		Rows: result.Rows, TotalCount: result.TotalCount,
 		CacheRevision: result.CacheRevision, IdentityRevision: result.IdentityRevision,
@@ -406,7 +413,7 @@ type NotPersonParticipantStore interface {
 // as not a person, with a fingerprint of the set for cursor drift checks. A
 // store without the capability classifies nothing.
 func (s *Server) notPersonParticipantSet(
-	w http.ResponseWriter, ctx context.Context,
+	ctx context.Context, w http.ResponseWriter,
 ) (map[int64]correspondentkind.Kind, string, bool) {
 	kinds, ok := s.store.(NotPersonParticipantStore)
 	if !ok {

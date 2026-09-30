@@ -2347,6 +2347,108 @@ func (c ConversationResponse) Validate() error {
 	return errors
 }
 
+type CorrespondentKindAssignment struct {
+	Kind             CorrespondentKindAssignmentKind   `json:"kind" validate:"required"`
+	OrganizationID   *int64                            `json:"organization_id,omitempty"`
+	OrganizationName *string                           `json:"organization_name,omitzero"`
+	Source           CorrespondentKindAssignmentSource `json:"source" validate:"required"`
+}
+
+func (c CorrespondentKindAssignment) Validate() error {
+	var errors runtime.ValidationErrors
+	if v, ok := any(c.Kind).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("Kind", err)
+		}
+	}
+	if v, ok := any(c.Source).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("Source", err)
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
+type CorrespondentKindPerson struct {
+	DisplayName     *string `json:"display_name,omitzero"`
+	ID              int64   `json:"id"`
+	OnlyThisCluster bool    `json:"only_this_cluster"`
+	Revision        int64   `json:"revision"`
+}
+
+type CorrespondentKindRecord struct {
+	Actor     *string  `json:"actor,omitzero"`
+	Addresses []string `json:"addresses" validate:"required"`
+
+	// CanonicalID The cluster's smallest participant ID.
+	CanonicalID      int64                       `json:"canonical_id"`
+	ClassifiedAt     *time.Time                  `json:"classified_at,omitempty"`
+	DisplayName      *string                     `json:"display_name,omitzero"`
+	Kind             CorrespondentKindRecordKind `json:"kind" validate:"required"`
+	MemberIds        []int64                     `json:"member_ids" validate:"required"`
+	OrganizationID   *int64                      `json:"organization_id,omitempty"`
+	OrganizationName *string                     `json:"organization_name,omitzero"`
+	Person           *CorrespondentKindPerson    `json:"person,omitempty"`
+
+	// Source Who classified the cluster; absent when it was never classified.
+	Source *CorrespondentKindRecordSource `json:"source,omitempty"`
+}
+
+func (c CorrespondentKindRecord) Validate() error {
+	var errors runtime.ValidationErrors
+	if err := typesValidator.Var(c.Addresses, "required"); err != nil {
+		errors = errors.Append("Addresses", err)
+	}
+	if v, ok := any(c.Kind).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("Kind", err)
+		}
+	}
+	if err := typesValidator.Var(c.MemberIds, "required"); err != nil {
+		errors = errors.Append("MemberIds", err)
+	}
+	if c.Person != nil {
+		if v, ok := any(c.Person).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("Person", err)
+			}
+		}
+	}
+	if c.Source != nil {
+		if v, ok := any(c.Source).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("Source", err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
+type CorrespondentKindsResponse struct {
+	Records []CorrespondentKindRecord `json:"records" validate:"required"`
+}
+
+func (c CorrespondentKindsResponse) Validate() error {
+	var errors runtime.ValidationErrors
+	for i, item := range c.Records {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("Records[%d]", i), err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
 type CreateAttributeDefinitionRequest struct {
 	Cardinality   *CreateAttributeDefinitionRequestCardinality `json:"cardinality,omitempty"`
 	Description   *string                                      `json:"description,omitzero"`
@@ -10200,23 +10302,24 @@ func (p PersonSplitResult) Validate() error {
 }
 
 type PersonSummary struct {
-	ActivityCount                  int64              `json:"activity_count"`
-	CacheRevision                  string             `json:"cache_revision" validate:"required"`
-	Cluster                        *PersonCluster     `json:"cluster,omitempty"`
-	CurrentRelationshipTemperature int64              `json:"current_relationship_temperature"`
-	DisplayLabel                   string             `json:"display_label" validate:"required"`
-	DisplayName                    *string            `json:"display_name,omitzero"`
-	FileCount                      int64              `json:"file_count"`
-	FirstAt                        time.Time          `json:"first_at" validate:"required"`
-	ID                             int64              `json:"id"`
-	Identifiers                    []PersonIdentifier `json:"identifiers" validate:"required"`
-	LastAt                         time.Time          `json:"last_at" validate:"required"`
-	MeetingCount                   int64              `json:"meeting_count"`
-	PartialLabel                   bool               `json:"partial_label"`
-	PeakRelationshipTemperature    int64              `json:"peak_relationship_temperature"`
-	PeakRelationshipYear           int64              `json:"peak_relationship_year"`
-	Profile                        *PersonProfile     `json:"profile,omitempty"`
-	SourceCounts                   []SourceCount      `json:"source_counts" validate:"required"`
+	ActivityCount                  int64                        `json:"activity_count"`
+	CacheRevision                  string                       `json:"cache_revision" validate:"required"`
+	Cluster                        *PersonCluster               `json:"cluster,omitempty"`
+	CorrespondentKind              *CorrespondentKindAssignment `json:"correspondent_kind,omitempty"`
+	CurrentRelationshipTemperature int64                        `json:"current_relationship_temperature"`
+	DisplayLabel                   string                       `json:"display_label" validate:"required"`
+	DisplayName                    *string                      `json:"display_name,omitzero"`
+	FileCount                      int64                        `json:"file_count"`
+	FirstAt                        time.Time                    `json:"first_at" validate:"required"`
+	ID                             int64                        `json:"id"`
+	Identifiers                    []PersonIdentifier           `json:"identifiers" validate:"required"`
+	LastAt                         time.Time                    `json:"last_at" validate:"required"`
+	MeetingCount                   int64                        `json:"meeting_count"`
+	PartialLabel                   bool                         `json:"partial_label"`
+	PeakRelationshipTemperature    int64                        `json:"peak_relationship_temperature"`
+	PeakRelationshipYear           int64                        `json:"peak_relationship_year"`
+	Profile                        *PersonProfile               `json:"profile,omitempty"`
+	SourceCounts                   []SourceCount                `json:"source_counts" validate:"required"`
 }
 
 func (p PersonSummary) Validate() error {
@@ -10228,6 +10331,13 @@ func (p PersonSummary) Validate() error {
 		if v, ok := any(p.Cluster).(runtime.Validator); ok {
 			if err := v.Validate(); err != nil {
 				errors = errors.Append("Cluster", err)
+			}
+		}
+	}
+	if p.CorrespondentKind != nil {
+		if v, ok := any(p.CorrespondentKind).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("CorrespondentKind", err)
 			}
 		}
 	}
@@ -10642,18 +10752,26 @@ func (r RelationshipReviewsResponse) Validate() error {
 }
 
 type RelationshipRow struct {
-	CanonicalID       int64               `json:"canonical_id"`
-	DisplayLabel      string              `json:"display_label" validate:"required"`
-	LastAt            time.Time           `json:"last_at" validate:"required"`
-	MemberIds         []int64             `json:"member_ids" validate:"required"`
-	PrimaryIdentifier *PrimaryIdentifier  `json:"primary_identifier,omitempty"`
-	Profile           *PersonProfile      `json:"profile,omitempty"`
-	Score             float64             `json:"score"`
-	Signals           RelationshipSignals `json:"signals"`
+	CanonicalID       int64                        `json:"canonical_id"`
+	CorrespondentKind *CorrespondentKindAssignment `json:"correspondent_kind,omitempty"`
+	DisplayLabel      string                       `json:"display_label" validate:"required"`
+	LastAt            time.Time                    `json:"last_at" validate:"required"`
+	MemberIds         []int64                      `json:"member_ids" validate:"required"`
+	PrimaryIdentifier *PrimaryIdentifier           `json:"primary_identifier,omitempty"`
+	Profile           *PersonProfile               `json:"profile,omitempty"`
+	Score             float64                      `json:"score"`
+	Signals           RelationshipSignals          `json:"signals"`
 }
 
 func (r RelationshipRow) Validate() error {
 	var errors runtime.ValidationErrors
+	if r.CorrespondentKind != nil {
+		if v, ok := any(r.CorrespondentKind).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("CorrespondentKind", err)
+			}
+		}
+	}
 	if err := typesValidator.Var(r.DisplayLabel, "required"); err != nil {
 		errors = errors.Append("DisplayLabel", err)
 	}
@@ -11418,6 +11536,50 @@ func (s SessionStatus) Validate() error {
 	if v, ok := any(s.AuthMode).(runtime.Validator); ok {
 		if err := v.Validate(); err != nil {
 			errors = errors.Append("AuthMode", err)
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
+type SetCorrespondentKindRequest struct {
+	// Kind person clears the classification ("this is a person"); organization, shared_mailbox, and ignored mark the cluster as not a person.
+	Kind SetCorrespondentKindRequestKind `json:"kind" validate:"required"`
+
+	// OrganizationID Organization to group the cluster under. Only for kind organization.
+	OrganizationID *int64 `json:"organization_id,omitempty"`
+
+	// OrganizationName Name of the organization to find or create. Only for kind organization; defaults to the cluster's display name, then its email domain.
+	OrganizationName *string `json:"organization_name,omitzero"`
+}
+
+func (s SetCorrespondentKindRequest) Validate() error {
+	var errors runtime.ValidationErrors
+	if v, ok := any(s.Kind).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("Kind", err)
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
+type SetCorrespondentKindResult struct {
+	OrganizationCreated bool                    `json:"organization_created"`
+	Record              CorrespondentKindRecord `json:"record"`
+	ResolvedCandidates  int64                   `json:"resolved_candidates"`
+	RestoredCandidates  int64                   `json:"restored_candidates"`
+}
+
+func (s SetCorrespondentKindResult) Validate() error {
+	var errors runtime.ValidationErrors
+	if v, ok := any(s.Record).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("Record", err)
 		}
 	}
 	if len(errors) == 0 {

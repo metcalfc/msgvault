@@ -1303,6 +1303,30 @@ type BuildContactMatchCandidatesResponse = ContactMatchBuildResult
 
 type BuildContactMatchCandidatesErrorResponse = ErrorResponse
 
+type ListCorrespondentKindsResponse = CorrespondentKindsResponse
+
+type ListCorrespondentKindsErrorResponse = ErrorResponse
+
+type ClearCorrespondentKindResponse = SetCorrespondentKindResult
+
+type ClearCorrespondentKindErrorResponse = ErrorResponse
+
+type ClearCorrespondentKindErrorResponseJSON = ErrorResponse
+
+type GetCorrespondentKindResponse = CorrespondentKindRecord
+
+type GetCorrespondentKindErrorResponse = ErrorResponse
+
+type GetCorrespondentKindErrorResponseJSON = ErrorResponse
+
+type SetCorrespondentKindResponse = SetCorrespondentKindResult
+
+type SetCorrespondentKindErrorResponse = ErrorResponse
+
+type SetCorrespondentKindErrorResponseJSON = ErrorResponse
+
+type SetCorrespondentKindErrorResponseJSON503 = ErrorResponse
+
 type LinkIdentityParticipantsResponse = IdentityLinkResponse
 
 type LinkIdentityParticipantsErrorResponse struct {
@@ -4444,6 +4468,42 @@ type BuildContactMatchCandidatesResp struct {
 	StatusCode   int
 	JSON200      *BuildContactMatchCandidatesResponse
 	JSON503      *BuildContactMatchCandidatesErrorResponse
+}
+
+type ListCorrespondentKindsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *ListCorrespondentKindsResponse
+	JSON503      *ListCorrespondentKindsErrorResponse
+}
+
+type ClearCorrespondentKindResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *ClearCorrespondentKindResponse
+	JSON404      *ClearCorrespondentKindErrorResponse
+	JSON503      *ClearCorrespondentKindErrorResponseJSON
+}
+
+type GetCorrespondentKindResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *GetCorrespondentKindResponse
+	JSON404      *GetCorrespondentKindErrorResponse
+	JSON503      *GetCorrespondentKindErrorResponseJSON
+}
+
+type SetCorrespondentKindResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *SetCorrespondentKindResponse
+	JSON404      *SetCorrespondentKindErrorResponse
+	JSON409      *SetCorrespondentKindErrorResponseJSON
+	JSON503      *SetCorrespondentKindErrorResponseJSON503
 }
 
 type LinkIdentityParticipantsResp struct {

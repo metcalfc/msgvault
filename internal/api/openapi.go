@@ -340,7 +340,18 @@ import (
 // explore counterpart names, and People hub and provider preset fields.
 // 2.34.0 adds enrichment identity review: listing identity_uncertain
 // attempts and confirming or rejecting their returned identity.
-const APISchemaVersion = "2.34.0"
+// 2.35.0 adds correspondent kinds: GET, PUT, and DELETE
+// /identity/correspondent-kinds/{id} and GET /identity/correspondent-kinds
+// mark an identity cluster as an organization, a shared mailbox, or ignored
+// (or a person again). Participant summaries and relationship rows gain
+// correspondent_kind; relationship rankings leave classified clusters out
+// unless include_not_people is set, and restart pagination with 409
+// not_people_changed when the set changes; the Directory hides people whose
+// every identity is an organization or ignored unless not_people asks for
+// them. Contact-match verdicts gain the shared_mailbox classification and
+// its signal, and accepting such a match is refused with 409
+// contact_match_shared_mailbox or contact_match_not_a_person.
+const APISchemaVersion = "2.35.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

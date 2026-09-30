@@ -113,10 +113,11 @@ func TestDetectSharedMailboxWithoutNames(t *testing.T) {
 }
 
 func TestIsRoleAddressCoversEveryRoleLocalPart(t *testing.T) {
+	assert := assert.New(t)
 	for _, local := range correspondentkind.RoleLocalParts {
-		assert.True(t, correspondentkind.IsRoleAddress(local+"@example.test"), local)
-		assert.True(t, correspondentkind.IsRoleAddress(local+"+tag@example.test"), local)
+		assert.True(correspondentkind.IsRoleAddress(local+"@example.test"), local)
+		assert.True(correspondentkind.IsRoleAddress(local+"+tag@example.test"), local)
 	}
-	assert.False(t, correspondentkind.IsRoleAddress("support"))
-	assert.False(t, correspondentkind.IsRoleAddress("@example.test"))
+	assert.False(correspondentkind.IsRoleAddress("support"))
+	assert.False(correspondentkind.IsRoleAddress("@example.test"))
 }

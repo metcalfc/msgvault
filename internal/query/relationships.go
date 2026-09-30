@@ -79,6 +79,9 @@ type RelationshipRow struct {
 	// the API from the store; the analytical engine never fills it.
 	Profile           *PersonProfile           `json:"profile,omitempty" doc:"The saved Directory person this cluster is bound to, when it has been saved."`
 	PrimaryIdentifier *store.PrimaryIdentifier `json:"primary_identifier,omitempty" doc:"The one identifier a list row shows: the best email address, else phone number, else handle, across the cluster's members in the committed cache. Within a kind, the lowest member participant ID wins (the canonical participant first); a participant's own email address or phone number comes before its stored identifier rows. Absent when the cluster has none."`
+	// CorrespondentKind is set by the API for a cluster marked as not a
+	// person, which rankings list only on request.
+	CorrespondentKind *store.CorrespondentKindAssignment `json:"correspondent_kind,omitzero" nullable:"false" doc:"Present when the identity cluster is marked as an organization, a shared mailbox, or ignored; such rows appear only with include_not_people."`
 }
 
 // RelationshipsRequest scopes and pages a relationship ranking query. Now is

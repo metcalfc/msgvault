@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/api"
 	"go.kenn.io/msgvault/internal/config"
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/daemonclient"
 	"go.kenn.io/msgvault/internal/query/querytest"
 	"go.kenn.io/msgvault/internal/store"
@@ -155,6 +156,41 @@ func TestMCPListDirectoryPeopleRecentContacts(t *testing.T) {
 	assert.ElementsMatch([]int64{recent.ID, equalFirst.ID, equalSecond.ID, older.ID, never.ID}, ids)
 	assert.Equal("inactive", findDirectoryPerson(allPage.People, never.ID).ContactState)
 	assert.Nil(findDirectoryPerson(allPage.People, never.ID).LastContactAt)
+}
+
+func TestMCPListDirectoryPeopleLeavesOutRecordsMarkedNotAPerson(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewSQLiteTestStore(t)
+	kept := createDirectoryIntegrationPerson(t, st, "Kept Person", "kept@example.test", "friend", "Example Org", nil)
+	ignored := createDirectoryIntegrationPerson(t, st, "Old Newsletter", "news@example.test", "friend", "Example Org", nil)
+	require.NotEmpty(ignored.ParticipantIDs)
+	_, err := st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: ignored.ParticipantIDs[0], Kind: correspondentkind.Ignored,
+	})
+	require.NoError(err)
+	require.NoError(st.RefreshDirectoryProjectionContext(t.Context()))
+
+	daemon := api.NewServerWithOptions(api.ServerOptions{
+		Config: &config.Config{}, Store: st,
+		Logger: slog.New(slog.DiscardHandler),
+	})
+	daemonHTTP := httptest.NewServer(daemon.Router())
+	t.Cleanup(daemonHTTP.Close)
+	engine, err := daemonclient.NewEngine(daemonclient.Config{URL: daemonHTTP.URL, AllowInsecure: true})
+	require.NoError(err)
+	people := daemonclient.NewPeopleBrowser(engine)
+	opts := ServeOptions{Engine: &querytest.MockEngine{}, PeopleBackend: people, DirectoryBackend: people}
+
+	listed := rawModernCall(t, opts, HTTPOptions{}, "tools/call", map[string]any{
+		"name": "list_directory_people", "arguments": map[string]any{"sort": "name"},
+	})
+	page := decodeDirectoryToolPage(t, listed.Result)
+	ids := []int64{}
+	for _, person := range page.People {
+		ids = append(ids, person.ID)
+	}
+	assert.Equal([]int64{kept.ID}, ids)
 }
 
 func createDirectoryIntegrationPerson(
