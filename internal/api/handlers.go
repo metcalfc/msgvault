@@ -2881,6 +2881,9 @@ func (s *Server) handleAggregates(w http.ResponseWriter, r *http.Request) {
 		s.rejectBadParam(w, err)
 		return
 	}
+	if !s.resolveSenderKind(w, r, viewType, &opts) {
+		return
+	}
 
 	rows, err := engine.Aggregate(r.Context(), viewType, opts)
 	if err != nil {

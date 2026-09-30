@@ -14,10 +14,14 @@ func runAggregateListCommand(
 	emptyMessage string,
 	keyHeader string,
 	errorLabel string,
+	configure ...func(*query.AggregateOptions),
 ) error {
 	opts, err := parseCommonFlags()
 	if err != nil {
 		return err
+	}
+	for _, apply := range configure {
+		apply(&opts)
 	}
 
 	engine, cleanup, err := openAggregateQueryEngine(cmd)

@@ -1399,7 +1399,17 @@ func (e *DuckDBEngine) aggregateByView(ctx context.Context, view ViewType, opts 
 	if err != nil {
 		return nil, err
 	}
+	restriction, none, err := senderRestriction(view, opts)
+	if err != nil {
+		return nil, err
+	}
+	if none {
+		return []AggregateRow{}, nil
+	}
 	where, args := e.buildWhereClause(opts, def.keyColumns...)
+	if restriction != "" {
+		where += " AND " + restriction
+	}
 	return e.runAggregation(ctx, def, where, args, opts)
 }
 

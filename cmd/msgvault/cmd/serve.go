@@ -1587,7 +1587,8 @@ var _ api.IdentityMatchStore = (*storeAPIAdapter)(nil)
 var _ api.PersonProfileStore = (*storeAPIAdapter)(nil)
 var _ api.PersonProfileBatchStore = (*storeAPIAdapter)(nil)
 var _ api.BoundParticipantStore = (*storeAPIAdapter)(nil)
-var _ api.NotPersonParticipantStore = (*storeAPIAdapter)(nil)
+var _ api.RankingHiddenParticipantStore = (*storeAPIAdapter)(nil)
+var _ api.SenderKindStore = (*storeAPIAdapter)(nil)
 var _ api.CorrespondentKindStore = (*storeAPIAdapter)(nil)
 var _ api.PersonCompletionStore = (*storeAPIAdapter)(nil)
 var _ api.PersonTrackingStore = (*storeAPIAdapter)(nil)
@@ -3121,10 +3122,16 @@ func (a *storeAPIAdapter) BoundParticipantIDsContext(ctx context.Context) ([]int
 	return a.store.BoundParticipantIDsContext(ctx)
 }
 
-func (a *storeAPIAdapter) NotPersonParticipantsContext(
+func (a *storeAPIAdapter) RankingHiddenParticipantsContext(
 	ctx context.Context,
 ) (map[int64]correspondentkind.Kind, error) {
-	return a.store.NotPersonParticipantsContext(ctx)
+	return a.store.RankingHiddenParticipantsContext(ctx)
+}
+
+func (a *storeAPIAdapter) ParticipantsWithCorrespondentKindContext(
+	ctx context.Context, kind correspondentkind.Kind,
+) ([]int64, error) {
+	return a.store.ParticipantsWithCorrespondentKindContext(ctx, kind)
 }
 
 func (a *storeAPIAdapter) NotPersonParticipantsForContext(

@@ -13,6 +13,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/msgvault/internal/correspondentkind"
+	"go.kenn.io/msgvault/internal/query"
 	"go.kenn.io/msgvault/internal/store"
 )
 
@@ -33,7 +34,7 @@ type CorrespondentKindStore interface {
 
 // SetCorrespondentKindRequest classifies an identity cluster.
 type SetCorrespondentKindRequest struct {
-	Kind             correspondentkind.Kind `json:"kind" enum:"person,organization,shared_mailbox,ignored" doc:"person clears the classification (\"this is a person\"); organization, shared_mailbox, and ignored mark the cluster as not a person."`
+	Kind             correspondentkind.Kind `json:"kind" enum:"person,organization,shared_mailbox,ignored,automated,mailing_list" doc:"person clears the classification (\"this is a person\"); organization, shared_mailbox, ignored, automated, and mailing_list mark the cluster as not a person."`
 	OrganizationID   *int64                 `json:"organization_id,omitzero" nullable:"false" doc:"Organization to group the cluster under. Only for kind organization."`
 	OrganizationName *string                `json:"organization_name,omitzero" nullable:"false" doc:"Name of the organization to find or create. Only for kind organization; defaults to the cluster's display name, then its email domain."`
 }
@@ -46,19 +47,23 @@ type CorrespondentKindsResponse struct {
 const correspondentKindDescription = "A correspondent kind says whether an archive identity " +
 	"cluster is a person. organization groups its messages under an Organization and attaches " +
 	"its email addresses as organization contact points; shared_mailbox keeps it for messages " +
-	"while the people who wrote from it keep their own profiles; ignored hides a record the user " +
-	"does not need. Every kind other than person leaves the cluster out of People lists, " +
-	"relationship rankings, contact matching, and enrichment, and resolves its open identity " +
-	"match candidates with reason not_a_person. Messages stay searchable. Setting person restores " +
-	"everything. Saved people are never deleted here: the response names a profile that exists " +
-	"only for this cluster so a client can offer an explicit delete."
+	"while the people who wrote from it keep their own profiles; automated marks a machine " +
+	"sender; mailing_list marks a list or group address; ignored hides a record the user " +
+	"does not need. A user decision always outranks rule and jev classifications. Every kind " +
+	"other than person leaves the cluster out of contact matching and enrichment; every kind " +
+	"except shared_mailbox also leaves People lists and relationship rankings. A user decision " +
+	"resolves the cluster's open identity match candidates with reason not_a_person. Messages " +
+	"stay searchable. Setting person restores everything. Saved people are never deleted here: " +
+	"the response names a profile that exists only for this cluster so a client can offer an " +
+	"explicit delete."
 
 func (s *Server) registerCorrespondentKindRoutes(api huma.API) {
 	list := rawAPIV1Operation("listCorrespondentKinds", http.MethodGet,
 		"/identity/correspondent-kinds", "List identity clusters marked as not a person")
-	list.Description = "Lists every identity cluster classified as an organization, a shared " +
-		"mailbox, or ignored, newest first, with its addresses, organization, and any saved " +
-		"person bound to it. " + correspondentKindDescription
+	list.Description = "Lists every identity cluster whose effective kind is not a person, " +
+		"newest first, with its addresses, organization, and any saved person bound to it. " +
+		"kind=unclear lists the Jev judgments waiting for review instead: they carry the Jev " +
+		"probabilities and are never included without that filter. " + correspondentKindDescription
 	list.Responses = jsonResponsesFor[CorrespondentKindsResponse](api)
 	addErrorResponses(api, list.Responses, http.StatusServiceUnavailable)
 	registerRawHumaRoute(api, list, s.handleListCorrespondentKinds)
@@ -266,4 +271,55 @@ func (s *Server) attachCorrespondentKinds(ctx context.Context, rows []*querySumm
 type querySummaryRef struct {
 	id     int64
 	target **store.CorrespondentKindAssignment
+}
+
+// SenderKindStore resolves a correspondent kind to the participants whose
+// cluster carries it, for sender aggregates filtered by kind.
+type SenderKindStore interface {
+	ParticipantsWithCorrespondentKindContext(ctx context.Context, kind correspondentkind.Kind) ([]int64, error)
+}
+
+// resolveSenderKind applies the sender_kind query parameter: it is valid
+// only for the senders view and resolves against the archive's current
+// classifications, so the analytical cache never holds a stale kind. It
+// writes the error and returns false when the request cannot proceed.
+func (s *Server) resolveSenderKind(
+	w http.ResponseWriter, r *http.Request, view query.ViewType, opts *query.AggregateOptions,
+) bool {
+	raw := strings.TrimSpace(r.URL.Query().Get("sender_kind"))
+	if raw == "" {
+		return true
+	}
+	kind := correspondentkind.Kind(raw)
+	if !kind.Known() || kind == correspondentkind.Person {
+		writeError(w, http.StatusBadRequest, "invalid_sender_kind",
+			"sender_kind must be organization, shared_mailbox, ignored, automated, mailing_list, or unclear")
+		return false
+	}
+	if view != query.ViewSenders {
+		writeError(w, http.StatusBadRequest, "invalid_sender_kind",
+			"sender_kind applies only to view_type=senders")
+		return false
+	}
+	kinds, ok := s.store.(SenderKindStore)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "correspondent_kinds_unavailable",
+			"Correspondent kinds are unavailable")
+		return false
+	}
+	ids, err := kinds.ParticipantsWithCorrespondentKindContext(r.Context(), kind)
+	if err != nil {
+		if s.writeIfContextError(w, err) {
+			return false
+		}
+		s.logger.Error("sender kind lookup failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Could not read correspondent kinds")
+		return false
+	}
+	if ids == nil {
+		ids = []int64{}
+	}
+	opts.SenderKind = raw
+	opts.SenderParticipantIDs = ids
+	return true
 }

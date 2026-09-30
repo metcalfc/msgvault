@@ -365,7 +365,14 @@ import (
 // 2.38.0 adds organization match review: listing organization names the
 // organization resolution judgment was unsure about and accepting or
 // rejecting them.
-const APISchemaVersion = "2.38.0"
+// 2.39.0 adds the automated and mailing_list correspondent kinds (settable
+// by users and written by rules) and the Jev-only unclear kind, listed only
+// through GET /identity/correspondent-kinds?kind=unclear. Correspondent kind
+// records gain confidence and probabilities for Jev judgments. Relationship
+// rankings leave automated, mailing list, and unclear clusters out unless
+// include_not_people is set. GET /aggregates gains sender_kind for the
+// senders view. Settings gain jev.correspondent_kind.enabled and automatic.
+const APISchemaVersion = "2.39.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

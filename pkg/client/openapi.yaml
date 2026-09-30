@@ -2601,6 +2601,9 @@ components:
             - organization
             - shared_mailbox
             - ignored
+            - automated
+            - mailing_list
+            - unclear
           type: string
         organization_id:
           format: int64
@@ -2634,6 +2637,7 @@ components:
     CorrespondentKindRecord:
       properties:
         actor:
+          description: Who wrote the effective classification. Rules record rule:<reason>; Jev records jev:<model>.
           type: string
         addresses:
           items:
@@ -2646,14 +2650,22 @@ components:
         classified_at:
           format: date-time
           type: string
+        confidence:
+          description: Confidence of a jev classification.
+          format: double
+          type: number
         display_name:
           type: string
         kind:
+          description: The effective kind. unclear is only ever written by a Jev judgment and awaits review.
           enum:
             - person
             - organization
             - shared_mailbox
             - ignored
+            - automated
+            - mailing_list
+            - unclear
           type: string
         member_ids:
           items:
@@ -2668,6 +2680,12 @@ components:
         person:
           $ref: "#/components/schemas/CorrespondentKindPerson"
           description: The saved Directory person bound to this cluster, if any.
+        probabilities:
+          additionalProperties:
+            format: double
+            type: number
+          description: "Probability of each Jev option for a jev classification: individual_person, shared_role_or_team_mailbox, mailing_list_or_group, automated_notification_or_transactional, marketing_or_newsletter, unclear."
+          type: object
         source:
           description: "Who classified the cluster: user, rule, or jev. Absent when it was never classified."
           type: string
@@ -11513,7 +11531,7 @@ components:
             $ref: "#/components/schemas/ExploreFilter"
           type: array
         include_not_people:
-          description: Include counterparts whose identity cluster is marked as an organization or ignored. They are left out by default; a shared mailbox is always listed, marked by correspondent_kind.
+          description: "Include counterparts whose identity cluster is an organization, an automated sender, a mailing list, ignored, or an unclear Jev judgment. They are left out by default: a Jev-classified cluster is ranked only when its individual_person probability is at least 0.60, and a user decision always wins. A shared mailbox is always listed, marked by correspondent_kind."
           type: boolean
         limit:
           format: int64
@@ -12088,12 +12106,14 @@ components:
       additionalProperties: false
       properties:
         kind:
-          description: person clears the classification ("this is a person"); organization, shared_mailbox, and ignored mark the cluster as not a person.
+          description: person clears the classification ("this is a person"); organization, shared_mailbox, ignored, automated, and mailing_list mark the cluster as not a person.
           enum:
             - person
             - organization
             - shared_mailbox
             - ignored
+            - automated
+            - mailing_list
           type: string
         organization_id:
           description: Organization to group the cluster under. Only for kind organization.
@@ -13790,7 +13810,7 @@ components:
       type: apiKey
 info:
   title: msgvault API
-  version: 2.38.0
+  version: 2.39.0
 openapi: 3.0.3
 paths:
   /api/daemon/identity:
@@ -14026,6 +14046,18 @@ paths:
           in: query
           name: view_type
           schema:
+            type: string
+        - description: Only senders whose identity cluster has this correspondent kind; senders view only
+          in: query
+          name: sender_kind
+          schema:
+            enum:
+              - organization
+              - shared_mailbox
+              - ignored
+              - automated
+              - mailing_list
+              - unclear
             type: string
         - description: "Sort field: count, size, attachment_size, or name"
           in: query
@@ -19290,10 +19322,10 @@ paths:
         - API
   /api/v1/identity/correspondent-kinds:
     get:
-      description: "Lists every identity cluster classified as an organization, a shared mailbox, or ignored, newest first, with its addresses, organization, and any saved person bound to it. A correspondent kind says whether an archive identity cluster is a person. organization groups its messages under an Organization and attaches its email addresses as organization contact points; shared_mailbox keeps it for messages while the people who wrote from it keep their own profiles; ignored hides a record the user does not need. Every kind other than person leaves the cluster out of People lists, relationship rankings, contact matching, and enrichment, and resolves its open identity match candidates with reason not_a_person. Messages stay searchable. Setting person restores everything. Saved people are never deleted here: the response names a profile that exists only for this cluster so a client can offer an explicit delete."
+      description: "Lists every identity cluster whose effective kind is not a person, newest first, with its addresses, organization, and any saved person bound to it. kind=unclear lists the Jev judgments waiting for review instead: they carry the Jev probabilities and are never included without that filter. A correspondent kind says whether an archive identity cluster is a person. organization groups its messages under an Organization and attaches its email addresses as organization contact points; shared_mailbox keeps it for messages while the people who wrote from it keep their own profiles; automated marks a machine sender; mailing_list marks a list or group address; ignored hides a record the user does not need. A user decision always outranks rule and jev classifications. Every kind other than person leaves the cluster out of contact matching and enrichment; every kind except shared_mailbox also leaves People lists and relationship rankings. A user decision resolves the cluster's open identity match candidates with reason not_a_person. Messages stay searchable. Setting person restores everything. Saved people are never deleted here: the response names a profile that exists only for this cluster so a client can offer an explicit delete."
       operationId: listCorrespondentKinds
       parameters:
-        - description: Only records of this kind
+        - description: Only records of this kind; unclear lists Jev judgments awaiting review
           in: query
           name: kind
           schema:
@@ -19301,6 +19333,9 @@ paths:
               - organization
               - shared_mailbox
               - ignored
+              - automated
+              - mailing_list
+              - unclear
             type: string
         - description: Only records grouped under this organization
           in: query
@@ -19416,7 +19451,7 @@ paths:
       tags:
         - API
     put:
-      description: "A correspondent kind says whether an archive identity cluster is a person. organization groups its messages under an Organization and attaches its email addresses as organization contact points; shared_mailbox keeps it for messages while the people who wrote from it keep their own profiles; ignored hides a record the user does not need. Every kind other than person leaves the cluster out of People lists, relationship rankings, contact matching, and enrichment, and resolves its open identity match candidates with reason not_a_person. Messages stay searchable. Setting person restores everything. Saved people are never deleted here: the response names a profile that exists only for this cluster so a client can offer an explicit delete."
+      description: "A correspondent kind says whether an archive identity cluster is a person. organization groups its messages under an Organization and attaches its email addresses as organization contact points; shared_mailbox keeps it for messages while the people who wrote from it keep their own profiles; automated marks a machine sender; mailing_list marks a list or group address; ignored hides a record the user does not need. A user decision always outranks rule and jev classifications. Every kind other than person leaves the cluster out of contact matching and enrichment; every kind except shared_mailbox also leaves People lists and relationship rankings. A user decision resolves the cluster's open identity match candidates with reason not_a_person. Messages stay searchable. Setting person restores everything. Saved people are never deleted here: the response names a profile that exists only for this cluster so a client can offer an explicit delete."
       operationId: setCorrespondentKind
       parameters:
         - description: Any participant ID in the identity cluster

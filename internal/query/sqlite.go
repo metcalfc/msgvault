@@ -631,7 +631,17 @@ func (e *SQLiteEngine) SubAggregate(ctx context.Context, filter MessageFilter, g
 
 // Aggregate performs grouping based on the provided ViewType.
 func (e *SQLiteEngine) Aggregate(ctx context.Context, groupBy ViewType, opts AggregateOptions) ([]AggregateRow, error) {
+	restriction, none, err := senderRestriction(groupBy, opts)
+	if err != nil {
+		return nil, err
+	}
+	if none {
+		return []AggregateRow{}, nil
+	}
 	conditions, args := optsToFilterConditions(e.dialect, opts, "m.")
+	if restriction != "" {
+		conditions = append(conditions, restriction)
+	}
 	if !aggregateHasExplicitMessageType(MessageFilter{}, opts) {
 		conditions = append(conditions, emailOnlyFilterM)
 	}

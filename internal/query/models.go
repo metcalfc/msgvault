@@ -5,7 +5,11 @@
 package query
 
 import (
+	"errors"
+	"fmt"
 	"maps"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -349,6 +353,42 @@ type AggregateOptions struct {
 
 	// Text search filter (filters aggregates to only include messages matching search)
 	SearchQuery string
+
+	// SenderKind restricts the senders view to identity clusters of one
+	// correspondent kind (for example automated or mailing_list). The API
+	// resolves it against the archive into SenderParticipantIDs before an
+	// engine runs; engines apply only the resolved IDs.
+	SenderKind string
+	// SenderParticipantIDs is the resolved sender restriction: nil means no
+	// restriction, an empty non-nil slice matches nothing.
+	SenderParticipantIDs []int64
+}
+
+// ErrSenderKindUnresolved reports a sender kind that reached an engine
+// without being resolved to participants.
+var ErrSenderKindUnresolved = errors.New("sender kind must be resolved to participants before aggregating")
+
+// senderRestriction renders the senders-view participant restriction on the
+// sender participant alias p. none is true when the restriction matches no
+// participant, so the caller can return no rows without querying.
+func senderRestriction(view ViewType, opts AggregateOptions) (condition string, none bool, err error) {
+	if opts.SenderParticipantIDs == nil {
+		if opts.SenderKind != "" {
+			return "", false, ErrSenderKindUnresolved
+		}
+		return "", false, nil
+	}
+	if view != ViewSenders {
+		return "", false, fmt.Errorf("a sender kind applies only to the senders view, not %s", view)
+	}
+	if len(opts.SenderParticipantIDs) == 0 {
+		return "", true, nil
+	}
+	ids := make([]string, len(opts.SenderParticipantIDs))
+	for i, id := range opts.SenderParticipantIDs {
+		ids[i] = strconv.FormatInt(id, 10)
+	}
+	return "p.id IN (" + strings.Join(ids, ",") + ")", false, nil
 }
 
 // DefaultAggregateOptions returns sensible defaults.

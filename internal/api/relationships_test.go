@@ -658,6 +658,43 @@ func TestRelationshipsLeaveOutRecordsMarkedNotAPerson(t *testing.T) {
 	assert.Nil(relationshipRowOf(t, ranked, relAliceID).CorrespondentKind)
 }
 
+func TestRelationshipsRankOnlyClustersJevCallsPeople(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	now := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+	srv, identityStore, _ := newRelationshipIdentityAPIServer(t, newRelationshipsDuckDBFixture(t, now), []string{
+		"owner@example.test", "alice@example.test", "alice@chat.example", "newsletter@example.test",
+	})
+	judge := func(participant int64, kind correspondentkind.Kind, individual float64) {
+		t.Helper()
+		confidence := 0.7
+		_, err := identityStore.WriteDerivedCorrespondentKindsContext(t.Context(), []store.DerivedCorrespondentKind{{
+			ParticipantID: participant, Source: correspondentkind.SourceJev, Kind: kind, Confidence: &confidence,
+			Probabilities: map[string]float64{"individual_person": individual}, Actor: "jev:test",
+		}})
+		require.NoError(err)
+	}
+
+	judge(relAliceID, correspondentkind.Person, 0.91)
+	judge(relNewsletterID, correspondentkind.MailingList, 0.05)
+	ranked := relationshipsPage(t, srv, `{"show_all":true}`)
+	require.Len(ranked.Rows, 1)
+	assert.Equal(relAliceID, ranked.Rows[0].CanonicalID, "individual_person at or above 0.60 stays ranked")
+	assert.Len(relationshipsPage(t, srv, `{"show_all":true,"include_not_people":true}`).Rows, 2)
+
+	judge(relNewsletterID, correspondentkind.Unclear, 0.45)
+	ranked = relationshipsPage(t, srv, `{"show_all":true}`)
+	require.Len(ranked.Rows, 1, "an unclear judgment is held out of rankings too")
+
+	_, err := identityStore.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: relNewsletterID, Kind: correspondentkind.Person,
+	})
+	require.NoError(err)
+	assert.Len(relationshipsPage(t, srv, `{"show_all":true}`).Rows, 2, "a user override outranks Jev")
+}
+
 func TestRelationshipsUnsavedCursorRestartsWhenSavedPeopleChange(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

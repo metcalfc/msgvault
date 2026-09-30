@@ -883,8 +883,8 @@ func rawRouteParameters(operationID string) []*huma.Param {
 	case "acceptIdentityMatchCandidate", "rejectIdentityMatchCandidate":
 		return []*huma.Param{pathIntegerParam("Identity match candidate ID")}
 	case "listCorrespondentKinds":
-		kind := queryStringParam("kind", "Only records of this kind", false)
-		kind.Schema.Enum = []any{"organization", "shared_mailbox", "ignored"}
+		kind := queryStringParam("kind", "Only records of this kind; unclear lists Jev judgments awaiting review", false)
+		kind.Schema.Enum = []any{"organization", "shared_mailbox", "ignored", "automated", "mailing_list", "unclear"}
 		return []*huma.Param{
 			kind,
 			queryIntegerParam("organization_id", "Only records grouped under this organization"),
@@ -946,8 +946,12 @@ func rawRouteParameters(operationID string) []*huma.Param {
 			queryStringParam("message_type", "Message type filter; repeat or comma-separate for multiple values", false),
 		}, scopeParams(), semanticMessageFilterParams())
 	case "getAggregates":
+		senderKind := queryStringParam("sender_kind",
+			"Only senders whose identity cluster has this correspondent kind; senders view only", false)
+		senderKind.Schema.Enum = []any{"organization", "shared_mailbox", "ignored", "automated", "mailing_list", "unclear"}
 		return append([]*huma.Param{
 			queryStringParam("view_type", "Aggregate view type", false),
+			senderKind,
 		}, aggregateOptionParams()...)
 	case "getSubAggregates":
 		// Aggregate params first so the sort/limit docs reflect

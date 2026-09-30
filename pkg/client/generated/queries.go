@@ -12,6 +12,9 @@ type GetAggregatesQuery struct {
 	// ViewType Aggregate view type
 	ViewType *string `json:"view_type,omitempty"`
 
+	// SenderKind Only senders whose identity cluster has this correspondent kind; senders view only
+	SenderKind *GetAggregatesQuerySenderKind `json:"sender_kind,omitempty"`
+
 	// Sort Sort field: count, size, attachment_size, or name
 	Sort *string `json:"sort,omitempty"`
 
@@ -44,6 +47,21 @@ type GetAggregatesQuery struct {
 
 	// Before Upper date/time bound (RFC3339 or YYYY-MM-DD)
 	Before *string `json:"before,omitempty"`
+}
+
+func (g GetAggregatesQuery) Validate() error {
+	var errors runtime.ValidationErrors
+	if g.SenderKind != nil {
+		if v, ok := any(g.SenderKind).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("SenderKind", err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
 }
 
 type GetSubAggregatesQuery struct {
@@ -456,7 +474,7 @@ type GetEntityLabelsQuery struct {
 }
 
 type ListCorrespondentKindsQuery struct {
-	// Kind Only records of this kind
+	// Kind Only records of this kind; unclear lists Jev judgments awaiting review
 	Kind *ListCorrespondentKindsQueryKind `json:"kind,omitempty"`
 
 	// OrganizationID Only records grouped under this organization

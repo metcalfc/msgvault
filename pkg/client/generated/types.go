@@ -2380,18 +2380,27 @@ type CorrespondentKindPerson struct {
 }
 
 type CorrespondentKindRecord struct {
+	// Actor Who wrote the effective classification. Rules record rule:<reason>; Jev records jev:<model>.
 	Actor     *string  `json:"actor,omitzero"`
 	Addresses []string `json:"addresses" validate:"required"`
 
 	// CanonicalID The cluster's smallest participant ID.
-	CanonicalID      int64                       `json:"canonical_id"`
-	ClassifiedAt     *time.Time                  `json:"classified_at,omitempty"`
-	DisplayName      *string                     `json:"display_name,omitzero"`
+	CanonicalID  int64      `json:"canonical_id"`
+	ClassifiedAt *time.Time `json:"classified_at,omitempty"`
+
+	// Confidence Confidence of a jev classification.
+	Confidence  *float64 `json:"confidence,omitempty"`
+	DisplayName *string  `json:"display_name,omitzero"`
+
+	// Kind The effective kind. unclear is only ever written by a Jev judgment and awaits review.
 	Kind             CorrespondentKindRecordKind `json:"kind" validate:"required"`
 	MemberIds        []int64                     `json:"member_ids" validate:"required"`
 	OrganizationID   *int64                      `json:"organization_id,omitempty"`
 	OrganizationName *string                     `json:"organization_name,omitzero"`
 	Person           *CorrespondentKindPerson    `json:"person,omitempty"`
+
+	// Probabilities Probability of each Jev option for a jev classification: individual_person, shared_role_or_team_mailbox, mailing_list_or_group, automated_notification_or_transactional, marketing_or_newsletter, unclear.
+	Probabilities map[string]float64 `json:"probabilities,omitempty"`
 
 	// Source Who classified the cluster: user, rule, or jev. Absent when it was never classified.
 	Source *string `json:"source,omitzero"`
@@ -11055,7 +11064,7 @@ type RelationshipsHTTPRequest struct {
 	Cursor  *string         `json:"cursor,omitzero"`
 	Filters []ExploreFilter `json:"filters,omitempty"`
 
-	// IncludeNotPeople Include counterparts whose identity cluster is marked as an organization or ignored. They are left out by default; a shared mailbox is always listed, marked by correspondent_kind.
+	// IncludeNotPeople Include counterparts whose identity cluster is an organization, an automated sender, a mailing list, ignored, or an unclear Jev judgment. They are left out by default: a Jev-classified cluster is ranked only when its individual_person probability is at least 0.60, and a user decision always wins. A shared mailbox is always listed, marked by correspondent_kind.
 	IncludeNotPeople *bool  `json:"include_not_people,omitempty"`
 	Limit            *int64 `json:"limit,omitempty" validate:"omitempty,gte=0,lte=500"`
 	ShowAll          *bool  `json:"show_all,omitempty"`
@@ -11679,7 +11688,7 @@ func (s SessionStatus) Validate() error {
 }
 
 type SetCorrespondentKindRequest struct {
-	// Kind person clears the classification ("this is a person"); organization, shared_mailbox, and ignored mark the cluster as not a person.
+	// Kind person clears the classification ("this is a person"); organization, shared_mailbox, ignored, automated, and mailing_list mark the cluster as not a person.
 	Kind SetCorrespondentKindRequestKind `json:"kind" validate:"required"`
 
 	// OrganizationID Organization to group the cluster under. Only for kind organization.

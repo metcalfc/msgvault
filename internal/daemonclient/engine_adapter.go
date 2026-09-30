@@ -665,10 +665,16 @@ func (e *Engine) Aggregate(ctx context.Context, groupBy query.ViewType, opts que
 	if err := e.requireListIDCapability(ctx, search.Parse(opts.SearchQuery), query.MessageFilter{}, groupBy); err != nil {
 		return nil, err
 	}
+	var senderKind *generated.GetAggregatesQuerySenderKind
+	if opts.SenderKind != "" {
+		kind := generated.GetAggregatesQuerySenderKind(opts.SenderKind)
+		senderKind = &kind
+	}
 	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.GetAggregatesResp, error) {
 		return client.GetAggregatesWithResponse(ctx, &generated.GetAggregatesRequestOptions{
 			Query: &generated.GetAggregatesQuery{
 				ViewType:        optionalString(viewTypeToString(groupBy)),
+				SenderKind:      senderKind,
 				Sort:            optionalString(sortFieldToString(opts.SortField)),
 				Direction:       optionalString(sortDirectionToString(opts.SortDirection)),
 				Limit:           optionalPositiveInt64(opts.Limit),

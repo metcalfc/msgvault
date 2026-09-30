@@ -1675,6 +1675,9 @@ func cliRunCommandAllowed(args []string) bool {
 	if args[0] == "jev" {
 		return cliRunJevAllowed(args[1:])
 	}
+	if args[0] == "kinds" {
+		return cliRunKindsAllowed(args[1:])
+	}
 	if args[0] == cliRunPersonCommand {
 		if len(args) < 3 {
 			return false
@@ -1934,6 +1937,37 @@ func cliRunJevAllowed(args []string) bool {
 	default:
 		return false
 	}
+}
+
+// cliRunKindsAllowed admits `kinds build` with its bounded flags only.
+func cliRunKindsAllowed(args []string) bool {
+	if len(args) == 0 || args[0] != "build" {
+		return false
+	}
+	values, positionals, ok := cliRunStrictFlagValues(args[1:])
+	if !ok || len(positionals) != 0 {
+		return false
+	}
+	for name, value := range values {
+		switch name {
+		case "min-messages":
+			if !cliRunPositiveInt(value) {
+				return false
+			}
+		case "limit":
+			if parsed, err := strconv.ParseInt(value, 10, 64); err != nil || parsed < 0 {
+				return false
+			}
+		case "rules-only", "json":
+			if _, err := strconv.ParseBool(value); err != nil {
+				return false
+			}
+		case "log-level", "verbose", "log-sql", "log-sql-slow-ms":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func cliRunPersonEnrichmentAllowed(args []string) bool {

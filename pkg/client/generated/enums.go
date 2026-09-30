@@ -464,35 +464,42 @@ func (c ContactMatchStatusClassification) Validate() error {
 type CorrespondentKindAssignmentKind string
 
 const (
+	Automated                                    CorrespondentKindAssignmentKind = "automated"
 	CorrespondentKindAssignmentKindOrganization  CorrespondentKindAssignmentKind = "organization"
 	CorrespondentKindAssignmentKindPerson        CorrespondentKindAssignmentKind = "person"
 	CorrespondentKindAssignmentKindSharedMailbox CorrespondentKindAssignmentKind = "shared_mailbox"
 	Ignored                                      CorrespondentKindAssignmentKind = "ignored"
+	MailingList                                  CorrespondentKindAssignmentKind = "mailing_list"
+	Unclear                                      CorrespondentKindAssignmentKind = "unclear"
 )
 
 // Validate checks if the CorrespondentKindAssignmentKind value is valid
 func (c CorrespondentKindAssignmentKind) Validate() error {
 	switch c {
-	case CorrespondentKindAssignmentKindOrganization, CorrespondentKindAssignmentKindPerson, CorrespondentKindAssignmentKindSharedMailbox, Ignored:
+	case Automated, CorrespondentKindAssignmentKindOrganization, CorrespondentKindAssignmentKindPerson, CorrespondentKindAssignmentKindSharedMailbox, Ignored, MailingList, Unclear:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid CorrespondentKindAssignmentKind value, got: %v", c))
 	}
 }
 
+// CorrespondentKindRecordKind The effective kind. unclear is only ever written by a Jev judgment and awaits review.
 type CorrespondentKindRecordKind string
 
 const (
+	CorrespondentKindRecordKindAutomated     CorrespondentKindRecordKind = "automated"
 	CorrespondentKindRecordKindIgnored       CorrespondentKindRecordKind = "ignored"
+	CorrespondentKindRecordKindMailingList   CorrespondentKindRecordKind = "mailing_list"
 	CorrespondentKindRecordKindOrganization  CorrespondentKindRecordKind = "organization"
 	CorrespondentKindRecordKindPerson        CorrespondentKindRecordKind = "person"
 	CorrespondentKindRecordKindSharedMailbox CorrespondentKindRecordKind = "shared_mailbox"
+	CorrespondentKindRecordKindUnclear       CorrespondentKindRecordKind = "unclear"
 )
 
 // Validate checks if the CorrespondentKindRecordKind value is valid
 func (c CorrespondentKindRecordKind) Validate() error {
 	switch c {
-	case CorrespondentKindRecordKindIgnored, CorrespondentKindRecordKindOrganization, CorrespondentKindRecordKindPerson, CorrespondentKindRecordKindSharedMailbox:
+	case CorrespondentKindRecordKindAutomated, CorrespondentKindRecordKindIgnored, CorrespondentKindRecordKindMailingList, CorrespondentKindRecordKindOrganization, CorrespondentKindRecordKindPerson, CorrespondentKindRecordKindSharedMailbox, CorrespondentKindRecordKindUnclear:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid CorrespondentKindRecordKind value, got: %v", c))
@@ -2419,11 +2426,13 @@ func (s SessionStatusAuthMode) Validate() error {
 	}
 }
 
-// SetCorrespondentKindRequestKind person clears the classification ("this is a person"); organization, shared_mailbox, and ignored mark the cluster as not a person.
+// SetCorrespondentKindRequestKind person clears the classification ("this is a person"); organization, shared_mailbox, ignored, automated, and mailing_list mark the cluster as not a person.
 type SetCorrespondentKindRequestKind string
 
 const (
+	SetCorrespondentKindRequestKindAutomated     SetCorrespondentKindRequestKind = "automated"
 	SetCorrespondentKindRequestKindIgnored       SetCorrespondentKindRequestKind = "ignored"
+	SetCorrespondentKindRequestKindMailingList   SetCorrespondentKindRequestKind = "mailing_list"
 	SetCorrespondentKindRequestKindOrganization  SetCorrespondentKindRequestKind = "organization"
 	SetCorrespondentKindRequestKindPerson        SetCorrespondentKindRequestKind = "person"
 	SetCorrespondentKindRequestKindSharedMailbox SetCorrespondentKindRequestKind = "shared_mailbox"
@@ -2432,7 +2441,7 @@ const (
 // Validate checks if the SetCorrespondentKindRequestKind value is valid
 func (s SetCorrespondentKindRequestKind) Validate() error {
 	switch s {
-	case SetCorrespondentKindRequestKindIgnored, SetCorrespondentKindRequestKindOrganization, SetCorrespondentKindRequestKindPerson, SetCorrespondentKindRequestKindSharedMailbox:
+	case SetCorrespondentKindRequestKindAutomated, SetCorrespondentKindRequestKindIgnored, SetCorrespondentKindRequestKindMailingList, SetCorrespondentKindRequestKindOrganization, SetCorrespondentKindRequestKindPerson, SetCorrespondentKindRequestKindSharedMailbox:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid SetCorrespondentKindRequestKind value, got: %v", s))
@@ -2588,18 +2597,42 @@ func (t TaskIntegrationStatusResponseState) Validate() error {
 	}
 }
 
+type GetAggregatesQuerySenderKind string
+
+const (
+	GetAggregatesQuerySenderKindAutomated     GetAggregatesQuerySenderKind = "automated"
+	GetAggregatesQuerySenderKindIgnored       GetAggregatesQuerySenderKind = "ignored"
+	GetAggregatesQuerySenderKindMailingList   GetAggregatesQuerySenderKind = "mailing_list"
+	GetAggregatesQuerySenderKindOrganization  GetAggregatesQuerySenderKind = "organization"
+	GetAggregatesQuerySenderKindSharedMailbox GetAggregatesQuerySenderKind = "shared_mailbox"
+	GetAggregatesQuerySenderKindUnclear       GetAggregatesQuerySenderKind = "unclear"
+)
+
+// Validate checks if the GetAggregatesQuerySenderKind value is valid
+func (g GetAggregatesQuerySenderKind) Validate() error {
+	switch g {
+	case GetAggregatesQuerySenderKindAutomated, GetAggregatesQuerySenderKindIgnored, GetAggregatesQuerySenderKindMailingList, GetAggregatesQuerySenderKindOrganization, GetAggregatesQuerySenderKindSharedMailbox, GetAggregatesQuerySenderKindUnclear:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid GetAggregatesQuerySenderKind value, got: %v", g))
+	}
+}
+
 type ListCorrespondentKindsQueryKind string
 
 const (
+	ListCorrespondentKindsQueryKindAutomated     ListCorrespondentKindsQueryKind = "automated"
 	ListCorrespondentKindsQueryKindIgnored       ListCorrespondentKindsQueryKind = "ignored"
+	ListCorrespondentKindsQueryKindMailingList   ListCorrespondentKindsQueryKind = "mailing_list"
 	ListCorrespondentKindsQueryKindOrganization  ListCorrespondentKindsQueryKind = "organization"
 	ListCorrespondentKindsQueryKindSharedMailbox ListCorrespondentKindsQueryKind = "shared_mailbox"
+	ListCorrespondentKindsQueryKindUnclear       ListCorrespondentKindsQueryKind = "unclear"
 )
 
 // Validate checks if the ListCorrespondentKindsQueryKind value is valid
 func (l ListCorrespondentKindsQueryKind) Validate() error {
 	switch l {
-	case ListCorrespondentKindsQueryKindIgnored, ListCorrespondentKindsQueryKindOrganization, ListCorrespondentKindsQueryKindSharedMailbox:
+	case ListCorrespondentKindsQueryKindAutomated, ListCorrespondentKindsQueryKindIgnored, ListCorrespondentKindsQueryKindMailingList, ListCorrespondentKindsQueryKindOrganization, ListCorrespondentKindsQueryKindSharedMailbox, ListCorrespondentKindsQueryKindUnclear:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid ListCorrespondentKindsQueryKind value, got: %v", l))

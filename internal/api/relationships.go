@@ -30,9 +30,9 @@ type RelationshipsHTTPRequest struct {
 	// UnsavedOnly lists only clusters not yet saved to the Directory, so
 	// the People list can merge them with saved people without duplicates.
 	UnsavedOnly bool `json:"unsaved_only,omitzero" doc:"List only counterparts whose cluster is not bound to a saved Directory person."`
-	// IncludeNotPeople keeps clusters the user classified as an
-	// organization or ignored; rankings leave them out by default.
-	IncludeNotPeople bool `json:"include_not_people,omitzero" doc:"Include counterparts whose identity cluster is marked as an organization or ignored. They are left out by default; a shared mailbox is always listed, marked by correspondent_kind."`
+	// IncludeNotPeople keeps clusters that are not known to be people;
+	// rankings leave them out by default.
+	IncludeNotPeople bool `json:"include_not_people,omitzero" doc:"Include counterparts whose identity cluster is an organization, an automated sender, a mailing list, ignored, or an unclear Jev judgment. They are left out by default: a Jev-classified cluster is ranked only when its individual_person probability is at least 0.60, and a user decision always wins. A shared mailbox is always listed, marked by correspondent_kind."`
 }
 
 // RelationshipsHTTPResponse echoes both revisions a page was computed
@@ -400,31 +400,33 @@ type BoundParticipantStore interface {
 	BoundParticipantIDsContext(ctx context.Context) ([]int64, error)
 }
 
-// NotPersonParticipantStore reports the participants in clusters the user
-// classified as an organization, a shared mailbox, or ignored.
-type NotPersonParticipantStore interface {
-	NotPersonParticipantsContext(ctx context.Context) (map[int64]correspondentkind.Kind, error)
+// RankingHiddenParticipantStore reports the participants in clusters that
+// relationship rankings leave out by default: organizations, automated
+// senders, mailing lists, ignored records, and unclear Jev judgments, each
+// under any user decision.
+type RankingHiddenParticipantStore interface {
+	RankingHiddenParticipantsContext(ctx context.Context) (map[int64]correspondentkind.Kind, error)
 }
 
-// rankingHiddenParticipantSet returns every participant in a cluster
-// classified as an organization or ignored, which rankings leave out, with a
-// fingerprint of the set for cursor drift checks. Shared mailboxes stay as
-// labelled rows. A store without the capability classifies nothing.
+// rankingHiddenParticipantSet returns every participant in a cluster that
+// rankings leave out, with a fingerprint of the set for cursor drift checks.
+// Shared mailboxes stay as labelled rows. A store without the capability
+// classifies nothing.
 func (s *Server) rankingHiddenParticipantSet(
 	ctx context.Context, w http.ResponseWriter,
 ) (map[int64]correspondentkind.Kind, string, bool) {
-	kinds, ok := s.store.(NotPersonParticipantStore)
+	kinds, ok := s.store.(RankingHiddenParticipantStore)
 	if !ok {
 		return nil, "", true
 	}
-	hidden, err := kinds.NotPersonParticipantsContext(ctx)
+	hidden, err := kinds.RankingHiddenParticipantsContext(ctx)
 	if err != nil {
 		s.logger.Error("correspondent kind lookup failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Could not read records marked as not a person")
 		return nil, "", false
 	}
 	for id, kind := range hidden {
-		if !kind.LeavesPeopleLists() {
+		if !kind.LeavesRankings() {
 			delete(hidden, id)
 		}
 	}

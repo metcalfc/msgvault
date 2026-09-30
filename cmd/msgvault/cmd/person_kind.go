@@ -30,11 +30,15 @@ func newPersonKindCommand() *cobra.Command {
 			"                  organization record and its addresses join that organization\n" +
 			"  shared_mailbox  an address several people write from, such as a support desk;\n" +
 			"                  the people who wrote from it keep their own profiles\n" +
+			"  automated       a machine sender: notifications, receipts, newsletters, bots\n" +
+			"  mailing_list    a list or group address that relays many senders\n" +
 			"  ignored         a record you do not need as a contact\n" +
-			"  person          this is a person (clears the classification)\n\n" +
-			"Anything other than person leaves the identity out of People lists, relationship\n" +
-			"rankings, contact matching, and enrichment, and resolves its open identity\n" +
-			"matches. Messages stay searchable. Saved profiles are never deleted.",
+			"  person          this is a person (overrides any rule or Jev classification)\n\n" +
+			"Anything other than person leaves the identity out of contact matching and\n" +
+			"enrichment and resolves its open identity matches; every kind except\n" +
+			"shared_mailbox also leaves People lists and relationship rankings. Your decision\n" +
+			"always outranks 'msgvault kinds build'. Messages stay searchable. Saved profiles\n" +
+			"are never deleted.",
 	}
 	command.AddCommand(newPersonKindSetCommand(), newPersonKindListCommand())
 	return command
@@ -45,7 +49,7 @@ func newPersonKindSetCommand() *cobra.Command {
 	var organizationName string
 	var jsonOutput bool
 	command := &cobra.Command{
-		Use:   "set <participant-id> organization|shared_mailbox|ignored|person",
+		Use:   "set <participant-id> organization|shared_mailbox|automated|mailing_list|ignored|person",
 		Short: "Classify the identity cluster containing a participant",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -56,7 +60,7 @@ func newPersonKindSetCommand() *cobra.Command {
 			kind := correspondentkind.Kind(strings.TrimSpace(args[1]))
 			if !kind.Valid() {
 				return usageErr(cmd, fmt.Errorf(
-					"kind must be organization, shared_mailbox, ignored, or person, got %q", args[1]))
+					"kind must be organization, shared_mailbox, automated, mailing_list, ignored, or person, got %q", args[1]))
 			}
 			organizationSet := cmd.Flags().Changed("organization")
 			nameSet := cmd.Flags().Changed("organization-name")
@@ -143,15 +147,18 @@ func newPersonKindListCommand() *cobra.Command {
 	var jsonOutput bool
 	command := &cobra.Command{
 		Use:   cmdUseList,
-		Short: "List identities marked as not a person",
+		Short: "List identities marked as not a person, or Jev judgments awaiting review",
+		Long: "Lists identities whose kind is not a person. --kind unclear lists the\n" +
+			"identities Jev could not classify instead, with the probability it gave each\n" +
+			"option; decide them with 'msgvault person kind set'.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			query := generated.ListCorrespondentKindsQuery{}
 			if kind = strings.TrimSpace(kind); kind != "" {
 				value := correspondentkind.Kind(kind)
-				if !value.Valid() || value.IsPerson() {
+				if !value.Known() || value == correspondentkind.Person {
 					return usageErr(cmd, fmt.Errorf(
-						"--kind must be organization, shared_mailbox, or ignored, got %q", kind))
+						"--kind must be organization, shared_mailbox, automated, mailing_list, ignored, or unclear, got %q", kind))
 				}
 				typed := generated.ListCorrespondentKindsQueryKind(kind)
 				query.Kind = &typed
@@ -174,7 +181,7 @@ func newPersonKindListCommand() *cobra.Command {
 					json.Deterministic(true))
 			}
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			_, _ = fmt.Fprintln(w, "PARTICIPANT\tKIND\tIDENTITY\tORGANIZATION\tSAVED PROFILE")
+			_, _ = fmt.Fprintln(w, "PARTICIPANT\tKIND\tSOURCE\tIDENTITY\tORGANIZATION\tSAVED PROFILE")
 			for _, record := range resp.JSON200.Records {
 				organization := "-"
 				if record.OrganizationName != nil {
@@ -184,7 +191,14 @@ func newPersonKindListCommand() *cobra.Command {
 				if record.Person != nil {
 					profile = strconv.FormatInt(record.Person.ID, 10)
 				}
-				_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", record.CanonicalID, record.Kind,
+				source := "-"
+				if record.Source != nil {
+					source = string(*record.Source)
+				}
+				if probability, ok := record.Probabilities["individual_person"]; ok {
+					source += " (person " + strconv.FormatFloat(probability, 'f', 2, 64) + ")"
+				}
+				_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\n", record.CanonicalID, record.Kind, source,
 					personKindRecordLabel(record), organization, profile)
 			}
 			if err := w.Flush(); err != nil {
@@ -193,7 +207,8 @@ func newPersonKindListCommand() *cobra.Command {
 			return nil
 		},
 	}
-	command.Flags().StringVar(&kind, "kind", "", "Only organization, shared_mailbox, or ignored")
+	command.Flags().StringVar(&kind, "kind", "",
+		"Only organization, shared_mailbox, automated, mailing_list, ignored, or unclear (Jev judgments awaiting review)")
 	command.Flags().BoolVar(&jsonOutput, flagJSON, false, "Output as JSON")
 	return command
 }
