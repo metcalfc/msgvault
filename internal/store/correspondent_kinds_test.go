@@ -503,3 +503,36 @@ func TestParticipantMergeCarriesOrganizationContactsTheClassificationAdded(t *te
 	require.NoError(err)
 	assert.Empty(profile.ContactPoints, "clearing the survivor withdraws the address the absorbed classification added")
 }
+
+func TestClearingOneEndpointKeepsACandidateWhoseOtherEndpointIsNotAPerson(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	left := f.emailParticipant("left-desk@example.test", "Desk")
+	right := f.emailParticipant("right-desk@example.test", "Desk")
+	candidate := upsertDisplayNameCandidate(t, f.st, left, right, "desk")
+	require.Equal(store.IdentityMatchStateCandidate, candidate.State)
+	for _, id := range []int64{left, right} {
+		_, err := f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+			ParticipantID: id, Kind: correspondentkind.Ignored,
+		})
+		require.NoError(err)
+	}
+
+	result, err := f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: left, Kind: correspondentkind.Person,
+	})
+	require.NoError(err)
+	assert.Equal(0, result.RestoredCandidates)
+	state, _ := candidateState(t, f.st, candidate.ID)
+	assert.Equal(store.IdentityMatchStateRejected, state, "the other endpoint is still ignored")
+
+	result, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: right, Kind: correspondentkind.Person,
+	})
+	require.NoError(err)
+	assert.Equal(1, result.RestoredCandidates)
+	state, _ = candidateState(t, f.st, candidate.ID)
+	assert.Equal(store.IdentityMatchStateCandidate, state)
+}

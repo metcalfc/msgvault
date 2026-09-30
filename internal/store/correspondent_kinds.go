@@ -1030,24 +1030,72 @@ func (s *Store) resolveNotAPersonCandidatesTx(
 func (s *Store) restoreNotAPersonCandidatesTx(
 	ctx context.Context, tx *loggedTx, members []int64,
 ) (int, error) {
+	type resolvedCandidate struct {
+		id                  int64
+		leftKind, rightKind IdentityMatchEndpointKind
+		leftID, rightID     int64
+		notes               string
+	}
+	found := map[int64]resolvedCandidate{}
+	for _, side := range []string{"left", "right"} {
+		if err := queryInChunksContext(ctx, tx, members, []any{
+			IdentityMatchStateRejected, correspondentkind.NotAPersonReason,
+			correspondentkind.NotAPersonConflictReason, IdentityMatchParticipant,
+		}, `SELECT id, left_kind, left_id, right_kind, right_id, notes
+			FROM identity_match_candidates
+			WHERE state = ? AND notes IN (?, ?) AND `+side+`_kind = ? AND `+side+`_id IN (%s)`,
+			func(rows *loggedRows) error {
+				var row resolvedCandidate
+				if err := rows.Scan(&row.id, &row.leftKind, &row.leftID,
+					&row.rightKind, &row.rightID, &row.notes); err != nil {
+					return fmt.Errorf("scan resolved candidate: %w", err)
+				}
+				found[row.id] = row
+				return nil
+			}); err != nil {
+			return 0, fmt.Errorf("load resolved candidates: %w", err)
+		}
+	}
+	if len(found) == 0 {
+		return 0, nil
+	}
+	// A candidate returns to review only when neither endpoint is still not
+	// a person; the other side may carry its own classification.
+	hidden, err := s.hiddenCorrespondentParticipantsTx(ctx, tx)
+	if err != nil {
+		return 0, err
+	}
+	ids := make([]int64, 0, len(found))
+	for id := range found {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
 	restored := 0
-	for _, state := range []IdentityMatchState{IdentityMatchStateCandidate, IdentityMatchStateConflict} {
-		reason := correspondentkind.NotAPersonReason
-		if state == IdentityMatchStateConflict {
-			reason = correspondentkind.NotAPersonConflictReason
-		}
-		for _, side := range []string{"left", "right"} {
-			count, err := execCountInChunksTx(ctx, tx, members, []any{
-				state, IdentityMatchStateRejected, reason, IdentityMatchParticipant,
-			}, `UPDATE identity_match_candidates SET
-					state = ?, decided_by = NULL, decided_at = NULL, notes = NULL,
-					application_pending = TRUE, updated_at = CURRENT_TIMESTAMP
-				WHERE state = ? AND notes = ? AND `+side+`_kind = ? AND `+side+`_id IN (%s)`)
-			if err != nil {
-				return restored, fmt.Errorf("restore identity candidates: %w", err)
+	for _, id := range ids {
+		row := found[id]
+		stillHidden := false
+		for _, endpoint := range []struct {
+			kind IdentityMatchEndpointKind
+			id   int64
+		}{{row.leftKind, row.leftID}, {row.rightKind, row.rightID}} {
+			if _, ok := hidden[endpoint.id]; ok && endpoint.kind == IdentityMatchParticipant {
+				stillHidden = true
 			}
-			restored += count
 		}
+		if stillHidden {
+			continue
+		}
+		state := IdentityMatchStateCandidate
+		if row.notes == correspondentkind.NotAPersonConflictReason {
+			state = IdentityMatchStateConflict
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE identity_match_candidates SET
+				state = ?, decided_by = NULL, decided_at = NULL, notes = NULL,
+				application_pending = TRUE, updated_at = CURRENT_TIMESTAMP
+			WHERE id = ?`, state, id); err != nil {
+			return restored, fmt.Errorf("restore identity candidate %d: %w", id, err)
+		}
+		restored++
 	}
 	return restored, nil
 }
