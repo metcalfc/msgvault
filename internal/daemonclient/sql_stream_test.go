@@ -33,9 +33,7 @@ func TestCopySQLResultJSON(t *testing.T) {
 			var output bytes.Buffer
 			err := copySQLResultJSON(&output, strings.NewReader(tc.input))
 			if tc.valid {
-				if !assertions.NoError(err) {
-					return
-				}
+				requirements.NoError(err)
 				assertions.JSONEq(tc.input, output.String())
 				if strings.Contains(tc.input, "9007199254740993") {
 					assertions.Contains(output.String(), "9007199254740993")
