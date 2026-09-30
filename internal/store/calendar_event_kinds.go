@@ -101,6 +101,7 @@ func (s *Store) CalendarEventKindCandidatesContext(ctx context.Context, limit in
 
 type calendarEventFacts struct {
 	meetingweight.Metadata
+
 	AllDay           bool     `json:"all_day"`
 	Start            string   `json:"start"`
 	End              string   `json:"end"`

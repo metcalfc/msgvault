@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -23,7 +24,7 @@ func cachedMeetingWeight(t *testing.T, analyticsDir string, messageID int64) (fl
 	var weight float64
 	err = duck.QueryRow(`SELECT weight FROM read_parquet(?) WHERE message_id = ?`,
 		filepath.Join(analyticsDir, identityindex.DatasetMeetingWeights, "*.parquet"), messageID).Scan(&weight)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false
 	}
 	require.NoError(t, err)

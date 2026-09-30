@@ -23,7 +23,9 @@ func judgeMeetingsForCacheBuild(ctx context.Context, cfg *config.Config, dbPath 
 		return
 	}
 	kinds, assignees := cfg.Jev.MeetingEventKind, cfg.Jev.MeetingActionAssignee
-	if !(kinds.Enabled && kinds.Automatic) && !(assignees.Enabled && assignees.Automatic) {
+	kindsAutomatic := kinds.Enabled && kinds.Automatic
+	assigneesAutomatic := assignees.Enabled && assignees.Automatic
+	if !kindsAutomatic && !assigneesAutomatic {
 		return
 	}
 	if logger == nil {

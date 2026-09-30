@@ -68,15 +68,15 @@ func newMeetingArchive(t *testing.T) (*meetingArchive, int64) {
 // assigneeByItem answers from each item's title, finding Casey's option
 // among the attendee labels the request offered.
 func assigneeByItem(questionID string, state map[string]any) (string, map[string]float64) {
-	index := strings.TrimPrefix(questionID, "assignee_")
-	item := state["action_items"].(map[string]any)["item_"+index].(map[string]any)
+	typed := asState[meetingjudge.AssigneeState](state)
+	item := typed.ActionItems["item_"+strings.TrimPrefix(questionID, "assignee_")]
 	caseyKey := ""
-	for key, attendee := range state["attendees"].(map[string]any) {
-		if attendee.(map[string]any)["label"] == "Casey Example" {
+	for key, attendee := range typed.Attendees {
+		if attendee.Label == "Casey Example" {
 			caseyKey = key
 		}
 	}
-	switch item["title"] {
+	switch item.Title {
 	case "Casey to draft the budget":
 		return caseyKey, map[string]float64{caseyKey: 0.93, meetingjudge.OptionOwner: 0.04}
 	case "I will book the room":
@@ -135,17 +135,16 @@ func TestAssigneesInferOwnersAndFilterByPerson(t *testing.T) {
 
 	requests := fake.requests()
 	require.Len(requests, 1)
-	state := requests[0]["state"].(map[string]any)
-	assert.Equal(map[string]any{"title": "Budget planning"}, state["meeting"])
+	state := asState[meetingjudge.AssigneeState](requests[0]["state"])
+	assert.Equal(meetingjudge.MeetingState{Title: "Budget planning"}, state.Meeting)
 	labels := []string{}
-	for _, attendee := range state["attendees"].(map[string]any) {
-		labels = append(labels, attendee.(map[string]any)["label"].(string))
+	for _, attendee := range state.Attendees {
+		labels = append(labels, attendee.Label)
 	}
 	assert.ElementsMatch([]string{"Casey Example", "jordan.lee"}, labels,
 		"attendees are offered by label; the owner is the owner option, never an attendee")
-	assert.Len(state["action_items"], 3)
-	questions := requests[0]["questions"].(map[string]any)
-	assert.Len(questions, 3, "only the questions for the items sent")
+	assert.Len(state.ActionItems, 3)
+	assert.Len(requests[0]["questions"], 3, "only the questions for the items sent")
 	raw := fake.rawRequests()[0]
 	assert.NotContains(raw, "@", "no address leaves the machine")
 	assert.NotContains(raw, "Owner Example", "the owner's name never leaves the machine")

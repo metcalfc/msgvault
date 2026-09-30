@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"go.kenn.io/msgvault/internal/config"
@@ -162,12 +163,9 @@ func eventKindCounts(counts map[meetingweight.Kind]int) string {
 		return "none"
 	}
 	slices.Sort(kinds)
-	text := ""
-	for i, kind := range kinds {
-		if i > 0 {
-			text += ", "
-		}
-		text += fmt.Sprintf("%d %s", counts[kind], kind)
+	parts := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		parts = append(parts, fmt.Sprintf("%d %s", counts[kind], kind))
 	}
-	return text
+	return strings.Join(parts, ", ")
 }

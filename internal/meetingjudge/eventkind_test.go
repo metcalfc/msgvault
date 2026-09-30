@@ -16,13 +16,12 @@ import (
 // eventKindByTitle answers by the title of the series each question asks
 // about.
 func eventKindByTitle(questionID string, state map[string]any) (string, map[string]float64) {
-	events := state["events"].([]any)
-	index := strings.TrimPrefix(questionID, "event_kind_")
+	events := asState[meetingjudge.EventKindState](state).Events
 	for i, event := range events {
-		if meetingjudge.EventKindQuestionID(i) != "event_kind_"+index {
+		if meetingjudge.EventKindQuestionID(i) != questionID {
 			continue
 		}
-		switch event.(map[string]any)["title"] {
+		switch event.Title {
 		case "Weekly sync":
 			return string(meetingweight.KindOneOnOne), map[string]float64{"one_on_one": 0.91, "small_working_meeting": 0.09}
 		case "Company all hands":
@@ -70,28 +69,31 @@ func TestEventKindsAskEachSeriesOnceAndWeighMeetings(t *testing.T) {
 
 	requests := fake.requests()
 	require.Len(requests, 1)
-	events := requests[0]["state"].(map[string]any)["events"].([]any)
-	require.Len(events, 3)
-	titles := []string{}
 	allowed := map[string]bool{}
 	for _, field := range meetingjudge.EventKindFeature().StateFields {
 		allowed[strings.TrimPrefix(field, "events[].")] = true
 	}
-	for _, event := range events {
-		fields := event.(map[string]any)
-		titles = append(titles, fields["title"].(string))
-		for key := range fields {
+	for _, event := range asState[struct {
+		Events []map[string]any `json:"events"`
+	}](requests[0]["state"]).Events {
+		for key := range event {
 			assert.True(allowed[key], "state field %s is disclosed", key)
 		}
-		if fields["title"] == "Weekly sync" {
-			assert.Equal(true, fields["recurring"])
-			assert.InDelta(2.0, fields["occurrences"], 1e-9)
-			assert.InDelta(30.0, fields["duration_minutes"], 1e-9)
-			assert.Equal(true, fields["organized_by_owner"])
-		}
-		if fields["title"] == "Vendor webinar" {
-			assert.InDelta(3.0, fields["attendee_count"], 1e-9)
-			assert.InDelta(1.0, fields["external_attendee_count"], 1e-9)
+	}
+	events := asState[meetingjudge.EventKindState](requests[0]["state"]).Events
+	require.Len(events, 3)
+	titles := []string{}
+	for _, event := range events {
+		titles = append(titles, event.Title)
+		switch event.Title {
+		case "Weekly sync":
+			assert.True(event.Recurring)
+			assert.Equal(2, event.Occurrences)
+			assert.Equal(30, event.DurationMinutes)
+			assert.True(event.OrganizedByOwner)
+		case "Vendor webinar":
+			assert.Equal(3, event.AttendeeCount)
+			assert.Equal(1, event.ExternalAttendeeCount)
 		}
 	}
 	assert.ElementsMatch([]string{"Weekly sync", "Company all hands", "Vendor webinar"}, titles)

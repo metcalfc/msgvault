@@ -32,31 +32,52 @@ type fakeJev struct {
 }
 
 func (j *fakeJev) server(t *testing.T) *httptest.Server {
+	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
 		var body map[string]any
-		require.NoError(t, json.Unmarshal(raw, &body))
+		if err == nil {
+			err = json.Unmarshal(raw, &body)
+		}
+		state, stateOK := body["state"].(map[string]any)
+		questions, questionsOK := body["questions"].(map[string]any)
+		if err != nil || !stateOK || !questionsOK {
+			// A malformed request fails the judgment, which the tests see as
+			// a skipped run.
+			http.Error(w, "malformed request", http.StatusBadRequest)
+			return
+		}
 		j.mu.Lock()
 		j.bodies = append(j.bodies, body)
 		j.raw = append(j.raw, string(raw))
 		j.mu.Unlock()
-		state := body["state"].(map[string]any)
 		answers := map[string]any{}
-		for id := range body["questions"].(map[string]any) {
+		for id := range questions {
 			choice, probabilities := j.answer(id, state)
 			answers[id] = map[string]any{
 				"type": "choice", "choice": choice, "probabilities": probabilities, "confidence": probabilities[choice],
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"model": jev.DefaultModel, "answers": answers,
 			"usage": map[string]any{"input_tokens": 700, "output_tokens": 30},
-		}))
+		})
 	}))
 	t.Cleanup(server.Close)
 	return server
+}
+
+// asState re-decodes a request's JSON state into a typed state; a shape it
+// cannot decode yields the zero value, which the answering tests treat as
+// "no match".
+func asState[T any](value any) T {
+	var out T
+	raw, err := json.Marshal(value)
+	if err == nil {
+		_ = json.Unmarshal(raw, &out)
+	}
+	return out
 }
 
 func (j *fakeJev) requests() []map[string]any {
