@@ -60,10 +60,10 @@
             <header>
               <div>
                 <p class="provider">{review.provider_name} · attempt {review.attempt_id}</p>
-                <h3 id={heading}>{personLabel(review)}</h3>
+                <h3 id={heading}>{personLabel(review, controller.names)}</h3>
               </div>
               <Button
-                label={`Open ${personLabel(review)}`}
+                label={`Open ${personLabel(review, controller.names)}`}
                 size="sm"
                 surface="soft"
                 onclick={() => onOpenPerson(review.person_id)}

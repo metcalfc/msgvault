@@ -6,6 +6,7 @@
   import type { APIClient } from '../../api/client';
   import type { EntryRow, ExploreFilter } from '../../explore/models';
   import { createExploreAPI } from '../../explore/api';
+  import { entityNames } from '../../names/entity-names.svelte';
   import type { MeetingWindow } from '../../routing/routes';
   import { humanizeDate } from '../../util/dates';
 
@@ -23,6 +24,7 @@
   const PAGE_LIMIT = 100;
   const DAY_MS = 86_400_000;
   const api = createExploreAPI(untrack(() => client));
+  const names = $derived(entityNames(client));
 
   let rows = $state<EntryRow[]>([]);
   let cursor = $state<string>();
@@ -163,7 +165,7 @@
     <Typeahead
       options={personOptions}
       value={person}
-      fallbackLabel={person ? personLabel || `Person ${person}` : 'Anyone'}
+      fallbackLabel={person ? personLabel || names.label('participant', Number(person)) : 'Anyone'}
       placeholder="Find a person…"
       title="Person"
       triggerPrefix="Person:"

@@ -5,6 +5,7 @@ import {
 } from '../api/generated/api/api';
 import { SvelteSet } from 'svelte/reactivity';
 import type { APIClient } from '../api/client';
+import { entityNames, type EntityNames } from '../names/entity-names.svelte';
 import type {
   PersonEnrichmentIdentityDecision,
   PersonEnrichmentIdentityReview as GeneratedReview,
@@ -30,12 +31,15 @@ export class EnrichmentReviewController {
   decisionError = $state<string | null>(null);
   status = $state<string | null>(null);
   readonly pending = new SvelteSet<number>();
+  /** Names a person whose review row carries no display name. */
+  readonly names: EntityNames;
   private readonly client: APIClient;
   private abort: AbortController | undefined;
   private disposed = false;
 
   constructor(client: APIClient) {
     this.client = client;
+    this.names = entityNames(client);
   }
 
   isPending(attemptID: number): boolean {
@@ -96,7 +100,9 @@ export class EnrichmentReviewController {
       if (this.disposed) return { ok: false, message: 'Review closed.' };
       if (response.data) {
         const row = this.rows.find((candidate) => candidate.attempt_id === attemptID);
-        const who = row ? personLabel(row) : `Person ${response.data.person_id}`;
+        const who = row?.person_display_name?.trim() ||
+          await this.names.settledLabel('person', response.data.person_id, 'the person');
+        if (this.disposed) return { ok: false, message: 'Review closed.' };
         this.rows = this.rows.filter((candidate) => candidate.attempt_id !== attemptID);
         this.status = confirm
           ? `Identity confirmed for ${who}. ${response.data.projections} value(s) applied.`
@@ -116,9 +122,9 @@ export class EnrichmentReviewController {
   }
 }
 
-/** The person's name, or their ID when they have none. */
-export function personLabel(review: PersonEnrichmentIdentityReview): string {
-  return review.person_display_name?.trim() || `Person ${review.person_id}`;
+/** The person's name, else the durable label the resolver finds. Never their ID. */
+export function personLabel(review: PersonEnrichmentIdentityReview, names: EntityNames): string {
+  return names.name('person', review.person_id, review.person_display_name);
 }
 
 /** The returned identity in one line: name, roles, location, and host. */

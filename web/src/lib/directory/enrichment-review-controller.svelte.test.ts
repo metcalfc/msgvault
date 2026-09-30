@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../api/client';
+import { entityNames, LOADING_LABEL } from '../names/entity-names.svelte';
+import { withEntityLabels } from '../../test/entity-labels';
 import {
   EnrichmentReviewController,
   percent,
@@ -87,11 +89,21 @@ describe('EnrichmentReviewController', () => {
   });
 
   it('formats the returned identity, person, and probabilities', () => {
+    const names = entityNames(createAPIClient(withEntityLabels(vi.fn<typeof fetch>(), { person: { 40: 'Synthetic Label' } })));
     expect(returnedIdentityLines(review(1).returned)).toEqual([
       'Ada E.', 'Engineer at Example Labs', 'Example City', 'profiles.example.test',
     ]);
     expect(returnedIdentityLines({ current_roles: [] })).toEqual([]);
-    expect(personLabel({ ...review(4), person_display_name: undefined })).toBe('Person 40');
+    expect(personLabel(review(4), names)).toBe('Synthetic Person 4');
+    expect(personLabel({ ...review(4), person_display_name: undefined }, names)).toBe(LOADING_LABEL);
     expect(percent(0.704)).toBe('70%');
+  });
+
+  it('names an unnamed person by the label lookup, never by ID', async () => {
+    const names = entityNames(createAPIClient(withEntityLabels(vi.fn<typeof fetch>(), { person: { 40: 'Synthetic Label' } })));
+    const unnamed = { ...review(4), person_display_name: undefined };
+    personLabel(unnamed, names);
+    await vi.waitFor(() => expect(personLabel(unnamed, names)).toBe('Synthetic Label'));
+    expect(personLabel(unnamed, names)).not.toContain('40');
   });
 });
