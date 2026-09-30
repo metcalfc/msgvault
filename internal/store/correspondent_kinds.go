@@ -1,0 +1,1005 @@
+package store
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"go.kenn.io/msgvault/internal/correspondentkind"
+)
+
+// Correspondent kinds record whether a participant identity cluster is a
+// person, an organization, a shared mailbox, or a record the user does not
+// need. Rows are participant-local (see schema.sql): a classification writes
+// one row per cluster member, and readers resolve a cluster's effective kind
+// from all of its members, so a participant linked into a classified cluster
+// later is covered without rewriting rows on link or unlink.
+
+var (
+	// ErrCorrespondentKindInvalid reports an unknown kind or a malformed
+	// organization choice.
+	ErrCorrespondentKindInvalid = errors.New("invalid correspondent kind")
+	// ErrCorrespondentKindOwner reports an attempt to classify one of the
+	// archive owner's own identities.
+	ErrCorrespondentKindOwner = errors.New("the archive owner's own identities are always a person")
+	// ErrCorrespondentKindOrganizationAmbiguous reports that an organization
+	// name matched more than one organization; the caller must choose one by
+	// ID.
+	ErrCorrespondentKindOrganizationAmbiguous = errors.New(
+		"organization name matches more than one organization; choose one by id")
+)
+
+// correspondentKindContactSourcePrefix marks organization contact points a
+// classification added, so clearing it can withdraw exactly those rows.
+const correspondentKindContactSourcePrefix = "correspondent_kind:"
+
+// CorrespondentKindPerson names a saved Directory person bound to a
+// classified cluster.
+type CorrespondentKindPerson struct {
+	ID          int64   `json:"id"`
+	DisplayName *string `json:"display_name,omitzero" nullable:"false"`
+	Revision    int64   `json:"revision"`
+	// OnlyThisCluster is true when every participant bound to the person is
+	// in this cluster, so the profile describes nothing but this record.
+	OnlyThisCluster bool `json:"only_this_cluster"`
+}
+
+// CorrespondentKindRecord is one classified identity cluster.
+type CorrespondentKindRecord struct {
+	CanonicalID      int64                    `json:"canonical_id" doc:"The cluster's smallest participant ID."`
+	MemberIDs        []int64                  `json:"member_ids"`
+	Kind             correspondentkind.Kind   `json:"kind" enum:"person,organization,shared_mailbox,ignored"`
+	Source           correspondentkind.Source `json:"source" enum:"user,rule,jev"`
+	DisplayName      *string                  `json:"display_name,omitzero" nullable:"false"`
+	Addresses        []string                 `json:"addresses"`
+	OrganizationID   *int64                   `json:"organization_id,omitzero" nullable:"false"`
+	OrganizationName *string                  `json:"organization_name,omitzero" nullable:"false"`
+	Person           *CorrespondentKindPerson `json:"person,omitzero" nullable:"false" doc:"The saved Directory person bound to this cluster, if any."`
+	Actor            *string                  `json:"actor,omitzero" nullable:"false"`
+	ClassifiedAt     time.Time                `json:"classified_at"`
+}
+
+// CorrespondentKindAssignment is the effective kind of one cluster.
+type CorrespondentKindAssignment struct {
+	Kind             correspondentkind.Kind   `json:"kind" enum:"person,organization,shared_mailbox,ignored"`
+	Source           correspondentkind.Source `json:"source" enum:"user,rule,jev"`
+	OrganizationID   *int64                   `json:"organization_id,omitzero" nullable:"false"`
+	OrganizationName *string                  `json:"organization_name,omitzero" nullable:"false"`
+}
+
+// SetCorrespondentKindInput classifies the cluster containing ParticipantID.
+// OrganizationID or OrganizationName applies only to the organization kind;
+// with neither, the organization is named after the cluster's display name
+// or, failing that, its email domain.
+type SetCorrespondentKindInput struct {
+	ParticipantID    int64
+	Kind             correspondentkind.Kind
+	OrganizationID   *int64
+	OrganizationName *string
+	Actor            string
+}
+
+// SetCorrespondentKindResult reports what a classification changed.
+type SetCorrespondentKindResult struct {
+	Record CorrespondentKindRecord `json:"record"`
+	// ResolvedCandidates counts open identity match candidates the
+	// classification rejected with reason not_a_person.
+	ResolvedCandidates int `json:"resolved_candidates"`
+	// RestoredCandidates counts candidates returned to review because the
+	// cluster is a person again.
+	RestoredCandidates  int  `json:"restored_candidates"`
+	OrganizationCreated bool `json:"organization_created"`
+}
+
+type correspondentKindRow struct {
+	participantID    int64
+	source           correspondentkind.Source
+	kind             correspondentkind.Kind
+	organizationID   *int64
+	organizationName *string
+	actor            *string
+	classifiedAt     time.Time
+}
+
+// correspondentKindCluster is the resolved classification of one cluster.
+type correspondentKindCluster struct {
+	root      int64
+	members   []int64
+	effective correspondentKindRow
+}
+
+// rowWins reports whether candidate outranks current: the higher source
+// precedence wins, then the later classification, then the lower
+// participant ID so the choice is deterministic.
+func (candidate correspondentKindRow) rowWins(current correspondentKindRow) bool {
+	if a, b := candidate.source.Precedence(), current.source.Precedence(); a != b {
+		return a > b
+	}
+	if !candidate.classifiedAt.Equal(current.classifiedAt) {
+		return candidate.classifiedAt.After(current.classifiedAt)
+	}
+	return candidate.participantID < current.participantID
+}
+
+func loadCorrespondentKindRowsTx(ctx context.Context, tx *loggedTx) ([]correspondentKindRow, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT ck.participant_id, ck.source, ck.kind, ck.organization_id, o.name,
+		       ck.actor, ck.classified_at
+		FROM correspondent_kinds ck
+		LEFT JOIN organizations o ON o.id = ck.organization_id
+		ORDER BY ck.participant_id, ck.source`)
+	if err != nil {
+		return nil, fmt.Errorf("load correspondent kinds: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	result := []correspondentKindRow{}
+	for rows.Next() {
+		var row correspondentKindRow
+		var source, kind string
+		var organizationID sql.NullInt64
+		var organizationName, actor sql.NullString
+		var classifiedAt nullableTimestamp
+		if err := rows.Scan(&row.participantID, &source, &kind, &organizationID,
+			&organizationName, &actor, &classifiedAt); err != nil {
+			return nil, fmt.Errorf("scan correspondent kind: %w", err)
+		}
+		row.source = correspondentkind.Source(source)
+		row.kind = correspondentkind.Kind(kind)
+		if organizationID.Valid {
+			row.organizationID = &organizationID.Int64
+		}
+		row.organizationName = nonBlankString(organizationName)
+		row.actor = nonBlankString(actor)
+		row.classifiedAt = classifiedAt.Time
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+// correspondentKindClustersTx resolves every cluster that has at least one
+// correspondent kind row to its effective classification, including clusters
+// whose effective kind is person.
+func (s *Store) correspondentKindClustersTx(
+	ctx context.Context, tx *loggedTx,
+) ([]correspondentKindCluster, error) {
+	rows, err := loadCorrespondentKindRowsTx(ctx, tx)
+	if err != nil || len(rows) == 0 {
+		return nil, err
+	}
+	edges, err := s.loadLinkEdgesTxContext(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	adjacency := buildAdjacency(edges)
+	roots := clustersFromEdges(edges)
+	byRoot := map[int64]*correspondentKindCluster{}
+	order := []int64{}
+	for _, row := range rows {
+		root, linked := roots[row.participantID]
+		if !linked {
+			root = row.participantID
+		}
+		cluster, ok := byRoot[root]
+		if !ok {
+			members := []int64{root}
+			if linked {
+				component := componentOfAdj(root, adjacency)
+				members = make([]int64, 0, len(component))
+				for id := range component {
+					members = append(members, id)
+				}
+				slices.Sort(members)
+			}
+			cluster = &correspondentKindCluster{root: root, members: members, effective: row}
+			byRoot[root] = cluster
+			order = append(order, root)
+			continue
+		}
+		if row.rowWins(cluster.effective) {
+			cluster.effective = row
+		}
+	}
+	slices.Sort(order)
+	result := make([]correspondentKindCluster, 0, len(order))
+	for _, root := range order {
+		result = append(result, *byRoot[root])
+	}
+	return result, nil
+}
+
+// hiddenCorrespondentParticipantsTx maps every member of every cluster whose
+// effective kind is not a person to that kind.
+func (s *Store) hiddenCorrespondentParticipantsTx(
+	ctx context.Context, tx *loggedTx,
+) (map[int64]correspondentKindRow, error) {
+	clusters, err := s.correspondentKindClustersTx(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	hidden := map[int64]correspondentKindRow{}
+	for _, cluster := range clusters {
+		if cluster.effective.kind.IsPerson() {
+			continue
+		}
+		for _, member := range cluster.members {
+			hidden[member] = cluster.effective
+		}
+	}
+	return hidden, nil
+}
+
+// NotPersonParticipantsContext maps every participant in a cluster that is
+// classified as something other than a person to its kind. Consumers use it
+// to leave those clusters out of People lists, rankings, and matching.
+func (s *Store) NotPersonParticipantsContext(
+	ctx context.Context,
+) (map[int64]correspondentkind.Kind, error) {
+	result := map[int64]correspondentkind.Kind{}
+	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
+		hidden, err := s.hiddenCorrespondentParticipantsTx(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for id, row := range hidden {
+			result[id] = row.kind
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// CorrespondentKindsForParticipantsContext returns the effective
+// non-person kind of each requested participant's cluster. Participants in
+// person or unclassified clusters are absent from the result.
+func (s *Store) CorrespondentKindsForParticipantsContext(
+	ctx context.Context, participantIDs []int64,
+) (map[int64]CorrespondentKindAssignment, error) {
+	result := map[int64]CorrespondentKindAssignment{}
+	if len(participantIDs) == 0 {
+		return result, nil
+	}
+	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
+		hidden, err := s.hiddenCorrespondentParticipantsTx(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for _, id := range participantIDs {
+			if row, ok := hidden[id]; ok {
+				result[id] = row.assignment()
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (row correspondentKindRow) assignment() CorrespondentKindAssignment {
+	return CorrespondentKindAssignment{
+		Kind: row.kind, Source: row.source,
+		OrganizationID: row.organizationID, OrganizationName: row.organizationName,
+	}
+}
+
+// CorrespondentKindListFilter narrows ListCorrespondentKindsContext.
+type CorrespondentKindListFilter struct {
+	Kind           correspondentkind.Kind
+	OrganizationID *int64
+}
+
+// ListCorrespondentKindsContext lists every cluster whose effective kind is
+// not a person, newest classification first.
+func (s *Store) ListCorrespondentKindsContext(
+	ctx context.Context, filter CorrespondentKindListFilter,
+) ([]CorrespondentKindRecord, error) {
+	if filter.Kind != "" && (!filter.Kind.Valid() || filter.Kind.IsPerson()) {
+		return nil, fmt.Errorf("%w: cannot list kind %q", ErrCorrespondentKindInvalid, filter.Kind)
+	}
+	records := []CorrespondentKindRecord{}
+	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
+		clusters, err := s.correspondentKindClustersTx(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for _, cluster := range clusters {
+			effective := cluster.effective
+			if effective.kind.IsPerson() {
+				continue
+			}
+			if filter.Kind != "" && effective.kind != filter.Kind {
+				continue
+			}
+			if filter.OrganizationID != nil && (effective.organizationID == nil ||
+				*effective.organizationID != *filter.OrganizationID) {
+				continue
+			}
+			record, err := s.correspondentKindRecordTx(ctx, tx, cluster)
+			if err != nil {
+				return err
+			}
+			records = append(records, record)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	slices.SortStableFunc(records, func(a, b CorrespondentKindRecord) int {
+		if !a.ClassifiedAt.Equal(b.ClassifiedAt) {
+			if a.ClassifiedAt.After(b.ClassifiedAt) {
+				return -1
+			}
+			return 1
+		}
+		return compareInt64(a.CanonicalID, b.CanonicalID)
+	})
+	return records, nil
+}
+
+// GetCorrespondentKindContext returns the effective classification of the
+// cluster containing participantID. A cluster with no classification reports
+// kind person with no source.
+func (s *Store) GetCorrespondentKindContext(
+	ctx context.Context, participantID int64,
+) (*CorrespondentKindRecord, error) {
+	var record *CorrespondentKindRecord
+	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
+		if err := requireParticipantTx(ctx, tx, participantID); err != nil {
+			return err
+		}
+		cluster, err := s.clusterCorrespondentKindTx(ctx, tx, participantID)
+		if err != nil {
+			return err
+		}
+		value, err := s.correspondentKindRecordTx(ctx, tx, cluster)
+		if err != nil {
+			return err
+		}
+		record = &value
+		return nil
+	})
+	return record, err
+}
+
+// clusterCorrespondentKindTx resolves the cluster containing participantID.
+// Its effective kind is person when no member carries a row.
+func (s *Store) clusterCorrespondentKindTx(
+	ctx context.Context, tx *loggedTx, participantID int64,
+) (correspondentKindCluster, error) {
+	edges, err := s.loadLinkEdgesTxContext(ctx, tx)
+	if err != nil {
+		return correspondentKindCluster{}, err
+	}
+	members := sortedComponentMembers(participantID, edges)
+	cluster := correspondentKindCluster{
+		root: members[0], members: members,
+		effective: correspondentKindRow{participantID: members[0], kind: correspondentkind.Person},
+	}
+	rows, err := loadCorrespondentKindRowsTx(ctx, tx)
+	if err != nil {
+		return cluster, err
+	}
+	found := false
+	for _, row := range rows {
+		if !slices.Contains(members, row.participantID) {
+			continue
+		}
+		if !found || row.rowWins(cluster.effective) {
+			cluster.effective = row
+			found = true
+		}
+	}
+	return cluster, nil
+}
+
+func requireParticipantTx(ctx context.Context, tx *loggedTx, participantID int64) error {
+	var exists int
+	err := tx.QueryRowContext(ctx, `SELECT 1 FROM participants WHERE id = ?`, participantID).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: %d", ErrParticipantNotFound, participantID)
+	}
+	if err != nil {
+		return fmt.Errorf("look up participant %d: %w", participantID, err)
+	}
+	return nil
+}
+
+func (s *Store) correspondentKindRecordTx(
+	ctx context.Context, tx *loggedTx, cluster correspondentKindCluster,
+) (CorrespondentKindRecord, error) {
+	effective := cluster.effective
+	record := CorrespondentKindRecord{
+		CanonicalID: cluster.root, MemberIDs: slices.Clone(cluster.members),
+		Kind: effective.kind, Source: effective.source,
+		OrganizationID: effective.organizationID, OrganizationName: effective.organizationName,
+		Actor: effective.actor, ClassifiedAt: effective.classifiedAt, Addresses: []string{},
+	}
+	name, err := clusterBestDisplayNameTx(ctx, tx, cluster.members)
+	if err != nil {
+		return record, err
+	}
+	record.DisplayName = name
+	addresses, err := clusterAddressesTx(ctx, tx, cluster.members)
+	if err != nil {
+		return record, err
+	}
+	record.Addresses = addresses
+	person, err := clusterBoundPersonTx(ctx, tx, cluster.members)
+	if err != nil {
+		return record, err
+	}
+	record.Person = person
+	return record, nil
+}
+
+// clusterAddressesTx returns the members' distinct email addresses and
+// phone numbers, emails first.
+func clusterAddressesTx(ctx context.Context, tx *loggedTx, members []int64) ([]string, error) {
+	emails, phones := []string{}, []string{}
+	seen := map[string]struct{}{}
+	add := func(list *[]string, value sql.NullString, lower bool) {
+		text := strings.TrimSpace(value.String)
+		if !value.Valid || text == "" {
+			return
+		}
+		key := text
+		if lower {
+			key = strings.ToLower(text)
+		}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		*list = append(*list, text)
+	}
+	if err := queryInChunksContext(ctx, tx, members, nil, `
+		SELECT email_address, phone_number FROM participants
+		WHERE id IN (%s) ORDER BY id`, func(rows *loggedRows) error {
+		var email, phone sql.NullString
+		if err := rows.Scan(&email, &phone); err != nil {
+			return fmt.Errorf("scan cluster address: %w", err)
+		}
+		add(&emails, email, true)
+		add(&phones, phone, false)
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("load cluster addresses: %w", err)
+	}
+	if err := queryInChunksContext(ctx, tx, members, nil, `
+		SELECT identifier_type, identifier_value FROM participant_identifiers
+		WHERE participant_id IN (%s) AND identifier_type IN ('email', 'phone')
+		ORDER BY participant_id, id`, func(rows *loggedRows) error {
+		var kind string
+		var value sql.NullString
+		if err := rows.Scan(&kind, &value); err != nil {
+			return fmt.Errorf("scan cluster identifier: %w", err)
+		}
+		if kind == "email" {
+			add(&emails, value, true)
+		} else {
+			add(&phones, value, false)
+		}
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("load cluster identifiers: %w", err)
+	}
+	return append(emails, phones...), nil
+}
+
+// clusterBoundPersonTx returns the saved person bound to the cluster, if any,
+// and whether that person is bound to nothing outside the cluster. Bindings
+// within a cluster are all-or-none to at most one person; when unlinking left
+// several, the lowest person ID is reported.
+func clusterBoundPersonTx(
+	ctx context.Context, tx *loggedTx, members []int64,
+) (*CorrespondentKindPerson, error) {
+	persons, err := personIDsForParticipantsTx(ctx, tx, members)
+	if err != nil || len(persons) == 0 {
+		return nil, err
+	}
+	person := &CorrespondentKindPerson{ID: persons[0]}
+	var name sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT display_name, revision FROM persons WHERE id = ?`,
+		person.ID).Scan(&name, &person.Revision); err != nil {
+		return nil, fmt.Errorf("load classified cluster person: %w", err)
+	}
+	person.DisplayName = nonBlankString(name)
+	outside := 0
+	args := []any{person.ID}
+	for _, member := range members {
+		args = append(args, member)
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM person_participants
+		WHERE person_id = ? AND participant_id NOT IN (`+placeholders(len(members))+`)`,
+		args...).Scan(&outside); err != nil {
+		return nil, fmt.Errorf("count person bindings outside cluster: %w", err)
+	}
+	person.OnlyThisCluster = outside == 0
+	return person, nil
+}
+
+// SetCorrespondentKindContext classifies the identity cluster containing the
+// participant. A non-person kind rejects the cluster's open identity match
+// candidates with reason not_a_person; setting person restores those
+// candidates and withdraws organization contact points the classification
+// added. Saved people are never deleted here: when a person profile exists
+// only for this cluster the result names it so the caller can offer an
+// explicit delete.
+func (s *Store) SetCorrespondentKindContext(
+	ctx context.Context, input SetCorrespondentKindInput,
+) (*SetCorrespondentKindResult, error) {
+	if !input.Kind.Valid() {
+		return nil, fmt.Errorf("%w: unknown kind %q", ErrCorrespondentKindInvalid, input.Kind)
+	}
+	if input.ParticipantID <= 0 {
+		return nil, fmt.Errorf("%w: participant id must be positive", ErrInvalidParticipantID)
+	}
+	if input.Kind != correspondentkind.Organization &&
+		(input.OrganizationID != nil || input.OrganizationName != nil) {
+		return nil, fmt.Errorf("%w: an organization applies only to kind organization",
+			ErrCorrespondentKindInvalid)
+	}
+	if input.OrganizationID != nil && input.OrganizationName != nil {
+		return nil, fmt.Errorf("%w: choose an organization by id or by name, not both",
+			ErrCorrespondentKindInvalid)
+	}
+	if input.OrganizationName != nil && strings.TrimSpace(*input.OrganizationName) == "" {
+		return nil, fmt.Errorf("%w: organization name is blank", ErrCorrespondentKindInvalid)
+	}
+	actor := strings.TrimSpace(input.Actor)
+	if actor == "" {
+		actor = string(ProvenanceUser)
+	}
+	return retryBusyWrite(ctx, s, "set correspondent kind", func() (*SetCorrespondentKindResult, error) {
+		var result *SetCorrespondentKindResult
+		err := s.withTxContext(ctx, func(tx *loggedTx) error {
+			var err error
+			result, err = s.setCorrespondentKindTx(ctx, tx, input, actor)
+			return err
+		})
+		return result, err
+	})
+}
+
+func (s *Store) setCorrespondentKindTx(
+	ctx context.Context, tx *loggedTx, input SetCorrespondentKindInput, actor string,
+) (*SetCorrespondentKindResult, error) {
+	if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
+		return nil, err
+	}
+	if err := requireParticipantTx(ctx, tx, input.ParticipantID); err != nil {
+		return nil, err
+	}
+	edges, err := s.loadLinkEdgesTxContext(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	members := sortedComponentMembers(input.ParticipantID, edges)
+	if !input.Kind.IsPerson() {
+		owners, err := ownerParticipantIDsTx(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
+		for _, member := range members {
+			if _, owner := owners[member]; owner {
+				return nil, ErrCorrespondentKindOwner
+			}
+		}
+	}
+	result := &SetCorrespondentKindResult{}
+	var organizationID *int64
+	if input.Kind == correspondentkind.Organization {
+		organization, created, err := s.resolveCorrespondentOrganizationTx(ctx, tx, input, members)
+		if err != nil {
+			return nil, err
+		}
+		organizationID = &organization.ID
+		result.OrganizationCreated = created
+	}
+	// Withdraw what an earlier organization classification attached before
+	// writing the new one, so a change of organization moves the addresses.
+	if err := s.withdrawCorrespondentOrganizationContactsTx(ctx, tx, members); err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	for _, member := range members {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO correspondent_kinds (
+				participant_id, source, kind, organization_id, actor, classified_at
+			) VALUES (?, ?, ?, ?, ?, ?)
+			ON CONFLICT (participant_id, source) DO UPDATE SET
+				kind = excluded.kind, organization_id = excluded.organization_id,
+				confidence = NULL, probabilities_json = NULL, identity_revision = NULL,
+				actor = excluded.actor, classified_at = excluded.classified_at`,
+			member, correspondentkind.SourceUser, input.Kind, organizationID, actor, now,
+		); err != nil {
+			return nil, fmt.Errorf("write correspondent kind: %w", err)
+		}
+	}
+	if organizationID != nil {
+		if err := s.attachCorrespondentOrganizationContactsTx(ctx, tx, *organizationID, members, now); err != nil {
+			return nil, err
+		}
+	}
+	if input.Kind.IsPerson() {
+		result.RestoredCandidates, err = s.restoreNotAPersonCandidatesTx(ctx, tx, members)
+	} else {
+		result.ResolvedCandidates, err = s.resolveNotAPersonCandidatesTx(ctx, tx, members)
+	}
+	if err != nil {
+		return nil, err
+	}
+	cluster, err := s.clusterCorrespondentKindTx(ctx, tx, input.ParticipantID)
+	if err != nil {
+		return nil, err
+	}
+	result.Record, err = s.correspondentKindRecordTx(ctx, tx, cluster)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// resolveCorrespondentOrganizationTx finds or creates the organization a
+// cluster is classified under. An explicit ID must name an organization (a
+// merged one resolves to its survivor). A name, or the cluster's display
+// name or email domain when none is given, reuses the one active
+// organization with that name or alias and creates one when none exists.
+func (s *Store) resolveCorrespondentOrganizationTx(
+	ctx context.Context, tx *loggedTx, input SetCorrespondentKindInput, members []int64,
+) (*Organization, bool, error) {
+	if input.OrganizationID != nil {
+		organization, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, *input.OrganizationID)
+		if err != nil {
+			return nil, false, err
+		}
+		for hops := 0; organization.MergedIntoID != nil && hops < 64; hops++ {
+			organization, err = getOrganizationForUpdateTx(ctx, tx, s.dialect, *organization.MergedIntoID)
+			if err != nil {
+				return nil, false, err
+			}
+		}
+		if organization.RetiredAt != nil {
+			return nil, false, fmt.Errorf("%w: organization %d is retired",
+				ErrCorrespondentKindInvalid, organization.ID)
+		}
+		return organization, false, nil
+	}
+	domain, err := clusterEmailDomainTx(ctx, tx, members)
+	if err != nil {
+		return nil, false, err
+	}
+	name := ""
+	if input.OrganizationName != nil {
+		name = strings.TrimSpace(*input.OrganizationName)
+	}
+	if name == "" {
+		display, err := clusterBestDisplayNameTx(ctx, tx, members)
+		if err != nil {
+			return nil, false, err
+		}
+		if display != nil {
+			name = *display
+		}
+	}
+	if name == "" {
+		name = domain
+	}
+	if name == "" {
+		return nil, false, fmt.Errorf("%w: name the organization", ErrCorrespondentKindInvalid)
+	}
+	normalized := NormalizeOrganizationName(name)
+	rows, err := tx.QueryContext(ctx, `
+		SELECT o.id FROM organizations o
+		WHERE o.retired_at IS NULL AND o.merged_into_id IS NULL
+		  AND (o.name_normalized = ? OR EXISTS (
+			SELECT 1 FROM organization_names n
+			WHERE n.organization_id = o.id AND n.name_normalized = ?
+			  AND n.active_until IS NULL AND n.superseded_at IS NULL))
+		ORDER BY o.id`, normalized, normalized)
+	if err != nil {
+		return nil, false, fmt.Errorf("look up organization by name: %w", err)
+	}
+	ids := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return nil, false, fmt.Errorf("scan organization match: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, false, fmt.Errorf("close organization matches: %w", err)
+	}
+	switch len(ids) {
+	case 1:
+		organization, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, ids[0])
+		return organization, false, err
+	case 0:
+	default:
+		return nil, false, ErrCorrespondentKindOrganizationAmbiguous
+	}
+	organizationInput := OrganizationInput{Name: name, Kind: OrganizationKindCompany}
+	if domain != "" && !correspondentkind.IsFreemailDomain(domain) {
+		organizationInput.PrimaryDomain = &domain
+	}
+	organizationInput, err = validateOrganizationInput(organizationInput)
+	if err != nil {
+		return nil, false, err
+	}
+	organization, err := scanOrganization(tx.QueryRowContext(ctx, `
+		INSERT INTO organizations (name, name_normalized, kind, primary_domain, description)
+		VALUES (?, ?, ?, ?, ?)
+		RETURNING `+organizationColumns,
+		organizationInput.Name, NormalizeOrganizationName(organizationInput.Name),
+		organizationInput.Kind, organizationInput.PrimaryDomain, organizationInput.Description))
+	if err != nil {
+		return nil, false, fmt.Errorf("create organization: %w", err)
+	}
+	return organization, true, nil
+}
+
+// clusterEmailDomainTx returns the domain of the cluster's first email
+// address, or "" when it has none.
+func clusterEmailDomainTx(ctx context.Context, tx *loggedTx, members []int64) (string, error) {
+	addresses, err := clusterAddressesTx(ctx, tx, members)
+	if err != nil {
+		return "", err
+	}
+	for _, address := range addresses {
+		if at := strings.LastIndex(address, "@"); at > 0 && at < len(address)-1 {
+			return strings.ToLower(address[at+1:]), nil
+		}
+	}
+	return "", nil
+}
+
+// attachCorrespondentOrganizationContactsTx records each member email
+// address as a user-sourced organization contact point, skipping addresses
+// the organization already lists.
+func (s *Store) attachCorrespondentOrganizationContactsTx(
+	ctx context.Context, tx *loggedTx, organizationID int64, members []int64, now time.Time,
+) error {
+	type memberEmail struct {
+		participantID int64
+		email         string
+	}
+	emails := []memberEmail{}
+	seen := map[string]struct{}{}
+	if err := queryInChunksContext(ctx, tx, members, nil, `
+		SELECT id, email_address FROM participants
+		WHERE id IN (%s) AND email_address IS NOT NULL ORDER BY id`, func(rows *loggedRows) error {
+		var id int64
+		var email string
+		if err := rows.Scan(&id, &email); err != nil {
+			return fmt.Errorf("scan member email: %w", err)
+		}
+		email = strings.TrimSpace(email)
+		if _, ok := seen[strings.ToLower(email)]; ok || email == "" {
+			return nil
+		}
+		seen[strings.ToLower(email)] = struct{}{}
+		emails = append(emails, memberEmail{participantID: id, email: email})
+		return nil
+	}); err != nil {
+		return fmt.Errorf("load member emails: %w", err)
+	}
+	added := false
+	for _, entry := range emails {
+		normalized, err := NormalizeServiceValue(nil, ContactAddressEmail, entry.email)
+		if err != nil {
+			continue
+		}
+		var existing int
+		err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM organization_contact_points
+			WHERE organization_id = ? AND address_kind = ? AND normalized_value = ?
+			  AND active_until IS NULL AND superseded_at IS NULL`,
+			organizationID, ContactAddressEmail, normalized).Scan(&existing)
+		if err != nil {
+			return fmt.Errorf("check organization contact point: %w", err)
+		}
+		if existing > 0 {
+			continue
+		}
+		sourceRef := correspondentKindContactSourcePrefix + strconv.FormatInt(entry.participantID, 10)
+		if _, err := s.insertOrganizationContactTx(ctx, tx, organizationID, preparedOrganizationContact{
+			input: OrganizationContactPointInput{
+				AddressKind: ContactAddressEmail, OriginalValue: entry.email,
+				Envelope: ValueEnvelopeInput{Source: ProvenanceUser, SourceRef: &sourceRef},
+			},
+			normalized:           normalized,
+			normalization:        fallbackContactNormalization(ContactAddressEmail),
+			normalizationVersion: 1,
+		}, now); err != nil {
+			return err
+		}
+		added = true
+	}
+	if !added {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE organizations
+		SET revision = revision + 1, updated_at = `+s.dialect.Now()+` WHERE id = ?`,
+		organizationID); err != nil {
+		return fmt.Errorf("bump organization revision: %w", err)
+	}
+	return s.bumpEmployedPersonVCardProjectionsTx(ctx, tx, organizationID)
+}
+
+// withdrawCorrespondentOrganizationContactsTx supersedes the organization
+// contact points an earlier classification of these members added.
+func (s *Store) withdrawCorrespondentOrganizationContactsTx(
+	ctx context.Context, tx *loggedTx, members []int64,
+) error {
+	refs := make([]string, 0, len(members))
+	for _, member := range members {
+		refs = append(refs, correspondentKindContactSourcePrefix+strconv.FormatInt(member, 10))
+	}
+	organizations := []int64{}
+	if err := queryInChunksContext(ctx, tx, refs, []any{ProvenanceUser}, `
+		SELECT DISTINCT organization_id FROM organization_contact_points
+		WHERE source = ? AND superseded_at IS NULL AND source_ref IN (%s)`,
+		func(rows *loggedRows) error {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				return fmt.Errorf("scan classified organization: %w", err)
+			}
+			organizations = append(organizations, id)
+			return nil
+		}); err != nil {
+		return fmt.Errorf("load classified organization contacts: %w", err)
+	}
+	if len(organizations) == 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	if _, err := execCountInChunksTx(ctx, tx, refs, []any{now, now, ProvenanceUser}, `
+		UPDATE organization_contact_points
+		SET active_until = ?, superseded_at = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE source = ? AND superseded_at IS NULL AND source_ref IN (%s)`); err != nil {
+		return fmt.Errorf("withdraw classified organization contacts: %w", err)
+	}
+	slices.Sort(organizations)
+	for _, id := range slices.Compact(organizations) {
+		if _, err := tx.ExecContext(ctx, `UPDATE organizations
+			SET revision = revision + 1, updated_at = `+s.dialect.Now()+` WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("bump organization revision: %w", err)
+		}
+		if err := s.bumpEmployedPersonVCardProjectionsTx(ctx, tx, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// resolveNotAPersonCandidatesTx rejects every open identity match candidate
+// with a participant endpoint in the cluster, recording reason
+// not_a_person, so the queue does not propose it again.
+func (s *Store) resolveNotAPersonCandidatesTx(
+	ctx context.Context, tx *loggedTx, members []int64,
+) (int, error) {
+	resolved := 0
+	for _, side := range []string{"left", "right"} {
+		count, err := execCountInChunksTx(ctx, tx, members, []any{
+			IdentityMatchStateRejected, string(ProvenanceUser), correspondentkind.NotAPersonReason,
+			IdentityMatchStateCandidate, IdentityMatchStateConflict, IdentityMatchParticipant,
+		}, `UPDATE identity_match_candidates SET
+				state = ?, decided_by = ?, decided_at = CURRENT_TIMESTAMP, notes = ?,
+				pre_conflict_state = NULL, application_pending = FALSE,
+				updated_at = CURRENT_TIMESTAMP
+			WHERE state IN (?, ?) AND `+side+`_kind = ? AND `+side+`_id IN (%s)`)
+		if err != nil {
+			return resolved, fmt.Errorf("resolve identity candidates as not a person: %w", err)
+		}
+		resolved += count
+	}
+	return resolved, nil
+}
+
+// restoreNotAPersonCandidatesTx returns candidates a classification rejected
+// to review.
+func (s *Store) restoreNotAPersonCandidatesTx(
+	ctx context.Context, tx *loggedTx, members []int64,
+) (int, error) {
+	restored := 0
+	for _, side := range []string{"left", "right"} {
+		count, err := execCountInChunksTx(ctx, tx, members, []any{
+			IdentityMatchStateCandidate, IdentityMatchStateRejected,
+			correspondentkind.NotAPersonReason, IdentityMatchParticipant,
+		}, `UPDATE identity_match_candidates SET
+				state = ?, decided_by = NULL, decided_at = NULL, notes = NULL,
+				application_pending = TRUE, updated_at = CURRENT_TIMESTAMP
+			WHERE state = ? AND notes = ? AND `+side+`_kind = ? AND `+side+`_id IN (%s)`)
+		if err != nil {
+			return restored, fmt.Errorf("restore identity candidates: %w", err)
+		}
+		restored += count
+	}
+	return restored, nil
+}
+
+// execCountInChunksTx runs an IN-list statement over ids in bounded chunks
+// and returns the total number of rows it changed.
+func execCountInChunksTx[T any](
+	ctx context.Context, tx *loggedTx, ids []T, prefixArgs []any, queryTemplate string,
+) (int, error) {
+	const chunkSize = 500
+	total := 0
+	for start := 0; start < len(ids); start += chunkSize {
+		chunk := ids[start:min(start+chunkSize, len(ids))]
+		args := slices.Clone(prefixArgs)
+		for _, id := range chunk {
+			args = append(args, id)
+		}
+		result, err := tx.ExecContext(ctx, fmt.Sprintf(queryTemplate, placeholders(len(chunk))), args...)
+		if err != nil {
+			return total, err
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return total, err
+		}
+		total += int(changed)
+	}
+	return total, nil
+}
+
+// participantsClassifiedNotPersonTx reports whether any of the given
+// participants carries a user classification other than person. It reads
+// the participants' own rows only, which a classification writes for every
+// cluster member, so it is cheap enough for per-candidate writers.
+func participantsClassifiedNotPersonTx(
+	ctx context.Context, tx *loggedTx, participantIDs []int64,
+) (bool, error) {
+	if len(participantIDs) == 0 {
+		return false, nil
+	}
+	args := []any{correspondentkind.SourceUser, correspondentkind.Person}
+	for _, id := range participantIDs {
+		args = append(args, id)
+	}
+	var count int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM correspondent_kinds
+		WHERE source = ? AND kind <> ? AND participant_id IN (`+placeholders(len(participantIDs))+`)`,
+		args...).Scan(&count); err != nil {
+		return false, fmt.Errorf("check correspondent kinds: %w", err)
+	}
+	return count > 0, nil
+}
+
+// rewriteCorrespondentKindsForMergeTx moves a merged-away participant's
+// classifications to the survivor. A survivor row from the same source is
+// kept only when it is at least as recent.
+func rewriteCorrespondentKindsForMergeTx(ctx context.Context, tx *loggedTx, oldID, newID int64) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM correspondent_kinds
+		WHERE participant_id = ? AND EXISTS (
+			SELECT 1 FROM correspondent_kinds survivor
+			WHERE survivor.participant_id = ? AND survivor.source = correspondent_kinds.source
+			  AND survivor.classified_at < correspondent_kinds.classified_at)`,
+		newID, oldID); err != nil {
+		return fmt.Errorf("drop superseded survivor correspondent kinds: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM correspondent_kinds
+		WHERE participant_id = ? AND EXISTS (
+			SELECT 1 FROM correspondent_kinds survivor
+			WHERE survivor.participant_id = ? AND survivor.source = correspondent_kinds.source)`,
+		oldID, newID); err != nil {
+		return fmt.Errorf("drop merged correspondent kinds: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE correspondent_kinds SET participant_id = ?
+		WHERE participant_id = ?`, newID, oldID); err != nil {
+		return fmt.Errorf("move correspondent kinds: %w", err)
+	}
+	return nil
+}

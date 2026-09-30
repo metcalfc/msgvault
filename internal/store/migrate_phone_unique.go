@@ -459,6 +459,9 @@ func (s *Store) mergeParticipant(ctx context.Context, tx *loggedTx, winner, lose
 	if err := rewritePersonMergeParticipantLineageTx(ctx, tx, loser, winner); err != nil {
 		return err
 	}
+	if err := rewriteCorrespondentKindsForMergeTx(ctx, tx, loser, winner); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM participants WHERE id = ?`, loser); err != nil {
 		return fmt.Errorf("delete loser participant id=%d: %w", loser, err)
 	}

@@ -4326,6 +4326,11 @@ func (s *Store) MergeParticipants(oldID, newID int64) error {
 		); err != nil {
 			return err
 		}
+		if err := rewriteCorrespondentKindsForMergeTx(
+			context.Background(), tx, oldID, newID,
+		); err != nil {
+			return err
+		}
 		_, err = tx.Exec(`DELETE FROM participants WHERE id = ?`, oldID)
 		if err != nil {
 			return err

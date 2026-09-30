@@ -4051,6 +4051,38 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_organization_media_property_identity
     ON organization_media(organization_id, source, source_ref, vcard_property, vcard_prop_id)
     WHERE source_ref IS NOT NULL AND vcard_prop_id IS NOT NULL AND superseded_at IS NULL;
 
+-- Correspondent kind of an archive identity: whether a participant is a
+-- person, an organization, a shared mailbox, or a record the user does not
+-- need. Rows are participant-local, like person_participants: classifying a
+-- cluster writes one row per member so link and unlink never rewrite them,
+-- and readers resolve a cluster from its members. Each source keeps its own
+-- row; a 'user' row always wins over derived 'rule' or 'jev' rows, and a
+-- user row of kind 'person' is the explicit "this is a person" override.
+-- kind and source vocabularies are validated in Go
+-- (internal/correspondentkind) so later sources can add kinds without a
+-- table rebuild. confidence and probabilities_json are for derived sources
+-- only.
+CREATE TABLE IF NOT EXISTS correspondent_kinds (
+    participant_id     INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+    source             TEXT NOT NULL,
+    kind               TEXT NOT NULL,
+    organization_id    INTEGER REFERENCES organizations(id) ON DELETE SET NULL,
+    confidence         REAL CHECK (confidence IS NULL OR (
+        confidence >= 0 AND confidence <= 1 AND source <> 'user'
+    )),
+    probabilities_json TEXT,
+    identity_revision  INTEGER,
+    actor              TEXT,
+    classified_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (participant_id, source),
+    CHECK (organization_id IS NULL OR kind = 'organization')
+);
+CREATE INDEX IF NOT EXISTS idx_correspondent_kinds_kind
+    ON correspondent_kinds(source, kind);
+CREATE INDEX IF NOT EXISTS idx_correspondent_kinds_organization
+    ON correspondent_kinds(organization_id)
+    WHERE organization_id IS NOT NULL;
+
 -- The temporal association between a person and an organization. Mutable
 -- employment facts live on this edge so concurrent roles and history remain
 -- independently queryable.

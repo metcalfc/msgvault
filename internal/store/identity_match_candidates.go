@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"go.kenn.io/msgvault/internal/correspondentkind"
 )
 
 type IdentityMatchEndpointKind string
@@ -323,17 +325,46 @@ func (s *Store) upsertIdentityMatchCandidateTx(
 	if observationConflict {
 		observationOrigin = observationConflictOriginGenerated
 	}
+	// A generated suggestion that involves an identity the user classified as
+	// not a person is recorded already resolved, so it never reaches review
+	// and is restored with the others if the classification is cleared.
+	state, decidedBy, notes := input.State, any(nil), stringValue(input.Notes)
+	if input.Source != ProvenanceUser &&
+		(state == IdentityMatchStateCandidate || state == IdentityMatchStateConflict) {
+		endpoints := []int64{}
+		if leftKind == IdentityMatchParticipant {
+			endpoints = append(endpoints, leftID)
+		}
+		if rightKind == IdentityMatchParticipant {
+			endpoints = append(endpoints, rightID)
+		}
+		notAPerson, err := participantsClassifiedNotPersonTx(ctx, tx, endpoints)
+		if err != nil {
+			return nil, false, err
+		}
+		if notAPerson {
+			state, decidedBy, notes = IdentityMatchStateRejected, string(ProvenanceSystem),
+				correspondentkind.NotAPersonReason
+			observationOrigin = nil
+		}
+	}
 	var id int64
+	decidedAt := any(nil)
+	if decidedBy != nil {
+		decidedAt = time.Now().UTC()
+	}
 	if err := tx.QueryRowContext(ctx, `INSERT INTO identity_match_candidates (
 		left_kind, left_id, right_kind, right_id, basis, service_id,
 		scope_kind, scope_value, normalized_value, state, confidence,
-		source, source_ref, observation_conflict_origin, notes, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		source, source_ref, observation_conflict_origin, notes,
+		decided_by, decided_at, application_pending, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		`+s.dialect.Now()+`, `+s.dialect.Now()+`) RETURNING id`,
 		leftKind, leftID, rightKind, rightID, input.Basis, serviceID,
 		stringValue(input.ScopeKind), stringValue(input.ScopeValue),
-		stringValue(input.NormalizedValue), input.State, floatValue(input.Confidence),
-		input.Source, stringValue(input.SourceRef), observationOrigin, stringValue(input.Notes),
+		stringValue(input.NormalizedValue), state, floatValue(input.Confidence),
+		input.Source, stringValue(input.SourceRef), observationOrigin, notes,
+		decidedBy, decidedAt, decidedBy == nil,
 	).Scan(&id); err != nil {
 		return nil, false, fmt.Errorf("insert identity match candidate: %w", err)
 	}
