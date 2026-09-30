@@ -693,3 +693,45 @@ func TestOwnerHookClearsOnlyClustersJoinedToTheOwner(t *testing.T) {
 	require.NoError(err)
 	assert.Len(records, 4)
 }
+
+func TestAnExplicitDecisionAfterResolutionIsNotUndoneByClearing(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		notes *string
+	}{
+		{"without notes", nil},
+		{"with the same note text", func() *string { value := correspondentkind.NotAPersonReason; return &value }()},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			f := newContactMatchFixture(t)
+
+			left := f.emailParticipant("decided-left@example.test", "Desk")
+			right := f.emailParticipant("decided-right@example.test", "Desk")
+			candidate := upsertDisplayNameCandidate(t, f.st, left, right, "decided")
+			_, err := f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+				ParticipantID: left, Kind: correspondentkind.Ignored,
+			})
+			require.NoError(err)
+
+			// The reviewer decides the resolved candidate explicitly.
+			decided, err := f.st.DecideIdentityMatchCandidateContext(t.Context(), candidate.ID,
+				store.IdentityMatchStateRejected, "user", test.notes)
+			require.NoError(err)
+
+			_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+				ParticipantID: left, Kind: correspondentkind.Person,
+			})
+			require.NoError(err)
+			after, err := f.st.GetIdentityMatchCandidateContext(t.Context(), candidate.ID)
+			require.NoError(err)
+			assert.Equal(store.IdentityMatchStateRejected, after.State, "the reviewer's decision stands")
+			assert.Equal(decided.Notes, after.Notes)
+			var snapshots int
+			require.NoError(f.st.DB().QueryRow(f.st.Rebind(`SELECT COUNT(*)
+				FROM correspondent_kind_candidate_snapshots WHERE candidate_id = ?`), candidate.ID).Scan(&snapshots))
+			assert.Equal(0, snapshots)
+		})
+	}
+}

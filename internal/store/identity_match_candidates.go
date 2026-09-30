@@ -778,6 +778,9 @@ func (s *Store) decideIdentityMatchCandidateContext(
 		); err != nil {
 			return fmt.Errorf("decide identity match candidate: %w", err)
 		}
+		if err := dropCandidateDecisionSnapshotTx(ctx, tx, candidateID); err != nil {
+			return err
+		}
 		candidate, err = getIdentityMatchCandidateTx(ctx, tx, candidateID)
 		return err
 	})

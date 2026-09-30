@@ -162,6 +162,9 @@ func (s *Store) acceptParticipantPersonMatchTx(
 	); err != nil {
 		return nil, fmt.Errorf("accept participant-to-person identity candidate: %w", err)
 	}
+	if err := dropCandidateDecisionSnapshotTx(ctx, tx, candidate.ID); err != nil {
+		return nil, err
+	}
 	return getIdentityMatchCandidateTx(ctx, tx, candidate.ID)
 }
 

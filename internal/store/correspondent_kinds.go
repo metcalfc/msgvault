@@ -1181,6 +1181,21 @@ func carryNotAPersonSnapshotTx(
 	return nil
 }
 
+// dropCandidateDecisionSnapshotTx forgets the pre-resolution decision of a
+// candidate that just received an explicit decision, so clearing the
+// classification later never restores an older state over it. It tolerates
+// a SQLite archive opened before the snapshot table existed.
+func dropCandidateDecisionSnapshotTx(ctx context.Context, tx *loggedTx, candidateID int64) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM correspondent_kind_candidate_snapshots
+		WHERE candidate_id = ?`, candidateID); err != nil {
+		if isSQLiteError(err, "no such table") {
+			return nil
+		}
+		return fmt.Errorf("drop candidate decision snapshot: %w", err)
+	}
+	return nil
+}
+
 // snapshotCandidateDecisionTx records a candidate's current decision fields
 // before a classification resolves it.
 func snapshotCandidateDecisionTx(ctx context.Context, tx *loggedTx, candidateID int64) error {
