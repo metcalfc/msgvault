@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/peoplebrowser"
 	"go.kenn.io/msgvault/internal/query"
 	"go.kenn.io/msgvault/internal/store"
@@ -254,7 +253,7 @@ func (h *handlers) prepareCuratedPeopleSearch(
 				ignored = false
 				continue
 			}
-			if contact.CorrespondentKind == nil || contact.CorrespondentKind.Kind != correspondentkind.Ignored {
+			if contact.CorrespondentKind == nil || !contact.CorrespondentKind.Kind.LeavesPeopleLists() {
 				ignored = false
 			}
 			if summary.ID == 0 {
@@ -302,14 +301,16 @@ func (h *handlers) searchObservedPeoplePage(
 			if _, excluded := prepared.excludedIDs[summary.ID]; excluded {
 				continue
 			}
-			// The user said these records are not needed as people; their
+			// Like the People list: records marked as not a person leave
+			// people results, except a shared mailbox's saved profile. Their
 			// messages stay reachable through message search.
-			if summary.CorrespondentKind != nil &&
-				summary.CorrespondentKind.Kind == correspondentkind.Ignored {
+			profile, hasProfile := profileForPeopleSummary(summary, prepared.byParticipant)
+			if kind := summary.CorrespondentKind; kind != nil && !kind.Kind.IsPerson() &&
+				(kind.Kind.LeavesPeopleLists() || !hasProfile) {
 				continue
 			}
 			row := searchPeopleRow{PersonSummary: summary}
-			if profile, exists := profileForPeopleSummary(summary, prepared.byParticipant); exists {
+			if hasProfile {
 				applyProfileToPeopleSummary(&row.PersonSummary, profile)
 				row.PersonID = profile.ID
 			}

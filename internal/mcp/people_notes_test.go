@@ -269,8 +269,11 @@ func TestMCPSearchPeopleLeavesOutIgnoredRecords(t *testing.T) {
 			row(13, "Test Help Desk", &store.CorrespondentKindAssignment{
 				Kind: correspondentkind.SharedMailbox, Source: correspondentkind.SourceUser,
 			}),
+			row(14, "Test Shop", &store.CorrespondentKindAssignment{
+				Kind: correspondentkind.Organization, Source: correspondentkind.SourceUser,
+			}),
 		},
-		TotalCount: 3, CacheRevision: "cache-7",
+		TotalCount: 4, CacheRevision: "cache-7",
 	}}
 	result := rawCallTool(t, peopleToolOptions(backend), ToolSearchPeople, map[string]any{"query": "test"})
 	assert.NotEqual(true, result["isError"], "result: %#v", result)
@@ -284,8 +287,48 @@ func TestMCPSearchPeopleLeavesOutIgnoredRecords(t *testing.T) {
 		require.True(ok)
 		labels = append(labels, label)
 	}
-	assert.Equal([]string{"Test Person", "Test Help Desk"}, labels,
-		"ignored records leave people results; a shared mailbox stays with its label")
+	assert.Equal([]string{"Test Person"}, labels,
+		"like the People list, observed records marked as not a person leave people results")
+}
+
+func TestMCPSearchPeopleLeavesOutProfilesMadeOnlyOfOrganizations(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 8, 20, 12, 30, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name   string
+		kind   correspondentkind.Kind
+		listed bool
+	}{
+		{"organization", correspondentkind.Organization, false},
+		{"ignored", correspondentkind.Ignored, false},
+		{"shared mailbox", correspondentkind.SharedMailbox, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			displayName := "Curated Record"
+			backend := &recordingPeopleBackend{
+				searchPage: &peoplebrowser.SearchPage{Rows: []query.PersonSummary{}, CacheRevision: "cache-7"},
+				profiles: []store.Person{{
+					ID: 7, VCardUID: "person-7", DisplayName: &displayName, Revision: 3,
+					ParticipantIDs: []int64{11}, CreatedAt: now, UpdatedAt: now,
+				}},
+				contact: &query.PersonSummary{
+					ID: 11, DisplayLabel: "Observed Record", Identifiers: []query.PersonIdentifier{},
+					SourceCounts: []query.SourceCount{}, FirstAt: now, LastAt: now, CacheRevision: "cache-7",
+					CorrespondentKind: &store.CorrespondentKindAssignment{Kind: test.kind, Source: correspondentkind.SourceUser},
+				},
+			}
+			result := rawCallTool(t, peopleToolOptions(backend), ToolSearchPeople, map[string]any{"query": "curated record"})
+			assert.NotEqual(true, result["isError"], "result: %#v", result)
+			rows, ok := toolStructuredContent(t, result)["rows"].([]any)
+			require.True(ok)
+			if test.listed {
+				assert.Len(rows, 1, "the people who wrote from a shared mailbox keep their profiles")
+			} else {
+				assert.Empty(rows)
+			}
+		})
+	}
 }
 
 func TestMCPSearchPeopleIncludesCuratedOnlyDisplayNameAndProfileID(t *testing.T) {
