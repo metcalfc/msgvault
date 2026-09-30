@@ -476,7 +476,12 @@ bar.
   > replaces, but no user edit surface exists yet. The owner's identities
   > are never attendees and never sent. `assignee_person_id` (API 2.42.0,
   > MCP, CLI) matches the source assignee address or the inferred
-  > participant; rows carry `inferred_assignee`.
+  > participant; rows carry `inferred_assignee`. Titles, labels, and item
+  > text are redacted (addresses and phone numbers) before sending; each
+  > row stores a fingerprint of its inputs and is re-judged when they
+  > change; a projection that gains a source assignee drops the inference,
+  > and listings ignore it. Event kinds weighing 0 also leave the activity
+  > spine: storing one requeues the series for projection.
 - [x] **Task 7.3 Event kind.** Choice over one_on_one, small_working_meeting,
   large_group_or_all_hands, external_webinar_or_marketing,
   personal_hold_or_logistics, social; recurring series asked once; weights

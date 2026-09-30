@@ -612,7 +612,9 @@ Code maps the answer when its probability is at least 0.60:
 | `external_webinar_or_marketing` | 0 |
 | `personal_hold_or_logistics` | 0 |
 
-Below 0.60 the attendee-count weight stays. The judgment is stored per series
+Below 0.60 the attendee-count weight stays. A series weighed 0 this way also
+stops counting as contact in last-contact dates; its events are re-projected
+when the judgment is stored. The judgment is stored per series
 (`calendar_event_kinds`, with its probabilities and the model) and never
 revisited, and the next analytics cache build publishes the new weights.
 `meetings judge` runs by hand. With `automatic = true`, each analytics cache
@@ -622,7 +624,8 @@ build also judges up to 200 new series first.
 
 Per series, under `events[i]`:
 
-- `title`: the event title, cut to 160 characters
+- `title`: the event title, cut to 160 characters, with email addresses
+  replaced by `[email]` and phone numbers by `[phone]`
 - `all_day` and `duration_minutes`: whether it is all day, and its length
 - `recurring` and `occurrences`: whether it repeats, and how many of its
   events are archived
@@ -676,8 +679,10 @@ owns it:
 3. An attendee or `owner` at 0.80 or more is stored as the item's inferred
    assignee (`meeting_action_assignees`, provenance `inferred`, with the
    probability as confidence and the full probabilities). Anything else is
-   stored as `none_or_unclear`, so the item is not asked again. A changed item
-   at the same position is asked again.
+   stored as `none_or_unclear`, so the item is not asked again. The row keeps
+   a fingerprint of every input (meeting title, attendees, item title and
+   description); when any of them changes, the item is asked again. When a
+   later import gives the item a source assignee, the inference is dropped.
 
 Action item listings (HTTP, MCP, CLI, and the Web UI) show the inferred
 assignee separately from the source's, and `assignee_person_id` lists a
@@ -692,9 +697,14 @@ Per request:
 - `meeting.title`: the meeting title, cut to 160 characters
 - `attendees.attendee_N.label`: each attendee's display name, or the local
   part of their address (the part before `@`) when no name is known, cut to
-  120 characters
+  120 characters. An address or phone number inside a name is dropped, a
+  name that is only an address becomes its local part, and a name with
+  nothing left becomes `attendee N`.
 - `action_items.item_N.title` and `.description`: the item's text, cut to 200
   and 500 characters
+
+In the meeting title and item text, email addresses become `[email]` and
+phone numbers `[phone]`.
 
 Your own identities are never attendees: you are the `owner` option, and
 your name and addresses are never sent. No addresses, transcripts, summaries,

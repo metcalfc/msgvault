@@ -2,10 +2,13 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -39,6 +42,8 @@ type MeetingAssigneeAction struct {
 	Ordinal     int
 	Title       string
 	Description string
+	// Fingerprint hashes the judgment inputs; store it with the result.
+	Fingerprint string
 }
 
 // MeetingAssigneeCandidate is one meeting with unassigned action items.
@@ -54,9 +59,11 @@ type MeetingAssigneeCandidate struct {
 
 // MeetingActionAssignee is one inferred assignee to store.
 type MeetingActionAssignee struct {
-	MessageID     int64
-	Ordinal       int
-	ActionTitle   string
+	MessageID   int64
+	Ordinal     int
+	ActionTitle string
+	// Fingerprint is the MeetingAssigneeAction fingerprint the judgment read.
+	Fingerprint   string
 	Choice        string
 	ParticipantID int64
 	Confidence    float64
@@ -73,7 +80,10 @@ func (s *Store) MeetingActionAssigneeCandidatesContext(
 ) ([]MeetingAssigneeCandidate, error) {
 	var candidates []MeetingAssigneeCandidate
 	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
-		query := `
+		// Every meeting with an unassigned item that has no user row is
+		// examined, newest first; whether an item needs judging depends on a
+		// fingerprint of its inputs, which only Go computes.
+		rows, err := tx.QueryContext(ctx, `
 			SELECT m.id, COALESCE(m.subject, '')
 			FROM messages m
 			WHERE m.message_type = ? AND m.deleted_at IS NULL
@@ -83,24 +93,19 @@ func (s *Store) MeetingActionAssigneeCandidatesContext(
 				  AND NOT EXISTS (
 					SELECT 1 FROM meeting_action_assignees x
 					WHERE x.message_id = a.message_id AND x.ordinal = a.ordinal
-					  AND (x.action_title = a.title OR x.provenance = 'user')))
-			ORDER BY m.sent_at DESC, m.id DESC`
-		args := []any{meetingTranscriptMessageType}
-		if limit > 0 {
-			query += ` LIMIT ?`
-			args = append(args, limit)
-		}
-		rows, err := tx.QueryContext(ctx, query, args...)
+					  AND x.provenance = 'user'))
+			ORDER BY m.sent_at DESC, m.id DESC`, meetingTranscriptMessageType)
 		if err != nil {
 			return fmt.Errorf("list meeting assignee candidates: %w", err)
 		}
+		var meetings []MeetingAssigneeCandidate
 		for rows.Next() {
 			var candidate MeetingAssigneeCandidate
 			if err := rows.Scan(&candidate.MessageID, &candidate.Title); err != nil {
 				_ = rows.Close()
 				return fmt.Errorf("scan meeting assignee candidate: %w", err)
 			}
-			candidates = append(candidates, candidate)
+			meetings = append(meetings, candidate)
 		}
 		if err := rows.Err(); err != nil {
 			_ = rows.Close()
@@ -113,12 +118,19 @@ func (s *Store) MeetingActionAssigneeCandidatesContext(
 		if err != nil {
 			return err
 		}
-		for i := range candidates {
-			if err := meetingAssigneeActionsTx(ctx, tx, &candidates[i]); err != nil {
+		for i := range meetings {
+			if limit > 0 && len(candidates) == limit {
+				break
+			}
+			candidate := meetings[i]
+			if err := meetingAssigneeAttendeesTx(ctx, tx, &candidate, owners); err != nil {
 				return err
 			}
-			if err := meetingAssigneeAttendeesTx(ctx, tx, &candidates[i], owners); err != nil {
+			if err := meetingAssigneeActionsTx(ctx, tx, &candidate); err != nil {
 				return err
+			}
+			if len(candidate.Actions) > 0 {
+				candidates = append(candidates, candidate)
 			}
 		}
 		return nil
@@ -129,32 +141,60 @@ func (s *Store) MeetingActionAssigneeCandidatesContext(
 	return candidates, nil
 }
 
+// meetingAssigneeActionsTx keeps the meeting's unassigned items whose inputs
+// changed since they were judged, or that were never judged. It needs the
+// attendees read first: they are part of every item's fingerprint.
 func meetingAssigneeActionsTx(ctx context.Context, tx *loggedTx, candidate *MeetingAssigneeCandidate) error {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT a.ordinal, a.title, a.description
+		SELECT a.ordinal, a.title, a.description, x.input_fingerprint
 		FROM meeting_action_items a
+		LEFT JOIN meeting_action_assignees x
+		  ON x.message_id = a.message_id AND x.ordinal = a.ordinal
 		WHERE a.message_id = ? AND a.assignee_email = '' AND a.assignee_name = ''
-		  AND NOT EXISTS (
-			SELECT 1 FROM meeting_action_assignees x
-			WHERE x.message_id = a.message_id AND x.ordinal = a.ordinal
-			  AND (x.action_title = a.title OR x.provenance = 'user'))
-		ORDER BY a.ordinal
-		LIMIT ?`, candidate.MessageID, meetingAssigneeCandidateActions)
+		  AND (x.provenance IS NULL OR x.provenance <> 'user')
+		ORDER BY a.ordinal`, candidate.MessageID)
 	if err != nil {
 		return fmt.Errorf("read meeting assignee actions: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var action MeetingAssigneeAction
-		if err := rows.Scan(&action.Ordinal, &action.Title, &action.Description); err != nil {
+		var judged sql.NullString
+		if err := rows.Scan(&action.Ordinal, &action.Title, &action.Description, &judged); err != nil {
 			return fmt.Errorf("scan meeting assignee action: %w", err)
 		}
-		candidate.Actions = append(candidate.Actions, action)
+		action.Fingerprint = meetingAssigneeFingerprint(*candidate, action)
+		if judged.Valid && judged.String == action.Fingerprint {
+			continue
+		}
+		if len(candidate.Actions) < meetingAssigneeCandidateActions {
+			candidate.Actions = append(candidate.Actions, action)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate meeting assignee actions: %w", err)
 	}
 	return nil
+}
+
+// meetingAssigneeFingerprint hashes every input a judgment of the item reads:
+// the meeting title, the attendees and their labels, the owner, and the item
+// title and description.
+func meetingAssigneeFingerprint(candidate MeetingAssigneeCandidate, action MeetingAssigneeAction) string {
+	hash := sha256.New()
+	write := func(parts ...string) {
+		for _, part := range parts {
+			_, _ = hash.Write([]byte(strconv.Itoa(len(part))))
+			_, _ = hash.Write([]byte{':'})
+			_, _ = hash.Write([]byte(part))
+		}
+	}
+	write("v1", candidate.Title, strconv.FormatInt(candidate.OwnerParticipantID, 10))
+	for _, attendee := range candidate.Attendees {
+		write(strconv.FormatInt(attendee.ParticipantID, 10), attendee.Label)
+	}
+	write("item", action.Title, action.Description)
+	return hex.EncodeToString(hash.Sum(nil))
 }
 
 // meetingAssigneeAttendeesTx reads the meeting's participants with an
@@ -263,11 +303,12 @@ func (s *Store) WriteInferredMeetingActionAssigneesContext(
 			}
 			result, err := tx.ExecContext(ctx, `
 				INSERT INTO meeting_action_assignees (
-					message_id, ordinal, action_title, choice, assignee_participant_id,
+					message_id, ordinal, action_title, input_fingerprint, choice, assignee_participant_id,
 					confidence, probabilities_json, provenance, model, judged_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, 'inferred', ?, `+s.dialect.Now()+`)
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'inferred', ?, `+s.dialect.Now()+`)
 				ON CONFLICT (message_id, ordinal) DO UPDATE SET
 					action_title = excluded.action_title,
+					input_fingerprint = excluded.input_fingerprint,
 					choice = excluded.choice,
 					assignee_participant_id = excluded.assignee_participant_id,
 					confidence = excluded.confidence,
@@ -275,7 +316,8 @@ func (s *Store) WriteInferredMeetingActionAssigneesContext(
 					model = excluded.model,
 					judged_at = excluded.judged_at
 				WHERE meeting_action_assignees.provenance = 'inferred'`,
-				assignee.MessageID, assignee.Ordinal, assignee.ActionTitle, assignee.Choice, participant,
+				assignee.MessageID, assignee.Ordinal, assignee.ActionTitle, assignee.Fingerprint,
+				assignee.Choice, participant,
 				assignee.Confidence, string(encoded), assignee.Model)
 			if err != nil {
 				return fmt.Errorf("write meeting action assignee: %w", err)

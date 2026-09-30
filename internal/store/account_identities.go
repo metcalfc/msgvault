@@ -560,6 +560,27 @@ func (s *Store) RemoveAccountIdentityContext(
 	return removed, nil
 }
 
+// OwnerEmailAddressesContext returns every confirmed owner address with an
+// @ across all accounts, lowercased.
+func (s *Store) OwnerEmailAddressesContext(ctx context.Context) (map[string]struct{}, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT address FROM account_identities`)
+	if err != nil {
+		return nil, fmt.Errorf("list owner addresses: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := make(map[string]struct{})
+	for rows.Next() {
+		var address string
+		if err := rows.Scan(&address); err != nil {
+			return nil, fmt.Errorf("scan owner address: %w", err)
+		}
+		if address = strings.ToLower(strings.TrimSpace(address)); strings.Contains(address, "@") {
+			out[address] = struct{}{}
+		}
+	}
+	return out, rows.Err()
+}
+
 // GetIdentitiesForScope returns the union of confirmed identifier addresses
 // across the given source IDs. Empty input returns an empty map — no global
 // default; an explicit empty scope means no identity matching.

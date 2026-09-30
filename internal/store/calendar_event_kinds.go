@@ -248,6 +248,19 @@ func (s *Store) WriteCalendarEventKindsContext(ctx context.Context, kinds []Cale
 				return fmt.Errorf("count calendar event kind write: %w", err)
 			}
 			written += int(affected)
+			if affected == 0 {
+				continue
+			}
+			// The kind can make the series' events no contact at all, so
+			// requeue them for the activity projection.
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO activity_projection_queue (message_id, revision, queued_at)
+				SELECT id, 1, CURRENT_TIMESTAMP FROM messages WHERE conversation_id = ?
+				ON CONFLICT (message_id) DO UPDATE SET
+					revision = activity_projection_queue.revision + 1,
+					queued_at = CURRENT_TIMESTAMP`, kind.ConversationID); err != nil {
+				return fmt.Errorf("requeue calendar series activity: %w", err)
+			}
 		}
 		if written == 0 {
 			return nil

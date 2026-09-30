@@ -143,5 +143,17 @@ func (s *Store) refreshMeetingProjectionWith(ctx context.Context, tx *loggedTx, 
 			return fmt.Errorf("write meeting action %d: %w", action.Ordinal, err)
 		}
 	}
+	// An inference only stands in for a missing source assignee: once the
+	// source names one, or the item is gone, the inference is dropped.
+	if _, err := q.Exec(`
+		DELETE FROM meeting_action_assignees
+		WHERE message_id = ? AND provenance = 'inferred'
+		  AND NOT EXISTS (
+			SELECT 1 FROM meeting_action_items a
+			WHERE a.message_id = meeting_action_assignees.message_id
+			  AND a.ordinal = meeting_action_assignees.ordinal
+			  AND a.assignee_email = '' AND a.assignee_name = '')`, messageID); err != nil {
+		return fmt.Errorf("drop superseded meeting action assignees: %w", err)
+	}
 	return nil
 }

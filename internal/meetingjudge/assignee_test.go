@@ -16,6 +16,7 @@ import (
 
 type meetingArchive struct {
 	st     *store.Store
+	source int64
 	owner  int64
 	casey  int64
 	jordan int64
@@ -36,33 +37,41 @@ func newMeetingArchive(t *testing.T) (*meetingArchive, int64) {
 	require.NoError(t, err)
 	jordan, err := st.EnsureParticipant("jordan.lee@example.net", "", "example.net")
 	require.NoError(t, err)
-	archive := &meetingArchive{st: st, owner: owner, casey: casey, jordan: jordan}
-	raw := `{"summary_text":"Budget planning","action_items":[` +
-		`{"source_id":"a0","title":"Casey to draft the budget","status":"open"},` +
-		`{"source_id":"a1","title":"I will book the room","status":"open"},` +
-		`{"source_id":"a2","title":"Somebody should pick a date","status":"open"},` +
-		`{"source_id":"a3","title":"Send notes","assignee_name":"Jordan","assignee_email":"jordan.lee@example.net","status":"open"}]}`
-	id, err := st.PersistMessage(&store.MessagePersistData{
+	archive := &meetingArchive{st: st, source: source.ID, owner: owner, casey: casey, jordan: jordan}
+	id := archive.persist(t, "Budget planning", `[`+
+		`{"source_id":"a0","title":"Casey to draft the budget","status":"open"},`+
+		`{"source_id":"a1","title":"I will book the room","status":"open"},`+
+		`{"source_id":"a2","title":"Somebody should pick a date","status":"open"},`+
+		`{"source_id":"a3","title":"Send notes","assignee_name":"Jordan","assignee_email":"jordan.lee@example.net","status":"open"}]`)
+	return archive, id
+}
+
+// persist stores (or re-imports) the meeting with the given title and
+// action items through the real persist and projection path.
+func (a *meetingArchive) persist(t *testing.T, title, actions string) int64 {
+	t.Helper()
+	id, err := a.st.PersistMessage(&store.MessagePersistData{
 		Message: &store.Message{
-			SourceID: source.ID, SourceMessageID: "planning", MessageType: "meeting_transcript",
+			SourceID: a.source, SourceMessageID: "planning", MessageType: "meeting_transcript",
 			SentAt:   sql.NullTime{Time: time.Date(2026, 5, 4, 15, 0, 0, 0, time.UTC), Valid: true},
-			SenderID: sql.NullInt64{Int64: owner, Valid: true},
-			Subject:  sql.NullString{String: "Budget planning", Valid: true},
+			SenderID: sql.NullInt64{Int64: a.owner, Valid: true},
+			Subject:  sql.NullString{String: title, Valid: true},
 		},
 		Conversation: &store.ConversationPersistData{
-			SourceConversationID: "planning", ConversationType: "meeting", Title: "Budget planning",
+			SourceConversationID: "planning", ConversationType: "meeting", Title: title,
 		},
 		Recipients: []store.RecipientSet{{
-			Type: "from", ParticipantIDs: []int64{owner}, DisplayNames: []string{"Owner Example"},
+			Type: "from", ParticipantIDs: []int64{a.owner}, DisplayNames: []string{"Owner Example"},
 			EmailAddresses: []string{ownerAddress},
 		}, {
-			Type: "to", ParticipantIDs: []int64{casey, jordan, owner}, DisplayNames: []string{"", "", ""},
+			Type: "to", ParticipantIDs: []int64{a.casey, a.jordan, a.owner}, DisplayNames: []string{"", "", ""},
 			EmailAddresses: []string{"casey@example.com", "jordan.lee@example.net", ownerAddress},
 		}},
-		RawMIME: []byte(raw), RawFormat: "meeting_json",
+		RawMIME:   []byte(`{"summary_text":"Summary","action_items":` + actions + `}`),
+		RawFormat: "meeting_json",
 	})
 	require.NoError(t, err)
-	return archive, id
+	return id
 }
 
 // assigneeByItem answers from each item's title, finding Casey's option
@@ -247,4 +256,78 @@ func TestAssigneesWithoutConsentSendNothing(t *testing.T) {
 	off, err := meetingjudge.RunAssignees(t.Context(), archive.st, meetingjudge.AssigneeOptions{})
 	require.NoError(err)
 	assert.Zero(off.Meetings, "without Jev nothing is read or written")
+}
+
+// Display names and titles are typed by people and can hold addresses or
+// phone numbers; none of them leaves the machine.
+func TestAssigneesRedactAddressesAndPhoneNumbers(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	archive, _ := newMeetingArchive(t)
+	st := archive.st
+	_, err := st.DB().ExecContext(t.Context(), st.Rebind(`UPDATE participants SET display_name = ? WHERE id = ?`),
+		"Casey <casey@example.com>", archive.casey)
+	require.NoError(err)
+	_, err = st.DB().ExecContext(t.Context(), st.Rebind(`UPDATE participants SET display_name = ? WHERE id = ?`),
+		"+1 (555) 010-0199", archive.jordan)
+	require.NoError(err)
+	archive.persist(t, "Budget with casey@example.com", `[`+
+		`{"source_id":"a0","title":"Casey to email riley@example.org","description":"call 555-010-0199","status":"open"}]`)
+	fake := &fakeJev{answer: assigneeByItem}
+	server := fake.server(t)
+	service := assigneeService(t, server.URL, st)
+
+	_, err = meetingjudge.RunAssignees(t.Context(), st, meetingjudge.AssigneeOptions{Judge: service})
+	require.NoError(err)
+	require.Len(fake.requests(), 1)
+	state := asState[meetingjudge.AssigneeState](fake.requests()[0]["state"])
+	assert.Equal("Budget with [email]", state.Meeting.Title)
+	assert.Equal(meetingjudge.AttendeeState{Label: "Casey"}, state.Attendees["attendee_1"])
+	assert.Equal(meetingjudge.AttendeeState{Label: "attendee 2"}, state.Attendees["attendee_2"])
+	assert.Equal(meetingjudge.ActionItemState{Title: "Casey to email [email]", Description: "call [phone]"},
+		state.ActionItems["item_1"])
+	raw := fake.rawRequests()[0]
+	assert.NotContains(raw, "@")
+	assert.NotContains(raw, "010-0199")
+}
+
+func TestAssigneesYieldToASourceAssigneeAndRejudgeChangedInputs(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	archive, meetingID := newMeetingArchive(t)
+	st := archive.st
+	fake := &fakeJev{answer: assigneeByItem}
+	server := fake.server(t)
+	service := assigneeService(t, server.URL, st)
+	_, err := meetingjudge.RunAssignees(t.Context(), st, meetingjudge.AssigneeOptions{Judge: service})
+	require.NoError(err)
+	caseyPerson, _, err := st.CreatePersonFromParticipantContext(t.Context(), archive.casey)
+	require.NoError(err)
+	require.Len(actionsByTitle(t, st, store.MeetingActionsQuery{AssigneePersonID: caseyPerson.ID}), 1)
+
+	// A re-import: the source now names Jordan for Casey's item, and the
+	// unclear item's description changed.
+	archive.persist(t, "Budget planning", `[`+
+		`{"source_id":"a0","title":"Casey to draft the budget","assignee_email":"jordan.lee@example.net","status":"open"},`+
+		`{"source_id":"a1","title":"I will book the room","status":"open"},`+
+		`{"source_id":"a2","title":"Somebody should pick a date","description":"Casey offered","status":"open"},`+
+		`{"source_id":"a3","title":"Send notes","assignee_name":"Jordan","assignee_email":"jordan.lee@example.net","status":"open"}]`)
+
+	rows := actionsByTitle(t, st, store.MeetingActionsQuery{})
+	assert.Nil(rows["Casey to draft the budget"].InferredAssignee, "the source assignee replaces the inference")
+	assert.Empty(actionsByTitle(t, st, store.MeetingActionsQuery{AssigneePersonID: caseyPerson.ID}),
+		"a superseded inference no longer matches the person")
+	var remaining int
+	require.NoError(st.DB().QueryRowContext(t.Context(), st.Rebind(
+		`SELECT COUNT(*) FROM meeting_action_assignees WHERE message_id = ? AND ordinal = 0`), meetingID).Scan(&remaining))
+	assert.Zero(remaining, "the projection drops the superseded inference")
+
+	again, err := meetingjudge.RunAssignees(t.Context(), st, meetingjudge.AssigneeOptions{Judge: service})
+	require.NoError(err)
+	assert.Equal(1, again.Items, "only the item whose inputs changed is judged again")
+	require.Len(fake.requests(), 2)
+	items := asState[meetingjudge.AssigneeState](fake.requests()[1]["state"]).ActionItems
+	assert.Equal(map[string]meetingjudge.ActionItemState{
+		"item_1": {Title: "Somebody should pick a date", Description: "Casey offered"},
+	}, items)
 }

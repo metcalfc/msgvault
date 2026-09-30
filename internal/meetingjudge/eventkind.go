@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
-	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -73,7 +72,9 @@ func EventKindFeature() jev.FeatureSpec {
 		Title: "Meeting event kind",
 		Purpose: "Decide whether a calendar series is a one-on-one, a small working meeting, a large " +
 			"group or all-hands, an outside webinar, a personal hold, or a social event, so relationship " +
-			"rankings count a real meeting with someone more than an all-hands or a webinar they also attended.",
+			"rankings count a real meeting with someone more than an all-hands or a webinar they also " +
+			"attended. Email addresses and phone numbers in titles are replaced with [email] and [phone] " +
+			"before sending.",
 		Questions: questions,
 		StateFields: []string{
 			"events[].title",
@@ -258,7 +259,7 @@ func judgeEventBatch(
 
 func eventStateFor(candidate store.CalendarEventKindCandidate) EventState {
 	return EventState{
-		Title:                 truncateRunes(strings.Join(strings.Fields(candidate.Title), " "), maxTitleRunes),
+		Title:                 truncateRunes(RedactText(candidate.Title), maxTitleRunes),
 		AllDay:                candidate.AllDay,
 		DurationMinutes:       candidate.DurationMinutes,
 		Recurring:             candidate.Recurring,

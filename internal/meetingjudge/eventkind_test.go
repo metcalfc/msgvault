@@ -180,3 +180,41 @@ func subjectsByID(t *testing.T, st *store.Store) map[int64]string {
 	require.NoError(t, rows.Err())
 	return subjects
 }
+
+// A series Jev confidently judged to weigh nothing stops being contact in
+// the activity spine too: the judgment requeues its events, and they load
+// as ineligible. Titles are sent without addresses or phone numbers.
+func TestEventKindsRequeueActivityAndRedactTitles(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := newStore(t)
+	syncCalendar(t, st,
+		calendarEvent("webinar", "Vendor webinar", 45, "host@example.org", "casey@example.com"),
+		calendarEvent("dial", "Call casey@example.com on +1 555 010 0199", 30, "casey@example.com"))
+	_, err := st.DB().ExecContext(t.Context(), `UPDATE activity_projection_queue SET processed_revision = revision`)
+	require.NoError(err)
+	fake := &fakeJev{answer: eventKindByTitle}
+	server := fake.server(t)
+	service, cfg := jevService(t, server.URL, st)
+	grantConsent(t, st, cfg, meetingjudge.EventKindFeature())
+
+	_, err = meetingjudge.RunEventKinds(t.Context(), st, meetingjudge.EventKindOptions{Judge: service})
+	require.NoError(err)
+	titles := []string{}
+	for _, event := range asState[meetingjudge.EventKindState](fake.requests()[0]["state"]).Events {
+		titles = append(titles, event.Title)
+	}
+	assert.ElementsMatch([]string{"Vendor webinar", "Call [email] on [phone]"}, titles)
+
+	candidates, err := st.LoadQueuedActivityCandidatesContext(t.Context(), 10)
+	require.NoError(err)
+	subjects := subjectsByID(t, st)
+	eligible := map[string]bool{}
+	for _, candidate := range candidates {
+		eligible[subjects[candidate.MessageID]] = candidate.Eligible
+	}
+	require.Contains(eligible, "Vendor webinar", "the judgment requeues the series")
+	assert.False(eligible["Vendor webinar"], "a confident webinar is no contact")
+	require.Contains(eligible, "Call casey@example.com on +1 555 010 0199")
+	assert.True(eligible["Call casey@example.com on +1 555 010 0199"], "a working meeting stays contact")
+}

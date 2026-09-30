@@ -77,6 +77,9 @@ type Syncer struct {
 	opts   Options
 	logger *slog.Logger
 	enq    EmbedEnqueuer
+	// ownerAddresses holds every confirmed owner address across accounts,
+	// read once per syncer so the owner's RSVP is found under any alias.
+	ownerAddresses map[string]struct{}
 }
 
 // New builds a Syncer.

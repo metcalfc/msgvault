@@ -166,18 +166,16 @@ func (s *Store) ListMeetingActionsContext(
 				a.ordinal, a.source_id, a.title, a.description,
 				a.assignee_name, a.assignee_email, a.status, a.source_status,
 				a.due_date, a.origin, a.locator,
-				x.choice, x.assignee_participant_id,
-				(SELECT pp.person_id FROM person_participants pp
-				  WHERE pp.participant_id = x.assignee_participant_id),
+				x.choice, x.assignee_participant_id, app.person_id,
 				COALESCE(NULLIF(TRIM(ap.display_name), ''), ap.email_address, ''),
 				x.confidence, x.provenance
 			FROM scoped_meetings sm
 			JOIN (meeting_action_items a
 				LEFT JOIN meeting_action_assignees x
 				  ON x.message_id = a.message_id AND x.ordinal = a.ordinal
-				 AND x.choice <> 'none_or_unclear'
-				 AND (x.action_title = a.title OR x.provenance = 'user')
-				LEFT JOIN participants ap ON ap.id = x.assignee_participant_id)
+				 AND `+liveInferredAssigneeSQL+`
+				LEFT JOIN participants ap ON ap.id = x.assignee_participant_id
+				LEFT JOIN person_participants app ON app.participant_id = x.assignee_participant_id)
 			  ON a.message_id = sm.message_id`+
 			filters+positionSQL+`
 			ORDER BY CASE WHEN sm.occurred_key IS NULL THEN 1 ELSE 0 END,
@@ -255,6 +253,13 @@ func (s *Store) ListMeetingActionsContext(
 	return result, nil
 }
 
+// liveInferredAssigneeSQL keeps an assignee row x that applies to action item
+// a: it names someone, and it is a user row, or an inference judged for the
+// item's current title while the source still has no assignee of its own.
+const liveInferredAssigneeSQL = `x.choice <> 'none_or_unclear'
+	AND (x.provenance = 'user' OR (x.action_title = a.title
+		AND a.assignee_email = '' AND a.assignee_name = ''))`
+
 // inferredAssigneeColumns scans the optional assignee row joined to an
 // action item.
 type inferredAssigneeColumns struct {
@@ -323,8 +328,7 @@ func (s *Store) meetingActionFilters(query MeetingActionsQuery) (string, []any) 
 				SELECT 1 FROM meeting_action_assignees x
 				JOIN person_participants pp ON pp.participant_id = x.assignee_participant_id
 				WHERE x.message_id = a.message_id AND x.ordinal = a.ordinal
-				  AND pp.person_id = ? AND x.choice <> 'none_or_unclear'
-				  AND (x.action_title = a.title OR x.provenance = 'user')))`)
+				  AND pp.person_id = ? AND `+liveInferredAssigneeSQL+`))`)
 		args = append(args, query.AssigneePersonID, query.AssigneePersonID)
 	}
 	if query.Status != "" {

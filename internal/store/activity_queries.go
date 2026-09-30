@@ -6,6 +6,7 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -68,6 +69,8 @@ type activityCandidateRow struct {
 	deletedAt           *time.Time
 	deletedFromSourceAt *time.Time
 	metadata            sql.NullString
+	// eventKind is the series' Jev event kind at or above the threshold.
+	eventKind sql.NullString
 }
 
 const activityCandidateStateCTE = `
@@ -111,11 +114,17 @@ const activityCandidateStateCTE = `
 		)
 	)`
 
-const activityCandidateColumns = `
+// activityCandidateColumns reads, beside the message, its series' confident
+// Jev event kind (calendar_event_kinds, one row per conversation by primary
+// key), so an event judged to weigh nothing is no contact.
+var activityCandidateColumns = `
 	m.id, m.source_id, m.conversation_id,
 	COALESCE(c.conversation_type, ''), COALESCE(m.message_type, ''),
 	m.sent_at, m.received_at, m.internal_date, m.last_modified,
 	m.deleted_at, m.deleted_from_source_at, m.metadata,
+	(SELECT k.kind FROM calendar_event_kinds k
+	  WHERE k.conversation_id = m.conversation_id AND k.source = 'jev'
+	    AND k.confidence >= ` + strconv.FormatFloat(meetingweight.KindThreshold, 'f', -1, 64) + `),
 	COALESCE(m.source_is_from_me, FALSE),
 	r.identity_revision, r.account_identity_revision,
 	r.timezone_active, r.timezone_target, r.timezone_generation,
@@ -319,6 +328,7 @@ func scanActivityCandidateRows(rows rowsScanner) ([]ActivityCandidate, error) {
 			&row.deletedAt,
 			&row.deletedFromSourceAt,
 			&row.metadata,
+			&row.eventKind,
 			&row.candidate.SourceIsFromMe,
 			&row.candidate.IdentityRevision,
 			&row.candidate.AccountIdentityRevision,
@@ -369,12 +379,20 @@ func applyActivityEligibility(row *activityCandidateRow) {
 	hasTimestamp := activityUsableTime(row.candidate.SentAt) ||
 		activityUsableTime(row.candidate.ReceivedAt) ||
 		activityUsableTime(row.candidate.InternalDate)
-	// A calendar event that is not a meeting (cancelled, declined by the
-	// owner, an out-of-office, focus-time, or working-location block, or
-	// marked free) is no contact with its attendees.
-	notMeeting := row.candidate.MessageType == calendarEventMessageType &&
-		row.metadata.Valid &&
-		meetingweight.ParseMetadata(row.metadata.String).Exclusion() != ""
+	// A calendar event that weighs nothing as a meeting (cancelled, declined
+	// by the owner, an out-of-office, focus-time, or working-location block,
+	// marked free, or confidently judged a webinar or a hold) is no contact
+	// with its attendees. The attendee count never makes the weight zero.
+	notMeeting := false
+	if row.candidate.MessageType == calendarEventMessageType {
+		var judgment *meetingweight.Judgment
+		if row.eventKind.Valid {
+			judgment = &meetingweight.Judgment{
+				Kind: meetingweight.Kind(row.eventKind.String), Confidence: meetingweight.KindThreshold,
+			}
+		}
+		notMeeting = meetingweight.Weight(meetingweight.ParseMetadata(row.metadata.String), 1, judgment) == 0
+	}
 	row.candidate.Eligible = row.deletedAt == nil &&
 		row.deletedFromSourceAt == nil &&
 		hasTimestamp &&

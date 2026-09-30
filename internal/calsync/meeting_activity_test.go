@@ -40,6 +40,32 @@ func TestFull_SkipsResourceAttendeesAndRecordsOwnerResponse(t *testing.T) {
 	assert.InDelta(2.0, meta["attendee_count"], 1e-9)
 }
 
+// The owner can be invited under an alias or another account's address, on
+// a calendar that does not mark it as self.
+func TestFull_OwnerDeclineUnderAnyOwnerAddress(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	m := gcal.NewMockAPI()
+	m.Calendars = []gcal.Calendar{{ID: "primary", Summary: "Work", AccessRole: "owner", Primary: true, TimeZone: "UTC"}}
+	ev := timedEvent("alias", "Vendor pitch",
+		gcal.Attendee{Email: "Alice.Alias@Example.net", ResponseStatus: "declined"},
+		gcal.Attendee{Email: "bob@example.com", ResponseStatus: "accepted"})
+	ev.Organizer = gcal.Person{Email: "bob@example.com"}
+	m.FullEvents["primary"] = [][]gcal.Event{{ev}}
+	s, st := newSyncer(t, m, Options{})
+	other, err := st.GetOrCreateSource("gmail", "alice.alias@example.net")
+	require.NoError(err)
+	require.NoError(st.AddAccountIdentity(other.ID, "alice.alias@example.net", "manual"))
+
+	_, err = s.Full(t.Context())
+	require.NoError(err)
+	src := primarySource(t, st)
+	require.NotNil(src)
+	row, ok := getMsg(t, st, src.ID, "alias")
+	require.True(ok)
+	assert.Equal("declined", parseMeta(t, row)["owner_response_status"])
+}
+
 func TestFull_MeetingWeightsLeaveOutEventsThatAreNotMeetings(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

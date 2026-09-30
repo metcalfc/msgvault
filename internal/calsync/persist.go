@@ -1,6 +1,7 @@
 package calsync
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json/v2"
 	"fmt"
@@ -138,7 +139,7 @@ func (s *Syncer) ingestEvent(sourceID int64, cal gcal.Calendar, ev gcal.Event) (
 		return 0, fmt.Errorf("upsert message: %w", err)
 	}
 
-	metaJSON, err := json.Marshal(buildMetadata(ev, cal, s.opts.AccountEmail), json.Deterministic(true))
+	metaJSON, err := json.Marshal(buildMetadata(ev, cal, s.opts.AccountEmail, s.ownerAddressSet()), json.Deterministic(true))
 	if err != nil {
 		return 0, fmt.Errorf("marshal metadata: %w", err)
 	}
@@ -301,23 +302,41 @@ func isResourceAttendee(a gcal.Attendee) bool {
 }
 
 // ownerResponseStatus is the owner's RSVP: the attendee the API marks as
-// self, else the attendee with the account's address.
-func ownerResponseStatus(ev gcal.Event, accountEmail string) string {
+// self, else an attendee with the account's address or any other confirmed
+// owner address (an alias or another account's address).
+func ownerResponseStatus(ev gcal.Event, accountEmail string, ownerAddresses map[string]struct{}) string {
 	for _, a := range ev.Attendees {
 		if a.Self {
 			return a.ResponseStatus
 		}
 	}
 	account := normalizeParticipantEmail(accountEmail)
-	if account == "" {
-		return ""
-	}
 	for _, a := range ev.Attendees {
-		if normalizeParticipantEmail(a.Email) == account {
+		address := normalizeParticipantEmail(a.Email)
+		if address == "" {
+			continue
+		}
+		if _, owner := ownerAddresses[address]; owner || address == account {
 			return a.ResponseStatus
 		}
 	}
 	return ""
+}
+
+// ownerAddressSet reads the confirmed owner addresses once per syncer. A
+// read failure leaves the set empty: the account address and the API's self
+// flag still identify the owner.
+func (s *Syncer) ownerAddressSet() map[string]struct{} {
+	if s.ownerAddresses != nil {
+		return s.ownerAddresses
+	}
+	addresses, err := s.store.OwnerEmailAddressesContext(context.Background())
+	if err != nil {
+		s.logger.Warn("read owner addresses for calendar RSVPs", "error", err)
+		addresses = map[string]struct{}{}
+	}
+	s.ownerAddresses = addresses
+	return addresses
 }
 
 // attendeeCount counts invited people with an address, never resources.
@@ -332,9 +351,11 @@ func attendeeCount(ev gcal.Event) int {
 }
 
 // buildMetadata projects an event into the metadata payload.
-func buildMetadata(ev gcal.Event, cal gcal.Calendar, accountEmail string) eventMetadata {
+func buildMetadata(
+	ev gcal.Event, cal gcal.Calendar, accountEmail string, ownerAddresses map[string]struct{},
+) eventMetadata {
 	return eventMetadata{
-		OwnerResponseStatus: ownerResponseStatus(ev, accountEmail),
+		OwnerResponseStatus: ownerResponseStatus(ev, accountEmail, ownerAddresses),
 		AttendeeCount:       attendeeCount(ev),
 		Status:              ev.Status,
 		AllDay:              ev.Start.IsAllDay(),

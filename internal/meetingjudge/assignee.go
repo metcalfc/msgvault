@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
-	"strings"
 	"time"
 
 	"go.kenn.io/msgvault/internal/jev"
@@ -79,7 +78,9 @@ func AssigneeFeature() jev.FeatureSpec {
 		Name:  jev.FeatureMeetingActionAssignee,
 		Title: "Meeting action assignee",
 		Purpose: "When a meeting tool records an action item without saying who owns it, decide which " +
-			"attendee (or you) is responsible, so action items can be listed by person.",
+			"attendee (or you) is responsible, so action items can be listed by person. Email addresses " +
+			"and phone numbers are removed from the title, labels, and item text before sending; an " +
+			"attendee with no name is sent as \"attendee N\".",
 		Questions: questions,
 		StateFields: []string{
 			"meeting.title",
@@ -192,7 +193,8 @@ func recordTooManyAttendees(ctx context.Context, st AssigneeStore, candidate sto
 	for _, action := range candidate.Actions {
 		rows = append(rows, store.MeetingActionAssignee{
 			MessageID: candidate.MessageID, Ordinal: action.Ordinal, ActionTitle: action.Title,
-			Choice: store.MeetingAssigneeChoiceNone, Model: tooManyAttendeesModel,
+			Fingerprint: action.Fingerprint,
+			Choice:      store.MeetingAssigneeChoiceNone, Model: tooManyAttendeesModel,
 		})
 	}
 	if _, err := st.WriteInferredMeetingActionAssigneesContext(ctx, rows); err != nil {
@@ -207,17 +209,17 @@ func judgeMeetingAssignees(
 ) error {
 	attendees := make(map[string]AttendeeState, len(candidate.Attendees))
 	for i, attendee := range candidate.Attendees {
-		attendees[AttendeeKey(i)] = AttendeeState{Label: truncateRunes(attendee.Label, maxAttendeeLabelRunes)}
+		attendees[AttendeeKey(i)] = AttendeeState{Label: truncateRunes(AttendeeLabel(attendee.Label, i), maxAttendeeLabelRunes)}
 	}
-	meeting := MeetingState{Title: truncateRunes(strings.Join(strings.Fields(candidate.Title), " "), maxTitleRunes)}
+	meeting := MeetingState{Title: truncateRunes(RedactText(candidate.Title), maxTitleRunes)}
 	for start := 0; start < len(candidate.Actions); start += AssigneeItemsPerRequest {
 		chunk := candidate.Actions[start:min(start+AssigneeItemsPerRequest, len(candidate.Actions))]
 		state := AssigneeState{Meeting: meeting, Attendees: attendees, ActionItems: map[string]ActionItemState{}}
 		ids := make([]string, 0, len(chunk))
 		for i, action := range chunk {
 			state.ActionItems[ItemKey(i)] = ActionItemState{
-				Title:       truncateRunes(strings.Join(strings.Fields(action.Title), " "), maxActionTitleRunes),
-				Description: truncateRunes(strings.Join(strings.Fields(action.Description), " "), maxActionDescriptionRunes),
+				Title:       truncateRunes(RedactText(action.Title), maxActionTitleRunes),
+				Description: truncateRunes(RedactText(action.Description), maxActionDescriptionRunes),
 			}
 			ids = append(ids, AssigneeQuestionID(i))
 		}
@@ -234,6 +236,7 @@ func judgeMeetingAssignees(
 			}
 			row := assigneeFor(candidate, answer)
 			row.MessageID, row.Ordinal, row.ActionTitle = candidate.MessageID, action.Ordinal, action.Title
+			row.Fingerprint = action.Fingerprint
 			row.Probabilities, row.Model = answer.Probabilities, response.Model
 			rows = append(rows, row)
 		}
