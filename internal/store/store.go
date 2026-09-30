@@ -1598,6 +1598,10 @@ func (s *Store) InitSchemaContext(ctx context.Context) error {
 		}); err != nil {
 		return err
 	}
+	if err := s.runOnceMigration(ctx, migrationStripLabelEmoji, 1, false,
+		s.stripStoredLabelEmoji); err != nil {
+		return err
+	}
 	// Organization domains written before IDNA normalization may still contain
 	// Unicode. Canonicalize them before fact resolution compares incoming ASCII
 	// references with persisted roots and identifiers.

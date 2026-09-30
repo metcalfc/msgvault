@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.kenn.io/msgvault/internal/attachmentpolicy"
+	"go.kenn.io/msgvault/internal/textutil"
 )
 
 // apiResponse is the envelope every Slack Web API method returns.
@@ -97,6 +98,18 @@ func (u *User) DisplayName() string {
 		}
 	}
 	return u.ID
+}
+
+// Label returns the participant label for the user: the first profile name
+// that is not made only of emoji, with emoji removed. Rendered message text
+// keeps DisplayName so mentions read as they did in Slack.
+func (u *User) Label() string {
+	for _, s := range []string{u.Profile.DisplayName, u.Profile.RealName, u.RealName, u.Name} {
+		if label := textutil.StripLabelEmoji(strings.TrimSpace(s)); label != "" {
+			return label
+		}
+	}
+	return u.DisplayName()
 }
 
 // Reaction is one emoji reaction aggregate on a message.

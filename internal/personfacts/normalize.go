@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"go.kenn.io/msgvault/internal/jsonexact"
+	"go.kenn.io/msgvault/internal/textutil"
 )
 
 // NormalizeClaimValue validates a submitted value against its target and
@@ -41,7 +42,7 @@ func NormalizeClaimValue(
 	case target.Kind == TargetEmployment && target.ValueType == ValueEmployment:
 		canonical, err = normalizeEmploymentValue(submitted)
 	case target.Kind == TargetAttribute && supportedGenericValueType(target.ValueType):
-		canonical, err = normalizeGenericValue(target.ValueType, submitted)
+		canonical, err = normalizeGenericValue(target.ValueType, submitted, IsLabelTarget(target))
 	default:
 		return unsupported(fmt.Sprintf(
 			"target %s/%s uses unsupported value type %s", target.Kind, target.Key, target.ValueType))
@@ -90,12 +91,15 @@ func supportedGenericValueType(valueType ValueType) bool {
 	}
 }
 
-func normalizeGenericValue(valueType ValueType, submitted jsontext.Value) ([]byte, error) {
+func normalizeGenericValue(valueType ValueType, submitted jsontext.Value, label bool) ([]byte, error) {
 	switch valueType {
 	case ValueText:
 		var value string
 		if err := decodeJSONValue(submitted, &value); err != nil {
 			return nil, fmt.Errorf("decode text: %w", err)
+		}
+		if label {
+			value = requiredLabelText(value)
 		}
 		value = strings.TrimSpace(value)
 		if value == "" {
@@ -161,7 +165,7 @@ func normalizeEmploymentValue(submitted jsontext.Value) ([]byte, error) {
 	if value.Organization.ID != nil && *value.Organization.ID <= 0 {
 		return nil, errors.New("employment organization id must be positive")
 	}
-	value.Organization.Name = normalizeHumanText(value.Organization.Name)
+	value.Organization.Name = normalizeHumanText(requiredLabelText(value.Organization.Name))
 	if value.Organization.Name == "" {
 		return nil, errors.New("employment organization name is required")
 	}
@@ -172,10 +176,10 @@ func normalizeEmploymentValue(submitted jsontext.Value) ([]byte, error) {
 		}
 		value.Organization.Domain = domain
 	}
-	value.Title = normalizeHumanText(value.Title)
-	value.Role = normalizeHumanText(value.Role)
-	value.Department = normalizeHumanText(value.Department)
-	value.Location = normalizeHumanText(value.Location)
+	value.Title = normalizeHumanText(textutil.StripLabelEmoji(value.Title))
+	value.Role = normalizeHumanText(textutil.StripLabelEmoji(value.Role))
+	value.Department = normalizeHumanText(textutil.StripLabelEmoji(value.Department))
+	value.Location = normalizeHumanText(textutil.StripLabelEmoji(value.Location))
 	if err := validatePartialDate("start_date", value.StartDate); err != nil {
 		return nil, err
 	}
@@ -196,6 +200,39 @@ func partialDateAfterAtSharedPrecision(start, end *PartialDateValue) bool {
 		return start.Month != 0 && end.Month != 0 && start.Month > end.Month
 	}
 	return start.Day != 0 && end.Day != 0 && start.Day > end.Day
+}
+
+// labelAttributeSlugs name the attribute targets that hold a short label
+// (a name, title, company, or location) rather than prose. Emoji are removed
+// from their values; notes and other free text keep them.
+var labelAttributeSlugs = map[string]struct{}{
+	"name": {}, "full_name": {}, "first_name": {}, "last_name": {}, "nickname": {},
+	"title": {}, "job_title": {}, "current_title": {}, "headline": {},
+	"company": {}, "current_company": {}, "organization": {}, "location": {},
+}
+
+// IsLabelTarget reports whether a text attribute target holds a short
+// human-facing label whose values lose emoji during normalization.
+func IsLabelTarget(target TargetDescriptor) bool {
+	if target.Kind != TargetAttribute || target.ValueType != ValueText {
+		return false
+	}
+	key := target.Slug
+	if key == "" {
+		key = target.Key
+	}
+	_, ok := labelAttributeSlugs[strings.ToLower(key)]
+	return ok
+}
+
+// requiredLabelText removes emoji from a label that must not be blank. A
+// value made only of emoji keeps its original text: it is still the only
+// label the fact has, and a stored projection must keep normalizing.
+func requiredLabelText(value string) string {
+	if stripped := textutil.StripLabelEmoji(value); stripped != "" {
+		return stripped
+	}
+	return value
 }
 
 func normalizeHumanText(value string) string {

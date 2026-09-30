@@ -338,3 +338,46 @@ func TestIngestRawMessage_LeavesCanonicalDateUnsetWhenNoDateIsPlausible(t *testi
 	assert.Contains(logs.String(), "ignored implausible email Date header")
 	assert.Contains(logs.String(), "replacement_source=none")
 }
+
+// Header display names lose emoji on ingest; the subject keeps them.
+func TestIngestRawMessageStripsEmojiFromHeaderDisplayNames(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(err)
+	t.Cleanup(func() { _ = st.Close() })
+	require.NoError(st.InitSchema())
+	src, err := st.GetOrCreateSource("test", "owner@example.com")
+	require.NoError(err)
+
+	raw := email.NewMessage().
+		From("=?UTF-8?Q?=F0=9F=8E=89_Ana_Example?= <ana@example.com>").
+		To("=?UTF-8?B?QmVhIEV4YW1wbGUg4pyo?= <bea@example.com>, =?UTF-8?B?8J+mhA==?= <cam@example.com>").
+		Subject("Launch 🚀 party").
+		Body("See you there 🎉").
+		Bytes()
+	require.NoError(IngestRawMessage(
+		context.Background(), st, src.ID, "owner@example.com", "",
+		nil, "source-msg-emoji", "hash-emoji", raw, time.Time{}, slog.Default(),
+	))
+
+	db := st.DB()
+	participantName := func(address string) string {
+		var name sql.NullString
+		require.NoError(db.QueryRow(
+			`SELECT display_name FROM participants WHERE email_address = ?`, address).Scan(&name))
+		return name.String
+	}
+	assert.Equal("Ana Example", participantName("ana@example.com"))
+	assert.Equal("Bea Example", participantName("bea@example.com"))
+	assert.Empty(participantName("cam@example.com"), "an emoji-only name leaves the address as the label")
+
+	var recipientName sql.NullString
+	require.NoError(db.QueryRow(`SELECT mr.display_name FROM message_recipients mr
+		JOIN participants p ON p.id = mr.participant_id
+		WHERE p.email_address = 'ana@example.com'`).Scan(&recipientName))
+	assert.Equal("Ana Example", recipientName.String)
+	var subject string
+	require.NoError(db.QueryRow(`SELECT subject FROM messages`).Scan(&subject))
+	assert.Equal("Launch 🚀 party", subject)
+}

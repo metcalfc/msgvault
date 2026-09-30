@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"go.kenn.io/msgvault/internal/store"
+	"go.kenn.io/msgvault/internal/textutil"
 	"go.kenn.io/msgvault/internal/vcard"
 )
 
@@ -987,14 +988,17 @@ func parseRemoteResource(href, etag string, body []byte) (store.CardDAVRemoteRes
 				if err != nil {
 					return store.CardDAVRemoteResource{}, fmt.Errorf("decode CardDAV FN: %w", err)
 				}
-				if value = strings.TrimSpace(value); value != "" {
+				// The stored card keeps its FN; only the derived label
+				// loses emoji. An emoji-only FN falls through to N,
+				// NICKNAME, ORG, then the first email or phone.
+				if value = textutil.StripLabelEmoji(strings.TrimSpace(value)); value != "" {
 					resource.DisplayName = value
 					resource.DisplayNameIdentity = identity
 				}
 			}
 		case "N":
 			if fallback.structuredName == "" {
-				fallback.structuredName = structuredNameLabel(property.RawValue)
+				fallback.structuredName = textutil.StripLabelEmoji(structuredNameLabel(property.RawValue))
 			}
 		case "NICKNAME":
 			if fallback.nickname == "" {
@@ -1002,11 +1006,11 @@ func parseRemoteResource(href, etag string, body []byte) (store.CardDAVRemoteRes
 				if err != nil {
 					return store.CardDAVRemoteResource{}, fmt.Errorf("decode CardDAV NICKNAME: %w", err)
 				}
-				fallback.nickname = strings.TrimSpace(value)
+				fallback.nickname = textutil.StripLabelEmoji(strings.TrimSpace(value))
 			}
 		case "ORG":
 			if fallback.organization == "" {
-				fallback.organization = firstStructuredComponent(property.RawValue)
+				fallback.organization = textutil.StripLabelEmoji(firstStructuredComponent(property.RawValue))
 			}
 		case "EMAIL":
 			value, err := cardDAVPropertyValue(envelope.RenderMetadata.StoredVersion, property)

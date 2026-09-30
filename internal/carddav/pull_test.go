@@ -893,6 +893,38 @@ func TestSyncDowngradesUnsupportedSyncCollectionToSnapshot(t *testing.T) {
 	}
 }
 
+// A synced card's label loses its emoji while the stored card keeps them.
+func TestSyncStripsEmojiFromImportedDisplayName(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	card := "BEGIN:VCARD&#13;\nVERSION:4.0&#13;\nUID:ana&#13;\nFN:🎉 Ana Example 👩🏽‍💻&#13;\n" +
+		"EMAIL:ana@example.test&#13;\nEND:VCARD&#13;\n"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := readRequestBody(t, r)
+		if strings.Contains(body, "sync-collection") {
+			writeDAVXML(t, w, syncResponse(
+				changedResponse("/books/personal/ana.vcf", `&quot;one&quot;`), "token-1",
+			))
+			return
+		}
+		writeDAVXML(t, w, syncResponse(
+			cardResponseRaw("/books/personal/ana.vcf", `"one"`, card), "",
+		))
+	}))
+	t.Cleanup(server.Close)
+	service, st, book := newPullService(t, server, true)
+
+	result, err := service.Sync(t.Context(), SyncOptions{Full: true})
+	require.NoError(err)
+	require.Equal(1, result.Created)
+	var displayName string
+	require.NoError(st.DB().QueryRow(`SELECT display_name FROM persons`).Scan(&displayName))
+	assert.Equal("Ana Example", displayName)
+	resource, err := st.GetCardDAVResourceContext(t.Context(), book.ID, server.URL+"/books/personal/ana.vcf")
+	require.NoError(err)
+	assert.Contains(string(resource.RemoteBody), "🎉 Ana Example 👩🏽‍💻")
+}
+
 func TestParseRemoteResourceStripsContactSchemesCaseInsensitively(t *testing.T) {
 	body := []byte("BEGIN:VCARD\r\nVERSION:4.0\r\nUID:schemes\r\nFN:Schemes\r\n" +
 		"EMAIL:MAILTO:Alice@Example.test\r\nTEL:TeL:+1-202-555-0100\r\nEND:VCARD\r\n")
@@ -1352,6 +1384,23 @@ func TestParseRemoteResourceDerivesDisplayNameWhenFNIsEmpty(t *testing.T) {
 			body:    "N:;;;;\r\nFN:\r\n",
 			want:    "",
 			derived: false,
+		}, {
+			name:    "emoji removed from FN",
+			body:    "N:Example;Ana;;;\r\nFN:🎉 Ana Example ✨\r\n",
+			want:    "Ana Example",
+			derived: false,
+		},
+		{
+			name:    "emoji-only FN falls back to N",
+			body:    "N:Example;Ana 🌴;;;\r\nFN:🎉🎉\r\n",
+			want:    "Ana Example",
+			derived: true,
+		},
+		{
+			name:    "emoji-only FN and nickname fall back to ORG",
+			body:    "FN:🦄\r\nNICKNAME:✨\r\nORG:Example Labs 🚀\r\n",
+			want:    "Example Labs",
+			derived: true,
 		},
 	}
 	for _, tc := range cases {

@@ -21,6 +21,7 @@ import (
 	"go.kenn.io/msgvault/internal/attachmentpolicy"
 	"go.kenn.io/msgvault/internal/mime"
 	"go.kenn.io/msgvault/internal/peoplesweep"
+	"go.kenn.io/msgvault/internal/textutil"
 )
 
 // querier is satisfied by both *sql.DB and *sql.Tx, allowing
@@ -2228,6 +2229,7 @@ func ensureParticipantWith(
 	domain string,
 	onInsert func() error,
 ) (int64, error) {
+	displayName = textutil.StripLabelEmoji(displayName)
 	// ON CONFLICT must mirror the partial unique index on
 	// participants(email_address) WHERE email_address IS NOT NULL — both
 	// PG and SQLite require the WHERE clause on the conflict target to
@@ -2416,7 +2418,7 @@ func replaceMessageRecipientsTx(tx querier, messageID int64, rs RecipientSet) er
 		ids = append(ids, pid)
 		name := ""
 		if i < len(rs.DisplayNames) {
-			name = rs.DisplayNames[i]
+			name = textutil.StripLabelEmoji(rs.DisplayNames[i])
 		}
 		names = append(names, name)
 		emails = append(emails, email)
@@ -4065,6 +4067,7 @@ func (s *Store) EnsureParticipantByPhone(phone, displayName, identifierType stri
 	if !strings.HasPrefix(phone, "+") {
 		return 0, fmt.Errorf("phone number must be in E.164 format (starting with +), got %q", phone)
 	}
+	displayName = textutil.StripLabelEmoji(displayName)
 
 	// The conflict target mirrors the partial unique index on
 	// participants(phone_number) WHERE phone_number IS NOT NULL exactly,
@@ -4754,6 +4757,7 @@ func (s *Store) EnsureParticipantByIdentifier(identifierType, identifierValue, d
 	if identifierValue == "" {
 		return 0, errors.New("identifier value is required")
 	}
+	displayName = identifierParticipantLabel(displayName)
 
 	var participantID int64
 	err := s.withTx(func(tx *loggedTx) error {
@@ -4841,6 +4845,7 @@ func (s *Store) EnsureParticipantByIdentifier(identifierType, identifierValue, d
 // empty. Returns true if a participant was found and updated, false if not found
 // or name was already set. Does NOT create new participants.
 func (s *Store) UpdateParticipantDisplayNameByPhone(phone, displayName string) (bool, error) {
+	displayName = textutil.StripLabelEmoji(displayName)
 	if phone == "" || displayName == "" {
 		return false, nil
 	}
@@ -4887,6 +4892,7 @@ func (s *Store) UpdateParticipantDisplayNameByPhone(phone, displayName string) (
 // names from other sources (Gmail, WhatsApp, Google Voice) are preserved.
 // Returns true if a participant was updated.
 func (s *Store) UpdateImessageParticipantDisplayNameByPhone(phone, displayName string) (bool, error) {
+	displayName = textutil.StripLabelEmoji(displayName)
 	if phone == "" || displayName == "" {
 		return false, nil
 	}
@@ -5189,6 +5195,7 @@ func (p imessageTitleParticipant) hasRealDisplayName() bool {
 // found and updated, false if not found or name was already set. Does
 // NOT create new participants. The lookup is case-insensitive.
 func (s *Store) UpdateParticipantDisplayNameByEmail(email, displayName string) (bool, error) {
+	displayName = textutil.StripLabelEmoji(displayName)
 	if email == "" || displayName == "" {
 		return false, nil
 	}

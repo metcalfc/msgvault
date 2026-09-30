@@ -282,6 +282,45 @@ func TestNormalizeEmploymentValueCanonicalizesOrganization(t *testing.T) {
 	}`, string(normalized.JSON))
 }
 
+func TestNormalizeClaimValueStripsEmojiFromLabels(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	employment, failure, err := NormalizeClaimValue(testEmploymentTarget(), json.RawMessage(`{
+		"organization":{"name":"Example Labs 🚀"},"title":"✨ Staff Engineer","location":"Lisbon 🌴"
+	}`))
+	require.NoError(err)
+	require.Nil(failure)
+	assert.JSONEq(`{"organization":{"name":"Example Labs"},"title":"Staff Engineer","location":"Lisbon"}`,
+		string(employment.JSON))
+
+	emojiOnlyOrganization, failure, err := NormalizeClaimValue(testEmploymentTarget(),
+		json.RawMessage(`{"organization":{"name":"🚀"},"title":"🎉"}`))
+	require.NoError(err)
+	require.Nil(failure, "a required organization name made only of emoji keeps its text")
+	assert.JSONEq(`{"organization":{"name":"🚀"}}`, string(emojiOnlyOrganization.JSON))
+}
+
+func TestNormalizeClaimValueStripsEmojiFromLabelAttributesOnly(t *testing.T) {
+	tests := []struct {
+		slug, submitted, want string
+	}{
+		{slug: "location", submitted: `"Lisbon 🌴"`, want: `"Lisbon"`},
+		{slug: "name", submitted: `"🎉 Ana Example"`, want: `"Ana Example"`},
+		{slug: "notes", submitted: `"Loves hiking 🌴"`, want: `"Loves hiking 🌴"`},
+	}
+	for _, test := range tests {
+		t.Run(test.slug, func(t *testing.T) {
+			target := testAttributeTarget(ValueText)
+			target.Slug = test.slug
+			target.Revision = testDescriptorRevision(target)
+			normalized, failure, err := NormalizeClaimValue(target, json.RawMessage(test.submitted))
+			require.NoError(t, err)
+			require.Nil(t, failure)
+			assert.JSONEq(t, test.want, string(normalized.JSON))
+		})
+	}
+}
+
 func TestNormalizeEmploymentValueRejectsReversedPartialDatesAtSharedPrecision(t *testing.T) {
 	tests := []struct {
 		name      string

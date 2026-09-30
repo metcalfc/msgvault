@@ -8,6 +8,13 @@ All notable changes to msgvault, grouped by release.
 
 ## Unreleased
 
+- Names and short profile labels drop emoji as msgvault imports them, so
+  "🎉 Ana" and "Ana ✨" both read "Ana". This covers email and chat display
+  names, calendar attendees, CardDAV contact names, and enrichment or sweep
+  names, titles, companies, and locations. The first start after upgrading
+  cleans labels already stored, except ones you entered. Message text,
+  subjects, notes, and stored source cards and MIME keep their emoji. See
+  [How names are cleaned](/docs/usage/people/#how-names-are-cleaned).
 - **Same person…** and accepting an identity match merge the two people
   automatically when both already have profiles, keeping the one with more
   identities. The Web UI asks you to choose only when that merge fails.

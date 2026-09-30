@@ -107,7 +107,7 @@ func (r *participantResolver) resolveID(userID string) (int64, error) {
 	}
 	u, known := r.users[userID]
 	if known && strings.Contains(u.Profile.Email, "@") && !u.IsBot {
-		pid, err := r.byEmail(u.Profile.Email, u.DisplayName())
+		pid, err := r.byEmail(u.Profile.Email, u.Label())
 		if err != nil {
 			return 0, err
 		}
@@ -118,7 +118,7 @@ func (r *participantResolver) resolveID(userID string) (int64, error) {
 	}
 	name := ""
 	if known {
-		name = u.DisplayName()
+		name = u.Label()
 	}
 	pid, err := r.store.EnsureParticipantByIdentifier(participantIdentifierType, r.identifierValue(userID), name)
 	if err != nil {

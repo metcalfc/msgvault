@@ -3,6 +3,8 @@ package discord
 import (
 	"encoding/json/v2"
 	"strings"
+
+	"go.kenn.io/msgvault/internal/textutil"
 )
 
 const (
@@ -44,7 +46,7 @@ func authorObservation(message *Message) participantObservation {
 			IdentifierType:          discordWebhookIdentifier,
 			IdentifierValue:         message.WebhookID,
 			ParticipantLabel:        "Discord webhook " + message.WebhookID,
-			PresentationDisplayName: userDisplayName(message.Author),
+			PresentationDisplayName: userLabel(message.Author),
 			PresentationAvatar:      message.Author.Avatar,
 			AuthorKind:              authorKindWebhook,
 			Automated:               true,
@@ -55,7 +57,7 @@ func authorObservation(message *Message) participantObservation {
 		if message.Author.Bot {
 			kind = authorKindBot
 		}
-		displayName := userDisplayName(message.Author)
+		displayName := userLabel(message.Author)
 		observation := participantObservation{
 			IdentifierType:          discordUserIdentifier,
 			IdentifierValue:         message.Author.ID,
@@ -147,8 +149,8 @@ func messageRecipientObservations(message *Message) []recipientObservation {
 			Participant: participantObservation{
 				IdentifierType:          discordUserIdentifier,
 				IdentifierValue:         mention.ID,
-				ParticipantLabel:        userDisplayName(mention),
-				PresentationDisplayName: userDisplayName(mention),
+				ParticipantLabel:        userLabel(mention),
+				PresentationDisplayName: userLabel(mention),
 				PresentationAvatar:      mention.Avatar,
 				AuthorKind:              kind,
 				Automated:               mention.Bot || mention.System,
@@ -163,4 +165,16 @@ func userDisplayName(user User) string {
 		return name
 	}
 	return strings.TrimSpace(user.Username)
+}
+
+// userLabel is the participant label for a user: the first of the global
+// name and username that is not made only of emoji, with emoji removed.
+// Rendered message text keeps userDisplayName.
+func userLabel(user User) string {
+	for _, candidate := range []string{user.GlobalName, user.Username} {
+		if label := textutil.StripLabelEmoji(strings.TrimSpace(candidate)); label != "" {
+			return label
+		}
+	}
+	return userDisplayName(user)
 }

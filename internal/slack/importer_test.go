@@ -379,6 +379,38 @@ func TestImportEndToEnd(t *testing.T) {
 	assert.Equal(3, members)
 }
 
+// Participant names lose emoji, falling back past an emoji-only profile name;
+// rendered message text keeps the name Slack showed.
+func TestImportStripsEmojiFromParticipantNames(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := testWorkspace(t)
+	f.users[1]["profile"] = map[string]any{"email": "alice@example.com", "display_name": "🌴"}
+	f.users[2]["real_name"] = "Bob Example 🚀"
+	f.convs[0].Msgs[1].Text = "ping <@UALICE>"
+	imp, opts := testImporter(t, f)
+	st := imp.store
+
+	_, err := imp.Import(context.Background(), opts)
+	require.NoError(err)
+
+	var alice string
+	require.NoError(st.DB().QueryRow(st.Rebind(
+		`SELECT display_name FROM participants WHERE email_address = ?`), "alice@example.com").Scan(&alice))
+	assert.Equal("Alice Example", alice)
+	var bob string
+	require.NoError(st.DB().QueryRow(st.Rebind(`
+		SELECT p.display_name FROM messages m JOIN participants p ON p.id = m.sender_id
+		WHERE m.source_message_id = ?`), "C01:"+ts(100)).Scan(&bob))
+	assert.Equal("Bob Example", bob)
+	var body string
+	require.NoError(st.DB().QueryRow(st.Rebind(`
+		SELECT mb.body_text FROM message_bodies mb
+		JOIN messages m ON m.id = mb.message_id
+		WHERE m.source_message_id = ?`), "C01:"+ts(1)).Scan(&body))
+	assert.Equal("ping @🌴", body)
+}
+
 func TestImportUsesNextCursorWhenHasMoreIsFalse(t *testing.T) {
 	require := require.New(t)
 	f := testWorkspace(t)

@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-29"
+last_edited: "2026-09-30"
 title: People and Profiles
 description: Find people across your archive, keep their details together, and understand your contact history.
 ---
@@ -40,6 +40,32 @@ Observed contacts use **participant IDs**. Saved profiles use **person IDs**.
 Commands name the ID they require; the two are not interchangeable. Promotion
 creates a profile from an observed person. Subscribed CardDAV contacts can also
 create profiles when imported.
+
+### How names are cleaned
+
+msgvault removes emoji from the names and short labels it imports, so a
+contact whose profile reads "🎉 Ana" or "Ana ✨" appears as "Ana".
+
+- **What is cleaned:** display names from email headers, chat services, and
+  calendar attendees; CardDAV contact names; and the name, title, company,
+  and location that enrichment or a person sweep finds.
+- **What is removed:** emoji and pictographs, including skin tones, flags,
+  keycaps such as 1️⃣, and joined sequences such as 👩🏽‍💻. A separator left at
+  either end or doubled up goes too: "Ana 🌴 | Design" becomes
+  "Ana | Design", and "Design | 🌴" becomes "Design".
+- **What is kept:** letters in every script, digits, `#`, punctuation, and
+  text symbols such as ©, ®, and ™.
+- **Emoji-only names:** a name made only of emoji is dropped, and msgvault
+  uses the next label it has, such as a CardDAV contact's structured name or
+  the email address. A chat participant known only by a service ID keeps the
+  emoji rather than showing the ID.
+- **What is never changed:** names you type yourself, message text, subjects,
+  notes, and the original vCards and MIME msgvault stores.
+
+The first start after upgrading cleans labels imported by earlier releases,
+once. It skips any value you entered. A saved profile's display name is
+cleaned only when it matches a name msgvault imported for that person; a
+renamed profile keeps your name.
 
 ## Promote a durable person
 

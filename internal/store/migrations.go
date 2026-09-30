@@ -100,6 +100,9 @@ const (
 	// one-on-one. The rule lives in code, so existing caches see no revision
 	// change until this bumps the meeting weight revision once.
 	migrationMeetingWeightTwoPersonSocial = "meeting_weight_two_person_social_v1"
+	// Ingest removes emoji from derived name and profile labels; this cleans
+	// the labels stored before it did. See stripStoredLabelEmoji.
+	migrationStripLabelEmoji = "strip_label_emoji_v1"
 )
 
 func (s *Store) backfillSyncRunResumeMetadata(
