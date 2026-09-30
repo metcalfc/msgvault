@@ -42,7 +42,7 @@ func TestFinalizeSyncFailure(t *testing.T) {
 }
 
 func TestFinalizeSyncFailurePreservesBothErrors(t *testing.T) {
-	assert, require := assert.New(t), require.New(t)
+	require := require.New(t)
 	testutil.SkipIfPostgres(t, "uses a SQLite trigger to reject the terminal sync write")
 	st := testutil.NewTestStore(t)
 	source, err := st.GetOrCreateSource("granola", "failed-finalization@example.test")
@@ -55,6 +55,6 @@ func TestFinalizeSyncFailurePreservesBothErrors(t *testing.T) {
 	cause := errors.New("synthetic provider failure")
 	got := st.FinalizeSyncFailure(runID, cause, &store.Checkpoint{MessagesProcessed: 2})
 	require.ErrorIs(got, cause)
-	assert.ErrorContains(got, "record failed sync")
-	assert.ErrorContains(got, "synthetic terminal write failure")
+	require.ErrorContains(got, "record failed sync")
+	require.ErrorContains(got, "synthetic terminal write failure")
 }
