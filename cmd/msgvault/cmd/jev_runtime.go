@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/msgvault/internal/personenrichment"
 	"go.kenn.io/msgvault/internal/personfacts"
 	"go.kenn.io/msgvault/internal/providercredentials"
+	"go.kenn.io/msgvault/internal/queryunderstand"
 )
 
 // jevRuntimeStore is what a live Jev service needs from the archive: consent
@@ -169,6 +170,21 @@ func newJevKindJudge(cfg *config.Config, st jevRuntimeStore) (kindclassify.Judge
 func newJevCleanupJudge(cfg *config.Config, st jevRuntimeStore) (cleanupsuggest.Judge, error) {
 	if cfg == nil || !cfg.Jev.Enabled || !cfg.Jev.CleanupSuggestions.Enabled {
 		return nil, nil //nolint:nilnil // nil means "no judgment".
+	}
+	service, err := newJevService(cfg, st)
+	if err != nil || service == nil {
+		return nil, err
+	}
+	return service, nil
+}
+
+// newJevQueryUnderstandingJudge wires Explore query suggestions, or returns
+// nil when Jev or the feature is off in the startup configuration so the
+// endpoint reports the feature disabled and reads nothing. Consent and the
+// credential are rechecked by the service on every request.
+func newJevQueryUnderstandingJudge(cfg *config.Config, st jevRuntimeStore) (queryunderstand.Judge, error) {
+	if cfg == nil || !cfg.Jev.Enabled || !cfg.Jev.QueryUnderstanding.Enabled {
+		return nil, nil //nolint:nilnil // nil means "no suggestions".
 	}
 	service, err := newJevService(cfg, st)
 	if err != nil || service == nil {

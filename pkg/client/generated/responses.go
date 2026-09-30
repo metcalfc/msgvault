@@ -1203,6 +1203,10 @@ func (p *PreflightExploreSelectionErrorResponseJSON503) UnmarshalJSON(data []byt
 	return nil
 }
 
+type UnderstandExploreQueryResponse = ExploreQueryUnderstandingResponse
+
+type UnderstandExploreQueryErrorResponse = ErrorResponse
+
 type GroupFilesResponse = FileGroupsHTTPResponse
 
 type GroupFilesErrorResponse = ErrorResponse
@@ -4459,6 +4463,14 @@ type PreflightExploreSelectionResp struct {
 	JSON400      *PreflightExploreSelectionErrorResponse
 	JSON409      *PreflightExploreSelectionErrorResponseJSON
 	JSON503      *PreflightExploreSelectionErrorResponseJSON503
+}
+
+type UnderstandExploreQueryResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *UnderstandExploreQueryResponse
+	JSON400      *UnderstandExploreQueryErrorResponse
 }
 
 type GroupFilesResp struct {

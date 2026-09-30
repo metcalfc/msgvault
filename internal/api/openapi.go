@@ -395,7 +395,12 @@ import (
 // inferred_assignee (participant, person, label, owner flag, confidence,
 // provenance) on each action row. Settings gain jev.meeting_event_kind and
 // jev.meeting_action_assignee enabled and automatic.
-const APISchemaVersion = "2.42.0"
+// 2.43.0 adds POST /explore/query-understanding: suggested Explore filters
+// (time window, person, message type, account) for a typed query, judged by
+// Jev within 800 ms when [jev.query_understanding] is enabled and
+// consented, with offer_hybrid for an empty full-text search. Settings gain
+// jev.query_understanding.enabled. Additive (minor bump).
+const APISchemaVersion = "2.43.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

@@ -410,6 +410,9 @@ var readOnlyPostRoutePatterns = []string{
 	"/api/v1/explore/preflight",
 	"/api/v1/explore/match-counts",
 	"/api/v1/explore/files",
+	// Query understanding reads the people index and accounts and, when
+	// consented, asks Jev about the query; it changes no archive state.
+	"/api/v1/explore/query-understanding",
 	"/api/v1/files/search",
 	// Visual attachment search reads the committed vector index and calls
 	// the embedding provider; it mutates nothing, and gating it would hold

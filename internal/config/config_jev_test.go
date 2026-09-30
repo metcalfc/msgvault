@@ -64,6 +64,9 @@ automatic = true
 
 [jev.meeting_action_assignee]
 enabled = true
+
+[jev.query_understanding]
+enabled = true
 `), 0o644))
 	cfg, err = Load(configPath, "")
 	require.NoError(err)
@@ -84,6 +87,7 @@ enabled = true
 	assert.True(cfg.Jev.MeetingEventKind.Automatic)
 	assert.True(cfg.Jev.MeetingActionAssignee.Enabled)
 	assert.False(cfg.Jev.MeetingActionAssignee.Automatic)
+	assert.True(cfg.Jev.QueryUnderstanding.Enabled)
 
 	require.NoError(os.WriteFile(configPath, []byte(`
 [jev]

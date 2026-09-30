@@ -745,6 +745,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		BlobStore:                     blobStore,
 	}
 	applyServerRuntimeConfig(&apiOpts, cfg)
+	// Query suggestions are optional: a wiring failure leaves the Explore
+	// endpoint reporting the feature disabled instead of stopping the daemon.
+	if queryJudge, judgeErr := newJevQueryUnderstandingJudge(cfg, s); judgeErr != nil {
+		logger.Warn("jev query understanding unavailable", "error", judgeErr)
+	} else if queryJudge != nil {
+		apiOpts.QueryUnderstanding = queryJudge
+	}
 	if cfg.Vector.AnyLaneEnabled() {
 		apiOpts.VectorStatus = api.VectorStatusInitializing
 	}

@@ -96,6 +96,8 @@ type CountExploreMatchesBody = ExploreMatchCountsRequest
 
 type PreflightExploreSelectionBody = ExplorePreflightRequest
 
+type UnderstandExploreQueryBody = ExploreQueryUnderstandingRequest
+
 type GroupFilesBody = FileGroupsHTTPRequest
 
 type SearchFilesBody = FileSearchHTTPRequest

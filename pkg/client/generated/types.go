@@ -4390,6 +4390,80 @@ func (e ExplorePreflightResponse) Validate() error {
 	return errors
 }
 
+type ExploreQuerySuggestion struct {
+	Filters        []ExploreFilter            `json:"filters" validate:"required"`
+	Kind           ExploreQuerySuggestionKind `json:"kind" validate:"required"`
+	Label          string                     `json:"label" validate:"required"`
+	Probability    float64                    `json:"probability"`
+	QueryOperators []string                   `json:"query_operators" validate:"required"`
+	Span           *string                    `json:"span,omitzero"`
+}
+
+func (e ExploreQuerySuggestion) Validate() error {
+	var errors runtime.ValidationErrors
+	for i, item := range e.Filters {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("Filters[%d]", i), err)
+			}
+		}
+	}
+	if v, ok := any(e.Kind).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("Kind", err)
+		}
+	}
+	if err := typesValidator.Var(e.Label, "required"); err != nil {
+		errors = errors.Append("Label", err)
+	}
+	if err := typesValidator.Var(e.QueryOperators, "required"); err != nil {
+		errors = errors.Append("QueryOperators", err)
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
+type ExploreQueryUnderstandingRequest struct {
+	Query    string  `json:"query" validate:"required,max=2000,min=1"`
+	Timezone *string `json:"timezone,omitzero" validate:"omitempty,max=64"`
+}
+
+func (e ExploreQueryUnderstandingRequest) Validate() error {
+	return runtime.ConvertValidatorError(typesValidator.Struct(e))
+}
+
+type ExploreQueryUnderstandingResponse struct {
+	ElapsedMs       int64                                   `json:"elapsed_ms"`
+	Model           *string                                 `json:"model,omitzero"`
+	NaturalLanguage *float64                                `json:"natural_language,omitempty"`
+	OfferHybrid     bool                                    `json:"offer_hybrid"`
+	Reason          *string                                 `json:"reason,omitzero"`
+	Status          ExploreQueryUnderstandingResponseStatus `json:"status" validate:"required"`
+	Suggestions     []ExploreQuerySuggestion                `json:"suggestions" validate:"required"`
+}
+
+func (e ExploreQueryUnderstandingResponse) Validate() error {
+	var errors runtime.ValidationErrors
+	if v, ok := any(e.Status).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("Status", err)
+		}
+	}
+	for i, item := range e.Suggestions {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("Suggestions[%d]", i), err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
 type ExploreRowMatchCount struct {
 	Count  int64  `json:"count"`
 	RowKey string `json:"row_key" validate:"required"`

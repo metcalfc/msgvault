@@ -809,6 +809,43 @@ func (e ExploreHTTPRequestSearchMode) Validate() error {
 	}
 }
 
+type ExploreQuerySuggestionKind string
+
+const (
+	Account                          ExploreQuerySuggestionKind = "account"
+	ExploreQuerySuggestionKindPerson ExploreQuerySuggestionKind = "person"
+	MessageType                      ExploreQuerySuggestionKind = "message_type"
+	TimeWindow                       ExploreQuerySuggestionKind = "time_window"
+)
+
+// Validate checks if the ExploreQuerySuggestionKind value is valid
+func (e ExploreQuerySuggestionKind) Validate() error {
+	switch e {
+	case Account, ExploreQuerySuggestionKindPerson, MessageType, TimeWindow:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid ExploreQuerySuggestionKind value, got: %v", e))
+	}
+}
+
+type ExploreQueryUnderstandingResponseStatus string
+
+const (
+	Judged  ExploreQueryUnderstandingResponseStatus = "judged"
+	Late    ExploreQueryUnderstandingResponseStatus = "late"
+	Skipped ExploreQueryUnderstandingResponseStatus = "skipped"
+)
+
+// Validate checks if the ExploreQueryUnderstandingResponseStatus value is valid
+func (e ExploreQueryUnderstandingResponseStatus) Validate() error {
+	switch e {
+	case Judged, Late, Skipped:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid ExploreQueryUnderstandingResponseStatus value, got: %v", e))
+	}
+}
+
 type ExploreSelectionMode string
 
 const (
@@ -899,14 +936,14 @@ func (f FileSearchRowContentState) Validate() error {
 type HybridRerankSummaryStatus string
 
 const (
-	Applied HybridRerankSummaryStatus = "applied"
-	Skipped HybridRerankSummaryStatus = "skipped"
+	Applied                          HybridRerankSummaryStatus = "applied"
+	HybridRerankSummaryStatusSkipped HybridRerankSummaryStatus = "skipped"
 )
 
 // Validate checks if the HybridRerankSummaryStatus value is valid
 func (h HybridRerankSummaryStatus) Validate() error {
 	switch h {
-	case Applied, Skipped:
+	case Applied, HybridRerankSummaryStatusSkipped:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid HybridRerankSummaryStatus value, got: %v", h))

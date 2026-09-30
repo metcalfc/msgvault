@@ -377,6 +377,7 @@ var settingsCatalog = []settingDefinition{
 	intSetting("jev.rerank.top", settingsGroupJev, func(c *config.Config) int { return c.Jev.Rerank.Top }),
 	boolSetting("jev.rerank.mcp", settingsGroupJev, func(c *config.Config) bool { return c.Jev.Rerank.MCP }),
 	stringArraySetting("jev.rerank.message_types_excluded", settingsGroupJev, func(c *config.Config) []string { return c.Jev.Rerank.MessageTypesExcluded }),
+	boolSetting("jev.query_understanding.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.QueryUnderstanding.Enabled }),
 	boolSetting("jev.meeting_event_kind.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.MeetingEventKind.Enabled }),
 	boolSetting("jev.meeting_event_kind.automatic", settingsGroupJev, func(c *config.Config) bool { return c.Jev.MeetingEventKind.Automatic }),
 	boolSetting("jev.meeting_action_assignee.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.MeetingActionAssignee.Enabled }),

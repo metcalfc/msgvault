@@ -467,6 +467,10 @@ type ClientInterface interface {
 	PreflightExploreSelection(ctx context.Context, options *PreflightExploreSelectionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PreflightExploreSelectionResponse, error)
 	PreflightExploreSelectionWithResponse(ctx context.Context, options *PreflightExploreSelectionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PreflightExploreSelectionResp, error)
 
+	// UnderstandExploreQuery Suggest Explore filters for a typed query
+	UnderstandExploreQuery(ctx context.Context, options *UnderstandExploreQueryRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UnderstandExploreQueryResponse, error)
+	UnderstandExploreQueryWithResponse(ctx context.Context, options *UnderstandExploreQueryRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UnderstandExploreQueryResp, error)
+
 	// GroupFiles Group analytical files
 	GroupFiles(ctx context.Context, options *GroupFilesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GroupFilesResponse, error)
 	GroupFilesWithResponse(ctx context.Context, options *GroupFilesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GroupFilesResp, error)
@@ -7761,6 +7765,70 @@ func (c *Client) PreflightExploreSelection(ctx context.Context, options *Preflig
 	}
 
 	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/api/v1/explore/preflight")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+	return responseParser(ctx, resp)
+}
+
+// UnderstandExploreQuery Suggest Explore filters for a typed query
+func (c *Client) UnderstandExploreQuery(ctx context.Context, options *UnderstandExploreQueryRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UnderstandExploreQueryResponse, error) {
+	var err error
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/api/v1/explore/query-understanding",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	responseParser := func(ctx context.Context, resp *runtime.Response) (*UnderstandExploreQueryResponse, error) {
+		bodyBytes := resp.Content
+		if resp.StatusCode != 200 {
+			target := new(UnderstandExploreQueryErrorResponse)
+			// Handle empty error response body gracefully - skip unmarshal if no content
+			if len(bodyBytes) > 0 {
+				if err = json.Unmarshal(bodyBytes, target); err != nil {
+					return nil, &runtime.ResponseDecodeError{
+						StatusCode:    resp.StatusCode,
+						ContentType:   resp.Headers.Get("Content-Type"),
+						ContentLength: len(bodyBytes),
+						TargetType:    "UnderstandExploreQueryErrorResponse",
+						Body:          bodyBytes,
+						Err:           err,
+					}
+				}
+			}
+			// Return error with (possibly empty) target
+			if errTarget, ok := any(*target).(error); ok {
+				return nil, runtime.NewClientAPIError(errTarget, runtime.WithStatusCode(resp.StatusCode))
+			}
+			return nil, runtime.NewClientAPIError(fmt.Errorf("API error (status %d): %v", resp.StatusCode, *target),
+				runtime.WithStatusCode(resp.StatusCode))
+		}
+		target := new(UnderstandExploreQueryResponse)
+		// Handle empty response body gracefully
+		if len(bodyBytes) == 0 {
+			return target, nil
+		}
+		if err = json.Unmarshal(bodyBytes, target); err != nil {
+			return nil, &runtime.ResponseDecodeError{
+				StatusCode:    resp.StatusCode,
+				ContentType:   resp.Headers.Get("Content-Type"),
+				ContentLength: len(bodyBytes),
+				TargetType:    "UnderstandExploreQueryResponse",
+				Body:          bodyBytes,
+				Err:           err,
+			}
+		}
+		return target, nil
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/api/v1/explore/query-understanding")
 	if err != nil {
 		return nil, fmt.Errorf("error executing request: %w", err)
 	}

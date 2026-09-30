@@ -260,6 +260,7 @@ func (s *Server) registerExploreRoutes(api huma.API) {
 	registerExploreRoute[ExplorePreflightRequest, ExplorePreflightResponse](api, "preflightExploreSelection", "/explore/preflight", "Preflight a revision-pinned analytical selection", s.handleExplorePreflight)
 	registerExploreRoute[ExploreMatchCountsRequest, ExploreMatchCountsResponse](api, "countExploreMatches", "/explore/match-counts", "Count exact lexical matches in visible rows", s.handleExploreMatchCounts)
 	s.registerExploreFilesRoute(api)
+	s.registerExploreQueryUnderstandingRoute(api)
 }
 
 func registerExploreRoute[Req any, Resp any](api huma.API, operationID, path, summary string, handler http.HandlerFunc) {

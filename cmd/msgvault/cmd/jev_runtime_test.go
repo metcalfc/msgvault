@@ -16,7 +16,7 @@ func TestJevFeatureRegistryListsEveryFeature(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	specs := jevFeatureSpecs()
-	require.Len(specs, 7)
+	require.Len(specs, 8)
 	assert.Equal(jev.FeatureEnrichmentIdentity, specs[0].Name)
 	assert.Equal(jev.FeatureOrganizationResolution, specs[1].Name)
 	assert.Equal(jev.FeatureCorrespondentKind, specs[2].Name)
@@ -24,6 +24,7 @@ func TestJevFeatureRegistryListsEveryFeature(t *testing.T) {
 	assert.Equal(jev.FeatureSearchRerank, specs[4].Name)
 	assert.Equal(jev.FeatureMeetingEventKind, specs[5].Name)
 	assert.Equal(jev.FeatureMeetingActionAssignee, specs[6].Name)
+	assert.Equal(jev.FeatureQueryUnderstanding, specs[7].Name)
 	cfg := config.NewDefaultConfig()
 	for _, spec := range specs {
 		require.NoError(spec.Validate())
@@ -53,6 +54,27 @@ func TestNewJevKindJudgeIsNilUntilJevAndTheFeatureAreOn(t *testing.T) {
 	assert.Nil(judge, "the feature switch is separate from the [jev] switch")
 	cfg.Jev.CorrespondentKind.Enabled = true
 	judge, err = newJevKindJudge(cfg, st)
+	require.NoError(err)
+	assert.NotNil(judge)
+}
+
+func TestNewJevQueryUnderstandingJudgeIsNilUntilJevAndTheFeatureAreOn(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	cfg := config.NewDefaultConfig()
+	cfg.HomeDir = t.TempDir()
+	cfg.Data.DataDir = cfg.HomeDir
+
+	judge, err := newJevQueryUnderstandingJudge(cfg, st)
+	require.NoError(err)
+	assert.Nil(judge, "off by default")
+	cfg.Jev.QueryUnderstanding.Enabled = true
+	judge, err = newJevQueryUnderstandingJudge(cfg, st)
+	require.NoError(err)
+	assert.Nil(judge, "the feature switch alone is not enough")
+	cfg.Jev.Enabled = true
+	judge, err = newJevQueryUnderstandingJudge(cfg, st)
 	require.NoError(err)
 	assert.NotNil(judge)
 }

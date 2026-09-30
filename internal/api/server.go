@@ -31,6 +31,7 @@ import (
 	"go.kenn.io/msgvault/internal/providercredentials"
 	"go.kenn.io/msgvault/internal/provideridentity"
 	"go.kenn.io/msgvault/internal/query"
+	"go.kenn.io/msgvault/internal/queryunderstand"
 	"go.kenn.io/msgvault/internal/remoteimage"
 	"go.kenn.io/msgvault/internal/scheduler"
 	"go.kenn.io/msgvault/internal/search"
@@ -435,6 +436,9 @@ type Server struct {
 	personAgendaOperations   PersonAgendaOperations
 	taskIdentityResolver     TaskIdentityResolver
 	fastmailInventoryFactory provideridentity.Factory
+	// queryUnderstanding is the Jev door for Explore query suggestions;
+	// nil when [jev.query_understanding] is off.
+	queryUnderstanding queryunderstand.Judge
 	// personBriefGenerator runs one manual, forced person brief through the
 	// daemon's people sweep worker. Nil in every process that does not own the
 	// worker, which makes POST /people/{id}/brief/generate report unavailable.
@@ -576,6 +580,9 @@ type ServerOptions struct {
 	TaskLinkOperations     TaskLinkOperations
 	TaskIdentityResolver   TaskIdentityResolver
 	PersonAgendaOperations PersonAgendaOperations
+	// QueryUnderstanding judges typed Explore queries for suggested
+	// filters. Nil (the default) reports the feature disabled.
+	QueryUnderstanding queryunderstand.Judge
 	// FastmailInventoryFactory is the provider-read seam used by identity
 	// discovery. Nil constructs the production JMAP client.
 	FastmailInventoryFactory provideridentity.Factory
@@ -658,6 +665,7 @@ func NewServerWithOptions(opts ServerOptions) *Server {
 		personAgendaOperations:   opts.PersonAgendaOperations,
 		taskIdentityResolver:     opts.TaskIdentityResolver,
 		fastmailInventoryFactory: fastmailInventoryFactory,
+		queryUnderstanding:       opts.QueryUnderstanding,
 		started:                  make(chan struct{}),
 	}
 	s.analyticsState.Store(&analyticsEngineState{
