@@ -263,6 +263,52 @@ func TestJevBatchedSplitsDenseCandidatesUnderTheTokenBudget(t *testing.T) {
 	assert.Equal(MaxCandidates, sent, "no candidate is dropped")
 }
 
+func TestJevRetriesOnlyTheOversizeRequestAndKeepsItsSiblings(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	// Thirty dense candidates split into several requests, the last one a
+	// small trailing batch.
+	candidates := make([]string, MaxCandidates)
+	for i := range candidates {
+		candidates[i] = denseCandidate(i + 1)
+	}
+	var mu sync.Mutex
+	var seen []recordedRequest
+	var rejected atomic.Bool
+	scorer, err := NewJev(ShapeBatched, "secret", &Budget{MaxRequests: 100, StopUSD: 1},
+		providerTransport(t, &mu, &seen, func(request recordedRequest) bool {
+			// The provider counts more tokens than the estimate for the
+			// first request that holds the first candidate.
+			return candidateScore(request.State.Candidates[0]) == 0.01 && rejected.CompareAndSwap(false, true)
+		}))
+	require.NoError(err)
+	result, err := scorer.Rerank(context.Background(), Request{Query: "order total", Candidates: candidates})
+	require.NoError(err)
+	assert.Equal(expectedScores(candidates), result.Scores, "scores stay aligned with their candidates")
+	sends := map[string]int{}
+	firstRequest := 0
+	for _, request := range seen {
+		for _, candidate := range request.State.Candidates {
+			sends[candidate]++
+		}
+		if firstRequest == 0 && candidateScore(request.State.Candidates[0]) == 0.01 {
+			firstRequest = len(request.State.Candidates)
+		}
+	}
+	require.Positive(firstRequest)
+	require.Less(firstRequest, MaxCandidates, "the plan has siblings, including a trailing batch")
+	for i, candidate := range candidates {
+		want := 1
+		if i < firstRequest {
+			want = 2
+		}
+		assert.Equal(want, sends[candidate], "candidate %d: siblings are sent once, the oversize request is resent split", i)
+	}
+	assert.Equal(len(seen), result.Usage.Requests)
+	assert.False(result.Usage.Complete, "the rejected request reported no usage")
+	assert.Equal(int64(100*(len(seen)-1)), *result.Usage.InputTokens, "every answered request's usage is recorded")
+}
+
 func TestJevRetriesOnceAtHalfSizeWhenTheProviderSaysMaxTokens(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

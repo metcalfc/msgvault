@@ -3082,8 +3082,9 @@ request at 128 KiB, and each response at 64 KiB. Each request must also fit
 the [Jev token budget](/docs/usage/jev-judgments/#budgets-and-safety): the
 batched shape splits candidates that tokenize densely (order numbers, URLs,
 SKUs) across several requests, so it can use more than one request per
-ranking. If TypeSafe still answers `max_tokens_exceeded`, the unanswered
-requests are split once more and resent. The up-front
+ranking. If TypeSafe still answers `max_tokens_exceeded` for a request, the
+other requests of that ranking finish normally and only the rejected one is
+split once more and resent. The up-front
 `--rerank-max-requests` check counts one batched request per ranking; the
 limit itself is enforced as requests are sent. Per-candidate requests use at
 most eight concurrent calls. Each HTTP call has a 10-second deadline, including

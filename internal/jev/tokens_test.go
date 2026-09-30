@@ -46,12 +46,12 @@ func TestEncodeRefusesStateOverTheTokenBudgetBeforeSending(t *testing.T) {
 	_, err := client.Encode(request)
 	require.Error(err)
 	require.ErrorIs(err, ErrStateTooLarge)
-	assert.ErrorIs(err, ErrRequestBounds)
+	require.ErrorIs(err, ErrRequestBounds)
 	assert.True(Oversize(err))
 	assert.Equal("state_too_large", Skipped(err))
 	assert.Equal(ErrStateTooLarge.Error(), SafeFailure(err))
 	_, err = client.Ask(context.Background(), request)
-	assert.ErrorIs(err, ErrStateTooLarge)
+	require.ErrorIs(err, ErrStateTooLarge)
 	assert.Zero(calls.Load())
 }
 
@@ -220,4 +220,41 @@ func TestJudgeSpansRetriesAProviderOversizeOnceAtHalfSize(t *testing.T) {
 	})
 	require.ErrorIs(t, err, ErrBreakerOpen)
 	assert.Equal(1, calls)
+}
+
+func TestAskAllLetsSiblingsFinishAfterAnOversizeAnswer(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	release := make(chan struct{})
+	client := newTestClient(t, &Budget{MaxRequests: 10}, func(r *http.Request) (*http.Response, error) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			return nil, err
+		}
+		if strings.Contains(string(body), `"big"`) {
+			defer close(release)
+			return statusResponse(400, `{"detail":{"error_type":"max_tokens_exceeded"}}`), nil
+		}
+		// Siblings answer only after the oversize answer is in, so a
+		// cancellation would reach them.
+		<-release
+		id := "small_a"
+		if strings.Contains(string(body), "small_b") {
+			id = "small_b"
+		}
+		return jsonResponse(`{"model":"jev-1.13.0","answers":{"` + id + `":{"type":"noul","noul":0.3}},
+			"usage":{"input_tokens":10,"output_tokens":1}}`), nil
+	})
+	result, err := client.AskAll(context.Background(), []Request{noulRequest("small_a"), noulRequest("big"), noulRequest("small_b")})
+	require.ErrorIs(err, ErrStateTooLarge)
+	require.Len(result.Responses, 3)
+	assert.NotNil(result.Responses[0])
+	assert.Nil(result.Responses[1])
+	assert.NotNil(result.Responses[2])
+	assert.False(result.TooLarge(0))
+	assert.True(result.TooLarge(1))
+	assert.False(result.TooLarge(2))
+	assert.Equal(3, result.Usage.Requests)
+	assert.Equal(int64(20), *result.Usage.InputTokens, "both siblings' usage is recorded")
+	assert.False(result.Usage.Complete)
 }

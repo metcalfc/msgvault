@@ -213,12 +213,20 @@ type Response struct {
 	Usage   Usage
 }
 
-// BatchResult is the outcome of AskAll. Responses aligns with the requests;
-// a failed request leaves a nil entry. Usage is the aggregate of every
-// attempted request.
+// BatchResult is the outcome of AskAll. Responses and Errors align with the
+// requests: a failed request leaves a nil response and, when it failed
+// itself rather than being cancelled or never started, its error. Usage is
+// the aggregate of every attempted request.
 type BatchResult struct {
 	Responses []*Response
+	Errors    []error
 	Usage     Usage
+}
+
+// TooLarge reports whether request i failed because the provider or the
+// token budget found it too large (ErrStateTooLarge).
+func (b BatchResult) TooLarge(i int) bool {
+	return i < len(b.Errors) && errors.Is(b.Errors[i], ErrStateTooLarge)
 }
 
 // Options configure a client. Zero values take the pinned defaults. Ledger
@@ -537,6 +545,10 @@ func (c *Client) dispatch(ctx context.Context, request Request, body []byte) (Re
 // AskAll sends several independent requests concurrently and aggregates
 // usage. The first failure cancels the remaining requests; responses that
 // completed before it are kept so callers can account for their usage.
+// A max_tokens_exceeded answer (ErrStateTooLarge) is the exception: it is
+// about that request's size, so the siblings run to completion and only the
+// oversize requests come back without a response, marked in Errors, and
+// AskAll returns the first such error.
 func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, error) {
 	bodies := make([][]byte, len(requests))
 	for i, request := range requests {
@@ -549,7 +561,8 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 	if err := c.budget.preflight(len(requests)); err != nil {
 		return emptyBatch(), err
 	}
-	result := BatchResult{Responses: make([]*Response, len(requests))}
+	result := BatchResult{Responses: make([]*Response, len(requests)), Errors: make([]error, len(requests))}
+	var tooLarge error
 	var mu sync.Mutex
 	var totalInput, totalOutput int64
 	complete := true
@@ -563,6 +576,7 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 			result.Usage.Requests = 1
 		}
 		if err != nil {
+			result.Errors[0] = err
 			result.Usage.InputTokens, result.Usage.OutputTokens = &totalInput, &totalOutput
 			return result, fmt.Errorf("jev requests failed: %w", err)
 		}
@@ -584,7 +598,20 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 			}
 			if err != nil {
 				if sent {
+					// A failed or cancelled send may have been billed
+					// without reporting usage.
 					complete = false
+				}
+				if groupCtx.Err() == nil || !errors.Is(err, context.Canceled) {
+					result.Errors[i] = err
+				}
+				if errors.Is(err, ErrStateTooLarge) {
+					// Only this request was too large: let the siblings
+					// finish and report their usage.
+					if tooLarge == nil {
+						tooLarge = err
+					}
+					return nil
 				}
 				return err
 			}
@@ -599,6 +626,9 @@ func (c *Client) AskAll(ctx context.Context, requests []Request) (BatchResult, e
 	result.Usage.Complete = complete
 	if groupErr != nil {
 		return result, fmt.Errorf("jev requests failed: %w", groupErr)
+	}
+	if tooLarge != nil {
+		return result, fmt.Errorf("jev requests failed: %w", tooLarge)
 	}
 	return result, nil
 }

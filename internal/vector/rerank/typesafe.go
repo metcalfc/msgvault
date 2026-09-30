@@ -219,9 +219,11 @@ type askFunc func(ctx context.Context, requests []jev.Request) (jev.BatchResult,
 
 // scoreCandidates plans the rerank within jev.MaxStateTokens, sends it, and
 // reads one Noul per candidate. If the provider still answers
-// max_tokens_exceeded, every unanswered request is replanned once at half
-// its own estimated size (split, or cut for a single candidate) and resent;
-// a second failure is returned. Usage covers every attempt on every path.
+// max_tokens_exceeded, the other requests still complete (see
+// jev.Client.AskAll) and only the oversize ones are replanned once at half
+// their own estimated size (split, or cut for a single candidate) and
+// resent; a second failure is returned. Usage covers every attempt on every
+// path.
 func scoreCandidates(ctx context.Context, request Request, shape string, ask askFunc) (Result, error) {
 	pending, err := planJevCalls(request.Query, request.Candidates, shape, jev.MaxStateTokens)
 	if err != nil {
@@ -237,9 +239,11 @@ func scoreCandidates(ctx context.Context, request Request, shape string, ask ask
 		batch, askErr := ask(ctx, requests)
 		addUsage(&result.Usage, batch.Usage)
 		var unanswered []jevCall
+		var tooLarge []bool
 		for i, call := range pending {
 			if i >= len(batch.Responses) || batch.Responses[i] == nil {
 				unanswered = append(unanswered, call)
+				tooLarge = append(tooLarge, batch.TooLarge(i))
 				continue
 			}
 			if err := readScores(*batch.Responses[i], call, shape, result.Scores); err != nil {
@@ -255,18 +259,23 @@ func scoreCandidates(ctx context.Context, request Request, shape string, ask ask
 		if retried || !errors.Is(askErr, jev.ErrStateTooLarge) || ctx.Err() != nil {
 			return result, fmt.Errorf("rerank requests failed: %w", askErr)
 		}
-		pending, err = replanSmaller(request, shape, unanswered)
+		pending, err = replanSmaller(request, shape, unanswered, tooLarge)
 		if err != nil {
 			return result, fmt.Errorf("rerank requests failed: %w", askErr)
 		}
 	}
 }
 
-// replanSmaller replans each unanswered call at half its own estimated size,
+// replanSmaller replans each unanswered call that was too large at half its
+// own estimated size, and resends any other unanswered call unchanged,
 // keeping every piece's span in the original candidate order.
-func replanSmaller(request Request, shape string, unanswered []jevCall) ([]jevCall, error) {
+func replanSmaller(request Request, shape string, unanswered []jevCall, tooLarge []bool) ([]jevCall, error) {
 	var pending []jevCall
-	for _, call := range unanswered {
+	for i, call := range unanswered {
+		if !tooLarge[i] {
+			pending = append(pending, call)
+			continue
+		}
 		estimate, err := jev.EstimateStateTokens(call.request.State, call.request.Questions)
 		if err != nil {
 			return nil, err
