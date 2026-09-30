@@ -188,7 +188,7 @@ var personAttributesSetCmd = &cobra.Command{
 			dryRun := true
 			query.DryRun = &dryRun
 		}
-		resp, err := daemonclient.APIResponse(client,
+		resp, err := daemonclient.APIResponse(cmd.Context(), client,
 			func(api *apiclient.Client) (*generated.SetPersonAttributeResp, error) {
 				return api.SetPersonAttributeWithResponse(cmd.Context(),
 					&generated.SetPersonAttributeRequestOptions{
@@ -241,7 +241,7 @@ var personAttributesClearCmd = &cobra.Command{
 			dryRun := true
 			query.DryRun = &dryRun
 		}
-		resp, err := daemonclient.APIResponse(client,
+		resp, err := daemonclient.APIResponse(cmd.Context(), client,
 			func(api *apiclient.Client) (*generated.ClearPersonAttributeResp, error) {
 				return api.ClearPersonAttributeWithResponse(cmd.Context(),
 					&generated.ClearPersonAttributeRequestOptions{
@@ -268,7 +268,7 @@ func listCLIPersonAttributes(
 	if trimmed := strings.TrimSpace(slug); trimmed != "" {
 		query.Slug = &trimmed
 	}
-	return daemonclient.APIResponse(client,
+	return daemonclient.APIResponse(cmd.Context(), client,
 		func(api *apiclient.Client) (*generated.ListPersonAttributesResp, error) {
 			return api.ListPersonAttributesWithResponse(cmd.Context(),
 				&generated.ListPersonAttributesRequestOptions{

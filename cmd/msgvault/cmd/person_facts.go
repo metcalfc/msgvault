@@ -50,7 +50,7 @@ func newPersonFactsCommand() *cobra.Command {
 				includeSensitive := true
 				query.IncludeSensitive = &includeSensitive
 			}
-			response, err := daemonclient.APIResponse(client,
+			response, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.ListPersonFactTargetsResp, error) {
 					return api.ListPersonFactTargetsWithResponse(cmd.Context(),
 						&generated.ListPersonFactTargetsRequestOptions{Query: query})
@@ -91,7 +91,7 @@ func newPersonFactsCommand() *cobra.Command {
 				return err
 			}
 			defer func() { _ = client.Close() }()
-			response, err := daemonclient.APIResponse(client,
+			response, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.ListPersonFactEvidenceResp, error) {
 					return api.ListPersonFactEvidenceWithResponse(cmd.Context(),
 						&generated.ListPersonFactEvidenceRequestOptions{
@@ -149,7 +149,7 @@ func newPersonFactsCommand() *cobra.Command {
 				return err
 			}
 			defer func() { _ = client.Close() }()
-			response, err := daemonclient.APIResponse(client,
+			response, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.ListPersonFactEvidenceStatusEventsResp, error) {
 					return api.ListPersonFactEvidenceStatusEventsWithResponse(cmd.Context(),
 						&generated.ListPersonFactEvidenceStatusEventsRequestOptions{
@@ -194,7 +194,7 @@ func newPersonFactsCommand() *cobra.Command {
 				return err
 			}
 			defer func() { _ = client.Close() }()
-			response, err := daemonclient.APIResponse(client,
+			response, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.ListPersonFactClaimsResp, error) {
 					return api.ListPersonFactClaimsWithResponse(cmd.Context(),
 						&generated.ListPersonFactClaimsRequestOptions{
@@ -238,7 +238,7 @@ func newPersonFactsCommand() *cobra.Command {
 				return err
 			}
 			defer func() { _ = client.Close() }()
-			response, err := daemonclient.APIResponse(client,
+			response, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.ListPersonFactDecisionsResp, error) {
 					return api.ListPersonFactDecisionsWithResponse(cmd.Context(),
 						&generated.ListPersonFactDecisionsRequestOptions{
@@ -282,7 +282,7 @@ func newPersonFactsCommand() *cobra.Command {
 				return err
 			}
 			defer func() { _ = client.Close() }()
-			response, err := daemonclient.APIResponse(client,
+			response, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.ListPersonFactPinsResp, error) {
 					return api.ListPersonFactPinsWithResponse(cmd.Context(),
 						&generated.ListPersonFactPinsRequestOptions{
@@ -358,7 +358,7 @@ func newPersonFactPinCommand(options *personFactsCLIOptions, pinned bool) *cobra
 			}
 			defer func() { _ = client.Close() }()
 			body := generated.SetPersonFactPinBody{Pinned: pinned}
-			response, err := daemonclient.APIResponse(client,
+			response, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.SetPersonFactPinResp, error) {
 					return api.SetPersonFactPinWithResponse(cmd.Context(),
 						&generated.SetPersonFactPinRequestOptions{

@@ -135,7 +135,7 @@ func runStageDeleteFromQuery(cmd *cobra.Command, queryText string) error {
 		Filters:    filters,
 		SearchMode: &searchMode,
 	}
-	exploreResp, err := daemonclient.APIResponse(store, func(client *apiclient.Client) (*generated.ExploreResp, error) {
+	exploreResp, err := daemonclient.APIResponse(cmd.Context(), store, func(client *apiclient.Client) (*generated.ExploreResp, error) {
 		return client.ExploreWithResponse(cmd.Context(), &generated.ExploreRequestOptions{
 			Body: &generated.ExploreBody{
 				Filters:    predicate.Filters,
@@ -159,7 +159,7 @@ func runStageDeleteFromQuery(cmd *cobra.Command, queryText string) error {
 		Predicate:           predicate,
 		SearchProvenance:    exploreResp.JSON200.SearchProvenance,
 	}
-	preflightResp, err := daemonclient.APIResponse(store, func(client *apiclient.Client) (*generated.PreflightExploreSelectionResp, error) {
+	preflightResp, err := daemonclient.APIResponse(cmd.Context(), store, func(client *apiclient.Client) (*generated.PreflightExploreSelectionResp, error) {
 		return client.PreflightExploreSelectionWithResponse(cmd.Context(), &generated.PreflightExploreSelectionRequestOptions{
 			Body: &generated.PreflightExploreSelectionBody{Selection: selection},
 		})
@@ -182,7 +182,7 @@ func runStageDeleteFromQuery(cmd *cobra.Command, queryText string) error {
 
 	description := "staged from CLI search"
 	operationToken := preflightResp.JSON200.OperationToken
-	stageResp, err := daemonclient.APIResponseWithStatuses(store, []int{200, 201}, func(client *apiclient.Client) (*generated.StageDeletionResp, error) {
+	stageResp, err := daemonclient.APIResponseWithStatuses(cmd.Context(), store, []int{200, 201}, func(client *apiclient.Client) (*generated.StageDeletionResp, error) {
 		return client.StageDeletionWithResponse(cmd.Context(), &generated.StageDeletionRequestOptions{
 			Body: &generated.StageDeletionBody{
 				Description:    &description,
@@ -233,7 +233,7 @@ func runStageDeleteFromIDs(cmd *cobra.Command) error {
 	defer func() { _ = store.Close() }()
 
 	description := "staged from CLI message IDs"
-	stageResp, err := daemonclient.APIResponseWithStatuses(store, []int{200, 201}, func(client *apiclient.Client) (*generated.StageDeletionResp, error) {
+	stageResp, err := daemonclient.APIResponseWithStatuses(cmd.Context(), store, []int{200, 201}, func(client *apiclient.Client) (*generated.StageDeletionResp, error) {
 		return client.StageDeletionWithResponse(cmd.Context(), &generated.StageDeletionRequestOptions{
 			Body: &generated.StageDeletionBody{
 				Description: &description,

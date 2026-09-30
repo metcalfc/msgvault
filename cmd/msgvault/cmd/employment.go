@@ -39,7 +39,7 @@ var employmentAddCmd = &cobra.Command{Use: "add", Short: "Add an employment reco
 		return err
 	}
 	defer func() { _ = client.Close() }()
-	resp, err := daemonclient.APIResponseWithStatuses(client, []int{http.StatusCreated}, func(api *apiclient.Client) (*generated.CreateEmploymentResp, error) {
+	resp, err := daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusCreated}, func(api *apiclient.Client) (*generated.CreateEmploymentResp, error) {
 		return api.CreateEmploymentWithResponse(cmd.Context(), &generated.CreateEmploymentRequestOptions{Body: &body})
 	})
 	if err != nil {
@@ -89,7 +89,7 @@ var employmentSetCmd = &cobra.Command{Use: "set <id>", Short: "Update an employm
 	if err != nil {
 		return err
 	}
-	resp, err := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.PatchEmploymentResp, error) {
+	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.PatchEmploymentResp, error) {
 		return api.PatchEmploymentWithResponse(cmd.Context(), &generated.PatchEmploymentRequestOptions{PathParams: &generated.PatchEmploymentPath{ID: id}, Header: &generated.PatchEmploymentHeaders{IfMatch: employmentETag(id, current.JSON200.Revision)}, Body: &body})
 	})
 	if err != nil {
@@ -119,7 +119,7 @@ var employmentEndCmd = &cobra.Command{Use: "end <id>", Short: "End an employment
 		return errors.New("employment response was empty")
 	}
 	body := generated.EndEmploymentBody{EndDate: employmentEndDate}
-	resp, err := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.EndEmploymentResp, error) {
+	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.EndEmploymentResp, error) {
 		return api.EndEmploymentWithResponse(cmd.Context(), &generated.EndEmploymentRequestOptions{PathParams: &generated.EndEmploymentPath{ID: id}, Header: &generated.EndEmploymentHeaders{IfMatch: employmentETag(id, current.JSON200.Revision)}, Body: &body})
 	})
 	if err != nil {
@@ -145,7 +145,7 @@ var employmentSetPrimaryCmd = &cobra.Command{Use: "set-primary <id>", Short: "Se
 	if current.JSON200 == nil {
 		return errors.New("employment response was empty")
 	}
-	resp, err := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.SetPrimaryEmploymentResp, error) {
+	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.SetPrimaryEmploymentResp, error) {
 		return api.SetPrimaryEmploymentWithResponse(cmd.Context(), &generated.SetPrimaryEmploymentRequestOptions{PathParams: &generated.SetPrimaryEmploymentPath{ID: id}, Header: &generated.SetPrimaryEmploymentHeaders{IfMatch: employmentETag(id, current.JSON200.Revision)}})
 	})
 	if err != nil {
@@ -171,7 +171,7 @@ var employmentDeleteCmd = &cobra.Command{Use: "delete <id>", Short: "Permanently
 	if current.JSON200 == nil {
 		return errors.New("employment response was empty")
 	}
-	_, err = daemonclient.APIResponseWithStatuses(client, []int{http.StatusNoContent}, func(api *apiclient.Client) (*generated.DeleteEmploymentResp, error) {
+	_, err = daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusNoContent}, func(api *apiclient.Client) (*generated.DeleteEmploymentResp, error) {
 		return api.DeleteEmploymentWithResponse(cmd.Context(), &generated.DeleteEmploymentRequestOptions{PathParams: &generated.DeleteEmploymentPath{ID: id}, Header: &generated.DeleteEmploymentHeaders{IfMatch: employmentETag(id, current.JSON200.Revision)}})
 	})
 	if err != nil {
@@ -216,7 +216,7 @@ var employmentListCmd = &cobra.Command{Use: cmdUseList, Short: "List employment 
 		offset = &employmentOffset
 	}
 	if personSet {
-		resp, getErr := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.ListPersonEmploymentsResp, error) {
+		resp, getErr := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ListPersonEmploymentsResp, error) {
 			return api.ListPersonEmploymentsWithResponse(cmd.Context(), &generated.ListPersonEmploymentsRequestOptions{PathParams: &generated.ListPersonEmploymentsPath{ID: id}, Query: &generated.ListPersonEmploymentsQuery{CurrentOnly: &currentOnly, Limit: limit, Offset: offset}})
 		})
 		if getErr != nil {
@@ -227,7 +227,7 @@ var employmentListCmd = &cobra.Command{Use: cmdUseList, Short: "List employment 
 		}
 		return writeCLIEmploymentList(cmd, client, resp.JSON200, true, employmentJSON)
 	}
-	resp, getErr := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.ListOrganizationEmploymentsResp, error) {
+	resp, getErr := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ListOrganizationEmploymentsResp, error) {
 		return api.ListOrganizationEmploymentsWithResponse(cmd.Context(), &generated.ListOrganizationEmploymentsRequestOptions{PathParams: &generated.ListOrganizationEmploymentsPath{ID: id}, Query: &generated.ListOrganizationEmploymentsQuery{CurrentOnly: &currentOnly, Limit: limit, Offset: offset}})
 	})
 	if getErr != nil {
@@ -240,7 +240,7 @@ var employmentListCmd = &cobra.Command{Use: cmdUseList, Short: "List employment 
 }}
 
 func getCLIEmployment(cmd *cobra.Command, client *daemonclient.Client, id int64) (*generated.GetEmploymentResp, error) {
-	return daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.GetEmploymentResp, error) {
+	return daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.GetEmploymentResp, error) {
 		return api.GetEmploymentWithResponse(cmd.Context(), &generated.GetEmploymentRequestOptions{PathParams: &generated.GetEmploymentPath{ID: id}})
 	})
 }

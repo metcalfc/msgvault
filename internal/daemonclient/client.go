@@ -389,7 +389,7 @@ type DaemonHealth struct {
 // engine mode the daemon selected at startup (empty on daemons that
 // predate the field).
 func (c *Client) GetHealth(ctx context.Context) (*DaemonHealth, error) {
-	resp, err := APIResponse(c, func(client *apiclient.Client) (*generated.HealthResp, error) {
+	resp, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.HealthResp, error) {
 		return client.HealthWithResponse(ctx)
 	})
 	if err != nil {

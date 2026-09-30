@@ -17,7 +17,7 @@ func (c *Client) GetMeetingContext(
 	ctx context.Context,
 	body generated.GetMeetingContextBody,
 ) (*meetingcontent.PacketResult, error) {
-	response, err := APIResponse(c,
+	response, err := APIResponse(ctx, c,
 		func(client *apiclient.Client) (*generated.GetMeetingContextResp, error) {
 			return client.GetMeetingContextWithResponse(ctx,
 				&generated.GetMeetingContextRequestOptions{Body: &body})
@@ -37,7 +37,7 @@ func (c *Client) ListMeetingActionItems(
 	ctx context.Context,
 	body generated.ListMeetingActionItemsBody,
 ) (*meetingcontent.ActionsPage, error) {
-	response, err := APIResponse(c,
+	response, err := APIResponse(ctx, c,
 		func(client *apiclient.Client) (*generated.ListMeetingActionItemsResp, error) {
 			return client.ListMeetingActionItemsWithResponse(ctx,
 				&generated.ListMeetingActionItemsRequestOptions{Body: &body})
@@ -58,7 +58,7 @@ func (c *Client) GetMeetingMetrics(
 	ctx context.Context,
 	body generated.GetMeetingMetricsBody,
 ) (*meetingcontent.Metrics, error) {
-	response, err := APIResponse(c,
+	response, err := APIResponse(ctx, c,
 		func(client *apiclient.Client) (*generated.GetMeetingMetricsResp, error) {
 			return client.GetMeetingMetricsWithResponse(ctx,
 				&generated.GetMeetingMetricsRequestOptions{Body: &body})

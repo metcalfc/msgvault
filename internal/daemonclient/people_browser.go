@@ -36,7 +36,7 @@ func NewPeopleBrowser(engine *Engine) *PeopleBrowser {
 
 // ListProfiles returns the daemon's deliberately small durable profile set.
 func (b *PeopleBrowser) ListProfiles(ctx context.Context) ([]store.Person, error) {
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.ListPeopleResp, error) {
 			return client.ListPeopleWithResponse(ctx)
 		})
@@ -62,7 +62,7 @@ func (b *PeopleBrowser) Search(
 			Direction: generated.IdentitySearchSortDirectionDesc,
 		},
 	}
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.SearchParticipantsResp, error) {
 			return client.SearchParticipantsWithResponse(ctx,
 				&generated.SearchParticipantsRequestOptions{Body: &body})
@@ -89,7 +89,7 @@ func (b *PeopleBrowser) Complete(
 		Query: request.Query,
 		Limit: optionalPositiveInt64(request.Limit),
 	}
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.CompleteParticipantsResp, error) {
 			return client.CompleteParticipantsWithResponse(ctx,
 				&generated.CompleteParticipantsRequestOptions{Body: &body})
@@ -125,7 +125,7 @@ func (b *PeopleBrowser) RelationshipCalendar(
 	body := generated.GetRelationshipCalendarBody{
 		Year: int64(request.Year), Timezone: optionalString(request.Timezone),
 	}
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.GetRelationshipCalendarResp, error) {
 			return client.GetRelationshipCalendarWithResponse(ctx,
 				&generated.GetRelationshipCalendarRequestOptions{
@@ -160,7 +160,7 @@ func validatePeopleRelationshipYear(year int, timezone string, now time.Time) er
 func (b *PeopleBrowser) GetContact(
 	ctx context.Context, participantID int64,
 ) (*query.PersonSummary, error) {
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.GetParticipantResp, error) {
 			return client.GetParticipantWithResponse(ctx,
 				&generated.GetParticipantRequestOptions{
@@ -182,7 +182,7 @@ func (b *PeopleBrowser) GetContact(
 func (b *PeopleBrowser) Promote(
 	ctx context.Context, participantID int64,
 ) (*store.Person, error) {
-	resp, err := APIResponseWithStatuses(b.engine.store,
+	resp, err := APIResponseWithStatuses(ctx, b.engine.store,
 		[]int{http.StatusOK, http.StatusCreated},
 		func(client *apiclient.Client) (*generated.CreatePersonResp, error) {
 			return client.CreatePersonWithResponse(ctx,
@@ -249,7 +249,7 @@ func (b *PeopleBrowser) ListAttributesByUniversalID(
 func (b *PeopleBrowser) listAttributes(
 	ctx context.Context, personID int64, slug, universalID string,
 ) (*peoplebrowser.Attributes, error) {
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.ListPersonAttributesResp, error) {
 			return client.ListPersonAttributesWithResponse(ctx,
 				&generated.ListPersonAttributesRequestOptions{
@@ -294,7 +294,7 @@ func (b *PeopleBrowser) CreateField(
 		FieldType:   string(input.FieldType),
 		Cardinality: &cardinality,
 	}
-	resp, err := APIResponseWithStatuses(b.engine.store,
+	resp, err := APIResponseWithStatuses(ctx, b.engine.store,
 		[]int{http.StatusCreated},
 		func(client *apiclient.Client) (*generated.CreateAttributeDefinitionResp, error) {
 			return client.CreateAttributeDefinitionWithResponse(ctx,
@@ -321,7 +321,7 @@ func (b *PeopleBrowser) SetAttribute(
 		Source:          &source,
 		Actor:           optionalString(request.Actor),
 	}
-	resp, err := apiResponseWithErrorDecoder(b.engine.store,
+	resp, err := apiResponseWithErrorDecoder(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.SetPersonAttributeResp, error) {
 			return client.SetPersonAttributeWithResponse(ctx,
 				&generated.SetPersonAttributeRequestOptions{
@@ -348,7 +348,7 @@ func (b *PeopleBrowser) AppendNote(
 	body := generated.AppendPersonNoteBody{
 		Text: request.Text, Source: &source, Actor: optionalString(request.Actor),
 	}
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.AppendPersonNoteResp, error) {
 			return client.AppendPersonNoteWithResponse(ctx,
 				&generated.AppendPersonNoteRequestOptions{
@@ -389,7 +389,7 @@ func decodePersonAttributeError(status int, body []byte) error {
 func (b *PeopleBrowser) ListInboxes(
 	ctx context.Context, participantID int64,
 ) (*query.PersonInboxResponse, error) {
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.ListParticipantInboxesResp, error) {
 			return client.ListParticipantInboxesWithResponse(ctx,
 				&generated.ListParticipantInboxesRequestOptions{
@@ -420,7 +420,7 @@ func (b *PeopleBrowser) ListInboxes(
 func (b *PeopleBrowser) ListConversations(
 	ctx context.Context, filter query.TextFilter,
 ) (*peoplebrowser.ConversationPage, error) {
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.ListTextConversationsResp, error) {
 			return client.ListTextConversationsWithResponse(ctx,
 				&generated.ListTextConversationsRequestOptions{Query: textConversationsQuery(filter)})
@@ -442,7 +442,7 @@ func (b *PeopleBrowser) ListConversations(
 func (b *PeopleBrowser) ListConversationMessages(
 	ctx context.Context, conversationID int64, filter query.TextFilter,
 ) (*peoplebrowser.ConversationMessagePage, error) {
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.ListTextConversationMessagesResp, error) {
 			return client.ListTextConversationMessagesWithResponse(ctx,
 				&generated.ListTextConversationMessagesRequestOptions{
@@ -502,7 +502,7 @@ func (b *PeopleBrowser) ListFiles(
 		},
 		Sort: generated.FileSearchSort{Field: "occurred_at", Direction: "desc"},
 	}
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.SearchParticipantFilesResp, error) {
 			return client.SearchParticipantFilesWithResponse(ctx,
 				&generated.SearchParticipantFilesRequestOptions{
@@ -565,7 +565,7 @@ func (b *PeopleBrowser) participantTimeline(
 			Field: generated.ExploreSortFieldOccurredAt, Direction: generated.ExploreSortDirectionDesc,
 		}},
 	}
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.GetParticipantTimelineResp, error) {
 			return client.GetParticipantTimelineWithResponse(ctx,
 				&generated.GetParticipantTimelineRequestOptions{

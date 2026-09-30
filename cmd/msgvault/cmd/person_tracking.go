@@ -33,7 +33,7 @@ func newPersonTrackingCommand(action string, tracked bool) *cobra.Command {
 			defer func() { _ = client.Close() }()
 
 			body := generated.SetPersonTrackingBody{Tracked: tracked}
-			response, err := daemonclient.APIResponse(client,
+			response, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.SetPersonTrackingResp, error) {
 					return api.SetPersonTrackingWithResponse(cmd.Context(),
 						&generated.SetPersonTrackingRequestOptions{

@@ -18,7 +18,7 @@ import (
 // daemon reports its gate held by unrelated work; a second freeze already
 // active surfaces as a plain (non-retried) error instead.
 func (c *Client) BackupFreezeBegin(ctx context.Context) (string, error) {
-	resp, err := APIResponse(c, func(client *apiclient.Client) (*generated.BeginBackupFreezeResp, error) {
+	resp, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.BeginBackupFreezeResp, error) {
 		return client.BeginBackupFreezeWithResponse(ctx)
 	})
 	if err != nil {
@@ -35,7 +35,7 @@ func (c *Client) BackupFreezeBegin(ctx context.Context) (string, error) {
 // was not open with that token (e.g. its watchdog already fired); the caller
 // must treat its backup as unfrozen and fail rather than proceed silently.
 func (c *Client) BackupFreezeEnd(ctx context.Context, token string) error {
-	_, err := APIResponse(c, func(client *apiclient.Client) (*generated.EndBackupFreezeResp, error) {
+	_, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.EndBackupFreezeResp, error) {
 		return client.EndBackupFreezeWithResponse(ctx, &generated.EndBackupFreezeRequestOptions{
 			Body: &generated.EndBackupFreezeBody{Token: token},
 		})

@@ -80,7 +80,10 @@ func directSQLiteWriterOwnsArchive(cfg *config.Config) (bool, error) {
 	}
 	lock, err := tryAcquireWriteOwnerLock(cfg.Data.DataDir)
 	if err != nil {
-		return errors.As(err, &writeOwnerLockHeldError{}), nil
+		if errors.As(err, &writeOwnerLockHeldError{}) {
+			return true, nil
+		}
+		return false, err
 	}
 	_ = lock.Close()
 	return false, nil

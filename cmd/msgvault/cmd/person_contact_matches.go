@@ -63,7 +63,7 @@ func newPersonContactMatchesListCommand() *cobra.Command {
 			if offset > 0 {
 				query.Offset = &offset
 			}
-			resp, err := daemonclient.APIResponse(client,
+			resp, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.ListIdentityMatchCandidatesResp, error) {
 					return api.ListIdentityMatchCandidatesWithResponse(cmd.Context(),
 						&generated.ListIdentityMatchCandidatesRequestOptions{Query: &query})
@@ -184,7 +184,7 @@ func newPersonContactMatchesDecideCommand(decision string) *cobra.Command {
 				body.Notes = &trimmed
 			}
 			if decision == "reject" {
-				resp, err := daemonclient.APIResponse(client,
+				resp, err := daemonclient.APIResponse(cmd.Context(), client,
 					func(api *apiclient.Client) (*generated.RejectIdentityMatchCandidateResp, error) {
 						return api.RejectIdentityMatchCandidateWithResponse(cmd.Context(),
 							&generated.RejectIdentityMatchCandidateRequestOptions{
@@ -292,7 +292,7 @@ func newPersonContactMatchesBuildCommand() *cobra.Command {
 				return err
 			}
 			defer func() { _ = client.Close() }()
-			resp, err := daemonclient.APIResponse(client,
+			resp, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.BuildContactMatchCandidatesResp, error) {
 					return api.BuildContactMatchCandidatesWithResponse(cmd.Context())
 				})

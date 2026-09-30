@@ -89,7 +89,7 @@ func newPersonKindSetCommand() *cobra.Command {
 				return err
 			}
 			defer func() { _ = client.Close() }()
-			resp, err := daemonclient.APIResponse(client,
+			resp, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.SetCorrespondentKindResp, error) {
 					return api.SetCorrespondentKindWithResponse(cmd.Context(),
 						&generated.SetCorrespondentKindRequestOptions{
@@ -168,7 +168,7 @@ func newPersonKindListCommand() *cobra.Command {
 				return err
 			}
 			defer func() { _ = client.Close() }()
-			resp, err := daemonclient.APIResponse(client,
+			resp, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.ListCorrespondentKindsResp, error) {
 					return api.ListCorrespondentKindsWithResponse(cmd.Context(),
 						&generated.ListCorrespondentKindsRequestOptions{Query: &query})

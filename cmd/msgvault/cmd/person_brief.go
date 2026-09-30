@@ -63,7 +63,7 @@ func newPersonBriefShowCommand() *cobra.Command {
 				return err
 			}
 			defer cleanup()
-			response, err := daemonclient.APIResponse(client,
+			response, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.GetPersonBriefResp, error) {
 					return api.GetPersonBriefWithResponse(cmd.Context(),
 						&generated.GetPersonBriefRequestOptions{
@@ -108,7 +108,7 @@ func newPersonBriefHistoryCommand() *cobra.Command {
 				bounded := int64(limit)
 				query.Limit = &bounded
 			}
-			response, err := daemonclient.APIResponse(client,
+			response, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.ListPersonBriefVersionsResp, error) {
 					return api.ListPersonBriefVersionsWithResponse(cmd.Context(),
 						&generated.ListPersonBriefVersionsRequestOptions{
@@ -146,7 +146,7 @@ func newPersonBriefGenerateCommand() *cobra.Command {
 				return err
 			}
 			defer cleanup()
-			response, err := daemonclient.APIResponse(client,
+			response, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.GeneratePersonBriefResp, error) {
 					return api.GeneratePersonBriefWithResponse(cmd.Context(),
 						&generated.GeneratePersonBriefRequestOptions{
@@ -187,7 +187,7 @@ func newPersonBriefRejectCommand() *cobra.Command {
 			// The route accepts an absent reason; the CLI always sends the
 			// field so the request body says exactly what the owner typed.
 			body := generated.RejectPersonBriefBody{Reason: &reason}
-			response, err := daemonclient.APIResponse(client,
+			response, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.RejectPersonBriefResp, error) {
 					return api.RejectPersonBriefWithResponse(cmd.Context(),
 						&generated.RejectPersonBriefRequestOptions{
@@ -236,7 +236,7 @@ func newPersonBriefEnrollmentCommand(action string, enrolled bool) *cobra.Comman
 			}
 			defer cleanup()
 			body := generated.SetPersonBriefEnrollmentBody{Enrolled: enrolled, Track: &track}
-			response, err := daemonclient.APIResponse(client,
+			response, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.SetPersonBriefEnrollmentResp, error) {
 					return api.SetPersonBriefEnrollmentWithResponse(cmd.Context(),
 						&generated.SetPersonBriefEnrollmentRequestOptions{

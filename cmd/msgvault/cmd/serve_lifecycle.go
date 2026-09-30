@@ -123,10 +123,6 @@ func newDaemonCommand() *cobra.Command {
 
 var daemonCmd = newDaemonCommand()
 
-func runServeStatus(cmd *cobra.Command, dataDir string) error {
-	return runServeStatusWithAPIKey(cmd, dataDir, "")
-}
-
 func runServeStatusWithAPIKey(cmd *cobra.Command, dataDir string, apiKey string) error {
 	out := cmd.OutOrStdout()
 	if rt := findDaemonRuntime(dataDir); rt != nil {
@@ -180,13 +176,6 @@ func serveStatusLines(rt *DaemonRuntime) []string {
 			time.Since(rt.Record.StartedAt).Round(time.Second)))
 	}
 	return lines
-}
-
-// fetchDaemonHealth fetches /health from a running daemon. Best-effort: any
-// transport/decode failure returns nil and callers simply omit the health
-// details.
-func fetchDaemonHealth(ctx context.Context, baseURL string) *api.HealthResponse {
-	return fetchDaemonHealthWithAPIKey(ctx, baseURL, "")
 }
 
 // fetchDaemonHealthWithAPIKey prefers the authenticated health endpoint so
@@ -420,10 +409,6 @@ func runServeRestart(cmd *cobra.Command, c *config.Config) error {
 	return runServeStart(cmd, c)
 }
 
-func stopLiveDaemons(cmd *cobra.Command, dataDir string, quietNoDaemon bool) error {
-	return stopLiveDaemonsWithAPIKey(cmd, dataDir, "", quietNoDaemon)
-}
-
 func stopLiveDaemonsWithAPIKey(cmd *cobra.Command, dataDir string, apiKey string, quietNoDaemon bool) error {
 	logger := loggerFromContext(cmd.Context())
 	records, err := listLiveDaemonRuntimeRecords(dataDir)
@@ -521,10 +506,6 @@ func stopDaemonRuntimeRecord(
 	default:
 		return fmt.Errorf("%w: unknown identity state for pid %d", errDaemonIdentityUnconfirmed, rec.PID)
 	}
-}
-
-func stopTargetConfirmed(rec daemon.RuntimeRecord) bool {
-	return processIdentityConfirmed(rec)
 }
 
 func processIdentityConfirmed(rec daemon.RuntimeRecord) bool {

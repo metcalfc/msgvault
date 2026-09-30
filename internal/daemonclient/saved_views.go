@@ -15,7 +15,7 @@ import (
 )
 
 func (c *Client) ListSavedViews(ctx context.Context) ([]store.SavedView, error) {
-	resp, err := APIResponse(c, func(client *apiclient.Client) (*generated.ListSavedViewsResp, error) {
+	resp, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.ListSavedViewsResp, error) {
 		return client.ListSavedViewsWithResponse(ctx)
 	})
 	if err != nil {
@@ -34,7 +34,7 @@ func (c *Client) ListSavedViews(ctx context.Context) ([]store.SavedView, error) 
 }
 
 func (c *Client) GetSavedView(ctx context.Context, id int64) (*store.SavedView, error) {
-	resp, err := APIResponse(c, func(client *apiclient.Client) (*generated.GetSavedViewResp, error) {
+	resp, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.GetSavedViewResp, error) {
 		return client.GetSavedViewWithResponse(ctx, &generated.GetSavedViewRequestOptions{
 			PathParams: &generated.GetSavedViewPath{ID: id},
 		})
@@ -53,7 +53,7 @@ func (c *Client) CreateSavedView(
 	if err != nil {
 		return nil, err
 	}
-	resp, err := APIResponseWithStatuses(c, []int{http.StatusCreated}, func(client *apiclient.Client) (*generated.CreateSavedViewResp, error) {
+	resp, err := APIResponseWithStatuses(ctx, c, []int{http.StatusCreated}, func(client *apiclient.Client) (*generated.CreateSavedViewResp, error) {
 		return client.CreateSavedViewWithResponse(ctx, &generated.CreateSavedViewRequestOptions{
 			Body: &generated.CreateSavedViewRequest{
 				Name: input.Name, Description: input.Description, CanonicalState: state,
@@ -86,7 +86,7 @@ func (c *Client) UpdateSavedView(
 		value := int64(*patch.SchemaVersion)
 		body.SchemaVersion = &value
 	}
-	resp, err := APIResponse(c, func(client *apiclient.Client) (*generated.PatchSavedViewResp, error) {
+	resp, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.PatchSavedViewResp, error) {
 		return client.PatchSavedViewWithResponse(ctx, &generated.PatchSavedViewRequestOptions{
 			PathParams: &generated.PatchSavedViewPath{ID: id},
 			Header: &generated.PatchSavedViewHeaders{
@@ -102,7 +102,7 @@ func (c *Client) UpdateSavedView(
 }
 
 func (c *Client) DeleteSavedView(ctx context.Context, id, expectedRevision int64) error {
-	_, err := APIResponseWithStatuses(c, []int{http.StatusNoContent}, func(client *apiclient.Client) (*generated.DeleteSavedViewResp, error) {
+	_, err := APIResponseWithStatuses(ctx, c, []int{http.StatusNoContent}, func(client *apiclient.Client) (*generated.DeleteSavedViewResp, error) {
 		return client.DeleteSavedViewWithResponse(ctx, &generated.DeleteSavedViewRequestOptions{
 			PathParams: &generated.DeleteSavedViewPath{ID: id},
 			Header: &generated.DeleteSavedViewHeaders{
@@ -126,7 +126,7 @@ func (c *Client) RunSavedView(
 	if cursor != "" {
 		body.Cursor = &cursor
 	}
-	resp, err := APIResponse(c, func(client *apiclient.Client) (*generated.RunSavedViewResp, error) {
+	resp, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.RunSavedViewResp, error) {
 		return client.RunSavedViewWithResponse(ctx, &generated.RunSavedViewRequestOptions{
 			PathParams: &generated.RunSavedViewPath{ID: id},
 			Body:       &body,

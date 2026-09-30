@@ -670,7 +670,7 @@ func (e *Engine) Aggregate(ctx context.Context, groupBy query.ViewType, opts que
 		kind := generated.GetAggregatesQuerySenderKind(opts.SenderKind)
 		senderKind = &kind
 	}
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.GetAggregatesResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.GetAggregatesResp, error) {
 		return client.GetAggregatesWithResponse(ctx, &generated.GetAggregatesRequestOptions{
 			Query: &generated.GetAggregatesQuery{
 				ViewType:        optionalString(viewTypeToString(groupBy)),
@@ -716,7 +716,7 @@ func (e *Engine) SubAggregate(ctx context.Context, filter query.MessageFilter, g
 	if opts.Limit > 0 {
 		limit = optionalPositiveInt64(opts.Limit)
 	}
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.GetSubAggregatesResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.GetSubAggregatesResp, error) {
 		return client.GetSubAggregatesWithResponse(ctx, &generated.GetSubAggregatesRequestOptions{
 			Query: &generated.GetSubAggregatesQuery{
 				ViewType:        viewTypeToString(groupBy),
@@ -763,7 +763,7 @@ func (e *Engine) ListMessages(ctx context.Context, filter query.MessageFilter) (
 	if err := e.requireListIDCapability(ctx, nil, filter); err != nil {
 		return nil, err
 	}
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.FilterMessagesResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.FilterMessagesResp, error) {
 		return client.FilterMessagesWithResponse(ctx, &generated.FilterMessagesRequestOptions{
 			Query: filterMessagesQuery(filter),
 		})
@@ -969,7 +969,7 @@ func (e *Engine) Search(ctx context.Context, q *search.Query, limit, offset int)
 		return nil, err
 	}
 
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.DeepSearchResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.DeepSearchResp, error) {
 		return client.DeepSearchWithResponse(ctx, &generated.DeepSearchRequestOptions{
 			Query: queryParams,
 		})
@@ -1051,7 +1051,7 @@ func (e *Engine) SearchDeepWithStats(
 	queryParams.Before = fields.Before
 	queryParams.EmptyTargets = fields.EmptyTargets
 
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.DeepSearchResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.DeepSearchResp, error) {
 		return client.DeepSearchWithResponse(ctx, &generated.DeepSearchRequestOptions{Query: queryParams})
 	})
 	if err != nil {
@@ -1088,7 +1088,7 @@ func (e *Engine) SearchMessageBodies(ctx context.Context, q *search.Query, limit
 	}
 	queryParams.Scope = optionalString("body")
 
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.DeepSearchResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.DeepSearchResp, error) {
 		return client.DeepSearchWithResponse(ctx, &generated.DeepSearchRequestOptions{Query: queryParams})
 	})
 	if err != nil {
@@ -1150,7 +1150,7 @@ func (e *Engine) SearchFastWithStats(ctx context.Context, q *search.Query, query
 		return &query.SearchFastResult{Stats: &query.TotalStats{}}, nil
 	}
 
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.FastSearchResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.FastSearchResp, error) {
 		return client.FastSearchWithResponse(ctx, &generated.FastSearchRequestOptions{
 			Query: fastSearchQuery(scopedQueryStr, filter, statsGroupBy, limit, offset),
 		})
@@ -1175,7 +1175,7 @@ func (e *Engine) GetDeletionTargetsByFilter(ctx context.Context, filter query.Me
 	if err := e.requireListIDCapability(ctx, nil, filter); err != nil {
 		return nil, err
 	}
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.GetGmailIDsByFilterResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.GetGmailIDsByFilterResp, error) {
 		return client.GetGmailIDsByFilterWithResponse(ctx, &generated.GetGmailIDsByFilterRequestOptions{
 			Query: gmailIDsFilterQuery(filter),
 		})
@@ -1216,7 +1216,7 @@ func (e *Engine) GetDeletionTargetsBySearch(
 	params := gmailIDsFilterQuery(filter)
 	params.Q = &queryString
 	params.SearchMode = &modeString
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.GetGmailIDsByFilterResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.GetGmailIDsByFilterResp, error) {
 		return client.GetGmailIDsByFilterWithResponse(ctx, &generated.GetGmailIDsByFilterRequestOptions{Query: params})
 	})
 	if err != nil {
@@ -1264,7 +1264,7 @@ func (e *Engine) GetDeletionTargetsByAggregateSearch(
 	params.SearchMode = &modeString
 	params.ViewType = &viewType
 	params.AggregateKey = &key
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.GetGmailIDsByFilterResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.GetGmailIDsByFilterResp, error) {
 		return client.GetGmailIDsByFilterWithResponse(ctx, &generated.GetGmailIDsByFilterRequestOptions{Query: params})
 	})
 	if err != nil {
@@ -1318,7 +1318,7 @@ func (c *Client) requireListIDCapability(
 }
 
 func (e *Engine) SearchByDomains(ctx context.Context, domains []string, after, before *time.Time, limit, offset int) ([]query.MessageSummary, error) {
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.SearchMessagesByDomainsResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.SearchMessagesByDomainsResp, error) {
 		return client.SearchMessagesByDomainsWithResponse(ctx, &generated.SearchMessagesByDomainsRequestOptions{
 			Query: &generated.SearchMessagesByDomainsQuery{
 				Domains: strings.Join(domains, ","),
@@ -1378,7 +1378,7 @@ func (e *Engine) ListCollectionScopes(ctx context.Context) ([]query.CollectionSc
 }
 
 func (e *Engine) ListConversations(ctx context.Context, filter query.TextFilter) ([]query.ConversationRow, error) {
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.ListTextConversationsResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.ListTextConversationsResp, error) {
 		return client.ListTextConversationsWithResponse(ctx, &generated.ListTextConversationsRequestOptions{
 			Query: textConversationsQuery(filter),
 		})
@@ -1390,7 +1390,7 @@ func (e *Engine) ListConversations(ctx context.Context, filter query.TextFilter)
 }
 
 func (e *Engine) TextAggregate(ctx context.Context, viewType query.TextViewType, opts query.TextAggregateOptions) ([]query.AggregateRow, error) {
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.GetTextAggregatesResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.GetTextAggregatesResp, error) {
 		return client.GetTextAggregatesWithResponse(ctx, &generated.GetTextAggregatesRequestOptions{
 			Query: textAggregateQuery(viewType, opts),
 		})
@@ -1402,7 +1402,7 @@ func (e *Engine) TextAggregate(ctx context.Context, viewType query.TextViewType,
 }
 
 func (e *Engine) ListConversationMessages(ctx context.Context, convID int64, filter query.TextFilter) ([]query.MessageSummary, error) {
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.ListTextConversationMessagesResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.ListTextConversationMessagesResp, error) {
 		return client.ListTextConversationMessagesWithResponse(ctx, &generated.ListTextConversationMessagesRequestOptions{
 			PathParams: &generated.ListTextConversationMessagesPath{ID: convID},
 			Query:      textConversationMessagesQuery(filter),
@@ -1415,7 +1415,7 @@ func (e *Engine) ListConversationMessages(ctx context.Context, convID int64, fil
 }
 
 func (e *Engine) TextSearch(ctx context.Context, queryStr string, sourceID *int64, limit, offset int) ([]query.MessageSummary, error) {
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.SearchTextMessagesResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.SearchTextMessagesResp, error) {
 		return client.SearchTextMessagesWithResponse(ctx, &generated.SearchTextMessagesRequestOptions{
 			Query: &generated.SearchTextMessagesQuery{
 				Q:        queryStr,
@@ -1435,7 +1435,7 @@ func (e *Engine) TextSearch(ctx context.Context, queryStr string, sourceID *int6
 }
 
 func (e *Engine) GetTextStats(ctx context.Context, opts query.TextStatsOptions) (*query.TotalStats, error) {
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.GetTextStatsResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.GetTextStatsResp, error) {
 		return client.GetTextStatsWithResponse(ctx, &generated.GetTextStatsRequestOptions{
 			Query: &generated.GetTextStatsQuery{
 				SourceID:    copyInt64(opts.SourceID),
@@ -1504,7 +1504,7 @@ func (e *Engine) GetTotalStats(ctx context.Context, opts query.StatsOptions) (*q
 		params.AttachmentsOnly = optionalBool(opts.WithAttachmentsOnly || filter.WithAttachmentsOnly)
 		params.HideDeleted = optionalBool(opts.HideDeletedFromSource || filter.HideDeletedFromSource)
 	}
-	resp, err := APIResponse(e.store, func(client *apiclient.Client) (*generated.GetTotalStatsResp, error) {
+	resp, err := APIResponse(ctx, e.store, func(client *apiclient.Client) (*generated.GetTotalStatsResp, error) {
 		return client.GetTotalStatsWithResponse(ctx, &generated.GetTotalStatsRequestOptions{
 			Query: params,
 		})

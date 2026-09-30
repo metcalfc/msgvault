@@ -51,7 +51,7 @@ func (b *PeopleBrowser) GetPersonBrief(
 	if personID < 1 {
 		return nil, errors.New("person ID must be positive")
 	}
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.GetPersonBriefResp, error) {
 			return client.GetPersonBriefWithResponse(ctx,
 				&generated.GetPersonBriefRequestOptions{
@@ -79,7 +79,7 @@ func (b *PeopleBrowser) SetPersonBriefEnrollment(
 	if personID < 1 {
 		return nil, errors.New("person ID must be positive")
 	}
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.SetPersonBriefEnrollmentResp, error) {
 			return client.SetPersonBriefEnrollmentWithResponse(ctx,
 				&generated.SetPersonBriefEnrollmentRequestOptions{
@@ -108,7 +108,7 @@ func (b *PeopleBrowser) GeneratePersonBrief(
 	if personID < 1 {
 		return nil, errors.New("person ID must be positive")
 	}
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.GeneratePersonBriefResp, error) {
 			return client.GeneratePersonBriefWithResponse(ctx,
 				&generated.GeneratePersonBriefRequestOptions{
@@ -136,7 +136,7 @@ func (b *PeopleBrowser) RejectPersonBrief(
 	if personID < 1 {
 		return nil, errors.New("person ID must be positive")
 	}
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.RejectPersonBriefResp, error) {
 			return client.RejectPersonBriefWithResponse(ctx,
 				&generated.RejectPersonBriefRequestOptions{

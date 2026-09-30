@@ -45,7 +45,7 @@ func (r *closeFailingAttachmentStream) Close() error {
 	return r.closeErr
 }
 
-func TestExportAttachmentBinaryStreamPreservesExistingFileOnError(t *testing.T) {
+func TestExportAttachmentBinaryDownloadPreservesExistingFileOnError(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	tmpDir := t.TempDir()
@@ -57,7 +57,7 @@ func TestExportAttachmentBinaryStreamPreservesExistingFileOnError(t *testing.T) 
 	defer func() { exportAttachmentOutput = savedOutput }()
 	exportAttachmentOutput = outFile
 
-	err := exportAttachmentBinaryStream(&failingAttachmentStream{})
+	err := exportAttachmentBinaryDownload(io.NopCloser(&failingAttachmentStream{}))
 	require.Error(err, "streaming failure should be returned")
 
 	got, readErr := os.ReadFile(outFile)
@@ -65,7 +65,7 @@ func TestExportAttachmentBinaryStreamPreservesExistingFileOnError(t *testing.T) 
 	assert.Equal(original, got, "pre-existing output must survive failed stream")
 }
 
-func TestExportAttachmentBinaryStreamReplacesExistingFile(t *testing.T) {
+func TestExportAttachmentBinaryDownloadReplacesExistingFile(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	tmpDir := t.TempDir()
@@ -76,7 +76,7 @@ func TestExportAttachmentBinaryStreamReplacesExistingFile(t *testing.T) {
 	defer func() { exportAttachmentOutput = savedOutput }()
 	exportAttachmentOutput = outFile
 
-	err := exportAttachmentBinaryStream(strings.NewReader("new data"))
+	err := exportAttachmentBinaryDownload(io.NopCloser(strings.NewReader("new data")))
 	require.NoError(err, "streaming replacement should succeed")
 
 	got, readErr := os.ReadFile(outFile)

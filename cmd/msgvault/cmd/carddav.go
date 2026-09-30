@@ -60,7 +60,7 @@ func newAddCardDAVCmd() *cobra.Command {
 		if schedule != "" {
 			body.Schedule = &schedule
 		}
-		resp, err := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.SaveCardDAVAccountResp, error) {
+		resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.SaveCardDAVAccountResp, error) {
 			return api.SaveCardDAVAccountWithResponse(cmd.Context(), &generated.SaveCardDAVAccountRequestOptions{Body: &body})
 		})
 		if err != nil {
@@ -108,7 +108,7 @@ func newSyncCardDAVCmd() *cobra.Command {
 		}
 		defer func() { _ = client.Close() }()
 		body := generated.SyncCardDAVBody{Full: &full}
-		resp, err := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.SyncCardDAVResp, error) {
+		resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.SyncCardDAVResp, error) {
 			return api.SyncCardDAVWithResponse(cmd.Context(), &generated.SyncCardDAVRequestOptions{Body: &body})
 		})
 		if err != nil {
@@ -137,7 +137,7 @@ func newCardDAVCmd() *cobra.Command {
 		}
 		defer func() { _ = client.Close() }()
 		body := generated.UpdateCardDAVBookRolesBody{WriteTarget: writeTarget, Subscribed: subscribed, LookupSource: lookup}
-		resp, err := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.UpdateCardDAVBookRolesResp, error) {
+		resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.UpdateCardDAVBookRolesResp, error) {
 			return api.UpdateCardDAVBookRolesWithResponse(cmd.Context(), &generated.UpdateCardDAVBookRolesRequestOptions{PathParams: &generated.UpdateCardDAVBookRolesPath{ID: id}, Body: &body})
 		})
 		if err != nil {
@@ -164,7 +164,7 @@ func runCardDAVBooks(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	defer func() { _ = client.Close() }()
-	resp, err := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.ListCardDAVBooksResp, error) {
+	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ListCardDAVBooksResp, error) {
 		return api.ListCardDAVBooksWithResponse(cmd.Context())
 	})
 	if err != nil {
@@ -188,7 +188,7 @@ func runCardDAVConflicts(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	defer func() { _ = client.Close() }()
-	resp, err := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.ListCardDAVConflictsResp, error) {
+	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ListCardDAVConflictsResp, error) {
 		return api.ListCardDAVConflictsWithResponse(cmd.Context())
 	})
 	if err != nil {
@@ -206,7 +206,7 @@ func runCardDAVConflictShow(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer func() { _ = client.Close() }()
-	resp, err := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.GetCardDAVConflictResp, error) {
+	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.GetCardDAVConflictResp, error) {
 		return api.GetCardDAVConflictWithResponse(cmd.Context(), &generated.GetCardDAVConflictRequestOptions{PathParams: &generated.GetCardDAVConflictPath{ID: id}})
 	})
 	if err != nil {
@@ -229,7 +229,7 @@ func runCardDAVResolve(cmd *cobra.Command, args []string) error {
 	}
 	defer func() { _ = client.Close() }()
 	body := generated.ResolveCardDAVConflictBody{Choice: choice}
-	_, err = daemonclient.APIResponseWithStatuses(client, []int{http.StatusOK}, func(api *apiclient.Client) (*generated.ResolveCardDAVConflictResp, error) {
+	_, err = daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusOK}, func(api *apiclient.Client) (*generated.ResolveCardDAVConflictResp, error) {
 		return api.ResolveCardDAVConflictWithResponse(cmd.Context(), &generated.ResolveCardDAVConflictRequestOptions{PathParams: &generated.ResolveCardDAVConflictPath{ID: id}, Body: &body})
 	})
 	return err
@@ -269,7 +269,7 @@ func newPersonCardDAVCommand(action string, publish bool) *cobra.Command {
 		defer func() { _ = client.Close() }()
 		switch {
 		case preview:
-			resp, err := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.PreviewCardDAVPublicationResp, error) {
+			resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.PreviewCardDAVPublicationResp, error) {
 				return api.PreviewCardDAVPublicationWithResponse(cmd.Context(), &generated.PreviewCardDAVPublicationRequestOptions{PathParams: &generated.PreviewCardDAVPublicationPath{PersonID: id}})
 			})
 			if err != nil {
@@ -278,15 +278,15 @@ func newPersonCardDAVCommand(action string, publish bool) *cobra.Command {
 			return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), resp.JSON200, json.Deterministic(true))
 		case approvalToken != "":
 			body := generated.ApproveCardDAVPublicationBody{ApprovalToken: approvalToken}
-			_, err = daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.ApproveCardDAVPublicationResp, error) {
+			_, err = daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ApproveCardDAVPublicationResp, error) {
 				return api.ApproveCardDAVPublicationWithResponse(cmd.Context(), &generated.ApproveCardDAVPublicationRequestOptions{PathParams: &generated.ApproveCardDAVPublicationPath{PersonID: id}, Body: &body})
 			})
 		case publish:
-			_, err = daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.PublishCardDAVPersonResp, error) {
+			_, err = daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.PublishCardDAVPersonResp, error) {
 				return api.PublishCardDAVPersonWithResponse(cmd.Context(), &generated.PublishCardDAVPersonRequestOptions{PathParams: &generated.PublishCardDAVPersonPath{PersonID: id}})
 			})
 		default:
-			_, err = daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.UnpublishCardDAVPersonResp, error) {
+			_, err = daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.UnpublishCardDAVPersonResp, error) {
 				return api.UnpublishCardDAVPersonWithResponse(cmd.Context(), &generated.UnpublishCardDAVPersonRequestOptions{PathParams: &generated.UnpublishCardDAVPersonPath{PersonID: id}})
 			})
 		}

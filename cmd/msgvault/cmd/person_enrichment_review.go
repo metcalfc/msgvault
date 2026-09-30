@@ -49,7 +49,7 @@ func newPersonEnrichmentReviewListCommand() *cobra.Command {
 			if limit > 0 {
 				query.Limit = &limit
 			}
-			resp, err := daemonclient.APIResponse(client,
+			resp, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.ListPersonEnrichmentIdentityReviewsResp, error) {
 					return api.ListPersonEnrichmentIdentityReviewsWithResponse(cmd.Context(),
 						&generated.ListPersonEnrichmentIdentityReviewsRequestOptions{Query: &query})
@@ -138,7 +138,7 @@ func newPersonEnrichmentReviewDecideCommand(confirm bool) *cobra.Command {
 			defer func() { _ = client.Close() }()
 			var decision *generated.PersonEnrichmentIdentityDecision
 			if confirm {
-				resp, err := daemonclient.APIResponse(client,
+				resp, err := daemonclient.APIResponse(cmd.Context(), client,
 					func(api *apiclient.Client) (*generated.ConfirmPersonEnrichmentIdentityResp, error) {
 						return api.ConfirmPersonEnrichmentIdentityWithResponse(cmd.Context(),
 							&generated.ConfirmPersonEnrichmentIdentityRequestOptions{
@@ -150,7 +150,7 @@ func newPersonEnrichmentReviewDecideCommand(confirm bool) *cobra.Command {
 				}
 				decision = resp.JSON200
 			} else {
-				resp, err := daemonclient.APIResponse(client,
+				resp, err := daemonclient.APIResponse(cmd.Context(), client,
 					func(api *apiclient.Client) (*generated.RejectPersonEnrichmentIdentityResp, error) {
 						return api.RejectPersonEnrichmentIdentityWithResponse(cmd.Context(),
 							&generated.RejectPersonEnrichmentIdentityRequestOptions{

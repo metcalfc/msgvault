@@ -53,7 +53,7 @@ var relationshipTypeListCmd = &cobra.Command{
 			return err
 		}
 		defer func() { _ = client.Close() }()
-		resp, err := daemonclient.APIResponse(client,
+		resp, err := daemonclient.APIResponse(cmd.Context(), client,
 			func(api *apiclient.Client) (*generated.ListRelationshipTypesResp, error) {
 				return api.ListRelationshipTypesWithResponse(cmd.Context())
 			})
@@ -104,7 +104,7 @@ var relationshipTypeCreateCmd = &cobra.Command{
 			Slug: slug, ForwardLabel: forward, ReverseLabel: reverse, IsSymmetric: &relationshipTypeSymmetric,
 			Color: optionalCLIFlag(relationshipTypeColor), Icon: optionalCLIFlag(relationshipTypeIcon),
 		}
-		resp, err := daemonclient.APIResponseWithStatuses(client, []int{http.StatusCreated},
+		resp, err := daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusCreated},
 			func(api *apiclient.Client) (*generated.CreateRelationshipTypeResp, error) {
 				return api.CreateRelationshipTypeWithResponse(cmd.Context(),
 					&generated.CreateRelationshipTypeRequestOptions{Body: &body})
@@ -142,7 +142,7 @@ var relationshipTypeUpdateCmd = &cobra.Command{
 			return errors.New("relationship type response was empty")
 		}
 		etag := fmt.Sprintf(`"relationship-type-%d-r%d"`, id, current.JSON200.Revision)
-		resp, err := daemonclient.APIResponse(client,
+		resp, err := daemonclient.APIResponse(cmd.Context(), client,
 			func(api *apiclient.Client) (*generated.PatchRelationshipTypeResp, error) {
 				return api.PatchRelationshipTypeWithResponse(cmd.Context(),
 					&generated.PatchRelationshipTypeRequestOptions{
@@ -220,7 +220,7 @@ var relationshipTypeDeleteCmd = &cobra.Command{
 			return errors.New("relationship type response was empty")
 		}
 		etag := fmt.Sprintf(`"relationship-type-%d-r%d"`, id, current.JSON200.Revision)
-		if _, err := daemonclient.APIResponseWithStatuses(client, []int{http.StatusNoContent},
+		if _, err := daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusNoContent},
 			func(api *apiclient.Client) (*generated.DeleteRelationshipTypeResp, error) {
 				return api.DeleteRelationshipTypeWithResponse(cmd.Context(),
 					&generated.DeleteRelationshipTypeRequestOptions{
@@ -258,7 +258,7 @@ var personRelationshipListCmd = &cobra.Command{
 		if relationshipIncludeEnded {
 			query.IncludeEnded = &relationshipIncludeEnded
 		}
-		resp, err := daemonclient.APIResponse(client,
+		resp, err := daemonclient.APIResponse(cmd.Context(), client,
 			func(api *apiclient.Client) (*generated.ListPersonRelationshipsResp, error) {
 				return api.ListPersonRelationshipsWithResponse(cmd.Context(),
 					&generated.ListPersonRelationshipsRequestOptions{
@@ -320,7 +320,7 @@ var personRelationshipAddCmd = &cobra.Command{
 			StartDate: optionalCLIFlag(relationshipStartDate), EndDate: optionalCLIFlag(relationshipEndDate),
 			Notes: optionalCLIFlag(relationshipNotes),
 		}
-		resp, err := daemonclient.APIResponseWithStatuses(client, []int{http.StatusCreated},
+		resp, err := daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusCreated},
 			func(api *apiclient.Client) (*generated.CreatePersonRelationshipResp, error) {
 				return api.CreatePersonRelationshipWithResponse(cmd.Context(),
 					&generated.CreatePersonRelationshipRequestOptions{Body: &body})
@@ -359,7 +359,7 @@ var personRelationshipEndCmd = &cobra.Command{
 		}
 		etag := fmt.Sprintf(`"person-relationship-%d-r%d"`, id, current.JSON200.Revision)
 		body := generated.PatchPersonRelationshipBody{EndDate: &until}
-		resp, err := daemonclient.APIResponse(client,
+		resp, err := daemonclient.APIResponse(cmd.Context(), client,
 			func(api *apiclient.Client) (*generated.PatchPersonRelationshipResp, error) {
 				return api.PatchPersonRelationshipWithResponse(cmd.Context(),
 					&generated.PatchPersonRelationshipRequestOptions{
@@ -396,7 +396,7 @@ var personRelationshipDeleteCmd = &cobra.Command{
 			return errors.New("relationship response was empty")
 		}
 		etag := fmt.Sprintf(`"person-relationship-%d-r%d"`, id, current.JSON200.Revision)
-		if _, err := daemonclient.APIResponseWithStatuses(client, []int{http.StatusNoContent},
+		if _, err := daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusNoContent},
 			func(api *apiclient.Client) (*generated.DeletePersonRelationshipResp, error) {
 				return api.DeletePersonRelationshipWithResponse(cmd.Context(),
 					&generated.DeletePersonRelationshipRequestOptions{
@@ -432,7 +432,7 @@ var personRelationshipReviewsCmd = &cobra.Command{
 			return err
 		}
 		defer func() { _ = client.Close() }()
-		resp, err := daemonclient.APIResponse(client,
+		resp, err := daemonclient.APIResponse(cmd.Context(), client,
 			func(api *apiclient.Client) (*generated.ListPersonRelationshipReviewsResp, error) {
 				return api.ListPersonRelationshipReviewsWithResponse(cmd.Context(),
 					&generated.ListPersonRelationshipReviewsRequestOptions{Query: query})
@@ -471,7 +471,7 @@ var personRelationshipReviewsCmd = &cobra.Command{
 func getCLIRelationshipType(
 	cmd *cobra.Command, client *daemonclient.Client, id int64,
 ) (*generated.GetRelationshipTypeResp, error) {
-	return daemonclient.APIResponse(client,
+	return daemonclient.APIResponse(cmd.Context(), client,
 		func(api *apiclient.Client) (*generated.GetRelationshipTypeResp, error) {
 			return api.GetRelationshipTypeWithResponse(cmd.Context(),
 				&generated.GetRelationshipTypeRequestOptions{PathParams: &generated.GetRelationshipTypePath{ID: id}})
@@ -481,7 +481,7 @@ func getCLIRelationshipType(
 func getCLIPersonRelationship(
 	cmd *cobra.Command, client *daemonclient.Client, id int64,
 ) (*generated.GetPersonRelationshipResp, error) {
-	return daemonclient.APIResponse(client,
+	return daemonclient.APIResponse(cmd.Context(), client,
 		func(api *apiclient.Client) (*generated.GetPersonRelationshipResp, error) {
 			return api.GetPersonRelationshipWithResponse(cmd.Context(),
 				&generated.GetPersonRelationshipRequestOptions{PathParams: &generated.GetPersonRelationshipPath{ID: id}})

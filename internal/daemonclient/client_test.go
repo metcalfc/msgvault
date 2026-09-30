@@ -902,3 +902,42 @@ func TestRequestEditorDelegatedMode(t *testing.T) {
 		assert.Empty(t, gotAPIKey, "X-Api-Key must not be set in delegated mode")
 	})
 }
+
+func TestGeneratedBusyRetryReturnsCallContextCancellation(t *testing.T) {
+	must := require.New(t)
+	check := assert.New(t)
+	old := operationBusyRetryDelay
+	operationBusyRetryDelay = time.Hour
+	t.Cleanup(func() { operationBusyRetryDelay = old })
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, err := w.Write([]byte(`{"error":"operation_in_progress","message":"busy"}`))
+		assert.NoError(t, err)
+	}))
+	defer server.Close()
+	root, stop := context.WithCancel(context.Background())
+	defer stop()
+	client, err := New(Config{URL: server.URL, AllowInsecure: true, Context: root})
+	must.NoError(err)
+	waiting := make(chan struct{}, 1)
+	client.SetBusyNotifier(func(string) { waiting <- struct{}{} })
+	call, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := client.GetCLICollections(call); done <- err }()
+	select {
+	case <-waiting:
+	case <-time.After(time.Second):
+		must.FailNow("request did not enter retry wait")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		check.ErrorIs(err, context.Canceled)
+	case <-time.After(time.Second):
+		stop()
+		<-done
+		check.Fail("per-call cancellation did not wake busy wait; only root cancellation did")
+	}
+}

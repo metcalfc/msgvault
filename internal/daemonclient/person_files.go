@@ -46,7 +46,7 @@ func (c *Client) SearchPersonFiles(
 			Values:    []string{request.Before.UTC().Format(time.RFC3339Nano)},
 		})
 	}
-	response, err := APIResponse(c, func(client *apiclient.Client) (*generated.SearchPersonFilesResp, error) {
+	response, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.SearchPersonFilesResp, error) {
 		return client.SearchPersonFilesWithResponse(ctx, &generated.SearchPersonFilesRequestOptions{
 			PathParams: &generated.SearchPersonFilesPath{ID: request.PersonID},
 			Body: &generated.PersonFileSearchHTTPRequest{

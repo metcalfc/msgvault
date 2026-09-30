@@ -173,7 +173,7 @@ func openAgentDelegatedStore(ctx context.Context, state *invocation) (*daemoncli
 	}
 	// Older keyless daemons accept the health probe but ignore agent tokens.
 	// Require the daemon to confirm that it authenticated this token as delegated.
-	session, err := daemonclient.APIResponse(st,
+	session, err := daemonclient.APIResponse(ctx, st,
 		func(api *apiclient.Client) (*generated.GetSessionResp, error) {
 			return api.GetSessionWithResponse(ctx)
 		})
@@ -341,7 +341,7 @@ func verifyRemoteAPISchemaVersion(ctx context.Context, client *daemonclient.Clie
 	if !remoteAPISchemaCheckEnabled {
 		return nil
 	}
-	response, err := daemonclient.APIResponse(client,
+	response, err := daemonclient.APIResponse(ctx, client,
 		func(api *apiclient.Client) (*generated.GetHealthResp, error) {
 			return api.GetHealthWithResponse(ctx)
 		})

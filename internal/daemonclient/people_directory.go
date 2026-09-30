@@ -42,7 +42,7 @@ func (b *PeopleBrowser) ListDirectoryPeople(
 		options.Query.NotPeople = &notPeople
 	}
 
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.ListDirectoryPeopleResp, error) {
 			return client.ListDirectoryPeopleWithResponse(ctx, options)
 		})

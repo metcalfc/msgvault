@@ -46,7 +46,7 @@ var organizationListCmd = &cobra.Command{Use: cmdUseList, Short: "List curated o
 	if cmd.Flags().Changed("include-retired") {
 		query.IncludeRetired = &organizationIncludeRetired
 	}
-	resp, err := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.ListOrganizationsResp, error) {
+	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ListOrganizationsResp, error) {
 		return api.ListOrganizationsWithResponse(cmd.Context(), &generated.ListOrganizationsRequestOptions{Query: query})
 	})
 	if err != nil {
@@ -91,7 +91,7 @@ var organizationCreateCmd = &cobra.Command{Use: "create <name>", Short: "Create 
 	if cmd.Flags().Changed("description") {
 		body.Description = &organizationDescription
 	}
-	resp, err := daemonclient.APIResponseWithStatuses(client, []int{http.StatusCreated}, func(api *apiclient.Client) (*generated.CreateOrganizationResp, error) {
+	resp, err := daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusCreated}, func(api *apiclient.Client) (*generated.CreateOrganizationResp, error) {
 		return api.CreateOrganizationWithResponse(cmd.Context(), &generated.CreateOrganizationRequestOptions{Body: &body})
 	})
 	if err != nil {
@@ -111,7 +111,7 @@ var organizationShowCmd = &cobra.Command{Use: "show <id>", Short: "Show an organ
 	}
 	defer func() { _ = client.Close() }()
 	if organizationShowHistory {
-		resp, getErr := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.GetOrganizationHistoryResp, error) {
+		resp, getErr := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.GetOrganizationHistoryResp, error) {
 			return api.GetOrganizationHistoryWithResponse(cmd.Context(), &generated.GetOrganizationHistoryRequestOptions{PathParams: &generated.GetOrganizationHistoryPath{ID: id}})
 		})
 		if getErr != nil {
@@ -175,7 +175,7 @@ var organizationSetCmd = &cobra.Command{Use: "set <id>", Short: "Replace an orga
 	}
 	retired := current.JSON200.Organization.RetiredAt != nil
 	body.Retired = &retired
-	resp, err := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.PatchOrganizationResp, error) {
+	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.PatchOrganizationResp, error) {
 		return api.PatchOrganizationWithResponse(cmd.Context(), &generated.PatchOrganizationRequestOptions{PathParams: &generated.PatchOrganizationPath{ID: id}, Header: &generated.PatchOrganizationHeaders{IfMatch: organizationETag(id, current.JSON200.Organization.Revision)}, Body: &body})
 	})
 	if err != nil {
@@ -209,7 +209,7 @@ func runOrganizationRetired(retired bool) func(*cobra.Command, []string) error {
 			Description:   current.JSON200.Organization.Description,
 			Retired:       &retired,
 		}
-		resp, err := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.PatchOrganizationResp, error) {
+		resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.PatchOrganizationResp, error) {
 			return api.PatchOrganizationWithResponse(cmd.Context(), &generated.PatchOrganizationRequestOptions{PathParams: &generated.PatchOrganizationPath{ID: id}, Header: &generated.PatchOrganizationHeaders{IfMatch: organizationETag(id, current.JSON200.Organization.Revision)}, Body: &body})
 		})
 		if err != nil {
@@ -239,7 +239,7 @@ var organizationDeleteCmd = &cobra.Command{Use: "delete <id>", Short: "Permanent
 	if current.JSON200 == nil {
 		return errors.New("organization response was empty")
 	}
-	_, err = daemonclient.APIResponseWithStatuses(client, []int{http.StatusNoContent}, func(api *apiclient.Client) (*generated.DeleteOrganizationResp, error) {
+	_, err = daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusNoContent}, func(api *apiclient.Client) (*generated.DeleteOrganizationResp, error) {
 		return api.DeleteOrganizationWithResponse(cmd.Context(), &generated.DeleteOrganizationRequestOptions{PathParams: &generated.DeleteOrganizationPath{ID: id}, Header: &generated.DeleteOrganizationHeaders{IfMatch: organizationETag(id, current.JSON200.Organization.Revision)}})
 	})
 	if err != nil {
@@ -278,7 +278,7 @@ var organizationMergeCmd = &cobra.Command{Use: "merge <survivor-id> <losing-id>"
 		return errors.New("organization response was empty")
 	}
 	body := generated.MergeOrganizationBody{LosingOrganizationID: losing, LosingRevision: loser.JSON200.Organization.Revision}
-	resp, err := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.MergeOrganizationResp, error) {
+	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.MergeOrganizationResp, error) {
 		return api.MergeOrganizationWithResponse(cmd.Context(), &generated.MergeOrganizationRequestOptions{PathParams: &generated.MergeOrganizationPath{ID: survivor}, Header: &generated.MergeOrganizationHeaders{IfMatch: organizationETag(survivor, current.JSON200.Organization.Revision)}, Body: &body})
 	})
 	if err != nil {
@@ -305,7 +305,7 @@ var organizationAttributeListCmd = &cobra.Command{Use: "list <id>", Short: "List
 	if cmd.Flags().Changed("definition") {
 		query.DefinitionSlug = &organizationDefinitionSlugValue
 	}
-	resp, err := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.ListOrganizationAttributesResp, error) {
+	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ListOrganizationAttributesResp, error) {
 		return api.ListOrganizationAttributesWithResponse(cmd.Context(), &generated.ListOrganizationAttributesRequestOptions{PathParams: &generated.ListOrganizationAttributesPath{ID: id}, Query: query})
 	})
 	if err != nil {
@@ -367,7 +367,7 @@ var organizationAttributeSetCmd = &cobra.Command{Use: "set <id>", Short: "Set a 
 		return err
 	}
 	defer func() { _ = client.Close() }()
-	resp, err := daemonclient.APIResponseWithStatuses(client, []int{http.StatusOK, http.StatusCreated}, func(api *apiclient.Client) (*generated.SetOrganizationAttributeResp, error) {
+	resp, err := daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusOK, http.StatusCreated}, func(api *apiclient.Client) (*generated.SetOrganizationAttributeResp, error) {
 		return api.SetOrganizationAttributeWithResponse(cmd.Context(), &generated.SetOrganizationAttributeRequestOptions{PathParams: &generated.SetOrganizationAttributePath{ID: id}, Body: &body})
 	})
 	if err != nil {
@@ -414,7 +414,7 @@ var organizationAttributeClearCmd = &cobra.Command{Use: "clear <id> <slug>", Sho
 		dryRun := true
 		query.DryRun = &dryRun
 	}
-	resp, err := daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.ClearOrganizationAttributeResp, error) {
+	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ClearOrganizationAttributeResp, error) {
 		return api.ClearOrganizationAttributeWithResponse(cmd.Context(), &generated.ClearOrganizationAttributeRequestOptions{
 			PathParams: &generated.ClearOrganizationAttributePath{ID: id, Slug: slug}, Query: query,
 		})
@@ -426,7 +426,7 @@ var organizationAttributeClearCmd = &cobra.Command{Use: "clear <id> <slug>", Sho
 }}
 
 func getCLIOrganization(cmd *cobra.Command, client *daemonclient.Client, id int64) (*generated.GetOrganizationResp, error) {
-	return daemonclient.APIResponse(client, func(api *apiclient.Client) (*generated.GetOrganizationResp, error) {
+	return daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.GetOrganizationResp, error) {
 		return api.GetOrganizationWithResponse(cmd.Context(), &generated.GetOrganizationRequestOptions{PathParams: &generated.GetOrganizationPath{ID: id}})
 	})
 }

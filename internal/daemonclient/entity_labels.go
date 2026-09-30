@@ -31,7 +31,7 @@ func (c *Client) EntityLabels(
 		query.Person, people = takeEntityLabelBatch(people)
 		query.Participant, participants = takeEntityLabelBatch(participants)
 		query.Organization, organizations = takeEntityLabelBatch(organizations)
-		resp, err := APIResponse(c, func(api *apiclient.Client) (*generated.GetEntityLabelsResp, error) {
+		resp, err := APIResponse(ctx, c, func(api *apiclient.Client) (*generated.GetEntityLabelsResp, error) {
 			return api.GetEntityLabelsWithResponse(ctx, &generated.GetEntityLabelsRequestOptions{Query: &query})
 		})
 		if err != nil {

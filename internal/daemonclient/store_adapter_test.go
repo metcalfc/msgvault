@@ -997,7 +997,7 @@ func TestGeneratedResponseWrappersApplyStoreErrorMapping(t *testing.T) {
 		Body:       []byte(`{}`),
 		JSON200:    &generated.GetStatsResponse{},
 	}
-	got, err := APIResponse(s, func(*apiclient.Client) (*generated.GetStatsResp, error) {
+	got, err := APIResponse(s.requestContext(), s, func(*apiclient.Client) (*generated.GetStatsResp, error) {
 		return want, nil
 	})
 	require.NoError(
@@ -1005,7 +1005,7 @@ func TestGeneratedResponseWrappersApplyStoreErrorMapping(t *testing.T) {
 
 	assert.Same(t, want, got, "API wrapper response")
 
-	_, err = CLIResponse(s, func(*apiclient.Client) (*generated.CreateCLICollectionResp, error) {
+	_, err = CLIResponse(s.requestContext(), s, func(*apiclient.Client) (*generated.CreateCLICollectionResp, error) {
 		return &generated.CreateCLICollectionResp{
 			StatusCode: http.StatusBadRequest,
 			Body:       []byte(`{"error":"invalid_collection","message":"bad account"}`),
@@ -1014,7 +1014,7 @@ func TestGeneratedResponseWrappersApplyStoreErrorMapping(t *testing.T) {
 	require.EqualError(err, "bad account", "CLI wrapper should keep bare message")
 
 	transportErr := errors.New("connection refused")
-	_, err = APIResponse(s, func(*apiclient.Client) (*generated.GetStatsResp, error) {
+	_, err = APIResponse(s.requestContext(), s, func(*apiclient.Client) (*generated.GetStatsResp, error) {
 		return nil, transportErr
 	})
 	require.ErrorIs(err, transportErr, "transport error")

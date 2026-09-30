@@ -55,7 +55,7 @@ var personSearchCmd = &cobra.Command{
 
 		limit := int64(personSearchLimit)
 		body := generated.SearchPeopleBody{Query: query, Limit: &limit}
-		response, err := daemonclient.APIResponse(client,
+		response, err := daemonclient.APIResponse(cmd.Context(), client,
 			func(api *apiclient.Client) (*generated.SearchPeopleResp, error) {
 				return api.SearchPeopleWithResponse(cmd.Context(), &generated.SearchPeopleRequestOptions{
 					Body: &body,

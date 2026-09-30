@@ -64,7 +64,7 @@ var attributeDefinitionListCmd = &cobra.Command{
 			includeHidden := true
 			options.Query.IncludeHidden = &includeHidden
 		}
-		resp, err := daemonclient.APIResponse(client,
+		resp, err := daemonclient.APIResponse(cmd.Context(), client,
 			func(api *apiclient.Client) (*generated.ListAttributeDefinitionsResp, error) {
 				return api.ListAttributeDefinitionsWithResponse(cmd.Context(), options)
 			})
@@ -153,7 +153,7 @@ var attributeDefinitionCreateCmd = &cobra.Command{
 			return err
 		}
 		defer func() { _ = client.Close() }()
-		resp, err := daemonclient.APIResponseWithStatuses(client,
+		resp, err := daemonclient.APIResponseWithStatuses(cmd.Context(), client,
 			[]int{http.StatusCreated},
 			func(api *apiclient.Client) (*generated.CreateAttributeDefinitionResp, error) {
 				return api.CreateAttributeDefinitionWithResponse(cmd.Context(),
@@ -210,7 +210,7 @@ var attributeDefinitionRenameCmd = &cobra.Command{
 		case description != "":
 			body.Description = &description
 		}
-		resp, err := daemonclient.APIResponse(client,
+		resp, err := daemonclient.APIResponse(cmd.Context(), client,
 			func(api *apiclient.Client) (*generated.PatchAttributeDefinitionResp, error) {
 				return api.PatchAttributeDefinitionWithResponse(cmd.Context(),
 					&generated.PatchAttributeDefinitionRequestOptions{
@@ -251,7 +251,7 @@ var attributeDefinitionDeleteCmd = &cobra.Command{
 			return errors.New("attribute definition response was empty")
 		}
 		etag := fmt.Sprintf(`"attribute-definition-%d-r%d"`, id, current.JSON200.Revision)
-		_, err = daemonclient.APIResponseWithStatuses(client,
+		_, err = daemonclient.APIResponseWithStatuses(cmd.Context(), client,
 			[]int{http.StatusNoContent},
 			func(api *apiclient.Client) (*generated.DeleteAttributeDefinitionResp, error) {
 				return api.DeleteAttributeDefinitionWithResponse(cmd.Context(),
@@ -352,7 +352,7 @@ func validateCLIAttributeDefinition(cmd *cobra.Command, data []byte) error {
 func getCLIAttributeDefinition(
 	cmd *cobra.Command, client *daemonclient.Client, id int64,
 ) (*generated.GetAttributeDefinitionResp, error) {
-	return daemonclient.APIResponse(client,
+	return daemonclient.APIResponse(cmd.Context(), client,
 		func(api *apiclient.Client) (*generated.GetAttributeDefinitionResp, error) {
 			return api.GetAttributeDefinitionWithResponse(cmd.Context(),
 				&generated.GetAttributeDefinitionRequestOptions{

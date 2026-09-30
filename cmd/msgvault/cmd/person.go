@@ -45,7 +45,7 @@ var personPromoteCmd = &cobra.Command{
 		}
 		defer func() { _ = client.Close() }()
 		body := generated.CreatePersonBody{ParticipantID: participantID}
-		resp, err := daemonclient.APIResponseWithStatuses(client,
+		resp, err := daemonclient.APIResponseWithStatuses(cmd.Context(), client,
 			[]int{http.StatusOK, http.StatusCreated},
 			func(api *apiclient.Client) (*generated.CreatePersonResp, error) {
 				return api.CreatePersonWithResponse(cmd.Context(),
@@ -95,7 +95,7 @@ var personListCmd = &cobra.Command{
 			return err
 		}
 		defer func() { _ = client.Close() }()
-		resp, err := daemonclient.APIResponse(client,
+		resp, err := daemonclient.APIResponse(cmd.Context(), client,
 			func(api *apiclient.Client) (*generated.ListPeopleResp, error) {
 				return api.ListPeopleWithResponse(cmd.Context())
 			})
@@ -155,7 +155,7 @@ var personSetDisplayNameCmd = &cobra.Command{
 		}
 		etag := fmt.Sprintf(`"person-%d-r%d"`, id, current.JSON200.Revision)
 		body := generated.PatchPersonBody{DisplayName: displayName}
-		resp, err := daemonclient.APIResponse(client,
+		resp, err := daemonclient.APIResponse(cmd.Context(), client,
 			func(api *apiclient.Client) (*generated.PatchPersonResp, error) {
 				return api.PatchPersonWithResponse(cmd.Context(), &generated.PatchPersonRequestOptions{
 					PathParams: &generated.PatchPersonPath{ID: id},
@@ -195,7 +195,7 @@ var personDeleteCmd = &cobra.Command{
 			return errors.New("person response was empty")
 		}
 		etag := fmt.Sprintf(`"person-%d-r%d"`, id, current.JSON200.Revision)
-		if _, err := daemonclient.APIResponseWithStatuses(client,
+		if _, err := daemonclient.APIResponseWithStatuses(cmd.Context(), client,
 			[]int{http.StatusNoContent},
 			func(api *apiclient.Client) (*generated.DeletePersonResp, error) {
 				return api.DeletePersonWithResponse(cmd.Context(), &generated.DeletePersonRequestOptions{
@@ -254,7 +254,7 @@ func newPersonMergeCommand() *cobra.Command {
 			}
 			defer func() { _ = client.Close() }()
 			body := generated.MergePersonsBody{AbsorbedPersonID: absorbedID}
-			resp, err := daemonclient.APIResponse(client,
+			resp, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.MergePersonsResp, error) {
 					return api.MergePersonsWithResponse(cmd.Context(),
 						&generated.MergePersonsRequestOptions{
@@ -322,7 +322,7 @@ func newPersonSplitCommand() *cobra.Command {
 			body := generated.SplitPersonMergeBody{
 				MergeID: mergeID, ParticipantIds: participantIDs,
 			}
-			resp, err := daemonclient.APIResponse(client,
+			resp, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.SplitPersonMergeResp, error) {
 					return api.SplitPersonMergeWithResponse(cmd.Context(),
 						&generated.SplitPersonMergeRequestOptions{
@@ -369,7 +369,7 @@ func newPersonMergeHistoryCommand() *cobra.Command {
 				return err
 			}
 			defer func() { _ = client.Close() }()
-			resp, err := daemonclient.APIResponse(client,
+			resp, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.ListPersonMergesResp, error) {
 					return api.ListPersonMergesWithResponse(cmd.Context(),
 						&generated.ListPersonMergesRequestOptions{
@@ -406,7 +406,7 @@ func newPersonMergeShowCommand() *cobra.Command {
 			}
 			defer func() { _ = client.Close() }()
 			if snapshot {
-				resp, loadErr := daemonclient.APIResponse(client,
+				resp, loadErr := daemonclient.APIResponse(cmd.Context(), client,
 					func(api *apiclient.Client) (*generated.GetPersonMergeSnapshotResp, error) {
 						return api.GetPersonMergeSnapshotWithResponse(cmd.Context(),
 							&generated.GetPersonMergeSnapshotRequestOptions{
@@ -424,7 +424,7 @@ func newPersonMergeShowCommand() *cobra.Command {
 					mergeID, resp.JSON200.Version, resp.JSON200.Sha256, resp.JSON200.Snapshot)
 				return nil
 			}
-			resp, loadErr := daemonclient.APIResponse(client,
+			resp, loadErr := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.GetPersonMergeResp, error) {
 					return api.GetPersonMergeWithResponse(cmd.Context(),
 						&generated.GetPersonMergeRequestOptions{
@@ -477,7 +477,7 @@ func newPersonMergeCandidateCommand() *cobra.Command {
 			body := generated.DecidePersonMergeCandidateBody{
 				PersonID: personID, Decision: mappedDecision,
 			}
-			resp, err := daemonclient.APIResponse(client,
+			resp, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.DecidePersonMergeCandidateResp, error) {
 					return api.DecidePersonMergeCandidateWithResponse(cmd.Context(),
 						&generated.DecidePersonMergeCandidateRequestOptions{
@@ -662,7 +662,7 @@ func personMergeCLIIfMatch(
 func getCLIPerson(
 	cmd *cobra.Command, client *daemonclient.Client, id int64,
 ) (*generated.GetPersonProfileResp, error) {
-	return daemonclient.APIResponse(client,
+	return daemonclient.APIResponse(cmd.Context(), client,
 		func(api *apiclient.Client) (*generated.GetPersonProfileResp, error) {
 			return api.GetPersonProfileWithResponse(cmd.Context(),
 				&generated.GetPersonProfileRequestOptions{

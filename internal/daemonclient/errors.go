@@ -2,6 +2,7 @@ package daemonclient
 
 import (
 	"bytes"
+	"context"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -144,40 +145,45 @@ func CLIResponseError(resp any, err error) error {
 // CLIResponseWithStatuses keeps CLI error wording while allowing an endpoint
 // to return an accepted asynchronous operation alongside ordinary results.
 func CLIResponseWithStatuses[R any](
+	ctx context.Context,
 	c *Client, successStatuses []int,
 	request func(*apiclient.Client) (R, error),
 ) (R, error) {
-	return generatedResponse(c, request, func(resp any, err error) error {
+	return generatedResponse(ctx, c, request, func(resp any, err error) error {
 		return responseError(resp, err, successStatuses, handleCLIErrorBody)
 	})
 }
 
-// APIResponse executes a generated request and validates its response.
+// APIResponse executes a generated request and validates its response. Busy
+// retries stop when either ctx or the client root context is cancelled.
 func APIResponse[R any](
+	ctx context.Context,
 	c *Client,
 	request func(*apiclient.Client) (R, error),
 ) (R, error) {
-	return generatedResponse(c, request, APIResponseError)
+	return generatedResponse(ctx, c, request, APIResponseError)
 }
 
 // APIResponseWithStatuses executes a generated request and validates it
 // against an explicit set of success statuses instead of the default 200 OK.
 func APIResponseWithStatuses[R any](
+	ctx context.Context,
 	c *Client,
 	expectedStatuses []int,
 	request func(*apiclient.Client) (R, error),
 ) (R, error) {
-	return generatedResponse(c, request, func(resp any, err error) error {
+	return generatedResponse(ctx, c, request, func(resp any, err error) error {
 		return responseError(resp, err, expectedStatuses, handleErrorBody)
 	})
 }
 
 func apiResponseWithErrorDecoder[R any](
+	ctx context.Context,
 	c *Client,
 	request func(*apiclient.Client) (R, error),
 	decodeErrorBody func(status int, body []byte) error,
 ) (R, error) {
-	return generatedResponse(c, request, func(resp any, err error) error {
+	return generatedResponse(ctx, c, request, func(resp any, err error) error {
 		return responseError(resp, err, []int{http.StatusOK}, decodeErrorBody)
 	})
 }
@@ -207,13 +213,15 @@ func APIResponseWithNotFound[R any](
 
 // CLIResponse executes a generated CLI request and validates its response.
 func CLIResponse[R any](
+	ctx context.Context,
 	c *Client,
 	request func(*apiclient.Client) (R, error),
 ) (R, error) {
-	return generatedResponse(c, request, CLIResponseError)
+	return generatedResponse(ctx, c, request, CLIResponseError)
 }
 
 func generatedResponse[R any](
+	ctx context.Context,
 	c *Client,
 	request func(*apiclient.Client) (R, error),
 	checkResponse func(any, error) error,
@@ -223,6 +231,14 @@ func generatedResponse[R any](
 	if err != nil {
 		return zero, err
 	}
+	if ctx == nil {
+		ctx = c.requestContext()
+	}
+	waitCtx, cancel := context.WithCancel(ctx)
+	rootCtx := c.requestContext()
+	stopRootCancellation := context.AfterFunc(rootCtx, cancel)
+	defer stopRootCancellation()
+	defer cancel()
 	waiter := &operationBusyWaiter{c: c}
 	for {
 		resp, err := request(client)
@@ -230,11 +246,13 @@ func generatedResponse[R any](
 		if checkErr == nil {
 			return resp, nil
 		}
-		waitCtx := c.requestContext()
 		if waiter.wait(waitCtx, checkErr) {
 			continue
 		}
-		if err := waitCtx.Err(); err != nil {
+		if err := ctx.Err(); err != nil {
+			return zero, err
+		}
+		if err := rootCtx.Err(); err != nil {
 			return zero, err
 		}
 		return zero, checkErr

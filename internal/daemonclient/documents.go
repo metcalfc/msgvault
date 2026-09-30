@@ -14,7 +14,7 @@ func (c *Client) SearchDocuments(
 	ctx context.Context,
 	request store.DocumentSearchRequest,
 ) (store.DocumentSearchResponse, error) {
-	response, err := APIResponse(c, func(client *apiclient.Client) (*generated.SearchDocumentsResp, error) {
+	response, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.SearchDocumentsResp, error) {
 		return client.SearchDocumentsWithResponse(ctx, &generated.SearchDocumentsRequestOptions{
 			Query: &generated.SearchDocumentsQuery{
 				Q: request.Query, SourceID: request.SourceIDs, MessageType: request.MessageTypes,
@@ -41,7 +41,7 @@ func (c *Client) GetDocumentIndexStatus(
 	ctx context.Context,
 	request store.DocumentIndexStatusRequest,
 ) (store.DocumentIndexStatusResponse, error) {
-	response, err := APIResponse(c, func(client *apiclient.Client) (*generated.GetDocumentIndexStatusResp, error) {
+	response, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.GetDocumentIndexStatusResp, error) {
 		return client.GetDocumentIndexStatusWithResponse(ctx, &generated.GetDocumentIndexStatusRequestOptions{
 			Query: &generated.GetDocumentIndexStatusQuery{
 				ProfileID: request.ProfileID, InputKey: request.ExtractionInputKey,

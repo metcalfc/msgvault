@@ -121,22 +121,6 @@ func exportAttachmentStreamAsBase64(r io.Reader) error {
 	return nil
 }
 
-func exportAttachmentBinaryStream(r io.Reader) error {
-	outputPath := exportAttachmentOutput
-	if outputPath == "" || outputPath == "-" {
-		_, err := io.Copy(os.Stdout, r)
-		return err
-	}
-
-	n, err := writeAttachmentStreamToFile(outputPath, r)
-	if err != nil {
-		return err
-	}
-
-	fmt.Fprintf(os.Stderr, "Exported attachment to: %s (%d bytes)\n", outputPath, n)
-	return nil
-}
-
 func exportAttachmentBinaryDownload(body io.ReadCloser) (err error) {
 	sourceClosed := false
 	closeSource := func() error {

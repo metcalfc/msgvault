@@ -29,7 +29,7 @@ func (b *PeopleBrowser) GetPersonProfile(
 	if personID < 1 {
 		return nil, errors.New("person ID must be positive")
 	}
-	personResp, err := APIResponse(b.engine.store,
+	personResp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.GetPersonProfileResp, error) {
 			return client.GetPersonProfileWithResponse(ctx,
 				&generated.GetPersonProfileRequestOptions{
@@ -41,7 +41,7 @@ func (b *PeopleBrowser) GetPersonProfile(
 	}
 	profile := &peoplebrowser.PersonProfile{Person: *personFromGenerated(personResp.JSON200)}
 
-	tracking, err := APIResponse(b.engine.store,
+	tracking, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.GetPersonTrackingResp, error) {
 			return client.GetPersonTrackingWithResponse(ctx,
 				&generated.GetPersonTrackingRequestOptions{
@@ -56,7 +56,7 @@ func (b *PeopleBrowser) GetPersonProfile(
 		return nil, err
 	}
 
-	state, err := APIResponse(b.engine.store,
+	state, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.GetPersonContactStateResp, error) {
 			return client.GetPersonContactStateWithResponse(ctx,
 				&generated.GetPersonContactStateRequestOptions{
@@ -106,7 +106,7 @@ func (b *PeopleBrowser) GetPersonProfile(
 		return nil, err
 	}
 
-	relationships, err := APIResponse(b.engine.store,
+	relationships, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.ListPersonRelationshipsResp, error) {
 			return client.ListPersonRelationshipsWithResponse(ctx,
 				&generated.ListPersonRelationshipsRequestOptions{
@@ -124,7 +124,7 @@ func (b *PeopleBrowser) GetPersonProfile(
 		return nil, err
 	}
 
-	structured, err := APIResponse(b.engine.store,
+	structured, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.GetPersonStructuredProfileResp, error) {
 			return client.GetPersonStructuredProfileWithResponse(ctx,
 				&generated.GetPersonStructuredProfileRequestOptions{
@@ -148,7 +148,7 @@ func (b *PeopleBrowser) currentEmployments(
 	ctx context.Context, personID int64,
 ) ([]peoplebrowser.PersonEmployment, error) {
 	currentOnly := true
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.ListPersonEmploymentsResp, error) {
 			return client.ListPersonEmploymentsWithResponse(ctx,
 				&generated.ListPersonEmploymentsRequestOptions{
@@ -196,7 +196,7 @@ func (b *PeopleBrowser) currentEmployments(
 // empty string when the daemon cannot serve it so a name gap never fails the
 // profile read.
 func (b *PeopleBrowser) organizationName(ctx context.Context, organizationID int64) string {
-	resp, err := APIResponse(b.engine.store,
+	resp, err := APIResponse(ctx, b.engine.store,
 		func(client *apiclient.Client) (*generated.GetOrganizationResp, error) {
 			return client.GetOrganizationWithResponse(ctx,
 				&generated.GetOrganizationRequestOptions{

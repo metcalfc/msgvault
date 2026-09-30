@@ -126,7 +126,7 @@ func (c *Client) SearchVisualAttachmentsFiltered(ctx context.Context, options Vi
 			return nil, err
 		}
 	}
-	resp, err := APIResponse(c, func(client *apiclient.Client) (*generated.SearchVisualAttachmentsResp, error) {
+	resp, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.SearchVisualAttachmentsResp, error) {
 		return client.SearchVisualAttachmentsWithResponse(ctx, request, editors...)
 	})
 	if err != nil {
@@ -142,7 +142,7 @@ func (c *Client) SearchVisualAttachmentsFiltered(ctx context.Context, options Vi
 // VisualStatusWithCoverage fetches visual status with the per-format coverage
 // scan, which re-reads every candidate blob; the daemon serializes it.
 func (c *Client) VisualStatusWithCoverage(ctx context.Context) (*visual.Status, error) {
-	response, err := APIResponse(c, func(client *apiclient.Client) (*generated.GetVisualAttachmentStatusResp, error) {
+	response, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.GetVisualAttachmentStatusResp, error) {
 		return client.GetVisualAttachmentStatusWithResponse(ctx, func(_ context.Context, req *http.Request) error {
 			query := req.URL.Query()
 			query.Set("coverage", "1")
@@ -161,7 +161,7 @@ func (c *Client) VisualStatusWithCoverage(ctx context.Context) (*visual.Status, 
 }
 
 func (c *Client) RunVisualBuildPass(ctx context.Context) (*visual.Status, error) {
-	response, err := APIResponse(c, func(client *apiclient.Client) (*generated.ResumeVisualAttachmentBuildResp, error) {
+	response, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.ResumeVisualAttachmentBuildResp, error) {
 		return client.ResumeVisualAttachmentBuildWithResponse(ctx)
 	})
 	if err != nil {
@@ -175,7 +175,7 @@ func (c *Client) RunVisualBuildPass(ctx context.Context) (*visual.Status, error)
 }
 
 func (c *Client) ConsentVisualBuildPass(ctx context.Context) (*visual.Status, error) {
-	response, err := APIResponse(c, func(client *apiclient.Client) (*generated.StartVisualAttachmentBuildResp, error) {
+	response, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.StartVisualAttachmentBuildResp, error) {
 		return client.StartVisualAttachmentBuildWithResponse(ctx, &generated.StartVisualAttachmentBuildRequestOptions{Body: &generated.StartVisualAttachmentBuildBody{Consent: true}})
 	})
 	if err != nil {
@@ -189,7 +189,7 @@ func (c *Client) ConsentVisualBuildPass(ctx context.Context) (*visual.Status, er
 }
 
 func (c *Client) RetryVisualOwner(ctx context.Context, messageID int64, blobHash string) (*visual.Status, error) {
-	response, err := APIResponse(c, func(client *apiclient.Client) (*generated.RetryVisualAttachmentOwnerResp, error) {
+	response, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.RetryVisualAttachmentOwnerResp, error) {
 		return client.RetryVisualAttachmentOwnerWithResponse(ctx, &generated.RetryVisualAttachmentOwnerRequestOptions{Body: &generated.RetryVisualAttachmentOwnerBody{MessageID: messageID, BlobHash: blobHash}})
 	})
 	if err != nil {
@@ -203,7 +203,7 @@ func (c *Client) RetryVisualOwner(ctx context.Context, messageID int64, blobHash
 }
 
 func (c *Client) RetireVisualGeneration(ctx context.Context, generationID int64) error {
-	_, err := APIResponseWithStatuses(c, []int{http.StatusNoContent}, func(client *apiclient.Client) (*generated.RetireVisualAttachmentGenerationResp, error) {
+	_, err := APIResponseWithStatuses(ctx, c, []int{http.StatusNoContent}, func(client *apiclient.Client) (*generated.RetireVisualAttachmentGenerationResp, error) {
 		return client.RetireVisualAttachmentGenerationWithResponse(ctx, &generated.RetireVisualAttachmentGenerationRequestOptions{
 			Body: &generated.RetireVisualAttachmentGenerationBody{GenerationID: generationID},
 		})

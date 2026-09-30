@@ -400,7 +400,7 @@ const (
 
 // InitCLIArchive runs setup-style startup work through the CLI-compatible API.
 func (c *Client) InitCLIArchive(ctx context.Context) (*CLIInitDB, error) {
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.InitCLIArchiveResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.InitCLIArchiveResp, error) {
 		return client.InitCLIArchiveWithResponse(ctx)
 	})
 	if err != nil {
@@ -411,7 +411,7 @@ func (c *Client) InitCLIArchive(ctx context.Context) (*CLIInitDB, error) {
 
 // GetCLICacheStats fetches analytics cache statistics through the daemon.
 func (c *Client) GetCLICacheStats(ctx context.Context) (*CLICacheStats, error) {
-	resp, err := APIResponse(c, func(client *apiclient.Client) (*generated.GetCLICacheStatsResp, error) {
+	resp, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.GetCLICacheStatsResp, error) {
 		return client.GetCLICacheStatsWithResponse(ctx)
 	})
 	if err != nil {
@@ -509,7 +509,7 @@ func (c *Client) requireSourceIDSyncCapability(ctx context.Context) error {
 
 // Health fetches the daemon's health and capability information.
 func (c *Client) Health(ctx context.Context) (*generated.HealthResponse, error) {
-	resp, err := APIResponse(c, func(client *apiclient.Client) (*generated.GetHealthResp, error) {
+	resp, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.GetHealthResp, error) {
 		return client.GetHealthWithResponse(ctx)
 	})
 	if err != nil {
@@ -735,7 +735,7 @@ func (c *Client) PlanCLIAddCalendar(
 		OauthAppExplicit: optionalBool(req.OAuthAppExplicit),
 		Headless:         optionalBool(req.Headless),
 	}
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.PlanCLIAddCalendarResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.PlanCLIAddCalendarResp, error) {
 		return client.PlanCLIAddCalendarWithResponse(ctx, &generated.PlanCLIAddCalendarRequestOptions{Body: &body})
 	})
 	if err != nil {
@@ -753,7 +753,7 @@ func (c *Client) PlanCLIEmbeddings(
 		GenerationID: req.GenerationID,
 		Force:        optionalBool(req.Force),
 	}
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.PlanCLIEmbeddingsResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.PlanCLIEmbeddingsResp, error) {
 		return client.PlanCLIEmbeddingsWithResponse(ctx, &generated.PlanCLIEmbeddingsRequestOptions{Body: &body})
 	})
 	if err != nil {
@@ -776,7 +776,7 @@ func (c *Client) PlanCLIDeleteStaged(
 		RemoteDeleteEnabled: optionalBool(req.RemoteDeleteEnabled),
 		Yes:                 optionalBool(req.Yes),
 	}
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.PlanCLIDeleteStagedResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.PlanCLIDeleteStagedResp, error) {
 		return client.PlanCLIDeleteStagedWithResponse(ctx, &generated.PlanCLIDeleteStagedRequestOptions{Body: &body})
 	})
 	if err != nil {
@@ -805,7 +805,7 @@ func (c *Client) CreateCLIDeletionManifest(
 		}
 	}
 	body := cliDeletionManifestToGenerated(manifest)
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.CreateCLIDeletionManifestResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.CreateCLIDeletionManifestResp, error) {
 		return client.CreateCLIDeletionManifestWithResponse(ctx, &generated.CreateCLIDeletionManifestRequestOptions{
 			Body: &body,
 		})
@@ -846,7 +846,7 @@ func (c *Client) PlanCLIDeduplicate(
 			apiprotocol.DeduplicatePlanProtocol,
 		),
 	}
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.PlanCLIDeduplicateResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.PlanCLIDeduplicateResp, error) {
 		return client.PlanCLIDeduplicateWithResponse(ctx, &generated.PlanCLIDeduplicateRequestOptions{Body: &body})
 	})
 	if err != nil {
@@ -926,7 +926,7 @@ func (c *Client) GetCLIStats(
 	account string,
 	collection string,
 ) (*CLIStats, error) {
-	resp, err := APIResponse(c, func(client *apiclient.Client) (*generated.GetCLIStatsResp, error) {
+	resp, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.GetCLIStatsResp, error) {
 		return client.GetCLIStatsWithResponse(ctx, &generated.GetCLIStatsRequestOptions{
 			Query: &generated.GetCLIStatsQuery{
 				Account:    optionalString(account),
@@ -956,7 +956,7 @@ func (c *Client) GetCLISearch(ctx context.Context, req CLISearchRequest) (*CLISe
 			)
 		}
 	}
-	resp, err := APIResponse(c, func(client *apiclient.Client) (*generated.SearchCLIResp, error) {
+	resp, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.SearchCLIResp, error) {
 		return client.SearchCLIWithResponse(ctx, &generated.SearchCLIRequestOptions{
 			Query: &generated.SearchCLIQuery{
 				Q:             req.Query,
@@ -986,7 +986,7 @@ func (c *Client) GetCLIHybridSearch(
 	if err := c.requireListIDCapability(ctx, search.Parse(req.Query), req.Filter); err != nil {
 		return nil, err
 	}
-	resp, err := APIResponse(c, func(client *apiclient.Client) (*generated.SearchMessagesResp, error) {
+	resp, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.SearchMessagesResp, error) {
 		return client.SearchMessagesWithResponse(ctx, &generated.SearchMessagesRequestOptions{
 			Query: &generated.SearchMessagesQuery{
 				Q:               req.Query,
@@ -1040,7 +1040,7 @@ func (c *Client) FindSimilarMessages(
 	ctx context.Context,
 	req SimilarSearchRequest,
 ) (*SimilarSearch, error) {
-	resp, err := APIResponse(c, func(client *apiclient.Client) (*generated.FindSimilarMessagesResp, error) {
+	resp, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.FindSimilarMessagesResp, error) {
 		return client.FindSimilarMessagesWithResponse(ctx, &generated.FindSimilarMessagesRequestOptions{
 			Query: &generated.FindSimilarMessagesQuery{
 				MessageID:     req.MessageID,
@@ -1074,7 +1074,7 @@ func (c *Client) FindSimilarMessages(
 }
 
 func (c *Client) GetCLIAccounts(ctx context.Context) ([]CLIAccount, error) {
-	resp, err := APIResponse(c, func(client *apiclient.Client) (*generated.ListCLIAccountsResp, error) {
+	resp, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.ListCLIAccountsResp, error) {
 		return client.ListCLIAccountsWithResponse(ctx)
 	})
 	if err != nil {
@@ -1098,7 +1098,7 @@ func (c *Client) UpdateCLIAccount(
 	if req.SourceIDSet || req.SourceID != 0 {
 		sourceID = &req.SourceID
 	}
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.UpdateCLIAccountResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.UpdateCLIAccountResp, error) {
 		return client.UpdateCLIAccountWithResponse(ctx, &generated.UpdateCLIAccountRequestOptions{
 			Body: &generated.UpdateCLIAccountBody{
 				Account:     account,
@@ -1115,7 +1115,7 @@ func (c *Client) UpdateCLIAccount(
 }
 
 func (c *Client) GetCLICollections(ctx context.Context) ([]CLICollection, error) {
-	resp, err := APIResponse(c, func(client *apiclient.Client) (*generated.ListCLICollectionsResp, error) {
+	resp, err := APIResponse(ctx, c, func(client *apiclient.Client) (*generated.ListCLICollectionsResp, error) {
 		return client.ListCLICollectionsWithResponse(ctx)
 	})
 	if err != nil {
@@ -1147,7 +1147,7 @@ func (c *Client) CreateCLICollection(
 	ctx context.Context,
 	req CLICollectionCreateRequest,
 ) (*CLICollectionMutationResult, error) {
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.CreateCLICollectionResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.CreateCLICollectionResp, error) {
 		return client.CreateCLICollectionWithResponse(ctx, &generated.CreateCLICollectionRequestOptions{
 			Body: &generated.CreateCLICollectionBody{
 				Name:     req.Name,
@@ -1166,7 +1166,7 @@ func (c *Client) AddCLICollectionSources(
 	name string,
 	req CLICollectionSourcesRequest,
 ) (*CLICollectionMutationResult, error) {
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.AddCLICollectionSourcesResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.AddCLICollectionSourcesResp, error) {
 		return client.AddCLICollectionSourcesWithResponse(ctx, &generated.AddCLICollectionSourcesRequestOptions{
 			PathParams: &generated.AddCLICollectionSourcesPath{Name: url.PathEscape(name)},
 			Body:       &generated.AddCLICollectionSourcesBody{Accounts: req.Accounts},
@@ -1183,7 +1183,7 @@ func (c *Client) RemoveCLICollectionSources(
 	name string,
 	req CLICollectionSourcesRequest,
 ) (*CLICollectionMutationResult, error) {
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.RemoveCLICollectionSourcesResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.RemoveCLICollectionSourcesResp, error) {
 		return client.RemoveCLICollectionSourcesWithResponse(ctx, &generated.RemoveCLICollectionSourcesRequestOptions{
 			PathParams: &generated.RemoveCLICollectionSourcesPath{Name: url.PathEscape(name)},
 			Body:       &generated.RemoveCLICollectionSourcesBody{Accounts: req.Accounts},
@@ -1199,7 +1199,7 @@ func (c *Client) DeleteCLICollection(
 	ctx context.Context,
 	name string,
 ) (*CLICollectionMutationResult, error) {
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.DeleteCLICollectionResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.DeleteCLICollectionResp, error) {
 		return client.DeleteCLICollectionWithResponse(ctx, &generated.DeleteCLICollectionRequestOptions{
 			PathParams: &generated.DeleteCLICollectionPath{Name: url.PathEscape(name)},
 		})
@@ -1214,7 +1214,7 @@ func (c *Client) GetCLIIdentities(
 	ctx context.Context,
 	req CLIIdentitiesRequest,
 ) ([]CLIIdentityRow, error) {
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.ListCLIIdentitiesResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.ListCLIIdentitiesResp, error) {
 		return client.ListCLIIdentitiesWithResponse(ctx, &generated.ListCLIIdentitiesRequestOptions{
 			Query: &generated.ListCLIIdentitiesQuery{
 				Account:     optionalString(req.Account),
@@ -1234,7 +1234,7 @@ func (c *Client) AddCLIIdentity(
 	ctx context.Context,
 	req CLIIdentityAddRequest,
 ) (*CLIIdentityAddResult, error) {
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.AddCLIIdentityResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.AddCLIIdentityResp, error) {
 		return client.AddCLIIdentityWithResponse(ctx, &generated.AddCLIIdentityRequestOptions{
 			Body: &generated.AddCLIIdentityBody{
 				Account:    optionalString(req.Account),
@@ -1254,7 +1254,7 @@ func (c *Client) ImportCLIIdentities(
 	ctx context.Context,
 	req CLIIdentityImportRequest,
 ) (*CLIIdentityImportResult, error) {
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.ImportCLIIdentitiesResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.ImportCLIIdentitiesResp, error) {
 		return client.ImportCLIIdentitiesWithResponse(ctx, &generated.ImportCLIIdentitiesRequestOptions{
 			Body: cliIdentityImportBodyFromRequest(req),
 		})
@@ -1269,7 +1269,7 @@ func (c *Client) RemoveCLIIdentity(
 	ctx context.Context,
 	req CLIIdentityRemoveRequest,
 ) (*CLIIdentityRemoveResult, error) {
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.RemoveCLIIdentityResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.RemoveCLIIdentityResp, error) {
 		return client.RemoveCLIIdentityWithResponse(ctx, &generated.RemoveCLIIdentityRequestOptions{
 			Body: &generated.RemoveCLIIdentityBody{
 				Account:    optionalString(req.Account),
@@ -1288,7 +1288,7 @@ func (c *Client) PlanCLIDeleteDeduped(
 	ctx context.Context,
 	req CLIDeleteDedupedRequest,
 ) (*CLIDeleteDedupedPlan, error) {
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.PlanCLIDeleteDedupedResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.PlanCLIDeleteDedupedResp, error) {
 		return client.PlanCLIDeleteDedupedWithResponse(ctx, &generated.PlanCLIDeleteDedupedRequestOptions{
 			Body: cliDeleteDedupedPlanBodyFromRequest(req),
 		})
@@ -1303,7 +1303,7 @@ func (c *Client) ExecuteCLIDeleteDeduped(
 	ctx context.Context,
 	req CLIDeleteDedupedRequest,
 ) (*CLIDeleteDedupedExecute, error) {
-	resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.ExecuteCLIDeleteDedupedResp, error) {
+	resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.ExecuteCLIDeleteDedupedResp, error) {
 		return client.ExecuteCLIDeleteDedupedWithResponse(ctx, &generated.ExecuteCLIDeleteDedupedRequestOptions{
 			Body: cliDeleteDedupedExecuteBodyFromRequest(req),
 		})
@@ -1484,7 +1484,7 @@ func (c *Client) WaitForCacheBuild(ctx context.Context, jobID string) error {
 		return errors.New("analytics cache build response is missing a job ID")
 	}
 	for {
-		resp, err := CLIResponse(c, func(client *apiclient.Client) (*generated.GetCacheBuildStatusResp, error) {
+		resp, err := CLIResponse(ctx, c, func(client *apiclient.Client) (*generated.GetCacheBuildStatusResp, error) {
 			return client.GetCacheBuildStatusWithResponse(ctx, &generated.GetCacheBuildStatusRequestOptions{
 				PathParams: &generated.GetCacheBuildStatusPath{JobID: jobID},
 			})
@@ -1531,7 +1531,7 @@ func (c *Client) RunSQLQueryWithFresh(ctx context.Context, sql string, fresh boo
 	if fresh {
 		body.Fresh = &fresh
 	}
-	resp, err := CLIResponseWithStatuses(c, []int{http.StatusOK, http.StatusAccepted}, func(client *apiclient.Client) (*generated.RunQueryResp, error) {
+	resp, err := CLIResponseWithStatuses(ctx, c, []int{http.StatusOK, http.StatusAccepted}, func(client *apiclient.Client) (*generated.RunQueryResp, error) {
 		return client.RunQueryWithResponse(ctx, &generated.RunQueryRequestOptions{
 			Body: body,
 		})
@@ -1547,7 +1547,7 @@ func (c *Client) RunArchiveSQLQueryWithFresh(ctx context.Context, sql string, fr
 	if fresh {
 		body.Fresh = &fresh
 	}
-	resp, err := CLIResponseWithStatuses(c, []int{http.StatusOK, http.StatusAccepted}, func(client *apiclient.Client) (*generated.RunArchiveQueryResp, error) {
+	resp, err := CLIResponseWithStatuses(ctx, c, []int{http.StatusOK, http.StatusAccepted}, func(client *apiclient.Client) (*generated.RunArchiveQueryResp, error) {
 		return client.RunArchiveQueryWithResponse(ctx, &generated.RunArchiveQueryRequestOptions{Body: body})
 	})
 	if err != nil {

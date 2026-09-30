@@ -1573,6 +1573,7 @@ var _ api.SourceStatusStore = (*storeAPIAdapter)(nil)
 var _ api.EntityLabelStore = (*storeAPIAdapter)(nil)
 var _ api.CLIStore = (*storeAPIAdapter)(nil)
 var _ api.ContextCLIStore = (*storeAPIAdapter)(nil)
+var _ api.CLICollectionStore = (*storeAPIAdapter)(nil)
 var _ api.CLIStartupMigrationStore = (*storeAPIAdapter)(nil)
 var _ api.CLICacheBuilder = (*storeAPIAdapter)(nil)
 var _ api.CLISyncRunner = (*storeAPIAdapter)(nil)
@@ -2528,21 +2529,10 @@ func (a *storeAPIAdapter) GetCollectionByNameContext(
 	return a.store.GetCollectionByNameContext(ctx, name)
 }
 
-func (a *storeAPIAdapter) ListCollections() ([]*store.CollectionWithSources, error) {
-	return a.store.ListCollections()
-}
-
 func (a *storeAPIAdapter) ListCollectionsContext(
 	ctx context.Context,
 ) ([]*store.CollectionWithSources, error) {
 	return a.store.ListCollectionsContext(ctx)
-}
-
-func (a *storeAPIAdapter) CreateCollection(
-	name, description string,
-	sourceIDs []int64,
-) (*store.Collection, error) {
-	return a.store.CreateCollection(name, description, sourceIDs)
 }
 
 func (a *storeAPIAdapter) CreateCollectionContext(
@@ -2553,10 +2543,6 @@ func (a *storeAPIAdapter) CreateCollectionContext(
 	return a.store.CreateCollectionContext(ctx, name, description, sourceIDs)
 }
 
-func (a *storeAPIAdapter) AddSourcesToCollection(name string, sourceIDs []int64) error {
-	return a.store.AddSourcesToCollection(name, sourceIDs)
-}
-
 func (a *storeAPIAdapter) AddSourcesToCollectionContext(
 	ctx context.Context,
 	name string,
@@ -2565,20 +2551,12 @@ func (a *storeAPIAdapter) AddSourcesToCollectionContext(
 	return a.store.AddSourcesToCollectionContext(ctx, name, sourceIDs)
 }
 
-func (a *storeAPIAdapter) RemoveSourcesFromCollection(name string, sourceIDs []int64) error {
-	return a.store.RemoveSourcesFromCollection(name, sourceIDs)
-}
-
 func (a *storeAPIAdapter) RemoveSourcesFromCollectionContext(
 	ctx context.Context,
 	name string,
 	sourceIDs []int64,
 ) error {
 	return a.store.RemoveSourcesFromCollectionContext(ctx, name, sourceIDs)
-}
-
-func (a *storeAPIAdapter) DeleteCollection(name string) error {
-	return a.store.DeleteCollection(name)
 }
 
 func (a *storeAPIAdapter) DeleteCollectionContext(ctx context.Context, name string) error {

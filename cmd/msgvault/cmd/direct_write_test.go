@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -549,4 +550,23 @@ func TestDaemonAutostartPreflight_AllowsProvedDaemonWithMismatchedCreateTime(t *
 	path, err := daemonRuntimeStore(dataDir).Path(os.Getpid())
 	require.NoError(err, "runtime record path")
 	assert.FileExists(path, "runtime record must survive preflight")
+}
+
+func TestDirectWriterOwnsArchiveReportsLockInspectionError(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	dataDir := t.TempDir()
+	cfg := lifecycleTestConfig(dataDir)
+	// A dangling target whose parent does not exist makes the real lock open
+	// fail regardless of whether this platform permits locking directories.
+	if err := os.Symlink(filepath.Join(dataDir, "missing", "lock"), writeOwnerLockPath(dataDir)); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	_, lockErr := tryAcquireWriteOwnerLock(dataDir)
+	require.Error(lockErr)
+	owned, err := directSQLiteWriterOwnsArchive(cfg)
+	assert.False(owned)
+	require.Error(err)
+	assert.ErrorContains(err, "acquire sqlite write-owner lock")
+	assert.Error(daemonAutostartPreflight(cfg))
 }

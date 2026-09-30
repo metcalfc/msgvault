@@ -32,7 +32,7 @@ func newPersonDirectoryCommand() *cobra.Command {
 				return err
 			}
 			defer func() { _ = client.Close() }()
-			response, err := daemonclient.APIResponse(client,
+			response, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.ListDirectoryPeopleResp, error) {
 					return api.ListDirectoryPeopleWithResponse(cmd.Context(), &generated.ListDirectoryPeopleRequestOptions{Query: query})
 				})

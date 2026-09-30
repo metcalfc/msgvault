@@ -623,30 +623,6 @@ func (m *mockStore) GetCollectionByName(name string) (*store.CollectionWithSourc
 	return nil, store.ErrCollectionNotFound
 }
 
-func (m *mockStore) ListCollections() ([]*store.CollectionWithSources, error) {
-	return nil, nil
-}
-
-func (m *mockStore) CreateCollection(
-	string,
-	string,
-	[]int64,
-) (*store.Collection, error) {
-	return &store.Collection{}, nil
-}
-
-func (m *mockStore) AddSourcesToCollection(string, []int64) error {
-	return nil
-}
-
-func (m *mockStore) RemoveSourcesFromCollection(string, []int64) error {
-	return nil
-}
-
-func (m *mockStore) DeleteCollection(string) error {
-	return nil
-}
-
 func (m *mockStore) UpdateSourceDisplayName(int64, string) error {
 	return nil
 }
@@ -2058,4 +2034,28 @@ func TestServerWaitStartedReportsListenError(t *testing.T) {
 	waitErr := srv.WaitStarted(context.Background())
 	require.Error(waitErr)
 	assert.EqualError(t, waitErr, startErr.Error())
+}
+
+func (m *mockStore) GetCollectionByNameContext(_ context.Context, name string) (*store.CollectionWithSources, error) {
+	return m.GetCollectionByName(name)
+}
+func (m *mockStore) ListCollectionsContext(context.Context) ([]*store.CollectionWithSources, error) {
+	return nil, nil
+}
+func (m *mockStore) CreateCollectionContext(context.Context, string, string, []int64) (*store.Collection, error) {
+	return &store.Collection{}, nil
+}
+func (m *mockStore) AddSourcesToCollectionContext(context.Context, string, []int64) error { return nil }
+func (m *mockStore) RemoveSourcesFromCollectionContext(context.Context, string, []int64) error {
+	return nil
+}
+func (m *mockStore) DeleteCollectionContext(context.Context, string) error { return nil }
+func (m *mockStore) GetSourceByIDContext(_ context.Context, id int64) (*store.Source, error) {
+	return m.GetSourceByID(id)
+}
+func (m *mockStore) GetSourcesByIdentifierOrDisplayNameContext(_ context.Context, query string) ([]*store.Source, error) {
+	return m.GetSourcesByIdentifierOrDisplayName(query)
+}
+func (m *mockStore) GetSourcesByTypeAndAccountContext(_ context.Context, sourceType, account string) ([]*store.Source, error) {
+	return m.GetSourcesByTypeAndAccount(sourceType, account)
 }

@@ -45,11 +45,6 @@ type CLIStore interface {
 	GetSourcesByIdentifierOrDisplayName(query string) ([]*store.Source, error)
 	GetSourcesByTypeAndAccount(sourceType, accountEmail string) ([]*store.Source, error)
 	GetCollectionByName(name string) (*store.CollectionWithSources, error)
-	ListCollections() ([]*store.CollectionWithSources, error)
-	CreateCollection(name, description string, sourceIDs []int64) (*store.Collection, error)
-	AddSourcesToCollection(name string, sourceIDs []int64) error
-	RemoveSourcesFromCollection(name string, sourceIDs []int64) error
-	DeleteCollection(name string) error
 	UpdateSourceDisplayName(sourceID int64, displayName string) error
 	ListSources(sourceType string) ([]*store.Source, error)
 	GetSourceByID(id int64) (*store.Source, error)
@@ -80,15 +75,6 @@ type ContextCLIStore interface {
 	GetSourcesByIdentifierOrDisplayNameContext(ctx context.Context, query string) ([]*store.Source, error)
 	GetSourcesByTypeAndAccountContext(ctx context.Context, sourceType, accountEmail string) ([]*store.Source, error)
 	GetCollectionByNameContext(ctx context.Context, name string) (*store.CollectionWithSources, error)
-	ListCollectionsContext(ctx context.Context) ([]*store.CollectionWithSources, error)
-	CreateCollectionContext(
-		ctx context.Context,
-		name, description string,
-		sourceIDs []int64,
-	) (*store.Collection, error)
-	AddSourcesToCollectionContext(ctx context.Context, name string, sourceIDs []int64) error
-	RemoveSourcesFromCollectionContext(ctx context.Context, name string, sourceIDs []int64) error
-	DeleteCollectionContext(ctx context.Context, name string) error
 	UpdateSourceDisplayNameContext(ctx context.Context, sourceID int64, displayName string) error
 	ListSourcesContext(ctx context.Context, sourceType string) ([]*store.Source, error)
 	GetSourceByIDContext(ctx context.Context, id int64) (*store.Source, error)
@@ -163,29 +149,6 @@ func (s *requestCLIStore) GetSourcesByTypeAndAccount(
 
 func (s *requestCLIStore) GetCollectionByName(name string) (*store.CollectionWithSources, error) {
 	return s.contextStore.GetCollectionByNameContext(s.ctx, name)
-}
-
-func (s *requestCLIStore) ListCollections() ([]*store.CollectionWithSources, error) {
-	return s.contextStore.ListCollectionsContext(s.ctx)
-}
-
-func (s *requestCLIStore) CreateCollection(
-	name, description string,
-	sourceIDs []int64,
-) (*store.Collection, error) {
-	return s.contextStore.CreateCollectionContext(s.ctx, name, description, sourceIDs)
-}
-
-func (s *requestCLIStore) AddSourcesToCollection(name string, sourceIDs []int64) error {
-	return s.contextStore.AddSourcesToCollectionContext(s.ctx, name, sourceIDs)
-}
-
-func (s *requestCLIStore) RemoveSourcesFromCollection(name string, sourceIDs []int64) error {
-	return s.contextStore.RemoveSourcesFromCollectionContext(s.ctx, name, sourceIDs)
-}
-
-func (s *requestCLIStore) DeleteCollection(name string) error {
-	return s.contextStore.DeleteCollectionContext(s.ctx, name)
 }
 
 func (s *requestCLIStore) UpdateSourceDisplayName(sourceID int64, displayName string) error {
@@ -2857,14 +2820,13 @@ func (s *Server) updateCLIAccount(
 }
 
 func (s *Server) handleCLICollections(w http.ResponseWriter, r *http.Request) {
-	cliStore, apiErr := s.cliStore()
+	cliStore, apiErr := s.cliCollectionStore()
 	if apiErr != nil {
 		writeAPIHTTPError(w, apiErr)
 		return
 	}
-	cliStore = bindCLIStoreContext(r.Context(), cliStore)
 
-	collections, err := cliStore.ListCollections()
+	collections, err := cliStore.ListCollectionsContext(r.Context())
 	if err != nil {
 		s.logger.Error("failed to list CLI collections", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list collections")
@@ -2873,7 +2835,7 @@ func (s *Server) handleCLICollections(w http.ResponseWriter, r *http.Request) {
 
 	resp := make([]cliCollectionResponse, 0, len(collections))
 	for _, coll := range collections {
-		item, err := cliCollectionResponseFromStore(cliStore, coll)
+		item, err := cliCollectionResponseFromStore(r.Context(), cliStore, coll)
 		if err != nil {
 			s.logger.Error("failed to hydrate CLI collection", "collection", coll.Name, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list collections")
@@ -2885,18 +2847,17 @@ func (s *Server) handleCLICollections(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCLICollection(w http.ResponseWriter, r *http.Request) {
-	cliStore, apiErr := s.cliStore()
+	cliStore, apiErr := s.cliCollectionStore()
 	if apiErr != nil {
 		writeAPIHTTPError(w, apiErr)
 		return
 	}
-	cliStore = bindCLIStoreContext(r.Context(), cliStore)
 	name := r.URL.Query().Get("name")
 	if name == "" {
 		writeError(w, http.StatusBadRequest, "missing_name", "Collection name is required")
 		return
 	}
-	coll, err := cliStore.GetCollectionByName(name)
+	coll, err := cliStore.GetCollectionByNameContext(r.Context(), name)
 	if err != nil {
 		if errors.Is(err, store.ErrCollectionNotFound) {
 			writeError(w, http.StatusNotFound, "not_found", "Collection not found")
@@ -2906,7 +2867,7 @@ func (s *Server) handleCLICollection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve collection")
 		return
 	}
-	item, err := cliCollectionResponseFromStore(cliStore, coll)
+	item, err := cliCollectionResponseFromStore(r.Context(), cliStore, coll)
 	if err != nil {
 		s.logger.Error("failed to hydrate CLI collection", "collection", coll.Name, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve collection")
@@ -2919,12 +2880,11 @@ func (s *Server) createCLICollection(
 	ctx context.Context,
 	req collectionops.CreateRequest,
 ) (collectionops.MutationResult, error) {
-	cliStore, apiErr := s.cliStore()
+	cliStore, apiErr := s.cliCollectionStore()
 	if apiErr != nil {
 		return collectionops.MutationResult{}, apiErr
 	}
-	cliStore = bindCLIStoreContext(ctx, cliStore)
-	result, err := collectionops.Create(cliStore, req)
+	result, err := collectionops.Create(&requestCLICollectionStore{store: cliStore, ctx: ctx}, req)
 	if err != nil {
 		return collectionops.MutationResult{}, s.operationError(
 			err,
@@ -2940,12 +2900,11 @@ func (s *Server) addCLICollectionSources(
 	name string,
 	req collectionops.SourcesRequest,
 ) (collectionops.MutationResult, error) {
-	cliStore, apiErr := s.cliStore()
+	cliStore, apiErr := s.cliCollectionStore()
 	if apiErr != nil {
 		return collectionops.MutationResult{}, apiErr
 	}
-	cliStore = bindCLIStoreContext(ctx, cliStore)
-	result, err := collectionops.AddSources(cliStore, name, req)
+	result, err := collectionops.AddSources(&requestCLICollectionStore{store: cliStore, ctx: ctx}, name, req)
 	if err != nil {
 		return collectionops.MutationResult{}, s.operationError(
 			err,
@@ -2961,12 +2920,11 @@ func (s *Server) removeCLICollectionSources(
 	name string,
 	req collectionops.SourcesRequest,
 ) (collectionops.MutationResult, error) {
-	cliStore, apiErr := s.cliStore()
+	cliStore, apiErr := s.cliCollectionStore()
 	if apiErr != nil {
 		return collectionops.MutationResult{}, apiErr
 	}
-	cliStore = bindCLIStoreContext(ctx, cliStore)
-	result, err := collectionops.RemoveSources(cliStore, name, req)
+	result, err := collectionops.RemoveSources(&requestCLICollectionStore{store: cliStore, ctx: ctx}, name, req)
 	if err != nil {
 		return collectionops.MutationResult{}, s.operationError(
 			err,
@@ -2981,12 +2939,11 @@ func (s *Server) deleteCLICollection(
 	ctx context.Context,
 	name string,
 ) (collectionops.MutationResult, error) {
-	cliStore, apiErr := s.cliStore()
+	cliStore, apiErr := s.cliCollectionStore()
 	if apiErr != nil {
 		return collectionops.MutationResult{}, apiErr
 	}
-	cliStore = bindCLIStoreContext(ctx, cliStore)
-	result, err := collectionops.Delete(cliStore, name)
+	result, err := collectionops.Delete(&requestCLICollectionStore{store: cliStore, ctx: ctx}, name)
 	if err != nil {
 		return collectionops.MutationResult{}, s.operationError(
 			err,
@@ -3617,7 +3574,8 @@ func cliMessageAttachments(atts []query.AttachmentInfo) []cliMessageAttachment {
 }
 
 func cliCollectionResponseFromStore(
-	st CLIStore,
+	ctx context.Context,
+	st CLICollectionStore,
 	coll *store.CollectionWithSources,
 ) (cliCollectionResponse, error) {
 	if coll == nil {
@@ -3634,7 +3592,7 @@ func cliCollectionResponseFromStore(
 		Sources:            make([]cliCollectionSourceResponse, 0, len(coll.SourceIDs)),
 	}
 	for _, sid := range coll.SourceIDs {
-		src, err := st.GetSourceByID(sid)
+		src, err := st.GetSourceByIDContext(ctx, sid)
 		if err != nil {
 			return cliCollectionResponse{}, fmt.Errorf("get source %d: %w", sid, err)
 		}

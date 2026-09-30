@@ -188,7 +188,7 @@ func TestServeStatusPrintsVectorLine(t *testing.T) {
 			srv := httptest.NewServer(mux)
 			defer srv.Close()
 
-			health := fetchDaemonHealth(context.Background(), srv.URL)
+			health := fetchDaemonHealthWithAPIKey(context.Background(), srv.URL, "")
 			require.NotNil(health, "health response")
 			lines := vectorStatusLines(health.Vector)
 			if tt.wantNone {
@@ -242,7 +242,7 @@ func TestRunServeStatusIncludesVectorHealth(t *testing.T) {
 
 	cmd, stdout, stderr := lifecycleTestCommand()
 	cmd.SetContext(context.Background())
-	require.NoError(runServeStatus(cmd, dataDir), "runServeStatus")
+	require.NoError(runServeStatusWithAPIKey(cmd, dataDir, ""), "runServeStatus")
 
 	out := stdout.String()
 	assert.Contains(out, "msgvault running at", "status shows the running daemon")
@@ -387,7 +387,7 @@ func TestRunServeStatusReportsStartupPhase(t *testing.T) {
 	require.NoError(err, "write starting runtime record")
 
 	cmd, stdout, stderr := lifecycleTestCommand()
-	require.NoError(runServeStatus(cmd, dataDir), "runServeStatus")
+	require.NoError(runServeStatusWithAPIKey(cmd, dataDir, ""), "runServeStatus")
 
 	assert.Contains(stdout.String(),
 		"msgvault daemon starting (pid "+strconv.Itoa(os.Getpid())+"): building analytics cache",
@@ -421,7 +421,7 @@ func TestRunServeStatusKeepsInitializingRecordWhenOwnershipHeldDespiteCreateTime
 	require.NoError(err, "write starting runtime record")
 
 	cmd, stdout, stderr := lifecycleTestCommand()
-	require.NoError(runServeStatus(cmd, dataDir), "runServeStatus")
+	require.NoError(runServeStatusWithAPIKey(cmd, dataDir, ""), "runServeStatus")
 
 	assert.Contains(stdout.String(),
 		"msgvault daemon starting (pid "+strconv.Itoa(os.Getpid())+"): migrating archive schema",
@@ -452,7 +452,7 @@ func TestStopTargetRequiresProcessIdentityDespiteRespondingPing(t *testing.T) {
 	info, err := probeDaemonRuntimeRecord(context.Background(), rec)
 	require.NoError(err, "precondition: recorded endpoint responds to daemon ping")
 	require.Equal(rec.PID, info.PID, "precondition: ping claims the recorded pid")
-	require.False(stopTargetConfirmed(rec),
+	require.False(processIdentityConfirmed(rec),
 		"unauthenticated ping must not authorize signaling a reused PID")
 }
 
@@ -758,7 +758,7 @@ func TestRunServeRestartDoesNotLaunchOverInitializingIdentityMismatch(t *testing
 func TestRunServeStatusNoDaemonWritesOnlyStdout(t *testing.T) {
 	cmd, stdout, stderr := lifecycleTestCommand()
 
-	require.NoError(t, runServeStatus(cmd, t.TempDir()))
+	require.NoError(t, runServeStatusWithAPIKey(cmd, t.TempDir(), ""))
 
 	assert.Equal(t, "No msgvault daemon is running.\n", stdout.String())
 	assert.Empty(t, stderr.String())
@@ -770,7 +770,7 @@ func TestRunServeStatusReturnsRuntimeListError(t *testing.T) {
 	dataDir := runtimeDataDirFile(t)
 	cmd, stdout, stderr := lifecycleTestCommand()
 
-	err := runServeStatus(cmd, dataDir)
+	err := runServeStatusWithAPIKey(cmd, dataDir, "")
 
 	require.Error(t, err, "status should surface runtime-store failures")
 	assert.Contains(err.Error(), "list daemon runtimes", "runtime list error")
@@ -784,7 +784,7 @@ func TestStopLiveDaemonsReturnsRuntimeListError(t *testing.T) {
 	dataDir := runtimeDataDirFile(t)
 	cmd, stdout, stderr := lifecycleTestCommand()
 
-	err := stopLiveDaemons(cmd, dataDir, false)
+	err := stopLiveDaemonsWithAPIKey(cmd, dataDir, "", false)
 
 	require.Error(t, err, "stop should surface runtime-store failures")
 	assert.Contains(err.Error(), "list daemon runtimes", "runtime list error")
