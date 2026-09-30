@@ -26,10 +26,7 @@ async function startMerge(page: Page) {
   const decision = page.getByRole('dialog', { name: 'Link identities' });
   await decision.getByRole('button', { name: 'Link identities' }).focus();
   await page.keyboard.press('Enter');
-  await expect(decision.getByRole('alert')).toContainText('An explicit merge is required');
-  await expect(page.getByRole('dialog')).toHaveCount(1);
-  await decision.getByRole('button', { name: 'Resolve merge' }).focus();
-  await page.keyboard.press('Enter');
+  // Accepting hands straight to the merge; there is no extra step.
   await expect(decision).toHaveCount(0);
 }
 

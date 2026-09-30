@@ -21,7 +21,9 @@
      * queue can move on to the next candidate. */
     onDecided?: () => void;
     onContextInvalidated: () => void;
-    onResolveMerge?: (conflict: PersonMergeRequiredError) => void;
+    /** Called in place of this modal when accepting needs the two people
+     * merged first; the merge modal then merges them. */
+    onResolveMerge: (conflict: PersonMergeRequiredError) => void;
   }
 
   let {
@@ -32,12 +34,11 @@
     onClose,
     onDecided = undefined,
     onContextInvalidated,
-    onResolveMerge = undefined
+    onResolveMerge
   }: Props = $props();
   const names = $derived(entityNames(controller.apiClient));
   let submitting = $state(false);
   let error = $state<string | null>(null);
-  let conflict = $state<PersonMergeRequiredError | null>(null);
   let releaseShortcutScope: (() => void) | undefined;
 
   const pending = $derived(submitting || controller.isDecisionPending(candidate.id));
@@ -83,7 +84,7 @@
       onContextInvalidated();
       return;
     }
-    if (pending || conflict) return;
+    if (pending) return;
     submitting = true;
     error = null;
     try {
@@ -93,17 +94,13 @@
       if (result.ok) {
         (onDecided ?? onClose)();
       } else if (result.kind === 'merge_required') {
-        conflict = result.conflict;
+        onResolveMerge(result.conflict);
       } else {
         error = result.message;
       }
     } finally {
       submitting = false;
     }
-  }
-
-  function profileLabel(profile: NonNullable<PersonMergeRequiredError['profiles']>[number]): string {
-    return names.name('person', profile.person.id, profile.person.display_name);
   }
 </script>
 
@@ -139,7 +136,7 @@
           aria-label="Decision notes"
           rows="3"
           value={draft}
-          disabled={pending || !!conflict}
+          disabled={pending}
           oninput={(event) => updateDraft(event.currentTarget.value)}
         ></textarea>
       </label>
@@ -150,58 +147,32 @@
           surface="soft"
           label="Add a note"
           ariaExpanded={false}
-          disabled={pending || !!conflict}
+          disabled={pending}
           onclick={() => void openNotes()}
         />
       </div>
     {/if}
 
-    {#if conflict}
-      <div class="merge-required" role="alert">
-        <strong>An explicit merge is required before these identities can be linked.</strong>
-        <p>The acceptance was recorded as a conflict and was not retried. Review both Directory profiles before choosing a survivor.</p>
-        <ul aria-label="Profiles requiring merge">
-          {#each conflict.profiles ?? [] as profile (profile.person.id)}
-            <li>
-              <dl>
-                <div><dt>Profile</dt><dd>{profileLabel(profile)}</dd></div>
-                <div><dt>ETag</dt><dd><code>{profile.etag}</code></dd></div>
-              </dl>
-            </li>
-          {/each}
-        </ul>
-      </div>
-    {:else if error}
+    {#if error}
       <p class="decision-error" role="alert">{error}</p>
     {/if}
   </div>
 
   {#snippet footer()}
     <Button surface="soft" label="Cancel" disabled={pending} onclick={requestClose} />
-    {#if conflict}
-      <Button
-        tone="info"
-        surface="solid"
-        label="Resolve merge"
-        disabled={!onResolveMerge}
-        title={onResolveMerge ? undefined : 'Merge resolution is installed in the next review-centre task.'}
-        onclick={() => onResolveMerge?.(conflict!)}
-      />
-    {:else}
-      <Button
-        tone={decision === 'accept' ? 'info' : 'neutral'}
-        surface="solid"
-        label={title}
-        disabled={pending}
-        onclick={() => void submit()}
-      />
-    {/if}
+    <Button
+      tone={decision === 'accept' ? 'info' : 'neutral'}
+      surface="solid"
+      label={title}
+      disabled={pending}
+      onclick={() => void submit()}
+    />
   {/snippet}
 </Modal>
 
 <style>
   .decision { display: grid; gap: var(--space-4); min-width: min(28rem, calc(100vw - 64px)); }
-  p, ul, dl, dd { margin: 0; }
+  p { margin: 0; }
   .candidate-context { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--text-primary); }
   .add-note { display: flex; }
   label small { color: var(--text-muted); font-weight: normal; }
@@ -210,11 +181,4 @@
   textarea:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset, 2px); }
   textarea:disabled { opacity: var(--opacity-disabled); }
   .decision-error { color: var(--text-danger); }
-  .merge-required { display: grid; gap: var(--space-2); padding: var(--space-4); border: var(--border-width) solid color-mix(in srgb, var(--accent-amber) 30%, var(--border-default)); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--accent-amber) 9%, var(--bg-surface)); color: var(--text-secondary); }
-  .merge-required strong { color: color-mix(in srgb, var(--accent-amber) 72%, var(--text-primary)); }
-  .merge-required ul { display: grid; gap: var(--space-1); padding-left: var(--space-5); }
-  .merge-required li dl { display: grid; gap: var(--space-2); }
-  .merge-required li dl > div { display: grid; gap: var(--space-1); }
-  .merge-required dt { color: var(--text-muted); font-size: var(--font-size-xs); }
-  .merge-required dd { overflow-wrap: anywhere; }
 </style>

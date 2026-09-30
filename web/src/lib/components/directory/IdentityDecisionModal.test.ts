@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { appShortcuts } from '@kenn-io/kit-ui';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -69,7 +69,8 @@ describe('IdentityDecisionModal', () => {
       decision,
       reviewContext: controller.reviewContextSnapshot(),
       onClose,
-      onContextInvalidated: vi.fn()
+      onContextInvalidated: vi.fn(),
+      onResolveMerge: vi.fn()
     });
 
     expect(screen.queryByText(/merge people/i)).toBeNull();
@@ -110,7 +111,8 @@ describe('IdentityDecisionModal', () => {
       reviewContext: controller.reviewContextSnapshot(),
       onClose,
       onDecided,
-      onContextInvalidated: vi.fn()
+      onContextInvalidated: vi.fn(),
+      onResolveMerge: vi.fn()
     });
 
     const disclosure = screen.getByRole('button', { name: 'Add a note' });
@@ -134,7 +136,8 @@ describe('IdentityDecisionModal', () => {
       decision: 'reject',
       reviewContext: controller.reviewContextSnapshot(),
       onClose: vi.fn(),
-      onContextInvalidated: vi.fn()
+      onContextInvalidated: vi.fn(),
+      onResolveMerge: vi.fn()
     });
 
     expect(screen.queryByRole('button', { name: 'Add a note' })).toBeNull();
@@ -158,7 +161,8 @@ describe('IdentityDecisionModal', () => {
       decision: 'reject',
       reviewContext: controller.reviewContextSnapshot(),
       onClose,
-      onContextInvalidated: vi.fn()
+      onContextInvalidated: vi.fn(),
+      onResolveMerge: vi.fn()
     });
 
     await focusAndClick(screen.getByRole('button', { name: 'Add a note' }));
@@ -191,7 +195,8 @@ describe('IdentityDecisionModal', () => {
       decision: 'accept',
       reviewContext: controller.reviewContextSnapshot(),
       onClose: vi.fn(),
-      onContextInvalidated
+      onContextInvalidated,
+      onResolveMerge: vi.fn()
     });
 
     controller.applyURLState({ reviewKind: 'identity', identityState: 'candidate' }, true);
@@ -219,7 +224,8 @@ describe('IdentityDecisionModal', () => {
       decision: 'reject',
       reviewContext: controller.reviewContextSnapshot(),
       onClose: vi.fn(),
-      onContextInvalidated
+      onContextInvalidated,
+      onResolveMerge: vi.fn()
     });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Keep separate' }));
@@ -245,7 +251,8 @@ describe('IdentityDecisionModal', () => {
         decision: 'accept',
         reviewContext: controller.reviewContextSnapshot(),
         onClose,
-        onContextInvalidated: vi.fn()
+        onContextInvalidated: vi.fn(),
+        onResolveMerge: vi.fn()
       });
       await waitFor(() => expect(appShortcuts.activeScope()).toBe('identity-decision-modal'));
       await fireEvent.click(screen.getByRole('button', { name: 'Link identities' }));
@@ -268,7 +275,7 @@ describe('IdentityDecisionModal', () => {
     }
   });
 
-  it('shows a typed merge-required handoff without retrying acceptance or issuing a merge', async () => {
+  it('hands an accept that needs a merge straight to the merge, with no extra step or click', async () => {
     const conflict: PersonMergeRequiredError = {
       error: 'person_merge_required',
       message: 'Choose a survivor',
@@ -297,37 +304,30 @@ describe('IdentityDecisionModal', () => {
     });
     const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
     const onResolveMerge = vi.fn();
+    const onClose = vi.fn();
+    const onDecided = vi.fn();
     render(IdentityDecisionModal, {
       controller,
       candidate: candidate(),
       decision: 'accept',
       reviewContext: controller.reviewContextSnapshot(),
-      onClose: vi.fn(),
+      onClose,
+      onDecided,
       onContextInvalidated: vi.fn(),
       onResolveMerge
     });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Link identities' }));
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('An explicit merge is required');
-    expect(within(alert).getByText('Synthetic One')).toBeDefined();
-    expect(within(alert).getByText('Synthetic Two')).toBeDefined();
-    const profiles = within(alert).getByRole('list', { name: 'Profiles requiring merge' });
-    const profileItems = within(profiles).getAllByRole('listitem');
-    expect(profileItems).toHaveLength(2);
-    expect(within(profileItems[0]!).getAllByRole('term').map((term) => term.textContent)).toEqual(['Profile', 'ETag']);
-    expect(within(profileItems[0]!).getAllByRole('definition').map((definition) => definition.textContent)).toEqual([
-      'Synthetic One', '"person-7-r4"'
-    ]);
-    expect(within(profileItems[1]!).getAllByRole('term').map((term) => term.textContent)).toEqual(['Profile', 'ETag']);
-    expect(within(profileItems[1]!).getAllByRole('definition').map((definition) => definition.textContent)).toEqual([
-      'Synthetic Two', '"person-9-r2"'
-    ]);
-    expect(screen.getByRole('dialog', { name: 'Link identities' })).toBeDefined();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Resolve merge' }));
-    expect(onResolveMerge).toHaveBeenCalledOnce();
+    await waitFor(() => expect(onResolveMerge).toHaveBeenCalledOnce());
     expect(onResolveMerge).toHaveBeenCalledWith(conflict);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onDecided).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Resolve merge' })).toBeNull();
+    expect(document.body.textContent).not.toContain('person-7-r4');
+    expect(document.body.textContent).not.toMatch(/ETag|explicit merge/i);
+    // The accept is sent once and not retried; the merge modal issues the merge.
     expect(requests).toHaveLength(1);
     expect(new URL(requests[0]!.url).pathname).toBe('/api/v1/identity/match-candidates/17/accept');
   });

@@ -139,7 +139,6 @@ describe('DirectoryReviewCentre', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Link identities' }));
     await fireEvent.click(screen.getByRole('dialog', { name: 'Link identities' }).querySelector('button.kit-button--solid')!);
-    await fireEvent.click(await screen.findByRole('button', { name: 'Resolve merge' }));
 
     await waitFor(() => expect(onAnnounce).toHaveBeenCalledWith(
       "People merged into Synthetic One. Undo it from Synthetic One's merge history."
@@ -170,7 +169,6 @@ describe('DirectoryReviewCentre', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Link identities' }));
     await fireEvent.click(screen.getByRole('dialog', { name: 'Link identities' }).querySelector('button.kit-button--solid')!);
-    await fireEvent.click(await screen.findByRole('button', { name: 'Resolve merge' }));
 
     const merge = await screen.findByRole('dialog', { name: 'Resolve person merge' });
     expect(within(merge).getByRole('alert').textContent).toContain('Unpublish first');
