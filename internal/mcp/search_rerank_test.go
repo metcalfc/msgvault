@@ -19,8 +19,11 @@ import (
 // every judgment it is asked for.
 type countingReranker struct{ calls atomic.Int32 }
 
-func (r *countingReranker) Top() int               { return 30 }
-func (r *countingReranker) Identity() string       { return "test" }
+func (r *countingReranker) Top() int         { return 30 }
+func (r *countingReranker) Identity() string { return "test" }
+func (r *countingReranker) Admit(context.Context) (string, error) {
+	return "policy", nil
+}
 func (r *countingReranker) Timeout() time.Duration { return time.Minute }
 func (r *countingReranker) Rerank(_ context.Context, _ string, ids []int64) (hybrid.RerankScores, error) {
 	r.calls.Add(1)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -26,12 +27,25 @@ type recordingReranker struct {
 	release chan struct{}
 	// started is signalled when a judgment begins.
 	started chan struct{}
+	// admit, when set, decides each caller's gate.
+	admit func() (string, error)
+	// honorCancel makes a held judgment return when its context ends,
+	// like a real provider call, and records that it did.
+	honorCancel bool
+	cancelled   atomic.Bool
 
 	mu    sync.Mutex
 	calls [][]int64
 }
 
 func (r *recordingReranker) Timeout() time.Duration { return r.timeout }
+
+func (r *recordingReranker) Admit(context.Context) (string, error) {
+	if r.admit != nil {
+		return r.admit()
+	}
+	return "policy-1", nil
+}
 
 func (r *recordingReranker) callCount() int {
 	r.mu.Lock()
@@ -47,7 +61,7 @@ func (e reasonError) RerankReason() string { return string(e) }
 func (r *recordingReranker) Top() int         { return r.top }
 func (r *recordingReranker) Identity() string { return "batched\x00test-model" }
 
-func (r *recordingReranker) Rerank(_ context.Context, _ string, ids []int64) (RerankScores, error) {
+func (r *recordingReranker) Rerank(ctx context.Context, _ string, ids []int64) (RerankScores, error) {
 	r.mu.Lock()
 	r.calls = append(r.calls, append([]int64(nil), ids...))
 	r.mu.Unlock()
@@ -55,7 +69,16 @@ func (r *recordingReranker) Rerank(_ context.Context, _ string, ids []int64) (Re
 		r.started <- struct{}{}
 	}
 	if r.release != nil {
-		<-r.release
+		if r.honorCancel {
+			select {
+			case <-r.release:
+			case <-ctx.Done():
+				r.cancelled.Store(true)
+				return RerankScores{}, ctx.Err()
+			}
+		} else {
+			<-r.release
+		}
 	}
 	if r.err != nil {
 		return RerankScores{}, r.err
@@ -259,15 +282,16 @@ func TestEngineRerankTimeoutKeepsFusedOrderAndNeverReplacesAnOrder(t *testing.T)
 		assert.Equal("timeout", info.Reason)
 		assert.Equal([]int64{1, 2, 3}, hitIDs(hits), "a timed-out judgment keeps the fused order")
 
-		// The slow judgment then finishes with an order, which is cached.
+		// Its only waiter left, so the judgment was cancelled and nothing
+		// was cached.
 		<-reranker.started
 		close(reranker.release)
 		synctest.Wait()
-		key := rerankCacheKey(request, generation, reranker.Identity(), []int64{1, 2, 3})
-		cached, ok := engine.rerankCache.get(key)
-		assert.True(ok)
-		assert.Equal(RerankApplied, cached.Status)
+		key := rerankCacheKey(request, generation, reranker.Identity()+"\x00policy-1", []int64{1, 2, 3})
+		_, ok := engine.rerankCache.get(key)
+		assert.False(ok, "a judgment nobody waits for is not cached")
 
+		engine.rerankCache.put(key, RerankInfo{Status: RerankApplied, Scores: map[int64]float64{1: 0.1, 2: 0.2, 3: 0.9}, Scored: 3})
 		engine.rerankCache.put(key, RerankInfo{Status: RerankSkipped, Reason: "timeout"})
 		hits = fusedFixtureHits()
 		info = engine.applyRerank(t.Context(), reranker, request, generation, hits)
@@ -278,13 +302,13 @@ func TestEngineRerankTimeoutKeepsFusedOrderAndNeverReplacesAnOrder(t *testing.T)
 	})
 }
 
-func TestEngineRerankCallerCancellationIsNotCached(t *testing.T) {
+func TestEngineRerankLastCallerLeavingCancelsTheJudgment(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
 		engine := NewEngine(nil, nil, nil, Config{})
 		reranker := &recordingReranker{
 			top: 3, scores: map[int64]float64{1: 0.1, 2: 0.2, 3: 0.9}, timeout: time.Minute,
-			release: make(chan struct{}), started: make(chan struct{}, 1),
+			release: make(chan struct{}), started: make(chan struct{}, 2), honorCancel: true,
 		}
 		request := hybridRequest(5, true)
 		ctx, cancel := context.WithCancel(t.Context())
@@ -295,11 +319,82 @@ func TestEngineRerankCallerCancellationIsNotCached(t *testing.T) {
 		hits := fusedFixtureHits()
 		info := engine.applyRerank(ctx, reranker, request, vector.Generation{ID: 1}, hits)
 		assert.Equal("timeout", info.Reason, "a caller that leaves keeps the fused order")
-		close(reranker.release)
 		synctest.Wait()
+		assert.True(reranker.cancelled.Load(), "the judgment stops once its only caller left")
+		assert.Equal(1, reranker.callCount(), "no further request is made for the abandoned search")
+
+		// The abandoned judgment was not cached; the next search judges afresh.
+		close(reranker.release)
 		hits = fusedFixtureHits()
 		info = engine.applyRerank(t.Context(), reranker, request, vector.Generation{ID: 1}, hits)
-		assert.Equal(RerankApplied, info.Status, "the detached judgment still completed for the next search")
+		assert.Equal(RerankApplied, info.Status)
+		assert.Equal(2, reranker.callCount())
+	})
+}
+
+func TestEngineRerankOneCallerLeavingKeepsTheJudgmentForOthers(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		engine := NewEngine(nil, nil, nil, Config{})
+		reranker := &recordingReranker{
+			top: 3, scores: map[int64]float64{1: 0.1, 2: 0.2, 3: 0.9}, timeout: time.Minute,
+			release: make(chan struct{}), started: make(chan struct{}, 1), honorCancel: true,
+		}
+		request := hybridRequest(5, true)
+		stayed := make(chan *RerankInfo, 1)
+		go func() {
+			stayed <- engine.applyRerank(t.Context(), reranker, request, vector.Generation{ID: 1}, fusedFixtureHits())
+		}()
+		<-reranker.started
+		ctx, cancel := context.WithCancel(t.Context())
+		left := make(chan *RerankInfo, 1)
+		go func() {
+			left <- engine.applyRerank(ctx, reranker, request, vector.Generation{ID: 1}, fusedFixtureHits())
+		}()
+		synctest.Wait()
+		cancel()
+		assert.Equal("timeout", (<-left).Reason)
+		close(reranker.release)
+		assert.Equal(RerankApplied, (<-stayed).Status)
+		assert.False(reranker.cancelled.Load())
+		assert.Equal(1, reranker.callCount())
+	})
+}
+
+func TestEngineRerankGatesEveryCallerBeforeJoining(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		engine := NewEngine(nil, nil, nil, Config{})
+		var revoked atomic.Bool
+		reranker := &recordingReranker{
+			top: 3, scores: map[int64]float64{1: 0.1, 2: 0.2, 3: 0.9}, timeout: time.Minute,
+			release: make(chan struct{}), started: make(chan struct{}, 1),
+			admit: func() (string, error) {
+				if revoked.Load() {
+					return "", reasonError("consent_required")
+				}
+				return "policy-1", nil
+			},
+		}
+		request := hybridRequest(5, true)
+		first := make(chan *RerankInfo, 1)
+		go func() {
+			first <- engine.applyRerank(t.Context(), reranker, request, vector.Generation{ID: 1}, fusedFixtureHits())
+		}()
+		<-reranker.started
+		revoked.Store(true) // consent revoked while the first judgment is in flight
+
+		hits := fusedFixtureHits()
+		info := engine.applyRerank(t.Context(), reranker, request, vector.Generation{ID: 1}, hits)
+		assert.Equal(RerankSkipped, info.Status)
+		assert.Equal("consent_required", info.Reason, "a caller whose gate fails never joins a judgment")
+		assert.Equal([]int64{1, 2, 3}, hitIDs(hits))
+
+		close(reranker.release)
+		assert.Equal(RerankApplied, (<-first).Status)
+
+		info = engine.applyRerank(t.Context(), reranker, request, vector.Generation{ID: 1}, fusedFixtureHits())
+		assert.Equal("consent_required", info.Reason, "nor reads the cached order")
 		assert.Equal(1, reranker.callCount())
 	})
 }

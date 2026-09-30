@@ -510,13 +510,17 @@ and reorders those results by that probability.
    order. A message that is deleted or filtered out changes those IDs, so a
    stale order is never reused. The next page of the same search reuses the
    order without a second request, and concurrent identical searches share
-   one request. A provider failure is kept the same way, so later pages keep
+   one request. Every search passes the consent, configuration, and budget
+   checks itself before it may reuse a kept order or join a request in
+   flight, so after `msgvault jev revoke` no search is reranked. A provider
+   failure is kept the same way, so later pages keep
    the fused order too, but it never replaces an order already kept. Gate
    states (disabled, no consent, no key) are not kept, so a change applies to
    the next search.
 5. **Bounded wait.** A search waits at most `[jev] request_timeout` (default
-   10s) for the judgment and otherwise keeps the fused order; a judgment that
-   finishes later is kept for the next page.
+   10s) for the judgment and otherwise keeps the fused order. When every
+   search waiting on a judgment has left, the judgment is cancelled, so no
+   further requests are sent for it, and nothing is kept.
 
 Any failure leaves the fused order and never fails the search. Hybrid
 responses carry `rerank` with `status` (`applied` or `skipped`), `reason` for

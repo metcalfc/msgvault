@@ -53,6 +53,7 @@ func ShapeFromConfig(shape string) (string, error) {
 // Judge is the shared Jev door the service scorer asks through.
 // *jev.Service implements it.
 type Judge interface {
+	Admit(ctx context.Context, spec jev.FeatureSpec, automatic bool) (string, error)
 	JudgeAll(ctx context.Context, spec jev.FeatureSpec, automatic bool, judgments []jev.Judgment, deadline time.Time) (jev.BatchResult, error)
 }
 
@@ -76,6 +77,12 @@ func NewServiceScorer(judge Judge, shape string) (*ServiceScorer, error) {
 		return nil, fmt.Errorf("unknown Jev request shape %q", shape)
 	}
 	return &ServiceScorer{judge: judge, shape: shape, spec: JevFeature()}, nil
+}
+
+// Admit runs the search_rerank gate for one caller as a non-automatic
+// caller and returns the admitted policy fingerprint.
+func (s *ServiceScorer) Admit(ctx context.Context) (string, error) {
+	return s.judge.Admit(ctx, s.spec, false)
 }
 
 // Rerank scores every candidate against the query. On failure the returned

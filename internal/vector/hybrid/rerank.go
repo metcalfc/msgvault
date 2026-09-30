@@ -43,6 +43,10 @@ type Reranker interface {
 	// Identity names everything besides the candidates that changes scores
 	// (for example the request shape and model). It is part of the cache key.
 	Identity() string
+	// Admit runs the gate for one caller (configuration, credential,
+	// consent, budget) without sending anything, and returns a token naming
+	// the admitted policy. An error carries a safe skip reason.
+	Admit(ctx context.Context) (string, error)
 	// Timeout bounds one judgment; zero means DefaultRerankTimeout. A search
 	// never waits longer and keeps its fused order when it runs out.
 	Timeout() time.Duration
@@ -171,7 +175,15 @@ func (e *Engine) applyRerank(
 	for i := range top {
 		ids[i] = hits[i].MessageID
 	}
-	key := rerankCacheKey(req, generation, reranker.Identity(), ids)
+	// Every caller passes the gate itself (configuration, credential,
+	// consent, budget) before it may read a cached order or join a judgment
+	// in flight. The admitted policy is part of the key, so a caller never
+	// reuses work admitted under another policy.
+	admission, err := reranker.Admit(ctx)
+	if err != nil {
+		return &RerankInfo{Status: RerankSkipped, Reason: rerankReason(err)}
+	}
+	key := rerankCacheKey(req, generation, reranker.Identity()+"\x00"+admission, ids)
 	if info, ok := e.rerankCache.get(key); ok {
 		info.Cached = true
 		reorderByScores(hits[:top], info.Scores)
@@ -181,30 +193,79 @@ func (e *Engine) applyRerank(
 	if timeout <= 0 {
 		timeout = DefaultRerankTimeout
 	}
-	// Concurrent misses for one key share one judgment. The judgment runs
-	// detached from any one caller, bounded by the reranker's timeout, so a
-	// caller that leaves early neither cancels it for the others nor turns
-	// its own cancellation into a cached failure.
-	flight := e.rerankFlights.DoChan(key, func() (any, error) {
-		flightCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
-		defer cancel()
-		return e.judgeRerank(flightCtx, reranker, req.FreeText, ids, key), nil
+	flight := e.joinRerankFlight(ctx, key, timeout, func(flightCtx context.Context) RerankInfo {
+		return e.judgeRerank(flightCtx, reranker, req.FreeText, ids, key)
 	})
 	wait := time.NewTimer(timeout)
 	defer wait.Stop()
 	select {
-	case result := <-flight:
-		info, _ := result.Val.(RerankInfo)
+	case <-flight.done:
+		info := flight.info
 		if info.Status == RerankApplied {
 			reorderByScores(hits[:top], info.Scores)
 		}
 		return &info
 	case <-ctx.Done():
-		return &RerankInfo{Status: RerankSkipped, Reason: "timeout"}
 	case <-wait.C:
-		// The judgment may still finish and be cached for the next page;
-		// this search keeps the fused order.
-		return &RerankInfo{Status: RerankSkipped, Reason: "timeout"}
+	}
+	e.leaveRerankFlight(key, flight)
+	return &RerankInfo{Status: RerankSkipped, Reason: "timeout"}
+}
+
+// rerankFlight is one judgment shared by every concurrent caller with the
+// same key. It runs on its own context, bounded by the reranker's timeout,
+// and is cancelled as soon as its last waiter leaves, so no request is sent
+// for a search nobody is waiting for.
+type rerankFlight struct {
+	cancel  context.CancelFunc
+	waiters int
+	done    chan struct{}
+	info    RerankInfo
+}
+
+func (e *Engine) joinRerankFlight(
+	ctx context.Context, key string, timeout time.Duration, judge func(context.Context) RerankInfo,
+) *rerankFlight {
+	e.rerankFlightsMu.Lock()
+	defer e.rerankFlightsMu.Unlock()
+	if flight, ok := e.rerankFlights[key]; ok {
+		flight.waiters++
+		return flight
+	}
+	flightCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	flight := &rerankFlight{cancel: cancel, waiters: 1, done: make(chan struct{})}
+	if e.rerankFlights == nil {
+		e.rerankFlights = make(map[string]*rerankFlight)
+	}
+	e.rerankFlights[key] = flight
+	go func() {
+		defer cancel()
+		info := judge(flightCtx)
+		e.rerankFlightsMu.Lock()
+		flight.info = info
+		if e.rerankFlights[key] == flight {
+			delete(e.rerankFlights, key)
+		}
+		e.rerankFlightsMu.Unlock()
+		close(flight.done)
+	}()
+	return flight
+}
+
+// leaveRerankFlight drops one waiter and cancels the judgment when none is
+// left.
+func (e *Engine) leaveRerankFlight(key string, flight *rerankFlight) {
+	e.rerankFlightsMu.Lock()
+	defer e.rerankFlightsMu.Unlock()
+	flight.waiters--
+	if flight.waiters > 0 {
+		return
+	}
+	flight.cancel()
+	if e.rerankFlights[key] == flight {
+		// A later caller starts a fresh judgment instead of joining a
+		// cancelled one.
+		delete(e.rerankFlights, key)
 	}
 }
 
@@ -213,6 +274,11 @@ func (e *Engine) applyRerank(
 // too-few-candidate skips are not cached.
 func (e *Engine) judgeRerank(ctx context.Context, reranker Reranker, query string, ids []int64, key string) RerankInfo {
 	scores, err := reranker.Rerank(ctx, query, ids)
+	if ctx.Err() != nil {
+		// Cancelled because every caller left, or out of time: nothing is
+		// cached, and the next search judges afresh.
+		return RerankInfo{Status: RerankSkipped, Reason: "timeout"}
+	}
 	if err == nil {
 		err = validateRerankScores(scores.Scores, ids)
 	}

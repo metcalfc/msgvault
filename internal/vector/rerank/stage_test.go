@@ -69,13 +69,25 @@ func (j *fakeJev) server(t *testing.T) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
+		if !assert.NoError(t, err) {
+			http.Error(w, "read", http.StatusBadRequest)
+			return
+		}
 		var body map[string]any
-		require.NoError(t, json.Unmarshal(raw, &body))
+		var typed struct {
+			State struct {
+				Candidate  string   `json:"candidate"`
+				Candidates []string `json:"candidates"`
+			} `json:"state"`
+			Questions map[string]json.RawMessage `json:"questions"`
+		}
+		if !assert.NoError(t, json.Unmarshal(raw, &body)) || !assert.NoError(t, json.Unmarshal(raw, &typed)) {
+			http.Error(w, "decode", http.StatusBadRequest)
+			return
+		}
 		j.mu.Lock()
 		j.bodies = append(j.bodies, body)
 		j.mu.Unlock()
-		state := body["state"].(map[string]any)
 		score := func(text string) float64 {
 			if strings.Contains(strings.ToLower(text), "lease") {
 				return 0.9
@@ -83,18 +95,20 @@ func (j *fakeJev) server(t *testing.T) *httptest.Server {
 			return 0.2
 		}
 		answers := map[string]any{}
-		for id := range body["questions"].(map[string]any) {
-			text, _ := state["candidate"].(string)
+		for id := range typed.Questions {
+			text := typed.State.Candidate
 			if id != "matches" {
 				var index int
-				_, err := fmt.Sscanf(id, "candidate_%d", &index)
-				require.NoError(t, err)
-				text = state["candidates"].([]any)[index].(string)
+				if _, err := fmt.Sscanf(id, "candidate_%d", &index); !assert.NoError(t, err) || index >= len(typed.State.Candidates) {
+					http.Error(w, "question", http.StatusBadRequest)
+					return
+				}
+				text = typed.State.Candidates[index]
 			}
 			answers[id] = map[string]any{"type": "noul", "noul": score(text)}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+		assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 			"model": jev.DefaultModel, "answers": answers,
 			"usage": map[string]any{"input_tokens": 300, "output_tokens": 10},
 		}))
@@ -166,7 +180,8 @@ func TestStageSendsOnlyDisclosedCandidateTextWithConsent(t *testing.T) {
 
 	requests := fake.requests()
 	require.Len(requests, 1, "the batched shape sends one request")
-	state := requests[0]["state"].(map[string]any)
+	state, ok := requests[0]["state"].(map[string]any)
+	require.True(ok)
 	assert.Equal("lease renewal", state["query"])
 	assert.Equal([]any{
 		"Subject: Weekly digest\nFrom: quiet@example.org\nDate: 2026-03-03\n\nUnrelated weekly figures.",
@@ -174,14 +189,17 @@ func TestStageSendsOnlyDisclosedCandidateTextWithConsent(t *testing.T) {
 	}, state["candidates"], "subject, sender, date, and the cleaned body are all that is sent")
 	assert.Len(state, 2, "the state carries only the query and the candidates")
 
-	questions := requests[0]["questions"].(map[string]any)
+	questions, ok := requests[0]["questions"].(map[string]any)
+	require.True(ok)
 	require.Len(questions, 2)
 	for _, question := range policy.Questions {
 		sent, ok := questions[question.ID]
 		if !ok {
 			continue
 		}
-		assert.Equal(question.Instructions, sent.(map[string]any)["instructions"], "wording is the consented policy's")
+		wire, isObject := sent.(map[string]any)
+		require.True(isObject)
+		assert.Equal(question.Instructions, wire["instructions"], "wording is the consented policy's")
 	}
 	assert.Contains(questions, "candidate_0")
 	assert.Contains(questions, "candidate_1")
@@ -281,8 +299,12 @@ func TestSenderNeverSendsAPhoneNumberAsAName(t *testing.T) {
 		{name: "+15550000002", want: "unknown sender"},
 		{name: "(555) 000-0002", email: "robin@example.org", want: "robin@example.org"},
 		{name: "555 0002 #12", want: "unknown sender"},
+		{name: "+1 (555) 000-0002", email: "casey@example.com", want: "casey@example.com"},
 		{name: "Casey Example", email: "casey@example.com", want: "Casey Example"},
 		{name: "Team 42", want: "Team 42"},
+		{name: "B2B 2026", email: "casey@example.com", want: "B2B 2026"},
+		{name: "Room 101", want: "Room 101"},
+		{name: "3M Support", want: "3M Support"},
 		{want: "unknown sender"},
 	} {
 		message := rerank.Message{FromName: tc.name, FromEmail: tc.email}
@@ -291,4 +313,26 @@ func TestSenderNeverSendsAPhoneNumberAsAName(t *testing.T) {
 	text := rerank.Candidate(rerank.Message{Subject: "Hi", FromName: "+15550000002"}, embed.PreprocessConfig{})
 	assert.Equal(t, "Subject: Hi\nFrom: unknown sender\nDate: \n\n", text)
 	assert.NotContains(t, text, "5550000002")
+}
+
+func TestStageAdmitFollowsConsentLive(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	a := newRerankArchive(t)
+	fake := &fakeJev{}
+	service, cfg := rerankService(t, fake.server(t).URL, a.f.Store)
+	policy := grantRerankConsent(t, a.f.Store, cfg)
+	stage := newTestStage(t, service, a.f.Store, rerank.ShapeBatched)
+
+	token, err := stage.Admit(t.Context())
+	require.NoError(err)
+	assert.Equal(policy.Fingerprint, token)
+
+	_, err = a.f.Store.RevokeJevFeatureConsent(t.Context(), jev.FeatureSearchRerank, "test")
+	require.NoError(err)
+	_, err = stage.Admit(t.Context())
+	var reasoner hybrid.RerankReasoner
+	require.ErrorAs(err, &reasoner)
+	assert.Equal("consent_required", reasoner.RerankReason())
+	assert.Empty(fake.requests(), "admission sends nothing")
 }

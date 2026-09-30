@@ -48,30 +48,23 @@ func (m Message) Sender() string {
 	return unknownSender
 }
 
-// looksLikePhone reports whether value parses as a phone number (with no
-// letters in it; the parser skips letters) or is mostly digits and phone
-// punctuation.
+// looksLikePhone reports whether a display name is really a phone number:
+// it has no letters and either parses as a phone number or holds 7 to 15
+// digits. A name with any letter ("3M Support", "Room 101") is a name.
 func looksLikePhone(value string) bool {
-	digits, phonePunctuation, letters, other := 0, 0, 0, 0
+	digits := 0
 	for _, r := range value {
 		switch {
+		case unicode.IsLetter(r):
+			return false
 		case unicode.IsDigit(r):
 			digits++
-		case strings.ContainsRune("+-(). /#*", r):
-			phonePunctuation++
-		case unicode.IsLetter(r):
-			letters++
-			other++
-		default:
-			other++
 		}
 	}
-	if letters == 0 {
-		if _, err := textimport.NormalizePhone(value); err == nil {
-			return true
-		}
+	if _, err := textimport.NormalizePhone(value); err == nil {
+		return true
 	}
-	return digits >= 3 && digits+phonePunctuation > 2*other
+	return digits >= 7 && digits <= 15
 }
 
 // Candidate renders one message as the text Jev judges: a Subject, From,

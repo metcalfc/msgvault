@@ -361,8 +361,10 @@ consumers `internal/api/handlers.go`, `internal/mcp/handlers.go`,
   > offers the same prefix. The cache is in memory (256 entries, ten
   > minutes) and also pins transient provider failures, not gate states;
   > a failure never replaces a cached order. Concurrent misses share one
-  > judgment (singleflight), detached from the caller and bounded by the
-  > request timeout.
+  > judgment, bounded by the request timeout and cancelled (uncached) when
+  > its last waiter leaves. Each caller passes the gate (`Service.Admit`)
+  > before reading the cache or joining, and the admitted policy
+  > fingerprint is part of the key.
   > `Store.GetMessagesWithBodiesByIDsContext` loads bodies with one
   > `message_id IN (...)` lookup, for search and `msgvault eval` alike.
 - [x] **Task 4.3 Config and gate.** `[jev.rerank]` `enabled`, `shape`

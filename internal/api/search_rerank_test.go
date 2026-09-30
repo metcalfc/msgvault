@@ -38,8 +38,9 @@ type fixedReranker struct {
 	calls  int
 }
 
-func (r *fixedReranker) Top() int         { return 30 }
-func (r *fixedReranker) Identity() string { return "test" }
+func (r *fixedReranker) Top() int                              { return 30 }
+func (r *fixedReranker) Identity() string                      { return "test" }
+func (r *fixedReranker) Admit(context.Context) (string, error) { return "policy", nil }
 func (r *fixedReranker) Timeout() time.Duration {
 	return time.Minute
 }

@@ -73,6 +73,26 @@ func NewStage(options StageOptions) (*Stage, error) {
 	return &Stage{options: options}, nil
 }
 
+// Admitter is a scorer with a gate a caller must pass before it may use or
+// share a judgment. *ServiceScorer implements it.
+type Admitter interface {
+	Admit(ctx context.Context) (string, error)
+}
+
+// Admit implements hybrid.Reranker: it runs the scorer's gate for this
+// caller. A scorer without a gate admits everyone.
+func (s *Stage) Admit(ctx context.Context) (string, error) {
+	admitter, ok := s.options.Scorer.(Admitter)
+	if !ok {
+		return "", nil
+	}
+	token, err := admitter.Admit(ctx)
+	if err != nil {
+		return "", &skipError{reason: jev.Skipped(err), err: err}
+	}
+	return token, nil
+}
+
 // Timeout implements hybrid.Reranker.
 func (s *Stage) Timeout() time.Duration { return s.options.Timeout }
 

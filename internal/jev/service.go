@@ -352,6 +352,21 @@ func (s *Service) JudgeQuestions(
 	return response, nil
 }
 
+// Admit runs every gate for one caller without sending anything: the
+// configuration, the feature switch, the credential, active consent for the
+// current policy, and the in-process budget (breaker, run halt, cost stop).
+// It returns the admitted policy fingerprint.
+func (s *Service) Admit(ctx context.Context, spec FeatureSpec, automatic bool) (string, error) {
+	cleared, err := s.check(ctx, spec, automatic)
+	if err != nil {
+		return "", err
+	}
+	if err := s.options.Budget.preflight(1); err != nil {
+		return "", err
+	}
+	return cleared.policy.Fingerprint, nil
+}
+
 // Judgment is one state and the consented questions to ask about it, for
 // JudgeAll. Nil or empty QuestionIDs asks every question of the policy.
 type Judgment struct {
