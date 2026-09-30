@@ -904,7 +904,7 @@ func (s *Store) loadPersonFactResolvedClaimsTx(
 				ValidUntil:     personFactPortableTimePointer(claim.ValidUntil),
 				Origin:         claim.Origin, Confidence: claim.Confidence,
 			},
-			Normalized: copyPersonFactNormalized(claim.Normalized),
+			Normalized: renormalizedPersonFactValue(proposedTarget, claim.Normalized),
 			Failure:    copyPersonFactFailure(claim.Failure),
 		}
 		if failure := preparedFailures[claim.ClaimKey]; failure != nil {
@@ -2747,6 +2747,26 @@ func personFactProjectionRowID(ref *personfacts.ProjectionRef) int64 {
 
 func personFactTargetMapKey(kind personfacts.TargetKind, key string) string {
 	return string(kind) + "\x00" + key
+}
+
+// renormalizedPersonFactValue passes a stored claim's normalized value
+// through the current normalization before resolution. The ledger keeps the
+// value and fingerprint recorded when the claim was written; resolution groups
+// by value, so a claim stored before a normalization change (a title with
+// emoji, say) must compare equal to the same value submitted after it.
+// Normalization is idempotent on its own output, so unchanged rules return
+// the stored value. A stored value the current rules reject is kept as is.
+func renormalizedPersonFactValue(
+	target personfacts.TargetDescriptor, value *personfacts.NormalizedValue,
+) *personfacts.NormalizedValue {
+	if value == nil {
+		return nil
+	}
+	current, failure, err := personfacts.NormalizeClaimValue(target, value.JSON)
+	if err != nil || failure != nil || current == nil {
+		return copyPersonFactNormalized(value)
+	}
+	return current
 }
 
 func copyPersonFactNormalized(value *personfacts.NormalizedValue) *personfacts.NormalizedValue {

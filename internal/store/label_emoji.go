@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"go.kenn.io/msgvault/internal/personfacts"
@@ -47,7 +48,7 @@ func (s *Store) stripStoredLabelEmoji(ctx context.Context) error {
 	if err := s.runMaintenance(ctx, s.stripParticipantLabelEmojiTx); err != nil {
 		return fmt.Errorf("strip emoji from participant names: %w", err)
 	}
-	if err := s.runMaintenance(ctx, s.stripRecipientLabelEmojiTx); err != nil {
+	if err := s.stripRecipientLabelEmoji(ctx); err != nil {
 		return fmt.Errorf("strip emoji from recipient names: %w", err)
 	}
 	return nil
@@ -78,11 +79,16 @@ func queryLabelRows(ctx context.Context, tx *loggedTx, query string, args ...any
 // stripPersonLabelEmojiTx cleans persons.display_name, non-user person_names,
 // and non-user employment and label-attribute values.
 //
-// persons.display_name has no provenance column. It is cleaned only when it
-// can be traced to a derived source: the promotion seed, a bound
-// participant's observed name, or a current non-user person_names row. A name
-// with no such source is treated as the user's own rename and kept. The
-// cleanup is not a rename, so display_name_changed_at is kept.
+// persons.display_name has no provenance column, and matching an imported
+// name does not prove the user never typed it. It is cleaned only with
+// positive evidence that it was never renamed: display_name_changed_at still
+// equals created_at (every rename re-dates it), or the promotion seed still
+// names it (every rename deletes the seed). Anything else is kept as the
+// user's. The cleanup is not a rename, so display_name_changed_at is kept.
+//
+// An imported formatted name that still equals a kept display name is kept
+// too: CardDAV treats that equality as the remote owning the label, and
+// cleaning only one side would hand the label to the user.
 func (s *Store) stripPersonLabelEmojiTx(ctx context.Context, tx *loggedTx) error {
 	if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
 		return err
@@ -104,14 +110,9 @@ func (s *Store) stripPersonLabelEmojiTx(ctx context.Context, tx *loggedTx) error
 		if err := tx.QueryRowContext(ctx, `SELECT
 			EXISTS (SELECT 1 FROM person_display_name_seeds
 				WHERE person_id = ? AND seeded_name = ?)
-			OR EXISTS (SELECT 1 FROM person_participants pp
-				JOIN participants p ON p.id = pp.participant_id
-				WHERE pp.person_id = ? AND TRIM(p.display_name) = ?)
-			OR EXISTS (SELECT 1 FROM person_names
-				WHERE person_id = ? AND source <> ? AND formatted = ?
-				  AND active_until IS NULL AND superseded_at IS NULL)`,
-			person.id, person.value, person.id, person.value,
-			person.id, ProvenanceUser, person.value).Scan(&derived); err != nil {
+			OR EXISTS (SELECT 1 FROM persons
+				WHERE id = ? AND display_name_changed_at = created_at)`,
+			person.id, person.value, person.id).Scan(&derived); err != nil {
 			return fmt.Errorf("trace person %d display name: %w", person.id, err)
 		}
 		if !derived {
@@ -138,7 +139,10 @@ func (s *Store) stripPersonLabelEmojiTx(ctx context.Context, tx *loggedTx) error
 	for _, column := range nameColumns {
 		rows, err := queryLabelRows(ctx, tx, `SELECT id, `+column+` FROM person_names
 			WHERE source <> ? AND superseded_at IS NULL AND `+column+` IS NOT NULL
-			  AND `+s.nonASCIIPredicate(column), ProvenanceUser)
+			  AND `+s.nonASCIIPredicate(column)+`
+			  AND NOT EXISTS (SELECT 1 FROM persons p
+				WHERE p.id = person_names.person_id AND p.display_name = person_names.`+column+`)`,
+			ProvenanceUser)
 		if err != nil {
 			return fmt.Errorf("read person name %s: %w", column, err)
 		}
@@ -369,30 +373,82 @@ func (s *Store) stripParticipantLabelEmojiTx(ctx context.Context, tx *loggedTx) 
 	return s.invalidateParticipantPersonEnrichmentTx(ctx, tx, changed...)
 }
 
-// stripRecipientLabelEmojiTx cleans message_recipients.display_name, the
-// name a message's header or roster gave each participant. Exported message
-// rows cannot be rewritten incrementally, so a change forces a full
-// analytics-cache rebuild.
-func (s *Store) stripRecipientLabelEmojiTx(ctx context.Context, tx *loggedTx) error {
-	rows, err := queryLabelRows(ctx, tx, `SELECT id, display_name FROM message_recipients
-		WHERE display_name IS NOT NULL AND `+s.nonASCIIPredicate("display_name"))
+// labelEmojiRecipientCursorKey records the last message_recipients id a
+// committed cleanup batch covered, so an interrupted upgrade resumes there.
+const labelEmojiRecipientCursorKey = "strip_label_emoji_recipient_cursor"
+
+// labelEmojiBatchSize is how many candidate recipient rows one cleanup
+// transaction reads.
+const labelEmojiBatchSize = 1000
+
+func (s *Store) labelEmojiBatch() int {
+	if s.labelEmojiBatchSizeOverride > 0 {
+		return s.labelEmojiBatchSizeOverride
+	}
+	return labelEmojiBatchSize
+}
+
+// stripRecipientLabelEmoji cleans message_recipients.display_name, the name
+// a message header or roster gave each participant. It walks the rows that
+// could change in id order, one committed transaction per batch, and records
+// the last id in archive_metadata with each batch. A restart resumes after
+// that id; rows already cleaned are unchanged by a second pass. Exported
+// message rows cannot be rewritten incrementally, so each batch that changes
+// a row advances the derived-data revision, forcing a full cache rebuild.
+func (s *Store) stripRecipientLabelEmoji(ctx context.Context) error {
+	stored, err := s.archiveMetadataValueContext(ctx, labelEmojiRecipientCursorKey)
 	if err != nil {
-		return fmt.Errorf("read recipient names: %w", err)
+		return err
 	}
-	changed := false
-	for _, row := range rows {
-		cleaned := textutil.StripLabelEmoji(row.value)
-		if cleaned == row.value {
-			continue
+	var cursor int64
+	if stored != "" {
+		if cursor, err = strconv.ParseInt(stored, 10, 64); err != nil {
+			return fmt.Errorf("parse recipient cleanup cursor %q: %w", stored, err)
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE message_recipients SET display_name = ? WHERE id = ?`,
-			cleaned, row.id); err != nil {
-			return fmt.Errorf("clean recipient %d name: %w", row.id, err)
+	}
+	for {
+		done := false
+		err := s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
+			rows, err := queryLabelRows(ctx, tx, `SELECT id, display_name FROM message_recipients
+				WHERE id > ? AND display_name IS NOT NULL AND `+s.nonASCIIPredicate("display_name")+`
+				ORDER BY id LIMIT ?`, cursor, s.labelEmojiBatch())
+			if err != nil {
+				return fmt.Errorf("read recipient names: %w", err)
+			}
+			if len(rows) == 0 {
+				done = true
+				_, err := tx.ExecContext(ctx, `DELETE FROM archive_metadata WHERE key = ?`,
+					labelEmojiRecipientCursorKey)
+				return err
+			}
+			changed := false
+			for _, row := range rows {
+				cleaned := textutil.StripLabelEmoji(row.value)
+				if cleaned == row.value {
+					continue
+				}
+				if _, err := tx.ExecContext(ctx, `UPDATE message_recipients SET display_name = ? WHERE id = ?`,
+					cleaned, row.id); err != nil {
+					return fmt.Errorf("clean recipient %d name: %w", row.id, err)
+				}
+				changed = true
+			}
+			cursor = rows[len(rows)-1].id
+			if changed {
+				if err := s.bumpDerivedDataRevision(tx); err != nil {
+					return err
+				}
+			}
+			return setArchiveMetadataValueTx(ctx, tx, labelEmojiRecipientCursorKey,
+				strconv.FormatInt(cursor, 10))
+		})
+		if err != nil || done {
+			return err
 		}
-		changed = true
+		if s.labelEmojiBatchHook != nil {
+			if err := s.labelEmojiBatchHook(cursor); err != nil {
+				return err
+			}
+		}
 	}
-	if !changed {
-		return nil
-	}
-	return s.bumpDerivedDataRevision(tx)
 }

@@ -54,7 +54,9 @@ contact whose profile reads "🎉 Ana" or "Ana ✨" appears as "Ana".
   either end or doubled up goes too: "Ana 🌴 | Design" becomes
   "Ana | Design", and "Design | 🌴" becomes "Design".
 - **What is kept:** letters in every script, digits, `#`, punctuation, and
-  text symbols such as ©, ®, and ™.
+  text-style symbols such as ©, ®, ™, ♀, and ★. One of these is removed
+  only when it is shown as an emoji (followed by the emoji variation
+  selector) or is part of an emoji sequence such as 🏃‍♀️.
 - **Emoji-only names:** a name made only of emoji is dropped, and msgvault
   uses the next label it has, such as a CardDAV contact's structured name or
   the email address. A chat participant known only by a service ID keeps the
@@ -63,9 +65,10 @@ contact whose profile reads "🎉 Ana" or "Ana ✨" appears as "Ana".
   notes, and the original vCards and MIME msgvault stores.
 
 The first start after upgrading cleans labels imported by earlier releases,
-once. It skips any value you entered. A saved profile's display name is
-cleaned only when it matches a name msgvault imported for that person; a
-renamed profile keeps your name.
+once, and resumes where it stopped if interrupted. It skips any value you
+entered. A saved profile's display name is cleaned only when msgvault can
+tell it was never renamed; any profile renamed since it was created keeps
+its name, even if the name matches one msgvault imported.
 
 ## Promote a durable person
 

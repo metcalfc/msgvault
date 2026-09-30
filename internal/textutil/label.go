@@ -20,14 +20,15 @@ import (
 // best label.
 //
 // Letters and marks in every script, digits, '#', and text-style symbols
-// such as ©, ®, and ™ are kept; one of those symbols is removed only when a
-// variation selector asks for its emoji presentation. A label with nothing to
+// such as ©, ®, ™, ♀, and ★ are kept; one of those symbols is removed only
+// when VS16 asks for its emoji presentation or it joins an emoji sequence. A label with nothing to
 // remove is returned unchanged, including its original spacing.
 func StripLabelEmoji(label string) string {
 	runes := []rune(label)
 	out := make([]rune, 0, len(runes))
 	removed := false
 	lastDropped := false
+	afterJoiner := false
 	gap := false
 	for i := 0; i < len(runes); i++ {
 		r := runes[i]
@@ -49,14 +50,18 @@ func StripLabelEmoji(label string) string {
 		case r == 0x200D:
 			drop = lastDropped || isEmojiBase(next)
 		case unicode.Is(extendedPictographic, r):
-			drop = !isTextDefaultSymbol(r) || next == 0xFE0F
+			// A text-style symbol (♀, ♥, ★) stays unless VS16 asks for its
+			// emoji form or it is part of a joined sequence such as 🏃‍♀️.
+			drop = !isTextDefaultSymbol(r) || next == 0xFE0F || next == 0x200D || afterJoiner
 		}
 		if drop {
 			removed = true
 			lastDropped = true
+			afterJoiner = r == 0x200D
 			gap = true
 			continue
 		}
+		afterJoiner = false
 		if gap && len(out) > 0 && needsJoiningSpace(out[len(out)-1], r) {
 			out = append(out, ' ')
 		}
@@ -93,18 +98,13 @@ func isEmojiBase(r rune) bool {
 	return r >= 0 && (unicode.Is(extendedPictographic, r) || isRegionalIndicator(r) || isEmojiModifier(r))
 }
 
-// isTextDefaultSymbol reports a pictographic character that renders as an
-// ordinary text symbol unless followed by VS16: ©, ®, ™, arrows, and similar
-// typography below the Miscellaneous Symbols block, plus a few in later
-// blocks. Characters with default emoji presentation (⌚, ⏳, ◾) are not here.
+// isTextDefaultSymbol reports a pictographic character in the Basic
+// Multilingual Plane that renders as an ordinary text symbol unless VS16
+// follows it: ©, ®, ™, arrows, ♀, ♂, ♥, ★, and similar. Characters with the
+// Emoji_Presentation property (⌚, ☕, ✨, ⭐) and every pictograph outside the
+// BMP render as emoji by default and are not text symbols.
 func isTextDefaultSymbol(r rune) bool {
-	switch r {
-	case 0x231A, 0x231B, 0x23E9, 0x23EA, 0x23EB, 0x23EC, 0x23F0, 0x23F3, 0x25FD, 0x25FE:
-		return false
-	case 0x2934, 0x2935, 0x2B05, 0x2B06, 0x2B07, 0x3030, 0x303D, 0x3297, 0x3299:
-		return true
-	}
-	return r < 0x2600
+	return r <= 0xFFFF && !unicode.Is(emojiPresentationBMP, r)
 }
 
 // needsJoiningSpace keeps words apart when an emoji sat between them without
@@ -172,6 +172,22 @@ func tidyStrippedLabel(label string) string {
 		return ""
 	}
 	return result
+}
+
+// emojiPresentationBMP is the Unicode 15.1 Emoji_Presentation property
+// restricted to the Basic Multilingual Plane.
+var emojiPresentationBMP = &unicode.RangeTable{
+	R16: []unicode.Range16{
+		{0x231A, 0x231B, 1}, {0x23E9, 0x23EC, 1}, {0x23F0, 0x23F0, 1}, {0x23F3, 0x23F3, 1},
+		{0x25FD, 0x25FE, 1}, {0x2614, 0x2615, 1}, {0x2648, 0x2653, 1}, {0x267F, 0x267F, 1},
+		{0x2693, 0x2693, 1}, {0x26A1, 0x26A1, 1}, {0x26AA, 0x26AB, 1}, {0x26BD, 0x26BE, 1},
+		{0x26C4, 0x26C5, 1}, {0x26CE, 0x26CE, 1}, {0x26D4, 0x26D4, 1}, {0x26EA, 0x26EA, 1},
+		{0x26F2, 0x26F3, 1}, {0x26F5, 0x26F5, 1}, {0x26FA, 0x26FA, 1}, {0x26FD, 0x26FD, 1},
+		{0x2705, 0x2705, 1}, {0x270A, 0x270B, 1}, {0x2728, 0x2728, 1}, {0x274C, 0x274C, 1},
+		{0x274E, 0x274E, 1}, {0x2753, 0x2755, 1}, {0x2757, 0x2757, 1}, {0x2795, 0x2797, 1},
+		{0x27B0, 0x27B0, 1}, {0x27BF, 0x27BF, 1}, {0x2B1B, 0x2B1C, 1}, {0x2B50, 0x2B50, 1},
+		{0x2B55, 0x2B55, 1},
+	},
 }
 
 // extendedPictographic is the Unicode 15.1 Extended_Pictographic property

@@ -130,6 +130,10 @@ type Store struct {
 	// the same reason.
 	contentChangedBackfillBatchSizeOverride int64
 	rfc822IDBackfillBatchSizeOverride       int
+	labelEmojiBatchSizeOverride             int
+	// labelEmojiBatchHook, when set, runs after each committed recipient
+	// batch; a non-nil return stops the cleanup there. Tests only.
+	labelEmojiBatchHook func(lastID int64) error
 }
 
 // synchronous=FULL + fullfsync=true protects WAL writes against OS/power crashes
