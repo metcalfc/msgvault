@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/msgvault/internal/persondedup"
 	"go.kenn.io/msgvault/internal/personenrichment"
 	"go.kenn.io/msgvault/internal/personfacts"
+	"go.kenn.io/msgvault/internal/profilejudge"
 	"go.kenn.io/msgvault/internal/providercredentials"
 	"go.kenn.io/msgvault/internal/queryunderstand"
 	"go.kenn.io/msgvault/internal/sweepjudge"
@@ -234,6 +235,21 @@ func newJevSweepGrounder(
 // every request.
 func newJevDuplicatePeopleJudge(cfg *config.Config, st jevRuntimeStore) (persondedup.Judge, error) {
 	if cfg == nil || !cfg.Jev.Enabled || !cfg.Jev.PersonDuplicates.Enabled {
+		return nil, nil //nolint:nilnil // nil means "no Jev".
+	}
+	service, err := newJevService(cfg, st)
+	if err != nil || service == nil {
+		return nil, err
+	}
+	return service, nil
+}
+
+// newJevProfileChoicesJudge wires the person profile choices judgment, or
+// returns nil when Jev or the feature is off so profiles keep the plain
+// rules. Consent, the credential, and the automatic switch are rechecked by
+// the service on every request.
+func newJevProfileChoicesJudge(cfg *config.Config, st jevRuntimeStore) (profilejudge.Judge, error) {
+	if cfg == nil || !cfg.Jev.Enabled || !cfg.Jev.PersonProfileChoices.Enabled {
 		return nil, nil //nolint:nilnil // nil means "no Jev".
 	}
 	service, err := newJevService(cfg, st)

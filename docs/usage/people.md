@@ -323,7 +323,11 @@ msgvault person merge 7 12 \
 ```
 
 Conflicting single-value attributes remain reviewable instead of being
-dropped. Inspect the merge and decide each candidate explicitly:
+dropped. With the optional
+[person profile choices](jev-judgments.md#feature-person-profile-choices) Jev
+judgment, `msgvault person judge` closes a conflict whose two values say the
+same thing by keeping the survivor's. Inspect the merge and decide each
+remaining candidate explicitly:
 
 ```bash
 msgvault person merge-history 7

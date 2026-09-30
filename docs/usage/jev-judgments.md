@@ -86,6 +86,10 @@ new `msgvault jev consent`.
    [jev.person_duplicates]   # sends display names and email addresses
    enabled = true
    # automatic = true   # also judge new pairs at each cache build
+
+   [jev.person_profile_choices]
+   enabled = true
+   # automatic = true   # also make profile choices at each cache build
    ```
 
 2. Provide an API key. Either paste it in Settings under **Jev judgments**
@@ -103,8 +107,9 @@ new `msgvault jev consent`.
 Consent is per feature: run the same two `consent` commands with
 `organization_resolution`, `correspondent_kind`, `cleanup_suggestions`,
 `search_rerank`, `meeting_event_kind`, `meeting_action_assignee`,
-`query_understanding`, `sweep_evidence_rerank`, `sweep_claim_grounding`, or
-`person_duplicates` for those features. `msgvault jev revoke enrichment_identity`
+`query_understanding`, `sweep_evidence_rerank`, `sweep_claim_grounding`,
+`person_duplicates`, or `person_profile_choices` for those features.
+`msgvault jev revoke enrichment_identity`
 or `msgvault jev revoke --all` stops the next request immediately.
 
 ## Budgets and safety
@@ -1040,6 +1045,64 @@ service address, or not enough to tell." A request with fewer than twenty
 pairs sends only their questions.
 `msgvault jev consent person_duplicates` prints the same disclosure.
 
+## Feature: person profile choices
+
+Feature name: `person_profile_choices`. Setting:
+`[jev.person_profile_choices]`. Command:
+[`msgvault person judge`](../cli-reference.md#person-judge).
+
+Three small profile questions have a plain rule that is often wrong. This
+feature asks Jev instead, and code writes an answer only above a fixed
+threshold and never over anything you set:
+
+| Question | Asked when | Written when | Otherwise |
+|---|---|---|---|
+| Primary current role | A person has two to six current employments, every one found automatically (none you entered or imported from contacts), and you have not pinned employment | A role scores 0.80 or more: it becomes the primary employment | The first role found stays primary |
+| Display name | A person was promoted from identities that use two to six different names, and the name has not changed since promotion | A name scores 0.80 or more: the person is renamed to it | The rule's name (the first-created identity's) stays |
+| Merge conflict | A person merge left two values of a non-sensitive, single-value field in conflict, and the absorbed value was not set by you | Both are 0.95 or more likely the same fact: the survivor's value is kept and the conflict closes, reviewed by `jev` | The conflict stays pending for you |
+
+Setting the primary role yourself pins employment, and renaming a person
+ends the display-name question; neither is ever replaced. Each person is
+asked again only when their roles or names change, and each conflict once.
+`person judge` runs by hand; with `automatic = true`, each analytics cache
+build makes up to 200 of each first.
+
+### What leaves the machine
+
+Each request carries only one question's state:
+
+- Primary role, under `roles.role_N`: each current role's `organization`
+  name, job `title`, and `start` year and month.
+- Display name, under `names.name_N`: each distinct display name the
+  person's identities use, cut to 160 characters. A name containing an email
+  address or phone number is never sent.
+- Merge conflicts, under `conflicts.conflict_N` (up to eight per request):
+  the field's label as `field`, and the two values as `first` (the
+  survivor's) and `second`, cut to 300 characters. A conflict whose values contain an email
+  address or phone number is never sent.
+
+No addresses, messages, or other profile fields, and nothing about you.
+
+### The questions, exactly as sent
+
+- `primary_role` (Choice): "Which of `roles` is this person's primary current
+  role? An option whose key is absent from `roles` never applies." Options
+  `role_1` to `role_6` ("`roles.role_N` is the person's main current job.")
+  and `unclear` ("No single current role stands out as the main one.").
+- `display_name` (Choice): "Which of `names` should a contact list show for
+  this person? An option whose key is absent from `names` never applies."
+  Options `name_1` to `name_6` ("`names.name_N` is the person's own full
+  name, written the way they use it.") and `unclear` ("None of the names is
+  clearly the person's own name.").
+- `same_value_1` to `same_value_8` (Noul): "Do
+  `conflicts.conflict_N.first` and `conflicts.conflict_N.second` state the
+  same fact for `conflicts.conflict_N.field`?" Yes means "The same fact
+  written differently: formatting, abbreviation, spelling variant, or more
+  or less detail that does not disagree." No means "Different facts, or one
+  contradicts the other."
+
+`msgvault jev consent person_profile_choices` prints the same disclosure.
+
 ## Turn it off
 
 - `msgvault jev revoke --all` stops every feature at the next request without
@@ -1058,8 +1121,8 @@ probabilities and outcomes, not the compared values.
 - Only the enrichment identity check, organization resolution,
   correspondent kind, cleanup suggestions, hybrid search reranking, meeting
   event kind, meeting action assignee, Explore query understanding, people
-  sweep evidence relevance, people sweep claim grounding, and duplicate
-  people exist today. The other features in
+  sweep evidence relevance, people sweep claim grounding, duplicate people,
+  and person profile choices exist today. The other features in
   the engineering record `docs/internal/jev-judgments-plan.md` are proposals.
 - Hybrid search reranking has not passed its evaluation gate. Its cached
   orders live in the daemon's memory, so a restart judges the next page of a

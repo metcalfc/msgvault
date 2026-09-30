@@ -388,6 +388,8 @@ var settingsCatalog = []settingDefinition{
 	boolSetting("jev.sweep_claim_grounding.automatic", settingsGroupJev, func(c *config.Config) bool { return c.Jev.SweepClaimGrounding.Automatic }),
 	boolSetting("jev.person_duplicates.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.PersonDuplicates.Enabled }),
 	boolSetting("jev.person_duplicates.automatic", settingsGroupJev, func(c *config.Config) bool { return c.Jev.PersonDuplicates.Automatic }),
+	boolSetting("jev.person_profile_choices.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.PersonProfileChoices.Enabled }),
+	boolSetting("jev.person_profile_choices.automatic", settingsGroupJev, func(c *config.Config) bool { return c.Jev.PersonProfileChoices.Automatic }),
 	boolSetting("integrations.kata.enabled", "integrations", func(c *config.Config) bool { return c.Integrations.Kata.Enabled }),
 	stringSetting("integrations.kata.endpoint", "integrations", nil, func(c *config.Config) string { return c.Integrations.Kata.Endpoint }),
 	secretSetting("integrations.kata.api_key", "integrations", func(c *config.Config) string { return c.Integrations.Kata.APIKey }),

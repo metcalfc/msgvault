@@ -92,6 +92,7 @@ func (s *Store) createPersonFromParticipantTx(
 	var personID int64
 	var person *Person
 	var created bool
+	var seededName *string
 	err := func() error {
 		if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
 			return err
@@ -128,6 +129,7 @@ func (s *Store) createPersonFromParticipantTx(
 			if err != nil {
 				return err
 			}
+			seededName = displayName
 			// The identity revision bump below already republishes derived
 			// person display names, so seeding needs no separate name bump.
 			if err := tx.QueryRowContext(ctx,
@@ -143,6 +145,11 @@ func (s *Store) createPersonFromParticipantTx(
 		bindingsChanged, err := s.bindPersonParticipantsTx(ctx, tx, personID, members)
 		if err != nil {
 			return err
+		}
+		if created {
+			if err := s.recordDisplayNameSeedTx(ctx, tx, personID, seededName, members); err != nil {
+				return err
+			}
 		}
 		if !created && bindingsChanged {
 			if err := s.bumpPersonRevisionsTx(ctx, tx, personID); err != nil {

@@ -71,6 +71,12 @@ type Config struct {
 	// person, to propose reviewable duplicate candidates. Automatic covers
 	// the analytics cache build.
 	PersonDuplicates FeatureConfig `toml:"person_duplicates"`
+	// PersonProfileChoices is [jev.person_profile_choices]: choosing a
+	// person's primary current role among several system-set ones, a
+	// promoted person's display name among several, and whether two merge
+	// conflict values are the same fact. Automatic covers the analytics
+	// cache build.
+	PersonProfileChoices FeatureConfig `toml:"person_profile_choices"`
 	// CleanupSuggestions is [jev.cleanup_suggestions]: judging junk and
 	// phishing candidates for `msgvault suggest-cleanup`. It only ever runs
 	// on request, so its automatic switch has no effect.

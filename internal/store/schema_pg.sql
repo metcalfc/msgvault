@@ -4250,3 +4250,44 @@ CREATE TABLE IF NOT EXISTS person_duplicate_judgments (
 );
 CREATE INDEX IF NOT EXISTS idx_person_duplicate_judgments_right
     ON person_duplicate_judgments(right_participant_id);
+
+-- One person_profile_choices Jev judgment per person and kind:
+-- 'primary_role' chose among the person's current, system-set employments
+-- (choice is the employment ID) and 'display_name' chose among the names a
+-- promoted person's identities use (choice is the name). choice is NULL when
+-- no option reached the threshold. inputs_fingerprint hashes the options, so
+-- the person is judged again only when they change; applied records whether
+-- the choice was written. A user's choice or pin is never replaced.
+CREATE TABLE IF NOT EXISTS person_profile_judgments (
+    person_id          BIGINT NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+    kind               TEXT NOT NULL CHECK (kind IN ('primary_role', 'display_name')),
+    inputs_fingerprint TEXT NOT NULL,
+    choice             TEXT,
+    confidence         DOUBLE PRECISION NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+    probabilities_json TEXT NOT NULL DEFAULT '{}',
+    model              TEXT NOT NULL,
+    applied            BOOLEAN NOT NULL DEFAULT FALSE,
+    judged_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (person_id, kind)
+);
+
+-- The display name the promotion rule gave a person whose identities used
+-- two or more distinct names. While the person's display name still equals
+-- seeded_name, the display_name judgment may replace it; any other rename
+-- ends that.
+CREATE TABLE IF NOT EXISTS person_display_name_seeds (
+    person_id   BIGINT PRIMARY KEY REFERENCES persons(id) ON DELETE CASCADE,
+    seeded_name TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- One person_profile_choices judgment of a pending merge attribute
+-- conflict: the probability that both values state the same fact. resolved
+-- records that the survivor's value was kept (probability at least 0.95).
+CREATE TABLE IF NOT EXISTS person_merge_conflict_judgments (
+    candidate_id BIGINT PRIMARY KEY REFERENCES person_merge_review_candidates(id) ON DELETE CASCADE,
+    probability  DOUBLE PRECISION NOT NULL CHECK (probability >= 0 AND probability <= 1),
+    model        TEXT NOT NULL,
+    resolved     BOOLEAN NOT NULL DEFAULT FALSE,
+    judged_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

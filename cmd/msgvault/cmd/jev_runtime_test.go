@@ -16,7 +16,7 @@ func TestJevFeatureRegistryListsEveryFeature(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	specs := jevFeatureSpecs()
-	require.Len(specs, 10)
+	require.Len(specs, 11)
 	assert.Equal(jev.FeatureEnrichmentIdentity, specs[0].Name)
 	assert.Equal(jev.FeatureOrganizationResolution, specs[1].Name)
 	assert.Equal(jev.FeatureCorrespondentKind, specs[2].Name)
@@ -28,6 +28,7 @@ func TestJevFeatureRegistryListsEveryFeature(t *testing.T) {
 	assert.Equal(jev.FeatureSweepEvidenceRerank, specs[7].Name)
 	assert.Equal(jev.FeatureSweepClaimGrounding, specs[8].Name)
 	assert.Equal(jev.FeatureDuplicatePeople, specs[9].Name)
+	assert.Equal(jev.FeaturePersonProfileChoices, specs[10].Name)
 	cfg := config.NewDefaultConfig()
 	for _, spec := range specs {
 		require.NoError(spec.Validate())
@@ -247,4 +248,12 @@ func TestNewJevSweepJudgesAreNilUntilJevAndTheFeatureAreOn(t *testing.T) {
 	duplicates, err = newJevDuplicatePeopleJudge(cfg, st)
 	require.NoError(err)
 	assert.NotNil(duplicates)
+
+	profiles, err := newJevProfileChoicesJudge(cfg, st)
+	require.NoError(err)
+	assert.Nil(profiles, "profile choices have their own switch")
+	cfg.Jev.PersonProfileChoices.Enabled = true
+	profiles, err = newJevProfileChoicesJudge(cfg, st)
+	require.NoError(err)
+	assert.NotNil(profiles)
 }

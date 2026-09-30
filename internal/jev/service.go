@@ -50,6 +50,11 @@ const FeatureSweepClaimGrounding = "sweep_claim_grounding"
 // display names and email addresses, so its consent disclosure says so.
 const FeatureDuplicatePeople = "person_duplicates"
 
+// FeaturePersonProfileChoices is the person profile choices feature: the
+// primary current role, a promoted person's display name, and merge
+// attribute conflicts.
+const FeaturePersonProfileChoices = "person_profile_choices"
+
 // Gate outcomes. Each is an expected administrative state, not a fault: the
 // caller falls back to its pre-Jev decision and reports the category.
 var (
@@ -91,6 +96,8 @@ func (c Config) FeatureConfigFor(name string) (FeatureConfig, bool) {
 		return c.SweepClaimGrounding, true
 	case FeatureDuplicatePeople:
 		return c.PersonDuplicates, true
+	case FeaturePersonProfileChoices:
+		return c.PersonProfileChoices, true
 	default:
 		return FeatureConfig{}, false
 	}

@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/msgvault/internal/orgresolution"
 	"go.kenn.io/msgvault/internal/persondedup"
 	"go.kenn.io/msgvault/internal/personenrichment"
+	"go.kenn.io/msgvault/internal/profilejudge"
 	"go.kenn.io/msgvault/internal/providercredentials"
 	"go.kenn.io/msgvault/internal/queryunderstand"
 	"go.kenn.io/msgvault/internal/store"
@@ -39,7 +40,7 @@ var jevFeatureSpecs = func() []jev.FeatureSpec {
 		meetingjudge.EventKindFeature(), meetingjudge.AssigneeFeature(),
 		queryunderstand.JevFeature(),
 		sweepjudge.EvidenceRerankFeature(), sweepjudge.ClaimGroundingFeature(),
-		persondedup.Feature(),
+		persondedup.Feature(), profilejudge.Feature(),
 	}
 }
 

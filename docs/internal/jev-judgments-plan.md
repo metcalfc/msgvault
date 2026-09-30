@@ -579,9 +579,27 @@ bar.
   backend exposes one) and to open the active person generation from the
   judge command; add it as another proposal source feeding the same
   judgment when that exists.
-- [ ] **Task 8.4 Small ones.** Primary current role Choice when two or more
+- [x] **Task 8.4 Small ones.** Primary current role Choice when two or more
   current roles are system-set; display-name Choice at promotion when two
   or more distinct names; merge attribute conflict Noul at ≥ 0.95.
+  > One feature, `person_profile_choices` (`internal/profilejudge`), run by
+  > `msgvault person judge` next to duplicate people and, with
+  > `automatic = true`, at each cache build. Each request asks one of the
+  > three consented question groups (`JudgeQuestions`). Primary role: two
+  > to six current employments, none declared (user, CardDAV, vCard), and
+  > no employment pin; a role at ≥ 0.80 is promoted without writing a pin,
+  > so a later user choice wins, and the store rechecks the role set under
+  > the write. Display name: promotion records `person_display_name_seeds`
+  > when the cluster used two or more distinct names; while the name still
+  > equals the seed, a name at ≥ 0.80 renames through the normal CAS rename,
+  > and any rename in between wins. The rename is asynchronous (the judge
+  > run), not inside the promotion transaction. Merge conflicts: pending
+  > scalar conflicts of non-sensitive fields whose absorbed value is not
+  > declared, eight per request; ≥ 0.95 rejects the absorbed value (keeps
+  > the survivor's) with reviewer `jev`. Judgments live in
+  > `person_profile_judgments` (fingerprinted per person and kind) and
+  > `person_merge_conflict_judgments`. Values or names with an address or
+  > phone are never sent. Resolver thresholds are unchanged.
 
 ## Plain-code fixes to land alongside (no Jev)
 

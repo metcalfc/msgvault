@@ -1438,6 +1438,16 @@ Duplicate people (feature `person_duplicates`). See
 | `enabled` | `false` | Let `msgvault person judge` ask Jev whether correspondents who share a display name or address name are one person, sending their display names and email addresses. Likely pairs appear in Reviews. Without it, no duplicate is proposed. |
 | `automatic` | `false` | Also judge up to 200 new pairs at each analytics cache build. |
 
+#### `[jev.person_profile_choices]`
+
+Person profile choices (feature `person_profile_choices`). See
+[the feature description](/docs/usage/jev-judgments/#feature-person-profile-choices).
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Let `msgvault person judge` ask Jev which automatically found current role is primary, which name a newly saved person should show, and whether two values left by a merge say the same thing. Sends role titles and organizations, names, or the two values. Without it, the plain rules apply. |
+| `automatic` | `false` | Also make up to 200 of each choice at each analytics cache build. |
+
 ### `[activity]`
 
 Dated activity projection and per-person contact state (first and last

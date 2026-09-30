@@ -37,12 +37,16 @@ func judgePeopleForCacheBuild(ctx context.Context, cfg *config.Config, dbPath st
 	}
 	logger.Info("person judgments before cache build",
 		"duplicate_proposals", report.Duplicates.Proposals, "duplicate_requests", report.Duplicates.Requests,
-		"duplicate_candidates", report.Duplicates.Candidates, "duplicate_skipped", report.Duplicates.Skipped)
+		"duplicate_candidates", report.Duplicates.Candidates, "duplicate_skipped", report.Duplicates.Skipped,
+		"profile_requests", report.Profiles.Requests, "primary_roles_set", report.Profiles.PrimaryRolesSet,
+		"display_names_set", report.Profiles.DisplayNamesSet, "conflicts_settled", report.Profiles.ConflictsSettled,
+		"profile_skipped", report.Profiles.Skipped)
 }
 
 // personJudgeAutomatic reports whether any person judgment may run
 // unattended.
 func personJudgeAutomatic(cfg *config.Config) bool {
-	duplicates := cfg.Jev.PersonDuplicates
-	return cfg.Jev.Enabled && duplicates.Enabled && duplicates.Automatic
+	duplicates, profiles := cfg.Jev.PersonDuplicates, cfg.Jev.PersonProfileChoices
+	return cfg.Jev.Enabled &&
+		(duplicates.Enabled && duplicates.Automatic || profiles.Enabled && profiles.Automatic)
 }

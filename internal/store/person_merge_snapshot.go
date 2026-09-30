@@ -385,6 +385,17 @@ var personMergeTableRegistry = map[string]personMergeTableSpec{
 		TableName: "person_contact_state", KeyColumn: "person_id", Snapshot: false,
 		PersonReferences: []personMergeReference{directPersonReference("person_id")},
 	},
+	// Profile choice judgments and display name seeds are derived state of
+	// the person that produced them and cascade with an absorbed root.
+	"person_profile_judgments": {
+		TableName: "person_profile_judgments", KeyColumn: personMergePersonIDColumn,
+		KeyColumns: []string{personMergePersonIDColumn, "kind"}, Snapshot: false,
+		PersonReferences: []personMergeReference{directPersonReference(personMergePersonIDColumn)},
+	},
+	"person_display_name_seeds": {
+		TableName: "person_display_name_seeds", KeyColumn: personMergePersonIDColumn, Snapshot: false,
+		PersonReferences: []personMergeReference{directPersonReference(personMergePersonIDColumn)},
+	},
 	"daily_note_entry_persons": {
 		TableName: "daily_note_entry_persons", KeyColumn: "entry_id",
 		KeyColumns: []string{"entry_id", "person_id"}, Snapshot: true,
