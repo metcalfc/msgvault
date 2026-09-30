@@ -17,6 +17,7 @@ const FeatureEnrichmentIdentity = "enrichment_identity"
 // FeatureOrganizationResolution is the organization resolution and job
 // title equivalence feature.
 const FeatureOrganizationResolution = "organization_resolution"
+
 // FeatureCorrespondentKind is the correspondent kind classification feature.
 const FeatureCorrespondentKind = "correspondent_kind"
 
