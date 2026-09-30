@@ -7220,6 +7220,8 @@ components:
           type: integer
         original_value:
           type: string
+        profile_url_template:
+          type: string
         scope_kind:
           type: string
         scope_value:
@@ -7227,6 +7229,8 @@ components:
         service_slug:
           type: string
         uri:
+          type: string
+        uri_scheme:
           type: string
       required:
         - envelope
@@ -8878,6 +8882,8 @@ components:
         person_id:
           format: int64
           type: integer
+        profile_url_template:
+          type: string
         scope_kind:
           type: string
         scope_value:
@@ -8885,6 +8891,8 @@ components:
         service_slug:
           type: string
         uri:
+          type: string
+        uri_scheme:
           type: string
       required:
         - envelope
@@ -9852,6 +9860,8 @@ components:
         participant_id:
           format: int64
           type: integer
+        profile_url_template:
+          type: string
         provenance:
           type: string
         scope_kind:
@@ -9863,6 +9873,8 @@ components:
         service_slug:
           type: string
         type:
+          type: string
+        uri_scheme:
           type: string
         value:
           type: string
@@ -13647,7 +13659,7 @@ components:
       type: apiKey
 info:
   title: msgvault API
-  version: 2.35.0
+  version: 2.36.0
 openapi: 3.0.3
 paths:
   /api/daemon/identity:

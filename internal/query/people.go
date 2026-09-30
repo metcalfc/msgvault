@@ -42,6 +42,10 @@ type PersonIdentifier struct {
 	ScopeKind              string `json:"scope_kind,omitempty"`
 	ScopeValue             string `json:"scope_value,omitempty"`
 	ParticipantDisplayName string `json:"participant_display_name,omitempty"`
+	// URIScheme and ProfileURLTemplate are the identifier's service link
+	// hints, so clients can build a profile link for a handle.
+	URIScheme          string `json:"uri_scheme,omitempty"`
+	ProfileURLTemplate string `json:"profile_url_template,omitempty"`
 }
 
 // PersonClusterEdge is one participant_links edge within a person's cluster,

@@ -566,6 +566,8 @@ func personSummaryFromGenerated(person generated.PersonSummary) query.PersonSumm
 			ServiceSlug: stringValue(identifier.ServiceSlug), ServiceLabel: stringValue(identifier.ServiceLabel),
 			ScopeKind: stringValue(identifier.ScopeKind), ScopeValue: stringValue(identifier.ScopeValue),
 			ParticipantDisplayName: stringValue(identifier.ParticipantDisplayName),
+			URIScheme:              stringValue(identifier.URIScheme),
+			ProfileURLTemplate:     stringValue(identifier.ProfileURLTemplate),
 		}
 	}
 	counts := make([]query.SourceCount, len(person.SourceCounts))

@@ -13,7 +13,10 @@ import (
 	"go.kenn.io/msgvault/internal/textimport"
 )
 
-const communicationServicesSeedV1 = "communication_services_seed_v1"
+const (
+	communicationServicesSeedV1 = "communication_services_seed_v1"
+	communicationServicesSeedV2 = "communication_services_seed_v2"
+)
 
 const (
 	ScopePolicyNone     = "none"
@@ -142,6 +145,16 @@ var seededCommunicationServices = []CommunicationServiceInput{
 	{Slug: "reddit", DisplayLabel: "Reddit", ScopePolicy: ScopePolicyNone, Normalization: NormalizationStripAtLower, NormalizationVersion: 1, ProfileURLTemplate: new("https://www.reddit.com/user/{username}")},
 	{Slug: "kakaotalk", DisplayLabel: "KakaoTalk", ScopePolicy: ScopePolicyNone, Normalization: NormalizationLower, NormalizationVersion: 1},
 	{Slug: "wechat", DisplayLabel: "WeChat", ScopePolicy: ScopePolicyNone, Normalization: NormalizationLower, NormalizationVersion: 1},
+}
+
+// seededCommunicationServicesV2 adds profile services whose handles the Web
+// UI links to. Mastodon has no template: a handle names its own server
+// (@user@host), so clients build the link from the value.
+var seededCommunicationServicesV2 = []CommunicationServiceInput{
+	{Slug: "github", DisplayLabel: "GitHub", ScopePolicy: ScopePolicyNone, Normalization: NormalizationStripAtLower, NormalizationVersion: 1, ProfileURLTemplate: new("https://github.com/{username}")},
+	{Slug: "youtube", DisplayLabel: "YouTube", ScopePolicy: ScopePolicyNone, Normalization: NormalizationStripAtLower, NormalizationVersion: 1, ProfileURLTemplate: new("https://www.youtube.com/@{username}")},
+	{Slug: "threads", DisplayLabel: "Threads", ScopePolicy: ScopePolicyNone, Normalization: NormalizationStripAtLower, NormalizationVersion: 1, ProfileURLTemplate: new("https://www.threads.com/@{username}")},
+	{Slug: "mastodon", DisplayLabel: "Mastodon", ScopePolicy: ScopePolicyNone, Normalization: NormalizationStripAtLower, NormalizationVersion: 1},
 }
 
 func (s *Store) ListCommunicationServicesContext(ctx context.Context, includeInactive bool) ([]CommunicationService, error) {
@@ -491,12 +504,35 @@ func trimmedOrNil(value *string) *string {
 	return &trimmed
 }
 
+// communicationServiceSeeds are applied in order, each once, recorded in the
+// migration ledger. A later seed only adds services: a slug or alias that
+// already exists (a user or importer registered it first) is left alone, so
+// startup never fights a user's catalog.
+var communicationServiceSeeds = []struct {
+	name     string
+	services []CommunicationServiceInput
+}{
+	{communicationServicesSeedV1, seededCommunicationServices},
+	{communicationServicesSeedV2, seededCommunicationServicesV2},
+}
+
 func (s *Store) seedCommunicationServices(ctx context.Context) error {
+	for _, seed := range communicationServiceSeeds {
+		if err := s.applyCommunicationServiceSeed(ctx, seed.name, seed.services); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) applyCommunicationServiceSeed(
+	ctx context.Context, name string, services []CommunicationServiceInput,
+) error {
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
 		var applied int
 		if err := tx.QueryRowContext(ctx,
 			`SELECT COUNT(*) FROM applied_migrations WHERE name = ?`,
-			communicationServicesSeedV1,
+			name,
 		).Scan(&applied); err != nil {
 			return fmt.Errorf("check communication service seed: %w", err)
 		}
@@ -507,7 +543,18 @@ func (s *Store) seedCommunicationServices(ctx context.Context) error {
 			slug, display_label, scope_policy, default_scope_kind, normalization,
 			normalization_version, uri_scheme, profile_url_template, is_system
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE)`)
-		for _, input := range seededCommunicationServices {
+		for _, input := range services {
+			var aliased int
+			if err := tx.QueryRowContext(ctx,
+				`SELECT COUNT(*) FROM communication_service_aliases WHERE alias = ?`,
+				input.Slug,
+			).Scan(&aliased); err != nil {
+				return fmt.Errorf("check communication service alias %q: %w", input.Slug, err)
+			}
+			if aliased > 0 {
+				// The name already resolves to another service.
+				continue
+			}
 			if _, err := tx.ExecContext(ctx, insert,
 				input.Slug, input.DisplayLabel, input.ScopePolicy, stringValue(input.DefaultScopeKind),
 				input.Normalization, input.NormalizationVersion, stringValue(input.URIScheme),
@@ -530,7 +577,7 @@ func (s *Store) seedCommunicationServices(ctx context.Context) error {
 		}
 		if _, err := tx.ExecContext(ctx,
 			s.dialect.InsertOrIgnore(`INSERT OR IGNORE INTO applied_migrations (name) VALUES (?)`),
-			communicationServicesSeedV1,
+			name,
 		); err != nil {
 			return fmt.Errorf("record communication service seed: %w", err)
 		}

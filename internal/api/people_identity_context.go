@@ -48,6 +48,8 @@ func enrichIdentityContext(person *query.PersonSummary, details *store.Participa
 			identifier.ServiceLabel = stored.ServiceLabel
 			identifier.ScopeKind = stored.ScopeKind
 			identifier.ScopeValue = stored.ScopeValue
+			identifier.URIScheme = stored.URIScheme
+			identifier.ProfileURLTemplate = stored.ProfileURLTemplate
 		}
 		identifier.ParticipantDisplayName = members[identifier.ParticipantID].DisplayName
 	}

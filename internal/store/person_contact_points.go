@@ -21,6 +21,11 @@ type PersonContactPoint struct {
 	Normalization        string             `json:"normalization"`
 	NormalizationVersion int                `json:"normalization_version"`
 	URI                  *string            `json:"uri,omitzero" nullable:"false"`
+	// URIScheme and ProfileURLTemplate are link hints copied from the
+	// point's communication service, so clients can build a profile link
+	// without a second catalog request. They are never written.
+	URIScheme          *string `json:"uri_scheme,omitzero" nullable:"false"`
+	ProfileURLTemplate *string `json:"profile_url_template,omitzero" nullable:"false"`
 }
 
 type PersonContactPointInput struct {
@@ -292,7 +297,7 @@ func resolveCommunicationServiceTx(
 const personContactPointSelect = `SELECT
 	p.id, p.person_id, p.address_kind, cs.slug, p.scope_kind, p.scope_value,
 	p.original_value, p.normalized_value, p.normalization,
-	p.normalization_version, p.uri,
+	p.normalization_version, p.uri, cs.uri_scheme, cs.profile_url_template,
 	p.pref, p.ordinal, p.type_label, p.type_tokens, p.vcard_property,
 	p.vcard_group, p.vcard_prop_id, p.vcard_pid, p.vcard_altid, p.source,
 	p.source_ref, p.source_resource_uid, p.confidence, p.active_from, p.active_until,
@@ -318,12 +323,13 @@ func getPersonContactPointTx(
 
 func scanPersonContactPoint(row scanner) (*PersonContactPoint, error) {
 	var point PersonContactPoint
-	var serviceSlug, scopeKind, scopeValue, uri sql.NullString
+	var serviceSlug, scopeKind, scopeValue, uri, uriScheme, profileURLTemplate sql.NullString
 	var env profileEnvelopeScanValues
 	dest := []any{
 		&point.Envelope.ID, &point.PersonID, &point.AddressKind, &serviceSlug,
 		&scopeKind, &scopeValue, &point.OriginalValue, &point.NormalizedValue,
 		&point.Normalization, &point.NormalizationVersion, &uri,
+		&uriScheme, &profileURLTemplate,
 	}
 	dest = append(dest, env.destinations()...)
 	if err := row.Scan(dest...); err != nil {
@@ -333,6 +339,8 @@ func scanPersonContactPoint(row scanner) (*PersonContactPoint, error) {
 	point.ScopeKind = nullStringPtr(scopeKind)
 	point.ScopeValue = nullStringPtr(scopeValue)
 	point.URI = nullStringPtr(uri)
+	point.URIScheme = nullStringPtr(uriScheme)
+	point.ProfileURLTemplate = nullStringPtr(profileURLTemplate)
 	if err := env.apply(&point.Envelope); err != nil {
 		return nil, err
 	}

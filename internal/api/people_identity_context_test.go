@@ -117,3 +117,19 @@ func TestParticipantDetailContinuesWhenIdentityContextFails(t *testing.T) {
 	}}, body.Identifiers)
 	assert.Contains(logs.String(), "participant identity context lookup failed")
 }
+
+func TestEnrichIdentityContextCopiesServiceLinkHints(t *testing.T) {
+	assert := assert.New(t)
+	person := &query.PersonSummary{Identifiers: []query.PersonIdentifier{{
+		Type: "beeper", Value: "example-user", ParticipantID: 7,
+	}}}
+	enrichIdentityContext(person, &store.ParticipantIdentityContext{
+		Identifiers: []store.ParticipantIdentifierContext{{
+			ParticipantID: 7, Type: "beeper", Value: "example-user",
+			ServiceSlug: "telegram", ServiceLabel: "Telegram",
+			URIScheme: "tg", ProfileURLTemplate: "https://t.me/{username}",
+		}},
+	})
+	assert.Equal("tg", person.Identifiers[0].URIScheme)
+	assert.Equal("https://t.me/{username}", person.Identifiers[0].ProfileURLTemplate)
+}

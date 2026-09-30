@@ -7,12 +7,14 @@ export interface PersonIdentifier {
   is_primary: boolean;
   participant_display_name?: string;
   participant_id: number;
+  profile_url_template?: string;
   provenance: string;
   scope_kind?: string;
   scope_value?: string;
   service_label?: string;
   service_slug?: string;
   type: string;
+  uri_scheme?: string;
   value: string;
   [key: string]: unknown;
 }

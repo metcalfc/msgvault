@@ -6689,10 +6689,12 @@ type OrganizationContactPoint struct {
 	NormalizedValue      string        `json:"normalized_value" validate:"required"`
 	OrganizationID       int64         `json:"organization_id"`
 	OriginalValue        string        `json:"original_value" validate:"required"`
+	ProfileURLTemplate   *string       `json:"profile_url_template,omitzero"`
 	ScopeKind            *string       `json:"scope_kind,omitzero"`
 	ScopeValue           *string       `json:"scope_value,omitzero"`
 	ServiceSlug          *string       `json:"service_slug,omitzero"`
 	URI                  *string       `json:"uri,omitzero"`
+	URIScheme            *string       `json:"uri_scheme,omitzero"`
 }
 
 func (o OrganizationContactPoint) Validate() error {
@@ -8289,10 +8291,12 @@ type PersonContactPoint struct {
 	NormalizedValue      string        `json:"normalized_value" validate:"required"`
 	OriginalValue        string        `json:"original_value" validate:"required"`
 	PersonID             int64         `json:"person_id"`
+	ProfileURLTemplate   *string       `json:"profile_url_template,omitzero"`
 	ScopeKind            *string       `json:"scope_kind,omitzero"`
 	ScopeValue           *string       `json:"scope_value,omitzero"`
 	ServiceSlug          *string       `json:"service_slug,omitzero"`
 	URI                  *string       `json:"uri,omitzero"`
+	URIScheme            *string       `json:"uri_scheme,omitzero"`
 }
 
 func (p PersonContactPoint) Validate() error {
@@ -9373,12 +9377,14 @@ type PersonIdentifier struct {
 	IsPrimary              bool    `json:"is_primary"`
 	ParticipantDisplayName *string `json:"participant_display_name,omitzero"`
 	ParticipantID          int64   `json:"participant_id"`
+	ProfileURLTemplate     *string `json:"profile_url_template,omitzero"`
 	Provenance             string  `json:"provenance" validate:"required"`
 	ScopeKind              *string `json:"scope_kind,omitzero"`
 	ScopeValue             *string `json:"scope_value,omitzero"`
 	ServiceLabel           *string `json:"service_label,omitzero"`
 	ServiceSlug            *string `json:"service_slug,omitzero"`
 	Type                   string  `json:"type" validate:"required"`
+	URIScheme              *string `json:"uri_scheme,omitzero"`
 	Value                  string  `json:"value" validate:"required"`
 }
 

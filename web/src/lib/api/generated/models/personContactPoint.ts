@@ -11,9 +11,11 @@ export interface PersonContactPoint {
   normalized_value: string;
   original_value: string;
   person_id: number;
+  profile_url_template?: string;
   scope_kind?: string;
   scope_value?: string;
   service_slug?: string;
   uri?: string;
+  uri_scheme?: string;
   [key: string]: unknown;
 }

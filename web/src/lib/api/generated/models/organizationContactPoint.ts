@@ -11,9 +11,11 @@ export interface OrganizationContactPoint {
   normalized_value: string;
   organization_id: number;
   original_value: string;
+  profile_url_template?: string;
   scope_kind?: string;
   scope_value?: string;
   service_slug?: string;
   uri?: string;
+  uri_scheme?: string;
   [key: string]: unknown;
 }

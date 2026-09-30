@@ -31,6 +31,9 @@ type ParticipantIdentifierContext struct {
 	ServiceLabel  string
 	ScopeKind     string
 	ScopeValue    string
+	// URIScheme and ProfileURLTemplate are the service's link hints.
+	URIScheme          string
+	ProfileURLTemplate string
 }
 
 // ParticipantLinkContext records the origin of a link between cluster members.
@@ -111,7 +114,8 @@ func (s *Store) readParticipantIdentifierContext(
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`SELECT pi.participant_id,
 		pi.identifier_type, pi.identifier_value, COALESCE(cs.slug, ''),
 		COALESCE(cs.display_label, ''), COALESCE(pi.scope_kind, ''),
-		COALESCE(pi.scope_value, '')
+		COALESCE(pi.scope_value, ''), COALESCE(cs.uri_scheme, ''),
+		COALESCE(cs.profile_url_template, '')
 		FROM participant_identifiers pi
 		LEFT JOIN communication_services cs ON cs.id = pi.service_id
 		WHERE pi.participant_id IN (%s)
@@ -124,7 +128,8 @@ func (s *Store) readParticipantIdentifierContext(
 		var identifier ParticipantIdentifierContext
 		if err := rows.Scan(&identifier.ParticipantID, &identifier.Type, &identifier.Value,
 			&identifier.ServiceSlug, &identifier.ServiceLabel, &identifier.ScopeKind,
-			&identifier.ScopeValue); err != nil {
+			&identifier.ScopeValue, &identifier.URIScheme,
+			&identifier.ProfileURLTemplate); err != nil {
 			return fmt.Errorf("scan participant identifier context: %w", err)
 		}
 		*dest = append(*dest, identifier)

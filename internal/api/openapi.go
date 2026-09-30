@@ -352,7 +352,10 @@ import (
 // them. Contact-match verdicts gain the shared_mailbox classification and
 // its signal, and accepting such a match is refused with 409
 // contact_match_shared_mailbox or contact_match_not_a_person.
-const APISchemaVersion = "2.35.0"
+// 2.36.0 adds optional uri_scheme and profile_url_template link hints to
+// person and organization contact points and to person identifiers, copied
+// from the value's communication service. Additive (minor bump).
+const APISchemaVersion = "2.36.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

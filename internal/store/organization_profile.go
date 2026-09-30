@@ -91,6 +91,10 @@ type OrganizationContactPoint struct {
 	Normalization        string             `json:"normalization"`
 	NormalizationVersion int                `json:"normalization_version"`
 	URI                  *string            `json:"uri,omitzero" nullable:"false"`
+	// URIScheme and ProfileURLTemplate are link hints copied from the
+	// point's communication service. They are never written.
+	URIScheme          *string `json:"uri_scheme,omitzero" nullable:"false"`
+	ProfileURLTemplate *string `json:"profile_url_template,omitzero" nullable:"false"`
 }
 
 type OrganizationContactPointInput = PersonContactPointInput
@@ -1352,7 +1356,10 @@ const organizationAddressSelect = `SELECT id, organization_id, address_kind,
 const organizationContactSelect = `SELECT p.id, p.organization_id, p.address_kind,
 	p.service_id, (SELECT slug FROM communication_services WHERE id = p.service_id),
 	p.scope_kind, p.scope_value, p.original_value, p.normalized_value,
-	p.normalization, p.normalization_version, p.uri, ` + profileEnvelopeReadColumns + `
+	p.normalization, p.normalization_version, p.uri,
+	(SELECT uri_scheme FROM communication_services WHERE id = p.service_id),
+	(SELECT profile_url_template FROM communication_services WHERE id = p.service_id),
+	` + profileEnvelopeReadColumns + `
 	FROM organization_contact_points p`
 
 // ReadOrganizationMediaDataContext returns the stored inline bytes for one
@@ -1441,14 +1448,14 @@ func scanOrganizationAddress(row scanner) (*OrganizationAddress, error) {
 
 func scanOrganizationContact(row scanner) (*OrganizationContactPoint, error) {
 	var value OrganizationContactPoint
-	var serviceSlug, scopeKind, scopeValue, uri sql.NullString
+	var serviceSlug, scopeKind, scopeValue, uri, uriScheme, profileURLTemplate sql.NullString
 	var serviceID sql.NullInt64
 	var env profileEnvelopeScanValues
 	dest := []any{
 		&value.Envelope.ID, &value.OrganizationID, &value.AddressKind,
 		&serviceID, &serviceSlug, &scopeKind, &scopeValue, &value.OriginalValue,
 		&value.NormalizedValue, &value.Normalization,
-		&value.NormalizationVersion, &uri,
+		&value.NormalizationVersion, &uri, &uriScheme, &profileURLTemplate,
 	}
 	dest = append(dest, env.destinations()...)
 	if err := row.Scan(dest...); err != nil {
@@ -1459,6 +1466,8 @@ func scanOrganizationContact(row scanner) (*OrganizationContactPoint, error) {
 		value.ServiceID = new(serviceID.Int64)
 	}
 	value.ScopeValue, value.URI = nullStringPtr(scopeValue), nullStringPtr(uri)
+	value.URIScheme = nullStringPtr(uriScheme)
+	value.ProfileURLTemplate = nullStringPtr(profileURLTemplate)
 	return &value, env.apply(&value.Envelope)
 }
 
