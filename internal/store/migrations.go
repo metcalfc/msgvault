@@ -96,6 +96,10 @@ const (
 	// persons.display_name_changed_at dates the display label for enrichment
 	// name selection. Rows that predate the column take created_at.
 	migrationPersonDisplayNameChangedAt = "person_display_name_changed_at_v1"
+	// A social event with only the owner and one other invitee now weighs as a
+	// one-on-one. The rule lives in code, so existing caches see no revision
+	// change until this bumps the meeting weight revision once.
+	migrationMeetingWeightTwoPersonSocial = "meeting_weight_two_person_social_v1"
 )
 
 func (s *Store) backfillSyncRunResumeMetadata(

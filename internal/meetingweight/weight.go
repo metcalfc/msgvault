@@ -137,13 +137,23 @@ type Judgment struct {
 	Confidence float64
 }
 
+// OneOnOneAttendees is the invitee count of a two-person event: the owner and
+// one other person.
+const OneOnOneAttendees = 2
+
 // Weight combines the rules: an excluded event weighs 0; a judgment at or
-// above KindThreshold sets the weight; otherwise the attendee count does.
+// above KindThreshold sets the weight; otherwise the attendee count does. A
+// social event with at most two invitees (drinks or lunch with one person)
+// counts as fully as a one-on-one: the social discount is for parties and
+// group outings, not for time spent with one person.
 func Weight(metadata Metadata, attendees int, judgment *Judgment) float64 {
 	if metadata.Exclusion() != "" {
 		return 0
 	}
 	if judgment != nil && judgment.Confidence >= KindThreshold {
+		if judgment.Kind == KindSocial && attendees <= OneOnOneAttendees {
+			return kindWeights[KindOneOnOne]
+		}
 		if weight, ok := KindWeight(judgment.Kind); ok {
 			return weight
 		}

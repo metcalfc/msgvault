@@ -650,7 +650,7 @@ Code maps the answer when its probability is at least 0.60:
 |---|---|
 | `one_on_one` | 1 |
 | `small_working_meeting` | 1 |
-| `social` | 0.5 |
+| `social` | 0.5, or 1 when only you and one other person are invited |
 | `large_group_or_all_hands` | 0.25 |
 | `external_webinar_or_marketing` | 0 |
 | `personal_hold_or_logistics` | 0 |

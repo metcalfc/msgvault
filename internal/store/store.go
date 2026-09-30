@@ -1590,6 +1590,14 @@ func (s *Store) InitSchemaContext(ctx context.Context) error {
 		}); err != nil {
 		return err
 	}
+	if err := s.runOnceMigration(ctx, migrationMeetingWeightTwoPersonSocial, 1, false,
+		func(ctx context.Context) error {
+			return s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
+				return s.bumpMeetingWeightRevisionTx(ctx, tx)
+			})
+		}); err != nil {
+		return err
+	}
 	// Organization domains written before IDNA normalization may still contain
 	// Unicode. Canonicalize them before fact resolution compares incoming ASCII
 	// references with persisted roots and identifiers.

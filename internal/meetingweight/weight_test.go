@@ -56,3 +56,25 @@ func TestWeightPrefersExclusionThenConfidentKind(t *testing.T) {
 		assert.True(ok, "every kind has a weight: %s", kind)
 	}
 }
+
+func TestSocialWithOnePersonCountsAsAOneOnOne(t *testing.T) {
+	ordinary := Metadata{Status: "confirmed"}
+	tests := []struct {
+		name      string
+		attendees int
+		want      float64
+	}{
+		{"drinks with one person", OneOnOneAttendees, 1},
+		{"no invite list", 0, 1},
+		{"three people", 3, 0.5},
+		{"party", 30, 0.5},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.InDelta(t, test.want,
+				Weight(ordinary, test.attendees, &Judgment{Kind: KindSocial, Confidence: 0.95}), 1e-9)
+		})
+	}
+	assert.InDelta(t, 0.0, Weight(Metadata{Status: "cancelled"}, OneOnOneAttendees,
+		&Judgment{Kind: KindSocial, Confidence: 0.95}), 1e-9, "exclusions still win")
+}
