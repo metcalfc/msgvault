@@ -17,7 +17,6 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
-	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -145,6 +144,8 @@ func TestRunEvalReranksFTSCandidates(t *testing.T) {
 			assert.Equal("renewal", request.Query)
 			require.Len(t, request.Candidates, 2)
 			candidateText := strings.ToLower(strings.Join(request.Candidates, "\n"))
+			assert.Contains(request.Candidates, "Subject: Lease renewal terms\nFrom: \nDate: 2020-01-01\n\nSigned and returned.",
+				"the eval sends the production candidate text")
 			assert.Contains(candidateText, "lease renewal terms")
 			assert.Contains(candidateText, "signed and returned")
 			assert.NotContains(candidateText, "<m1@example.com>")
@@ -412,12 +413,158 @@ func TestRunEvalPreflightsJevRequestEstimateBeforeOpeningArchive(t *testing.T) {
 	assert.True(t, os.IsNotExist(statErr), "the rejected estimate must not open the archive")
 }
 
-func TestEvalRerankCandidateText(t *testing.T) {
-	assert := assert.New(t)
-	text := truncateUTF8Bytes(strings.Repeat("界", 1000), rerank.MaxCandidateBytes)
-	assert.LessOrEqual(len([]byte(text)), 2048)
-	assert.True(utf8.ValidString(text))
-	assert.Equal("abc", truncateUTF8Bytes("abc", 2048))
+func gateAggregate(t *testing.T, relevantAt int, samples int) *eval.Aggregate {
+	t.Helper()
+	aggregate := &eval.Aggregate{}
+	ranked := make([]string, 20)
+	for i := range ranked {
+		ranked[i] = fmt.Sprintf("m%d", i)
+	}
+	relevant := map[string]struct{}{fmt.Sprintf("m%d", relevantAt): {}}
+	for range samples {
+		aggregate.Add(eval.Evaluate(ranked, relevant, eval.CutoffsForDepth(20)))
+	}
+	return aggregate
+}
+
+func gateReport(t *testing.T, latencies map[string]time.Duration) *evalRerankReport {
+	t.Helper()
+	report := newEvalRerankReport(evalRerankOptions{Shapes: []string{"batched", "per-candidate"}, Top: 30})
+	for shape, latency := range latencies {
+		arm := report.arm("hybrid", shape)
+		arm.Agg = gateAggregate(t, 0, 4)
+		for range 4 {
+			arm.Lat.Add(latency)
+		}
+	}
+	return report
+}
+
+func TestEvalRerankGateThresholds(t *testing.T) {
+	cutoffs := eval.CutoffsForDepth(20)
+	baseline := map[string]*eval.Aggregate{"hybrid": gateAggregate(t, 15, 4)}
+
+	t.Run("one shape passing passes the gate", func(t *testing.T) {
+		assert := assert.New(t)
+		gate := gateReport(t, map[string]time.Duration{
+			"batched": 900 * time.Millisecond, "per-candidate": 2500 * time.Millisecond,
+		}).gate(baseline, cutoffs)
+		assert.Equal(rerankGatePass, gate.Status)
+		assert.InDelta(0.05, gate.MinHit10Gain, 1e-12)
+		assert.InDelta(2000.0, gate.MaxP95MS, 1e-12)
+		batched := gate.Shapes["batched"]
+		assert.Equal(rerankGatePass, batched.Status)
+		require.NotNil(t, batched.Hit10Gain)
+		assert.InDelta(1.0, *batched.Hit10Gain, 1e-12)
+		perCandidate := gate.Shapes["per-candidate"]
+		assert.Equal(rerankGateFail, perCandidate.Status, "p95 at or above 2 s fails")
+		assert.True(perCandidate.GainPasses)
+		assert.False(perCandidate.LatencyPasses)
+	})
+
+	t.Run("no gain fails", func(t *testing.T) {
+		report := gateReport(t, map[string]time.Duration{"batched": time.Millisecond})
+		gate := report.gate(map[string]*eval.Aggregate{"hybrid": gateAggregate(t, 0, 4)}, cutoffs)
+		assert.Equal(t, rerankGateFail, gate.Status)
+		assert.False(t, gate.Shapes["batched"].GainPasses)
+		assert.Equal(t, rerankGateNotEvaluated, gate.Shapes["per-candidate"].Status, "an unrun shape is not judged")
+	})
+
+	t.Run("gate needs the hybrid mode and Hit@10", func(t *testing.T) {
+		report := gateReport(t, map[string]time.Duration{"batched": time.Millisecond})
+		assert.Equal(t, rerankGateNotEvaluated, report.gate(map[string]*eval.Aggregate{"fts": gateAggregate(t, 0, 1)}, cutoffs).Status)
+		shallow := report.gate(baseline, eval.CutoffsForDepth(5))
+		assert.Equal(t, rerankGateNotEvaluated, shallow.Status)
+		assert.Contains(t, shallow.Reason, "--limit")
+	})
+
+	t.Run("table names the verdict", func(t *testing.T) {
+		report := gateReport(t, map[string]time.Duration{"batched": 900 * time.Millisecond})
+		var table bytes.Buffer
+		require.NoError(t, report.gate(baseline, cutoffs).table(&table, report.Shapes))
+		assert.Contains(t, table.String(), "Jev rerank gate (hybrid: Hit@10 gain >= 0.05 and p95 < 2000 ms): pass")
+		assert.Contains(t, table.String(), "batched\tpass: Hit@10 0.000 -> 1.000 (gain +1.000, pass)")
+	})
+}
+
+// TestRunEvalJevHarnessThroughFakeProvider runs the whole eval with the real
+// Jev client against a local fake System One endpoint: the provider API is
+// an external contract no test can reach, and the fake proves the harness
+// sends production candidate text and reports the gate.
+func TestRunEvalJevHarnessThroughFakeProvider(t *testing.T) {
+	cmd, out := prepareEvalRerankRun(t, "batched", 1)
+	cfg := invocationFromContext(cmd.Context()).cfg
+	dataDir := cfg.Data.DataDir
+	evalQrels = writeEvalFile(t, dataDir, "gate-qrels.txt", "q1 0 <m2@example.com> 1\n")
+	evalModes = "hybrid"
+	c := evalVectorConfig(t, vector.APIFormatOpenAI, "test-model")
+	c.Data.DataDir = dataDir
+	c.Vector.Embeddings.Dimension = 3
+	_, endpoint := embedTestServer(t, `{"data":[{"index":0,"embedding":[1,0,0]}]}`)
+	c.Vector.Embeddings.Endpoint = endpoint
+	invocationFromContext(cmd.Context()).cfg = c
+	cmd.SetContext(testInvocationContext(cmd.Context(), c, invocationOptions{}))
+	s, err := store.Open(c.DatabaseDSN())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+	require.NoError(t, s.InitSchema())
+	seedEmbeddedGeneration(t, dataDir, c.DatabaseDSN(), s, c.Vector, 1, 2)
+	require.NoError(t, sqlitevec.RegisterExtension())
+	backend, err := sqlitevec.Open(context.Background(), sqlitevec.Options{
+		Path: filepath.Join(dataDir, "vectors.db"), MainPath: c.DatabaseDSN(),
+		Dimension: 3, MainDB: s.DB(),
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, backend.Close()) })
+	generation, err := backend.ActiveGeneration(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, backend.Upsert(context.Background(), generation.ID, []vector.Chunk{
+		{MessageID: 1, Vector: []float32{1, 0, 0}, SourceCharLen: 32},
+		{MessageID: 2, Vector: []float32{0, 1, 0}, SourceCharLen: 32},
+	}))
+
+	var bodies []map[string]any
+	factory := func(shape, key string, budget *rerank.Budget) (evalReranker, error) {
+		return rerank.NewJev(shape, key, budget, testTransport(func(request *http.Request) (*http.Response, error) {
+			raw, readErr := io.ReadAll(request.Body)
+			require.NoError(t, readErr)
+			var body map[string]any
+			require.NoError(t, json.Unmarshal(raw, &body))
+			bodies = append(bodies, body)
+			answers := map[string]any{}
+			for i, candidate := range body["state"].(map[string]any)["candidates"].([]any) {
+				score := 0.1
+				if strings.Contains(candidate.(string), "Weekly digest") {
+					score = 0.9
+				}
+				answers[fmt.Sprintf("candidate_%d", i)] = map[string]any{"type": "noul", "noul": score}
+			}
+			encoded, encodeErr := json.Marshal(map[string]any{
+				"model": "jev-1.13.0", "answers": answers,
+				"usage": map[string]any{"input_tokens": 400, "output_tokens": 12},
+			})
+			require.NoError(t, encodeErr)
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
+				Body: io.NopCloser(bytes.NewReader(encoded))}, nil
+		}))
+	}
+	require.NoError(t, runEvalWithRerankerFactory(cmd, nil, factory))
+
+	require.Len(t, bodies, 1)
+	candidates := bodies[0]["state"].(map[string]any)["candidates"].([]any)
+	require.Len(t, candidates, 2)
+	for _, candidate := range candidates {
+		assert.Regexp(t, `^Subject: .+\nFrom: .*\nDate: \d{4}-\d{2}-\d{2}\n\n`, candidate)
+	}
+	var report struct {
+		Gate evalRerankGate `json:"rerank_gate"`
+	}
+	require.NoError(t, json.Unmarshal(out.Bytes(), &report))
+	assert.Equal(t, "hybrid", report.Gate.Mode)
+	batched := report.Gate.Shapes["batched"]
+	require.NotNil(t, batched.Hit10Gain)
+	assert.InDelta(t, 0, *batched.Hit10Gain, 1e-12, "both messages were already in the top ten")
+	assert.Equal(t, rerankGateFail, report.Gate.Status, "no gain cannot pass the gate")
 }
 
 func TestEvalRerankOptIn(t *testing.T) {

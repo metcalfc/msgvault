@@ -14,7 +14,6 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
-	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"go.kenn.io/msgvault/internal/eval"
@@ -392,35 +391,38 @@ func validateJevRequestEstimate(topicCount, modeCount int, shapes []string, top,
 	return nil
 }
 
-func truncateUTF8Bytes(value string, limit int) string {
-	if len([]byte(value)) <= limit {
-		return value
-	}
-	value = value[:limit]
-	for len(value) > 0 && !utf8.ValidString(value) {
-		value = value[:len(value)-1]
-	}
-	return value
-}
-
-func prepareEvalCandidates(ctx context.Context, s *store.Store, keys []string, hits map[string]evalHit, preprocess embed.PreprocessConfig, top int) ([]string, error) {
+// prepareEvalCandidates renders the leading ranked messages exactly as the
+// search rerank stage does (rerank.Candidate: subject, sender, date, and
+// cleaned body within 2 KiB), loading them in one batched primary-key lookup,
+// so the eval measures the text production reranking sends.
+func prepareEvalCandidates(ctx context.Context, loader rerank.MessageLoader, keys []string, hits map[string]evalHit, preprocess embed.PreprocessConfig, top int) ([]string, error) {
 	if len(keys) == 0 {
 		return nil, nil
 	}
 	top = min(top, len(keys))
-	texts := make([]string, top)
+	ids := make([]int64, top)
 	for i, key := range keys[:top] {
 		hit, ok := hits[key]
 		if !ok || hit.MessageID == 0 {
 			return nil, fmt.Errorf("rerank candidate %d has no message identity", i)
 		}
-		message, err := s.GetMessageContext(ctx, hit.MessageID)
-		if err != nil {
-			return nil, fmt.Errorf("prepare rerank candidate %d: %w", i, err)
+		ids[i] = hit.MessageID
+	}
+	messages, err := loader.GetMessagesWithBodiesByIDsContext(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("prepare rerank candidates: %w", err)
+	}
+	byID := make(map[int64]*store.APIMessage, len(messages))
+	for i := range messages {
+		byID[messages[i].ID] = &messages[i]
+	}
+	texts := make([]string, top)
+	for i, id := range ids {
+		message, ok := byID[id]
+		if !ok {
+			return nil, fmt.Errorf("prepare rerank candidate %d: message not found", i)
 		}
-		body := embed.BodyTextForEmbedding(message.BodyText, message.BodyHTML)
-		text, _ := embed.Preprocess(message.Subject, body, 0, preprocess)
-		texts[i] = truncateUTF8Bytes(text, rerank.MaxCandidateBytes)
+		texts[i] = rerank.Candidate(rerank.MessageFromAPI(message), preprocess)
 	}
 	return texts, nil
 }

@@ -1574,6 +1574,9 @@ func (r evalReport) table(w io.Writer) error {
 		if err := r.rerank.table(w, r.cutoffs); err != nil {
 			return err
 		}
+		if err := r.rerank.gate(r.aggs, r.cutoffs).table(w, r.rerank.Shapes); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -1627,6 +1630,7 @@ func (r evalReport) json(w io.Writer) error {
 	}
 	if r.rerank != nil {
 		out["rerank_results"] = r.rerank.json(r.cutoffs)
+		out["rerank_gate"] = r.rerank.gate(r.aggs, r.cutoffs)
 	}
 	return printJSONTo(w, out)
 }
