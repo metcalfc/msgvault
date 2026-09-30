@@ -84,6 +84,26 @@ func enabled(cfg *jev.Config) { cfg.PersonProfileChoices = jev.FeatureConfig{Ena
 
 func mergeWithLocations(t *testing.T, st *store.Store, key, survivorValue, absorbedValue string) *store.PersonMergeResult {
 	t.Helper()
+	return mergeWithValues(t, st, store.AttributeSlugLocation, key, survivorValue, absorbedValue)
+}
+
+// longTextSlug defines a single-value text field without a length limit.
+func longTextSlug(t *testing.T, st *store.Store) string {
+	t.Helper()
+	_, err := st.CreateAttributeDefinitionContext(t.Context(), store.AttributeDefinitionInput{
+		UniversalID: "test-home-notes", ObjectType: store.AttributeObjectPerson, Slug: "home_notes",
+		Label: "Home notes", ValueType: store.AttributeValueText, FieldType: store.AttributeFieldText,
+		Cardinality: store.AttributeCardinalitySingle, Ownership: store.AttributeOwnershipUser,
+		UICreatable: true, UIEditable: true, APIMutable: true, IsAudited: true, IsDeletable: true,
+	})
+	require.NoError(t, err)
+	return "home_notes"
+}
+
+func mergeWithValues(
+	t *testing.T, st *store.Store, slug, key, survivorValue, absorbedValue string,
+) *store.PersonMergeResult {
+	t.Helper()
 	require := require.New(t)
 	ctx := context.Background()
 	survivor := promoted(t, st, key+"-survivor@example.com", "Survivor "+key)
@@ -94,7 +114,7 @@ func mergeWithLocations(t *testing.T, st *store.Store, key, survivorValue, absor
 	}{{survivor.ID, survivorValue}, {absorbed.ID, absorbedValue}} {
 		value := entry.value
 		_, err := st.SetPersonAttributeValueContext(ctx, store.PersonAttributeValueInput{
-			PersonID: entry.personID, DefinitionSlug: store.AttributeSlugLocation,
+			PersonID: entry.personID, DefinitionSlug: slug,
 			Value:  store.AttributeValue{Type: store.AttributeValueText, Text: &value},
 			Source: store.ProvenanceExtraction,
 		})
@@ -199,4 +219,29 @@ func TestRunSendsNothingWithoutConsentAndKeepsLowConfidenceChoices(t *testing.T)
 	assert.Equal(1, report.PrimaryRoles)
 	assert.Zero(report.PrimaryRolesSet, "unclear keeps the rule's primary role")
 	assert.Equal(board, primaryID(t, st, robin.ID))
+}
+
+func TestRunNeverSettlesAConflictWhoseValuesWouldBeCut(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	prefix := strings.Repeat("Lives near the old harbor district ", 10)
+	merged := mergeWithValues(t, st, longTextSlug(t, st), "long", prefix+"in the north", prefix+"in the south")
+
+	alwaysSame := func(string, map[string]any, map[string]any) map[string]any { return jevtest.Noul(0.99) }
+	server := jevtest.NewServer(t, alwaysSame)
+	service, cfg := server.Service(t, st, enabled)
+	jevtest.GrantConsent(t, st, cfg, profilejudge.Feature())
+
+	report, err := profilejudge.Run(t.Context(), st, profilejudge.Options{Judge: service})
+	require.NoError(err)
+	assert.Zero(report.ConflictsSettled)
+	assert.Empty(server.Requests(), "a conflict with a value over 300 characters is never sent")
+	merges, err := st.ListPersonMergesContext(t.Context(), merged.Person.ID)
+	require.NoError(err)
+	require.Len(merges, 1)
+	assert.Equal(1, merges[0].PendingCandidateCount, "the conflict stays with the user")
+	remaining, err := st.MergeConflictCandidatesContext(t.Context(), 0)
+	require.NoError(err)
+	assert.Empty(remaining, "it is recorded so it is not listed again")
 }

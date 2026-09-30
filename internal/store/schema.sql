@@ -4700,9 +4700,9 @@ CREATE TABLE IF NOT EXISTS person_profile_judgments (
 );
 
 -- The display name the promotion rule gave a person whose identities used
--- two or more distinct names. While the person's display name still equals
--- seeded_name, the display_name judgment may replace it; any other rename
--- ends that.
+-- two or more distinct names. While this row exists and the display name
+-- still equals seeded_name, the display_name judgment may replace it. Every
+-- rename deletes the row, so a name renamed back to seeded_name is kept.
 CREATE TABLE IF NOT EXISTS person_display_name_seeds (
     person_id   INTEGER PRIMARY KEY REFERENCES persons(id) ON DELETE CASCADE,
     seeded_name TEXT NOT NULL,

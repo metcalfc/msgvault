@@ -970,6 +970,9 @@ func (s *Store) rebaseCardDAVImportedProjectionTx(
 		}
 		displayChanged = affected > 0
 		if displayChanged {
+			if err := dropDisplayNameSeedTx(ctx, tx, personID); err != nil {
+				return false, err
+			}
 			if err := s.bumpPersonDisplayNameRevisionContext(ctx, tx); err != nil {
 				return false, err
 			}
@@ -1033,6 +1036,9 @@ func (s *Store) retireCardDAVImportedProjectionTx(
 			return fmt.Errorf("count cleared CardDAV display label: %w", err)
 		}
 		if affected > 0 {
+			if err := dropDisplayNameSeedTx(ctx, tx, personID); err != nil {
+				return err
+			}
 			if err := s.bumpPersonDisplayNameRevisionContext(ctx, tx); err != nil {
 				return err
 			}

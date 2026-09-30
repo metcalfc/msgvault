@@ -99,12 +99,14 @@ type Options struct {
 
 // Report summarizes a run. It never contains names or addresses.
 type Report struct {
-	Proposals  int    `json:"proposals"`
-	Requests   int    `json:"requests"`
-	Judged     int    `json:"judged"`
-	Candidates int    `json:"candidates"`
-	Existing   int    `json:"existing"`
-	Skipped    string `json:"skipped,omitempty"`
+	Proposals  int `json:"proposals"`
+	Requests   int `json:"requests"`
+	Judged     int `json:"judged"`
+	Candidates int `json:"candidates"`
+	Existing   int `json:"existing"`
+	// Dropped counts judged pairs that no longer qualified when written.
+	Dropped int    `json:"dropped"`
+	Skipped string `json:"skipped,omitempty"`
 }
 
 // IdentityState is one side of a pair as sent.
@@ -175,6 +177,7 @@ func Run(ctx context.Context, st Store, options Options) (Report, error) {
 		report.Judged += written.Recorded
 		report.Candidates += written.Candidates
 		report.Existing += written.Existing
+		report.Dropped += written.Dropped
 	}
 	return report, nil
 }

@@ -640,6 +640,11 @@ func (s *Store) updatePersonDisplayNameOnce(
 			return fmt.Errorf("update person %d: %w", id, err)
 		}
 		if nameChanged {
+			// Any rename, even back to the rule's name, ends the
+			// display-name judgment's claim on this person.
+			if err := dropDisplayNameSeedTx(ctx, tx, updatedID); err != nil {
+				return err
+			}
 			if err := s.bumpPersonDisplayNameRevisionContext(ctx, tx); err != nil {
 				return err
 			}

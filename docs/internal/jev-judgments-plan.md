@@ -536,7 +536,10 @@ bar.
   > or provider failure) keeps its items. When a packet must shrink, the
   > least relevant context leaves first, which without judgments is the old
   > trim-from-the-end order. A per-attempt memo keeps the several
-  > assemblies of one attempt to one judgment per target.
+  > assemblies of one attempt to one judgment per target. Relevance scores
+  > are not stored: they only shape what the chat model reads, like the
+  > model call itself, and replays resolve from the stored generation
+  > (claims, cited evidence, reported scores), never from live judgments.
 - [x] **Task 8.2 Claim grounding.** Nouls `stated` and `current` per claim
   replace the chat LLM's self-reported confidence as `ReportedScore`.
   > Feature `sweep_claim_grounding` (`internal/sweepjudge`), wired into the
@@ -548,7 +551,12 @@ bar.
   > `round(1000 × stated × current)`. Sensitive targets, values that carry
   > an address or phone number, and every claim after a failure keep the
   > model's score; claims are never added, dropped, or reordered, and the
-  > resolver arithmetic is unchanged.
+  > resolver arithmetic is unchanged. The reported score is only the
+  > resolver's confidence term (score / 10, at most 100 of the 750 apply
+  > threshold); source class, directness, authority, freshness, and
+  > corroboration carry the rest, so grounding shifts margins but never
+  > applies a claim by itself. The grounded score is stored on the claim, so
+  > replays need no live call.
 - [x] **Task 8.3 Duplicate-person candidates.** Code proposes pairs (same
   display name across addresses, same local part across domains, person
   embedding neighbors); Noul `same_person` batched 20 per request; write

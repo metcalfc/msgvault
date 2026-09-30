@@ -411,6 +411,16 @@ func (s *Store) recordDisplayNameSeedTx(
 	return nil
 }
 
+// dropDisplayNameSeedTx forgets a person's seed: a rename by anyone, the
+// display-name judgment included, makes the name no longer the rule's
+// choice, even when it is renamed back to the same text later.
+func dropDisplayNameSeedTx(ctx context.Context, tx *loggedTx, personID int64) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM person_display_name_seeds WHERE person_id = ?`, personID); err != nil {
+		return fmt.Errorf("drop display name seed: %w", err)
+	}
+	return nil
+}
+
 // clusterDistinctDisplayNamesTx returns the distinct display names of the
 // participants, compared case-insensitively, that could be a person's name:
 // with a letter and without an address. Order is by participant ID.

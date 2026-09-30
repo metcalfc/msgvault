@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"go.kenn.io/msgvault/internal/jev"
 	"go.kenn.io/msgvault/internal/meetingjudge"
@@ -116,8 +117,8 @@ func Feature() jev.FeatureSpec {
 			"names.name_N: each display name the person's identities use, cut to 160 characters; a name " +
 				"containing an email address or phone number is never sent (display name only)",
 			"conflicts.conflict_N.field, .first, and .second: the attribute's label and the two conflicting " +
-				"values, cut to 300 characters; values with an email address or phone number are never sent " +
-				"(merge conflicts only)",
+				"values, sent whole; a conflict with a value over 300 characters or with an email address or " +
+				"phone number is never sent (merge conflicts only)",
 		},
 	}
 }
@@ -338,9 +339,16 @@ func runMergeConflicts(ctx context.Context, st Store, options Options, report *R
 	}
 	sendable := candidates[:0]
 	for _, candidate := range candidates {
-		if meetingjudge.RedactText(candidate.Survivor) == strings.TrimSpace(candidate.Survivor) &&
-			meetingjudge.RedactText(candidate.Absorbed) == strings.TrimSpace(candidate.Absorbed) {
+		if conflictSendable(candidate) {
 			sendable = append(sendable, candidate)
+			continue
+		}
+		// Never sent: recorded so it is not listed again, and left pending
+		// for the user.
+		if _, err := st.ApplyMergeConflictJudgmentContext(ctx, store.MergeConflictJudgment{
+			CandidateID: candidate.CandidateID, PersonID: candidate.PersonID, Model: notSentModel,
+		}); err != nil {
+			return fmt.Errorf("record unsent merge conflict: %w", err)
 		}
 	}
 	for start := 0; start < len(sendable); start += ConflictsPerRequest {
@@ -349,9 +357,9 @@ func runMergeConflicts(ctx context.Context, st Store, options Options, report *R
 		ids := make([]string, len(chunk))
 		for i, candidate := range chunk {
 			state.Conflicts[ConflictKey(i)] = ConflictState{
-				Field:  truncateRunes(candidate.Field, maxFieldRunes),
-				First:  truncateRunes(candidate.Survivor, maxValueRunes),
-				Second: truncateRunes(candidate.Absorbed, maxValueRunes),
+				Field:  candidate.Field,
+				First:  candidate.Survivor,
+				Second: candidate.Absorbed,
 			}
 			ids[i] = SameValueQuestionID(i)
 		}
@@ -376,6 +384,23 @@ func runMergeConflicts(ctx context.Context, st Store, options Options, report *R
 		}
 	}
 	return nil
+}
+
+// notSentModel marks a merge conflict recorded without asking Jev.
+const notSentModel = "rule:not_sent"
+
+// conflictSendable reports whether both values can be sent whole: no email
+// address or phone number, and short enough that nothing is cut. A value
+// that would be truncated could hide the difference that makes two values
+// disagree, so such a conflict is never judged and stays with the user.
+func conflictSendable(candidate store.MergeConflictCandidate) bool {
+	for _, value := range []string{candidate.Survivor, candidate.Absorbed} {
+		if meetingjudge.RedactText(value) != strings.TrimSpace(value) ||
+			utf8.RuneCountInString(value) > maxValueRunes {
+			return false
+		}
+	}
+	return utf8.RuneCountInString(candidate.Field) <= maxFieldRunes
 }
 
 func clamp(value float64) float64 { return min(1, max(0, value)) }

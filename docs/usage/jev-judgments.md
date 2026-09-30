@@ -1078,8 +1078,9 @@ Each request carries only one question's state:
   address or phone number is never sent.
 - Merge conflicts, under `conflicts.conflict_N` (up to eight per request):
   the field's label as `field`, and the two values as `first` (the
-  survivor's) and `second`, cut to 300 characters. A conflict whose values contain an email
-  address or phone number is never sent.
+  survivor's) and `second`, each sent whole. A conflict with a value over 300
+  characters, or with an email address or phone number, is never sent and
+  stays pending for you: a cut value could hide the difference.
 
 No addresses, messages, or other profile fields, and nothing about you.
 

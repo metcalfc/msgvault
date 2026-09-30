@@ -226,6 +226,64 @@ func TestPersonDuplicateCandidateLinksOnlyOnAUserAccept(t *testing.T) {
 	assert.Equal(clusters[left], clusters[right], "the user's accept links the two identities")
 }
 
+func TestRecordPersonDuplicateJudgmentsRecheckExclusionsBeforeWriting(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	desk := duplicateParticipant(t, st, "riley@example.com", "Riley Desk")
+	duplicateParticipant(t, st, "riley.d@example.org", "Riley Desk")
+	duplicateParticipant(t, st, "jane@example.com", "Jane Doe")
+	duplicateParticipant(t, st, "jdoe@example.org", "Jane Doe")
+	proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	require.Len(proposals, 2)
+
+	// While Jev judges, the user marks one side of a pair as an organization.
+	_, err = st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: desk, Kind: correspondentkind.Organization,
+	})
+	require.NoError(err)
+
+	judgments := make([]store.PersonDuplicateJudgment, len(proposals))
+	for i, proposal := range proposals {
+		judgments[i] = store.PersonDuplicateJudgment{Proposal: proposal, Probability: 0.9, Model: "jev-test", Propose: true}
+	}
+	result, err := st.RecordPersonDuplicateJudgmentsContext(t.Context(), judgments)
+	require.NoError(err)
+	assert.Equal(store.PersonDuplicateWriteResult{Recorded: 1, Candidates: 1, Dropped: 1}, result)
+	candidates, err := st.ListPersonDuplicateCandidatesContext(t.Context(), nil, 100, 0)
+	require.NoError(err)
+	require.Len(candidates, 1)
+	assert.NotEqual(desk, candidates[0].LeftID)
+}
+
+func TestPersonDuplicateProposalsAreDeterministic(t *testing.T) {
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	// Two shared names and two shared local parts between the same clusters,
+	// so the representative value must not depend on map order.
+	left := duplicateParticipant(t, st, "jordan.lee@example.com", "Jordan Lee")
+	leftAlias := duplicateParticipant(t, st, "jlee.work@example.com", "Lee Jordan Q")
+	_, err := st.LinkParticipants(left, leftAlias)
+	require.NoError(err)
+	right := duplicateParticipant(t, st, "jordan.lee@example.org", "Jordan Lee")
+	rightAlias := duplicateParticipant(t, st, "jlee.work@example.net", "Lee Jordan Q")
+	_, err = st.LinkParticipants(right, rightAlias)
+	require.NoError(err)
+
+	first, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	require.Len(first, 1)
+	for range 20 {
+		again, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+		require.NoError(err)
+		require.Len(again, 1)
+		require.Equal(first[0].Fingerprint, again[0].Fingerprint)
+		require.Equal(first[0].SharedValue, again[0].SharedValue)
+	}
+	assert.Equal(t, "jordan lee", first[0].SharedValue, "the smallest shared name represents the pair")
+}
+
 func TestRecordPersonDuplicateJudgmentsRejectsMalformedInput(t *testing.T) {
 	st := testutil.NewTestStore(t)
 	_, err := st.RecordPersonDuplicateJudgmentsContext(t.Context(), []store.PersonDuplicateJudgment{{

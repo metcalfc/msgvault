@@ -99,6 +99,11 @@ type PersonDuplicateWriteResult struct {
 	// Existing counts proposals that already had a candidate row, which is
 	// never changed.
 	Existing int `json:"existing"`
+	// Dropped counts judgments whose proposal no longer holds when written
+	// (an owner identity, a non-person classification, a new candidate or
+	// rejection, one person binding, or changed inputs); nothing is written
+	// for them and a later run proposes them afresh if they qualify again.
+	Dropped int `json:"dropped"`
 }
 
 type duplicateCluster struct {
@@ -211,7 +216,9 @@ func (s *Store) personDuplicateProposalsTx(
 				if pairs[key] == nil {
 					pairs[key] = map[PersonDuplicateSignal]string{}
 				}
-				if _, seen := pairs[key][signal]; !seen {
+				// The smallest shared value represents the signal, so the
+				// proposal does not depend on map iteration order.
+				if prior, seen := pairs[key][signal]; !seen || value < prior {
 					pairs[key][signal] = value
 				}
 			}
@@ -556,7 +563,22 @@ func (s *Store) RecordPersonDuplicateJudgmentsContext(
 			if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
 				return err
 			}
+			// Every exclusion is rechecked under the identity lock: only a
+			// pair that is still proposed, with the same inputs, is written.
+			current, err := s.personDuplicateProposalsTx(ctx, tx)
+			if err != nil {
+				return err
+			}
+			live := make(map[[2]int64]string, len(current))
+			for _, proposal := range current {
+				live[[2]int64{proposal.Left.ParticipantID, proposal.Right.ParticipantID}] = proposal.Fingerprint
+			}
 			for _, judgment := range judgments {
+				pair := [2]int64{judgment.Proposal.Left.ParticipantID, judgment.Proposal.Right.ParticipantID}
+				if fingerprint, ok := live[pair]; !ok || fingerprint != judgment.Proposal.Fingerprint {
+					result.Dropped++
+					continue
+				}
 				if err := s.recordPersonDuplicateJudgmentTx(ctx, tx, judgment, &result); err != nil {
 					return err
 				}

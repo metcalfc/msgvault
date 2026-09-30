@@ -164,8 +164,15 @@ func TestDisplayNameJudgmentNeverOverridesAUserRename(t *testing.T) {
 	require.Len(candidates, 1)
 
 	chosen := "J. Doe (personal)"
-	_, err = st.UpdatePersonDisplayNameContext(t.Context(), person.ID, person.Revision, &chosen)
+	renamed, err := st.UpdatePersonDisplayNameContext(t.Context(), person.ID, person.Revision, &chosen)
 	require.NoError(err)
+	// Renamed back to the rule's name: still the user's choice.
+	chosen = "jdoe"
+	_, err = st.UpdatePersonDisplayNameContext(t.Context(), person.ID, renamed.Revision, &chosen)
+	require.NoError(err)
+	later, err := st.DisplayNameCandidatesContext(t.Context(), 0)
+	require.NoError(err)
+	assert.Empty(later, "a renamed person is never offered again")
 
 	name := "Jane Doe"
 	changed, err := st.ApplyDisplayNameJudgmentContext(t.Context(), store.DisplayNameJudgment{
