@@ -14,8 +14,70 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/msgvault/internal/personenrichment"
 	"go.kenn.io/msgvault/internal/vcard"
 )
+
+// TestSubsetKeepsTheDisplayNameChangeTime: an exported archive keeps when the
+// display label last changed, so a rename made after a preferred name is
+// still the name enrichment sends from the subset.
+func TestSubsetKeepsTheDisplayNameChangeTime(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := context.Background()
+	sourceDir := t.TempDir()
+	destinationDir := filepath.Join(t.TempDir(), "subset")
+	sourcePath := createTestSourceDB(t, sourceDir, 4)
+	source, err := Open(sourcePath)
+	require.NoError(err)
+	person, _, err := source.CreatePersonFromParticipantContext(ctx, 1)
+	require.NoError(err)
+	preferred, err := source.AddPersonNameContext(ctx, person.ID, PersonNameInput{
+		NameKind: PersonNameFormatted, OriginalValue: "Zara Example",
+		Envelope: ValueEnvelopeInput{Source: ProvenanceUser, Pref: new(1)},
+	})
+	require.NoError(err)
+	// Order creation, the preferred name, and the rename an hour apart so
+	// the rename is strictly newer without waiting on the clock.
+	now := time.Now().UTC()
+	_, err = source.DB().ExecContext(ctx,
+		`UPDATE persons SET created_at = ?, display_name_changed_at = ? WHERE id = ?`,
+		now.Add(-2*time.Hour), now.Add(-2*time.Hour), person.ID)
+	require.NoError(err)
+	_, err = source.DB().ExecContext(ctx,
+		`UPDATE person_names SET created_at = ? WHERE id = ?`, now.Add(-time.Hour), preferred.Envelope.ID)
+	require.NoError(err)
+	person, err = source.GetPersonContext(ctx, person.ID)
+	require.NoError(err)
+	_, err = source.UpdatePersonDisplayNameContext(ctx, person.ID, person.Revision, new("New Name"))
+	require.NoError(err)
+	require.NoError(source.Close())
+
+	_, err = CopySubsetWithOptions(sourcePath, destinationDir, 4, CopySubsetOptions{
+		IncludeIdentity: true, IncludeProfiles: true,
+	})
+	require.NoError(err)
+	destination, err := Open(filepath.Join(destinationDir, "msgvault.db"))
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(destination.Close()) })
+
+	input, err := destination.LoadRequestInput(ctx, personenrichment.WorkLease{PersonID: person.ID})
+	require.NoError(err)
+	var label, preferredName *personenrichment.IdentityCandidate
+	for i := range input.Names {
+		switch input.Names[i].Value {
+		case "New Name":
+			label = &input.Names[i]
+		case "Zara Example":
+			preferredName = &input.Names[i]
+		}
+	}
+	require.NotNil(label)
+	require.NotNil(preferredName)
+	assert.True(preferredName.Primary)
+	assert.True(label.Primary, "the rename outranks the older preferred name in the subset")
+	assert.True(label.ActiveFrom.After(preferredName.ActiveFrom))
+}
 
 func subsetPersonDefinition(slug string) AttributeDefinitionInput {
 	return AttributeDefinitionInput{

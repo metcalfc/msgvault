@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -514,10 +515,24 @@ func copyData(tx *sql.Tx, rowCount int, options CopySubsetOptions) (*CopyResult,
 	// original revision would misrepresent the curated profile. With
 	// includeIdentity, the closure above already pulled every bound
 	// participant in, so no touched person is skipped.
+	// The display label's change time decides whether a rename outranks an
+	// older preferred name, so it is carried over. A source from before the
+	// column existed dates the label at the person's creation, as the
+	// upgrade backfill does.
+	sourcePersonColumns, err := schemaColumns(tx, "src", "persons")
+	if err != nil {
+		return nil, err
+	}
+	displayNameChangedAt := "p.created_at"
+	if slices.Contains(sourcePersonColumns, "display_name_changed_at") {
+		displayNameChangedAt = "COALESCE(p.display_name_changed_at, p.created_at)"
+	}
 	if _, err := tx.Exec(`
 		INSERT INTO persons
-			(id, vcard_uid, display_name, revision, created_at, updated_at)
-		SELECT p.id, p.vcard_uid, p.display_name, p.revision, p.created_at, p.updated_at
+			(id, vcard_uid, display_name, revision, created_at, updated_at,
+			 display_name_changed_at)
+		SELECT p.id, p.vcard_uid, p.display_name, p.revision, p.created_at, p.updated_at,
+			` + displayNameChangedAt + `
 		FROM src.persons p
 		WHERE EXISTS (
 			SELECT 1 FROM src.person_participants pp
