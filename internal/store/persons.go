@@ -131,7 +131,8 @@ func (s *Store) createPersonFromParticipantTx(
 			// The identity revision bump below already republishes derived
 			// person display names, so seeding needs no separate name bump.
 			if err := tx.QueryRowContext(ctx,
-				`INSERT INTO persons (vcard_uid, display_name) VALUES (?, ?) RETURNING id`,
+				`INSERT INTO persons (vcard_uid, display_name, display_name_changed_at)
+				VALUES (?, ?, `+s.dialect.Now()+`) RETURNING id`,
 				uid, displayName,
 			).Scan(&personID); err != nil {
 				return fmt.Errorf("create person: %w", err)
@@ -606,26 +607,30 @@ func (s *Store) updatePersonDisplayNameOnce(
 		if err != nil {
 			return fmt.Errorf("read person %d display name: %w", id, err)
 		}
+		// Preserve the person revision contract, but invalidate analytics and
+		// re-date the label only when the display name actually changed.
+		nameChanged := previousName.Valid
+		if displayName != nil {
+			nameChanged = !previousName.Valid || previousName.String != *displayName
+		}
+		changedAt := "display_name_changed_at"
+		if nameChanged {
+			changedAt = s.dialect.Now()
+		}
 		var updatedID int64
 		err = tx.QueryRowContext(ctx, fmt.Sprintf(`
 			UPDATE persons
 			SET display_name = ?, revision = revision + 1,
 			    vcard_projection_revision = vcard_projection_revision + 1,
-			    updated_at = %s
+			    updated_at = %s, display_name_changed_at = %s
 			WHERE id = ? AND revision = ?
 			RETURNING id
-		`, s.dialect.Now()), displayName, id, expectedRevision).Scan(&updatedID)
+		`, s.dialect.Now(), changedAt), displayName, id, expectedRevision).Scan(&updatedID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return s.personCASMissTx(ctx, tx, id)
 		}
 		if err != nil {
 			return fmt.Errorf("update person %d: %w", id, err)
-		}
-		// Preserve the person revision contract, but invalidate analytics only
-		// when the normalized display name actually changed.
-		nameChanged := previousName.Valid
-		if displayName != nil {
-			nameChanged = !previousName.Valid || previousName.String != *displayName
 		}
 		if nameChanged {
 			if err := s.bumpPersonDisplayNameRevisionContext(ctx, tx); err != nil {

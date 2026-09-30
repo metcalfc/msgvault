@@ -729,6 +729,11 @@ func (d *PostgreSQLDialect) LegacyColumnMigrations() []ColumnMigration {
 		// projection write moves it, so no backfill is needed.
 		{`ALTER TABLE persons ADD COLUMN IF NOT EXISTS vcard_projection_revision BIGINT NOT NULL DEFAULT 1`,
 			"persons.vcard_projection_revision"},
+		// display_name_changed_at: when the display label last changed.
+		// Existing rows are backfilled from created_at once, so an upgrade
+		// never makes an old label look recently chosen.
+		{`ALTER TABLE persons ADD COLUMN IF NOT EXISTS display_name_changed_at TIMESTAMPTZ`,
+			"persons.display_name_changed_at"},
 		{`ALTER TABLE person_names ADD COLUMN IF NOT EXISTS source_resource_uid TEXT`, "person_names.source_resource_uid"},
 		{`ALTER TABLE person_contact_points ADD COLUMN IF NOT EXISTS source_resource_uid TEXT`, "person_contact_points.source_resource_uid"},
 		{`ALTER TABLE person_addresses ADD COLUMN IF NOT EXISTS source_resource_uid TEXT`, "person_addresses.source_resource_uid"},

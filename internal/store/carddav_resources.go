@@ -857,8 +857,8 @@ func (s *Store) createCardDAVImportedPersonTx(
 		return nil, nil, err
 	}
 	var personID int64
-	if err := tx.QueryRowContext(ctx, `INSERT INTO persons (vcard_uid, display_name)
-		VALUES (?, NULLIF(?, '')) RETURNING id`, uid, input.DisplayName).Scan(&personID); err != nil {
+	if err := tx.QueryRowContext(ctx, `INSERT INTO persons (vcard_uid, display_name, display_name_changed_at)
+		VALUES (?, NULLIF(?, ''), `+s.dialect.Now()+`) RETURNING id`, uid, input.DisplayName).Scan(&personID); err != nil {
 		return nil, nil, fmt.Errorf("create CardDAV imported person: %w", err)
 	}
 	if strings.TrimSpace(input.DisplayName) != "" {
@@ -957,7 +957,8 @@ func (s *Store) rebaseCardDAVImportedProjectionTx(
 	}
 	displayChanged := false
 	if remoteOwnsDisplay {
-		result, err := tx.ExecContext(ctx, `UPDATE persons SET display_name = NULLIF(?, '')
+		result, err := tx.ExecContext(ctx, `UPDATE persons SET display_name = NULLIF(?, ''),
+			display_name_changed_at = `+s.dialect.Now()+`
 			WHERE id = ? AND display_name IS DISTINCT FROM NULLIF(?, '')`,
 			strings.TrimSpace(input.DisplayName), personID, strings.TrimSpace(input.DisplayName))
 		if err != nil {
@@ -1021,7 +1022,8 @@ func (s *Store) retireCardDAVImportedProjectionTx(
 		}
 	}
 	if remoteOwnsDisplay {
-		result, err := tx.ExecContext(ctx, `UPDATE persons SET display_name = NULL
+		result, err := tx.ExecContext(ctx, `UPDATE persons SET display_name = NULL,
+			display_name_changed_at = `+s.dialect.Now()+`
 			WHERE id = ? AND display_name = ?`, personID, importedDisplay.String)
 		if err != nil {
 			return fmt.Errorf("clear retired CardDAV display label: %w", err)

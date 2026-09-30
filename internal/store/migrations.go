@@ -93,6 +93,9 @@ const (
 	// The attempt state vocabulary gains identity_uncertain: a semantic
 	// identity check between the accept and reject thresholds.
 	migrationPersonEnrichmentIdentityUncertain = "person_enrichment_attempts_identity_uncertain_v1"
+	// persons.display_name_changed_at dates the display label for enrichment
+	// name selection. Rows that predate the column take created_at.
+	migrationPersonDisplayNameChangedAt = "person_display_name_changed_at_v1"
 )
 
 func (s *Store) backfillSyncRunResumeMetadata(

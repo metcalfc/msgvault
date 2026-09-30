@@ -2283,27 +2283,44 @@ func (s *Store) LoadRequestInput(
 	if err != nil {
 		return input, err
 	}
+	var newestPreferredName time.Time
 	preferredName := false
 	for _, name := range names {
 		if value := strings.TrimSpace(name.OriginalValue); value != "" {
 			primary := name.Envelope.Pref != nil && *name.Envelope.Pref == 1
-			preferredName = preferredName || primary
+			activeFrom := valueEnvelopeActiveFrom(name.Envelope)
+			if _, err := personenrichment.NormalizeIdentifier(personenrichment.IdentifierName, value); primary && err == nil {
+				if !preferredName || activeFrom.After(newestPreferredName) {
+					newestPreferredName = activeFrom
+				}
+				preferredName = true
+			}
 			input.Names = append(input.Names, personenrichment.IdentityCandidate{
-				StableID: name.Envelope.ID, Value: value, Primary: primary,
-				ActiveFrom: valueEnvelopeActiveFrom(name.Envelope),
+				StableID: name.Envelope.ID, Value: value, Primary: primary, ActiveFrom: activeFrom,
 			})
 		}
 	}
-	// The display label is primary unless the person has a preferred (pref=1)
-	// name, which outranks it. The persons row has no timestamp for when the
-	// label was set: updated_at moves on every unrelated profile write, so
-	// ranking the label by it let a later employment or contact-point write,
-	// landing in a later second, switch the lookup name. created_at is stable.
+	// The display label and a preferred (pref=1) name are both explicit
+	// choices, so the newer one wins. The label is dated by when it last
+	// changed, not by updated_at, which moves on every unrelated profile
+	// write. On an exact tie the preferred name wins, so the label is
+	// demoted unless it is strictly newer than every preferred name.
 	if person.DisplayName != nil {
 		if value := strings.TrimSpace(*person.DisplayName); value != "" {
+			var changed nullableTimestamp
+			if err := s.db.QueryRowContext(ctx, `SELECT
+				COALESCE(display_name_changed_at, created_at) FROM persons WHERE id = ?`,
+				person.ID).Scan(&changed); err != nil {
+				return input, fmt.Errorf("load person display-name change time: %w", err)
+			}
+			changedAt := person.CreatedAt.UTC()
+			if changed.Valid {
+				changedAt = changed.Time.UTC()
+			}
 			input.Names = append(input.Names, personenrichment.IdentityCandidate{
-				StableID: person.ID, Value: value, Primary: !preferredName,
-				ActiveFrom: person.CreatedAt.UTC(),
+				StableID: person.ID, Value: value,
+				Primary:    !preferredName || changedAt.After(newestPreferredName),
+				ActiveFrom: changedAt,
 			})
 		}
 	}

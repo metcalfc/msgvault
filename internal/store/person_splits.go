@@ -177,7 +177,8 @@ func (s *Store) splitPersonMergeOnce(
 		}
 		var newPersonID int64
 		if err := tx.QueryRowContext(ctx,
-			`INSERT INTO persons (vcard_uid, display_name) VALUES (?, ?) RETURNING id`,
+			`INSERT INTO persons (vcard_uid, display_name, display_name_changed_at)
+			VALUES (?, ?, `+s.dialect.Now()+`) RETURNING id`,
 			newUID, displayName,
 		).Scan(&newPersonID); err != nil {
 			return fmt.Errorf("create split person: %w", err)
@@ -239,7 +240,10 @@ func (s *Store) splitPersonMergeOnce(
 			ambiguous = append(ambiguous, ancestorAmbiguous...)
 			if ancestor.absorbedRoot.DisplayName != nil {
 				if _, err := tx.ExecContext(ctx, `UPDATE persons
-					SET display_name = COALESCE(display_name, ?) WHERE id = ?`,
+					SET display_name_changed_at = CASE WHEN display_name IS NULL
+					        THEN `+s.dialect.Now()+` ELSE display_name_changed_at END,
+					    display_name = COALESCE(display_name, ?)
+					WHERE id = ?`,
 					*ancestor.absorbedRoot.DisplayName, newPersonID); err != nil {
 					return fmt.Errorf("restore ancestor split display name: %w", err)
 				}

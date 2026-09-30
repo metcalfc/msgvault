@@ -357,7 +357,11 @@ CREATE TABLE IF NOT EXISTS persons (
     revision                  BIGINT NOT NULL DEFAULT 1,
     vcard_projection_revision BIGINT NOT NULL DEFAULT 1,
     created_at                TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at                TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at                TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- When display_name last changed. updated_at moves on every profile
+    -- write, so it cannot date the label. Writers set it explicitly; readers
+    -- fall back to created_at for a row an older release inserted.
+    display_name_changed_at   TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS person_carddav_inference_state (

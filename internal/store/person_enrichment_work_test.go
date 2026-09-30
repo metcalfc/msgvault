@@ -1421,6 +1421,79 @@ func TestPersonEnrichmentRequestPrefersThePreferredNameOverTheDisplayLabel(t *te
 	checks.Equal("zara example", request.Identity.Name)
 }
 
+// TestPersonEnrichmentRequestSendsARenameMadeAfterThePreferredName: the
+// display label and a preferred name are both explicit choices, so a rename
+// made after the preferred name is the one sent. Re-saving the same label is
+// not a rename and leaves the preferred name in place.
+func TestPersonEnrichmentRequestSendsARenameMadeAfterThePreferredName(t *testing.T) {
+	cases := map[string]struct {
+		displayName string
+		want        string
+	}{
+		"renamed":           {displayName: "New Name", want: "new name"},
+		"same label resent": {displayName: "Work Person", want: "zara example"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			requirements := require.New(t)
+			checks := assert.New(t)
+			f := newEnrichmentWorkFixture(t)
+			preferred, err := f.store.AddPersonNameContext(t.Context(), f.person.ID, store.PersonNameInput{
+				NameKind: store.PersonNameFormatted, OriginalValue: "Zara Example",
+				Envelope: store.ValueEnvelopeInput{Source: store.ProvenanceUser, Pref: new(1)},
+			})
+			requirements.NoError(err)
+			organization, err := f.store.CreateOrganizationContext(t.Context(), store.OrganizationInput{
+				Name: "Example Labs", Kind: store.OrganizationKindCompany,
+			})
+			requirements.NoError(err)
+			_, err = f.store.AddEmploymentContext(t.Context(), store.EmploymentInput{
+				PersonID: f.person.ID, OrganizationID: organization.ID,
+				IsCurrent: new(true), IsPrimary: new(true), Source: store.ProvenanceUser,
+			})
+			requirements.NoError(err)
+			// Date the preferred name and the original label in the past so
+			// the rename below is strictly newer without waiting a second.
+			past := time.Now().UTC().Add(-time.Hour)
+			_, err = f.store.DB().ExecContext(t.Context(), f.store.Rebind(
+				`UPDATE person_names SET created_at = ? WHERE id = ?`), past, preferred.Envelope.ID)
+			requirements.NoError(err)
+			_, err = f.store.DB().ExecContext(t.Context(), f.store.Rebind(
+				`UPDATE persons SET display_name_changed_at = ? WHERE id = ?`),
+				past.Add(-time.Hour), f.person.ID)
+			requirements.NoError(err)
+			person, err := f.store.GetPersonContext(t.Context(), f.person.ID)
+			requirements.NoError(err)
+			displayName := tc.displayName
+			_, err = f.store.UpdatePersonDisplayNameContext(t.Context(), person.ID, person.Revision, &displayName)
+			requirements.NoError(err)
+
+			input, err := f.store.LoadRequestInput(t.Context(), personenrichment.WorkLease{
+				PersonID: f.person.ID,
+				Trigger:  personenrichment.Trigger{Kind: personenrichment.TriggerManual, Generation: "manual:rename"},
+			})
+			requirements.NoError(err)
+			var target personfacts.TargetDescriptor
+			for _, candidate := range input.Catalog.Targets {
+				if !candidate.Sensitive {
+					target = candidate
+					break
+				}
+			}
+			requirements.NotEmpty(target.Key)
+			profile := f.profile
+			profile.Kind = personenrichment.ProviderSixtyfour
+			profile.AllowedIdentifiers = []personenrichment.IdentifierClass{
+				personenrichment.IdentifierName, personenrichment.IdentifierCurrentCompany,
+			}
+			profile.Targets = []personfacts.TargetDescriptor{target}
+			request, _, err := personenrichment.BuildRequest(input, profile)
+			requirements.NoError(err)
+			checks.Equal(tc.want, request.Identity.Name)
+		})
+	}
+}
+
 func TestPersonEnrichmentTerminalRefreshBecomesUnboundWork(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -1513,4 +1586,29 @@ func TestPersonEnrichmentFinalReconcileKeepsARecordedRetryCharge(t *testing.T) {
 	require.NoError(f.store.DB().QueryRowContext(t.Context(), f.store.Rebind(`SELECT cost_charged_usd_micros
 		FROM person_enrichment_run_counters WHERE run_id = ?`), run.ID).Scan(&charged))
 	assert.Equal(int64(5000), charged, "and matches the run counter")
+}
+
+// TestPersonDisplayNameChangeTimeBackfillsFromCreation: a person row an older
+// release wrote has no display-name change time. The one-time migration dates
+// its label at the person's creation, so an upgrade never makes an old label
+// look like a recent choice.
+func TestPersonDisplayNameChangeTimeBackfillsFromCreation(t *testing.T) {
+	requirements := require.New(t)
+	checks := assert.New(t)
+	f := newEnrichmentWorkFixture(t)
+	created := time.Date(2024, 3, 4, 5, 6, 7, 0, time.UTC)
+	_, err := f.store.DB().ExecContext(t.Context(), f.store.Rebind(
+		`UPDATE persons SET display_name_changed_at = NULL, created_at = ? WHERE id = ?`),
+		created, f.person.ID)
+	requirements.NoError(err)
+	_, err = f.store.DB().ExecContext(t.Context(), f.store.Rebind(
+		`DELETE FROM applied_migrations WHERE name = ?`), "person_display_name_changed_at_v1")
+	requirements.NoError(err)
+	requirements.NoError(f.store.InitSchemaContext(t.Context()))
+
+	var backfilled, creation string
+	requirements.NoError(f.store.DB().QueryRowContext(t.Context(), f.store.Rebind(
+		`SELECT CAST(display_name_changed_at AS TEXT), CAST(created_at AS TEXT) FROM persons WHERE id = ?`),
+		f.person.ID).Scan(&backfilled, &creation))
+	checks.Equal(creation, backfilled)
 }

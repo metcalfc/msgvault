@@ -383,7 +383,11 @@ CREATE TABLE IF NOT EXISTS persons (
     revision                  INTEGER NOT NULL DEFAULT 1,
     vcard_projection_revision INTEGER NOT NULL DEFAULT 1,
     created_at                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- When display_name last changed. updated_at moves on every profile
+    -- write, so it cannot date the label. Writers set it explicitly; readers
+    -- fall back to created_at for a row an older release inserted.
+    display_name_changed_at   DATETIME
 );
 
 -- Inferred export inputs must be explicitly reviewed before publication. A

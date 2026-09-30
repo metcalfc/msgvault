@@ -1576,6 +1576,17 @@ func (s *Store) InitSchemaContext(ctx context.Context) error {
 	if err := s.ensureVCardSourceResourceIdentityIndexes(ctx); err != nil {
 		return fmt.Errorf("scope vCard identities to source resources: %w", err)
 	}
+	if err := s.runOnceMigration(ctx, migrationPersonDisplayNameChangedAt, 1, false,
+		func(ctx context.Context) error {
+			if _, err := s.db.ExecContext(ctx, `UPDATE persons
+				SET display_name_changed_at = created_at
+				WHERE display_name_changed_at IS NULL`); err != nil {
+				return fmt.Errorf("backfill person display-name change times: %w", err)
+			}
+			return nil
+		}); err != nil {
+		return err
+	}
 	// Organization domains written before IDNA normalization may still contain
 	// Unicode. Canonicalize them before fact resolution compares incoming ASCII
 	// references with persisted roots and identifiers.
