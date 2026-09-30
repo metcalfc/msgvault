@@ -633,8 +633,8 @@ func TestHandleIssueAgentTokenValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var st MessageStore
 			if tc.noResolver {
-				// mockStore does not implement agentGrantSourceResolver.
-				st = &mockStore{}
+				// Expose only MessageStore, which lacks agentGrantSourceResolver.
+				st = struct{ MessageStore }{&mockStore{}}
 			} else {
 				stub := &stubSourceStore{
 					src: &store.Source{ID: 1, SourceType: "imap", Identifier: "alice@example.com"},
