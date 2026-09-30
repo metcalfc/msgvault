@@ -1344,6 +1344,16 @@ Organization resolution and job title equivalence (feature
 | `enabled` | `false` | Ask Jev whether an organization name that matches no existing organization exactly is one of a few similar ones, and whether two job titles at one organization are the same role. `person enrichment run` and `person sweep` may send once consent is active. |
 | `automatic` | `false` | Also let the daemon's scheduled enrichment and people sweep runs send. |
 
+#### `[jev.correspondent_kind]`
+
+Correspondent kind classification (feature `correspondent_kind`). See
+[the feature description](/docs/usage/jev-judgments/#feature-correspondent-kind).
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Let `msgvault kinds build` ask Jev about identities the deterministic rules could not classify. Without it, `kinds build` applies the rules alone. |
+| `automatic` | `false` | Also classify up to 200 new identities, rules first and then Jev, at each analytics cache build. Rules run at cache build only when this is on. |
+
 ### `[activity]`
 
 Dated activity projection and per-person contact state (first and last

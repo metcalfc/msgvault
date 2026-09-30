@@ -1883,8 +1883,8 @@ per-feature consent.
 | `jev revoke <feature>` | Revoke the feature's active consent; the next request is refused |
 | `jev revoke --all` | Revoke every feature's consent |
 
-All three accept `--json`. Feature names are lowercase identifiers; the only
-feature today is `enrichment_identity`. Consent binds to a fingerprint of the
+All three accept `--json`. Feature names are lowercase identifiers:
+`enrichment_identity` and `correspondent_kind`. Consent binds to a fingerprint of the
 feature name, question wording, disclosed fields, model, and endpoint, so a
 change to any of them shows as "consent required (policy changed)" in status
 until you consent again. The commands run through the daemon like the other
@@ -2254,21 +2254,28 @@ applies to the participant's whole identity cluster. Every subcommand goes
 through the daemon.
 
 ```bash
-msgvault person kind set <participant-id> organization|shared_mailbox|ignored|person \
+msgvault person kind set <participant-id> organization|shared_mailbox|automated|mailing_list|ignored|person \
   [--organization <organization-id> | --organization-name <name>] [--json]
-msgvault person kind list [--kind organization|shared_mailbox|ignored] [--json]
+msgvault person kind list [--kind organization|shared_mailbox|automated|mailing_list|ignored|unclear] [--json]
 ```
 
 | Kind | Meaning |
 |---|---|
 | `organization` | A business or institution. Its email addresses join the organization named by `--organization` or `--organization-name`. Without either, the organization is named after the identity's display name, then its email domain, and is reused when one with that name exists. |
 | `shared_mailbox` | An address several people write from. Nothing is linked or merged through it. |
+| `automated` | A machine sender: notifications, receipts, newsletters, bots, SMS short codes. |
+| `mailing_list` | A list or group address that relays messages from many senders. |
 | `ignored` | A record you do not need as a contact. |
-| `person` | Clears the classification and returns resolved identity matches to review. |
+| `person` | This is a person. Overrides any rule or Jev classification and returns resolved identity matches to review. |
 
 Any kind other than `person` removes the identity from contact matching,
-enrichment, and open identity matches. Organizations and ignored identities
-also leave relationship rankings and People lists. Messages stay searchable.
+enrichment, and open identity matches. Every kind except `shared_mailbox`
+also leaves relationship rankings and People lists. Messages stay searchable.
+Your decision always outranks the rule and Jev classifications that
+[`kinds build`](#kinds-build) writes. `list` shows who classified each
+record (`user`, `rule`, or `jev`); `list --kind unclear` is the review list
+of identities Jev could not classify, with the probability it gave
+`individual_person`. Decide them with `set`.
 `set` refuses your own identities and a name that matches several
 organizations; pass `--organization <id>` in that case. It never deletes a
 saved profile: when one describes only this identity, `set` prints the
@@ -2601,7 +2608,47 @@ msgvault list-senders [flags]
 | `-n`, `--limit N` | Number of results (default: 50) |
 | `--after YYYY-MM-DD` | Only messages after this date |
 | `--before YYYY-MM-DD` | Only messages before this date |
+| `--kind KIND` | Only senders whose identity has this correspondent kind: `organization`, `shared_mailbox`, `automated`, `mailing_list`, `ignored`, or `unclear`. The daemon reads the current classifications, so a change shows without a cache rebuild. |
 | `--json` | Output as JSON |
+
+---
+
+## kinds build
+
+Classify archive identities as people, shared mailboxes, mailing lists, or
+automated senders.
+
+```bash
+msgvault kinds build [--min-messages N] [--limit N] [--rules-only] [--json]
+```
+
+| Flag | Description |
+|---|---|
+| `--min-messages N` | Only identities with at least N messages, counting messages they sent and messages you sent them (default: 5) |
+| `--limit N` | Classify at most N identities, most active first (default: 0, all) |
+| `--rules-only` | Apply the deterministic rules only; never ask Jev |
+| `--json` | Output the run report as JSON |
+
+The command visits identity clusters that no user, rule, or Jev judgment has
+classified, so a rerun only visits new ones. Your own identities are never
+classified or sent. It runs in the daemon:
+
+1. Rules decide from message metadata and the header block of up to five
+   sampled messages per identity: a chat provider's bot flag, an SMS short
+   code, a no-reply address, the list's own posting address (its List-Id),
+   `Auto-Submitted: auto-generated`, and, when you never wrote to the sender,
+   bulk headers (`List-Unsubscribe`, `Precedence: bulk`) or the Gmail
+   Promotions category. Rules write `automated` or `mailing_list`.
+2. When `[jev]` and [`[jev.correspondent_kind]`](configuration.md#jevcorrespondent_kind)
+   are enabled, an API key resolves, and `jev consent correspondent_kind --yes`
+   has been given, the rest are sent to Jev ten per request. See
+   [what is sent](usage/jev-judgments.md#feature-correspondent-kind). A Jev
+   failure, budget stop, or missing consent stops Jev for the run and leaves
+   those identities unclassified.
+
+The report counts the identities visited, the rule and Jev decisions by kind,
+and those left unclassified. When `[jev.correspondent_kind] automatic = true`,
+each analytics cache build also classifies up to 200 new identities.
 
 ---
 

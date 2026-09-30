@@ -29,6 +29,16 @@ All notable changes to msgvault, grouped by release.
   as an ID or vCard UID. The Web UI, CLI, and MCP tools use a shared name
   lookup (`GET /api/v1/entity-labels`), and employment listings name the
   organizations they reference. Requires API schema 2.37.0.
+- Classify which identities are people. `msgvault kinds build` marks
+  automated senders and mailing lists with deterministic rules, and, when
+  `[jev.correspondent_kind]` is enabled and consented, asks Jev about the
+  rest. Relationship rankings then show a Jev-classified identity only when
+  Jev judged it a person with probability at least 0.60; enrichment skips
+  automated senders and lists. Your own decision always wins, and **Not a
+  person…** now offers **Automated sender** and **Mailing list**. Identities
+  Jev could not classify wait in **Reviews → Unclear correspondents** and
+  `msgvault person kind list --kind unclear`. `msgvault list-senders --kind`
+  filters senders by kind. Requires API schema 2.39.0.
 - Mark records that aren't people. Use **Not a person…** on a person or
   contact page, a review card's **Not a person** menu, or
   `msgvault person kind set`. Choose **Organization** to group a business's

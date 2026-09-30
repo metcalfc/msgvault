@@ -236,12 +236,21 @@ eligibility in `internal/store/person_enrichment_work.go`.
 > people's names) holds back contact matches. Tasks below now write
 > `rule`/`jev` rows into that table and read effective kinds through it.
 
-- [ ] **Task 2.1 Deterministic pre-classification.** New
+- [x] **Task 2.1 Deterministic pre-classification.** New
   `internal/correspondentkind`: parse `List-Unsubscribe`, `Auto-Submitted`,
   `Precedence`, `list_id`, `CATEGORY_*` labels, provider bot flags, `noreply`
   local parts, SMS short codes (≤ 6 digits), and a freemail-domain list.
   Assign `automated` or `mailing_list` in code when signals are decisive.
-- [ ] **Task 2.2 Jev classification for the remainder.** Store results in
+  > No header column exists, so header presence is read from the header
+  > block of up to five sampled raw messages per cluster, by primary key.
+  > The only stored provider bot flags are Discord's webhook and automated
+  > identifier types. `list_id` alone never decides (people post through
+  > lists): `mailing_list` needs the sender to be the List-Id's own posting
+  > address, and the bulk-header and Promotions rules apply only to senders
+  > the owner never wrote to. Freemail is counter-evidence for Promotions.
+  > `unclear` joined the vocabulary as a Jev-only kind; `automated` and
+  > `mailing_list` are also user-settable.
+- [x] **Task 2.2 Jev classification for the remainder.** Store results in
   the existing `correspondent_kinds` table (see the note above) with
   source `jev`, `probabilities_json`, `confidence`, and
   `identity_revision`. One Choice per identity, batched 10 per request as
@@ -252,16 +261,29 @@ eligibility in `internal/store/person_enrichment_work.go`.
   domain separately), counts (sent, received, meetings), list_id and
   category shares, header presence counts, up to 5 subjects from them and 3
   from the owner. No bodies.
-- [ ] **Task 2.3 Consumers.** Relationships gate: hide unless
+  > `internal/kindclassify`. The policy has ten Choice questions
+  > (`kind_0`..`kind_9`); a short batch sends only its questions through
+  > `Service.JudgeQuestions`, which keeps the consented wording. An option
+  > at or above 0.60 decides (`individual_person` → `person`, marketing →
+  > `automated`); anything else stores `unclear`. Phones are never sent.
+- [x] **Task 2.3 Consumers.** Relationships gate: hide unless
   `individual_person ≥ 0.60` or user override; `--all` bypasses. Export the
   kind on the people parquet. `list-senders --kind`. Enrichment: skip
   non-persons with reason `not_a_person` instead of failing. `person kind
   set <participant> <kind>` for overrides already exists; add a review list
   for `unclear`.
-- [ ] **Task 2.4 Scheduling.** `msgvault kinds build` one-time backfill over
+  > Shared mailboxes stay listed in rankings as labelled rows, the rule
+  > that shipped with the user override; every other non-person kind and
+  > `unclear` is hidden. There is no relationships CLI, so the `--all`
+  > bypass is the API's `include_not_people`. `list-senders --kind` resolves
+  > the kind live through `GET /aggregates?sender_kind=`. `relationship_people`
+  > carries `correspondent_kind`, `correspondent_kind_source`, and
+  > `individual_person`. The review list is `person kind list --kind
+  > unclear` and Reviews → Unclear correspondents.
+- [x] **Task 2.4 Scheduling.** `msgvault kinds build` one-time backfill over
   identities above a message floor; incremental at cache build only when
   `[jev.correspondent_kind].automatic = true`.
-- [ ] **Task 2.5 Tests.** Rule-only paths need no fake Jev. Fake Jev returns
+- [x] **Task 2.5 Tests.** Rule-only paths need no fake Jev. Fake Jev returns
   a mailing list for a "team@" alias the owner replied to once; assert it is
   hidden from Relationships and skipped by enrichment.
 

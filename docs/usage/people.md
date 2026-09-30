@@ -117,6 +117,8 @@ searchable, and you can undo the choice at any time.
 |---|---|---|
 | **Organization** | A business or institution | The record joins an organization, found by name or created. Its email addresses are added to that organization. |
 | **Shared mailbox** | An address several people write from, such as `support@` | Nothing is linked or merged through it. The people who wrote from it keep their own profiles. Sender lists show it with a **Shared mailbox** label. |
+| **Automated sender** | Notifications, receipts, newsletters, bots | It leaves People and rankings. |
+| **Mailing list** | A list or group address that relays many senders | It leaves People and rankings. |
 | **Ignored** | A record you do not need as a contact | It leaves People and Reviews. |
 
 Every choice has the same effects:
@@ -125,8 +127,8 @@ Every choice has the same effects:
 - Its open identity matches are resolved with reason `not_a_person` and are
   not proposed again.
 - New identity matches for it are resolved as they are found.
-- Organizations and ignored records also leave relationship rankings. A saved
-  profile made only of such records leaves the People list.
+- Every kind except a shared mailbox also leaves relationship rankings. A
+  saved profile made only of such records leaves the People list.
 - Choosing **This is a person** restores everything, including the resolved
   matches.
 
@@ -148,6 +150,16 @@ msgvault person kind set 44 ignored
 msgvault person kind set 42 person
 msgvault person kind list
 ```
+
+### Automatic classification
+
+`msgvault kinds build` classifies the records you have not decided:
+deterministic rules mark automated senders and mailing lists, and, with
+[Jev](jev-judgments.md#feature-correspondent-kind) enabled and consented,
+Jev judges the rest. Your choice always outranks both. Identities Jev could
+not classify stay in People but leave relationship rankings until you decide
+them in **Reviews → Unclear correspondents** or with `msgvault person kind
+list --kind unclear`.
 
 ### Shared mailbox suggestions
 

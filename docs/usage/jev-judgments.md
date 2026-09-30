@@ -54,6 +54,10 @@ new `msgvault jev consent`.
    [jev.organization_resolution]
    enabled = true
    # automatic = true   # also let scheduled enrichment and sweep runs ask
+
+   [jev.correspondent_kind]
+   enabled = true
+   # automatic = true   # also classify new identities at each cache build
    ```
 
 2. Provide an API key. Either paste it in Settings under **Jev judgments**
@@ -68,8 +72,9 @@ new `msgvault jev consent`.
    msgvault jev status                             # consent, credential, today's counters
    ```
 
-Consent is per feature. `msgvault jev revoke enrichment_identity` or
-`msgvault jev revoke --all` stops the next request immediately.
+Consent is per feature: run the same two `consent` commands with
+`correspondent_kind` for that feature. `msgvault jev revoke enrichment_identity`
+or `msgvault jev revoke --all` stops the next request immediately.
 
 ## Budgets and safety
 
@@ -291,6 +296,92 @@ missed, and one `title_same_role_N` per title pair.
 At most eight organizations are asked about per saved set of facts, within one
 minute; the rest resolve as before.
 
+## Feature: correspondent kind
+
+Feature name: `correspondent_kind`. Setting: `[jev.correspondent_kind]`.
+Command: [`msgvault kinds build`](../cli-reference.md#kinds-build).
+
+Many archive identities are not people: receipts, notifications, mailing
+lists, team aliases. They crowd relationship rankings and waste enrichment
+lookups. A [user decision](people.md#records-that-arent-people) always wins;
+below it, `kinds build` classifies identities above a message floor in two
+steps:
+
+1. **Rules, no Jev.** A chat provider's bot flag, an SMS short code, a
+   no-reply address, the list's own posting address, or `Auto-Submitted:
+   auto-generated` decides on its own. Bulk headers (`List-Unsubscribe`,
+   `Precedence: bulk`) or the Gmail Promotions category decide only for a
+   sender you never wrote to, with at least three messages, whose messages
+   were not relayed by a list. Rules write `automated` or `mailing_list`.
+2. **Jev, only with consent.** The rest are asked one Choice each, ten
+   identities per request. Code maps the answer:
+
+   | Answer | Stored kind | Effect |
+   |---|---|---|
+   | `individual_person` ≥ 0.60 | `person` | Ranked as today |
+   | `shared_role_or_team_mailbox` ≥ 0.60 | `shared_mailbox` | Listed as a labelled row; left out of matching and enrichment |
+   | `mailing_list_or_group` ≥ 0.60 | `mailing_list` | Left out of People, rankings, matching, and enrichment |
+   | `automated_notification_or_transactional` or `marketing_or_newsletter` ≥ 0.60 | `automated` | Same as a mailing list |
+   | anything else | `unclear` | Left out of rankings only; waits in review |
+
+So a Jev-classified identity appears in relationship rankings only when its
+`individual_person` probability is at least 0.60, unless you mark it a
+person. Enrichment skips a profile made only of automated, mailing-list,
+organization, or ignored identities with outcome `not_a_person`.
+
+Review unclear identities in **Reviews → Unclear correspondents**, or with
+`msgvault person kind list --kind unclear` and `msgvault person kind set`.
+`msgvault list-senders --kind automated` lists senders by kind. The
+analytics cache's `relationship_people` dataset carries each identity's
+effective kind, its source, and the Jev `individual_person` probability.
+
+`kinds build` runs by hand. With `automatic = true`, each analytics cache
+build also classifies up to 200 new identities, rules first and then Jev;
+rules do not run at cache build without it. Your own identities are never
+classified or sent.
+
+### What leaves the machine
+
+Per identity, under `identities[i]`:
+
+- `label`: the display name
+- `addresses[].local_part` and `addresses[].domain`: up to five email
+  addresses, split; phone numbers are never sent
+- `counts.sent`, `counts.received`, `counts.meetings`: messages the identity
+  sent, messages you sent it, and meetings or events it attended
+- `list_id_share` and `category_shares`: the share of its messages carrying a
+  List-Id and each Gmail category label
+- `header_counts.sampled`, `.list_unsubscribe`, `.auto_submitted`,
+  `.precedence_bulk`, `.list_id`: how many of up to five sampled messages
+  carried each header, never the header values
+- `subjects_from_them[]` (up to five) and `subjects_from_owner[]` (up to
+  three): recent subjects, each cut to 160 characters
+
+No message bodies, no identifiers, no phone numbers, and nothing about your
+own identities.
+
+### The question, exactly as sent
+
+`kind_0` through `kind_9` (Choice), one per identity in the request: "What
+kind of correspondent is `identities[i]`? Judge from its label, address
+parts, message counts, list and category shares, header counts, and
+subjects." The options are:
+
+- `individual_person`: one human writing as themselves, including from a work
+  address.
+- `shared_role_or_team_mailbox`: a role or team address that several people
+  read or write from, such as a support desk or a team alias people reply to.
+- `mailing_list_or_group`: a list or group address that relays messages from
+  many members.
+- `automated_notification_or_transactional`: machine-generated
+  notifications, receipts, alerts, security or account messages.
+- `marketing_or_newsletter`: marketing, promotions, or a newsletter sent in
+  bulk.
+- `unclear`: the evidence does not support any other option.
+
+A request with fewer than ten identities sends only their questions.
+`msgvault jev consent correspondent_kind` prints the same disclosure.
+
 ## Turn it off
 
 - `msgvault jev revoke --all` stops every feature at the next request without
@@ -306,9 +397,12 @@ probabilities and outcomes, not the compared values.
 
 ## Limitations
 
-- Only the enrichment identity check and organization resolution exist
-  today. The other features in the engineering record
-  `docs/internal/jev-judgments-plan.md` are proposals.
+- Only the enrichment identity check, organization resolution, and
+  correspondent kind exist today. The other features in the engineering
+  record `docs/internal/jev-judgments-plan.md` are proposals.
+- Correspondent kind does not revisit an identity once a rule or Jev
+  classified it, even after links or new messages; mark it yourself with
+  `msgvault person kind set`.
 - Facts from different saves for the same organization and role do not add
   up: the newest save for a role replaces the older one, as it always has.
 - Attempts decided before provider person IDs were kept can only be refused
