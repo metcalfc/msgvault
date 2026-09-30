@@ -50,6 +50,10 @@ new `msgvault jev consent`.
    [jev.identity_verification]
    enabled = true
    # automatic = true   # also let the daemon's scheduled enrichment runs ask
+
+   [jev.organization_resolution]
+   enabled = true
+   # automatic = true   # also let scheduled enrichment and sweep runs ask
    ```
 
 2. Provide an API key. Either paste it in Settings under **Jev judgments**
@@ -179,6 +183,105 @@ No message content, no addresses, no identifiers.
 
 `msgvault jev consent enrichment_identity` prints the same disclosure.
 
+## Feature: organization resolution
+
+Feature name: `organization_resolution`. Setting:
+`[jev.organization_resolution]`.
+
+Employment facts name organizations as text. The exact lookup matches a name
+only after lowercasing and collapsing spaces, so "Example Labs, Inc." or
+"Example Labs (YC W21)" creates a second organization beside "Example Labs",
+and "General Partner" and "Partner" at one firm become two jobs. This feature
+decides both questions once and stores the answer, so the exact lookup and
+employment projection get them right from then on.
+
+It runs before an enrichment result or a people sweep's facts are saved, for
+each organization a fact names without an ID:
+
+1. **Exact lookup, no Jev.** A name and domain that already resolve to one
+   organization are used as they are.
+2. **Shortlist in code, no Jev.** On a miss, code picks at most eight existing
+   organizations whose name or alternate name shares words, a prefix, or
+   letter patterns with it, or whose domain shares its registrable domain
+   (`eu.example.com` and `example.com`). No shortlist means the organization
+   is created as before, and nothing is sent.
+3. **One request.** Jev picks which shortlisted organization, if any, the
+   name is, and answers one yes/no question per job-title pair (at most four)
+   that the person already has at the organizations involved.
+
+| Result | Condition | Outcome |
+|---|---|---|
+| Alias | best candidate ≥ 0.85 | The name, and its domain when the organization lacks it, become lookup keys of that organization. Source `system`, source_ref `jev:organization_resolution:<model>`, the probability as confidence. |
+| Review | best candidate ≥ 0.50 | The organization is created as before, and an organization match review asks you whether the two are the same. |
+| New organization | otherwise, or Jev unavailable | Exactly today's behavior. |
+| Same role | `title_same_role_N` ≥ 0.85 | The claimed title maps to the known title at that organization. |
+
+Employment projection maps titles through these mappings before comparing
+facts. Two facts for "Partner" and "General Partner" at one organization then
+add up as one role, and a later fact for the same role updates the existing
+employment instead of adding a second current job. A new employment shows the
+known title. Resolver scores and thresholds are unchanged.
+
+Aliases and title mappings are stored in the archive, and projection reads
+only them, never Jev. Replaying or re-resolving facts gives the same answer
+with Jev off, and a name that already resolved is never asked about again.
+
+### Confirm or reject an organization match
+
+Open **Reviews → Organization matches** in the Web UI, or use
+`GET /api/v1/organization-match-reviews` and
+`POST /api/v1/organization-match-reviews/{id}/accept|reject`. Each review
+shows the proposed name and domain, the existing organization, and the
+probability.
+
+- **Same organization** (`accept`) merges the organization that was created
+  for the name into the existing one, which keeps the name as a former name.
+  The name and domain are added to the existing organization with user
+  provenance. When no separate organization exists, only the alias is added.
+- **Different organization** (`reject`) keeps that organization off the name's
+  shortlist from now on.
+
+Accepting fails when more than one organization has the proposed name, or
+when the merge would give a person two current jobs with the same title at
+one organization; resolve those in the directory first.
+
+### What leaves the machine
+
+Only organization names, domains, and job titles:
+
+- `reference.name`, `reference.domain`: the organization name and domain from
+  the fact
+- `candidates.candidate_N.name`, `candidates.candidate_N.domains[]`,
+  `candidates.candidate_N.other_names[]` for each shortlisted organization
+  (N is 1 to 8; at most five domains and five alternate names each)
+- `title_pairs.pair_N.organization`, `title_pairs.pair_N.title`,
+  `title_pairs.pair_N.other_title` (N is 1 to 4)
+
+No message content, no people's names, no addresses, no identifiers. A
+request carries only the questions it needs: `org_ref` when the lookup
+missed, and one `title_same_role_N` per title pair.
+
+### The questions, exactly as sent
+
+- `org_ref` (Choice): "Which organization in `candidates` is the same
+  real-world organization as `reference`? Allow a legal suffix, an
+  accelerator batch tag, a former name, a regional office, or a shared domain.
+  An option whose key is absent from `candidates` never applies." Options
+  `candidate_1` to `candidate_8` ("`candidates.candidate_N` is the same
+  organization as `reference`.") and `new_organization` ("No organization in
+  `candidates` is `reference`: it is a different organization, a competitor,
+  or only has a similar name.").
+- `title_same_role_N` (Noul, N is 1 to 4): "Do `title_pairs.pair_N.title` and
+  `title_pairs.pair_N.other_title` name the same role at
+  `title_pairs.pair_N.organization`?" Yes means the same role for one person:
+  a synonym, an abbreviation, a longer or shorter form, or a formal and an
+  informal name for it. No means different roles: a different function, a
+  clearly different seniority, or unrelated positions.
+
+`msgvault jev consent organization_resolution` prints the same disclosure.
+At most eight organizations are asked about per saved set of facts; the rest
+resolve as before.
+
 ## Turn it off
 
 - `msgvault jev revoke --all` stops every feature at the next request without
@@ -194,8 +297,13 @@ probabilities and outcomes, not the compared values.
 
 ## Limitations
 
-- Only the enrichment identity check exists today. The other features in the
-  engineering record `docs/internal/jev-judgments-plan.md` are proposals.
+- Only the enrichment identity check and organization resolution exist
+  today. The other features in the engineering record
+  `docs/internal/jev-judgments-plan.md` are proposals.
+- Title mappings recorded against an organization are followed after it is
+  merged into another, one merge deep.
+- Facts from different saves for the same organization and role do not add
+  up: the newest save for a role replaces the older one, as it always has.
 - Attempts decided before provider person IDs were kept can only be refused
   by profile URL; a provider that returns the same person under a new URL is
   not caught by that negative.

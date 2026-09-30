@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-26"
+last_edited: "2026-09-29"
 title: Configuration
 description: Configuration file reference, environment variables, and file locations.
 ---
@@ -1332,6 +1332,17 @@ The enrichment identity check (feature `enrichment_identity`). See
 |---|---|---|
 | `enabled` | `false` | Ask Jev whether a partially matching enrichment result is the requested person. `person enrichment run` may send once consent is active. |
 | `automatic` | `false` | Also let the daemon's scheduled enrichment runs send. |
+
+#### `[jev.organization_resolution]`
+
+Organization resolution and job title equivalence (feature
+`organization_resolution`). See
+[the feature description](/docs/usage/jev-judgments/#feature-organization-resolution).
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Ask Jev whether an organization name that matches no existing organization exactly is one of a few similar ones, and whether two job titles at one organization are the same role. `person enrichment run` and `person sweep` may send once consent is active. |
+| `automatic` | `false` | Also let the daemon's scheduled enrichment and people sweep runs send. |
 
 ### `[activity]`
 

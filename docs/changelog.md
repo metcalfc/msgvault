@@ -8,6 +8,15 @@ All notable changes to msgvault, grouped by release.
 
 ## Unreleased
 
+- Resolve organization names that match no existing organization exactly.
+  With `[jev.organization_resolution]` enabled and consent recorded, an
+  employment fact naming "Example Labs, Inc." or "Example Labs (YC W21)" is
+  checked against up to eight similar existing organizations; a confident
+  match becomes a stored alias, an unsure one appears under Reviews →
+  Organization matches, and anything else creates the organization as before.
+  Job titles judged the same role at one organization, such as "Partner" and
+  "General Partner", count as one employment. Only organization names,
+  domains, and job titles are sent. Requires API schema 2.38.0.
 - Act on contact facts from the Web UI. Email addresses, E.164 phone numbers,
   and profile handles on person pages, identity reviews, and the file viewer
   open as `mailto:`, `tel:`, and `https:` links, and a message's name pill
