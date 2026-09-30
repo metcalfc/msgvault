@@ -1,8 +1,9 @@
 // Package correspondentkind defines what kind of correspondent an archive
-// identity cluster is: a person, an organization, a shared mailbox, or a
-// record the user does not need. The vocabulary and the precedence between
-// sources live here so the store, the API, and later rule or Jev classifiers
-// agree on one definition.
+// identity cluster is: a person, an organization, a shared mailbox, an
+// automated sender, a mailing list, or a record the user does not need. The
+// vocabulary, the precedence between sources, and the deterministic rules
+// live here so the store, the API, and the Jev classifier agree on one
+// definition.
 package correspondentkind
 
 import "slices"
@@ -25,31 +26,59 @@ const (
 	// Ignored is a record the user does not need as a contact. Its messages
 	// stay searchable.
 	Ignored Kind = "ignored"
+	// Automated is a sender that is not a person writing: notifications,
+	// receipts, marketing, bots, and SMS short codes.
+	Automated Kind = "automated"
+	// MailingList is a list or group address whose messages are relayed from
+	// many senders.
+	MailingList Kind = "mailing_list"
+	// Unclear is a Jev judgment that could not tell what the cluster is. It
+	// is never set by a user or a rule. The cluster stays in People lists and
+	// enrichment, is held out of relationship rankings, and waits in review.
+	Unclear Kind = "unclear"
 )
 
-// UserKinds is the ordered vocabulary a user may set. Derived sources may
-// later add kinds (for example automated senders or mailing lists); every
-// kind other than Person is treated as "not a person".
-var UserKinds = []Kind{Person, Organization, SharedMailbox, Ignored}
+// UserKinds is the ordered vocabulary a user may set. Every kind other than
+// Person is treated as "not a person".
+var UserKinds = []Kind{Person, Organization, SharedMailbox, Ignored, Automated, MailingList}
+
+// StoredKinds is every kind a correspondent_kinds row may carry: the user
+// vocabulary plus kinds only a derived source writes.
+var StoredKinds = []Kind{Person, Organization, SharedMailbox, Ignored, Automated, MailingList, Unclear}
 
 // Valid reports whether k is a kind a user may set.
 func (k Kind) Valid() bool {
 	return slices.Contains(UserKinds, k)
 }
 
-// IsPerson reports whether k leaves the cluster in People lists.
+// Known reports whether k is any stored kind, including derived-only ones.
+func (k Kind) Known() bool {
+	return slices.Contains(StoredKinds, k)
+}
+
+// IsPerson reports whether k leaves the cluster in People lists, contact
+// matching, and enrichment. Unclear counts as a person there: an undecided
+// judgment never removes anyone.
 func (k Kind) IsPerson() bool {
-	return k == Person || k == ""
+	return k == Person || k == "" || k == Unclear
 }
 
 // LeavesPeopleLists reports whether k removes the cluster, and a saved
 // profile made only of such clusters, from People lists and relationship
-// rankings. Organizations and ignored records leave them. A shared mailbox
-// stays as a labelled non-person row in sender views and keeps any saved
-// profile listed, because the people who wrote from it are still
-// correspondents.
+// rankings. Organizations, ignored records, automated senders, and mailing
+// lists leave them. A shared mailbox stays as a labelled non-person row in
+// sender views and keeps any saved profile listed, because the people who
+// wrote from it are still correspondents.
 func (k Kind) LeavesPeopleLists() bool {
-	return k == Organization || k == Ignored
+	return k == Organization || k == Ignored || k == Automated || k == MailingList
+}
+
+// LeavesRankings reports whether k keeps the cluster out of relationship
+// rankings by default: every kind that leaves People lists, plus an unclear
+// judgment, since a ranking of relationships should show only clusters no
+// one doubts are people.
+func (k Kind) LeavesRankings() bool {
+	return k.LeavesPeopleLists() || k == Unclear
 }
 
 // Label is the short human label for k.
@@ -61,6 +90,12 @@ func (k Kind) Label() string {
 		return "Shared mailbox"
 	case Ignored:
 		return "Ignored"
+	case Automated:
+		return "Automated sender"
+	case MailingList:
+		return "Mailing list"
+	case Unclear:
+		return "Unclear"
 	case Person:
 		return "Person"
 	default:
@@ -74,9 +109,9 @@ type Source string
 const (
 	// SourceUser is an explicit user decision. It always wins.
 	SourceUser Source = "user"
-	// SourceRule is a deterministic classifier (reserved for later work).
+	// SourceRule is a deterministic classifier (see Classify).
 	SourceRule Source = "rule"
-	// SourceJev is a model judgment (reserved for later work).
+	// SourceJev is a Jev (System One) judgment.
 	SourceJev Source = "jev"
 )
 

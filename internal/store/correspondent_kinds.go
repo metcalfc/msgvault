@@ -54,20 +54,25 @@ type CorrespondentKindPerson struct {
 type CorrespondentKindRecord struct {
 	CanonicalID      int64                     `json:"canonical_id" doc:"The cluster's smallest participant ID."`
 	MemberIDs        []int64                   `json:"member_ids"`
-	Kind             correspondentkind.Kind    `json:"kind" enum:"person,organization,shared_mailbox,ignored"`
+	Kind             correspondentkind.Kind    `json:"kind" enum:"person,organization,shared_mailbox,ignored,automated,mailing_list,unclear" doc:"The effective kind. unclear is only ever written by a Jev judgment and awaits review."`
 	Source           *correspondentkind.Source `json:"source,omitzero" nullable:"false" doc:"Who classified the cluster: user, rule, or jev. Absent when it was never classified."`
 	DisplayName      *string                   `json:"display_name,omitzero" nullable:"false"`
 	Addresses        []string                  `json:"addresses"`
 	OrganizationID   *int64                    `json:"organization_id,omitzero" nullable:"false"`
 	OrganizationName *string                   `json:"organization_name,omitzero" nullable:"false"`
 	Person           *CorrespondentKindPerson  `json:"person,omitzero" nullable:"false" doc:"The saved Directory person bound to this cluster, if any."`
-	Actor            *string                   `json:"actor,omitzero" nullable:"false"`
+	Actor            *string                   `json:"actor,omitzero" nullable:"false" doc:"Who wrote the effective classification. Rules record rule:<reason>; Jev records jev:<model>."`
 	ClassifiedAt     *time.Time                `json:"classified_at,omitempty"`
+	// Confidence and Probabilities are present only for a jev
+	// classification: the judgment's confidence and its distribution over
+	// the Jev options.
+	Confidence    *float64           `json:"confidence,omitzero" nullable:"false" doc:"Confidence of a jev classification."`
+	Probabilities map[string]float64 `json:"probabilities,omitzero" nullable:"false" doc:"Probability of each Jev option for a jev classification: individual_person, shared_role_or_team_mailbox, mailing_list_or_group, automated_notification_or_transactional, marketing_or_newsletter, unclear."`
 }
 
 // CorrespondentKindAssignment is the effective kind of one cluster.
 type CorrespondentKindAssignment struct {
-	Kind             correspondentkind.Kind   `json:"kind" enum:"person,organization,shared_mailbox,ignored"`
+	Kind             correspondentkind.Kind   `json:"kind" enum:"person,organization,shared_mailbox,ignored,automated,mailing_list,unclear"`
 	Source           correspondentkind.Source `json:"source" doc:"Who classified the cluster: user, rule, or jev."`
 	OrganizationID   *int64                   `json:"organization_id,omitzero" nullable:"false"`
 	OrganizationName *string                  `json:"organization_name,omitzero" nullable:"false"`
@@ -105,6 +110,8 @@ type correspondentKindRow struct {
 	organizationName *string
 	actor            *string
 	classifiedAt     time.Time
+	confidence       *float64
+	probabilities    map[string]float64
 }
 
 // correspondentKindCluster is the resolved classification of one cluster.
@@ -130,7 +137,7 @@ func (row correspondentKindRow) rowWins(current correspondentKindRow) bool {
 func loadCorrespondentKindRowsTx(ctx context.Context, tx *loggedTx) ([]correspondentKindRow, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT ck.participant_id, ck.source, ck.kind, ck.organization_id, o.name,
-		       ck.actor, ck.classified_at
+		       ck.actor, ck.classified_at, ck.confidence, ck.probabilities_json
 		FROM correspondent_kinds ck
 		LEFT JOIN organizations o ON o.id = ck.organization_id
 		ORDER BY ck.participant_id, ck.source`)
@@ -143,12 +150,17 @@ func loadCorrespondentKindRowsTx(ctx context.Context, tx *loggedTx) ([]correspon
 		var row correspondentKindRow
 		var source, kind string
 		var organizationID sql.NullInt64
-		var organizationName, actor sql.NullString
+		var organizationName, actor, probabilities sql.NullString
 		var classifiedAt nullableTimestamp
+		var confidence sql.NullFloat64
 		if err := rows.Scan(&row.participantID, &source, &kind, &organizationID,
-			&organizationName, &actor, &classifiedAt); err != nil {
+			&organizationName, &actor, &classifiedAt, &confidence, &probabilities); err != nil {
 			return nil, fmt.Errorf("scan correspondent kind: %w", err)
 		}
+		if confidence.Valid {
+			row.confidence = &confidence.Float64
+		}
+		row.probabilities = decodeKindProbabilities(probabilities)
 		row.source = correspondentkind.Source(source)
 		row.kind = correspondentkind.Kind(kind)
 		if organizationID.Valid {
@@ -360,6 +372,9 @@ func (s *Store) dropOwnerClusterClassificationsTx(ctx context.Context, tx *logge
 	}
 	slices.Sort(participants)
 	participants = slices.Compact(participants)
+	if err := s.bumpCorrespondentKindRevisionTx(ctx, tx); err != nil {
+		return err
+	}
 	if err := s.withdrawCorrespondentOrganizationContactsTx(ctx, tx, participants); err != nil {
 		return err
 	}
@@ -495,7 +510,7 @@ type CorrespondentKindListFilter struct {
 func (s *Store) ListCorrespondentKindsContext(
 	ctx context.Context, filter CorrespondentKindListFilter,
 ) ([]CorrespondentKindRecord, error) {
-	if filter.Kind != "" && (!filter.Kind.Valid() || filter.Kind.IsPerson()) {
+	if filter.Kind != "" && (!filter.Kind.Known() || filter.Kind == correspondentkind.Person) {
 		return nil, fmt.Errorf("%w: cannot list kind %q", ErrCorrespondentKindInvalid, filter.Kind)
 	}
 	records := []CorrespondentKindRecord{}
@@ -506,7 +521,10 @@ func (s *Store) ListCorrespondentKindsContext(
 		}
 		for _, cluster := range clusters {
 			effective := cluster.effective
-			if effective.kind.IsPerson() {
+			// Unclear judgments are listed only when asked for: they are a
+			// review queue, not records marked as not a person.
+			if effective.kind.IsPerson() && (filter.Kind != correspondentkind.Unclear ||
+				effective.kind != correspondentkind.Unclear) {
 				continue
 			}
 			if filter.Kind != "" && effective.kind != filter.Kind {
@@ -621,6 +639,7 @@ func (s *Store) correspondentKindRecordTx(
 		Kind:           effective.kind,
 		OrganizationID: effective.organizationID, OrganizationName: effective.organizationName,
 		Actor: effective.actor, Addresses: []string{},
+		Confidence: effective.confidence, Probabilities: effective.probabilities,
 	}
 	if effective.source != "" {
 		source, classifiedAt := effective.source, effective.classifiedAt
@@ -827,6 +846,9 @@ func (s *Store) setCorrespondentKindTx(
 		); err != nil {
 			return nil, fmt.Errorf("write correspondent kind: %w", err)
 		}
+	}
+	if err := s.bumpCorrespondentKindRevisionTx(ctx, tx); err != nil {
+		return nil, err
 	}
 	if organizationID != nil {
 		if err := s.attachCorrespondentOrganizationContactsTx(ctx, tx, *organizationID, members, now); err != nil {
