@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/msgvault/internal/deletion"
 	"go.kenn.io/msgvault/internal/query"
 	"go.kenn.io/msgvault/internal/query/querytest"
 	"go.kenn.io/msgvault/internal/store"
@@ -23,6 +24,8 @@ type protectionStore struct {
 	deletionMockStore
 	protections map[int64]store.DeletionProtection
 	blocked     map[int64]bool
+	keepQuery   []int64
+	keepMin     float64
 }
 
 func (s *protectionStore) DeletionProtectionsContext(
@@ -43,6 +46,55 @@ func (s *protectionStore) MessageRemoteImagesBlockedContext(_ context.Context, i
 		return false, sql.ErrNoRows
 	}
 	return blocked, nil
+}
+
+func (s *protectionStore) KeepCandidatesForSourceMessagesContext(
+	_ context.Context, sourceID int64, ids []string, minKeep float64,
+) ([]store.CleanupSuggestionRow, error) {
+	rows := []store.CleanupSuggestionRow{}
+	for i := range 60 {
+		rows = append(rows, store.CleanupSuggestionRow{
+			CleanupSuggestion: store.CleanupSuggestion{MessageID: int64(100 + i), KeepProbability: 0.9 - float64(i)/100},
+			SourceMessageID:   ids[0], Subject: "Photos", FromName: "Casey Example", FromEmail: "casey@example.net",
+		})
+	}
+	s.keepQuery = append(s.keepQuery, sourceID)
+	s.keepMin = minKeep
+	return rows, nil
+}
+
+func TestGetDeletionListsPossiblyWorthKeepingMessages(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	st := &protectionStore{}
+	st.getStatus = "pending"
+	st.getManifest = &deletion.Manifest{
+		ID: "batch-7", GmailIDs: []string{"gm-1", "gm-2"},
+		Source: &deletion.SourceReference{ID: 42, Type: "gmail", Identifier: "user@example.com"},
+	}
+	srv := newDeletionTestServer(t, st, &querytest.MockEngine{})
+
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/deletions/batch-7", nil))
+
+	require.Equal(http.StatusOK, w.Code, w.Body.String())
+	var detail DeletionManifestDetail
+	require.NoError(json.Unmarshal(w.Body.Bytes(), &detail))
+	assert.Equal([]int64{42}, st.keepQuery)
+	assert.InDelta(0.50, st.keepMin, 1e-9)
+	assert.Equal(60, detail.PossiblyWorthKeepingCount)
+	require.Len(detail.PossiblyWorthKeeping, 50)
+	assert.Equal(deletion.KeepCandidate{
+		MessageID: 100, SourceMessageID: "gm-1", From: "Casey Example <casey@example.net>",
+		Subject: "Photos", KeepProbability: 0.9,
+	}, detail.PossiblyWorthKeeping[0])
+
+	st.getManifest.Source = nil
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/deletions/batch-7", nil))
+	require.Equal(http.StatusOK, w.Code, w.Body.String())
+	assert.NotContains(w.Body.String(), "possibly_worth_keeping", "a manifest without a source reference cannot be matched")
 }
 
 func protectionTargets() *querytest.MockEngine {

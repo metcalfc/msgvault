@@ -396,6 +396,41 @@ describe('DeletionsWorkspace', () => {
     expect((await screen.findAllByText('cancelled')).length).toBeGreaterThan(0);
   });
 
+  it('lists staged messages that look like personal or work mail as possibly worth keeping', async () => {
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      if (new URL(request.url).pathname.endsWith('/batch-1'))
+        return Response.json({
+          id: 'batch-1',
+          status: 'pending',
+          created_at: '2026-07-19T10:00:00Z',
+          created_by: 'api',
+          description: 'reviewed selection',
+          account: 'archive@example.com',
+          message_count: 40,
+          possibly_worth_keeping: [
+            {
+              message_id: 7,
+              source_message_id: 'm7',
+              from: 'Casey Example <casey@example.net>',
+              subject: 'Photos from the trip',
+              keep_probability: 0.82,
+            },
+          ],
+          possibly_worth_keeping_count: 3,
+        });
+      return Response.json(listResponse());
+    });
+    render(DeletionsWorkspace, { client: createAPIClient(fetchFn) });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Inspect batch-1' }));
+    const section = await screen.findByRole('region', { name: 'Possibly worth keeping' });
+    expect(section.textContent).toMatch(/3 staged messages look like personal or\s+work mail/);
+    expect(section.textContent).toContain('Photos from the trip');
+    expect(section.textContent).toContain('Casey Example <casey@example.net> · 82% personal or work');
+    expect(section.textContent).toContain('and 2 more');
+  });
+
   it('discloses the active-only deletion scope reported by the preflight review', async () => {
     let scoped = false;
     const fetchFn = vi.fn<typeof fetch>(async (input) => {

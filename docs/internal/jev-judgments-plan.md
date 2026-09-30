@@ -394,9 +394,14 @@ Site: `cmd/msgvault/cmd/stage_delete.go`, `internal/api/deletions.go`,
   > correspondent kinds, failing closed to `unknown`). Only system labels
   > are sent. Results live in `cleanup_suggestions` keyed by message.
   > `automatic` has no effect: there is no unattended path.
-- [ ] **Task 5.3 Review surfacing.** `show-deletion` and the Web UI deletion
+- [x] **Task 5.3 Review surfacing.** `show-deletion` and the Web UI deletion
   review list staged messages that scored personal/work ≥ 0.50 as "possibly
   worth keeping".
+  > "personal/work" is the sum of the two category probabilities. Manifests
+  > hold provider IDs, so the lookup maps them back through the manifest's
+  > source reference; a manifest without one (older TUI batches) lists
+  > nothing. `GET /deletions/{id}` carries up to 50 with a total count; the
+  > CLI prints up to 20. Messages never judged are not listed.
 
 ## Phase 6: query understanding for Explore
 

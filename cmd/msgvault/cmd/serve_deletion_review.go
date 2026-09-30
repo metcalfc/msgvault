@@ -8,9 +8,16 @@ import (
 )
 
 var (
-	_ api.DeletionProtectionStore = (*storeAPIAdapter)(nil)
-	_ api.RemoteImagePolicyStore  = (*storeAPIAdapter)(nil)
+	_ api.DeletionProtectionStore    = (*storeAPIAdapter)(nil)
+	_ api.RemoteImagePolicyStore     = (*storeAPIAdapter)(nil)
+	_ api.DeletionKeepCandidateStore = (*storeAPIAdapter)(nil)
 )
+
+func (a *storeAPIAdapter) KeepCandidatesForSourceMessagesContext(
+	ctx context.Context, sourceID int64, sourceMessageIDs []string, minKeep float64,
+) ([]store.CleanupSuggestionRow, error) {
+	return a.store.KeepCandidatesForSourceMessagesContext(ctx, sourceID, sourceMessageIDs, minKeep)
+}
 
 func (a *storeAPIAdapter) DeletionProtectionsContext(
 	ctx context.Context, messageIDs []int64,

@@ -312,6 +312,40 @@ func (m *Manifest) FormatSummary() string {
 	return sb.String()
 }
 
+// KeepCandidate is a staged message that a cleanup judgment found likely to
+// be personal or work mail: probably not what the batch meant to delete.
+type KeepCandidate struct {
+	MessageID       int64   `json:"message_id"`
+	SourceMessageID string  `json:"source_message_id"`
+	From            string  `json:"from"`
+	Subject         string  `json:"subject"`
+	KeepProbability float64 `json:"keep_probability" doc:"Probability the message is personal or work mail, from its stored cleanup suggestion."`
+}
+
+// FormatKeepCandidates renders the "possibly worth keeping" section of a
+// batch summary, listing at most limit messages. It returns "" when there
+// are none.
+func FormatKeepCandidates(candidates []KeepCandidate, limit int) string {
+	if len(candidates) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "\nPossibly worth keeping: %d staged message(s) look like personal or work mail\n", len(candidates))
+	for i, candidate := range candidates {
+		if limit > 0 && i >= limit {
+			fmt.Fprintf(&sb, "  ... and %d more\n", len(candidates)-limit)
+			break
+		}
+		subject := candidate.Subject
+		if subject == "" {
+			subject = "(no subject)"
+		}
+		fmt.Fprintf(&sb, "  %d  %.2f  %s  %q\n", candidate.MessageID, candidate.KeepProbability, candidate.From, subject)
+	}
+	sb.WriteString("Cancel the batch and restage without them if they should stay.\n")
+	return sb.String()
+}
+
 // statusDirMap provides an explicit mapping from Status to on-disk directory name.
 // This decouples the Status constant values (which may be used for display or JSON)
 // from the filesystem directory names.

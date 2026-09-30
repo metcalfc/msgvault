@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"go.kenn.io/msgvault/internal/cleanupsuggest"
 	"go.kenn.io/msgvault/internal/deletion"
 	"go.kenn.io/msgvault/internal/query"
 	"go.kenn.io/msgvault/internal/store"
@@ -46,6 +47,19 @@ type DeletionManifestCanceller interface {
 type DeletionProtectionStore interface {
 	DeletionProtectionsContext(ctx context.Context, messageIDs []int64) (map[int64]store.DeletionProtection, error)
 }
+
+// DeletionKeepCandidateStore finds staged messages whose stored cleanup
+// suggestion says they look like personal or work mail. Implemented by the
+// serve daemon's store adapter.
+type DeletionKeepCandidateStore interface {
+	KeepCandidatesForSourceMessagesContext(
+		ctx context.Context, sourceID int64, sourceMessageIDs []string, minKeep float64,
+	) ([]store.CleanupSuggestionRow, error)
+}
+
+// deletionKeepCandidateLimit caps the possibly-worth-keeping messages a
+// manifest detail lists.
+const deletionKeepCandidateLimit = 50
 
 // deletionProtectionSampleSize caps the protected message IDs a staging
 // response names.
@@ -168,6 +182,10 @@ type DeletionManifestDetail struct {
 	Summary      *deletion.Summary         `json:"summary,omitzero" nullable:"false"`
 	Execution    *deletion.Execution       `json:"execution,omitzero" nullable:"false"`
 	Source       *deletion.SourceReference `json:"source,omitzero" nullable:"false"`
+	// PossiblyWorthKeeping lists staged messages whose cleanup suggestion
+	// scored personal plus work at or above 0.50, most likely first.
+	PossiblyWorthKeeping      []deletion.KeepCandidate `json:"possibly_worth_keeping,omitempty" doc:"Up to 50 staged messages that a cleanup suggestion found likely to be personal or work mail (personal plus work at least 0.50), most likely first."`
+	PossiblyWorthKeepingCount int                      `json:"possibly_worth_keeping_count,omitzero" doc:"How many staged messages are possibly worth keeping, including any beyond the listed 50."`
 }
 
 // CancelDeletionResponse is the DELETE /api/v1/deletions/{id} body.
@@ -641,12 +659,58 @@ func (s *Server) handleGetDeletion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load deletion manifest")
 		return
 	}
-	writeJSON(w, http.StatusOK, DeletionManifestDetail{
+	detail := DeletionManifestDetail{
 		ID: manifest.ID, Status: string(status), CreatedAt: manifest.CreatedAt,
 		CreatedBy: manifest.CreatedBy, Description: manifest.Description,
 		Account: manifest.Filters.Account, MessageCount: len(manifest.GmailIDs),
 		Summary: manifest.Summary, Execution: manifest.Execution, Source: manifest.Source,
-	})
+	}
+	candidates, err := s.deletionKeepCandidates(r.Context(), manifest)
+	if err != nil {
+		s.logger.Error("failed to load possibly worth keeping messages", "id", id, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to load deletion review")
+		return
+	}
+	detail.PossiblyWorthKeepingCount = len(candidates)
+	if len(candidates) > deletionKeepCandidateLimit {
+		candidates = candidates[:deletionKeepCandidateLimit]
+	}
+	detail.PossiblyWorthKeeping = candidates
+	writeJSON(w, http.StatusOK, detail)
+}
+
+// deletionKeepCandidates lists the manifest's staged messages that look like
+// personal or work mail. A manifest without a source reference, or a store
+// that cannot look, has none.
+func (s *Server) deletionKeepCandidates(ctx context.Context, manifest *deletion.Manifest) ([]deletion.KeepCandidate, error) {
+	finder, ok := s.store.(DeletionKeepCandidateStore)
+	if !ok || manifest.Source == nil || manifest.Source.ID <= 0 {
+		return nil, nil
+	}
+	rows, err := finder.KeepCandidatesForSourceMessagesContext(
+		ctx, manifest.Source.ID, manifest.GmailIDs, cleanupsuggest.KeepThreshold)
+	if err != nil {
+		return nil, err
+	}
+	return KeepCandidatesFromSuggestions(rows), nil
+}
+
+// KeepCandidatesFromSuggestions converts stored suggestions for display.
+func KeepCandidatesFromSuggestions(rows []store.CleanupSuggestionRow) []deletion.KeepCandidate {
+	candidates := make([]deletion.KeepCandidate, 0, len(rows))
+	for _, row := range rows {
+		from := row.FromEmail
+		if row.FromName != "" && row.FromEmail != "" {
+			from = row.FromName + " <" + row.FromEmail + ">"
+		} else if from == "" {
+			from = row.FromName
+		}
+		candidates = append(candidates, deletion.KeepCandidate{
+			MessageID: row.MessageID, SourceMessageID: row.SourceMessageID, From: from,
+			Subject: row.Subject, KeepProbability: row.KeepProbability,
+		})
+	}
+	return candidates
 }
 
 func (s *Server) handleCancelDeletion(w http.ResponseWriter, r *http.Request) {

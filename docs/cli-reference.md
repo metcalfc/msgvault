@@ -3497,6 +3497,12 @@ Show details of a deletion batch.
 msgvault show-deletion <batch-id>
 ```
 
+After the batch summary, the command lists up to 20 staged messages whose
+stored [cleanup suggestion](#suggest-cleanup) found them likely to be personal
+or work mail (personal plus work probability at least 0.50) under **Possibly
+worth keeping**. Cancel the batch and restage without them if they should
+stay. Messages never judged are not listed.
+
 ---
 
 ## cancel-deletion

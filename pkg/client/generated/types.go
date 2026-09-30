@@ -2796,16 +2796,22 @@ func (d DeepSearchResponse) Validate() error {
 }
 
 type DeletionManifestDetail struct {
-	Account      *string          `json:"account,omitzero"`
-	CreatedAt    time.Time        `json:"created_at" validate:"required"`
-	CreatedBy    string           `json:"created_by" validate:"required"`
-	Description  string           `json:"description" validate:"required"`
-	Execution    *Execution       `json:"execution,omitempty"`
-	ID           string           `json:"id" validate:"required"`
-	MessageCount int64            `json:"message_count"`
-	Source       *SourceReference `json:"source,omitempty"`
-	Status       string           `json:"status" validate:"required"`
-	Summary      *Summary         `json:"summary,omitempty"`
+	Account      *string    `json:"account,omitzero"`
+	CreatedAt    time.Time  `json:"created_at" validate:"required"`
+	CreatedBy    string     `json:"created_by" validate:"required"`
+	Description  string     `json:"description" validate:"required"`
+	Execution    *Execution `json:"execution,omitempty"`
+	ID           string     `json:"id" validate:"required"`
+	MessageCount int64      `json:"message_count"`
+
+	// PossiblyWorthKeeping Up to 50 staged messages that a cleanup suggestion found likely to be personal or work mail (personal plus work at least 0.50), most likely first.
+	PossiblyWorthKeeping []KeepCandidate `json:"possibly_worth_keeping,omitempty"`
+
+	// PossiblyWorthKeepingCount How many staged messages are possibly worth keeping, including any beyond the listed 50.
+	PossiblyWorthKeepingCount *int64           `json:"possibly_worth_keeping_count,omitempty"`
+	Source                    *SourceReference `json:"source,omitempty"`
+	Status                    string           `json:"status" validate:"required"`
+	Summary                   *Summary         `json:"summary,omitempty"`
 }
 
 func (d DeletionManifestDetail) Validate() error {
@@ -2828,6 +2834,13 @@ func (d DeletionManifestDetail) Validate() error {
 	}
 	if err := typesValidator.Var(d.ID, "required"); err != nil {
 		errors = errors.Append("ID", err)
+	}
+	for i, item := range d.PossiblyWorthKeeping {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("PossiblyWorthKeeping[%d]", i), err)
+			}
+		}
 	}
 	if d.Source != nil {
 		if v, ok := any(d.Source).(runtime.Validator); ok {
@@ -5382,6 +5395,20 @@ func (i ImportResult) Validate() error {
 		return nil
 	}
 	return errors
+}
+
+type KeepCandidate struct {
+	From string `json:"from" validate:"required"`
+
+	// KeepProbability Probability the message is personal or work mail, from its stored cleanup suggestion.
+	KeepProbability float64 `json:"keep_probability"`
+	MessageID       int64   `json:"message_id"`
+	SourceMessageID string  `json:"source_message_id" validate:"required"`
+	Subject         string  `json:"subject" validate:"required"`
+}
+
+func (k KeepCandidate) Validate() error {
+	return runtime.ConvertValidatorError(typesValidator.Struct(k))
 }
 
 type ListDeletionsResponse struct {

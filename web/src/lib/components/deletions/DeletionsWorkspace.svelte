@@ -405,6 +405,26 @@
           <span>{detail.execution.succeeded} succeeded · {detail.execution.failed} failed</span>
           {#each detail.execution.failed_ids ?? [] as id}<code>{id}</code>{/each}
         {/if}
+        {#if (detail.possibly_worth_keeping ?? []).length > 0}
+          {@const keep = detail.possibly_worth_keeping ?? []}
+          {@const keepTotal = detail.possibly_worth_keeping_count ?? keep.length}
+          <section class="keep" aria-labelledby="deletion-keep-title">
+            <h3 id="deletion-keep-title">Possibly worth keeping</h3>
+            <p>
+              {keepTotal.toLocaleString()} staged {keepTotal === 1 ? 'message looks' : 'messages look'} like personal or
+              work mail. Cancel the manifest and restage without them if they should stay.
+            </p>
+            <ul>
+              {#each keep as candidate (candidate.message_id)}
+                <li>
+                  <strong>{candidate.subject || '(no subject)'}</strong>
+                  <span>{candidate.from} · {Math.round(candidate.keep_probability * 100)}% personal or work</span>
+                </li>
+              {/each}
+            </ul>
+            {#if keepTotal > keep.length}<span>and {(keepTotal - keep.length).toLocaleString()} more</span>{/if}
+          </section>
+        {/if}
       </aside>
     </Card>
   {/if}
@@ -542,6 +562,34 @@
   }
   .notice--error {
     border-color: var(--accent-red);
+  }
+  .keep {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--accent-amber);
+    border-radius: var(--radius-md);
+    background: var(--surface-well);
+  }
+  .keep h3,
+  .keep p,
+  .keep ul {
+    margin: 0;
+  }
+  .keep h3 {
+    font-size: var(--font-size-sm);
+  }
+  .keep p {
+    font-size: var(--font-size-xs);
+  }
+  .keep ul {
+    display: grid;
+    gap: var(--space-1);
+    padding: 0;
+    list-style: none;
+  }
+  .keep li {
+    display: grid;
   }
   @media (max-width: 760px) {
     article,

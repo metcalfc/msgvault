@@ -514,8 +514,10 @@ daemon first preflights the selection and reports any unavailable action before
 the UI offers a separate staging confirmation. Dry runs and staging results
 name [protected messages](/docs/usage/deletion/#protected-messages) (starred,
 sent by you, or from a person); check **Skip starred, self-sent, and
-person-sent messages** to leave them out. Deletions lists, inspects,
-and cancels manifests; it cannot execute deletion against a provider. Use the
+person-sent messages** to leave them out. Inspecting a manifest lists
+staged messages that a [cleanup suggestion](/docs/usage/jev-judgments/#feature-cleanup-suggestions)
+found likely to be personal or work mail under **Possibly worth keeping**.
+Deletions lists, inspects, and cancels manifests; it cannot execute deletion against a provider. Use the
 explicit `msgvault delete-staged` CLI workflow for that final operation.
 
 ## Keyboard controls

@@ -397,6 +397,7 @@ export * from "./importJobResponseStatus";
 export * from "./importJobSummary";
 export * from "./importRequest";
 export * from "./importResult";
+export * from "./keepCandidate";
 export * from "./linkPersonAgendaItemPathParameters";
 export * from "./listAttributeDefinitionsParams";
 export * from "./listCardDAVRunsParams";

@@ -331,11 +331,12 @@ func (s *Store) WriteCleanupSuggestionsContext(ctx context.Context, suggestions 
 // fields.
 type CleanupSuggestionRow struct {
 	CleanupSuggestion
-	Subject   string
-	FromName  string
-	FromEmail string
-	SentAt    *time.Time
-	JudgedAt  time.Time
+	SourceMessageID string
+	Subject         string
+	FromName        string
+	FromEmail       string
+	SentAt          *time.Time
+	JudgedAt        time.Time
 }
 
 // CleanupSuggestionFilter narrows ListCleanupSuggestionsContext.
@@ -347,16 +348,16 @@ type CleanupSuggestionFilter struct {
 const cleanupSuggestionColumns = `
 	cs.message_id, cs.score, cs.impersonation, cs.pressure, cs.category,
 	cs.category_probabilities_json, cs.keep_probability, cs.signals_json, cs.model, cs.judged_at,
-	m.subject, m.sent_at, p.display_name, p.email_address`
+	m.source_message_id, m.subject, m.sent_at, p.display_name, p.email_address`
 
 func scanCleanupSuggestionRow(rows *loggedRows) (CleanupSuggestionRow, error) {
 	var row CleanupSuggestionRow
 	var probabilities, signals string
-	var subject, name, email sql.NullString
+	var sourceMessageID, subject, name, email sql.NullString
 	var judgedAt, sentAt nullableTimestamp
 	if err := rows.Scan(&row.MessageID, &row.Score, &row.Impersonation, &row.Pressure, &row.Category,
 		&probabilities, &row.KeepProbability, &signals, &row.Model, &judgedAt,
-		&subject, &sentAt, &name, &email); err != nil {
+		&sourceMessageID, &subject, &sentAt, &name, &email); err != nil {
 		return row, fmt.Errorf("scan cleanup suggestion: %w", err)
 	}
 	if err := json.Unmarshal([]byte(probabilities), &row.CategoryProbabilities); err != nil {
@@ -370,6 +371,7 @@ func scanCleanupSuggestionRow(rows *loggedRows) (CleanupSuggestionRow, error) {
 		sent := sentAt.Time
 		row.SentAt = &sent
 	}
+	row.SourceMessageID = sourceMessageID.String
 	row.Subject, row.FromName, row.FromEmail = subject.String, name.String, email.String
 	return row, nil
 }

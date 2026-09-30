@@ -22,6 +22,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.kenn.io/msgvault/internal/api"
+	"go.kenn.io/msgvault/internal/cleanupsuggest"
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/daemonclient"
 	"go.kenn.io/msgvault/internal/deletion"
@@ -178,8 +179,41 @@ func runShowDeletion(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get manifest: %w", err)
 	}
 
-	fmt.Print(manifest.FormatSummary())
+	out := cmd.OutOrStdout()
+	_, _ = fmt.Fprint(out, manifest.FormatSummary())
+	// Stored cleanup suggestions name staged messages that look like
+	// personal or work mail. Reviewing them is advisory, so a store that
+	// cannot be read only warns.
+	candidates, err := showDeletionKeepCandidates(cmd.Context(), cfg.DatabaseDSN(), manifest)
+	if err != nil {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: could not check for messages possibly worth keeping: %v\n", err)
+		return nil
+	}
+	_, _ = fmt.Fprint(out, deletion.FormatKeepCandidates(candidates, showDeletionKeepLimit))
 	return nil
+}
+
+// showDeletionKeepLimit caps the possibly-worth-keeping lines show-deletion
+// prints.
+const showDeletionKeepLimit = 20
+
+func showDeletionKeepCandidates(
+	ctx context.Context, dsn string, manifest *deletion.Manifest,
+) ([]deletion.KeepCandidate, error) {
+	if manifest.Source == nil || manifest.Source.ID <= 0 || len(manifest.GmailIDs) == 0 {
+		return nil, nil
+	}
+	st, err := store.OpenReadOnly(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open database read-only: %w", err)
+	}
+	defer func() { _ = st.Close() }()
+	rows, err := st.KeepCandidatesForSourceMessagesContext(
+		ctx, manifest.Source.ID, manifest.GmailIDs, cleanupsuggest.KeepThreshold)
+	if err != nil {
+		return nil, err
+	}
+	return api.KeepCandidatesFromSuggestions(rows), nil
 }
 
 var cancelAll bool

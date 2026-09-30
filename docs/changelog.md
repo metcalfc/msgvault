@@ -8,6 +8,20 @@ All notable changes to msgvault, grouped by release.
 
 ## Unreleased
 
+- Deletion staging names messages that may be worth keeping: starred mail,
+  mail you sent, and mail from a sender classified as a person. The CLI and
+  Web UI warn about them, and `stage-delete --protect` (or **Skip starred,
+  self-sent, and person-sent messages**) leaves them out. Remote images never
+  load for spam or trash, in the reader, during sync and import, or through
+  the image proxy. Requires API schema 2.41.0.
+- Find likely phishing with `msgvault suggest-cleanup`. With
+  `[jev.cleanup_suggestions]` enabled and consented, spam and promotional mail
+  you never replied to is judged for impersonation, pressure, and category,
+  then scored with SPF, DKIM, and DMARC results; messages at 0.80 or higher
+  are listed as suspected phishing. Each message sends at most the first 500
+  characters of its text. Nothing is staged or deleted for you, and
+  `show-deletion` and the Web UI deletion review list staged messages that
+  look like personal or work mail as possibly worth keeping.
 - Resolve organization names that match no existing organization exactly.
   With `[jev.organization_resolution]` enabled and consent recorded, an
   employment fact naming "Example Labs, Inc." or "Example Labs (YC W21)" is

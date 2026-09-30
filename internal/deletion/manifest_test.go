@@ -1578,3 +1578,19 @@ func TestManager_ClaimCancelStress(t *testing.T) {
 		assertSingleValidManifest(t, mgr, id)
 	}
 }
+
+func TestFormatKeepCandidatesCapsTheListing(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	assert.Empty(FormatKeepCandidates(nil, 5))
+	got := FormatKeepCandidates([]KeepCandidate{
+		{MessageID: 7, From: "Casey Example <casey@example.net>", Subject: "Photos", KeepProbability: 0.8},
+		{MessageID: 8, From: "Riley Example <riley@example.org>", KeepProbability: 0.6},
+		{MessageID: 9, From: "Sam Example <sam@example.com>", Subject: "Plans", KeepProbability: 0.55},
+	}, 2)
+	assert.Equal("\nPossibly worth keeping: 3 staged message(s) look like personal or work mail\n"+
+		"  7  0.80  Casey Example <casey@example.net>  \"Photos\"\n"+
+		"  8  0.60  Riley Example <riley@example.org>  \"(no subject)\"\n"+
+		"  ... and 1 more\n"+
+		"Cancel the batch and restage without them if they should stay.\n", got)
+}
