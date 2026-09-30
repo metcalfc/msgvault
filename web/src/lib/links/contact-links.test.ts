@@ -45,6 +45,16 @@ describe('contactLink', () => {
     ['threads', { kind: 'handle', service: 'threads', value: '@ada.l' }, 'https://www.threads.com/@ada.l', true],
     ['youtube handle', { kind: 'handle', service: 'youtube', value: '@AdaTalks' }, 'https://www.youtube.com/@AdaTalks', true],
     ['youtube channel id', { kind: 'handle', service: 'youtube', value: 'UCabcdefghijklmnopqrstuv' }, 'https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv', true],
+    // The daemon's seeded template and strip_at_lower normalization must not
+    // lowercase a case-sensitive channel ID into an @handle.
+    ['youtube channel id with the seeded template', { kind: 'handle', service: 'youtube', value: 'UCAbCdEfGhIjKlMnOpQrStUv',
+      normalized: 'ucabcdefghijklmnopqrstuv', services: { youtube: { profile_url_template: 'https://www.youtube.com/@{username}' } } },
+    'https://www.youtube.com/channel/UCAbCdEfGhIjKlMnOpQrStUv', true],
+    ['youtube handle with the seeded template', { kind: 'handle', service: 'youtube', value: '@AdaTalks', normalized: 'adatalks',
+      services: { youtube: { profile_url_template: 'https://www.youtube.com/@{username}' } } }, 'https://www.youtube.com/@adatalks', true],
+    ['bluesky did', { kind: 'handle', service: 'bluesky', value: 'did:plc:abcdefghijklmnopqrstuvwx' }, 'https://bsky.app/profile/did:plc:abcdefghijklmnopqrstuvwx', true],
+    ['bluesky did with the seeded template', { kind: 'handle', service: 'bluesky', value: 'did:plc:abcdefghijklmnopqrstuvwx',
+      services: { bluesky: { profile_url_template: 'https://bsky.app/profile/{username}' } } }, 'https://bsky.app/profile/did:plc:abcdefghijklmnopqrstuvwx', true],
     ['matrix', { kind: 'impp', service: 'matrix', value: '@ada:example.org' }, 'https://matrix.to/#/%40ada%3Aexample.org', true],
     ['telegram', { kind: 'impp', service: 'telegram', value: '@ada_lovelace' }, 'https://t.me/ada_lovelace', true]
   ];
@@ -85,7 +95,21 @@ describe('contactLink', () => {
     ['unknown service handle', { kind: 'handle', service: 'kakaotalk', value: 'ada' }],
     ['invalid github handle', { kind: 'social', service: 'github', value: 'ada lovelace' }],
     ['mastodon to a private host', { kind: 'social', service: 'mastodon', value: '@ada@10.0.0.1' }],
-    ['empty value', { kind: 'url', value: '  ' }]
+    ['empty value', { kind: 'url', value: '  ' }],
+    // Dot segments would resolve away and retarget the link.
+    ['dot-dot handle through a template', { kind: 'handle', service: 'linkedin', value: '..', services: { linkedin: { profile_url_template: 'https://www.linkedin.com/in/{username}' } } }],
+    ['dot handle through a template', { kind: 'handle', service: 'github', value: '@.', services: { github: { profile_url_template: 'https://github.com/{username}' } } }],
+    ['all-dots handle through a suffixed template', { kind: 'handle', service: 'custom', value: '...', services: { custom: { profile_url_template: 'https://example.com/u/{username}/profile' } } }],
+    ['dot-dot through a suffixed template', { kind: 'handle', service: 'custom', value: '..', services: { custom: { profile_url_template: 'https://example.com/u/{username}/profile' } } }],
+    ['dot-dot instagram handle', { kind: 'handle', service: 'instagram', value: '..' }],
+    ['dot-dot facebook handle', { kind: 'handle', service: 'facebook', value: '..' }],
+    ['dot-dot linkedin slug', { kind: 'social', service: 'linkedin', value: 'in/..' }],
+    ['encoded dot-dot linkedin slug', { kind: 'social', service: 'linkedin', value: '%2e%2e' }],
+    ['other scheme for bluesky', { kind: 'handle', service: 'bluesky', value: 'javascript:alert(1)' }],
+    ['non-plc did for bluesky', { kind: 'handle', service: 'bluesky', value: 'did:web:example.com' }],
+    ['encoded bcc in a mailto uri', { kind: 'contact_uri', value: 'Ada', uri: 'mailto:ada@example.com%3Fbcc=eve@example.com' }],
+    ['encoded cc in an email value', { kind: 'email', value: 'ada@example.com%3Fcc%3Deve@example.com' }],
+    ['ampersand body in an email domain', { kind: 'email', value: 'ada@example.com&body=hi' }]
   ];
 
   it.each(refused)('refuses %s', (_name, input) => {
@@ -93,8 +117,18 @@ describe('contactLink', () => {
   });
 
   it('allows the mailto of a clean address even when the stored uri adds headers', () => {
-    expect(contactLink({ kind: 'contact_uri', value: 'Ada', uri: 'mailto:ada@example.com?subject=hi' })?.href)
-      .toBe('mailto:ada@example.com');
+    for (const uri of [
+      'mailto:ada@example.com?subject=hi', 'MAILTO:ada@example.com?CC=eve@example.com',
+      'mailto:ada@example.com?Bcc=eve@example.com&body=hi'
+    ]) {
+      expect(contactLink({ kind: 'contact_uri', value: 'Ada', uri })?.href).toBe('mailto:ada@example.com');
+    }
+  });
+
+  it('keeps a template that places the handle before a suffix path', () => {
+    expect(contactLink({ kind: 'handle', service: 'custom', value: 'ada', services: {
+      custom: { profile_url_template: 'https://example.com/u/{username}/profile' }
+    } })?.href).toBe('https://example.com/u/ada/profile');
   });
 });
 

@@ -9,7 +9,8 @@ describe('eventJoinLink', () => {
     ['https://example.zoom.us/j/123456789?pwd=x', 'https://example.zoom.us/j/123456789?pwd=x'],
     ['https://teams.microsoft.com/l/meetup-join/abc', 'https://teams.microsoft.com/l/meetup-join/abc'],
     ['https://teams.live.com/meet/123', 'https://teams.live.com/meet/123'],
-    ['http://meet.google.com/abc-defg-hij', 'https://meet.google.com/abc-defg-hij']
+    ['http://meet.google.com/abc-defg-hij', 'https://meet.google.com/abc-defg-hij'],
+    ['https://MEET.Google.COM/abc-defg-hij', 'https://meet.google.com/abc-defg-hij']
   ])('allows %s', (raw, href) => {
     expect(eventJoinLink(raw)).toEqual({ href, label: 'Join meeting', external: true });
   });
@@ -20,6 +21,10 @@ describe('eventJoinLink', () => {
     'https://notzoom.us/j/1',
     'https://zoom.us.evil.example/j/1',
     'https://user:pass@meet.google.com/abc',
+    'https://meet.google.com@evil.example/abc',
+    'https://meet.google.com./abc',
+    'https://evil.zoom.us./j/1',
+    'https://zoom.us:443@evil.example/j/1',
     'javascript:alert(1)',
     '',
     undefined
@@ -39,5 +44,7 @@ describe('eventCalendarLink', () => {
     expect(eventCalendarLink('https://www.google.com/url?q=https://evil.example')).toBeUndefined();
     expect(eventCalendarLink('https://calendar.evil.example/event')).toBeUndefined();
     expect(eventCalendarLink('data:text/html,hi')).toBeUndefined();
+    expect(eventCalendarLink('https://user:secret@calendar.google.com/calendar/event?eid=abc')).toBeUndefined();
+    expect(eventCalendarLink('https://calendar.google.com@evil.example/calendar/event')).toBeUndefined();
   });
 });

@@ -51,10 +51,18 @@ export interface ContactLinkInput {
 }
 
 const E164 = /^\+[1-9]\d{6,14}$/;
-const EMAIL = /^[^\s@<>()[\]",;:\\]+@[^\s@<>()[\]",;:\\]+\.[^\s@<>()[\]",;:\\]+$/;
+// The domain is hostname characters only, so an encoded ?, &, or = can
+// never smuggle mailto headers (cc, bcc, body) in through the address.
+const EMAIL = /^[^\s@<>()[\]",;:\\]+@(?:[\p{L}\p{N}-]+\.)+[\p{L}\p{N}-]{2,}$/u;
 const SCHEME = /^([a-z][a-z0-9+.-]*):/i;
 /** A handle that can be dropped into a URL path segment as-is. */
 const PLAIN_HANDLE = /^[^\s/?#\\]+$/;
+
+/** A path segment of only dots is a dot segment ("." or "..") or reads
+ * like one; the URL parser would resolve it away and change the target. */
+function dotSegment(segment: string): boolean {
+  return /^\.+$/.test(segment);
+}
 
 function clean(value: string | undefined): string {
   return (value ?? '').trim();
@@ -139,7 +147,7 @@ type Builder = (value: string) => string | undefined;
 function pathHandle(pattern: RegExp, base: string): Builder {
   return (value) => {
     const handle = stripAt(value);
-    return pattern.test(handle) ? `${base}${encodeURIComponent(handle)}` : undefined;
+    return pattern.test(handle) && !dotSegment(handle) ? `${base}${encodeURIComponent(handle)}` : undefined;
   };
 }
 
@@ -149,8 +157,10 @@ function linkedinURL(value: string): string | undefined {
     .replace(/^(?:[a-z]{2,3}\.|www\.)?linkedin\.com\//i, '')
     .replace(/\/+$/, '');
   const typed = /^(in|company|school|pub)\/([^/?#\s]+)$/i.exec(path);
-  if (typed) return `https://www.linkedin.com/${(typed[1] ?? '').toLowerCase()}/${encodeURIComponent(safeDecode(typed[2] ?? ''))}`;
-  if (/^[\p{L}\p{N}_.%-]{2,100}$/u.test(path)) return `https://www.linkedin.com/in/${encodeURIComponent(safeDecode(path))}`;
+  const slug = safeDecode(typed ? typed[2] ?? '' : path);
+  if (dotSegment(slug)) return undefined;
+  if (typed) return `https://www.linkedin.com/${(typed[1] ?? '').toLowerCase()}/${encodeURIComponent(slug)}`;
+  if (/^[\p{L}\p{N}_.%-]{2,100}$/u.test(path)) return `https://www.linkedin.com/in/${encodeURIComponent(slug)}`;
   return undefined;
 }
 
@@ -174,8 +184,11 @@ function matrixURL(value: string): string | undefined {
   return `https://matrix.to/#/${encodeURIComponent(id)}`;
 }
 
+const YOUTUBE_CHANNEL_ID = /^UC[A-Za-z0-9_-]{22}$/;
+const BLUESKY_DID = /^did:plc:[a-z2-7]{24}$/;
+
 function youtubeURL(value: string): string | undefined {
-  if (/^UC[A-Za-z0-9_-]{22}$/.test(value)) return `https://www.youtube.com/channel/${value}`;
+  if (YOUTUBE_CHANNEL_ID.test(value)) return `https://www.youtube.com/channel/${value}`;
   const handle = stripAt(value);
   return /^[A-Za-z0-9._-]{3,30}$/.test(handle) ? `https://www.youtube.com/@${encodeURIComponent(handle)}` : undefined;
 }
@@ -198,6 +211,16 @@ const BUILTIN: Record<string, Builder> = {
   telegram: pathHandle(/^[A-Za-z][A-Za-z0-9_]{4,31}$/, 'https://t.me/')
 };
 
+/** Identifier forms a service's handle template cannot express, built
+ * from the original value before scheme checks or templates apply: a
+ * YouTube channel ID is case-sensitive (normalization lowercases it) and
+ * lives under /channel/, and a Bluesky DID looks like a URI scheme. */
+const SERVICE_IDENTIFIERS: Record<string, Builder> = {
+  youtube: (value) => YOUTUBE_CHANNEL_ID.test(value) ? `https://www.youtube.com/channel/${value}` : undefined,
+  bluesky: (value) => BLUESKY_DID.test(value) ? `https://bsky.app/profile/${value}` : undefined,
+  bsky: (value) => BLUESKY_DID.test(value) ? `https://bsky.app/profile/${value}` : undefined
+};
+
 const SERVICE_LABELS: Record<string, string> = {
   github: 'GitHub', mastodon: 'Mastodon', linkedin: 'LinkedIn', x: 'X', twitter: 'X',
   bluesky: 'Bluesky', bsky: 'Bluesky', instagram: 'Instagram', facebook: 'Facebook',
@@ -211,7 +234,7 @@ function profileLabel(service: string, value: string): string {
 
 function fromTemplate(template: string | undefined, handle: string): string | undefined {
   if (!template || !template.includes('{username}')) return undefined;
-  if (!handle || !PLAIN_HANDLE.test(handle)) return undefined;
+  if (!handle || !PLAIN_HANDLE.test(handle) || dotSegment(handle)) return undefined;
   return safeWebURL(template.replaceAll('{username}', encodeURIComponent(handle)));
 }
 
@@ -244,6 +267,9 @@ export function contactLink(input: ContactLinkInput): ContactLink | undefined {
     const fromURI = linkFromURI(uri, label);
     if (fromURI) return fromURI;
   }
+
+  const identifier = SERVICE_IDENTIFIERS[service]?.(value);
+  if (identifier) return webLink(identifier, label);
 
   const direct = linkFromURI(value, label);
   if (direct !== null) return direct;
