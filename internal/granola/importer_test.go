@@ -964,8 +964,8 @@ func TestImportReportsFailureToRecordFailedSync(t *testing.T) {
 	require.NoError(err)
 	summary, err := imp.Import(t.Context(), ImportOptions{Identifier: "failure@example.test"})
 	require.Error(err)
-	assert.ErrorContains(err, "partial Granola sync")
-	assert.ErrorContains(err, "synthetic terminal write failure")
+	require.ErrorContains(err, "partial Granola sync")
+	require.ErrorContains(err, "synthetic terminal write failure")
 	require.NotNil(summary)
 	assert.EqualValues(1, summary.Errors)
 }

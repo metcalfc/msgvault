@@ -246,7 +246,7 @@ func TestClient_CancellationDuringQuotaPause(t *testing.T) {
 		calls := 0
 		client := NewClient(nil, WithHTTPClient(&http.Client{Transport: retryTransportFunc(func(request *http.Request) (*http.Response, error) {
 			calls++
-			return &http.Response{StatusCode: 429, Header: http.Header{"Retry-After": []string{"120"}}, Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
+			return &http.Response{StatusCode: http.StatusTooManyRequests, Header: http.Header{"Retry-After": []string{"120"}}, Body: io.NopCloser(strings.NewReader("")), Request: request}, nil
 		})}))
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
