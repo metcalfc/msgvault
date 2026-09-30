@@ -343,9 +343,11 @@ func (s *Store) upsertIdentityMatchCandidateTx(
 			return nil, false, err
 		}
 		if notAPerson {
-			state, decidedBy, notes = IdentityMatchStateRejected, string(ProvenanceSystem),
-				correspondentkind.NotAPersonReason
-			observationOrigin = nil
+			reason := correspondentkind.NotAPersonReason
+			if state == IdentityMatchStateConflict {
+				reason = correspondentkind.NotAPersonConflictReason
+			}
+			state, decidedBy, notes = IdentityMatchStateRejected, string(ProvenanceSystem), reason
 		}
 	}
 	var id int64

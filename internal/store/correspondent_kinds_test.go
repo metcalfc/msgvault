@@ -164,6 +164,41 @@ func TestGeneratedCandidateForClassifiedIdentityIsRecordedResolved(t *testing.T)
 	assert.Equal(store.IdentityMatchStateCandidate, state)
 }
 
+func TestClearingACorrespondentKindReturnsConflictsToConflict(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	left := f.emailParticipant("left-conflict@example.test", "Left")
+	right := f.emailParticipant("right-conflict@example.test", "Right")
+	value := "shared-handle"
+	conflict, _, err := f.st.UpsertIdentityMatchCandidateContext(t.Context(),
+		store.IdentityMatchCandidateInput{
+			LeftKind: store.IdentityMatchParticipant, LeftID: left,
+			RightKind: store.IdentityMatchParticipant, RightID: right,
+			Basis: store.IdentityMatchDisplayName, NormalizedValue: &value,
+			State: store.IdentityMatchStateConflict, Source: store.ProvenanceSystem,
+		})
+	require.NoError(err)
+	require.Equal(store.IdentityMatchStateConflict, conflict.State)
+
+	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: left, Kind: correspondentkind.Ignored,
+	})
+	require.NoError(err)
+	state, notes := candidateState(t, f.st, conflict.ID)
+	assert.Equal(store.IdentityMatchStateRejected, state)
+	require.NotNil(notes)
+	assert.Equal(correspondentkind.NotAPersonConflictReason, *notes)
+
+	_, err = f.st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: left, Kind: correspondentkind.Person,
+	})
+	require.NoError(err)
+	state, _ = candidateState(t, f.st, conflict.ID)
+	assert.Equal(store.IdentityMatchStateConflict, state)
+}
+
 func TestSetCorrespondentKindOrganizationFindsOrCreatesTheOrganization(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

@@ -480,24 +480,6 @@ func (c CorrespondentKindAssignmentKind) Validate() error {
 	}
 }
 
-type CorrespondentKindAssignmentSource string
-
-const (
-	Jev  CorrespondentKindAssignmentSource = "jev"
-	Rule CorrespondentKindAssignmentSource = "rule"
-	User CorrespondentKindAssignmentSource = "user"
-)
-
-// Validate checks if the CorrespondentKindAssignmentSource value is valid
-func (c CorrespondentKindAssignmentSource) Validate() error {
-	switch c {
-	case Jev, Rule, User:
-		return nil
-	default:
-		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid CorrespondentKindAssignmentSource value, got: %v", c))
-	}
-}
-
 type CorrespondentKindRecordKind string
 
 const (
@@ -514,25 +496,6 @@ func (c CorrespondentKindRecordKind) Validate() error {
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid CorrespondentKindRecordKind value, got: %v", c))
-	}
-}
-
-// CorrespondentKindRecordSource Who classified the cluster; absent when it was never classified.
-type CorrespondentKindRecordSource string
-
-const (
-	CorrespondentKindRecordSourceJev  CorrespondentKindRecordSource = "jev"
-	CorrespondentKindRecordSourceRule CorrespondentKindRecordSource = "rule"
-	CorrespondentKindRecordSourceUser CorrespondentKindRecordSource = "user"
-)
-
-// Validate checks if the CorrespondentKindRecordSource value is valid
-func (c CorrespondentKindRecordSource) Validate() error {
-	switch c {
-	case CorrespondentKindRecordSourceJev, CorrespondentKindRecordSourceRule, CorrespondentKindRecordSourceUser:
-		return nil
-	default:
-		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid CorrespondentKindRecordSource value, got: %v", c))
 	}
 }
 
@@ -647,19 +610,19 @@ func (d DiscoverEventType) Validate() error {
 type EmploymentBodySource string
 
 const (
-	ArchiveObservation       EmploymentBodySource = "archive_observation"
-	CarddavImport            EmploymentBodySource = "carddav_import"
-	EmploymentBodySourceUser EmploymentBodySource = "user"
-	Enrichment               EmploymentBodySource = "enrichment"
-	Extraction               EmploymentBodySource = "extraction"
-	System                   EmploymentBodySource = "system"
-	VcardImport              EmploymentBodySource = "vcard_import"
+	ArchiveObservation EmploymentBodySource = "archive_observation"
+	CarddavImport      EmploymentBodySource = "carddav_import"
+	Enrichment         EmploymentBodySource = "enrichment"
+	Extraction         EmploymentBodySource = "extraction"
+	System             EmploymentBodySource = "system"
+	User               EmploymentBodySource = "user"
+	VcardImport        EmploymentBodySource = "vcard_import"
 )
 
 // Validate checks if the EmploymentBodySource value is valid
 func (e EmploymentBodySource) Validate() error {
 	switch e {
-	case ArchiveObservation, CarddavImport, EmploymentBodySourceUser, Enrichment, Extraction, System, VcardImport:
+	case ArchiveObservation, CarddavImport, Enrichment, Extraction, System, User, VcardImport:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid EmploymentBodySource value, got: %v", e))
@@ -2512,11 +2475,11 @@ const (
 	Backup                  SettingGroup0 = "backup"
 	Browser                 SettingGroup0 = "browser"
 	Integrations            SettingGroup0 = "integrations"
+	Jev                     SettingGroup0 = "jev"
 	Logging                 SettingGroup0 = "logging"
 	Search                  SettingGroup0 = "search"
 	Server                  SettingGroup0 = "server"
 	SettingGroup0Enrichment SettingGroup0 = "enrichment"
-	SettingGroup0Jev        SettingGroup0 = "jev"
 	Sources                 SettingGroup0 = "sources"
 	Sync                    SettingGroup0 = "sync"
 )
@@ -2524,7 +2487,7 @@ const (
 // Validate checks if the SettingGroup0 value is valid
 func (s SettingGroup0) Validate() error {
 	switch s {
-	case Activity, Archive, Attachments, Backup, Browser, Integrations, Logging, Search, Server, SettingGroup0Enrichment, SettingGroup0Jev, Sources, Sync:
+	case Activity, Archive, Attachments, Backup, Browser, Integrations, Jev, Logging, Search, Server, SettingGroup0Enrichment, Sources, Sync:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid SettingGroup0 value, got: %v", s))

@@ -2348,10 +2348,12 @@ func (c ConversationResponse) Validate() error {
 }
 
 type CorrespondentKindAssignment struct {
-	Kind             CorrespondentKindAssignmentKind   `json:"kind" validate:"required"`
-	OrganizationID   *int64                            `json:"organization_id,omitempty"`
-	OrganizationName *string                           `json:"organization_name,omitzero"`
-	Source           CorrespondentKindAssignmentSource `json:"source" validate:"required"`
+	Kind             CorrespondentKindAssignmentKind `json:"kind" validate:"required"`
+	OrganizationID   *int64                          `json:"organization_id,omitempty"`
+	OrganizationName *string                         `json:"organization_name,omitzero"`
+
+	// Source Who classified the cluster: user, rule, or jev.
+	Source string `json:"source" validate:"required"`
 }
 
 func (c CorrespondentKindAssignment) Validate() error {
@@ -2361,10 +2363,8 @@ func (c CorrespondentKindAssignment) Validate() error {
 			errors = errors.Append("Kind", err)
 		}
 	}
-	if v, ok := any(c.Source).(runtime.Validator); ok {
-		if err := v.Validate(); err != nil {
-			errors = errors.Append("Source", err)
-		}
+	if err := typesValidator.Var(c.Source, "required"); err != nil {
+		errors = errors.Append("Source", err)
 	}
 	if len(errors) == 0 {
 		return nil
@@ -2393,8 +2393,8 @@ type CorrespondentKindRecord struct {
 	OrganizationName *string                     `json:"organization_name,omitzero"`
 	Person           *CorrespondentKindPerson    `json:"person,omitempty"`
 
-	// Source Who classified the cluster; absent when it was never classified.
-	Source *CorrespondentKindRecordSource `json:"source,omitempty"`
+	// Source Who classified the cluster: user, rule, or jev. Absent when it was never classified.
+	Source *string `json:"source,omitzero"`
 }
 
 func (c CorrespondentKindRecord) Validate() error {
@@ -2414,13 +2414,6 @@ func (c CorrespondentKindRecord) Validate() error {
 		if v, ok := any(c.Person).(runtime.Validator); ok {
 			if err := v.Validate(); err != nil {
 				errors = errors.Append("Person", err)
-			}
-		}
-	}
-	if c.Source != nil {
-		if v, ok := any(c.Source).(runtime.Validator); ok {
-			if err := v.Validate(); err != nil {
-				errors = errors.Append("Source", err)
 			}
 		}
 	}

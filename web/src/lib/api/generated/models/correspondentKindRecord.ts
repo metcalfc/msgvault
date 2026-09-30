@@ -3,7 +3,6 @@
  */
 import type { CorrespondentKindPerson } from "./correspondentKindPerson";
 import type { CorrespondentKindRecordKind } from "./correspondentKindRecordKind";
-import type { CorrespondentKindRecordSource } from "./correspondentKindRecordSource";
 
 export interface CorrespondentKindRecord {
   actor?: string;
@@ -18,7 +17,7 @@ export interface CorrespondentKindRecord {
   organization_name?: string;
   /** The saved Directory person bound to this cluster, if any. */
   person?: CorrespondentKindPerson;
-  /** Who classified the cluster; absent when it was never classified. */
-  source?: CorrespondentKindRecordSource;
+  /** Who classified the cluster: user, rule, or jev. Absent when it was never classified. */
+  source?: string;
   [key: string]: unknown;
 }

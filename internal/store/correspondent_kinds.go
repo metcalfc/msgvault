@@ -55,7 +55,7 @@ type CorrespondentKindRecord struct {
 	CanonicalID      int64                     `json:"canonical_id" doc:"The cluster's smallest participant ID."`
 	MemberIDs        []int64                   `json:"member_ids"`
 	Kind             correspondentkind.Kind    `json:"kind" enum:"person,organization,shared_mailbox,ignored"`
-	Source           *correspondentkind.Source `json:"source,omitzero" nullable:"false" enum:"user,rule,jev" doc:"Who classified the cluster; absent when it was never classified."`
+	Source           *correspondentkind.Source `json:"source,omitzero" nullable:"false" doc:"Who classified the cluster: user, rule, or jev. Absent when it was never classified."`
 	DisplayName      *string                   `json:"display_name,omitzero" nullable:"false"`
 	Addresses        []string                  `json:"addresses"`
 	OrganizationID   *int64                    `json:"organization_id,omitzero" nullable:"false"`
@@ -68,7 +68,7 @@ type CorrespondentKindRecord struct {
 // CorrespondentKindAssignment is the effective kind of one cluster.
 type CorrespondentKindAssignment struct {
 	Kind             correspondentkind.Kind   `json:"kind" enum:"person,organization,shared_mailbox,ignored"`
-	Source           correspondentkind.Source `json:"source" enum:"user,rule,jev"`
+	Source           correspondentkind.Source `json:"source" doc:"Who classified the cluster: user, rule, or jev."`
 	OrganizationID   *int64                   `json:"organization_id,omitzero" nullable:"false"`
 	OrganizationName *string                  `json:"organization_name,omitzero" nullable:"false"`
 }
@@ -896,19 +896,24 @@ func (s *Store) resolveNotAPersonCandidatesTx(
 	ctx context.Context, tx *loggedTx, members []int64,
 ) (int, error) {
 	resolved := 0
-	for _, side := range []string{"left", "right"} {
-		count, err := execCountInChunksTx(ctx, tx, members, []any{
-			IdentityMatchStateRejected, string(ProvenanceUser), correspondentkind.NotAPersonReason,
-			IdentityMatchStateCandidate, IdentityMatchStateConflict, IdentityMatchParticipant,
-		}, `UPDATE identity_match_candidates SET
-				state = ?, decided_by = ?, decided_at = CURRENT_TIMESTAMP, notes = ?,
-				pre_conflict_state = NULL, application_pending = FALSE,
-				updated_at = CURRENT_TIMESTAMP
-			WHERE state IN (?, ?) AND `+side+`_kind = ? AND `+side+`_id IN (%s)`)
-		if err != nil {
-			return resolved, fmt.Errorf("resolve identity candidates as not a person: %w", err)
+	for _, state := range []IdentityMatchState{IdentityMatchStateCandidate, IdentityMatchStateConflict} {
+		reason := correspondentkind.NotAPersonReason
+		if state == IdentityMatchStateConflict {
+			reason = correspondentkind.NotAPersonConflictReason
 		}
-		resolved += count
+		for _, side := range []string{"left", "right"} {
+			count, err := execCountInChunksTx(ctx, tx, members, []any{
+				IdentityMatchStateRejected, string(ProvenanceUser), reason,
+				state, IdentityMatchParticipant,
+			}, `UPDATE identity_match_candidates SET
+					state = ?, decided_by = ?, decided_at = CURRENT_TIMESTAMP, notes = ?,
+					application_pending = FALSE, updated_at = CURRENT_TIMESTAMP
+				WHERE state = ? AND `+side+`_kind = ? AND `+side+`_id IN (%s)`)
+			if err != nil {
+				return resolved, fmt.Errorf("resolve identity candidates as not a person: %w", err)
+			}
+			resolved += count
+		}
 	}
 	return resolved, nil
 }
@@ -919,18 +924,23 @@ func (s *Store) restoreNotAPersonCandidatesTx(
 	ctx context.Context, tx *loggedTx, members []int64,
 ) (int, error) {
 	restored := 0
-	for _, side := range []string{"left", "right"} {
-		count, err := execCountInChunksTx(ctx, tx, members, []any{
-			IdentityMatchStateCandidate, IdentityMatchStateRejected,
-			correspondentkind.NotAPersonReason, IdentityMatchParticipant,
-		}, `UPDATE identity_match_candidates SET
-				state = ?, decided_by = NULL, decided_at = NULL, notes = NULL,
-				application_pending = TRUE, updated_at = CURRENT_TIMESTAMP
-			WHERE state = ? AND notes = ? AND `+side+`_kind = ? AND `+side+`_id IN (%s)`)
-		if err != nil {
-			return restored, fmt.Errorf("restore identity candidates: %w", err)
+	for _, state := range []IdentityMatchState{IdentityMatchStateCandidate, IdentityMatchStateConflict} {
+		reason := correspondentkind.NotAPersonReason
+		if state == IdentityMatchStateConflict {
+			reason = correspondentkind.NotAPersonConflictReason
 		}
-		restored += count
+		for _, side := range []string{"left", "right"} {
+			count, err := execCountInChunksTx(ctx, tx, members, []any{
+				state, IdentityMatchStateRejected, reason, IdentityMatchParticipant,
+			}, `UPDATE identity_match_candidates SET
+					state = ?, decided_by = NULL, decided_at = NULL, notes = NULL,
+					application_pending = TRUE, updated_at = CURRENT_TIMESTAMP
+				WHERE state = ? AND notes = ? AND `+side+`_kind = ? AND `+side+`_id IN (%s)`)
+			if err != nil {
+				return restored, fmt.Errorf("restore identity candidates: %w", err)
+			}
+			restored += count
+		}
 	}
 	return restored, nil
 }
