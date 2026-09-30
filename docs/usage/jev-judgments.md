@@ -75,6 +75,9 @@ new `msgvault jev consent`.
 
    [jev.query_understanding]
    enabled = true      # searches you type in the Web UI only; never automatic
+   [jev.sweep_evidence_rerank]   # sends message excerpts the person wrote
+   enabled = true
+   # automatic = true   # also judge during the daemon's scheduled people sweeps
    ```
 
 2. Provide an API key. Either paste it in Settings under **Jev judgments**
@@ -93,6 +96,7 @@ Consent is per feature: run the same two `consent` commands with
 `organization_resolution`, `correspondent_kind`, `cleanup_suggestions`,
 `search_rerank`, `meeting_event_kind`, `meeting_action_assignee`, or
 `query_understanding` for those features. `msgvault jev revoke enrichment_identity`
+`sweep_evidence_rerank` for those features. `msgvault jev revoke enrichment_identity`
 or `msgvault jev revoke --all` stops the next request immediately.
 
 ## Budgets and safety
@@ -848,6 +852,60 @@ No messages, bodies, participant IDs, or addresses leave the machine.
 
 `msgvault jev consent query_understanding` prints the same disclosure.
 
+## Feature: people sweep evidence relevance
+
+Feature name: `sweep_evidence_rerank`. Setting:
+`[jev.sweep_evidence_rerank]`. Runs inside the
+[people sweep](people-automation.md#run-and-inspect-a-sweep).
+
+For each fact it looks for (each target in the fact catalog, such as
+employment), the people sweep retrieves up to `context_per_target` older
+messages the person wrote and sends them to its chat model next to the newly
+changed messages. Many retrieved messages say nothing about the fact. This
+feature asks Jev, before the chat model sees them, which ones bear on it:
+
+1. **Newly changed messages are never judged.** They are always sent, so the
+   sweep's progress over the archive is unchanged.
+2. **One request per target** that retrieved context, up to 30 messages per
+   request, using the same question as
+   [hybrid search reranking](#feature-hybrid-search-reranking). A sensitive
+   target's context is never judged.
+3. **Code drops a message below 0.20** for every target that retrieved it. A
+   message some target kept, or could not judge, stays.
+4. **When a packet must shrink** to fit the sweep's request limit, the least
+   relevant context leaves first; without judgments it shrinks from the end,
+   as before.
+
+Any gate, budget, or provider failure keeps every retrieved message, exactly
+as without the feature. A manual `msgvault person sweep run` or brief request
+may ask; the daemon's scheduled sweeps ask only with `automatic = true`.
+
+### What leaves the machine
+
+Per request:
+
+- `query`: the fact's catalog description, such as "Current and historical
+  employment, including organization, title, role, department, location, and
+  partial start and end dates". Never a name or an address.
+- `candidates[]`: **for each retrieved message, its date and up to 2 KiB of
+  excerpt text** from a message the person sent on a source that
+  authenticates its sender (the same messages the sweep admits as the
+  person's own evidence). Email addresses become `[email]` and phone numbers
+  `[phone]`.
+
+The excerpts are message text the person wrote. Your own identities, the
+person's name, and their addresses are never sent as fields, and nothing from
+messages other people wrote is sent.
+
+### The question, exactly as sent
+
+`candidate_0` to `candidate_29` (Noul): "Could `candidates[i]` be the best
+answer to `query`?" Yes means "The `candidates[i]` contains the specific
+information needed to answer the query." No means "The `candidates[i]` is
+only topically similar or does not contain the needed evidence." A request
+asks only as many as it has messages.
+`msgvault jev consent sweep_evidence_rerank` prints the same disclosure.
+
 ## Turn it off
 
 - `msgvault jev revoke --all` stops every feature at the next request without
@@ -867,6 +925,8 @@ probabilities and outcomes, not the compared values.
   correspondent kind, cleanup suggestions, hybrid search reranking, meeting
   event kind, meeting action assignee, and Explore query understanding exist
   today. The other features in
+  event kind, meeting action assignee, and people sweep evidence relevance
+  exist today. The other features in
   the engineering record `docs/internal/jev-judgments-plan.md` are proposals.
 - Hybrid search reranking has not passed its evaluation gate. Its cached
   orders live in the daemon's memory, so a restart judges the next page of a

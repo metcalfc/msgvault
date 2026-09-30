@@ -196,6 +196,12 @@ automation considers supported. The sweep retains earlier evidence and records
 its current support status. It also revisits older material in bounded passes;
 `person sweep run --backstop --limit 5` explicitly requests that path.
 
+With the optional
+[evidence relevance](jev-judgments.md#feature-people-sweep-evidence-relevance)
+Jev judgment, the sweep leaves out retrieved older messages that do not bear
+on a fact before the chat model reads them. Newly changed messages are always
+sent.
+
 Status and history are redacted operational records. Use them to inspect
 progress, failures, and usage without printing message packets. A failed
 provider call does not authorize a switch to another provider.

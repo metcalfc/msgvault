@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -49,6 +50,11 @@ type Assembler struct {
 	MaxProgressWindows   int
 	ContextPerTarget     int
 	HistoricalMessageCap int
+	// Judge, when set, scores each target's retrieved context: items judged
+	// below ContextRelevanceFloor for every target are left out, and when
+	// the packet must shrink the least relevant context goes first. Nil
+	// keeps every retrieved item and trims from the end.
+	Judge ContextJudge
 }
 
 func (a Assembler) Build(ctx context.Context, request AssemblyRequest) (Assembly, error) {
@@ -266,12 +272,19 @@ cursorLoop:
 	if len(result.Packet.Catalog.Targets) == 0 {
 		return result, nil
 	}
+	// relevance holds the best judged score of each context item; an item
+	// absent from it was never judged and keeps full priority.
+	relevance := make(map[string]float64)
 	if a.Context != nil && a.ContextPerTarget > 0 {
 		contextByID := make(map[string]EvidenceItem)
 		seedIDs := make(map[string]struct{}, len(result.Packet.Seeds))
 		for _, seed := range result.Packet.Seeds {
 			seedIDs[packetEvidenceID(seed)] = struct{}{}
 		}
+		// judgedOut collects items judged below the floor; one is dropped
+		// only if no other target kept it or left it unjudged.
+		judgedOut := make(map[string]struct{})
+		unjudged := make(map[string]struct{})
 		for _, target := range result.Packet.Catalog.Targets {
 			items, retrieveErr := a.Context.RetrievePersonSweepContext(ctx, ContextRequest{
 				PersonID: request.PersonID, Target: target,
@@ -282,6 +295,7 @@ cursorLoop:
 			if retrieveErr != nil {
 				return Assembly{}, fmt.Errorf("retrieve context for target %q: %w", target.Key, retrieveErr)
 			}
+			targetItems := make([]EvidenceItem, 0, len(items))
 			for _, item := range items {
 				allowed, validateErr := assemblyEvidenceAllowed(item, request.Profile, after, before)
 				if validateErr != nil {
@@ -293,8 +307,19 @@ cursorLoop:
 				id := packetEvidenceID(item)
 				if _, isSeed := seedIDs[id]; !isSeed {
 					contextByID[id] = item
+					targetItems = append(targetItems, item)
 				}
 			}
+			a.judgeTargetContext(ctx, target, targetItems, relevance, judgedOut, unjudged)
+		}
+		for id := range judgedOut {
+			if _, kept := relevance[id]; kept {
+				continue
+			}
+			if _, open := unjudged[id]; open {
+				continue
+			}
+			delete(contextByID, id)
 		}
 		result.Packet.Context = evidenceMapValues(contextByID)
 	}
@@ -302,14 +327,86 @@ cursorLoop:
 	if err != nil {
 		return Assembly{}, err
 	}
+	removal := contextRemovalOrder(result.Packet.Context, relevance)
 	for a.MaxBatches > 0 && len(result.Batches) > a.MaxBatches && len(result.Packet.Context) > 0 {
-		result.Packet.Context = result.Packet.Context[:len(result.Packet.Context)-1]
+		drop := removal[0]
+		removal = removal[1:]
+		result.Packet.Context = slices.DeleteFunc(result.Packet.Context, func(item EvidenceItem) bool {
+			return packetEvidenceID(item) == drop
+		})
 		result.Batches, err = PartitionEvidencePacket(result.Packet, a.MaxBytes, a.MaxItems)
 		if err != nil {
 			return Assembly{}, err
 		}
 	}
 	return result, nil
+}
+
+// judgeTargetContext asks the judge about one target's retrieved context.
+// An item at or above ContextRelevanceFloor records its best score in
+// relevance; one below it is noted in judgedOut; a failed or skipped
+// judgment leaves every item in unjudged, which keeps it.
+func (a Assembler) judgeTargetContext(
+	ctx context.Context, target personfacts.TargetDescriptor, items []EvidenceItem,
+	relevance map[string]float64, judgedOut, unjudged map[string]struct{},
+) {
+	if len(items) == 0 {
+		return
+	}
+	var scores []float64
+	var err error
+	if a.Judge != nil {
+		scores, err = a.Judge.JudgeContext(ctx, target, items)
+	}
+	if a.Judge == nil || err != nil || len(scores) != len(items) {
+		for _, item := range items {
+			unjudged[packetEvidenceID(item)] = struct{}{}
+		}
+		return
+	}
+	for i, item := range items {
+		id := packetEvidenceID(item)
+		if scores[i] < ContextRelevanceFloor {
+			judgedOut[id] = struct{}{}
+			continue
+		}
+		if prior, ok := relevance[id]; !ok || scores[i] > prior {
+			relevance[id] = scores[i]
+		}
+	}
+}
+
+// contextRemovalOrder lists context evidence IDs in the order they leave a
+// packet that must shrink: least relevant first, with an unjudged item
+// counted at ContextRelevanceFloor (it earned no relevance), and ties from
+// the end of the canonical order. With no judgments it is exactly the
+// canonical order reversed, which is how the packet shrank before judging.
+func contextRemovalOrder(context []EvidenceItem, relevance map[string]float64) []string {
+	type entry struct {
+		id    string
+		score float64
+		index int
+	}
+	entries := make([]entry, len(context))
+	for i, item := range context {
+		id := packetEvidenceID(item)
+		score, judged := relevance[id]
+		if !judged {
+			score = ContextRelevanceFloor
+		}
+		entries[i] = entry{id: id, score: score, index: i}
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].score != entries[j].score {
+			return entries[i].score < entries[j].score
+		}
+		return entries[i].index > entries[j].index
+	})
+	order := make([]string, len(entries))
+	for i, entry := range entries {
+		order[i] = entry.id
+	}
+	return order
 }
 
 func (a Assembler) loadWindow(ctx context.Context, request WindowRequest) (PersonWindow, error) {

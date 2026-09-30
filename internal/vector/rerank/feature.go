@@ -18,9 +18,7 @@ import (
 func JevFeature() jev.FeatureSpec {
 	questions := make([]jev.Question, 0, MaxCandidates+1)
 	questions = append(questions, rankingQuestion(perCandidateQuestionID, "candidate"))
-	for i := range MaxCandidates {
-		questions = append(questions, rankingQuestion(batchedQuestionID(i), fmt.Sprintf("candidates[%d]", i)))
-	}
+	questions = append(questions, BatchedQuestions()...)
 	return jev.FeatureSpec{
 		Name:  jev.FeatureSearchRerank,
 		Title: "Hybrid search reranking",

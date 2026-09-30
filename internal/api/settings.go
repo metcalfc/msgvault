@@ -382,6 +382,8 @@ var settingsCatalog = []settingDefinition{
 	boolSetting("jev.meeting_event_kind.automatic", settingsGroupJev, func(c *config.Config) bool { return c.Jev.MeetingEventKind.Automatic }),
 	boolSetting("jev.meeting_action_assignee.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.MeetingActionAssignee.Enabled }),
 	boolSetting("jev.meeting_action_assignee.automatic", settingsGroupJev, func(c *config.Config) bool { return c.Jev.MeetingActionAssignee.Automatic }),
+	boolSetting("jev.sweep_evidence_rerank.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.SweepEvidenceRerank.Enabled }),
+	boolSetting("jev.sweep_evidence_rerank.automatic", settingsGroupJev, func(c *config.Config) bool { return c.Jev.SweepEvidenceRerank.Automatic }),
 	boolSetting("integrations.kata.enabled", "integrations", func(c *config.Config) bool { return c.Integrations.Kata.Enabled }),
 	stringSetting("integrations.kata.endpoint", "integrations", nil, func(c *config.Config) string { return c.Integrations.Kata.Endpoint }),
 	secretSetting("integrations.kata.api_key", "integrations", func(c *config.Config) string { return c.Integrations.Kata.APIKey }),

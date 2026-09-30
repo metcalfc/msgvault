@@ -12,10 +12,12 @@ import (
 	"go.kenn.io/msgvault/internal/kindclassify"
 	"go.kenn.io/msgvault/internal/meetingjudge"
 	"go.kenn.io/msgvault/internal/orgresolution"
+	"go.kenn.io/msgvault/internal/peoplesweep"
 	"go.kenn.io/msgvault/internal/personenrichment"
 	"go.kenn.io/msgvault/internal/personfacts"
 	"go.kenn.io/msgvault/internal/providercredentials"
 	"go.kenn.io/msgvault/internal/queryunderstand"
+	"go.kenn.io/msgvault/internal/sweepjudge"
 )
 
 // jevRuntimeStore is what a live Jev service needs from the archive: consent
@@ -191,4 +193,20 @@ func newJevQueryUnderstandingJudge(cfg *config.Config, st jevRuntimeStore) (quer
 		return nil, err
 	}
 	return service, nil
+}
+
+// newJevSweepContextJudge wires the people sweep's context relevance
+// judgment, or returns nil when Jev or the feature is off so the sweep keeps
+// every retrieved item. automatic marks the daemon's scheduled sweeps.
+func newJevSweepContextJudge(
+	cfg *config.Config, st jevRuntimeStore, automatic bool,
+) (peoplesweep.ContextJudge, error) {
+	if cfg == nil || !cfg.Jev.Enabled || !cfg.Jev.SweepEvidenceRerank.Enabled {
+		return nil, nil //nolint:nilnil // nil means "no judgment".
+	}
+	service, err := newJevService(cfg, st)
+	if err != nil || service == nil {
+		return nil, err
+	}
+	return sweepjudge.NewContextJudge(service, automatic, nil), nil
 }

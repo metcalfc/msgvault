@@ -426,9 +426,12 @@ type Worker struct {
 	// applied and may record organization aliases the deterministic
 	// organization lookup then uses. Nil keeps the exact lookup alone.
 	Organizations personfacts.OrganizationPreparer
-	Clock         func() time.Time
-	NewID         func() string
-	WorkerID      string
+	// ContextJudge, when set, scores retrieved context before it joins the
+	// extraction packet (see Assembler.Judge). Nil keeps every item.
+	ContextJudge ContextJudge
+	Clock        func() time.Time
+	NewID        func() string
+	WorkerID     string
 }
 
 func personSweepAttemptEnvelopeHash(cursors []GenerationCursor) (string, error) {
@@ -611,6 +614,8 @@ func (w *Worker) runPerson(
 	assemblyRequest := AssemblyRequest{PersonID: lease.PersonID, Cursors: cursors, Catalog: catalog,
 		Profile: profile, Now: resolvedAt, BackstopInterval: w.Config.BackstopInterval,
 		ForceBackstop: mode == RunBackstop}
+	// One judgment per target and item set serves every assembly below.
+	contextJudge := newMemoContextJudge(w.ContextJudge)
 	buildAssembly := func(selected []Cursor, maxProgressWindows int, forceBackstop bool) (Assembly, error) {
 		request := assemblyRequest
 		request.Cursors = selected
@@ -620,7 +625,8 @@ func (w *Worker) runPerson(
 			MaxItems: w.Config.EvidenceMaxItems, WindowLimit: w.Config.ChangeBatchSize,
 			MaxBatches: maxBatches, MaxProgressWindows: maxProgressWindows,
 			ContextPerTarget:     w.Config.ContextPerTarget,
-			HistoricalMessageCap: w.Config.HistoricalMessageCap}).Build(ctx, request)
+			HistoricalMessageCap: w.Config.HistoricalMessageCap,
+			Judge:                contextJudge}).Build(ctx, request)
 	}
 	assembly, err := buildAssembly(cursors, 0, false)
 	if err != nil && !errors.Is(err, ErrNoChangedSeed) {

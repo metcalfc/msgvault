@@ -522,8 +522,21 @@ bar.
 
 ## Phase 8: sweep and remaining people items
 
-- [ ] **Task 8.1 Sweep evidence rerank** before the chat LLM using the
+- [x] **Task 8.1 Sweep evidence rerank** before the chat LLM using the
   shared Noul reranker; drop < 0.20.
+  > Feature `sweep_evidence_rerank` (`internal/sweepjudge`), wired into the
+  > worker as `peoplesweep.ContextJudge`. Only retrieved context is judged:
+  > seeds (newly changed messages) always reach the chat model so cursor
+  > progress is unchanged. One request per target that retrieved context,
+  > asking the search reranker's batched `candidate_i` Nouls with the
+  > target's catalog description as `query` and each item's date and
+  > redacted excerpt (addresses and phones replaced) as a candidate. An
+  > item is dropped only when every target that retrieved it judged it
+  > below 0.20; a target that could not be judged (sensitive, gate, budget,
+  > or provider failure) keeps its items. When a packet must shrink, the
+  > least relevant context leaves first, which without judgments is the old
+  > trim-from-the-end order. A per-attempt memo keeps the several
+  > assemblies of one attempt to one judgment per target.
 - [ ] **Task 8.2 Claim grounding.** Nouls `stated` and `current` per claim
   replace the chat LLM's self-reported confidence as `ReportedScore`.
 - [ ] **Task 8.3 Duplicate-person candidates.** Code proposes pairs (same

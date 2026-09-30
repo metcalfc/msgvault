@@ -23,6 +23,21 @@ const perCandidateQuestionID = "matches"
 
 func batchedQuestionID(i int) string { return fmt.Sprintf("candidate_%d", i) }
 
+// BatchedQuestionID is the batched shape's question about candidates[i].
+func BatchedQuestionID(i int) string { return batchedQuestionID(i) }
+
+// BatchedQuestions returns the batched shape's MaxCandidates questions,
+// worded exactly as search reranking sends them over a state of `query` and
+// `candidates`. Another feature asks the same Noul under its own consent
+// by listing these in its own policy.
+func BatchedQuestions() []jev.Question {
+	questions := make([]jev.Question, MaxCandidates)
+	for i := range questions {
+		questions[i] = rankingQuestion(batchedQuestionID(i), fmt.Sprintf("candidates[%d]", i))
+	}
+	return questions
+}
+
 const (
 	JevEndpoint       = jev.DefaultEndpoint
 	JevModel          = jev.DefaultModel

@@ -25,6 +25,7 @@ func TestJevFeatureRegistryListsEveryFeature(t *testing.T) {
 	assert.Equal(jev.FeatureMeetingEventKind, specs[5].Name)
 	assert.Equal(jev.FeatureMeetingActionAssignee, specs[6].Name)
 	assert.Equal(jev.FeatureQueryUnderstanding, specs[7].Name)
+	assert.Equal(jev.FeatureSweepEvidenceRerank, specs[7].Name)
 	cfg := config.NewDefaultConfig()
 	for _, spec := range specs {
 		require.NoError(spec.Validate())
@@ -207,4 +208,25 @@ func TestNewJevIdentityJudgeIsNilUntilJevAndTheFeatureAreOn(t *testing.T) {
 	cfg.Jev.IdentityVerification.Automatic = true
 	_, err = service.Judge(t.Context(), jevFeatureSpecs()[0], true, state, time.Time{})
 	require.ErrorIs(err, jev.ErrCredentialMissing, "no key resolves in a fresh home, and nothing is sent")
+}
+
+func TestNewJevSweepJudgesAreNilUntilJevAndTheFeatureAreOn(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	cfg := config.NewDefaultConfig()
+	cfg.HomeDir = t.TempDir()
+	cfg.Data.DataDir = cfg.HomeDir
+
+	contextJudge, err := newJevSweepContextJudge(cfg, st, true)
+	require.NoError(err)
+	assert.Nil(contextJudge, "everything off keeps every retrieved item")
+	cfg.Jev.Enabled = true
+	contextJudge, err = newJevSweepContextJudge(cfg, st, true)
+	require.NoError(err)
+	assert.Nil(contextJudge, "the feature switch is separate from the [jev] switch")
+	cfg.Jev.SweepEvidenceRerank.Enabled = true
+	contextJudge, err = newJevSweepContextJudge(cfg, st, true)
+	require.NoError(err)
+	assert.NotNil(contextJudge)
 }

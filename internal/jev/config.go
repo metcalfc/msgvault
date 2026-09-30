@@ -57,6 +57,10 @@ type Config struct {
 	// which attendee owns a meeting action item the meeting tool left
 	// unassigned.
 	MeetingActionAssignee FeatureConfig `toml:"meeting_action_assignee"`
+	// SweepEvidenceRerank is [jev.sweep_evidence_rerank]: asking which
+	// retrieved messages bear on a fact before the people sweep sends them
+	// to its chat model. Automatic covers the daemon's scheduled sweeps.
+	SweepEvidenceRerank FeatureConfig `toml:"sweep_evidence_rerank"`
 	// CleanupSuggestions is [jev.cleanup_suggestions]: judging junk and
 	// phishing candidates for `msgvault suggest-cleanup`. It only ever runs
 	// on request, so its automatic switch has no effect.

@@ -189,6 +189,8 @@ var settingsMetadata = map[string]settingMetadata{
 	"jev.meeting_event_kind.automatic":      {"Automatic meeting event kinds", "Judge new calendar series when the analytics cache is built, without running msgvault meetings judge.", sectionJevFeatures},
 	"jev.meeting_action_assignee.enabled":   {"Meeting action assignee", "Ask Jev which attendee owns a meeting action item the meeting tool left unassigned, sending the meeting title, attendee names, and the item text.", sectionJevFeatures},
 	"jev.meeting_action_assignee.automatic": {"Automatic action assignees", "Infer assignees for newly imported meetings when the analytics cache is built, without running msgvault meetings judge.", sectionJevFeatures},
+	"jev.sweep_evidence_rerank.enabled":     {"People sweep evidence relevance", "Ask Jev which of a person's older messages bear on each fact before the people sweep sends them to its chat model, sending excerpts of messages the person wrote.", sectionJevFeatures},
+	"jev.sweep_evidence_rerank.automatic":   {"Automatic evidence relevance", "Also judge evidence during the daemon's scheduled people sweeps, not only manual runs.", sectionJevFeatures},
 	"vector.people.enabled":                 {"Embed person fields", "Send the consented fields of each person to the text embedding provider. Semantic search must be on.", "people"},
 	"vector.people.retention_posture":       {"Provider retention statement", "Your statement of how long the provider keeps person data.", "people"},
 	"vector.people.training_posture":        {"Provider training statement", "Your statement of whether the provider trains on person data.", "people"},
