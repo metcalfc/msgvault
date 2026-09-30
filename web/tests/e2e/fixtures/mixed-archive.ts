@@ -118,6 +118,7 @@ export async function installMixedArchive(page: Page): Promise<InstalledMixedArc
   let trackingMutationFailure = false;
   let trackingReadFailure = false;
   await page.route('**/api/session', sessionRoute);
+  await page.route('**/api/v1/reviews/pending', (route) => route.fulfill({ json: { pending: false, kinds: [] } }));
   await page.route(/\/api\/v1\/entity-labels(?:\?.*)?$/, (route) => route.fulfill({ json: entityLabels(route.request().url()) }));
   await page.route('**/api/v1/settings', (route) =>
     route.fulfill({
@@ -791,6 +792,11 @@ export async function installDirectoryReviewArchive(page: Page) {
   ]);
   let phase: 'premerge' | 'postmerge' | 'postsplit' = 'premerge';
   const requests: CapturedReviewRequest[] = [];
+  // Identity candidates still open light the Reviews dot.
+  await page.route('**/api/v1/reviews/pending', (route) => {
+    const waiting = candidates.some((candidate) => candidate.state === 'candidate' || candidate.state === 'conflict');
+    return route.fulfill({ json: { pending: waiting, kinds: waiting ? ['identity'] : [] } });
+  });
   const decisionGates = new Map<number, { promise: Promise<void>; release: () => void }>();
   const decisionFailures = new Map<number, string>();
   const relationshipRequests: CapturedRelationshipReviewRequest[] = [];
@@ -1125,7 +1131,7 @@ export async function installDirectoryReviewArchive(page: Page) {
   });
 
   // Marking an identity as not a person resolves its open candidates.
-  await page.route(/\/api\/v1\/identity\/correspondent-kinds\/\d+$/, (route) => {
+  await page.route(/\/api\/v1\/identity\/correspondent-kinds\/\d+(?:\?.*)?$/, (route) => {
     const captured = capture(route.request());
     requests.push(captured);
     const participantID = Number(captured.path.split('/').at(-1));
@@ -1158,6 +1164,7 @@ export async function installDirectoryReviewArchive(page: Page) {
           ...(organizationName ? { organization_id: 31, organization_name: organizationName } : {}),
         },
         organization_created: kind === 'organization', resolved_candidates: resolved, restored_candidates: restored,
+        organization_removed: kind === 'person' && new URL(route.request().url()).searchParams.has('remove_organization_id'),
       },
     });
   });

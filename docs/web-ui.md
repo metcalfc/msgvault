@@ -88,7 +88,9 @@ warns that its session cookie travels without TLS. `HttpOnly` and
 
 Primary navigation has six places: **People**, **Inbox**, **Files**,
 **Meetings**, **Reviews**, and **Activity**. On a narrow window the places
-collapse into one menu.
+collapse into one menu. A dot on Reviews means at least one review waits;
+it checks when the app opens, when the window regains focus, after each
+review decision, and otherwise at most once a minute.
 
 - The header search field submits to Search. It appears on every surface
   except Inbox and Search, which keep their own full search bar with modes
@@ -414,7 +416,8 @@ accepting or rejecting a candidate. Decision notes are optional; choose
   ignored, and applies the choice at once. An organization is named after the
   identity's display name or email domain; rename it later from the
   organization. The status line offers **Undo**, which makes the identity a
-  person again and returns its matches to review.
+  person again and returns its matches to review. Undo also removes an
+  organization the mark created, unless something else now uses it.
 - A contact match through an address that looks shared says **Looks like a
   shared mailbox** and cannot be linked until you choose **This is a person**
   on the card.

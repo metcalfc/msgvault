@@ -63,6 +63,7 @@ import type {
   Catalog,
   ChangesResponse,
   CheckSettingsPeopleInferenceProviderPathParameters,
+  ClearCorrespondentKindParams,
   ClearCorrespondentKindPathParameters,
   ClearOrganizationAttributeParams,
   ClearOrganizationAttributePathParameters,
@@ -291,6 +292,7 @@ import type {
   PatchRelationshipTypeRequest,
   PatchSavedViewPathParameters,
   PatchSavedViewRequest,
+  PendingReviewsResponse,
   PeopleCodexLoginRequest,
   PeopleCodexLoginResponse,
   PeopleCodexLoginStatusResponse,
@@ -1717,17 +1719,19 @@ export const listCorrespondentKinds = (
   );
 };
 /**
- * Equivalent to setting kind person: the cluster returns to People lists, rankings, matching, and enrichment, and candidates resolved as not a person return to review.
+ * Equivalent to setting kind person: the cluster returns to People lists, rankings, matching, and enrichment, and candidates resolved as not a person return to review. remove_organization_id undoes an organization classification completely: when the cluster was grouped under that organization and nothing else refers to it (employments, merges, other classified clusters, active contact points, profile data, attributes, aliases, reviews, or fact decisions), the organization is deleted and organization_removed is true. Otherwise it is kept.
  * @summary Mark a participant's cluster as a person again
  */
 export const clearCorrespondentKind = (
   { id }: ClearCorrespondentKindPathParameters,
+  params?: ClearCorrespondentKindParams,
   options?: SecondParameter<typeof orvalFetch<SetCorrespondentKindResult>>,
 ) => {
   return orvalFetch<SetCorrespondentKindResult>(
     {
       url: `/api/v1/identity/correspondent-kinds/${encodeURIComponent(String(id))}`,
       method: "DELETE",
+      params,
     },
     options,
   );
@@ -3509,6 +3513,18 @@ export const patchRelationshipType = (
       headers: { "Content-Type": "application/json" },
       data: patchRelationshipTypeRequest,
     },
+    options,
+  );
+};
+/**
+ * Answers whether any Reviews queue has an item waiting, and which: identity (open identity match candidates, including contact matches and possible duplicate people), enrichment (uncertain enrichment identities), organization (organization names to confirm), and correspondent (identities Jev could not classify). It reports presence, not counts: each queue costs one indexed lookup, so a client can poll it for a navigation hint. The correspondent check works per identity, so it can report a queue whose only item an identity cluster decision already settled.
+ * @summary Check whether any review is waiting
+ */
+export const getPendingReviews = (
+  options?: SecondParameter<typeof orvalFetch<PendingReviewsResponse>>,
+) => {
+  return orvalFetch<PendingReviewsResponse>(
+    { url: `/api/v1/reviews/pending`, method: "GET" },
     options,
   );
 };

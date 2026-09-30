@@ -200,7 +200,42 @@ test('primary navigation reaches Reviews without overflowing the header at deskt
       // into one menu that names the current place.
       await expect(nav.getByRole('combobox', { name: /^Primary: Reviews/ })).toBeVisible();
     } else {
-      await expect(nav.getByRole('button', { name: 'Reviews', exact: true })).toHaveAttribute('aria-current', 'page');
+      // Open matches light the dot, which names itself inside the tab.
+      const tab = nav.getByRole('button', { name: 'Reviews Items waiting' });
+      await expect(tab).toHaveAttribute('aria-current', 'page');
+      for (const theme of ['light', 'dark'] as const) {
+        await setKitTheme(page, theme);
+        const dot = await tab.getByRole('img', { name: 'Items waiting' }).evaluate((element) => {
+          const channel = (value: number) => {
+            const c = value / 255;
+            return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+          };
+          const luminance = (color: string) => {
+            const [r, g, b] = (color.match(/[\d.]+/g) ?? []).map(Number);
+            return 0.2126 * channel(r ?? 0) + 0.7152 * channel(g ?? 0) + 0.0722 * channel(b ?? 0);
+          };
+          let surface: Element | null = element.parentElement;
+          let background = 'rgba(0, 0, 0, 0)';
+          while (surface && /rgba\(.*, 0\)|transparent/.test(background)) {
+            background = getComputedStyle(surface).backgroundColor;
+            surface = surface.parentElement;
+          }
+          const [light, dark] = [luminance(getComputedStyle(element).backgroundColor), luminance(background)]
+            .sort((a, b) => b - a);
+          const tabRect = element.parentElement!.getBoundingClientRect();
+          const rect = element.getBoundingClientRect();
+          return {
+            contrast: (light! + 0.05) / (dark! + 0.05),
+            position: getComputedStyle(element).position,
+            inside: rect.left >= tabRect.left && rect.right <= tabRect.right && rect.top >= tabRect.top && rect.bottom <= tabRect.bottom,
+          };
+        });
+        // The dot overlays the tab's corner, so it never widens the tab.
+        expect(dot.position).toBe('absolute');
+        expect(dot.inside).toBe(true);
+        expect(dot.contrast, `${theme} dot contrast`).toBeGreaterThanOrEqual(3);
+      }
+      await setKitTheme(page, 'light');
     }
     // Visible header controls stay inside the viewport. (kit-ui's hidden
     // tab-measurement probe is not a visible control, so the bar's

@@ -310,22 +310,24 @@ describe('DirectoryReviewCentre', () => {
   it.each([
     { decision: 'Link identities', state: 'accepted', path: '/accept', status: 'Identity match accepted.' },
     { decision: 'Keep separate', state: 'rejected', path: '/reject', status: 'Identity match rejected.' }
-  ])('stays in the queue after $decision and focuses the next candidate', async ({ decision, state, path, status }) => {
+  ])('stays in the queue after $decision on the third card and focuses the new third card', async ({ decision, state, path, status }) => {
     const requests: Request[] = [];
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = requestOf(input);
       requests.push(request);
       if (request.method === 'POST') {
-        return Response.json({ candidate: candidate(17, state), identity_revision: 4, cache_state: 'stale' });
+        return Response.json({ candidate: candidate(19, state), identity_revision: 4, cache_state: 'stale' });
       }
-      return page([candidate(18), candidate(19)]);
+      // The queue reloads before the decision returns, and a new
+      // candidate arrived at the end meanwhile.
+      return page([candidate(17), candidate(18), candidate(20), candidate(21)]);
     });
     const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
-    controller.rows = [candidate(17), candidate(18), candidate(19)];
+    controller.rows = [candidate(17), candidate(18), candidate(19), candidate(20)];
     const onOpenPerson = vi.fn();
     renderReview(controller, onOpenPerson);
 
-    await focusAndClick(within(card(17)).getByRole('button', { name: decision }));
+    await focusAndClick(within(card(19)).getByRole('button', { name: decision }));
     await focusAndClick(screen.getByRole('button', { name: 'Add a note' }));
     await fireEvent.input(screen.getByRole('textbox', { name: 'Decision notes' }), {
       target: { value: 'Confirmed by synthetic fixture' }
@@ -333,8 +335,8 @@ describe('DirectoryReviewCentre', () => {
     await focusAndClick(screen.getByRole('dialog', { name: decision }).querySelector('button.kit-button--solid')!);
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: decision })).toBeNull());
-    await waitFor(() => expect(document.activeElement).toBe(card(18)));
-    expect(screen.queryByRole('article', { name: 'Identity match 17' })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(card(20)));
+    expect(screen.queryByRole('article', { name: 'Identity match 19' })).toBeNull();
     expect(screen.getByRole('status').textContent).toContain(status);
     expect(onOpenPerson).not.toHaveBeenCalled();
     const posts = requests.filter((request) => request.method === 'POST');
@@ -353,7 +355,8 @@ describe('DirectoryReviewCentre', () => {
       if (url.pathname === '/api/v1/identity/correspondent-kinds/170') {
         marked = request.method === 'PUT';
         return Response.json({
-          organization_created: request.method === 'PUT', resolved_candidates: 1, restored_candidates: request.method === 'PUT' ? 0 : 1,
+          organization_created: request.method === 'PUT', organization_removed: request.method === 'DELETE',
+          resolved_candidates: 1, restored_candidates: request.method === 'PUT' ? 0 : 1,
           record: {
             canonical_id: 170, member_ids: [170], addresses: ['desk@shop.example.test'], display_name: 'Example Shop',
             kind: request.method === 'PUT' ? 'organization' : 'person',
@@ -390,9 +393,12 @@ describe('DirectoryReviewCentre', () => {
 
     await focusAndClick(screen.getByRole('button', { name: 'Undo: Example Shop is a person' }));
 
-    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Undone: Example Shop is a person again.'));
-    expect(requests.filter((request) => request.method === 'DELETE').map((request) => new URL(request.url).pathname))
-      .toEqual(['/api/v1/identity/correspondent-kinds/170']);
+    await waitFor(() => expect(screen.getByRole('status').textContent)
+      .toBe('Undone: Example Shop is a person again, and Example Shop was removed.'));
+    // Undo asks the server to remove the organization the mark created.
+    const cleared = requests.filter((request) => request.method === 'DELETE').map((request) => new URL(request.url));
+    expect(cleared.map((url) => url.pathname)).toEqual(['/api/v1/identity/correspondent-kinds/170']);
+    expect(cleared[0]!.searchParams.get('remove_organization_id')).toBe('5');
     expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
   });
 

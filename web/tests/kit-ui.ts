@@ -11,14 +11,17 @@ export async function selectKitOption(
 
 export async function selectKitTopBarTab(page: Page, tab: string): Promise<void> {
   const navigation = page.getByRole('navigation', { name: 'Primary' });
-  const button = navigation.getByRole('button', { name: tab, exact: true });
+  // A tab's status dot joins its name ("Reviews Items waiting").
+  const escaped = tab.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const button = navigation.getByRole('button', { name: new RegExp(`^${escaped}(\\s|$)`) });
   const collapsed = navigation.getByRole('combobox', { name: /^Primary:/ });
   await expect(button.or(collapsed)).toBeVisible();
   if (await button.isVisible()) {
     await button.click();
     return;
   }
-  await selectKitOption(page, 'Primary', tab);
+  await collapsed.click();
+  await page.getByRole('option', { name: new RegExp(`^${escaped}(\\s|$)`) }).click();
 }
 
 /** Theme and density live in Settings; the command palette applies them

@@ -1,0 +1,105 @@
+package store
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+
+	"go.kenn.io/msgvault/internal/correspondentkind"
+)
+
+// PendingReviewKind names a Reviews queue that can wait for a decision.
+type PendingReviewKind string
+
+const (
+	// PendingReviewIdentity covers open identity match candidates: contact
+	// matches, possible duplicate people, and other proposed links.
+	PendingReviewIdentity PendingReviewKind = "identity"
+	// PendingReviewEnrichment covers enrichment lookups whose identity check
+	// was uncertain.
+	PendingReviewEnrichment PendingReviewKind = "enrichment"
+	// PendingReviewOrganization covers organization names the check could
+	// not match with confidence.
+	PendingReviewOrganization PendingReviewKind = "organization"
+	// PendingReviewCorrespondent covers identities Jev could not classify.
+	PendingReviewCorrespondent PendingReviewKind = "correspondent"
+)
+
+// pendingReviewQuery is one indexed existence probe. Each returns at most
+// one row, so the whole check reads a handful of index entries no matter
+// how large the queues are.
+type pendingReviewQuery struct {
+	kind  PendingReviewKind
+	query string
+	args  []any
+}
+
+func pendingReviewQueries() []pendingReviewQuery {
+	return []pendingReviewQuery{
+		{
+			kind: PendingReviewIdentity,
+			query: `SELECT 1 FROM identity_match_candidates
+				WHERE state IN (?, ?) LIMIT 1`,
+			args: []any{IdentityMatchStateCandidate, IdentityMatchStateConflict},
+		},
+		{
+			kind: PendingReviewEnrichment,
+			query: `SELECT 1 FROM person_enrichment_attempts a
+				WHERE a.state = ? AND EXISTS (
+					SELECT 1 FROM person_enrichment_identity_judgments j WHERE j.attempt_id = a.id)
+				LIMIT 1`,
+			args: []any{personEnrichmentStateIdentityUncertain},
+		},
+		{
+			kind: PendingReviewOrganization,
+			query: `SELECT 1 FROM organization_match_reviews r
+				WHERE r.status = 'pending' AND EXISTS (
+					SELECT 1 FROM organizations o
+					WHERE o.id = r.organization_id AND o.merged_into_id IS NULL
+					  AND o.retired_at IS NULL)
+				LIMIT 1`,
+		},
+		{
+			// A Jev judgment is effective only while no user or rule
+			// decision outranks it for the same participant.
+			kind: PendingReviewCorrespondent,
+			query: `SELECT 1 FROM correspondent_kinds k
+				WHERE k.source = ? AND k.kind = ? AND NOT EXISTS (
+					SELECT 1 FROM correspondent_kinds d
+					WHERE d.participant_id = k.participant_id AND d.source IN (?, ?))
+				LIMIT 1`,
+			args: []any{
+				correspondentkind.SourceJev, correspondentkind.Unclear,
+				correspondentkind.SourceUser, correspondentkind.SourceRule,
+			},
+		},
+	}
+}
+
+// PendingReviewKindsContext reports which Reviews queues have at least one
+// item waiting, in queue order. It answers "is anything waiting?" for a
+// navigation hint, not how many: each queue costs one indexed probe. The
+// unclear-correspondent probe works per participant, so a cluster whose
+// other member carries a user decision can still report as waiting.
+func (s *Store) PendingReviewKindsContext(ctx context.Context) ([]PendingReviewKind, error) {
+	kinds := []PendingReviewKind{}
+	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
+		for _, probe := range pendingReviewQueries() {
+			var one int
+			err := tx.QueryRowContext(ctx, probe.query, probe.args...).Scan(&one)
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("check pending %s reviews: %w", probe.kind, err)
+			}
+			kinds = append(kinds, probe.kind)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return kinds, nil
+}

@@ -15,7 +15,8 @@ function result(kind: string, person?: SetCorrespondentKindResult['record']['per
       ...(kind === 'organization' ? { organization_id: 5, organization_name: 'Example Shop' } : {}),
       ...(person ? { person } : {})
     },
-    organization_created: kind === 'organization', resolved_candidates: 1, restored_candidates: 0
+    organization_created: kind === 'organization', organization_removed: false, resolved_candidates: 1,
+    restored_candidates: 0
   };
 }
 

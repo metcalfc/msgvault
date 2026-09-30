@@ -2815,6 +2815,10 @@ func (g *GetRelationshipTimelineErrorResponseJSON503) UnmarshalJSON(data []byte)
 	return nil
 }
 
+type GetPendingReviewsResponse = PendingReviewsResponse
+
+type GetPendingReviewsErrorResponse = ErrorResponse
+
 type ListSavedViewsResponse = SavedViewsResponse
 
 type ListSavedViewsErrorResponse = ErrorResponse
@@ -5891,6 +5895,14 @@ type GetRelationshipTimelineResp struct {
 	JSON400      *GetRelationshipTimelineErrorResponse
 	JSON409      *GetRelationshipTimelineErrorResponseJSON
 	JSON503      *GetRelationshipTimelineErrorResponseJSON503
+}
+
+type GetPendingReviewsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *GetPendingReviewsResponse
+	JSON503      *GetPendingReviewsErrorResponse
 }
 
 type ListSavedViewsResp struct {

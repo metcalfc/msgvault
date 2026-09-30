@@ -87,7 +87,12 @@ type SetCorrespondentKindInput struct {
 	Kind             correspondentkind.Kind
 	OrganizationID   *int64
 	OrganizationName *string
-	Actor            string
+	// RemoveOrganizationID applies only to kind person: when the cluster
+	// was classified under this organization and, once the classification
+	// is cleared, nothing else refers to it, the organization is deleted.
+	// It lets an undo remove the organization its classification created.
+	RemoveOrganizationID *int64
+	Actor                string
 }
 
 // SetCorrespondentKindResult reports what a classification changed.
@@ -100,6 +105,9 @@ type SetCorrespondentKindResult struct {
 	// cluster is a person again.
 	RestoredCandidates  int  `json:"restored_candidates"`
 	OrganizationCreated bool `json:"organization_created"`
+	// OrganizationRemoved reports that the organization named by
+	// RemoveOrganizationID was deleted because nothing else used it.
+	OrganizationRemoved bool `json:"organization_removed"`
 }
 
 type correspondentKindRow struct {
@@ -822,6 +830,10 @@ func (s *Store) SetCorrespondentKindContext(
 	if input.OrganizationName != nil && strings.TrimSpace(*input.OrganizationName) == "" {
 		return nil, fmt.Errorf("%w: organization name is blank", ErrCorrespondentKindInvalid)
 	}
+	if input.RemoveOrganizationID != nil && (!input.Kind.IsPerson() || *input.RemoveOrganizationID <= 0) {
+		return nil, fmt.Errorf("%w: removing an organization applies only to kind person",
+			ErrCorrespondentKindInvalid)
+	}
 	actor := strings.TrimSpace(input.Actor)
 	if actor == "" {
 		actor = string(ProvenanceUser)
@@ -863,6 +875,13 @@ func (s *Store) setCorrespondentKindTx(
 		}
 	}
 	result := &SetCorrespondentKindResult{}
+	removeOrganization := false
+	if input.RemoveOrganizationID != nil {
+		removeOrganization, err = clusterClassifiedUnderTx(ctx, tx, members, *input.RemoveOrganizationID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var organizationID *int64
 	if input.Kind == correspondentkind.Organization {
 		organization, created, err := s.resolveCorrespondentOrganizationTx(ctx, tx, input, members)
@@ -908,6 +927,12 @@ func (s *Store) setCorrespondentKindTx(
 	if err != nil {
 		return nil, err
 	}
+	if removeOrganization {
+		result.OrganizationRemoved, err = s.deleteUnreferencedOrganizationTx(ctx, tx, *input.RemoveOrganizationID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	cluster, err := s.clusterCorrespondentKindTx(ctx, tx, input.ParticipantID)
 	if err != nil {
 		return nil, err
@@ -917,6 +942,81 @@ func (s *Store) setCorrespondentKindTx(
 		return nil, err
 	}
 	return result, nil
+}
+
+// clusterClassifiedUnderTx reports whether a user decision grouped any
+// member of the cluster under the organization.
+func clusterClassifiedUnderTx(
+	ctx context.Context, tx *loggedTx, members []int64, organizationID int64,
+) (bool, error) {
+	for _, member := range members {
+		var one int
+		err := tx.QueryRowContext(ctx, `SELECT 1 FROM correspondent_kinds
+			WHERE participant_id = ? AND source = ? AND organization_id = ?`,
+			member, correspondentkind.SourceUser, organizationID).Scan(&one)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return false, fmt.Errorf("check classified organization: %w", err)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+// organizationReferenceQueries each find one row that keeps an organization
+// in use: an employment, a merge redirect, a classification, an active
+// contact point, or any profile, attribute, alias, review, or fact record.
+// Superseded contact points are history and go with the organization.
+var organizationReferenceQueries = []string{
+	`SELECT 1 FROM employments WHERE organization_id = ? LIMIT 1`,
+	`SELECT 1 FROM organizations WHERE merged_into_id = ? LIMIT 1`,
+	`SELECT 1 FROM correspondent_kinds WHERE organization_id = ? LIMIT 1`,
+	`SELECT 1 FROM organization_contact_points
+		WHERE organization_id = ? AND superseded_at IS NULL LIMIT 1`,
+	`SELECT 1 FROM organization_names WHERE organization_id = ? LIMIT 1`,
+	`SELECT 1 FROM organization_identifiers WHERE organization_id = ? LIMIT 1`,
+	`SELECT 1 FROM organization_addresses WHERE organization_id = ? LIMIT 1`,
+	`SELECT 1 FROM organization_categories WHERE organization_id = ? LIMIT 1`,
+	`SELECT 1 FROM organization_media WHERE organization_id = ? LIMIT 1`,
+	`SELECT 1 FROM organization_attribute_values WHERE organization_id = ? LIMIT 1`,
+	`SELECT 1 FROM organization_title_aliases WHERE organization_id = ? LIMIT 1`,
+	`SELECT 1 FROM organization_match_reviews WHERE organization_id = ? LIMIT 1`,
+	`SELECT 1 FROM person_fact_decisions WHERE resolved_organization_id = ? LIMIT 1`,
+}
+
+// deleteUnreferencedOrganizationTx deletes the organization only when
+// nothing refers to it, reporting whether it did. A missing or merged
+// organization is left alone.
+func (s *Store) deleteUnreferencedOrganizationTx(
+	ctx context.Context, tx *loggedTx, organizationID int64,
+) (bool, error) {
+	organization, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, organizationID)
+	if errors.Is(err, ErrOrganizationNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if organization.MergedIntoID != nil {
+		return false, nil
+	}
+	for _, query := range organizationReferenceQueries {
+		var one int
+		err := tx.QueryRowContext(ctx, query, organizationID).Scan(&one)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return false, fmt.Errorf("check organization %d references: %w", organizationID, err)
+		}
+		return false, nil
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM organizations WHERE id = ?`, organizationID); err != nil {
+		return false, fmt.Errorf("delete organization %d: %w", organizationID, err)
+	}
+	return true, nil
 }
 
 // resolveCorrespondentOrganizationTx finds or creates the organization a

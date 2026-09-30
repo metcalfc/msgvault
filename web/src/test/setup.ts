@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach } from 'vitest';
 
+import { PendingReviewsMonitor } from '../lib/directory/pending-reviews.svelte';
+
 const densityCSS = readFileSync(join(process.cwd(), 'src/styles/density.css'), 'utf8');
 
 const compactRowHeight = /--row-height:\s*([^;]+);/.exec(densityCSS)?.[1]?.trim();
@@ -71,6 +73,8 @@ Object.defineProperty(Element.prototype, 'scrollIntoView', {
 });
 
 beforeEach(() => {
+  // Rendered shells check for pending reviews only in tests of that dot.
+  PendingReviewsMonitor.autoStart = false;
   document.documentElement.dataset.density = 'compact';
   document.documentElement.style.setProperty('--row-height', compactRowHeight);
 });

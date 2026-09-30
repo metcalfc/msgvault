@@ -89,7 +89,11 @@ func (s *Server) registerCorrespondentKindRoutes(api huma.API) {
 		"/identity/correspondent-kinds/{id}", "Mark a participant's cluster as a person again")
 	clearKind.Description = "Equivalent to setting kind person: the cluster returns to People " +
 		"lists, rankings, matching, and enrichment, and candidates resolved as not a person " +
-		"return to review."
+		"return to review. remove_organization_id undoes an organization classification " +
+		"completely: when the cluster was grouped under that organization and nothing else " +
+		"refers to it (employments, merges, other classified clusters, active contact points, " +
+		"profile data, attributes, aliases, reviews, or fact decisions), the organization is " +
+		"deleted and organization_removed is true. Otherwise it is kept."
 	clearKind.Responses = jsonResponsesFor[store.SetCorrespondentKindResult](api)
 	addErrorResponses(api, clearKind.Responses, http.StatusNotFound, http.StatusServiceUnavailable)
 	registerRawHumaRoute(api, clearKind, s.handleClearCorrespondentKind)
@@ -197,9 +201,19 @@ func (s *Server) handleClearCorrespondentKind(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	s.setCorrespondentKind(w, r, kinds, store.SetCorrespondentKindInput{
+	input := store.SetCorrespondentKindInput{
 		ParticipantID: id, Kind: correspondentkind.Person, Actor: string(store.ProvenanceUser),
-	})
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("remove_organization_id")); raw != "" {
+		organizationID, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || organizationID <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid_organization_id",
+				"remove_organization_id must be a positive integer")
+			return
+		}
+		input.RemoveOrganizationID = &organizationID
+	}
+	s.setCorrespondentKind(w, r, kinds, input)
 }
 
 func (s *Server) setCorrespondentKind(

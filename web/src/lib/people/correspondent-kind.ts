@@ -137,10 +137,16 @@ export async function setKind(
   }
 }
 
-/** "This is a person": clears the classification. */
-export async function clearKind(client: APIClient, participantID: number): Promise<KindResult> {
+/** "This is a person": clears the classification. removeOrganizationID
+ * also deletes that organization when the classification created it and
+ * nothing else refers to it (see organization_removed). */
+export async function clearKind(client: APIClient, participantID: number, removeOrganizationID?: number): Promise<KindResult> {
   try {
-    const { data, error, response } = await clearCorrespondentKind({ id: participantID }, client);
+    const { data, error, response } = await clearCorrespondentKind(
+      { id: participantID },
+      removeOrganizationID === undefined ? undefined : { remove_organization_id: removeOrganizationID },
+      client
+    );
     if (!data) return failure(error, response.status);
     invalidatePeopleNames(client);
     return { ok: true, result: data };

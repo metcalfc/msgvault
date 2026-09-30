@@ -7741,6 +7741,29 @@ func (p PatchSavedViewRequest) Validate() error {
 	return errors
 }
 
+type PendingReviewsResponse struct {
+	// Kinds The queues with an item waiting, in Reviews order.
+	Kinds []PendingReviewsResponseKinds `json:"kinds" validate:"required"`
+
+	// Pending True when at least one Reviews queue has an item waiting.
+	Pending bool `json:"pending"`
+}
+
+func (p PendingReviewsResponse) Validate() error {
+	var errors runtime.ValidationErrors
+	for i, item := range p.Kinds {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("Kinds[%d]", i), err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
 type PeopleCodexLoginRequest struct {
 	Name string `json:"name" validate:"required,min=1"`
 }
@@ -11911,6 +11934,7 @@ func (s SetCorrespondentKindRequest) Validate() error {
 
 type SetCorrespondentKindResult struct {
 	OrganizationCreated bool                    `json:"organization_created"`
+	OrganizationRemoved bool                    `json:"organization_removed"`
 	Record              CorrespondentKindRecord `json:"record"`
 	ResolvedCandidates  int64                   `json:"resolved_candidates"`
 	RestoredCandidates  int64                   `json:"restored_candidates"`

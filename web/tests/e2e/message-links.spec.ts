@@ -15,6 +15,8 @@ for (const messageType of ['email', 'whatsapp']) {
     await page.route('**/api/v1/**', async (route) => {
       const url = new URL(route.request().url());
       if (url.pathname === '/api/v1/settings') return route.fulfill({ json: { settings: [], pending_restart: false } });
+      // The shell's Reviews dot check is not an archive read.
+      if (url.pathname === '/api/v1/reviews/pending') return route.fulfill({ json: { pending: false, kinds: [] } });
       archiveRequests.push(url.pathname);
       if (url.pathname === '/api/v1/messages/42001') return route.fulfill({ json: message });
       if (url.pathname === '/api/v1/conversations/71') {

@@ -7,6 +7,7 @@ import { withEntityLabels } from '../../../test/entity-labels';
 import type { Person as GeneratedPerson } from '../../api/generated/models';
 import type { PersonMergeSuccess, ValidatedPersonMergeRequired } from '../../directory/person-merge';
 import PersonBindingConflictModal from './PersonBindingConflictModal.svelte';
+import { focusAndClick } from '../../../test/kit-ui';
 
 type Person = GeneratedPerson;
 
@@ -249,6 +250,48 @@ describe('PersonBindingConflictModal', () => {
       '11111111-1111-4111-8111-111111111111',
       '22222222-2222-4222-8222-222222222222',
     ]);
+  });
+
+  it('keeps an explicitly chosen survivor across a stale reload so the retry merges into it', async () => {
+    const requests: Request[] = [];
+    let mergeAttempts = 0;
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = requestOf(input);
+      requests.push(request);
+      const path = new URL(request.url).pathname;
+      if (request.method === 'GET' && path === '/api/v1/people/7') {
+        return Response.json(person(7, 5, 'Synthetic One Updated'), { headers: { ETag: '"person-7-r5"' } });
+      }
+      if (request.method === 'GET' && path === '/api/v1/people/9') {
+        return Response.json(person(9, 3, 'Synthetic Two Updated'), { headers: { ETag: '"person-9-r3"' } });
+      }
+      mergeAttempts += 1;
+      if (mergeAttempts === 1) {
+        return Response.json({ error: 'person_merge_revision_conflict', message: 'Reload profiles' }, { status: 409 });
+      }
+      return Response.json(mergeResult(person(9, 4, 'Synthetic Two Updated')), { headers: { ETag: '"person-9-r4"' } });
+    });
+    const { onSuccess } = renderModal(fetchFn);
+
+    // The default is Synthetic One; the user explicitly keeps Synthetic Two.
+    await focusAndClick(screen.getByRole('radio', { name: 'Synthetic Two' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Merge into selected survivor' }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Profiles changed — check the survivor');
+    const chosen = await screen.findByRole('radio', { name: 'Synthetic Two Updated' });
+    expect(chosen.getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('radio', { name: 'Synthetic One Updated' }).getAttribute('aria-checked')).toBe('false');
+    const submit = screen.getByRole('button', { name: 'Merge into selected survivor' });
+    await waitFor(() => expect(submit).toHaveProperty('disabled', false));
+    await focusAndClick(submit);
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
+    const posts = requests.filter((request) => request.method === 'POST');
+    expect(posts.map((request) => new URL(request.url).pathname)).toEqual([
+      '/api/v1/people/9/merge', '/api/v1/people/9/merge'
+    ]);
+    expect(posts[1]!.headers.get('If-Match')).toBe('"person-9-r3", "person-7-r5"');
+    await expect(posts[1]!.clone().json()).resolves.toEqual({ absorbed_person_id: 7 });
   });
 
   it('reloads both exact profiles atomically and needs another explicit merge click', async () => {

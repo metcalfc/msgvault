@@ -8550,6 +8550,26 @@ components:
           format: int64
           type: integer
       type: object
+    PendingReviewsResponse:
+      additionalProperties: true
+      properties:
+        kinds:
+          description: The queues with an item waiting, in Reviews order.
+          items:
+            enum:
+              - identity
+              - enrichment
+              - organization
+              - correspondent
+            type: string
+          type: array
+        pending:
+          description: True when at least one Reviews queue has an item waiting.
+          type: boolean
+      required:
+        - pending
+        - kinds
+      type: object
     PeopleCodexLoginRequest:
       additionalProperties: false
       properties:
@@ -12622,6 +12642,8 @@ components:
       properties:
         organization_created:
           type: boolean
+        organization_removed:
+          type: boolean
         record:
           $ref: "#/components/schemas/CorrespondentKindRecord"
         resolved_candidates:
@@ -12635,6 +12657,7 @@ components:
         - resolved_candidates
         - restored_candidates
         - organization_created
+        - organization_removed
       type: object
     SetOrganizationAttributeBody:
       additionalProperties: false
@@ -14369,7 +14392,7 @@ components:
       type: apiKey
 info:
   title: msgvault API
-  version: 2.44.0
+  version: 2.45.0
 openapi: 3.1.0
 paths:
   /api/ping:
@@ -19958,13 +19981,19 @@ paths:
         - API
   /api/v1/identity/correspondent-kinds/{id}:
     delete:
-      description: "Equivalent to setting kind person: the cluster returns to People lists, rankings, matching, and enrichment, and candidates resolved as not a person return to review."
+      description: "Equivalent to setting kind person: the cluster returns to People lists, rankings, matching, and enrichment, and candidates resolved as not a person return to review. remove_organization_id undoes an organization classification completely: when the cluster was grouped under that organization and nothing else refers to it (employments, merges, other classified clusters, active contact points, profile data, attributes, aliases, reviews, or fact decisions), the organization is deleted and organization_removed is true. Otherwise it is kept."
       operationId: clearCorrespondentKind
       parameters:
         - description: Any participant ID in the identity cluster
           in: path
           name: id
           required: true
+          schema:
+            format: int64
+            type: integer
+        - description: Delete this organization too when the cluster was grouped under it and nothing else refers to it
+          in: query
+          name: remove_organization_id
           schema:
             format: int64
             type: integer
@@ -26959,6 +26988,34 @@ paths:
       summary: Get one counterpart's interaction timeline, with chat grouped into local-day bursts
       tags:
         - Exploration
+  /api/v1/reviews/pending:
+    get:
+      description: "Answers whether any Reviews queue has an item waiting, and which: identity (open identity match candidates, including contact matches and possible duplicate people), enrichment (uncertain enrichment identities), organization (organization names to confirm), and correspondent (identities Jev could not classify). It reports presence, not counts: each queue costs one indexed lookup, so a client can poll it for a navigation hint. The correspondent check works per identity, so it can report a queue whose only item an identity cluster decision already settled."
+      operationId: getPendingReviews
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PendingReviewsResponse"
+          description: OK
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Error
+      security:
+        - apiKey: []
+      summary: Check whether any review is waiting
+      tags:
+        - API
   /api/v1/saved-views:
     get:
       operationId: listSavedViews

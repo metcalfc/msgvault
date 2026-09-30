@@ -8,6 +8,15 @@ All notable changes to msgvault, grouped by release.
 
 ## Unreleased
 
+- Reviews has its own place in the Web UI's primary navigation, with a dot
+  when any review waits. `GET /api/v1/reviews/pending` answers which review
+  queues have an item waiting with one indexed lookup per queue. Deciding
+  from Reviews keeps you in the queue, the not-a-person menu applies its
+  choice at once with Undo, and merges preselect the survivor without a
+  confirmation checkbox. Undoing an organization mark removes the
+  organization it created when nothing else uses it
+  (`DELETE /api/v1/identity/correspondent-kinds/{id}?remove_organization_id=`).
+  Requires API schema 2.45.0.
 - Suggested filters for Web UI searches. With `[jev.query_understanding]`
   enabled and consented, a query you type such as "texts from Ana last week"
   offers chips for a time period, a person, a message type, or an account;

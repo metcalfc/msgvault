@@ -496,6 +496,11 @@ func (l ListCorrespondentKindsQuery) Validate() error {
 	return errors
 }
 
+type ClearCorrespondentKindQuery struct {
+	// RemoveOrganizationID Delete this organization too when the cluster was grouped under it and nothing else refers to it
+	RemoveOrganizationID *int64 `json:"remove_organization_id,omitempty"`
+}
+
 type ListIdentityMatchCandidatesQuery struct {
 	// State Candidate state filter (candidate, accepted, rejected, conflict); repeat or comma-separate for multiple values
 	State *string `json:"state,omitempty"`

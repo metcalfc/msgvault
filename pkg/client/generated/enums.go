@@ -1906,6 +1906,25 @@ func (p ParticipantCompletionHTTPRowKind) Validate() error {
 	}
 }
 
+type PendingReviewsResponseKinds string
+
+const (
+	Correspondent                           PendingReviewsResponseKinds = "correspondent"
+	Identity                                PendingReviewsResponseKinds = "identity"
+	PendingReviewsResponseKindsEnrichment   PendingReviewsResponseKinds = "enrichment"
+	PendingReviewsResponseKindsOrganization PendingReviewsResponseKinds = "organization"
+)
+
+// Validate checks if the PendingReviewsResponseKinds value is valid
+func (p PendingReviewsResponseKinds) Validate() error {
+	switch p {
+	case Correspondent, Identity, PendingReviewsResponseKindsEnrichment, PendingReviewsResponseKindsOrganization:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid PendingReviewsResponseKinds value, got: %v", p))
+	}
+}
+
 type PeopleInferencePresetCreateRequestPresetID string
 
 const (

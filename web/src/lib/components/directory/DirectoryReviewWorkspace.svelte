@@ -12,6 +12,8 @@
     onOpenDirectory?: () => void;
     onOpenPerson?: (personID: number) => void;
     onAnnounce?: (message: string) => void;
+    /** Called after any review decision is recorded. */
+    onDecided?: () => void;
   }
   let {
     controller,
@@ -20,7 +22,8 @@
     directoryPersonID,
     onOpenDirectory = undefined,
     onOpenPerson = undefined,
-    onAnnounce = undefined
+    onAnnounce = undefined,
+    onDecided = undefined
   }: Props = $props();
 </script>
 
@@ -32,4 +35,5 @@
   {onOpenDirectory}
   {onOpenPerson}
   {onAnnounce}
+  {onDecided}
 />

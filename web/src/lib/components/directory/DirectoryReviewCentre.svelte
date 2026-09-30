@@ -25,7 +25,7 @@
   import type { PersonMergeSuccess, ValidatedPersonMergeRequired } from '../../directory/person-merge';
   import type { NotAPersonKind } from '../../people/correspondent-kind';
   import { endpointLabel } from '../../directory/identity-endpoints';
-  import { focusReviewCard, nextReviewIndex } from '../../directory/review-focus';
+  import { focusReviewCard, nextReviewIndex, reviewPosition, type ReviewPosition } from '../../directory/review-focus';
 
   interface Props {
     controller: DirectoryReviewController;
@@ -35,6 +35,8 @@
     onOpenDirectory?: () => void;
     onOpenPerson?: (personID: number) => void;
     onAnnounce?: (message: string) => void;
+    /** Called after any review decision is recorded. */
+    onDecided?: () => void;
   }
 
   let {
@@ -44,11 +46,14 @@
     directoryPersonID = null,
     onOpenDirectory = () => undefined,
     onOpenPerson = () => undefined,
-    onAnnounce = () => undefined
+    onAnnounce = () => undefined,
+    onDecided = () => undefined
   }: Props = $props();
+  // position: where the candidate sat when its decision opened, taken
+  // before anything is sent because the queue reloads before it returns.
   type ActiveModal =
-    | { kind: 'decision'; candidate: IdentityMatchCandidate; decision: 'accept' | 'reject'; context: DirectoryReviewContextSnapshot }
-    | { kind: 'merge'; candidate: IdentityMatchCandidate; context: DirectoryReviewContextSnapshot; conflict: ValidatedPersonMergeRequired };
+    | { kind: 'decision'; candidate: IdentityMatchCandidate; decision: 'accept' | 'reject'; context: DirectoryReviewContextSnapshot; position: ReviewPosition<number> }
+    | { kind: 'merge'; candidate: IdentityMatchCandidate; context: DirectoryReviewContextSnapshot; conflict: ValidatedPersonMergeRequired; position: ReviewPosition<number> };
   const names = $derived(entityNames(controller.apiClient));
   let activeDecision = $state<ActiveModal>();
   // svelte-ignore state_referenced_locally
@@ -111,18 +116,20 @@
 
   function openDecision(candidate: IdentityMatchCandidate, decision: 'accept' | 'reject'): void {
     mergedSurvivor = undefined;
-    activeDecision = { kind: 'decision', candidate, decision, context: controller.reviewContextSnapshot() };
+    activeDecision = {
+      kind: 'decision', candidate, decision, context: controller.reviewContextSnapshot(), position: positionOf(candidate.id)
+    };
   }
 
   /** Deciding stays in the queue: focus moves to the next candidate
    * without scrolling, and profiles open only from explicit links. */
-  async function focusAfterDecision(candidateID: number, originalIndex: number): Promise<void> {
-    const index = nextReviewIndex(controller.rows, (row) => row.id === candidateID, originalIndex);
+  async function focusAfterDecision(candidateID: number, position: ReviewPosition<number>): Promise<void> {
+    const index = nextReviewIndex(controller.rows, (row) => row.id, candidateID, position);
     await focusReviewCard(candidateList, index, identityReviewHeading);
   }
 
-  function rowIndex(candidateID: number): number {
-    return Math.max(0, controller.rows.findIndex((row) => row.id === candidateID));
+  function positionOf(candidateID: number): ReviewPosition<number> {
+    return reviewPosition(controller.rows, (row) => row.id, candidateID);
   }
 
   // The organization name a marked identity gets: its display name, else
@@ -138,7 +145,7 @@
   // The card's menu already names the kind, so it applies at once; the
   // status line offers Undo.
   async function markNotAPerson(candidate: IdentityMatchCandidate, participantID: number, kind: NotAPersonKind): Promise<void> {
-    const index = rowIndex(candidate.id);
+    const position = positionOf(candidate.id);
     const label = endpointLabel(names, 'participant', participantID, controller.endpointFor('participant', participantID));
     notAPersonError = null;
     mergedSurvivor = undefined;
@@ -150,25 +157,28 @@
       notAPersonError = failure;
       return;
     }
-    await focusAfterDecision(candidate.id, index);
+    onDecided();
+    await focusAfterDecision(candidate.id, position);
   }
 
   async function undoNotAPerson(): Promise<void> {
     notAPersonError = await controller.undoNotAPerson(controller.reviewContextSnapshot());
-    if (!notAPersonError) await focusReviewCard(candidateList, 0, identityReviewHeading);
+    if (notAPersonError) return;
+    onDecided();
+    await focusReviewCard(candidateList, 0, identityReviewHeading);
   }
 
   function resolveMerge(conflict: ValidatedPersonMergeRequired): void {
     if (!activeDecision || activeDecision.kind !== 'decision') return;
     activeDecision = {
-      kind: 'merge', candidate: activeDecision.candidate, context: activeDecision.context, conflict
+      kind: 'merge', candidate: activeDecision.candidate, context: activeDecision.context, conflict,
+      position: activeDecision.position
     };
   }
 
   async function completeMerge(success: PersonMergeSuccess): Promise<void> {
     if (!activeDecision || activeDecision.kind !== 'merge') return;
     const origin = activeDecision;
-    const index = rowIndex(origin.candidate.id);
     const completion = controller.completePersonMerge(origin.candidate.id, origin.context, success);
     activeDecision = undefined;
     void mergedName(success).then((name) => {
@@ -176,15 +186,16 @@
       onAnnounce(`People merged into ${name}. Undo it from ${name}'s merge history.`);
     });
     await completion;
-    await focusAfterDecision(origin.candidate.id, index);
+    onDecided();
+    await focusAfterDecision(origin.candidate.id, origin.position);
   }
 
   async function completeDecision(): Promise<void> {
     const decided = activeDecision;
     if (!decided) return;
-    const index = rowIndex(decided.candidate.id);
     activeDecision = undefined;
-    await focusAfterDecision(decided.candidate.id, index);
+    onDecided();
+    await focusAfterDecision(decided.candidate.id, decided.position);
   }
 
   function mergedName(success: PersonMergeSuccess): Promise<string> {
@@ -349,7 +360,8 @@
                   onNotAPerson={(participantID, notAPersonKind) => void markNotAPerson(row, participantID, notAPersonKind)}
                   onIsPerson={(participantID) => {
                     mergedSurvivor = undefined;
-                    void controller.confirmPerson(row.id, participantID, controller.reviewContextSnapshot());
+                    void controller.confirmPerson(row.id, participantID, controller.reviewContextSnapshot())
+                      .then((failure) => { if (!failure) onDecided(); });
                   }}
                 />
               {/each}
@@ -377,11 +389,11 @@
       {/if}
     </section>
   {:else if controller.reviewKind === 'enrichment'}
-    <EnrichmentIdentityReviewQueue controller={enrichmentController} {onOpenPerson} />
+    <EnrichmentIdentityReviewQueue controller={enrichmentController} {onOpenPerson} {onDecided} />
   {:else if controller.reviewKind === 'organization'}
-    <OrganizationMatchReviewQueue controller={organizationController} />
+    <OrganizationMatchReviewQueue controller={organizationController} {onDecided} />
   {:else if controller.reviewKind === 'correspondent'}
-    <CorrespondentKindReviewQueue controller={correspondentController} {onOpenPerson} />
+    <CorrespondentKindReviewQueue controller={correspondentController} {onOpenPerson} {onDecided} />
   {:else if controller.reviewKind === 'fact'}
     {#if factController}
       <FactReviewPanel controller={factController} personID={directoryPersonID} {onOpenDirectory} {onOpenPerson} />

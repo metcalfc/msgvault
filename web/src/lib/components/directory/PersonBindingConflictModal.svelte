@@ -35,6 +35,8 @@
   // The profile with more identities, then the older one, then the lower
   // ID survives by default; the user can still pick the other.
   let survivorID = $state<number | null>(untrack(() => defaultSurvivorID(conflict.profiles)));
+  // True once the user picked the survivor; a reload keeps that choice.
+  let survivorChosen = false;
   let pending = $state(false);
   let completed = $state(false);
   let error = $state<string | null>(null);
@@ -87,6 +89,7 @@
   }
   function selectSurvivor(value: string): void {
     const nextID = Number(value);
+    survivorChosen = true;
     if (nextID === survivorID) return;
     survivorID = nextID;
     idempotencyKey = null;
@@ -132,10 +135,16 @@
         return;
       }
       profiles = next.profiles;
-      survivorID = defaultSurvivorID(next.profiles);
+      // Keep the user's explicit survivor while it still exists; otherwise
+      // fall back to the default for the current profiles.
+      const keepChoice = survivorChosen && next.profiles.some((profile) => profile.person.id === survivorID);
+      if (!keepChoice) {
+        survivorChosen = false;
+        survivorID = defaultSurvivorID(next.profiles);
+      }
       idempotencyKey = null;
       reloadRequired = false;
-      error = 'Profiles changed while you were reviewing them. Check the current profiles, then merge again.';
+      error = 'Profiles changed — check the survivor, then merge again.';
     } catch (cause) {
       if (disposed || generation !== requestGeneration || signal.aborted) return;
       error = 'The merge was stale, but could not load both current profile revisions. Try again.';

@@ -88,7 +88,12 @@ export class DirectoryReviewController {
   lastMerge = $state<DirectoryReviewMergeCompletion | null>(null);
   /** The identity most recently marked as not a person from this queue,
    * which the status line offers to undo. */
-  lastNotAPerson = $state<{ participantID: number; label: string } | null>(null);
+  lastNotAPerson = $state<{
+    participantID: number;
+    label: string;
+    /** The organization the mark created, which Undo removes when unused. */
+    createdOrganization?: { id: number; name: string };
+  } | null>(null);
   readonly pendingDecisions = new SvelteSet<number>();
   private readonly client: APIClient;
   private readonly commit: ReviewCommit;
@@ -338,20 +343,24 @@ export class DirectoryReviewController {
         ? ' Its saved profile was kept.'
         : '';
       this.status = `Marked ${label} as ${kindLabel(kind).toLowerCase()}${organization ? ` (${organization})` : ''}.${kept}`;
-      this.lastNotAPerson = { participantID, label };
+      const createdOrganization = outcome.result.organization_created && record.organization_id !== undefined
+        ? { id: record.organization_id, name: organization || 'the new organization' }
+        : undefined;
+      this.lastNotAPerson = { participantID, label, ...(createdOrganization ? { createdOrganization } : {}) };
       return null;
     } finally {
       this.pendingDecisions.delete(candidateID);
     }
   }
   /** Undoes the last not-a-person mark: the identity is a person again and
-   * the server returns its resolved candidates to review. */
+   * the server returns its resolved candidates to review. An organization
+   * the mark created goes too, unless something else now refers to it. */
   async undoNotAPerson(context: DirectoryReviewContextSnapshot): Promise<string | null> {
     const marked = this.lastNotAPerson;
     if (this.disposed || !marked) return null;
     if (!this.isReviewContextCurrent(context)) return 'The review context changed.';
     this.decisionError = null;
-    const outcome = await clearKind(this.client, marked.participantID);
+    const outcome = await clearKind(this.client, marked.participantID, marked.createdOrganization?.id);
     if (!outcome.ok) {
       if (this.ownsDecisionContext(context)) this.decisionError = outcome.message;
       return outcome.message;
@@ -359,7 +368,12 @@ export class DirectoryReviewController {
     if (!this.ownsDecisionContext(context)) return null;
     this.lastNotAPerson = null;
     await this.loadIdentityPage(context.offset, context.identityState);
-    this.status = `Undone: ${marked.label} is a person again.`;
+    const created = marked.createdOrganization;
+    this.status = !created
+      ? `Undone: ${marked.label} is a person again.`
+      : outcome.result.organization_removed
+        ? `Undone: ${marked.label} is a person again, and ${created.name} was removed.`
+        : `Undone: ${marked.label} is a person again. ${created.name} was kept because other records use it.`;
     return null;
   }
   async completePersonMerge(

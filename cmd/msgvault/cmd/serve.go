@@ -2724,6 +2724,12 @@ func (a *storeAPIAdapter) ListPersonDuplicateCandidatesContext(
 	return a.store.ListPersonDuplicateCandidatesContext(ctx, states, limit, offset)
 }
 
+func (a *storeAPIAdapter) PendingReviewKindsContext(
+	ctx context.Context,
+) ([]store.PendingReviewKind, error) {
+	return a.store.PendingReviewKindsContext(ctx)
+}
+
 func (a *storeAPIAdapter) ListOrganizationMatchReviewsContext(
 	ctx context.Context, limit int,
 ) ([]store.OrganizationMatchReview, error) {

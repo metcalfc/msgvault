@@ -14,9 +14,10 @@
   interface Props {
     controller: EnrichmentReviewController;
     onOpenPerson?: (personID: number) => void;
+    onDecided?: () => void;
   }
 
-  let { controller, onOpenPerson = () => undefined }: Props = $props();
+  let { controller, onOpenPerson = () => undefined, onDecided = () => undefined }: Props = $props();
 
   let list = $state<HTMLElement>();
   let queueHeading = $state<HTMLHeadingElement>();
@@ -25,7 +26,9 @@
   // place, so the queue can be worked through without scrolling back.
   async function decide(index: number, run: () => Promise<{ ok: boolean }>): Promise<void> {
     const result = await run();
-    if (result.ok) await focusReviewCard(list, index, queueHeading);
+    if (!result.ok) return;
+    onDecided();
+    await focusReviewCard(list, index, queueHeading);
   }
 
   $effect(() => {

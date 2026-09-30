@@ -4484,6 +4484,7 @@ func (o *ListCorrespondentKindsRequestOptions) GetHeader() (map[string]string, e
 // ClearCorrespondentKindRequestOptions is the options needed to make a request to ClearCorrespondentKind.
 type ClearCorrespondentKindRequestOptions struct {
 	PathParams *ClearCorrespondentKindPath
+	Query      *ClearCorrespondentKindQuery
 }
 
 // Validate validates all the fields in the options.
@@ -4495,6 +4496,14 @@ func (o *ClearCorrespondentKindRequestOptions) Validate() error {
 		if v, ok := any(o.PathParams).(runtime.Validator); ok {
 			if err := v.Validate(); err != nil {
 				errors = errors.Append("PathParams", err)
+			}
+		}
+	}
+
+	if o.Query != nil {
+		if v, ok := any(o.Query).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("Query", err)
 			}
 		}
 	}
@@ -4512,7 +4521,7 @@ func (o *ClearCorrespondentKindRequestOptions) GetPathParams() (map[string]any, 
 
 // GetQuery returns the query params as a map.
 func (o *ClearCorrespondentKindRequestOptions) GetQuery() (map[string]any, error) {
-	return nil, nil
+	return runtime.AsMap[any](o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.

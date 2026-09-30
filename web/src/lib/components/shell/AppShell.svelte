@@ -83,6 +83,8 @@
   import { PeopleHub, type PeopleFilters, type PeopleRow } from '../../people/hub.svelte';
   import type { PersonTab } from '../../routing/routes';
   import DirectoryReviewWorkspace from '../directory/DirectoryReviewWorkspace.svelte';
+  import { PendingReviewsMonitor } from '../../directory/pending-reviews.svelte';
+  import type { TopBarTab } from '@kenn-io/kit-ui';
   import KeyboardHelp from './KeyboardHelp.svelte';
   import MessagePage from '../reader/MessagePage.svelte';
   import HeaderSearch from './HeaderSearch.svelte';
@@ -400,18 +402,23 @@
   type APIExploreSelection = GeneratedExploreSelection;
   type ExplorePreflight = GeneratedExplorePreflightResponse;
   // Primary navigation: the places people go. Settings and Saved Views
-  // live in the gear menu; Search is the header field. Reviews carries no
-  // count: no cheap count endpoint exists, and opening the app should cost
-  // no review reads.
+  // live in the gear menu; Search is the header field. Reviews shows a dot,
+  // not a count, when anything waits: the daemon answers that with one
+  // indexed lookup per queue.
   type NavigationID = 'people' | 'inbox' | 'files' | 'meetings' | 'reviews' | 'activity';
-  const tabs: { id: NavigationID; label: string }[] = [
+  const pendingReviews = new PendingReviewsMonitor(untrack(() => client));
+  const tabs = $derived<TopBarTab[]>([
     { id: 'people', label: 'People' },
     { id: 'inbox', label: 'Inbox' },
     { id: 'files', label: 'Files' },
     { id: 'meetings', label: 'Meetings' },
-    { id: 'reviews', label: 'Reviews' },
+    {
+      id: 'reviews',
+      label: 'Reviews',
+      ...(pendingReviews.waiting ? { indicator: { tone: 'info' as const, title: 'Items waiting' } } : {}),
+    },
     { id: 'activity', label: 'Activity' },
-  ];
+  ]);
   const activitySections = [
     { id: 'sources', label: 'Sources' },
     { id: 'operations', label: 'Operations' },
@@ -1332,6 +1339,7 @@
     else commitWorkspace('everything');
   }
   onMount(() => {
+    pendingReviews.start();
     const detachShortcuts = initShortcuts();
     let disposed = false;
     const resyncEditableScope = (): void => {
@@ -1378,6 +1386,7 @@
     };
   });
   onDestroy(() => {
+    pendingReviews.stop();
     debouncedSearchPatch.cancel();
     loader.destroy();
     archivedMeeting.cancel();
@@ -1649,6 +1658,7 @@
       onOpenDirectory={() => commitWorkspace('directory')}
       onOpenPerson={openDirectoryPerson}
       onAnnounce={announceOperation}
+      onDecided={() => void pendingReviews.refresh(true)}
     />
   {:else if exploreState.current.workspace === 'files'}
     <div class="files-shell">
@@ -1878,6 +1888,18 @@
     padding: 5px 12px;
     border-radius: var(--radius-md);
     font-size: var(--font-size-md);
+  }
+
+  /* The Reviews dot sits in the tab's corner so it never changes the
+   * tab's width or the collapse measurement. */
+  .app-shell :global(.kit-top-bar__tab) {
+    position: relative;
+  }
+
+  .app-shell :global(.kit-top-bar__tab .kit-top-bar__tab-dot) {
+    position: absolute;
+    top: 3px;
+    right: 3px;
   }
 
   .app-shell :global(.kit-top-bar__tab.active) {

@@ -5,6 +5,7 @@ import type { CorrespondentKindRecord } from "./correspondentKindRecord";
 
 export interface SetCorrespondentKindResult {
   organization_created: boolean;
+  organization_removed: boolean;
   record: CorrespondentKindRecord;
   resolved_candidates: number;
   restored_candidates: number;
