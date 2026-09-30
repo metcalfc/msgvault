@@ -331,6 +331,7 @@ func (s *Store) WriteCleanupSuggestionsContext(ctx context.Context, suggestions 
 // fields.
 type CleanupSuggestionRow struct {
 	CleanupSuggestion
+
 	SourceMessageID string
 	Subject         string
 	FromName        string

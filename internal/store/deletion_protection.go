@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"go.kenn.io/msgvault/internal/correspondentkind"
 )
@@ -75,13 +76,11 @@ const messageSenderSQL = `COALESCE(m.sender_id, (
 // labelRoleSQL matches a label by its Gmail system ID or, for sources that
 // only carry names, by its upper-cased name.
 func labelRoleSQL(alias string, roles ...string) string {
-	in := ""
+	quoted := make([]string, len(roles))
 	for i, role := range roles {
-		if i > 0 {
-			in += ", "
-		}
-		in += "'" + role + "'"
+		quoted[i] = "'" + role + "'"
 	}
+	in := strings.Join(quoted, ", ")
 	return "(" + alias + ".source_label_id IN (" + in + ") OR UPPER(" + alias + ".name) IN (" + in + "))"
 }
 
@@ -188,6 +187,8 @@ func (s *Store) PersonClassifiedParticipantsContext(
 			case correspondentkind.SourceJev:
 				person = effective.kind == correspondentkind.Person ||
 					(probability != nil && *probability >= PersonSenderThreshold)
+			case correspondentkind.SourceRule:
+				// Rules only ever decide that a cluster is not a person.
 			}
 			if !person {
 				continue

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -391,9 +392,7 @@ func (s *Server) applyDeletionProtection(
 			kept = append(kept, target)
 		}
 	}
-	sort.Slice(summary.SampleMessageIDs, func(i, j int) bool {
-		return summary.SampleMessageIDs[i] < summary.SampleMessageIDs[j]
-	})
+	slices.Sort(summary.SampleMessageIDs)
 	if len(summary.SampleMessageIDs) > deletionProtectionSampleSize {
 		summary.SampleMessageIDs = summary.SampleMessageIDs[:deletionProtectionSampleSize]
 	}

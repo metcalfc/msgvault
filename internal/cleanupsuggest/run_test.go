@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -58,16 +59,12 @@ func (a *archive) send(m mail) int64 {
 	a.t.Helper()
 	a.next++
 	a.sentAt = a.sentAt.Add(time.Hour)
-	conversation := a.f.ConvID
-	if m.thread != "" {
-		id, err := a.f.Store.EnsureConversation(a.f.Source.ID, m.thread, m.thread)
-		require.NoError(a.t, err)
-		conversation = id
-	} else {
-		id, err := a.f.Store.EnsureConversation(a.f.Source.ID, fmt.Sprintf("thread-%d", a.next), "thread")
-		require.NoError(a.t, err)
-		conversation = id
+	thread := m.thread
+	if thread == "" {
+		thread = fmt.Sprintf("thread-%d", a.next)
 	}
+	conversation, err := a.f.Store.EnsureConversation(a.f.Source.ID, thread, thread)
+	require.NoError(a.t, err)
 	id, err := a.f.Store.UpsertMessage(&store.Message{
 		ConversationID: conversation, SourceID: a.f.Source.ID,
 		SourceMessageID: fmt.Sprintf("cleanup-%d", a.next), MessageType: "email",
@@ -100,18 +97,29 @@ type fakeJev struct {
 }
 
 func (j *fakeJev) server(t *testing.T) *httptest.Server {
+	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
-		var body map[string]any
-		require.NoError(t, json.Unmarshal(raw, &body))
+		if !assert.NoError(t, err) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		var body struct {
+			State struct {
+				Messages []map[string]any `json:"messages"`
+			} `json:"state"`
+		}
+		var recorded map[string]any
+		if !assert.NoError(t, json.Unmarshal(raw, &body)) || !assert.NoError(t, json.Unmarshal(raw, &recorded)) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		j.mu.Lock()
-		j.bodies = append(j.bodies, body)
+		j.bodies = append(j.bodies, recorded)
 		j.mu.Unlock()
-		messages := body["state"].(map[string]any)["messages"].([]any)
 		answers := map[string]any{}
-		for i, message := range messages {
-			impersonation, pressure, category, probabilities := j.answer(message.(map[string]any))
+		for i, message := range body.State.Messages {
+			impersonation, pressure, category, probabilities := j.answer(message)
 			answers[cleanupsuggest.ImpersonationID(i)] = map[string]any{"type": "noul", "noul": impersonation}
 			answers[cleanupsuggest.PressureID(i)] = map[string]any{"type": "noul", "noul": pressure}
 			answers[cleanupsuggest.CategoryID(i)] = map[string]any{
@@ -119,7 +127,7 @@ func (j *fakeJev) server(t *testing.T) *httptest.Server {
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+		assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 			"model": jev.DefaultModel, "answers": answers,
 			"usage": map[string]any{"input_tokens": 1200, "output_tokens": 60},
 		}))
@@ -232,15 +240,21 @@ func TestRunJudgesThePoolAndOnlyListsSuggestions(t *testing.T) {
 
 	requests := fake.requests()
 	require.Len(requests, 1)
-	messages := requests[0]["state"].(map[string]any)["messages"].([]any)
+	state, ok := requests[0]["state"].(map[string]any)
+	require.True(ok)
+	messages, ok := state["messages"].([]any)
+	require.True(ok)
 	require.Len(messages, 3)
 	byID := map[string]map[string]any{}
 	for _, raw := range messages {
-		message := raw.(map[string]any)
+		message, ok := raw.(map[string]any)
+		require.True(ok)
 		assert.Equal([]string{"addressed_as", "authentication", "body_start", "from_domain", "from_name",
 			"labels", "link_hosts", "reply_to_domain", "sender_kind", "subject", "thread_replied"}, keys(message))
-		assert.LessOrEqual(len([]rune(message["body_start"].(string))), cleanupsuggest.BodyChars)
-		byID[message["subject"].(string)] = message
+		bodyStart, _ := message["body_start"].(string)
+		assert.LessOrEqual(len([]rune(bodyStart)), cleanupsuggest.BodyChars)
+		subject, _ := message["subject"].(string)
+		byID[subject] = message
 	}
 	phishState := byID["Your account is locked"]
 	assert.Equal("collector.example.org", phishState["reply_to_domain"])
@@ -248,7 +262,8 @@ func TestRunJudgesThePoolAndOnlyListsSuggestions(t *testing.T) {
 	assert.Equal([]any{"SPAM"}, phishState["labels"], "the owner's own label names are never sent")
 	assert.Equal("bcc_or_undisclosed", phishState["addressed_as"])
 	assert.Equal("to_or_cc", byID["Weekend sale"]["addressed_as"])
-	questions := requests[0]["questions"].(map[string]any)
+	questions, ok := requests[0]["questions"].(map[string]any)
+	require.True(ok)
 	assert.Len(questions, 9, "a short batch asks only its own questions")
 
 	suspected, err := st.ListCleanupSuggestionsContext(t.Context(), store.CleanupSuggestionFilter{
@@ -291,7 +306,7 @@ func TestRunStopsJevOnRevokedConsentAndWithoutAJudge(t *testing.T) {
 	bank := a.f.EnsureParticipant("alerts@bank.example", "Example Bank Security", "bank.example")
 	for i := range 6 {
 		a.send(mail{from: bank, subject: fmt.Sprintf("Locked %d", i), headers: phishHeaders,
-			body: "https://login.bank-verify.example/" + fmt.Sprint(i), labels: []string{"SPAM"}})
+			body: "https://login.bank-verify.example/" + strconv.Itoa(i), labels: []string{"SPAM"}})
 	}
 
 	report, err := cleanupsuggest.Run(t.Context(), st, cleanupsuggest.Options{})

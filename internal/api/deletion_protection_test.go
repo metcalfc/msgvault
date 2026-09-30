@@ -22,6 +22,7 @@ import (
 // contract the daemon adapter fulfills with store.DeletionProtectionsContext.
 type protectionStore struct {
 	deletionMockStore
+
 	protections map[int64]store.DeletionProtection
 	blocked     map[int64]bool
 	keepQuery   []int64
@@ -54,8 +55,8 @@ func (s *protectionStore) KeepCandidatesForSourceMessagesContext(
 	rows := []store.CleanupSuggestionRow{}
 	for i := range 60 {
 		rows = append(rows, store.CleanupSuggestionRow{
-			CleanupSuggestion: store.CleanupSuggestion{MessageID: int64(100 + i), KeepProbability: 0.9 - float64(i)/100},
-			SourceMessageID:   ids[0], Subject: "Photos", FromName: "Casey Example", FromEmail: "casey@example.net",
+			MessageID: int64(100 + i), KeepProbability: 0.9 - float64(i)/100,
+			SourceMessageID: ids[0], Subject: "Photos", FromName: "Casey Example", FromEmail: "casey@example.net",
 		})
 	}
 	s.keepQuery = append(s.keepQuery, sourceID)

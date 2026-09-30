@@ -39,7 +39,7 @@ const (
 	CategoryOtherJunk     = "other_junk"
 )
 
-// Question IDs for messages[i].
+// ImpersonationID asks whether messages[i] impersonates a sender.
 func ImpersonationID(i int) string { return "impersonation_" + strconv.Itoa(i) }
 
 // PressureID asks whether messages[i] pressures the reader.
