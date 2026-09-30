@@ -96,6 +96,10 @@ describe('contactLink', () => {
     ['invalid github handle', { kind: 'social', service: 'github', value: 'ada lovelace' }],
     ['mastodon to a private host', { kind: 'social', service: 'mastodon', value: '@ada@10.0.0.1' }],
     ['empty value', { kind: 'url', value: '  ' }],
+    // Inherited object properties are not services.
+    ['__proto__ service', { kind: 'handle', service: '__proto__', value: 'ada' }],
+    ['constructor service', { kind: 'handle', service: 'constructor', value: 'ada' }],
+    ['toString service', { kind: 'handle', service: 'toString', value: 'ada', services: {} }],
     // Dot segments would resolve away and retarget the link.
     ['dot-dot handle through a template', { kind: 'handle', service: 'linkedin', value: '..', services: { linkedin: { profile_url_template: 'https://www.linkedin.com/in/{username}' } } }],
     ['dot handle through a template', { kind: 'handle', service: 'github', value: '@.', services: { github: { profile_url_template: 'https://github.com/{username}' } } }],

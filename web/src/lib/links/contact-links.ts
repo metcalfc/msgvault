@@ -64,6 +64,12 @@ function dotSegment(segment: string): boolean {
   return /^\.+$/.test(segment);
 }
 
+/** A slug-keyed table entry, ignoring inherited properties so a slug such
+ * as "__proto__" or "constructor" finds nothing. */
+function own<T>(table: Readonly<Record<string, T>> | undefined, key: string): T | undefined {
+  return table && Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
 function clean(value: string | undefined): string {
   return (value ?? '').trim();
 }
@@ -188,6 +194,7 @@ const YOUTUBE_CHANNEL_ID = /^UC[A-Za-z0-9_-]{22}$/;
 const BLUESKY_DID = /^did:plc:[a-z2-7]{24}$/;
 
 function youtubeURL(value: string): string | undefined {
+  // Deliberate: a value without @ that is exactly UC plus 22 characters is taken as a channel ID, not a handle.
   if (YOUTUBE_CHANNEL_ID.test(value)) return `https://www.youtube.com/channel/${value}`;
   const handle = stripAt(value);
   return /^[A-Za-z0-9._-]{3,30}$/.test(handle) ? `https://www.youtube.com/@${encodeURIComponent(handle)}` : undefined;
@@ -228,7 +235,7 @@ const SERVICE_LABELS: Record<string, string> = {
 };
 
 function profileLabel(service: string, value: string): string {
-  const name = SERVICE_LABELS[service] ?? (service ? service.charAt(0).toUpperCase() + service.slice(1) : '');
+  const name = own(SERVICE_LABELS, service) ?? (service ? service.charAt(0).toUpperCase() + service.slice(1) : '');
   return name ? `Open ${name} profile ${value}` : `Open ${value}`;
 }
 
@@ -268,7 +275,7 @@ export function contactLink(input: ContactLinkInput): ContactLink | undefined {
     if (fromURI) return fromURI;
   }
 
-  const identifier = SERVICE_IDENTIFIERS[service]?.(value);
+  const identifier = own(SERVICE_IDENTIFIERS, service)?.(value);
   if (identifier) return webLink(identifier, label);
 
   const direct = linkFromURI(value, label);
@@ -278,10 +285,10 @@ export function contactLink(input: ContactLinkInput): ContactLink | undefined {
   }
 
   const handle = stripAt(normalized || value);
-  const templated = fromTemplate(input.services?.[service]?.profile_url_template, handle);
+  const templated = fromTemplate(own(input.services, service)?.profile_url_template, handle);
   if (templated) return { href: templated, label, external: true };
 
-  const built = BUILTIN[service]?.(value);
+  const built = own(BUILTIN, service)?.(value);
   if (built) return webLink(built, label);
 
   // A profile given without a scheme ("github.com/ada") is still a web address.

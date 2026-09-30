@@ -105,7 +105,7 @@ const serviceLabels: Record<string, string> = {
 export function serviceLabelForSlug(slug: string | undefined): string | undefined {
   const trimmed = slug?.trim().toLowerCase();
   if (!trimmed || trimmed === 'email' || trimmed === 'phone' || trimmed === 'other') return undefined;
-  return serviceLabels[trimmed] ?? trimmed.charAt(0).toUpperCase() + trimmed.slice(1).replaceAll('_', ' ');
+  return (Object.hasOwn(serviceLabels, trimmed) ? serviceLabels[trimmed] : undefined) ?? trimmed.charAt(0).toUpperCase() + trimmed.slice(1).replaceAll('_', ' ');
 }
 
 /** Which reach kind a structured-profile `address_kind` maps to; postal and

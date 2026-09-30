@@ -45,6 +45,7 @@ describe('reach entries', () => {
     expect(serviceLabelForSlug('email')).toBeUndefined();
     expect(serviceLabelForSlug('other')).toBeUndefined();
     expect(serviceLabelForSlug(undefined)).toBeUndefined();
+    expect(serviceLabelForSlug('constructor')).toBe('Constructor');
   });
 
   it('marks address-book contact points as curated and archive observations as observed', () => {
