@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
+import { focusAndClick } from '../../../test/kit-ui';
 import type {
   AttributeDefinition as GeneratedAttributeDefinition,
   AttributeValue as GeneratedAttributeValue,
@@ -137,7 +138,7 @@ describe('AttributeEditor', () => {
 
     render(AttributeEditor, { controller, definition: choice, current });
     await fireEvent.change(screen.getByLabelText('Relationship status'), { target: { value: 'friend' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
     expect(new URL(requests[0]!.url).pathname).toBe('/api/v1/people/7/attributes/relationship_status');
@@ -243,7 +244,7 @@ describe('AttributeEditor', () => {
 
       render(AttributeEditor, { controller, definition: definitionValue });
       await input();
-      await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+      await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
 
       await waitFor(() => expect(requests).toHaveLength(1));
       await expect(requests[0]!.clone().json()).resolves.toEqual({ value: want, source: 'user' });
@@ -272,7 +273,7 @@ describe('AttributeEditor', () => {
 
     render(AttributeEditor, { controller, definition: multi, current });
     await fireEvent.input(screen.getByLabelText('Ask me about'), { target: { value: 'New topic' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
     await expect(requests[0]!.clone().json()).resolves.toEqual({
@@ -324,7 +325,7 @@ describe('AttributeEditor', () => {
 
       render(AttributeEditor, { controller, definition: definitionValue });
       await fireEvent.input(screen.getByRole('textbox', { name: definitionValue.label }), { target: { value: draft } });
-      await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+      await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
 
       await waitFor(() => expect(requests).toHaveLength(1));
       await expect(requests[0]!.clone().json()).resolves.toEqual({ value: want, source: 'user' });
@@ -422,7 +423,7 @@ describe('AttributeEditor', () => {
 
     render(AttributeEditor, { controller, definition: definitionValue });
     await fireEvent.input(screen.getByRole('textbox', { name: definitionValue.label }), { target: { value: draft } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
 
     expect(fetchFn).not.toHaveBeenCalled();
     expect(screen.getByRole('alert').textContent).toContain(message);
@@ -451,13 +452,13 @@ describe('AttributeEditor', () => {
     expect(document.getElementById(constraintID!)?.textContent).toBe('0 / 5 characters.');
     await fireEvent.input(screen.getByRole('textbox', { name: 'Short note' }), { target: { value: '123456' } });
     expect(document.getElementById(constraintID!)?.textContent).toBe('6 / 5 characters.');
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
 
     expect(requests).toHaveLength(0);
     expect(screen.getByRole('alert').textContent).toContain('Use 5 characters or fewer.');
 
     await fireEvent.input(screen.getByRole('textbox', { name: 'Short note' }), { target: { value: '12345' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
     await waitFor(() => expect(requests).toHaveLength(1));
     await expect(requests[0]!.clone().json()).resolves.toEqual({
       value: { type: 'text', text: '12345' },
@@ -486,14 +487,14 @@ describe('AttributeEditor', () => {
     expect(textarea.getAttribute('maxlength')).toBeNull();
     await fireEvent.input(textarea, { target: { value: '  😀😀😀😀😀😀  ' } });
     expect(textarea).toHaveProperty('value', '  😀😀😀😀😀😀  ');
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
     expect(requests).toHaveLength(0);
     expect(screen.getByRole('alert').textContent).toContain('Use 5 characters or fewer.');
 
     await fireEvent.input(textarea, { target: { value: '  😀😀😀😀😀  ' } });
     const constraintID = textarea.getAttribute('aria-describedby');
     expect(document.getElementById(constraintID!)?.textContent).toBe('5 / 5 characters.');
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
     await expect(requests[0]!.clone().json()).resolves.toEqual({
@@ -523,7 +524,7 @@ describe('AttributeEditor', () => {
     await fireEvent.input(input, { target: { value: '\u0085a\u0085' } });
     const constraintID = input.getAttribute('aria-describedby');
     expect(document.getElementById(constraintID!)?.textContent).toBe('1 / 1 characters.');
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
     await expect(requests[0]!.clone().json()).resolves.toEqual({
@@ -553,13 +554,13 @@ describe('AttributeEditor', () => {
     const constraintID = input.getAttribute('aria-describedby');
     await fireEvent.input(input, { target: { value: '\uFEFFa\uFEFF' } });
     expect(document.getElementById(constraintID!)?.textContent).toBe('3 / 2 characters.');
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
     expect(requests).toHaveLength(0);
     expect(screen.getByRole('alert').textContent).toContain('Use 2 characters or fewer.');
 
     await fireEvent.input(input, { target: { value: '\uFEFFa' } });
     expect(document.getElementById(constraintID!)?.textContent).toBe('2 / 2 characters.');
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
     await expect(requests[0]!.clone().json()).resolves.toEqual({
@@ -598,17 +599,17 @@ describe('AttributeEditor', () => {
     expect(document.getElementById(constraintID!)?.textContent).toBe('5 / 5 characters.');
 
     await fireEvent.change(select, { target: { value: '😀😀😀😀😀😀' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
     expect(requests).toHaveLength(0);
     expect(screen.getByRole('alert').textContent).toContain('Use 5 characters or fewer.');
 
     await fireEvent.change(select, { target: { value: '\uFEFF12345' } });
     expect(document.getElementById(constraintID!)?.textContent).toBe('6 / 5 characters.');
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
     expect(requests).toHaveLength(0);
 
     await fireEvent.change(select, { target: { value: '😀😀😀😀😀' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
     await waitFor(() => expect(requests).toHaveLength(1));
   });
 
@@ -662,7 +663,7 @@ describe('AttributeEditor', () => {
 
     render(AttributeEditor, { controller, definition: note, current: original });
     await fireEvent.input(screen.getByLabelText('Note'), { target: { value: 'Local draft' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain(
       'This person changed elsewhere. Reload and retry.',
@@ -676,7 +677,7 @@ describe('AttributeEditor', () => {
     );
     expect(screen.getByLabelText('Note')).toHaveProperty('value', 'Local draft');
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
     await waitFor(() => expect(setAttempts).toBe(2));
     const setRequests = requests.filter((request) => request.method === 'PUT');
     await expect(setRequests[1]!.clone().json()).resolves.toEqual({
@@ -746,7 +747,7 @@ describe('AttributeEditor', () => {
 
     render(AttributeEditor, { controller, definition: note, current: original });
     await fireEvent.input(screen.getByLabelText('Note'), { target: { value: 'Local draft' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
     await fireEvent.click(await screen.findByRole('button', { name: 'Reload attributes' }));
 
     expect(
@@ -760,7 +761,7 @@ describe('AttributeEditor', () => {
     expect(screen.getByRole('form', { name: 'Add Note value' })).toBeDefined();
     expect(screen.queryByRole('form', { name: 'Edit Note value' })).toBeNull();
     expect(screen.getByRole('status').textContent).toContain('This draft will be added as a new value.');
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
 
     await waitFor(() => expect(setAttempts).toBe(2));
     const setRequests = requests.filter((request) => request.method === 'PUT');

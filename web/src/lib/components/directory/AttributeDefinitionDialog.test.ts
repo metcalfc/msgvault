@@ -9,7 +9,7 @@ import type {
 } from '../../api/generated/models';
 import type { DirectoryReadBundle } from '../../directory/models';
 import { DirectoryProfileController } from '../../directory/profile-controller.svelte';
-import { chooseSelectOption } from '../../../test/kit-ui';
+import { chooseSelectOption, focusAndClick } from '../../../test/kit-ui';
 import AttributeDefinitionDialog from './AttributeDefinitionDialog.svelte';
 import AttributeSection from './AttributeSection.svelte';
 
@@ -83,7 +83,7 @@ describe('AttributeDefinitionDialog', () => {
     });
     await fireEvent.input(screen.getByLabelText('Choices'), { target: { value: ' email\nphone ' } });
     await fireEvent.click(screen.getByRole('checkbox', { name: 'Sensitive' }));
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
 
     await waitFor(() => expect(profile.createdDefinition).toEqual(created));
     expect(requests).toHaveLength(2);
@@ -147,7 +147,7 @@ describe('AttributeDefinitionDialog', () => {
     render(AttributeDefinitionDialog, { controller: controller(fetchFn), onClose: vi.fn() });
     await fireEvent.input(screen.getByLabelText('Label'), { target: { value: 'Synthetic field' } });
     await chooseSelectOption(screen.getByLabelText('Value type'), optionLabel);
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
     await waitFor(() => expect(requests).toHaveLength(2));
 
     const body = (await requests[0]!.clone().json()) as Record<string, unknown>;
@@ -172,7 +172,7 @@ describe('AttributeDefinitionDialog', () => {
     await chooseSelectOption(screen.getByLabelText('Cardinality'), 'Multiple values');
     await fireEvent.input(screen.getByLabelText('Choices'), { target: { value: ' email | Email\n phone | Phone ' } });
     await fireEvent.input(screen.getByLabelText('Maximum length'), { target: { value: ' 32 ' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
     await waitFor(() => expect(requests).toHaveLength(2));
 
     await expect(requests[0]!.clone().json()).resolves.toMatchObject({
@@ -199,7 +199,7 @@ describe('AttributeDefinitionDialog', () => {
     if (label) await fireEvent.input(screen.getByLabelText('Label'), { target: { value: label } });
     if (choices) await fireEvent.input(screen.getByLabelText('Choices'), { target: { value: choices } });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
 
     expect(screen.getByRole('alert').textContent).toContain(message);
     expect(fetchFn).not.toHaveBeenCalled();
@@ -212,7 +212,7 @@ describe('AttributeDefinitionDialog', () => {
     await chooseSelectOption(screen.getByLabelText('Value type'), 'Integer');
     await fireEvent.input(screen.getByLabelText('Choices'), { target: { value: '01 | First\n1 | Second' } });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
 
     expect(screen.getByRole('alert').textContent).toContain('Choice values must be unique.');
     expect(fetchFn).not.toHaveBeenCalled();
@@ -234,7 +234,7 @@ describe('AttributeDefinitionDialog', () => {
     await chooseSelectOption(screen.getByLabelText('Value type'), 'JSON');
     expect(screen.queryByLabelText('Choices')).toBeNull();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
     await waitFor(() => expect(requests).toHaveLength(2));
     const body = (await requests[0]!.clone().json()) as Record<string, unknown>;
     expect(body).not.toHaveProperty('options');
@@ -248,7 +248,7 @@ describe('AttributeDefinitionDialog', () => {
     render(AttributeDefinitionDialog, { controller: controller(fetchFn), onClose: vi.fn() });
     await fireEvent.input(screen.getByLabelText('Label'), { target: { value: 'Limited text' } });
     await fireEvent.input(screen.getByLabelText('Maximum length'), { target: { value: limit } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
     expect(screen.getByRole('alert').textContent).toContain(message);
     expect(fetchFn).not.toHaveBeenCalled();
   });
@@ -266,7 +266,7 @@ describe('AttributeDefinitionDialog', () => {
     render(AttributeDefinitionDialog, { controller: controller(fetchFn), onClose: vi.fn() });
     await fireEvent.input(screen.getByLabelText('Label'), { target: { value: 'Unlimited text' } });
     await fireEvent.input(screen.getByLabelText('Maximum length'), { target: { value: '0' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
     await waitFor(() => expect(requests).toHaveLength(2));
     const body = (await requests[0]!.clone().json()) as Record<string, unknown>;
     expect(body).not.toHaveProperty('options');
@@ -291,7 +291,7 @@ describe('AttributeDefinitionDialog', () => {
     await fireEvent.input(screen.getByLabelText('Choices'), { target: { value: choice } });
     await fireEvent.input(screen.getByLabelText('Maximum length'), { target: { value: limit } });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
 
     expect(screen.getByRole('alert').textContent).toContain(`Each text choice must be ${limit} characters or fewer.`);
     expect(fetchFn).not.toHaveBeenCalled();
@@ -303,7 +303,7 @@ describe('AttributeDefinitionDialog', () => {
     await fireEvent.input(screen.getByLabelText('Label'), { target: { value: 'Limited choice' } });
     await fireEvent.input(screen.getByLabelText('Choices'), { target: { value: 'email' } });
     await fireEvent.input(screen.getByLabelText('Maximum length'), { target: { value: '4' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
     expect(screen.getByRole('alert').textContent).toContain('Each text choice must be 4 characters or fewer.');
 
     await fireEvent.input(screen.getByLabelText('Maximum length'), { target: { value: '5' } });
@@ -358,14 +358,14 @@ describe('AttributeDefinitionDialog', () => {
       target: { value: `\u0085${canonicalChoice}\u0085 | Astral plus BOM` },
     });
     await fireEvent.input(screen.getByLabelText('Maximum length'), { target: { value: '2' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
     await screen.findByRole('status');
     await fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Add Limited choice value' }));
     await fireEvent.change(screen.getByRole('combobox', { name: 'Limited choice' }), {
       target: { value: canonicalChoice },
     });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
     await waitFor(() => expect(requests.filter((request) => request.method === 'PUT')).toHaveLength(1));
 
     const definitionBody = await requests
@@ -434,14 +434,14 @@ describe('AttributeDefinitionDialog', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Create attribute field' }));
       await fireEvent.input(screen.getByLabelText('Label'), { target: { value: `First ${cardinality}` } });
       if (cardinality === 'multi') await chooseSelectOption(screen.getByLabelText('Cardinality'), 'Multiple values');
-      await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+      await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
       await screen.findByRole('status');
       await fireEvent.click(screen.getByRole('button', { name: 'Done' }));
       await fireEvent.click(screen.getByRole('button', { name: `Add First ${cardinality} value` }));
       await fireEvent.input(screen.getByRole('textbox', { name: `First ${cardinality}` }), {
         target: { value: 'Initial value' },
       });
-      await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+      await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
 
       expect(await screen.findByText('Initial value')).toBeDefined();
       await waitFor(() => expect(profile.mutationPending).toBe(false));
@@ -493,7 +493,7 @@ describe('AttributeDefinitionDialog', () => {
     await chooseSelectOption(screen.getByLabelText('Value type'), type);
     await fireEvent.input(screen.getByLabelText('Choices'), { target: { value: choice } });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
 
     expect(screen.getByRole('alert').textContent).toContain(message);
     expect(fetchFn).not.toHaveBeenCalled();
@@ -525,7 +525,7 @@ describe('AttributeDefinitionDialog', () => {
     await fireEvent.input(screen.getByLabelText('Choices'), { target: { value: '1 | One' } });
     expect(screen.queryByLabelText('Unit')).toBeNull();
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
     await waitFor(() => expect(requests).toHaveLength(2));
 
     await expect(requests[0]!.clone().json()).resolves.toMatchObject({
@@ -549,7 +549,7 @@ describe('AttributeDefinitionDialog', () => {
     render(AttributeDefinitionDialog, { controller: profile, onClose: vi.fn() });
     await fireEvent.input(screen.getByLabelText('Label'), { target: { value: 'Wrong owner' } });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('user-owned');
     expect(requests).toHaveLength(1);
@@ -574,7 +574,7 @@ describe('AttributeDefinitionDialog', () => {
     render(AttributeDefinitionDialog, { controller: profile, onClose: vi.fn() });
     await fireEvent.input(screen.getByLabelText('Label'), { target: { value: 'Returned mismatch' } });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('person attribute registry');
     expect(profile.draft?.kind).toBe('createDefinition');
@@ -603,7 +603,7 @@ describe('AttributeDefinitionDialog', () => {
     const profile = controller(fetchFn);
     render(AttributeDefinitionDialog, { controller: profile, onClose });
     await fireEvent.input(screen.getByLabelText('Label'), { target: { value: 'Preferred channel' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('Registry temporarily unavailable');
     expect(screen.queryByRole('button', { name: 'Create field' })).toBeNull();
@@ -649,7 +649,7 @@ describe('AttributeDefinitionDialog', () => {
     const onClose = vi.fn();
     const view = render(AttributeDefinitionDialog, { controller: profile, onClose });
     await fireEvent.input(screen.getByLabelText('Label'), { target: { value: 'Preferred channel' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
     await screen.findByRole('button', { name: 'Retry registry refresh' });
     await fireEvent.click(screen.getByRole('button', { name: 'Close create attribute field' }));
     expect(onClose).toHaveBeenCalledOnce();
@@ -685,7 +685,7 @@ describe('AttributeDefinitionDialog', () => {
     const profile = controller(fetchFn);
     render(AttributeDefinitionDialog, { controller: profile, onClose: vi.fn() });
     await fireEvent.input(screen.getByLabelText('Label'), { target: { value: 'Unidentified field' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('usable identity');
     expect(profile.definitionCreationCommit).toEqual({ kind: 'unknown' });
@@ -708,7 +708,7 @@ describe('AttributeDefinitionDialog', () => {
     render(AttributeDefinitionDialog, { controller: profile, onClose: vi.fn() });
     await fireEvent.input(screen.getByLabelText('Label'), { target: { value: 'Unidentified field' } });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('usable identity');
     expect(profile.definitionCreationCommit).toEqual({ kind: 'unknown' });
@@ -739,7 +739,7 @@ describe('AttributeDefinitionDialog', () => {
     render(AttributeDefinitionDialog, { controller: profile, onClose: vi.fn() });
     await fireEvent.input(screen.getByLabelText('Label'), { target: { value: 'Malformed response field' } });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('usable identity');
     expect(profile.definitionCreationCommit).toEqual({ kind: 'unknown' });
@@ -925,7 +925,7 @@ describe('AttributeDefinitionDialog', () => {
       await chooseSelectOption(screen.getByLabelText('Value type'), option);
       await chooseSelectOption(screen.getByLabelText('Cardinality'), 'Multiple values');
       await fireEvent.input(screen.getByLabelText('Choices'), { target: { value: choices.join('\n') } });
-      await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+      await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
       await screen.findByRole('status');
       await fireEvent.click(screen.getByRole('button', { name: 'Done' }));
 
@@ -934,7 +934,7 @@ describe('AttributeDefinitionDialog', () => {
         await fireEvent.change(screen.getByRole('combobox', { name: 'Boundary choice' }), {
           target: { value: choice },
         });
-        await fireEvent.click(screen.getByRole('button', { name: 'Save attribute' }));
+        await focusAndClick(screen.getByRole('button', { name: 'Save attribute' }));
         await waitFor(() => expect(requests.filter((request) => request.method === 'PUT')).toHaveLength(index + 1));
         await waitFor(() => expect(screen.queryByRole('button', { name: 'Save attribute' })).toBeNull());
       }
@@ -996,7 +996,7 @@ describe('AttributeDefinitionDialog', () => {
       await fireEvent.input(screen.getByLabelText('Label'), { target: { value: 'Option field' } });
       await chooseSelectOption(screen.getByLabelText('Value type'), option);
       await fill();
-      await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+      await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
       await screen.findByRole('status');
       await fireEvent.click(screen.getByRole('button', { name: 'Done' }));
       expect(screen.queryByRole('heading', { name: 'Unrelated empty field' })).toBeNull();
@@ -1035,7 +1035,7 @@ describe('AttributeDefinitionDialog', () => {
     createTrigger.focus();
     await fireEvent.click(createTrigger);
     await fireEvent.input(screen.getByLabelText('Label'), { target: { value: 'Preferred channel' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Create field' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create field' }));
     await screen.findByRole('status');
     await fireEvent.click(screen.getByRole('button', { name: 'Done' }));
 

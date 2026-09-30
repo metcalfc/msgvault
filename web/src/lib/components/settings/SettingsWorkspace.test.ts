@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import SettingsWorkspace from './SettingsWorkspace.svelte';
 import { createAPIClient } from '../../api/client';
-import { chooseSelectOption } from '../../../test/kit-ui';
+import { chooseSelectOption, focusAndClick, openTypeahead } from '../../../test/kit-ui';
 
 const initialSettings = {
   groups: [
@@ -184,7 +184,7 @@ describe('SettingsWorkspace', () => {
     await fireEvent.input(screen.getByLabelText('Retention statement'), { target: { value: 'No retention' } });
     await fireEvent.input(screen.getByLabelText('Training statement'), { target: { value: 'No training' } });
     await fireEvent.click(screen.getByLabelText('Allow sensitive content'));
-    await fireEvent.click(screen.getByRole('button', { name: 'Create profile' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create profile' }));
     expect(await screen.findByText('Stored key')).toBeDefined();
     await waitFor(() => expect((screen.getByRole('button', { name: 'Check provider' }) as HTMLButtonElement).disabled).toBe(false));
     await fireEvent.click(screen.getByRole('button', { name: 'Check provider' }));
@@ -306,7 +306,7 @@ describe('SettingsWorkspace', () => {
     render(SettingsWorkspace, { client: createAPIClient(fetchFn) });
 
     await chooseSelectOption(await screen.findByLabelText('Theme'), 'Dark');
-    await fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save settings' }));
 
     await waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(2));
     const request = fetchFn.mock.calls[1]?.[0] as Request;
@@ -698,11 +698,14 @@ describe('SettingsWorkspace', () => {
     await fireEvent.input(schedule, { target: { value: '0 3 * * 9' } });
     expect(status()).toBe('Weekday: 9 is above the maximum of 6.');
     await fireEvent.input(schedule, { target: { value: '0 2 * * 0' } });
+    await fireEvent.input(await openTypeahead('Time zone'), { target: { value: 'tokyo' } });
+    await fireEvent.mouseDown(await screen.findByRole('option', { name: /Asia\/Tokyo/ }));
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    // Save must use the zone picked just before focus moved to it.
+    await focusAndClick(screen.getByRole('button', { name: 'Save settings' }));
     await waitFor(() => expect(requests.filter((request) => request.method === 'PATCH')).toHaveLength(1));
     const patch = await requests.find((request) => request.method === 'PATCH')!.clone().json();
-    expect(patch.updates).toEqual([{ key: 'vector.embed.schedule.cron', value: { string: '0 2 * * 0' } }]);
+    expect(patch.updates).toEqual([{ key: 'vector.embed.schedule.cron', value: { string: 'CRON_TZ=Asia/Tokyo 0 2 * * 0' } }]);
   });
 
   it('updates one stable-name enrichment provider without rewriting same-kind siblings', async () => {

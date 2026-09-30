@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
+import { focusAndClick } from '../../../test/kit-ui';
 import type { PersonContactPoint as GeneratedPersonContactPoint } from '../../api/generated/models';
 import type { DirectoryReadBundle } from '../../directory/models';
 import { DirectoryProfileController } from '../../directory/profile-controller.svelte';
@@ -74,7 +75,7 @@ describe('StructuredProfileEditor', () => {
     render(StructuredProfileEditor, { controller, section: 'contact_points', current });
 
     await fireEvent.input(screen.getByLabelText('Email'), { target: { value: 'alice@example.test' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save contact point' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save contact point' }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
     await expect(requests[0]!.clone().json()).resolves.toEqual({
@@ -185,7 +186,7 @@ describe('StructuredProfileEditor', () => {
     render(StructuredProfileEditor, { controller, section });
 
     await fireEvent.input(screen.getByLabelText(label), { target: { value } });
-    await fireEvent.click(screen.getByRole('button', { name: save }));
+    await focusAndClick(screen.getByRole('button', { name: save }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
     await expect(requests[0]!.clone().json()).resolves.toEqual(expected);
@@ -197,7 +198,7 @@ describe('StructuredProfileEditor', () => {
 
     await fireEvent.input(screen.getByLabelText('Locality'), { target: { value: 'Exampleville' } });
     await fireEvent.input(screen.getByLabelText('Country'), { target: { value: 'Testland' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save address' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save address' }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
     await expect(requests[0]!.clone().json()).resolves.toEqual({
@@ -229,7 +230,7 @@ describe('StructuredProfileEditor', () => {
 
     expect(screen.getByLabelText('Street address')).toHaveProperty('value', '');
     await fireEvent.input(screen.getByLabelText('Country'), { target: { value: 'Testland' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save address' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save address' }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
     await expect(requests[0]!.clone().json()).resolves.toEqual({
@@ -253,7 +254,7 @@ describe('StructuredProfileEditor', () => {
     const { controller, requests } = requestHarness();
     render(StructuredProfileEditor, { controller, section: 'addresses' });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Save address' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save address' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('Enter at least one address component.');
     expect(requests).toHaveLength(0);
@@ -469,7 +470,7 @@ describe('StructuredProfileEditor', () => {
       render(StructuredProfileEditor, { controller, section, current });
 
       await fireEvent.input(screen.getByLabelText(label), { target: { value } });
-      await fireEvent.click(screen.getByRole('button', { name: save }));
+      await focusAndClick(screen.getByRole('button', { name: save }));
 
       await waitFor(() => expect(requests).toHaveLength(1));
       await expect(requests[0]!.clone().json()).resolves.toEqual(expected);
@@ -559,7 +560,7 @@ describe('StructuredProfileEditor', () => {
       render(StructuredProfileEditor, { controller, section, current });
 
       await fireEvent.change(screen.getByLabelText(selector), { target: { value: nextKind } });
-      await fireEvent.click(screen.getByRole('button', { name: save }));
+      await focusAndClick(screen.getByRole('button', { name: save }));
 
       await waitFor(() => expect(requests).toHaveLength(1));
       const body = (await requests[0]!.clone().json()) as Record<
@@ -580,7 +581,7 @@ describe('StructuredProfileEditor', () => {
     await fireEvent.input(screen.getByLabelText('Service'), { target: { value: 'slack' } });
     await fireEvent.input(screen.getByLabelText('Service scope kind'), { target: { value: 'workspace' } });
     await fireEvent.input(screen.getByLabelText('Service scope value'), { target: { value: 'synthetic-team' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save contact point' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save contact point' }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
     await expect(requests[0]!.clone().json()).resolves.toEqual({
@@ -605,7 +606,7 @@ describe('StructuredProfileEditor', () => {
     render(StructuredProfileEditor, { controller, section: 'dates' });
 
     await fireEvent.input(screen.getByLabelText('Date'), { target: { value: '2000' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save date' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save date' }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
     await expect(requests[0]!.clone().json()).resolves.toEqual({
@@ -644,7 +645,7 @@ describe('StructuredProfileEditor', () => {
     render(StructuredProfileEditor, { controller, section: 'dates', current });
 
     expect(screen.getByLabelText('Date')).toHaveProperty('value', formatted);
-    await fireEvent.click(screen.getByRole('button', { name: 'Save date' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save date' }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
     const body = (await requests[0]!.clone().json()) as { dates: { add: Array<Record<string, unknown>> } };
@@ -665,7 +666,7 @@ describe('StructuredProfileEditor', () => {
 
     const input = screen.getByLabelText('Category') as HTMLInputElement;
     await fireEvent.input(input, { target: { value: 'Close friends' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save category' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save category' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain(
       'This person changed elsewhere. Reload and retry.',
@@ -699,7 +700,7 @@ describe('StructuredProfileEditor', () => {
     render(StructuredProfileEditor, { controller, section: 'categories', onDone });
 
     await fireEvent.input(screen.getByLabelText('Category'), { target: { value: 'Close friends' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save category' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save category' }));
     expect(await screen.findByText('Reload this profile.')).toBeDefined();
     expect(screen.getByRole('button', { name: 'Save category' })).toHaveProperty('disabled', true);
 
@@ -733,7 +734,7 @@ describe('StructuredProfileEditor', () => {
 
     const input = screen.getByLabelText('Category') as HTMLInputElement;
     await fireEvent.input(input, { target: { value: 'Friends' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save category' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Save category' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('That category is already current.');
     expect(input.value).toBe('Friends');

@@ -294,6 +294,11 @@ describe('ContextBar person filters', () => {
     expect(onFiltersChange).toHaveBeenLastCalledWith(both);
 
     await rerender(baseProps({ client: createAPIClient(fetchFn), filters: both, onFiltersChange }));
+    // Moving on to the next filter blurs the person picker; the added person stays.
+    const calls = onFiltersChange.mock.calls.length;
+    await chooseSelectOption(screen.getByRole('combobox', { name: /^Message type:/ }), 'Email');
+    expect(onFiltersChange).toHaveBeenCalledTimes(calls + 1);
+    expect(onFiltersChange).toHaveBeenLastCalledWith([...both, { dimension: 'message_type', values: ['email'] }]);
     await fireEvent.click(await screen.findByRole('button', { name: 'Remove Person: Casey Example' }));
     expect(onFiltersChange).toHaveBeenLastCalledWith([{ dimension: 'participant', values: ['4'] }]);
   });

@@ -4,6 +4,7 @@ import { tick } from 'svelte';
 
 import { createAPIClient } from '../../api/client';
 import { FactLedgerController } from '../../directory/fact-ledger-controller.svelte';
+import { chooseSelectOption, focusAndClick } from '../../../test/kit-ui';
 import FactLedger from './FactLedger.svelte';
 
 afterEach(() => cleanup());
@@ -76,6 +77,19 @@ describe('FactLedger', () => {
     await fireEvent.click(screen.getByRole('radio', { name: 'Pins' }));
     expect(screen.getByText(/Pinned/)).toBeDefined();
     expect(screen.queryByRole('button', { name: /pin/i })).toBeNull();
+  });
+
+  it('keeps the chosen fact target when focus moves on to a section', async () => {
+    const value = controller();
+    const selectTarget = vi.spyOn(value, 'selectTarget').mockImplementation(async (option) => { value.selectedTargetOption = option; });
+    vi.spyOn(value, 'selectSection').mockImplementation(async (section) => { value.selectedSection = section; });
+    render(FactLedger, { controller: value });
+
+    await chooseSelectOption(screen.getByRole('combobox', { name: /^Fact target:/ }), 'Private note — Sensitive');
+    await focusAndClick(screen.getByRole('radio', { name: 'Claims' }));
+
+    expect(selectTarget.mock.calls).toEqual([['target-0']]);
+    expect(screen.getByRole('combobox', { name: 'Fact target: Private note — Sensitive' })).toBeDefined();
   });
 
   it('renders target metadata without putting canonical keys into the DOM', () => {

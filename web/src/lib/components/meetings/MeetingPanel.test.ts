@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { createAPIClient } from '../../api/client';
+import { chooseSelectOption, focusAndClick } from '../../../test/kit-ui';
 import { meetingAction, meetingActions, meetingMetrics } from '../../meetings/fixtures.test-support';
 import MeetingPanel from './MeetingPanel.svelte';
 
@@ -23,6 +24,19 @@ describe('MeetingPanel', () => {
     await waitFor(() => expect(requests.filter((request) => request.url.endsWith('/actions'))).toHaveLength(2));
     const last = requests.filter((request) => request.url.endsWith('/actions')).at(-1)!;
     await expect(last.clone().json()).resolves.toEqual({ scope: { person_id: 7 }, assignee_email: 'person@example.test', limit: 50 });
+  });
+
+  it('applies the source status picked before focus moved to Apply', async () => {
+    const requests: Request[] = [];
+    render(MeetingPanel, { client: createAPIClient(async (input) => {
+      const request = input instanceof Request ? input : new Request(input); requests.push(request); return response(request);
+    }), scope: { kind: 'direct', scope: { person_id: 7 } } });
+    await chooseSelectOption(await screen.findByRole('combobox', { name: /^Source status:/ }), 'Completed');
+    await focusAndClick(screen.getByRole('button', { name: 'Apply action filters' }));
+    await waitFor(() => expect(requests.filter((request) => request.url.endsWith('/actions'))).toHaveLength(2));
+    const last = requests.filter((request) => request.url.endsWith('/actions')).at(-1)!;
+    await expect(last.clone().json()).resolves.toMatchObject({ status: 'completed' });
+    expect(screen.getByRole('combobox', { name: 'Source status: Completed' })).toBeDefined();
   });
 
   it('hides the action filters until the scope has action items', async () => {

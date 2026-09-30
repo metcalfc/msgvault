@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 
-import { chooseSelectOption } from '../../../test/kit-ui';
+import { chooseSelectOption, focusAndClick, openTypeahead } from '../../../test/kit-ui';
 import { createAPIClient } from '../../api/client';
 import type { SettingState } from '../../settings/catalog';
 import CardDAVAccountSettings from './CardDAVAccountSettings.svelte';
@@ -205,6 +205,35 @@ describe('CardDAVAccountSettings', () => {
     expect((screen.getByLabelText('Username') as HTMLInputElement).value).toBe('save-user');
     expect((screen.getByLabelText('Password') as HTMLInputElement).value).toBe('');
     expect(onSaved).toHaveBeenCalledOnce();
+  });
+
+  it('saves the schedule preset and time zone picked before focus moved to Save', async () => {
+    let body: Record<string, unknown> | undefined;
+    const fetchFn: typeof fetch = async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      body = await request.clone().json();
+      return Response.json({ base_url: 'https://old.example.test/', username: 'alice', enabled: false, schedule: String(body?.schedule), books: 1 });
+    };
+    render(CardDAVAccountSettings, { client: createAPIClient(fetchFn), settings });
+
+    await chooseSelectOption(screen.getByRole('combobox', { name: /^Presets:/ }), 'Every hour');
+    await fireEvent.input(await openTypeahead('Time zone'), { target: { value: 'tokyo' } });
+    await fireEvent.mouseDown(await screen.findByRole('option', { name: /Asia\/Tokyo/ }));
+    await focusAndClick(screen.getByLabelText('Password'));
+    await fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'save-password' } });
+    await focusAndClick(screen.getByRole('button', { name: 'Save CardDAV account' }));
+
+    await waitFor(() => expect(body).toBeDefined());
+    expect(body?.schedule).toBe('CRON_TZ=Asia/Tokyo 0 * * * *');
+    expect(screen.getByRole('button', { name: /^Time zone: .*Tokyo/ })).toBeDefined();
+    expect(screen.getByRole('combobox', { name: 'Presets: Every hour' })).toBeDefined();
+  });
+
+  it('keeps the chosen provider when focus moves to the next field', async () => {
+    render(CardDAVAccountSettings, { client: createAPIClient(vi.fn()), settings });
+    await chooseSelectOption(screen.getByRole('combobox', { name: /^CardDAV provider/ }), 'Google Contacts');
+    await focusAndClick(screen.getByRole('combobox', { name: /^Presets:/ }));
+    expect(screen.getByRole('combobox', { name: 'CardDAV provider: Google Contacts' })).toBeDefined();
   });
 
   it('retains one in-memory password from successful Test through exact Save, then clears it', async () => {

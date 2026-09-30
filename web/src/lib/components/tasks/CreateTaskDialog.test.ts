@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
-import { chooseSelectOption } from '../../../test/kit-ui';
+import { chooseSelectOption, focusAndClick } from '../../../test/kit-ui';
 import CreateTaskDialog from './CreateTaskDialog.svelte';
 
 function deferredFetch(): { fetchFn: typeof fetch; respond: (response: Response) => void } {
@@ -47,7 +47,7 @@ describe('CreateTaskDialog', () => {
     await fireEvent.input(screen.getByLabelText('Description'), { target: { value: 'Notes' } });
     await chooseSelectOption(screen.getByLabelText('Priority'), 'High');
     await fireEvent.input(screen.getByLabelText('Labels'), { target: { value: 'mail, follow-up' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Create task' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create task' }));
     await waitFor(() => expect(oncreated).toHaveBeenCalledOnce());
     await expect(requests[0]!.clone().json()).resolves.toMatchObject({
       title: 'Edited', description: 'Notes', priority: 'high', labels: ['mail', 'follow-up']
@@ -71,9 +71,9 @@ describe('CreateTaskDialog', () => {
       sourceMessageId: 'source-42', subject: 'Synthetic subject', from: 'sender@example.com', sentAt: '2026-07-18T12:00:00Z'
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Create task' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create task' }));
     await screen.findByRole('alert');
-    await fireEvent.click(screen.getByRole('button', { name: 'Create task' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create task' }));
     await waitFor(() => expect(requests).toHaveLength(2));
     expect(requests[0]!.headers.get('X-Request-Id')).toBe(requests[1]!.headers.get('X-Request-Id'));
     await expect(requests[0]!.clone().text()).resolves.toBe(await requests[1]!.clone().text());
@@ -98,12 +98,12 @@ describe('CreateTaskDialog', () => {
       sourceMessageId: 'source-42', subject: 'Synthetic subject', from: 'sender@example.com', sentAt: '2026-07-18T12:00:00Z'
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Create task' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create task' }));
     await screen.findByRole('alert');
     const first = await requests[0]!.clone().json() as { added_at: string };
     await edit();
     await waitFor(() => expect(screen.queryByText(first.added_at)).toBeNull());
-    await fireEvent.click(screen.getByRole('button', { name: 'Create task' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create task' }));
     await waitFor(() => expect(requests).toHaveLength(2));
     expect(requests[0]!.headers.get('X-Request-Id')).not.toBe(requests[1]!.headers.get('X-Request-Id'));
     const second = await requests[1]!.clone().json() as { added_at: string };
@@ -114,7 +114,7 @@ describe('CreateTaskDialog', () => {
     const { fetchFn, respond } = deferredFetch();
     const { oncreated, onclose } = renderDialog(fetchFn);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Create task' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create task' }));
 
     expect(screen.getByRole('button', { name: 'Cancel' })).toHaveProperty('disabled', true);
     await fireEvent.keyDown(window, { key: 'Escape' });
@@ -135,7 +135,7 @@ describe('CreateTaskDialog', () => {
     const { fetchFn, respond } = deferredFetch();
     const { oncreated, onclose } = renderDialog(fetchFn);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Create task' }));
+    await focusAndClick(screen.getByRole('button', { name: 'Create task' }));
     respond(Response.json({ message: 'Unavailable' }, { status: 503 }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('Unavailable');
