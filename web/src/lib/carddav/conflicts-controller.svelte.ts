@@ -4,6 +4,7 @@ import {
   resolveCardDAVConflict as generatedResolveCardDAVConflict,
 } from '../api/generated/api/api';
 import type { APIClient } from '../api/client';
+import { invalidatePeopleNames } from '../names/entity-names.svelte';
 import type {
   CardDAVAddressBookIdentityResponse as GeneratedCardDAVAddressBookIdentityResponse,
   CardDAVConflictDetailResponse as GeneratedCardDAVConflictDetailResponse,
@@ -171,6 +172,8 @@ export class CardDAVConflictsController {
           signal: controller.signal,
         },
       );
+      // Adopting the remote card can rename the person.
+      if (result.data) invalidatePeopleNames(this.client);
       if (!this.currentMutation(context, mutation, controller.signal)) return { kind: 'ignored' };
       if (
         result.data &&

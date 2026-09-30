@@ -243,6 +243,8 @@ export class DirectoryProfileController {
         },
       );
       if (response.response.status === 204) {
+        // Participants bound to the deleted person no longer lead with its name.
+        invalidatePeopleNames(this.client);
         this.completeMutation(draftGeneration, true);
         deleted = true;
       } else {

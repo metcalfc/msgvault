@@ -5,7 +5,7 @@ import {
 } from '../api/generated/api/api';
 import { SvelteSet } from 'svelte/reactivity';
 import type { APIClient } from '../api/client';
-import { entityNames, type EntityNames } from '../names/entity-names.svelte';
+import { entityNames, invalidatePeopleNames, type EntityNames } from '../names/entity-names.svelte';
 import type {
   PersonEnrichmentIdentityDecision,
   PersonEnrichmentIdentityReview as GeneratedReview,
@@ -99,6 +99,8 @@ export class EnrichmentReviewController {
       const response = await request({ id: attemptID }, this.client);
       if (this.disposed) return { ok: false, message: 'Review closed.' };
       if (response.data) {
+        // Confirmed values can include the person's name.
+        if (confirm) invalidatePeopleNames(this.client);
         const row = this.rows.find((candidate) => candidate.attempt_id === attemptID);
         const who = row?.person_display_name?.trim() ||
           await this.names.settledLabel('person', response.data.person_id, 'the person');

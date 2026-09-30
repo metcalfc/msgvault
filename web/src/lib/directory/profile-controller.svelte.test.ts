@@ -231,6 +231,31 @@ describe('DirectoryProfileController', () => {
     await vi.waitFor(() => expect(names.label('participant', 70)).toBe('Renamed User'));
   });
 
+  it('refreshes the names of the deleted person and its identities', async () => {
+    let participantLabel = 'Test User';
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      if (pathOf(request) === '/api/v1/entity-labels') {
+        return Response.json({ people: [], participants: [{ id: 70, label: participantLabel }], organizations: [] });
+      }
+      if (pathOf(request) === '/api/v1/people/7' && request.method === 'DELETE') return new Response(null, { status: 204 });
+      return Response.json({});
+    });
+    const client = createAPIClient(fetchFn);
+    const names = entityNames(client);
+    names.seed('person', 7, 'Test User');
+    await names.load('participant', [70]);
+    const onDeleted = vi.fn();
+    const controller = new DirectoryProfileController(client, 7, bundle(), { onDeleted });
+
+    participantLabel = 'test.user@example.test';
+    await controller.deletePerson();
+
+    expect(onDeleted).toHaveBeenCalledWith(7);
+    names.label('participant', 70);
+    await vi.waitFor(() => expect(names.label('participant', 70)).toBe('test.user@example.test'));
+  });
+
   it('uses the revision returned by a rename for the next structured-profile patch', async () => {
     let write = 0;
     const fetchFn = vi.fn<typeof fetch>(async () => {
