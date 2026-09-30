@@ -357,7 +357,12 @@ import (
 // from the value's communication service, and optional event_links
 // (join_url, calendar_url) to calendar-event message details. Additive
 // (minor bump).
-const APISchemaVersion = "2.36.0"
+// 2.37.0 adds GET /entity-labels, which names people, participants, and
+// organizations by ID without ever returning an ID or vCard UID as a label.
+// Employment listings gain organizations ({id, name}) for the organizations
+// their rows reference, entity-label participant entries gain an optional
+// identity, and text conversation rows gain an optional participant_label.
+const APISchemaVersion = "2.37.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

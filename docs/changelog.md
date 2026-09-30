@@ -16,6 +16,10 @@ All notable changes to msgvault, grouped by release.
   schemes and private-network addresses stay plain text; message bodies stay
   unlinked. GitHub, YouTube, Threads, and Mastodon join the service catalog.
   Requires API schema 2.36.0.
+- People, contacts, and organizations are named everywhere instead of shown
+  as an ID or vCard UID. The Web UI, CLI, and MCP tools use a shared name
+  lookup (`GET /api/v1/entity-labels`), and employment listings name the
+  organizations they reference. Requires API schema 2.37.0.
 - Mark records that aren't people. Use **Not a person…** on a person or
   contact page, a review card's **Not a person** menu, or
   `msgvault person kind set`. Choose **Organization** to group a business's
