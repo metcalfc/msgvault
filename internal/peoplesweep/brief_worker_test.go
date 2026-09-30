@@ -115,6 +115,7 @@ type briefWorkerCase struct {
 	// denyReservation is the 1-based reservation the store refuses with a
 	// budget denial, which is how a person budget runs out mid-attempt.
 	denyReservation int
+	denyStart       int
 	// runRequest, when set, drives Worker.Run instead of RunPersonBrief so the
 	// claim path is exercised too.
 	runRequest *RunRequest
@@ -159,7 +160,7 @@ func runBriefWorkerCase(t *testing.T, testCase briefWorkerCase) briefWorkerOutco
 
 	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	store := &workerFailureStore{cursor: Cursor{ReconciliationComplete: true, LastBackstopAt: &now},
-		reserveErrAt: testCase.denyReservation, gapResults: testCase.gapResults}
+		reserveErrAt: testCase.denyReservation, markErrAt: testCase.denyStart, gapResults: testCase.gapResults}
 	seed := packetTestEvidence(71, SourceConversationText, "changed seed")
 	source := &workerProductionSource{windows: map[GenerationCursorMode]PersonWindow{
 		GenerationCursorOptimistic: {Seeds: []EvidenceItem{seed}, Changes: []ArchiveChange{{
@@ -1097,4 +1098,24 @@ func TestPersonSweepWorkerCapsTheRenderedBrief(t *testing.T) {
 	assert.Empty(stored.FollowUps)
 	assert.NotNil(stored.LastMeaningfulInteraction)
 	assert.Len(trimmed.Evidence, 1, "the pointers cover only the kept item")
+}
+
+func TestPersonSweepWorkerStartFailurePreservesCompletedUsage(t *testing.T) {
+	for _, denyStart := range []int{1, 2} {
+		t.Run(fmt.Sprintf("call_%d", denyStart), func(t *testing.T) {
+			assert, require := assert.New(t), require.New(t)
+			outcome := runBriefWorkerCase(t, briefWorkerCase{
+				mode: BriefModeAuto, denyStart: denyStart,
+				brief:     &briefFakeStore{enrolled: true, highWater: 90, changedAfter: 90},
+				responses: []DriverResponse{briefDriverResponse(json.RawMessage(`{"claims":[]}`), "request-extraction")},
+			})
+			require.ErrorContains(outcome.err, "synthetic budget mark failure")
+			assert.Empty(outcome.sink.requests, "no extraction or brief may apply after a failed durable start")
+			assert.Equal(denyStart-1, outcome.driver.calls, "failed marks prevent paid provider I/O")
+			require.Len(outcome.store.released, 1)
+			assert.Equal(outcome.store.marked[denyStart-1].ID, outcome.store.released[0].ID)
+			require.Len(outcome.store.finalized, 1)
+			assert.Len(outcome.store.finalized[0].Completed, denyStart-1)
+		})
+	}
 }

@@ -106,14 +106,11 @@ type StructuredExecutionSession interface {
 	RepairCall(prepared PreparedStructuredRequest) (PreparedStructuredCall, error)
 }
 
-// StructuredRunner is the consent-gated entry point later people-sweep
-// programs consume.
+// StructuredRunner is the worker's consent-gated preparation and execution
+// boundary. Repair calls stay within the pinned StructuredExecutionSession.
 type StructuredRunner interface {
 	PrepareStructured(ctx context.Context, request StructuredRequest) (PreparedStructuredRequest, error)
-	PrepareRepair(request StructuredRequest, failure ValidationFailure) (PreparedStructuredRequest, error)
 	BeginStructuredExecution(ctx context.Context, primary PreparedStructuredRequest) (StructuredExecutionSession, error)
-	RunPreparedStructured(ctx context.Context, prepared PreparedStructuredRequest) (StructuredResponse, error)
-	RunStructured(ctx context.Context, request StructuredRequest) (StructuredResponse, error)
 }
 
 // ProviderCapabilityError is a bounded classification derived only from a

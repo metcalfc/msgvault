@@ -525,8 +525,13 @@ func parityRunChargedBatch(t *testing.T, f *personSweepParityFixture,
 			EstimatedInputTokens: estimate.InputTokens, EstimatedOutputTokens: estimate.OutputTokens,
 			EstimatedCostMicroUSD: cost, Budget: f.config.Budgets})
 	require.NoError(t, err)
-	require.NoError(t, f.store.MarkPersonSweepBudgetStarted(t.Context(), reservation, *lease))
-	response, err := f.worker.Runner.RunPreparedStructured(t.Context(), prepared)
+	execution, err := f.worker.Runner.BeginStructuredExecution(t.Context(), prepared)
+	require.NoError(t, err)
+	call, err := execution.PrimaryCall(prepared)
+	require.NoError(t, err)
+	response, err := call.Execute(t.Context(), func(ctx context.Context) error {
+		return f.store.MarkPersonSweepBudgetStarted(ctx, reservation, *lease)
+	})
 	require.NoError(t, err)
 	assert.Equal(t, parityInputTokens, response.Usage.InputTokens)
 	assert.Equal(t, parityOutputTokens, response.Usage.OutputTokens)

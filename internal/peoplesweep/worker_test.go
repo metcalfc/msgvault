@@ -136,6 +136,7 @@ type workerFailureStore struct {
 	gaps         []GapRequest
 	gapResults   []GapResult
 	reserved     []BudgetReservationRequest
+	markErrAt    int
 	reserveErrAt int
 	released     []BudgetReservation
 	marked       []BudgetReservation
@@ -208,6 +209,9 @@ func (s *workerFailureStore) ReleasePersonSweepBudget(_ context.Context, reserva
 func (s *workerFailureStore) MarkPersonSweepBudgetStarted(_ context.Context, reservation BudgetReservation, lease Lease) error {
 	s.marked = append(s.marked, reservation)
 	s.markedLeases = append(s.markedLeases, lease)
+	if s.markErrAt > 0 && len(s.marked) == s.markErrAt {
+		return errors.New("synthetic budget mark failure")
+	}
 	return nil
 }
 func (s *workerFailureStore) CompleteIdlePersonSweep(_ context.Context, lease Lease, _, _ string) error {
@@ -834,9 +838,6 @@ func (r *workerProductionRunner) PrepareStructured(_ context.Context, request St
 	r.prepared++
 	return NewPreparedStructuredRequest(request, []byte(`{"wire":"prepared"}`))
 }
-func (r *workerProductionRunner) PrepareRepair(StructuredRequest, ValidationFailure) (PreparedStructuredRequest, error) {
-	return PreparedStructuredRequest{}, errors.New("unexpected provider repair preparation")
-}
 func (r *workerProductionRunner) BeginStructuredExecution(
 	_ context.Context,
 	primary PreparedStructuredRequest,
@@ -858,9 +859,6 @@ func (r *workerProductionRunner) RunPreparedStructured(context.Context, Prepared
 	return StructuredResponse{Output: json.RawMessage(`{"claims":[]}`),
 		ProviderRequestID: "request-production", ProviderVersion: "provider-v1",
 		ModelVersion: "model-v1", Usage: TokenUsage{InputTokens: 2, OutputTokens: 1}}, nil
-}
-func (r *workerProductionRunner) RunStructured(context.Context, StructuredRequest) (StructuredResponse, error) {
-	return StructuredResponse{}, errors.New("worker must use prepared production path")
 }
 
 type workerProductionSink struct {

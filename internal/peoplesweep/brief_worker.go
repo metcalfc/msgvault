@@ -358,12 +358,7 @@ func (w *Worker) runBriefCall(
 	if err != nil {
 		return nil, briefFailureClass(err), lease, briefFatalError(ctx, err)
 	}
-	estimate, err := EstimateWireTokenReservation(
-		prepared.WireRequest(), window.Batch.Request.MaxOutputTokens)
-	if err != nil {
-		return nil, briefFailureClass(err), lease, briefFatalError(ctx, err)
-	}
-	estimatedCost, err := EstimateCostMicroUSD(estimate, w.Config.Budgets)
+	estimate, estimatedCost, err := w.estimateProviderRequest(prepared, window.Batch.Request.MaxOutputTokens)
 	if err != nil {
 		return nil, briefFailureClass(err), lease, briefFatalError(ctx, err)
 	}
@@ -376,17 +371,12 @@ func (w *Worker) runBriefCall(
 		return nil, briefFailureClass(err), lease, briefFatalError(ctx, err)
 	}
 
-	reservation, err := w.Store.ReservePersonSweepBudget(ctx, BudgetReservationRequest{
+	reservation, err := w.reserveProviderCall(ctx, BudgetReservationRequest{
 		RunID: call.runID, AttemptID: call.attemptID, BatchOrdinal: call.batchOrdinal,
 		CallOrdinal: 0, Purpose: ProviderCallPurposeBrief, PersonID: lease.PersonID,
 		ProviderFingerprint: call.profile.Fingerprint,
 		UTCDate:             call.resolvedAt.UTC().Format(time.DateOnly),
-		InputHash:           prepared.WireSHA256(),
-		ItemCount:           len(window.Batch.Packet.Seeds) + len(window.Batch.Packet.Context),
-		EstimatedRequests:   1, EstimatedInputTokens: estimate.InputTokens,
-		EstimatedOutputTokens: estimate.OutputTokens, EstimatedCostMicroUSD: estimatedCost,
-		Budget: w.Config.Budgets,
-	})
+	}, window.Batch, prepared, estimate, estimatedCost)
 	if err != nil {
 		// Budget exhaustion defers the brief to the next run; the reservation
 		// rolled back, so there is nothing to reconcile.
@@ -406,30 +396,16 @@ func (w *Worker) runBriefCall(
 			return nil, "", lease, ErrLeaseLost
 		}
 		lease = *renewed
-		started := w.now()
-		marked := false
-		updated, response, runErr := w.runPreparedWithLeaseHeartbeat(ctx, lease,
-			func(markCtx context.Context) error {
-				if markErr := w.Store.MarkPersonSweepBudgetStarted(
-					markCtx, current.reservation, lease); markErr != nil {
-					return markErr
-				}
-				marked = true
-				return nil
-			}, preparedCall)
-		lease = updated
-		if !marked {
-			// The store never recorded the call as started, so the reservation
-			// is still refundable and the attempt cannot be trusted to finish.
-			_ = w.Store.ReleasePersonSweepBudget(ctx, current.reservation)
-			return nil, "", lease, briefMarkFailure(runErr)
+		result := w.executeAccountedCall(ctx, lease, current, preparedCall, accounting)
+		lease = result.lease
+		if !result.marked {
+			// An unstarted reservation is refundable, but cannot finish an attempt.
+			return nil, "", lease, briefMarkFailure(result.runErr)
 		}
-		latency := max(time.Duration(0), w.now().Sub(started))
-		if structuredResponseCompleted(response) {
-			if recordErr := accounting.record(current, response, latency); recordErr != nil {
-				return nil, briefFailureClass(recordErr), lease, briefFatalError(ctx, recordErr)
-			}
+		if result.recordErr != nil {
+			return nil, briefFailureClass(result.recordErr), lease, briefFatalError(ctx, result.recordErr)
 		}
+		response, runErr := result.response, result.runErr
 
 		var failure *ValidationFailure
 		if runErr != nil {
@@ -468,26 +444,16 @@ func (w *Worker) runBriefCall(
 		if repairErr != nil {
 			return nil, briefFailureClass(repairErr), lease, briefFatalError(ctx, repairErr)
 		}
-		repairEstimate, estimateErr := EstimateWireTokenReservation(
-			repair.WireRequest(), window.Batch.Request.MaxOutputTokens)
+		repairEstimate, repairCost, estimateErr := w.estimateProviderRequest(repair, window.Batch.Request.MaxOutputTokens)
 		if estimateErr != nil {
 			return nil, briefFailureClass(estimateErr), lease, briefFatalError(ctx, estimateErr)
 		}
-		repairCost, estimateErr := EstimateCostMicroUSD(repairEstimate, w.Config.Budgets)
-		if estimateErr != nil {
-			return nil, briefFailureClass(estimateErr), lease, briefFatalError(ctx, estimateErr)
-		}
-		repairReservation, reserveErr := w.Store.ReservePersonSweepBudget(ctx, BudgetReservationRequest{
+		repairReservation, reserveErr := w.reserveProviderCall(ctx, BudgetReservationRequest{
 			RunID: call.runID, AttemptID: call.attemptID, BatchOrdinal: call.batchOrdinal,
 			CallOrdinal: 1, Purpose: ProviderCallPurposeBriefRepair, PersonID: lease.PersonID,
 			ProviderFingerprint: call.profile.Fingerprint,
 			UTCDate:             call.resolvedAt.UTC().Format(time.DateOnly),
-			InputHash:           repair.WireSHA256(),
-			ItemCount:           len(window.Batch.Packet.Seeds) + len(window.Batch.Packet.Context),
-			EstimatedRequests:   1, EstimatedInputTokens: repairEstimate.InputTokens,
-			EstimatedOutputTokens: repairEstimate.OutputTokens,
-			EstimatedCostMicroUSD: repairCost, Budget: w.Config.Budgets,
-		})
+		}, window.Batch, repair, repairEstimate, repairCost)
 		if reserveErr != nil {
 			return nil, briefFailureClass(reserveErr), lease, briefFatalError(ctx, reserveErr)
 		}
