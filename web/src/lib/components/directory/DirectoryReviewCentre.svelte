@@ -20,6 +20,8 @@
   import { entityNames } from '../../names/entity-names.svelte';
   import OrganizationMatchReviewQueue from './OrganizationMatchReviewQueue.svelte';
   import { OrganizationReviewController } from '../../directory/organization-review-controller.svelte';
+  import CorrespondentKindReviewQueue from './CorrespondentKindReviewQueue.svelte';
+  import { CorrespondentReviewController } from '../../directory/correspondent-review-controller.svelte';
   import type { PersonMergeSuccess, ValidatedPersonMergeRequired } from '../../directory/person-merge';
   import type { NotAPersonKind } from '../../people/correspondent-kind';
 
@@ -54,6 +56,9 @@
   // svelte-ignore state_referenced_locally
   const organizationController = new OrganizationReviewController(controller.apiClient);
   onDestroy(() => organizationController.destroy());
+  // svelte-ignore state_referenced_locally
+  const correspondentController = new CorrespondentReviewController(controller.apiClient);
+  onDestroy(() => correspondentController.destroy());
   let identityReviewHeading = $state<HTMLHeadingElement>();
 
   const reviewKindOptions = [
@@ -61,7 +66,8 @@
     { value: 'fact', label: 'Fact review' },
     { value: 'relationship', label: 'Imported relationships' },
     { value: 'enrichment', label: 'Enrichment identities' },
-    { value: 'organization', label: 'Organization matches' }
+    { value: 'organization', label: 'Organization matches' },
+    { value: 'correspondent', label: 'Unclear correspondents' }
   ];
   const identityStateOptions = [
     { value: 'candidate', label: 'Candidate' },
@@ -127,6 +133,8 @@
         ? document.getElementById('enrichment-review-heading')
       : controller.reviewKind === 'organization'
         ? document.getElementById('organization-review-heading')
+      : controller.reviewKind === 'correspondent'
+        ? document.getElementById('correspondent-review-heading')
       : controller.reviewKind === 'relationship'
         ? document.getElementById('relationship-review-heading')
         : identityReviewHeading;
@@ -282,6 +290,8 @@
     <EnrichmentIdentityReviewQueue controller={enrichmentController} {onOpenPerson} />
   {:else if controller.reviewKind === 'organization'}
     <OrganizationMatchReviewQueue controller={organizationController} />
+  {:else if controller.reviewKind === 'correspondent'}
+    <CorrespondentKindReviewQueue controller={correspondentController} {onOpenPerson} />
   {:else if controller.reviewKind === 'fact'}
     {#if factController}
       <FactReviewPanel controller={factController} personID={directoryPersonID} {onOpenDirectory} {onOpenPerson} />

@@ -4,7 +4,7 @@
 import type { SetCorrespondentKindRequestKind } from "./setCorrespondentKindRequestKind";
 
 export interface SetCorrespondentKindRequest {
-  /** person clears the classification ("this is a person"); organization, shared_mailbox, and ignored mark the cluster as not a person. */
+  /** person clears the classification ("this is a person"); organization, shared_mailbox, ignored, automated, and mailing_list mark the cluster as not a person. */
   kind: SetCorrespondentKindRequestKind;
   /** Organization to group the cluster under. Only for kind organization. */
   organization_id?: number;

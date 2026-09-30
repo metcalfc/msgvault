@@ -7,7 +7,7 @@ import type { RelationshipsHTTPRequestSort } from "./relationshipsHTTPRequestSor
 export interface RelationshipsHTTPRequest {
   cursor?: string;
   filters?: ExploreFilter[];
-  /** Include counterparts whose identity cluster is marked as an organization or ignored. They are left out by default; a shared mailbox is always listed, marked by correspondent_kind. */
+  /** Include counterparts whose identity cluster is an organization, an automated sender, a mailing list, ignored, or an unclear Jev judgment. They are left out by default: a Jev-classified cluster is ranked only when its individual_person probability is at least 0.60, and a user decision always wins. A shared mailbox is always listed, marked by correspondent_kind. */
   include_not_people?: boolean;
   /**
    * @minimum 0

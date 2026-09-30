@@ -153,7 +153,7 @@
 
   {#if hub.showsNotPeople}
   <section class="people-list" aria-label="Records that are not people" aria-busy={hub.notPeople.loading}>
-    <p class="state">Organizations, shared mailboxes, and ignored records stay out of People, Reviews, and rankings. Their messages stay searchable.</p>
+    <p class="state">Organizations, automated senders, mailing lists, and ignored records stay out of People and rankings; shared mailboxes stay listed. Their messages stay searchable.</p>
     {#if hub.notPeople.error}<Notice tone="error" message={hub.notPeople.error} />{/if}
     {#if restoreMessage}<Notice tone={restoreMessage.tone} message={restoreMessage.text} />{/if}
     {#if notPeople.length === 0}

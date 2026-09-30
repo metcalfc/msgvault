@@ -3,20 +3,27 @@
  */
 import type { CorrespondentKindPerson } from "./correspondentKindPerson";
 import type { CorrespondentKindRecordKind } from "./correspondentKindRecordKind";
+import type { CorrespondentKindRecordProbabilities } from "./correspondentKindRecordProbabilities";
 
 export interface CorrespondentKindRecord {
+  /** Who wrote the effective classification. Rules record rule:<reason>; Jev records jev:<model>. */
   actor?: string;
   addresses: string[];
   /** The cluster's smallest participant ID. */
   canonical_id: number;
   classified_at?: string;
+  /** Confidence of a jev classification. */
+  confidence?: number;
   display_name?: string;
+  /** The effective kind. unclear is only ever written by a Jev judgment and awaits review. */
   kind: CorrespondentKindRecordKind;
   member_ids: number[];
   organization_id?: number;
   organization_name?: string;
   /** The saved Directory person bound to this cluster, if any. */
   person?: CorrespondentKindPerson;
+  /** Probability of each Jev option for a jev classification: individual_person, shared_role_or_team_mailbox, mailing_list_or_group, automated_notification_or_transactional, marketing_or_newsletter, unclear. */
+  probabilities?: CorrespondentKindRecordProbabilities;
   /** Who classified the cluster: user, rule, or jev. Absent when it was never classified. */
   source?: string;
   [key: string]: unknown;

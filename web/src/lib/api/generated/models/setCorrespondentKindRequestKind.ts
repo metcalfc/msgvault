@@ -3,7 +3,7 @@
  */
 
 /**
- * person clears the classification ("this is a person"); organization, shared_mailbox, and ignored mark the cluster as not a person.
+ * person clears the classification ("this is a person"); organization, shared_mailbox, ignored, automated, and mailing_list mark the cluster as not a person.
  */
 export type SetCorrespondentKindRequestKind =
   (typeof SetCorrespondentKindRequestKind)[keyof typeof SetCorrespondentKindRequestKind];
@@ -13,4 +13,6 @@ export const SetCorrespondentKindRequestKind = {
   organization: "organization",
   shared_mailbox: "shared_mailbox",
   ignored: "ignored",
+  automated: "automated",
+  mailing_list: "mailing_list",
 } as const;

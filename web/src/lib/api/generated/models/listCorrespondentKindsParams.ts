@@ -5,7 +5,7 @@ import type { ListCorrespondentKindsKind } from "./listCorrespondentKindsKind";
 
 export type ListCorrespondentKindsParams = {
   /**
-   * Only records of this kind
+   * Only records of this kind; unclear lists Jev judgments awaiting review
    */
   kind?: ListCorrespondentKindsKind;
   /**

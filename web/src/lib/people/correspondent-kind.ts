@@ -1,5 +1,7 @@
 /** Marking archive identities as not a person: an organization, a shared
- * mailbox, or a record the user does not need. */
+ * mailbox, an automated sender, a mailing list, or a record the user does
+ * not need. Rules and Jev may also classify identities; an unclear Jev
+ * judgment waits in Reviews. */
 import {
   clearCorrespondentKind,
   deletePerson,
@@ -16,7 +18,7 @@ import type {
 } from '../api/generated/models';
 
 /** The kinds a user picks when a record is not a person. */
-export type NotAPersonKind = 'organization' | 'shared_mailbox' | 'ignored';
+export type NotAPersonKind = 'organization' | 'shared_mailbox' | 'automated' | 'mailing_list' | 'ignored';
 export type CorrespondentKind = NotAPersonKind | 'person';
 
 export interface NotAPersonChoice {
@@ -41,6 +43,18 @@ export const NOT_A_PERSON_CHOICES: readonly NotAPersonChoice[] = [
     explanation: 'An address several people write from, like a support desk. Nothing is merged through it; the people who wrote from it keep their own profiles.'
   },
   {
+    kind: 'automated',
+    label: 'Automated sender',
+    action: 'Automated sender',
+    explanation: 'A machine sender such as notifications, receipts, or newsletters. It leaves People and rankings; its messages stay searchable.'
+  },
+  {
+    kind: 'mailing_list',
+    label: 'Mailing list',
+    action: 'Mailing list',
+    explanation: 'A list or group address that relays messages from many people. It leaves People and rankings; its messages stay searchable.'
+  },
+  {
     kind: 'ignored',
     label: 'Ignored',
     action: 'Ignore',
@@ -49,12 +63,34 @@ export const NOT_A_PERSON_CHOICES: readonly NotAPersonChoice[] = [
 ];
 
 export function kindLabel(kind: string | undefined): string {
+  if (kind === 'unclear') return 'Unclear';
   return NOT_A_PERSON_CHOICES.find((choice) => choice.kind === kind)?.label ?? 'Person';
 }
 
 export function isNotAPerson(kind: string | undefined): kind is NotAPersonKind {
-  return kind === 'organization' || kind === 'shared_mailbox' || kind === 'ignored';
+  return NOT_A_PERSON_CHOICES.some((choice) => choice.kind === kind);
 }
+
+/** Who classified a record, in words: the user, a rule, or Jev. */
+export function sourceLabel(source: string | undefined): string {
+  switch (source) {
+    case 'user': return 'You';
+    case 'rule': return 'Rule';
+    case 'jev': return 'Jev';
+    default: return 'Unclassified';
+  }
+}
+
+/** The Jev options, as offered, with the words shown next to their
+ * probabilities in review. */
+export const JEV_OPTION_LABELS: readonly { option: string; label: string }[] = [
+  { option: 'individual_person', label: 'Person' },
+  { option: 'shared_role_or_team_mailbox', label: 'Shared or team mailbox' },
+  { option: 'mailing_list_or_group', label: 'Mailing list or group' },
+  { option: 'automated_notification_or_transactional', label: 'Automated notification' },
+  { option: 'marketing_or_newsletter', label: 'Marketing or newsletter' },
+  { option: 'unclear', label: 'Unclear' }
+];
 
 /** "Shared mailbox" or "Organization · Example Shop". */
 export function assignmentLabel(assignment: Pick<CorrespondentKindAssignment, 'kind' | 'organization_name'> | undefined): string {
@@ -119,6 +155,19 @@ export async function listNotPeople(
 ): Promise<{ records: CorrespondentKindRecord[] } | { error: string }> {
   try {
     const { data, error, response } = await listCorrespondentKinds(undefined, { ...client, ...(signal ? { signal } : {}) });
+    return data ? { records: data.records } : { error: failure(error, response.status).message };
+  } catch (cause) {
+    return { error: failure(cause, 0).message };
+  }
+}
+
+/** Identities Jev could not classify, waiting for a decision. */
+export async function listUnclear(
+  client: APIClient,
+  signal?: AbortSignal
+): Promise<{ records: CorrespondentKindRecord[] } | { error: string }> {
+  try {
+    const { data, error, response } = await listCorrespondentKinds({ kind: 'unclear' }, { ...client, ...(signal ? { signal } : {}) });
     return data ? { records: data.records } : { error: failure(error, response.status).message };
   } catch (cause) {
     return { error: failure(cause, 0).message };

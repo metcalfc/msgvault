@@ -120,6 +120,15 @@ describe('Explore URL state', () => {
     expect(restored).toMatchObject({ workspace: 'directory_review', reviewKind: 'organization' });
   });
 
+  it('restores the unclear correspondent review queue from URL state', () => {
+    const restored = parseExploreURLState(serializeExploreURLState({
+      ...defaultExploreURLState,
+      workspace: 'directory_review',
+      reviewKind: 'correspondent',
+    }));
+    expect(restored).toMatchObject({ workspace: 'directory_review', reviewKind: 'correspondent' });
+  });
+
   it('keeps the selected person when sharing a Fact review', () => {
     const restored = parseExploreURLState(serializeExploreURLState({
       ...defaultExploreURLState,

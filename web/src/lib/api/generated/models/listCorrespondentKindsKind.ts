@@ -9,4 +9,7 @@ export const ListCorrespondentKindsKind = {
   organization: "organization",
   shared_mailbox: "shared_mailbox",
   ignored: "ignored",
+  automated: "automated",
+  mailing_list: "mailing_list",
+  unclear: "unclear",
 } as const;

@@ -239,7 +239,7 @@ describe('IdentityCandidateCard', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Not a person: identity match 17' }));
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim()))
-      .toEqual(['Organization', 'Shared mailbox', 'Ignore']);
+      .toEqual(['Organization', 'Shared mailbox', 'Automated sender', 'Mailing list', 'Ignore']);
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Shared mailbox' }));
     expect(onNotAPerson).toHaveBeenCalledWith(40, 'shared_mailbox');
 
@@ -261,8 +261,8 @@ describe('IdentityCandidateCard', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Not a person: identity match 17' }));
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual([
-      'Organization: Desk', 'Shared mailbox: Desk', 'Ignore: Desk',
-      'Organization: Casey', 'Shared mailbox: Casey', 'Ignore: Casey'
+      'Organization: Desk', 'Shared mailbox: Desk', 'Automated sender: Desk', 'Mailing list: Desk', 'Ignore: Desk',
+      'Organization: Casey', 'Shared mailbox: Casey', 'Automated sender: Casey', 'Mailing list: Casey', 'Ignore: Casey'
     ]);
   });
 });
