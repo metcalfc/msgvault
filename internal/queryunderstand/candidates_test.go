@@ -176,6 +176,32 @@ func TestPeopleMustMatchWholeNameWords(t *testing.T) {
 	assert.False(nameHasWords("Martha Example", []string{"art"}))
 }
 
+func TestPeopleWithPunctuatedNames(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	index := func(context.Context, string) ([]PersonMatch, error) {
+		all := []PersonMatch{
+			{ParticipantID: 1, DisplayLabel: "Anne-Marie Example"},
+			{ParticipantID: 2, DisplayLabel: "Pat O’Neil"},
+			{ParticipantID: 3, DisplayLabel: "Anne Sample"},
+		}
+		// The worst case: an index that returns everyone for any phrase.
+		return all, nil
+	}
+	labels := func(query string) []string {
+		candidates, err := Generate(t.Context(), Input{Query: query, Now: now, People: index})
+		require.NoError(err)
+		out := []string{}
+		for _, person := range candidates.People {
+			out = append(out, person.Label+"|"+person.Span)
+		}
+		return out
+	}
+	assert.Equal([]string{"Anne-Marie Example|from Anne-Marie"}, labels("notes from Anne-Marie"))
+	assert.Equal([]string{"Pat O’Neil|from O'Neil"}, labels("notes from O'Neil"))
+	assert.Equal([]string{"Anne-Marie Example|from Anne", "Anne Sample|from Anne"}, labels("notes from Anne"))
+}
+
 // placed is any candidate or suggestion with a query position.
 type placed interface {
 	Window | TypeCandidate | PersonCandidate | AccountCandidate | Suggestion

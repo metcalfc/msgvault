@@ -336,14 +336,29 @@ func truncateRunes(value string, limit int) string {
 // name, ignoring case and accents: "jane" and "jane doe" match "Jane Doe",
 // "art" does not match "Martha".
 func nameHasWords(name string, phrase []string) bool {
-	words := strings.FieldsFunc(foldName(name), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
-	for _, want := range phrase {
-		want = foldName(want)
-		if utf8.RuneCountInString(want) < 2 || !slices.Contains(words, want) {
+	words := nameWords(name)
+	long := false
+	for _, typed := range phrase {
+		// A query word splits like the name does: "anne-marie" is "anne"
+		// and "marie", "o'neil" is "o" and "neil"; every part must match.
+		parts := nameWords(typed)
+		if len(parts) == 0 {
 			return false
 		}
+		for _, part := range parts {
+			if !slices.Contains(words, part) {
+				return false
+			}
+			long = long || utf8.RuneCountInString(part) >= 2
+		}
 	}
-	return len(phrase) > 0
+	return long
+}
+
+// nameWords folds case and accents and splits at anything that is not a
+// letter or digit (spaces, hyphens, apostrophes, periods).
+func nameWords(value string) []string {
+	return strings.FieldsFunc(foldName(value), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
 }
 
 // foldName lowercases and strips accents.

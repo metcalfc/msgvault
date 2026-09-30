@@ -69,12 +69,13 @@ func (b *Backend) fuseAcceleratedSignals(
 		bm25Request.SubjectBoost = 1
 		bm25Request.SubjectTerms = nil
 		var err error
-		bm25Hits, bm25Saturated, _, err = b.fusedSearchExact(ctx, bm25Request)
+		var lexicalPool int
+		bm25Hits, bm25Saturated, lexicalPool, err = b.fusedSearchExact(ctx, bm25Request)
 		if err != nil {
 			return nil, vector.SearchMetadata{}, err
 		}
 		// Counted before fusion, boosting, or trimming.
-		metadata.LexicalHits, metadata.LexicalCounted = len(bm25Hits), true
+		metadata.LexicalHits, metadata.LexicalCounted = lexicalPool, true
 	}
 
 	byMessage := make(map[int64]vector.FusedHit, len(bm25Hits)+len(vectorHits))

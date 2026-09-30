@@ -71,6 +71,44 @@ func TestFusedSearch_ReadyAcceleratorFusesBothSignals(t *testing.T) {
 	assert.Equal(t, acceleratorKind, metadata.Accelerator)
 }
 
+// TestFusedSearchReportsTheUntrimmedLexicalPool: with more BM25 matches
+// than KPerSignal, both the accelerated and the exact path report the pool
+// the query counted (the K+1 probe), not the trimmed hit count.
+func TestFusedSearchReportsTheUntrimmedLexicalPool(t *testing.T) {
+	for _, accelerated := range []bool{true, false} {
+		t.Run(map[bool]string{true: "accelerated", false: "exact"}[accelerated], func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			b, ctx := newFusedBackendForTest(t)
+			vectors := map[int64][]float32{}
+			for id := int64(11); id <= 14; id++ {
+				vectors[id] = unitVec(768, int(id))
+			}
+			generationID := seedAndEmbed(t, b, vectors)
+			for id := int64(11); id <= 14; id++ {
+				_, err := b.mainDB.ExecContext(ctx,
+					`INSERT INTO messages_fts (rowid, subject, body) VALUES (?, 'zeta report', 'zeta')`, id)
+				require.NoError(err)
+			}
+			if accelerated {
+				installReadyFlatAccelerator(t, b, generationID, 768)
+			}
+			require.NoError(b.ActivateGeneration(ctx, generationID, true))
+
+			_, metadata, err := b.FusedSearch(ctx, vector.FusedRequest{
+				FTSTerms: []string{"zeta"}, QueryVec: unitVec(768, 11),
+				Generation: generationID, KPerSignal: 2, Limit: 1, RRFK: 60,
+			})
+			require.NoError(err)
+			assert.True(metadata.LexicalCounted)
+			assert.Equal(3, metadata.LexicalHits, "four matches report the K+1 probe, above KPerSignal")
+			if accelerated {
+				assert.Equal(acceleratorKind, metadata.Accelerator)
+			}
+		})
+	}
+}
+
 func TestFusedSearch_ReadyAcceleratorReportsUnderfilledWorkCeiling(t *testing.T) {
 	b, ctx := newFusedBackendForTest(t)
 	vectors := make(map[int64][]float32, 80)
