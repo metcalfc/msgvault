@@ -246,6 +246,23 @@ func applyOwnerIdentityRuleTx(ctx context.Context, tx *loggedTx, clusters []corr
 	return nil
 }
 
+// anyNotPersonClassificationTx is a one-row probe for any classification
+// other than person. Identity writers call it on every revision bump, so it
+// also tolerates a SQLite archive opened before the table existed (schema
+// initialization creates it; PostgreSQL archives always have it).
+func (s *Store) anyNotPersonClassificationTx(ctx context.Context, tx *loggedTx) (bool, error) {
+	var classified int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM (
+		SELECT 1 FROM correspondent_kinds WHERE kind <> ? LIMIT 1) probe`,
+		correspondentkind.Person).Scan(&classified); err != nil {
+		if s.dialect.IsNoSuchTableError(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("probe correspondent kinds: %w", err)
+	}
+	return classified > 0, nil
+}
+
 // ownerIdentityActor records why a classification was replaced when its
 // cluster came to include one of the owner's identities.
 const ownerIdentityActor = "system:owner_identity"
@@ -257,13 +274,11 @@ const ownerIdentityActor = "system:owner_identity"
 // classification added are withdrawn. It runs with every identity revision
 // bump, and costs one indexed probe when nothing is classified.
 func (s *Store) dropOwnerClusterClassificationsTx(ctx context.Context, tx *loggedTx) error {
-	var classified int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM (
-		SELECT 1 FROM correspondent_kinds WHERE kind <> ? LIMIT 1) probe`,
-		correspondentkind.Person).Scan(&classified); err != nil {
-		return fmt.Errorf("probe correspondent kinds: %w", err)
+	classified, err := s.anyNotPersonClassificationTx(ctx, tx)
+	if err != nil {
+		return err
 	}
-	if classified == 0 {
+	if !classified {
 		return nil
 	}
 	rows, err := loadCorrespondentKindRowsTx(ctx, tx)
@@ -1177,13 +1192,11 @@ func (s *Store) participantsClassifiedNotPersonTx(
 	if len(participantIDs) == 0 {
 		return false, nil
 	}
-	var classified int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM (
-		SELECT 1 FROM correspondent_kinds WHERE kind <> ? LIMIT 1) probe`,
-		correspondentkind.Person).Scan(&classified); err != nil {
-		return false, fmt.Errorf("probe correspondent kinds: %w", err)
+	classified, err := s.anyNotPersonClassificationTx(ctx, tx)
+	if err != nil {
+		return false, err
 	}
-	if classified == 0 {
+	if !classified {
 		return false, nil
 	}
 	hidden, err := s.hiddenCorrespondentParticipantsTx(ctx, tx)
