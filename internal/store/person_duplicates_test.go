@@ -315,6 +315,55 @@ func TestRecordPersonDuplicateJudgmentsDropAPairThatBecameTheOwner(t *testing.T)
 	assert.Equal(t, store.PersonDuplicateWriteResult{Dropped: 1}, result)
 }
 
+func TestRecordPersonDuplicateJudgmentsKeepsTheArchiveWideSharedValue(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	// Both clusters use "Alex Smith" and "Zoe Taylor". "Alex Smith" is too
+	// common (six clusters), so the proposal rests on "Zoe Taylor" even
+	// though "alex smith" sorts first between just these two clusters.
+	left := duplicateParticipant(t, st, "zoe@example.com", "Zoe Taylor")
+	leftAlias := duplicateParticipant(t, st, "zoe.alias@example.com", "Alex Smith")
+	_, err := st.LinkParticipants(left, leftAlias)
+	require.NoError(err)
+	right := duplicateParticipant(t, st, "ztaylor@example.org", "Zoe Taylor")
+	rightAlias := duplicateParticipant(t, st, "ztaylor.alias@example.org", "Alex Smith")
+	_, err = st.LinkParticipants(right, rightAlias)
+	require.NoError(err)
+	for i := range 4 {
+		duplicateParticipant(t, st, fmt.Sprintf("alex%d@example.net", i), "Alex Smith")
+	}
+	proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	require.Len(proposals, 1)
+	assert.Equal("taylor zoe", proposals[0].SharedValue)
+
+	result, err := st.RecordPersonDuplicateJudgmentsContext(t.Context(), []store.PersonDuplicateJudgment{{
+		Proposal: proposals[0], Probability: 0.8, Model: "jev-test", Propose: true,
+	}})
+	require.NoError(err)
+	assert.Equal(store.PersonDuplicateWriteResult{Recorded: 1, Candidates: 1}, result,
+		"an unchanged proposal is written")
+}
+
+func TestRecordPersonDuplicateJudgmentsDropAPairThatNoLongerSharesTheName(t *testing.T) {
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	duplicateParticipant(t, st, "jane@example.com", "Jane Doe")
+	janeWork := duplicateParticipant(t, st, "jdoe@example.org", "Jane Doe")
+	proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	require.Len(proposals, 1)
+	_, err = st.DB().Exec(st.Rebind(`UPDATE participants SET display_name = ? WHERE id = ?`), "Janet Roe", janeWork)
+	require.NoError(err)
+
+	result, err := st.RecordPersonDuplicateJudgmentsContext(t.Context(), []store.PersonDuplicateJudgment{{
+		Proposal: proposals[0], Probability: 0.9, Model: "jev-test", Propose: true,
+	}})
+	require.NoError(err)
+	assert.Equal(t, store.PersonDuplicateWriteResult{Dropped: 1}, result)
+}
+
 func TestPersonDuplicateProposalsAreDeterministic(t *testing.T) {
 	require := require.New(t)
 	st := testutil.NewTestStore(t)

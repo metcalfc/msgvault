@@ -75,6 +75,10 @@ type PersonDuplicateProposal struct {
 	Signals     []PersonDuplicateSignal
 	// SharedValue is the normalized shared name, else the shared local part.
 	SharedValue string
+	// SignalValues is the exact shared value behind each signal, as chosen
+	// with the whole archive in view. Revalidation checks these values are
+	// still shared rather than choosing again.
+	SignalValues map[PersonDuplicateSignal]string
 	// Fingerprint hashes both clusters' members, names, and addresses and
 	// the signals; a stored judgment with the same fingerprint is not asked
 	// again.
@@ -365,6 +369,10 @@ func buildDuplicateProposal(
 			if proposal.SharedValue == "" {
 				proposal.SharedValue = value
 			}
+			if proposal.SignalValues == nil {
+				proposal.SignalValues = map[PersonDuplicateSignal]string{}
+			}
+			proposal.SignalValues[signal] = value
 		}
 	}
 	hash := sha256.New()

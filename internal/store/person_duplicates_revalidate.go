@@ -15,10 +15,12 @@ import (
 // identity lock, reading only the two clusters: their links and members,
 // owner status, correspondent kinds, shared-mailbox signals, person
 // bindings, candidates and rejections between them, and the names and
-// addresses behind the proposal's signals. It reports whether the pair
-// still qualifies with exactly the judged inputs. How many other clusters
-// share the name or local part is not rechecked; that only decided which
-// pairs were worth asking.
+// addresses behind the proposal's signals. It reports whether the
+// exclusions still pass and both clusters still share the exact values the
+// proposal was built on; it does not choose values again. How many other
+// clusters share a name or local part is not rechecked: a group that grew
+// past the five-cluster cap after judging still writes its candidate, which
+// is acceptable because the candidate is only a suggestion the user reviews.
 func (s *Store) revalidatePersonDuplicateTx(
 	ctx context.Context, tx *loggedTx, proposal PersonDuplicateProposal,
 ) (bool, error) {
@@ -115,17 +117,13 @@ func (s *Store) revalidatePersonDuplicateTx(
 	}); err != nil {
 		return false, fmt.Errorf("load duplicate-person participants: %w", err)
 	}
-	signals := pairDuplicateSignals(clusters[left], clusters[right])
-	judged := map[PersonDuplicateSignal]string{}
 	for _, signal := range proposal.Signals {
-		value, ok := signals[signal]
-		if !ok {
+		value, ok := proposal.SignalValues[signal]
+		if !ok || !stillShared(signal, value, clusters[left], clusters[right]) {
 			return false, nil
 		}
-		judged[signal] = value
 	}
-	current := buildDuplicateProposal(clusters[left], clusters[right], leftPersons, rightPersons, judged)
-	return current.Fingerprint == proposal.Fingerprint, nil
+	return len(proposal.Signals) > 0, nil
 }
 
 // add records one email-bearing participant's address and display name.
@@ -141,42 +139,30 @@ func (c *duplicateCluster) add(email, name string) {
 	}
 }
 
-// pairDuplicateSignals computes the signals two clusters share, each
-// represented by its smallest shared value, exactly as the proposal builder
-// does for one pair.
-func pairDuplicateSignals(left, right *duplicateCluster) map[PersonDuplicateSignal]string {
-	signals := map[PersonDuplicateSignal]string{}
-	keep := func(signal PersonDuplicateSignal, value string) {
-		if prior, ok := signals[signal]; !ok || value < prior {
-			signals[signal] = value
-		}
-	}
-	for key := range left.names {
-		if _, ok := right.names[key]; ok {
-			keep(PersonDuplicateSameName, key)
-		}
-	}
-	domains := func(cluster *duplicateCluster) map[string]map[string]struct{} {
-		result := map[string]map[string]struct{}{}
-		for _, address := range cluster.addresses {
-			local, domain, ok := duplicateLocalPart(address)
-			if !ok {
-				continue
+// stillShared reports whether both clusters still carry the exact shared
+// value a signal was proposed on: the same normalized name, or the same
+// local part at different domains.
+func stillShared(signal PersonDuplicateSignal, value string, left, right *duplicateCluster) bool {
+	switch signal {
+	case PersonDuplicateSameName:
+		_, inLeft := left.names[value]
+		_, inRight := right.names[value]
+		return inLeft && inRight
+	case PersonDuplicateSameLocalPart:
+		domains := func(cluster *duplicateCluster) map[string]struct{} {
+			result := map[string]struct{}{}
+			for _, address := range cluster.addresses {
+				if local, domain, ok := duplicateLocalPart(address); ok && local == value {
+					result[domain] = struct{}{}
+				}
 			}
-			if result[local] == nil {
-				result[local] = map[string]struct{}{}
-			}
-			result[local][domain] = struct{}{}
+			return result
 		}
-		return result
+		leftDomains, rightDomains := domains(left), domains(right)
+		return len(leftDomains) > 0 && len(rightDomains) > 0 && differentDomains(leftDomains, rightDomains)
+	default:
+		return false
 	}
-	rightDomains := domains(right)
-	for local, leftDomains := range domains(left) {
-		if other, ok := rightDomains[local]; ok && differentDomains(leftDomains, other) {
-			keep(PersonDuplicateSameLocalPart, local)
-		}
-	}
-	return signals
 }
 
 // duplicatePairDecidedTx reports whether any participant-to-participant
