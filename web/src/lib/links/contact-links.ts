@@ -290,6 +290,24 @@ export function contactPointLinkInput(point: ContactPointLike): ContactLinkInput
   };
 }
 
+/** A link for an organization's domain or LinkedIn identifier; other
+ * identifier kinds (DUNS, tax ID, registry) have no public page. A bare
+ * LinkedIn slug names a company page. */
+export function organizationIdentifierLink(kind: string, value: string): ContactLink | undefined {
+  const trimmed = clean(value);
+  switch (clean(kind).toLowerCase()) {
+    case 'domain':
+      return contactLink({ kind: 'url', value: trimmed });
+    case 'linkedin':
+      return contactLink({
+        kind: 'social', service: 'linkedin',
+        value: /[/:]/.test(trimmed) ? trimmed : `company/${trimmed}`
+      });
+    default:
+      return undefined;
+  }
+}
+
 /** The address fields a map link can use. */
 export interface MapLinkInput {
   geo_uri?: string;

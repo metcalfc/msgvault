@@ -3,6 +3,8 @@
 
   import type { DirectoryEntityController } from '../../directory/entity-controller.svelte';
   import type { Employment, Organization } from '../../directory/models';
+  import { organizationIdentifierLink } from '../../links/contact-links';
+  import LinkedValue from '../common/LinkedValue.svelte';
   import EmploymentCurrentData from './EmploymentCurrentData.svelte';
   import EmploymentEditor from './EmploymentEditor.svelte';
   import OrganizationEditor from './OrganizationEditor.svelte';
@@ -187,7 +189,7 @@
     {:else if controller.errors.organizations}<p role="alert">{controller.errors.organizations}</p>
     {:else if controller.organizations.length === 0}<p class="empty">No organizations found.</p>
     {:else}
-      <ul class="organizations">{#each controller.organizations as organization (organization.id)}<li><span><strong>{organization.name}</strong> · {organization.kind}{#if organization.primary_domain} · {organization.primary_domain}{/if}</span><Button size="sm" label={`Manage ${organization.name}`} onclick={() => { organizationEditor = organization; }} /></li>{/each}</ul>
+      <ul class="organizations">{#each controller.organizations as organization (organization.id)}<li><span><strong>{organization.name}</strong> · {organization.kind}{#if organization.primary_domain} · <LinkedValue link={organizationIdentifierLink('domain', organization.primary_domain)} text={organization.primary_domain} copy={false} />{/if}</span><Button size="sm" label={`Manage ${organization.name}`} onclick={() => { organizationEditor = organization; }} /></li>{/each}</ul>
     {/if}
   </section>
 </section>

@@ -131,6 +131,9 @@ describe('OrganizationEmploymentTab', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Search organizations' }));
     expect(await screen.findByRole('button', { name: 'Manage Synthetic Org' })).toBeDefined();
+    const domain = screen.getByRole('link', { name: 'synthetic.example (opens in new tab)' });
+    expect(domain.getAttribute('href')).toBe('https://synthetic.example/');
+    expect(domain.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
   it('creates an employment for the exact selected person with user provenance and renders reconciled projection', async () => {

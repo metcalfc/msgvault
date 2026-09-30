@@ -3,6 +3,8 @@
   import { onDestroy, onMount, untrack } from 'svelte';
 
   import type { DirectoryEntityController } from '../../directory/entity-controller.svelte';
+  import { organizationIdentifierLink } from '../../links/contact-links';
+  import LinkedValue from '../common/LinkedValue.svelte';
   import type { DirectoryEntityMutationResult, Organization, OrganizationProfile, OrganizationProfileBody } from '../../directory/models';
 
   interface Props {
@@ -314,7 +316,7 @@
             <h4>Addresses</h4>
             {#if conflictCurrent.addresses?.length}<ul>{#each conflictCurrent.addresses as item}<li>{present([item.address_kind, item.original_value, item.post_office_box, item.extended_address, item.street_address, item.locality, item.region, item.postal_code, item.country_name, item.extended_components, item.free_text, item.place_uri, item.geo_uri, item.label, item.timezone, item.country_code])} · {envelopeText(item.envelope)}</li>{/each}</ul>{:else}<p>None</p>{/if}
             <h4>Identifiers</h4>
-            {#if conflictCurrent.identifiers?.length}<ul>{#each conflictCurrent.identifiers as item}<li>{item.identifier_kind}: {item.identifier_value} · {envelopeText(item.envelope)}</li>{/each}</ul>{:else}<p>None</p>{/if}
+            {#if conflictCurrent.identifiers?.length}<ul>{#each conflictCurrent.identifiers as item}<li>{item.identifier_kind}: <LinkedValue link={organizationIdentifierLink(item.identifier_kind, item.identifier_value)} text={item.identifier_value} copy={false} /> · {envelopeText(item.envelope)}</li>{/each}</ul>{:else}<p>None</p>{/if}
             <h4>Media</h4>
             {#if conflictCurrent.media?.length}<ul>{#each conflictCurrent.media as item}<li>{present([item.media_kind, item.original_value, item.media_type, item.uri, item.content_hash])} · {envelopeText(item.envelope)}</li>{/each}</ul>{:else}<p>None</p>{/if}
           </section>

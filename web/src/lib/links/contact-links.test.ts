@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { contactLink, formattedAddress, mapLink, type ContactLinkInput } from './contact-links';
+import {
+  contactLink, contactPointLinkInput, formattedAddress, mapLink, organizationIdentifierLink, type ContactLinkInput
+} from './contact-links';
 
 describe('contactLink', () => {
   const linked: Array<[string, ContactLinkInput, string, boolean]> = [
@@ -122,3 +124,40 @@ describe('mapLink', () => {
       .toBe('1 Main St, Springfield, US');
   });
 });
+
+describe('organizationIdentifierLink', () => {
+  it('links a primary domain over https', () => {
+    expect(organizationIdentifierLink('domain', 'example.com')?.href).toBe('https://example.com/');
+  });
+
+  it('refuses a private or single-label domain', () => {
+    expect(organizationIdentifierLink('domain', 'intranet')).toBeUndefined();
+    expect(organizationIdentifierLink('domain', 'corp.internal')).toBeUndefined();
+  });
+
+  it('links a LinkedIn slug as a company page and keeps a full path', () => {
+    expect(organizationIdentifierLink('linkedin', 'example-co')?.href).toBe('https://www.linkedin.com/company/example-co');
+    expect(organizationIdentifierLink('linkedin', 'school/example-university')?.href)
+      .toBe('https://www.linkedin.com/school/example-university');
+    expect(organizationIdentifierLink('linkedin', 'https://www.linkedin.com/company/example-co/')?.href)
+      .toBe('https://www.linkedin.com/company/example-co/');
+  });
+
+  it('leaves registry identifiers unlinked', () => {
+    expect(organizationIdentifierLink('duns', '123456789')).toBeUndefined();
+    expect(organizationIdentifierLink('tax_id', '12-3456789')).toBeUndefined();
+  });
+});
+
+describe('contactPointLinkInput', () => {
+  it('passes the stored template for the point service', () => {
+    expect(contactPointLinkInput({
+      address_kind: 'username', service_slug: 'GitHub', original_value: '@Example', normalized_value: 'example',
+      profile_url_template: 'https://github.com/{username}'
+    })).toEqual({
+      kind: 'username', service: 'github', value: '@Example', normalized: 'example', uri: undefined,
+      services: { github: { profile_url_template: 'https://github.com/{username}' } }
+    });
+  });
+});
+
