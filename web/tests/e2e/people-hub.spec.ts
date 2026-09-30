@@ -218,3 +218,59 @@ test('a saved person marked as an organization keeps the profile unless deleting
   await expect(page.getByRole('region', { name: 'Not a person' })).toContainText('Not a person · Organization · Example Co');
   expect(deleted).toBe(false);
 });
+
+// A real browser moves focus from the picker to the next control before the
+// click lands. Pickers that treated that focusout as "clear the choice" left
+// the confirm button doing nothing.
+test('a person picked in Same person stays picked when the confirm button is clicked', async ({ page }) => {
+  await page.route('**/api/v1/participants/search', (route) => route.fulfill({ json: {
+    rows: [summary(21, 'Ada Example', 7)], total_count: 1, cache_revision: 'c', search_provenance: {},
+  } }));
+  await page.goto('/people/contact-31');
+  await page.getByRole('button', { name: 'More actions for Bo Example' }).click();
+  await page.getByRole('menuitem', { name: 'Same person…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Link another identity for Bo Example' });
+  await dialog.getByRole('button', { name: /^Search people to link/ }).click();
+  await dialog.getByRole('combobox', { name: 'Search people to link' }).fill('Ada');
+  await page.getByRole('option', { name: /Ada Example/ }).click();
+  await expect(dialog.getByRole('button', { name: 'Search people to link: Ada Example' })).toBeVisible();
+
+  const linked = page.waitForRequest((request) => request.method() === 'POST' &&
+    new URL(request.url()).pathname === '/api/v1/identity/links');
+  await dialog.getByRole('button', { name: 'These are the same person' }).click();
+  expect((await linked).postDataJSON()).toEqual({ participant_a: 31, participant_b: 21 });
+});
+
+test('a new relationship keeps the counterpart and type picked before Create is clicked', async ({ page }) => {
+  await page.route('**/api/v1/relationship-types', (route) => route.fulfill({ json: { relationship_types: [{
+    id: 31, revision: 1, slug: 'mentor', forward_label: 'mentors', reverse_label: 'is mentored by', is_symmetric: false,
+    is_canonical: false, is_deletable: true, ownership: 'user', universal_id: 'relationship-type-31', created_at: when, updated_at: when,
+  }] } }));
+  await page.route(/\/api\/v1\/people\/directory\?.*\bq=/, (route) => route.fulfill({ json: { people: [
+    { id: 7, revision: 1, display_name: 'Ada Example', contact_state: 'active', categories: [], organizations: [] },
+    { id: 9, revision: 1, display_name: 'Cy Example', contact_state: 'active', categories: [], organizations: [] },
+  ] } }));
+  await page.route('**/api/v1/person-relationships', (route) => route.fulfill({ status: 201, headers: { ETag: '"relationship-44-r1"' }, json: {
+    id: 44, revision: 1, relationship_type_id: 31, type_slug: 'mentor', source_person_id: 7, target_person_id: 9,
+    forward_label: 'mentors', reverse_label: 'is mentored by', is_symmetric: false, status: 'active', source: 'user',
+    created_by: 'user', updated_by: 'user', vcard_identity: {}, created_at: when, updated_at: when,
+  } }));
+  await page.goto('/people/7/profile');
+  const relationships = page.getByRole('region', { name: 'Relationships' });
+  await relationships.getByRole('button', { name: 'Add relationship', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add relationship' });
+  await expect(dialog.getByRole('combobox', { name: 'Relationship type: Choose a type' })).toBeVisible();
+
+  await dialog.getByRole('button', { name: /^Relationship counterpart/ }).click();
+  await dialog.getByRole('combobox', { name: 'Relationship counterpart' }).fill('Cy');
+  await page.getByRole('option', { name: /Cy Example/ }).click();
+  await dialog.getByRole('combobox', { name: /^Relationship type:/ }).click();
+  await page.getByRole('option', { name: 'mentors / is mentored by' }).click();
+  await dialog.getByRole('textbox', { name: 'Relationship notes' }).click();
+  await expect(dialog.getByRole('button', { name: 'Relationship counterpart: Cy Example' })).toBeVisible();
+
+  const created = page.waitForRequest((request) => request.method() === 'POST' &&
+    new URL(request.url()).pathname === '/api/v1/person-relationships');
+  await dialog.getByRole('button', { name: 'Create relationship' }).click();
+  expect((await created).postDataJSON()).toMatchObject({ source_person_id: 7, target_person_id: 9, relationship_type_slug: 'mentor' });
+});

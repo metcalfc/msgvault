@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createAPIClient } from '../../api/client';
 import { DirectoryEntityController } from '../../directory/entity-controller.svelte';
-import { chooseSelectOption, openTypeahead } from '../../../test/kit-ui';
+import { chooseSelectOption, focusAndClick, openTypeahead } from '../../../test/kit-ui';
 import RelationshipsTab from './RelationshipsTab.svelte';
 
 function requestOf(input: RequestInfo | URL): Request {
@@ -235,6 +235,48 @@ describe('RelationshipsTab', () => {
       relationship_type_slug: 'mentor'
     });
     expect(screen.getByText('Synthetic Colleague · mentors')).toBeDefined();
+  });
+
+  it('keeps the chosen counterpart and type as focus moves through the form to Create', async () => {
+    const requests: Request[] = [];
+    const created = relationship(46, 1, { source_person_id: 7, target_person_id: 9 });
+    const { client, controller } = controllerWith(vi.fn<typeof fetch>(async (input) => {
+      const request = requestOf(input);
+      requests.push(request);
+      const path = pathOf(request);
+      if (path === '/api/v1/people/directory') return Response.json({ people: [
+        { id: 9, revision: 1, display_name: 'Synthetic Colleague', categories: [], contact_state: 'active', organizations: [] }
+      ] });
+      if (path === '/api/v1/person-relationships' && request.method === 'POST') {
+        return new Response(JSON.stringify(created), { status: 201, headers: { ETag: '"relationship-46-r1"' } });
+      }
+      if (path === '/api/v1/people/7/relationships') {
+        return Response.json({ relationships: [view(46, 'outgoing', 'mentors', 'Synthetic Colleague', { relationship: created })] });
+      }
+      throw new Error(`unexpected ${request.method} ${path}`);
+    }));
+    controller.relationshipTypes = [relationshipType()];
+    render(RelationshipsTab, { client, controller, personID: 7 });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Add relationship' }));
+    const create = screen.getByRole('button', { name: 'Create relationship' });
+    // No type is chosen yet, so the trigger must say so rather than show the
+    // first type while Create stays disabled.
+    expect(screen.getByRole('combobox', { name: 'Relationship type: Choose a type' })).toBeDefined();
+    expect(create).toHaveProperty('disabled', true);
+
+    await fireEvent.input(await openTypeahead('Relationship counterpart'), { target: { value: 'Colleague' } });
+    await fireEvent.mouseDown(await screen.findByRole('option', { name: /Synthetic Colleague/ }));
+    // Moving on to the next picker and then to Create each blur the counterpart picker.
+    await chooseSelectOption(screen.getByRole('combobox', { name: /^Relationship type:/ }), 'mentors / is mentored by');
+    await focusAndClick(screen.getByRole('textbox', { name: 'Relationship notes' }));
+    expect(screen.getByRole('button', { name: 'Relationship counterpart: Synthetic Colleague' })).toBeDefined();
+    expect(create).toHaveProperty('disabled', false);
+    await focusAndClick(create);
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add relationship' })).toBeNull());
+    const post = requests.find((request) => pathOf(request) === '/api/v1/person-relationships' && request.method === 'POST')!;
+    await expect(post.clone().json()).resolves.toMatchObject({ source_person_id: 7, target_person_id: 9, relationship_type_slug: 'mentor' });
   });
 
   it('retains an edge draft on conflict and uses the fresh individual ETag without auto-retry', async () => {

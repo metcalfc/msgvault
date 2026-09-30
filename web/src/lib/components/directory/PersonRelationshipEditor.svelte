@@ -46,7 +46,6 @@
   let people = $state<DirectoryPerson[]>([]);
   let searching = $state(false);
   let searchError = $state('');
-  let preserveSelectionOnClose = false;
   let direction = $state<'outgoing' | 'incoming'>('outgoing');
   let relationshipTypeSlug = $state(initialRelationship?.type_slug ?? '');
   let startDate = $state(partialDate(initialRelationship?.start_date));
@@ -68,12 +67,16 @@
       }),
     ),
   );
-  const typeOptions = $derived(
-    controller.relationshipTypes.map((type) => ({
+  // SelectDropdown shows its first option for an unmatched value, so without
+  // this placeholder the trigger would name a type the form has not chosen
+  // and Create would stay disabled with nothing on screen explaining why.
+  const typeOptions = $derived([
+    { value: '', label: 'Choose a type', disabled: true },
+    ...controller.relationshipTypes.map((type) => ({
       value: type.slug,
       label: type.is_symmetric ? type.forward_label : `${type.forward_label} / ${type.reverse_label}`,
     })),
-  );
+  ]);
   const directionOptions = [
     { value: 'outgoing', label: 'Selected person → counterpart' },
     { value: 'incoming', label: 'Counterpart → selected person' },
@@ -122,15 +125,15 @@
     }
   }
   function handleQuery(value: string): void {
-    if (!value.trim() && preserveSelectionOnClose) return;
-    counterpartID = null;
-    preserveSelectionOnClose = false;
+    // Typeahead reports an empty query whenever it opens or closes, including
+    // the focusout when the user moves on to another field. Only typed text
+    // replaces the chosen counterpart; an empty query keeps it.
+    if (value.trim() !== '') counterpartID = null;
     debouncedSearch(value);
   }
   function selectCounterpart(value: string): void {
     const id = Number(value);
     counterpartID = id === personID ? null : id;
-    preserveSelectionOnClose = counterpartID !== null;
     message = counterpartID === null ? 'A person cannot have a relationship with itself.' : '';
   }
   async function submit(): Promise<void> {
