@@ -255,7 +255,17 @@ func (s *Store) applyAcceptedIdentityMatchCandidateContext(
 				}
 				loaded.Evidence = current.Evidence
 				current = *loaded
-				if decidedBy != string(ProvenanceUser) {
+				guard := decidedBy != string(ProvenanceUser)
+				if guard {
+					// Without an active detachment nothing can be rejoined,
+					// so skip loading the whole link graph for the guard.
+					active, activeErr := hasActivePersonDetachmentTx(ctx, tx)
+					if activeErr != nil {
+						return activeErr
+					}
+					guard = active
+				}
+				if guard {
 					edges, edgeErr := s.loadLinkEdgesTxContext(ctx, tx)
 					if edgeErr != nil {
 						return edgeErr

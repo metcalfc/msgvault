@@ -1554,3 +1554,58 @@ func TestThreeParticipantCollisionExplainsAndReportsEveryConflict(t *testing.T) 
 		assert.Equal(evidenceName, candidate.Evidence[0].EvidenceKind)
 	}
 }
+
+func TestStableMatchThatWouldRejoinADetachedIdentityIsResolvedNotAnError(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	ctx := context.Background()
+	cc := captureContext{
+		SourceID: newBeeperTestSource(t, st, "telegram"), AccountID: "telegram", Network: "Telegram",
+	}
+
+	alice, err := st.EnsureParticipantByIdentifier(
+		participantIdentifierType, "@telegram_alice:beeper.local", "Alice Example")
+	require.NoError(err, "ensure alice")
+	bob, err := st.EnsureParticipantByIdentifier(
+		participantIdentifierType, "@telegram_bob:beeper.local", "Bot Example")
+	require.NoError(err, "ensure bob")
+	carol, err := st.EnsureParticipantByIdentifier(
+		participantIdentifierType, "@telegram_carol:beeper.local", "Carol Example")
+	require.NoError(err, "ensure carol")
+	person, _, err := st.CreatePersonFromParticipantContext(ctx, alice)
+	require.NoError(err, "promote alice")
+	_, err = st.LinkParticipants(alice, bob)
+	require.NoError(err, "link bob to alice's person")
+	current, err := st.GetPersonContext(ctx, person.ID)
+	require.NoError(err, "GetPersonContext")
+	_, err = st.DetachPersonParticipantsContext(ctx, store.PersonParticipantDetachRequest{
+		PersonID: person.ID, ParticipantIDs: []int64{bob}, ExpectedRevision: current.Revision, Actor: "user",
+	})
+	require.NoError(err, "detach bob")
+
+	recorder := newObservationRecorder(st)
+	matcher := newIdentityMatcher(st)
+	// Bob and Carol share one provider ID; joining them touches no person.
+	captureAndMatch(t, recorder, matcher, bob, &User{
+		ID: "@telegram_bob:beeper.local", Raw: []byte(`{"providerID":"tg-bot"}`),
+	}, cc)
+	captureAndMatch(t, recorder, matcher, carol, &User{
+		ID: "@telegram_carol:beeper.local", Raw: []byte(`{"providerID":"tg-bot"}`),
+	}, cc)
+	require.True(linked(t, st, bob, carol), "a join away from the person is still automatic")
+
+	// Carol and Alice share another; joining them would bring Bob back.
+	captureAndMatch(t, recorder, matcher, alice, &User{
+		ID: "@telegram_alice:beeper.local", Raw: []byte(`{"providerID":"tg-alice"}`),
+	}, cc)
+	outcome := captureAndMatch(t, recorder, matcher, carol, &User{
+		ID: "@telegram_carol:beeper.local", Raw: []byte(`{"providerID":"tg-alice"}`),
+	}, cc)
+
+	assert.Empty(outcome.AutoResolved, "the detachment blocks the rejoin")
+	assert.False(linked(t, st, alice, carol))
+	after, err := st.GetPersonContext(ctx, person.ID)
+	require.NoError(err, "GetPersonContext after match")
+	assert.Equal([]int64{alice}, after.ParticipantIDs, "the detached identity stays detached")
+}

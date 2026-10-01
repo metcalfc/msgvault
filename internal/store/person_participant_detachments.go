@@ -994,6 +994,17 @@ func (e *PersonDetachmentJoinError) Unwrap() error { return ErrPersonDetachmentJ
 var ErrPersonDetachmentJoin = errors.New(
 	"identity match would rejoin an identity detached from its person")
 
+// hasActivePersonDetachmentTx reports whether any detachment is still in
+// effect, so callers can skip guards that only matter while one is.
+func hasActivePersonDetachmentTx(ctx context.Context, tx *loggedTx) (bool, error) {
+	var active bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM person_participant_detachments WHERE reattached_at IS NULL)`).Scan(&active); err != nil {
+		return false, fmt.Errorf("check active person detachments: %w", err)
+	}
+	return active, nil
+}
+
 // detachmentBlockingJoinTx reports the active detachment, if any, that a
 // new edge between a and b would defeat: after the join, one cluster would
 // hold a participant the user detached from a person (with that

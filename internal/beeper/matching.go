@@ -465,6 +465,11 @@ func (m *identityMatcher) matchStableProviderID(
 			); staleErr != nil {
 				return staleErr
 			}
+		case errors.Is(err, store.ErrPersonDetachmentJoin):
+			// The user detached one side from the person this match would
+			// rejoin; the store rejected the candidate, which is a durable
+			// suppression, not an import error.
+			m.resolved[memoKey] = struct{}{}
 		case errors.Is(err, store.ErrIdentityMatchRejected):
 			// A user rejection won the identity lock after this importer
 			// observed the candidate. It is a durable decision, not an
