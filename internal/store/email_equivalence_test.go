@@ -570,3 +570,43 @@ func TestLinkEquivalentEmailAddressesAnchorsOnEligibleMember(t *testing.T) {
 	assert.True(linkedPair(t, st, first, second), "siblings link without the hub")
 	assert.False(linkedPair(t, st, hub, first), "the automated address stays apart")
 }
+
+// A rejected dot-variant suggestion is about two mailboxes. When another
+// address becomes its mailbox's anchor, the same suggestion is not raised
+// again for the new anchor.
+func TestLinkEquivalentEmailAddressesDotVariantRejectionSurvivesAnchorShift(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	ctx := context.Background()
+
+	dotted := ensureEmailParticipant(t, st, "lee.roe@example.org")
+	dottedTag := ensureEmailParticipant(t, st, "lee.roe+x@example.org")
+	dotless := ensureEmailParticipant(t, st, "leeroe@example.org")
+	_, err := st.LinkEquivalentEmailAddressesContext(ctx, false)
+	require.NoError(err, "first pass")
+	require.True(linkedPair(t, st, dotted, dottedTag))
+	suggestion := equivalenceCandidateFor(t, st, dotted, dotless)
+	_, err = st.DecideIdentityMatchCandidateContext(
+		ctx, suggestion.ID, store.IdentityMatchStateRejected, "user", nil)
+	require.NoError(err, "reject the suggestion")
+
+	// Detaching the anchor makes the tagged address its mailbox's anchor.
+	person, _, err := st.CreatePersonFromParticipant(dotted)
+	require.NoError(err, "promote")
+	_, err = st.DetachPersonParticipantsContext(ctx, store.PersonParticipantDetachRequest{
+		PersonID: person.ID, ParticipantIDs: []int64{dotted},
+		ExpectedRevision: person.Revision, Actor: "user",
+	})
+	require.NoError(err, "detach the anchor")
+
+	result, err := st.LinkEquivalentEmailAddressesContext(ctx, true)
+	require.NoError(err, "forced pass")
+	assert.Equal(0, result.Suggested, "the rejected mailbox pair is not suggested again")
+	for _, candidate := range equivalenceCandidates(t, st) {
+		if candidate.Basis == store.IdentityMatchEmailDotVariant {
+			assert.Equal(store.IdentityMatchStateRejected, candidate.State,
+				"dot-variant candidate %d-%d", candidate.LeftID, candidate.RightID)
+		}
+	}
+}

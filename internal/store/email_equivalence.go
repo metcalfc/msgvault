@@ -133,6 +133,67 @@ func newEmailEquivalenceDecisions(
 	return decisions
 }
 
+// mailboxPair is an unordered pair of mailbox keys.
+type mailboxPair [2]string
+
+func newMailboxPair(a, b string) mailboxPair {
+	if a > b {
+		a, b = b, a
+	}
+	return mailboxPair{a, b}
+}
+
+// loadDecidedDotVariantMailboxes returns the mailbox pairs that already have
+// a dot-variant candidate in any state. A suggestion is about two mailboxes,
+// not two participant IDs: the anchor that represents a mailbox can change
+// (a promotion, a detachment), and the user's decision must survive that.
+func loadDecidedDotVariantMailboxes(
+	ctx context.Context, query func(context.Context, string, ...any) (rowsScanner, error),
+) (map[mailboxPair]struct{}, error) {
+	rows, err := query(ctx, `SELECT left_side.email_address, right_side.email_address
+		FROM identity_match_candidates c
+		JOIN participants left_side ON left_side.id = c.left_id
+		JOIN participants right_side ON right_side.id = c.right_id
+		WHERE c.basis = ? AND c.left_kind = ? AND c.right_kind = ?
+		  AND left_side.email_address IS NOT NULL
+		  AND right_side.email_address IS NOT NULL`,
+		IdentityMatchEmailDotVariant, IdentityMatchParticipant, IdentityMatchParticipant)
+	if err != nil {
+		return nil, fmt.Errorf("load dot-variant decisions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	decided := make(map[mailboxPair]struct{})
+	for rows.Next() {
+		var left, right string
+		if err := rows.Scan(&left, &right); err != nil {
+			return nil, fmt.Errorf("scan dot-variant decision: %w", err)
+		}
+		leftMailbox, okLeft := emailaddr.Mailbox(left)
+		rightMailbox, okRight := emailaddr.Mailbox(right)
+		if okLeft && okRight {
+			decided[newMailboxPair(leftMailbox, rightMailbox)] = struct{}{}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate dot-variant decisions: %w", err)
+	}
+	return decided, nil
+}
+
+// dotVariantDecided reports whether the mailboxes of a dot-variant pair
+// already have a suggestion, whichever participants it named.
+func dotVariantDecided(
+	pair emailEquivalencePair, addresses map[int64]string, decided map[mailboxPair]struct{},
+) bool {
+	lo, okLo := emailaddr.Mailbox(addresses[pair.lo])
+	hi, okHi := emailaddr.Mailbox(addresses[pair.hi])
+	if !okLo || !okHi {
+		return false
+	}
+	_, found := decided[newMailboxPair(lo, hi)]
+	return found
+}
+
 // settled reports whether a pair already has an outcome the pass must not
 // revisit: a rejection under any key, a conflict, or an applied acceptance.
 func (d emailEquivalenceDecisions) settled(pair emailEquivalencePair) bool {
@@ -183,12 +244,12 @@ func (s *Store) LinkEquivalentEmailAddressesContext(
 	if err != nil {
 		return nil, err
 	}
-	pairs, scanned, err := s.planEmailEquivalencePairsContext(ctx, ineligible)
+	pairs, addresses, scanned, err := s.planEmailEquivalencePairsContext(ctx, ineligible)
 	if err != nil {
 		return nil, err
 	}
 	result.Participants = scanned
-	pairs, err = s.pendingEmailEquivalencePairsContext(ctx, pairs)
+	pairs, err = s.pendingEmailEquivalencePairsContext(ctx, pairs, addresses)
 	if err != nil {
 		return nil, err
 	}
@@ -299,15 +360,16 @@ func (s *Store) emailEquivalenceIneligibleAnchorsContext(
 // anchors of each mailbox that shares a dot-insensitive key.
 func (s *Store) planEmailEquivalencePairsContext(
 	ctx context.Context, ineligible map[int64]struct{},
-) ([]emailEquivalencePair, int, error) {
+) ([]emailEquivalencePair, map[int64]string, int, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id, email_address FROM participants
 		WHERE email_address IS NOT NULL AND email_address <> ''
 		ORDER BY id`)
 	if err != nil {
-		return nil, 0, fmt.Errorf("scan email participants: %w", err)
+		return nil, nil, 0, fmt.Errorf("scan email participants: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	mailboxes := make(map[string][]int64)
+	addresses := make(map[int64]string)
 	mailboxOrder := make([]string, 0)
 	dotless := make(map[string][]string)
 	dotlessOrder := make([]string, 0)
@@ -316,7 +378,7 @@ func (s *Store) planEmailEquivalencePairsContext(
 		var id int64
 		var address string
 		if err := rows.Scan(&id, &address); err != nil {
-			return nil, 0, fmt.Errorf("scan email participant: %w", err)
+			return nil, nil, 0, fmt.Errorf("scan email participant: %w", err)
 		}
 		scanned++
 		mailbox, ok := emailaddr.Mailbox(address)
@@ -334,9 +396,10 @@ func (s *Store) planEmailEquivalencePairsContext(
 			dotless[key] = append(dotless[key], mailbox)
 		}
 		mailboxes[mailbox] = append(mailboxes[mailbox], id)
+		addresses[id] = address
 	}
 	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate email participants: %w", err)
+		return nil, nil, 0, fmt.Errorf("iterate email participants: %w", err)
 	}
 
 	anchors := make(map[string]int64, len(mailboxOrder))
@@ -377,7 +440,7 @@ func (s *Store) planEmailEquivalencePairsContext(
 			})
 		}
 	}
-	return pairs, scanned, nil
+	return pairs, addresses, scanned, nil
 }
 
 // loadEmailEquivalenceCandidates reads every candidate the pass may have
@@ -416,15 +479,19 @@ func loadEmailEquivalenceCandidates(
 // outcome, using an unlocked snapshot. Each remaining pair is checked again
 // under the identity lock before it is written.
 func (s *Store) pendingEmailEquivalencePairsContext(
-	ctx context.Context, pairs []emailEquivalencePair,
+	ctx context.Context, pairs []emailEquivalencePair, addresses map[int64]string,
 ) ([]emailEquivalencePair, error) {
 	if len(pairs) == 0 {
 		return pairs, nil
 	}
-	candidates, err := loadEmailEquivalenceCandidates(ctx,
-		func(ctx context.Context, query string, args ...any) (rowsScanner, error) {
-			return s.db.QueryContext(ctx, query, args...)
-		})
+	query := func(ctx context.Context, query string, args ...any) (rowsScanner, error) {
+		return s.db.QueryContext(ctx, query, args...)
+	}
+	candidates, err := loadEmailEquivalenceCandidates(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	dotDecided, err := loadDecidedDotVariantMailboxes(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -445,7 +512,9 @@ func (s *Store) pendingEmailEquivalencePairsContext(
 		if decisions.settled(pair) {
 			continue
 		}
-		if pair.basis == IdentityMatchEmailDotVariant && clusterOf(pair.lo) == clusterOf(pair.hi) {
+		if pair.basis == IdentityMatchEmailDotVariant &&
+			(clusterOf(pair.lo) == clusterOf(pair.hi) ||
+				dotVariantDecided(pair, addresses, dotDecided)) {
 			continue
 		}
 		pending = append(pending, pair)
@@ -558,14 +627,18 @@ func (s *Store) applyEmailEquivalenceBatchContext(
 		if err := loadPersonBindingsIntoForestTx(ctx, tx, forest); err != nil {
 			return err
 		}
-		candidates, err := loadEmailEquivalenceCandidates(ctx,
-			func(ctx context.Context, query string, args ...any) (rowsScanner, error) {
-				return tx.QueryContext(ctx, query, args...)
-			})
+		query := func(ctx context.Context, query string, args ...any) (rowsScanner, error) {
+			return tx.QueryContext(ctx, query, args...)
+		}
+		candidates, err := loadEmailEquivalenceCandidates(ctx, query)
 		if err != nil {
 			return err
 		}
 		decisions := newEmailEquivalenceDecisions(candidates)
+		dotDecided, err := loadDecidedDotVariantMailboxes(ctx, query)
+		if err != nil {
+			return err
+		}
 		// userHidden holds identities the user marked as not a person; their
 		// pairs are recorded rejected and restored when the mark is cleared.
 		// derivedHidden adds rule and Jev classifications (an automated
@@ -627,7 +700,8 @@ func (s *Store) applyEmailEquivalenceBatchContext(
 			personLo, personHi := forest.person[rootLo], forest.person[rootHi]
 
 			if pair.basis == IdentityMatchEmailDotVariant {
-				if found || rootLo == rootHi || (personLo != 0 && personLo == personHi) {
+				if found || rootLo == rootHi || (personLo != 0 && personLo == personHi) ||
+					dotVariantDecided(pair, addresses, dotDecided) {
 					continue
 				}
 				if !loHidden && !hiHidden && (loDerived || hiDerived) {
