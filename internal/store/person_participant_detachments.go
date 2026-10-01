@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/peoplesweep"
 )
 
@@ -19,6 +20,14 @@ const MaxPersonParticipantDetachIDs = 200
 // PersonDetachmentNote is the decision note on every identity match
 // candidate a detachment rejects or creates. Reviews shows it as the reason.
 const PersonDetachmentNote = "detached from this person"
+
+// notRestorableNotAPersonSQL excludes a rejection the not-a-person
+// classification made and will undo when the classification is cleared:
+// that rejection is not the user's statement about this person, so it is
+// never a detachment tombstone. The alias is "tombstone".
+const notRestorableNotAPersonSQL = `NOT (tombstone.notes = '` + correspondentkind.NotAPersonReason + `'
+	AND EXISTS (SELECT 1 FROM correspondent_kind_candidate_snapshots snapshot
+	            WHERE snapshot.candidate_id = tombstone.id))`
 
 // personDetachmentSourceRef marks the participant-to-person tombstone a
 // detachment creates when no candidate for the pair existed yet.
@@ -210,12 +219,12 @@ func (s *Store) detachPersonParticipantsOnce(
 			return err
 		}
 		if err := s.rejectDetachedParticipantCandidatesTx(
-			ctx, tx, detachmentID, personID, detachedSet, related,
+			ctx, tx, detachmentID, personID, request.Actor, detachedSet, related,
 		); err != nil {
 			return err
 		}
 		if err := s.tombstoneDetachedParticipantsTx(
-			ctx, tx, detachmentID, personID, detached,
+			ctx, tx, detachmentID, personID, request.Actor, detached,
 		); err != nil {
 			return err
 		}
@@ -391,7 +400,7 @@ func recordDetachmentCandidatePriorTx(
 }
 
 func (s *Store) rejectCandidateForDetachmentTx(
-	ctx context.Context, tx *loggedTx, detachmentID, candidateID int64,
+	ctx context.Context, tx *loggedTx, detachmentID, candidateID int64, actor string,
 ) error {
 	if err := recordDetachmentCandidatePriorTx(ctx, tx, detachmentID, candidateID); err != nil {
 		return err
@@ -401,7 +410,7 @@ func (s *Store) rejectCandidateForDetachmentTx(
 			pre_conflict_state = NULL, application_pending = FALSE,
 			updated_at = `+s.dialect.Now()+`
 		WHERE id = ?`,
-		IdentityMatchStateRejected, string(ProvenanceUser), PersonDetachmentNote, candidateID,
+		IdentityMatchStateRejected, actor, PersonDetachmentNote, candidateID,
 	); err != nil {
 		return fmt.Errorf("reject identity match %d for detachment: %w", candidateID, err)
 	}
@@ -415,6 +424,7 @@ func (s *Store) rejectDetachedParticipantCandidatesTx(
 	ctx context.Context,
 	tx *loggedTx,
 	detachmentID, personID int64,
+	actor string,
 	detached, related map[int64]struct{},
 ) error {
 	// The scan mirrors rejectAcceptedIdentityMatchesAcrossUnlinkTx: no IN
@@ -464,7 +474,7 @@ func (s *Store) rejectDetachedParticipantCandidatesTx(
 		return fmt.Errorf("close candidates crossing detachment: %w", err)
 	}
 	for _, id := range candidateIDs {
-		if err := s.rejectCandidateForDetachmentTx(ctx, tx, detachmentID, id); err != nil {
+		if err := s.rejectCandidateForDetachmentTx(ctx, tx, detachmentID, id, actor); err != nil {
 			return err
 		}
 	}
@@ -476,14 +486,15 @@ func (s *Store) rejectDetachedParticipantCandidatesTx(
 // the suppression record contact matching and duplicate detection already
 // honor for the participant's whole cluster.
 func (s *Store) tombstoneDetachedParticipantsTx(
-	ctx context.Context, tx *loggedTx, detachmentID, personID int64, detached []int64,
+	ctx context.Context, tx *loggedTx, detachmentID, personID int64, actor string, detached []int64,
 ) error {
 	for _, participantID := range detached {
 		var exists bool
 		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
-				SELECT 1 FROM identity_match_candidates
-				WHERE left_kind = ? AND left_id = ? AND right_kind = ? AND right_id = ?
-				  AND state = ?)`,
+				SELECT 1 FROM identity_match_candidates tombstone
+				WHERE tombstone.left_kind = ? AND tombstone.left_id = ?
+				  AND tombstone.right_kind = ? AND tombstone.right_id = ?
+				  AND tombstone.state = ? AND `+notRestorableNotAPersonSQL+`)`,
 			IdentityMatchParticipant, participantID, IdentityMatchPerson, personID,
 			IdentityMatchStateRejected,
 		).Scan(&exists); err != nil {
@@ -505,7 +516,7 @@ func (s *Store) tombstoneDetachedParticipantsTx(
 				`+s.dialect.Now()+`, `+s.dialect.Now()+`) RETURNING id`,
 			IdentityMatchParticipant, participantID, IdentityMatchPerson, personID,
 			basis, normalized, IdentityMatchStateRejected, ProvenanceUser,
-			personDetachmentSourceRef, PersonDetachmentNote, string(ProvenanceUser),
+			personDetachmentSourceRef, PersonDetachmentNote, actor,
 		).Scan(&candidateID)
 		if err != nil {
 			return fmt.Errorf("create detachment tombstone for participant %d: %w", participantID, err)
@@ -875,6 +886,7 @@ func (s *Store) activePersonDetachmentSeparatingTx(
 			  AND EXISTS (SELECT 1 FROM identity_match_candidates tombstone
 			              WHERE tombstone.left_kind = ? AND tombstone.left_id = member.participant_id
 			                AND tombstone.right_kind = ? AND tombstone.state = ?
+			                AND `+notRestorableNotAPersonSQL+`
 			                AND `+personFilter+`
 			                AND NOT EXISTS (SELECT 1 FROM person_participants rebound
 			                                WHERE rebound.participant_id = member.participant_id
@@ -930,4 +942,153 @@ func (s *Store) ListPersonParticipantDetachmentsContext(
 		return nil
 	})
 	return detachments, err
+}
+
+// adoptNotAPersonCandidateForDetachmentTx moves a candidate whose
+// not-a-person rejection is being cleared under an active detachment that
+// separates its endpoints: instead of returning to its prior decision, it
+// stays rejected for the detachment, and the decision the not-a-person
+// snapshot held moves into the detachment journal, so undoing the
+// detachment restores it.
+func (s *Store) adoptNotAPersonCandidateForDetachmentTx(
+	ctx context.Context, tx *loggedTx, detachmentID, candidateID int64,
+) error {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO person_participant_detachment_candidates (
+			detachment_id, candidate_id, created_by_detachment, prior_state,
+			prior_decided_by, prior_decided_at, prior_notes,
+			prior_application_pending, prior_pre_conflict_state)
+		SELECT CAST(? AS BIGINT), candidate_id, FALSE, prior_state, prior_decided_by,
+			prior_decided_at, prior_notes, prior_application_pending, prior_pre_conflict_state
+		FROM correspondent_kind_candidate_snapshots WHERE candidate_id = ?
+		ON CONFLICT (detachment_id, candidate_id) DO NOTHING`,
+		detachmentID, candidateID); err != nil {
+		return fmt.Errorf("journal not-a-person candidate %d for detachment: %w", candidateID, err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE identity_match_candidates SET
+			decided_by = ?, notes = ?, updated_at = `+s.dialect.Now()+`
+		WHERE id = ?`, string(ProvenanceSystem), PersonDetachmentNote, candidateID); err != nil {
+		return fmt.Errorf("hand candidate %d to detachment: %w", candidateID, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM correspondent_kind_candidate_snapshots
+		WHERE candidate_id = ?`, candidateID); err != nil {
+		return fmt.Errorf("drop not-a-person snapshot for candidate %d: %w", candidateID, err)
+	}
+	return nil
+}
+
+// PersonDetachmentJoinError reports that a system identity match would join
+// a participant's cluster with a person the user detached that participant
+// from. The link is refused and the candidate is rejected for the
+// detachment; an explicit user link or a user acceptance is not refused.
+type PersonDetachmentJoinError struct {
+	DetachmentID int64
+}
+
+func (e *PersonDetachmentJoinError) Error() string {
+	return fmt.Sprintf("%s: detachment %d", ErrPersonDetachmentJoin, e.DetachmentID)
+}
+
+func (e *PersonDetachmentJoinError) Unwrap() error { return ErrPersonDetachmentJoin }
+
+// ErrPersonDetachmentJoin is the sentinel PersonDetachmentJoinError wraps.
+var ErrPersonDetachmentJoin = errors.New(
+	"identity match would rejoin an identity detached from its person")
+
+// detachmentBlockingJoinTx reports the active detachment, if any, that a
+// new edge between a and b would defeat: after the join, one cluster would
+// hold a participant the user detached from a person (with that
+// detachment's tombstone still live, and the participant not bound to the
+// person again) together with a participant bound to that person. This
+// catches a re-attach through a third participant, which an endpoint-only
+// check cannot see.
+func detachmentBlockingJoinTx(
+	ctx context.Context, tx *loggedTx, a, b int64, edges []linkEdge,
+) (int64, bool, error) {
+	adjacency := buildAdjacency(edges)
+	union := componentOfAdj(a, adjacency)
+	for member := range componentOfAdj(b, adjacency) {
+		union[member] = struct{}{}
+	}
+	members := make([]int64, 0, len(union))
+	for member := range union {
+		members = append(members, member)
+	}
+	slices.Sort(members)
+	type detached struct{ participantID, detachmentID, personID int64 }
+	found := []detached{}
+	if err := queryInChunksContext(ctx, tx, members, []any{
+		IdentityMatchParticipant, IdentityMatchPerson, IdentityMatchStateRejected,
+	}, `SELECT member.participant_id, member.detachment_id, tombstone.right_id
+		FROM person_participant_detachment_members member
+		JOIN person_participant_detachments detachment
+		  ON detachment.id = member.detachment_id AND detachment.reattached_at IS NULL
+		JOIN identity_match_candidates tombstone
+		  ON tombstone.left_kind = ? AND tombstone.left_id = member.participant_id
+		 AND tombstone.right_kind = ? AND tombstone.state = ?
+		 AND `+notRestorableNotAPersonSQL+`
+		WHERE member.participant_id IN (%s)
+		ORDER BY member.detachment_id DESC`, func(rows *loggedRows) error {
+		var row detached
+		if err := rows.Scan(&row.participantID, &row.detachmentID, &row.personID); err != nil {
+			return fmt.Errorf("scan detached cluster member: %w", err)
+		}
+		found = append(found, row)
+		return nil
+	}); err != nil {
+		return 0, false, fmt.Errorf("load detached cluster members: %w", err)
+	}
+	if len(found) == 0 {
+		return 0, false, nil
+	}
+	bindings := map[int64]int64{}
+	if err := queryInChunksContext(ctx, tx, members, nil,
+		`SELECT participant_id, person_id FROM person_participants WHERE participant_id IN (%s)`,
+		func(rows *loggedRows) error {
+			var participantID, personID int64
+			if err := rows.Scan(&participantID, &personID); err != nil {
+				return fmt.Errorf("scan cluster binding: %w", err)
+			}
+			bindings[participantID] = personID
+			return nil
+		}); err != nil {
+		return 0, false, fmt.Errorf("load cluster bindings: %w", err)
+	}
+	for _, row := range found {
+		if bindings[row.participantID] == row.personID {
+			continue
+		}
+		for participantID, personID := range bindings {
+			if personID == row.personID && participantID != row.participantID {
+				return row.detachmentID, true, nil
+			}
+		}
+	}
+	return 0, false, nil
+}
+
+// rejectCandidateBlockedByDetachmentContext records a system match the
+// detachment guard refused: the candidate becomes rejected for that
+// detachment, journaled so undoing the detachment restores it.
+func (s *Store) rejectCandidateBlockedByDetachmentContext(
+	ctx context.Context, detachmentID, candidateID int64,
+) error {
+	return s.withTxContext(ctx, func(tx *loggedTx) error {
+		if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
+			return err
+		}
+		var state IdentityMatchState
+		err := tx.QueryRowContext(ctx, `SELECT state FROM identity_match_candidates WHERE id = ?`,
+			candidateID).Scan(&state)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("load candidate %d blocked by detachment: %w", candidateID, err)
+		}
+		if state == IdentityMatchStateRejected {
+			return nil
+		}
+		return s.rejectCandidateForDetachmentTx(
+			ctx, tx, detachmentID, candidateID, string(ProvenanceSystem))
+	})
 }

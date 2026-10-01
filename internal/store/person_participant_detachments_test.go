@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/testutil/storetest"
 )
@@ -120,8 +121,13 @@ func TestDetachPersonParticipantsValidatesAndAllowsContactOnlyProfile(t *testing
 
 	result, err := st.DetachPersonParticipantsContext(ctx, store.PersonParticipantDetachRequest{
 		PersonID: person.ID, ParticipantIDs: []int64{solo}, ExpectedRevision: person.Revision,
+		Actor: "cli",
 	})
 	require.NoError(err, "a person with no archive identity is a valid contact-only profile")
+	tombstones := participantPersonCandidates(t, st, solo, person.ID)
+	require.Len(tombstones, 1)
+	require.NotNil(tombstones[0].DecidedBy)
+	assert.Equal("cli", *tombstones[0].DecidedBy, "the decision records the requesting actor")
 	assert.Empty(result.Person.ParticipantIDs)
 	kept, err := st.GetPersonContext(ctx, person.ID)
 	require.NoError(err)
@@ -339,4 +345,158 @@ func TestDetachedParticipantStaysOutOfContactMatching(t *testing.T) {
 	after, err := f.st.GetPersonContext(ctx, contactID)
 	require.NoError(err)
 	assert.Equal([]int64{first}, after.ParticipantIDs)
+}
+
+// linkedBeeperPerson is a saved person holding two linked Beeper identities.
+func linkedBeeperPerson(t *testing.T, prefix string) (*store.Store, int64, int64, *store.Person) {
+	t.Helper()
+	require := require.New(t)
+	st := storetest.New(t).Store
+	left, err := st.EnsureParticipantByIdentifier("beeper", "@"+prefix+"-left:beeper.local", "Ana Example")
+	require.NoError(err)
+	right, err := st.EnsureParticipantByIdentifier("beeper", "@"+prefix+"-right:beeper.local", "Ana Example")
+	require.NoError(err)
+	_, err = st.LinkParticipants(left, right)
+	require.NoError(err)
+	person, _, err := st.CreatePersonFromParticipant(left)
+	require.NoError(err)
+	return st, left, right, person
+}
+
+func TestClearingNotAPersonKeepsDetachedIdentityDetached(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	st, left, right, person := linkedBeeperPerson(t, "kind")
+	open := upsertPairCandidate(t, st, left, right, store.IdentityMatchStableProviderID)
+	require.Equal(store.IdentityMatchStateCandidate, open.State)
+
+	// Marking the cluster automated rejects the open candidate with a
+	// snapshot that clearing the mark would restore.
+	_, err := st.SetCorrespondentKindContext(ctx, store.SetCorrespondentKindInput{
+		ParticipantID: left, Kind: correspondentkind.Automated})
+	require.NoError(err)
+	person, err = st.GetPersonContext(ctx, person.ID)
+	require.NoError(err)
+	detached, err := st.DetachPersonParticipantsContext(ctx, store.PersonParticipantDetachRequest{
+		PersonID: person.ID, ParticipantIDs: []int64{right}, ExpectedRevision: person.Revision})
+	require.NoError(err)
+
+	for _, id := range []int64{left, right} {
+		_, err = st.SetCorrespondentKindContext(ctx, store.SetCorrespondentKindInput{
+			ParticipantID: id, Kind: correspondentkind.Person})
+		require.NoError(err)
+	}
+	kept := detachCandidate(t, st, open.ID)
+	assert.Equal(store.IdentityMatchStateRejected, kept.State,
+		"clearing the mark must not reopen a match across the detachment")
+	require.NotNil(kept.Notes)
+	assert.Equal(store.PersonDetachmentNote, *kept.Notes)
+	_, _, err = st.AcceptIdentityMatchCandidateContext(ctx, open.ID, "system", nil)
+	require.Error(err)
+	after, err := st.GetPersonContext(ctx, person.ID)
+	require.NoError(err)
+	assert.Equal([]int64{left}, after.ParticipantIDs)
+
+	_, err = st.ReattachPersonParticipantsContext(ctx, store.PersonParticipantReattachRequest{
+		PersonID: person.ID, DetachmentID: detached.Detachment.ID, ExpectedRevision: after.Revision})
+	require.NoError(err)
+	assert.Equal(store.IdentityMatchStateCandidate, detachCandidate(t, st, open.ID).State,
+		"undo returns the match to the decision it had before the mark")
+}
+
+func TestDetachTombstoneIgnoresRestorableNotAPersonRejection(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	f := newContactMatchFixture(t)
+	first := f.emailParticipant("ivy@example.test", "Ivy")
+	robot := f.emailParticipant("ivy.alerts@example.test", "Ivy")
+	_, err := f.st.LinkParticipants(first, robot)
+	require.NoError(err)
+	people := f.importCards(f.card("card-ivy", "Ivy Contact", []string{"ivy.alerts@example.test"}, nil))
+	contactID := people["card-ivy"]
+	candidate := f.buildCandidate(contactID)
+	_, _, err = f.st.AcceptIdentityMatchCandidateContext(ctx, candidate.ID, "user", nil)
+	require.NoError(err)
+	other := f.emailParticipant("ivy.bot@example.test", "Ivy")
+	_, err = f.st.LinkParticipants(first, other)
+	require.NoError(err)
+	contact, err := f.st.GetPersonContext(ctx, contactID)
+	require.NoError(err)
+	require.Contains(contact.ParticipantIDs, other)
+	// A pending contact match for the bot, then a not-a-person mark on the
+	// bot alone rejects it with a restorable snapshot.
+	pending, _, err := f.st.UpsertIdentityMatchCandidateContext(ctx, store.IdentityMatchCandidateInput{
+		LeftKind: store.IdentityMatchParticipant, LeftID: other,
+		RightKind: store.IdentityMatchPerson, RightID: contactID,
+		Basis: store.IdentityMatchDisplayName, NormalizedValue: new("ivy"),
+		State: store.IdentityMatchStateCandidate, Source: store.ProvenanceSystem,
+	})
+	require.NoError(err)
+	_, err = f.st.UnlinkParticipants(first, other)
+	require.NoError(err)
+	_, err = f.st.SetCorrespondentKindContext(ctx, store.SetCorrespondentKindInput{
+		ParticipantID: other, Kind: correspondentkind.Automated})
+	require.NoError(err)
+	require.Equal(store.IdentityMatchStateRejected, detachCandidate(t, f.st, pending.ID).State)
+	contact, err = f.st.GetPersonContext(ctx, contactID)
+	require.NoError(err)
+
+	_, err = f.st.DetachPersonParticipantsContext(ctx, store.PersonParticipantDetachRequest{
+		PersonID: contactID, ParticipantIDs: []int64{other}, ExpectedRevision: contact.Revision})
+	require.NoError(err)
+	_, err = f.st.SetCorrespondentKindContext(ctx, store.SetCorrespondentKindInput{
+		ParticipantID: other, Kind: correspondentkind.Person})
+	require.NoError(err)
+
+	live := 0
+	for _, match := range participantPersonCandidates(t, f.st, other, contactID) {
+		assert.Equal(store.IdentityMatchStateRejected, match.State, "candidate %d", match.ID)
+		if match.State == store.IdentityMatchStateRejected {
+			live++
+		}
+	}
+	assert.Equal(2, live, "the detachment has its own tombstone besides the cleared mark")
+}
+
+func TestSystemMatchThroughThirdIdentityCannotReattach(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	st, left, right, person := linkedBeeperPerson(t, "via")
+	_, err := st.DetachPersonParticipantsContext(ctx, store.PersonParticipantDetachRequest{
+		PersonID: person.ID, ParticipantIDs: []int64{right}, ExpectedRevision: person.Revision})
+	require.NoError(err)
+
+	third, err := st.EnsureParticipantByIdentifier("beeper", "@via-third:beeper.local", "Ana Example")
+	require.NoError(err)
+	rightThird := upsertPairCandidate(t, st, right, third, store.IdentityMatchStableProviderID)
+	_, _, err = st.AcceptIdentityMatchCandidateContext(ctx, rightThird.ID, "system", nil)
+	require.NoError(err, "the detached identity may still join an unrelated one")
+	thirdLeft, _, err := st.UpsertIdentityMatchCandidateContext(ctx, store.IdentityMatchCandidateInput{
+		LeftKind: store.IdentityMatchParticipant, LeftID: third,
+		RightKind: store.IdentityMatchParticipant, RightID: left,
+		Basis: store.IdentityMatchStableProviderID, NormalizedValue: new("beeper:@other:beeper.local"),
+		State: store.IdentityMatchStateCandidate, Source: store.ProvenanceArchiveObservation,
+	})
+	require.NoError(err)
+
+	_, _, err = st.AcceptIdentityMatchCandidateContext(ctx, thirdLeft.ID, "system", nil)
+	require.ErrorIs(err, store.ErrPersonDetachmentJoin)
+	assert.Equal(store.IdentityMatchStateRejected, detachCandidate(t, st, thirdLeft.ID).State)
+	assert.False(linkedPair(t, st, third, left))
+	after, err := st.GetPersonContext(ctx, person.ID)
+	require.NoError(err)
+	assert.Equal([]int64{left}, after.ParticipantIDs)
+	applied, err := st.ApplyAcceptedIdentityMatchesContext(ctx, 0)
+	require.NoError(err)
+	assert.Equal(0, applied)
+
+	// The user's own link is an explicit decision and is allowed.
+	_, err = st.LinkParticipants(third, left)
+	require.NoError(err)
+	after, err = st.GetPersonContext(ctx, person.ID)
+	require.NoError(err)
+	assert.Contains(after.ParticipantIDs, right)
 }

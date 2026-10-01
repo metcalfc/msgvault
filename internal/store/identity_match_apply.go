@@ -255,6 +255,20 @@ func (s *Store) applyAcceptedIdentityMatchCandidateContext(
 				}
 				loaded.Evidence = current.Evidence
 				current = *loaded
+				if decidedBy != string(ProvenanceUser) {
+					edges, edgeErr := s.loadLinkEdgesTxContext(ctx, tx)
+					if edgeErr != nil {
+						return edgeErr
+					}
+					detachmentID, blocked, blockErr := detachmentBlockingJoinTx(
+						ctx, tx, current.LeftID, current.RightID, edges)
+					if blockErr != nil {
+						return blockErr
+					}
+					if blocked {
+						return &PersonDetachmentJoinError{DetachmentID: detachmentID}
+					}
+				}
 				if _, updateErr := tx.ExecContext(ctx, `UPDATE identity_match_candidates
 					SET application_pending = FALSE WHERE id = ?`, current.ID); updateErr != nil {
 					return fmt.Errorf("complete identity match application: %w", updateErr)
@@ -286,6 +300,16 @@ func (s *Store) applyAcceptedIdentityMatchCandidateContext(
 		if err != nil {
 			return nil, 0, false, err
 		}
+	case errors.Is(err, ErrPersonDetachmentJoin):
+		var joinErr *PersonDetachmentJoinError
+		if errors.As(err, &joinErr) {
+			if rejectErr := s.rejectCandidateBlockedByDetachmentContext(
+				ctx, joinErr.DetachmentID, current.ID,
+			); rejectErr != nil {
+				return nil, 0, false, errors.Join(err, rejectErr)
+			}
+		}
+		return nil, 0, false, err
 	case errors.Is(err, ErrPersonBindingConflict):
 		conflictNote := "accepted match spans two durable person profiles; not applied"
 		if _, decideErr := s.DecideIdentityMatchCandidateContext(
@@ -332,7 +356,8 @@ func (s *Store) ApplyAcceptedIdentityMatchesContext(ctx context.Context, limit i
 		)
 		if err != nil {
 			switch {
-			case errors.Is(err, ErrIdentityMatchNotAccepted):
+			case errors.Is(err, ErrIdentityMatchNotAccepted),
+				errors.Is(err, ErrPersonDetachmentJoin):
 				continue
 			case errors.Is(err, ErrPersonBindingConflict):
 				slog.Warn("accepted identity match could not be applied",

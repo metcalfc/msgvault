@@ -1455,6 +1455,20 @@ func (s *Store) restoreNotAPersonCandidatesTx(
 		if stillHidden {
 			continue
 		}
+		// A candidate that would reconnect an identity the user detached
+		// from a person stays rejected; the detachment takes over its
+		// snapshot so undoing the detachment restores it.
+		detachmentID, detached, err := s.activePersonDetachmentSeparatingTx(
+			ctx, tx, row.leftKind, row.leftID, row.rightKind, row.rightID)
+		if err != nil {
+			return restored, err
+		}
+		if detached {
+			if err := s.adoptNotAPersonCandidateForDetachmentTx(ctx, tx, detachmentID, id); err != nil {
+				return restored, err
+			}
+			continue
+		}
 		// Restore the exact decision fields the candidate had before it was
 		// resolved, then drop the snapshot.
 		if _, err := tx.ExecContext(ctx, `UPDATE identity_match_candidates SET
