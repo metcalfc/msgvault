@@ -3,6 +3,7 @@ package store_test
 import (
 	"database/sql"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -177,4 +178,29 @@ func TestInspectMessage_RecipientDisplayNames(t *testing.T) {
 
 	key := "from:sender@example.com"
 	assert.Equal(t, "Custom Display Name", insp.RecipientDisplayName[key], "RecipientDisplayName[%s]", key)
+}
+
+// Inspection methods must preserve non-NULL message timestamps and agree.
+func TestInspectMessage_TimestampScan(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := storetest.New(t)
+
+	sent := time.Date(2025, 6, 15, 12, 30, 45, 0, time.UTC)
+	f.NewMessage().
+		WithSourceMessageID("inspect-msg-1").
+		WithSubject("hello").
+		WithSentAt(sent).
+		WithInternalDate(sent.Add(2*time.Hour)).
+		Create(t, f.Store)
+
+	insp, err := f.Store.InspectMessage("inspect-msg-1")
+	require.NoError(err, "InspectMessage")
+	assert.Equal("2025-06-15 12:30:45", insp.SentAt)
+	assert.Equal("2025-06-15 14:30:45", insp.InternalDate)
+
+	sentAtStr, internalDateStr, err := f.Store.InspectMessageDates("inspect-msg-1")
+	require.NoError(err, "InspectMessageDates")
+	assert.Equal(insp.SentAt, sentAtStr, "InspectMessageDates sentAt")
+	assert.Equal(insp.InternalDate, internalDateStr, "InspectMessageDates internalDate")
 }

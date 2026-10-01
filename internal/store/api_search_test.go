@@ -125,6 +125,7 @@ func TestSearchMessages_LegacyRawString(t *testing.T) {
 	}{
 		{"only_punctuation", "!!!"},
 		{"only_dashes", "---"},
+		{"only_dots", "..."},
 		{"whitespace_only", "   \t  "},
 		{"mixed_punctuation", "!!! --- ???"},
 	}
@@ -136,7 +137,16 @@ func TestSearchMessages_LegacyRawString(t *testing.T) {
 			assert.Empty(t, msgs)
 		})
 	}
+
+	// Punctuation inside otherwise searchable input must not produce an FTS error.
+	for _, query := range []string{"foo-bar", "user@example.com", "a.b.c", "foo ---", "v1.2.3-rc.1"} {
+		t.Run(query, func(t *testing.T) {
+			_, _, err := f.Store.SearchMessages(query, 0, 50)
+			assert.NoError(t, err, "SearchMessages(%q)", query)
+		})
+	}
 }
+
 func TestSearchMessagesQuery_MessageTypeFilter(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -310,4 +320,61 @@ func TestSearchMessagesQuery_ListIDFilters(t *testing.T) {
 			assert.ElementsMatch(t, tc.want, got, "matching message IDs")
 		})
 	}
+}
+
+// Subject filters must match without regard to ASCII case.
+func TestSearchMessagesQuery_SubjectLikeCaseInsensitive(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := storetest.New(t)
+
+	mid := f.NewMessage().
+		WithSourceMessageID("subj-msg-1").
+		WithSubject("invoice from acme").
+		WithSnippet("see attached").
+		Create(t, f.Store)
+	require.NoError(f.Store.UpsertMessageBody(mid,
+		sql.NullString{String: "body", Valid: true}, sql.NullString{}), "UpsertMessageBody")
+	_, err := f.Store.BackfillFTS(nil)
+	require.NoError(err, "BackfillFTS")
+
+	f.NewMessage().WithSourceMessageID("subject-nonmatching").WithSubject("Unrelated meeting").Create(t, f.Store)
+
+	msgs, total, err := f.Store.SearchMessagesQuery(
+		&search.Query{SubjectTerms: []string{"Invoice"}}, 0, 50,
+	)
+	require.NoError(err, "SearchMessagesQuery")
+	assert.Equal(int64(1), total, "Subject:Invoice matches a lower-case subject")
+	require.Len(msgs, 1)
+	assert.Equal(mid, msgs[0].ID)
+}
+
+// Recipient filters normalize mixed-case email addresses before matching.
+func TestSearchMessagesQuery_ToFilterCaseInsensitive(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := storetest.New(t)
+
+	to, err := f.Store.EnsureParticipant("alice@example.com", "Alice", "example.com")
+	require.NoError(err, "EnsureParticipant")
+
+	mid := f.NewMessage().
+		WithSourceMessageID("to-msg-1").
+		WithSubject("greetings").
+		Create(t, f.Store)
+	require.NoError(f.Store.ReplaceMessageRecipients(mid, "to", []int64{to}, []string{"Alice"}),
+		"ReplaceMessageRecipients to")
+
+	_, err = f.Store.BackfillFTS(nil)
+	require.NoError(err, "BackfillFTS")
+
+	f.NewMessage().WithSourceMessageID("recipient-nonmatching").WithSubject("Unrelated meeting").Create(t, f.Store)
+
+	msgs, total, err := f.Store.SearchMessagesQuery(
+		&search.Query{ToAddrs: []string{"Alice@Example.COM"}}, 0, 50,
+	)
+	require.NoError(err, "SearchMessagesQuery")
+	assert.Equal(int64(1), total, "to:Alice@Example.COM (case-insensitive)")
+	require.Len(msgs, 1)
+	assert.Equal(mid, msgs[0].ID)
 }
