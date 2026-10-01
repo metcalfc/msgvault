@@ -1,10 +1,19 @@
 ---
-last_edited: "2026-09-22"
+last_edited: "2026-10-01"
 title: Documentation
 description: Set up your archive, find messages and files, maintain people, and operate msgvault.
 ---
 
 # Use your communications archive
+
+!!! note "This is a fork of msgvault"
+    These docs belong to [metcalfc/msgvault](https://github.com/metcalfc/msgvault),
+    a fork of [kenn-io/msgvault](https://github.com/kenn-io/msgvault). Thank you
+    to the msgvault maintainers and contributors, whose work this builds on. We
+    intend to keep contributing back where changes fit. For Windows support, a
+    provider-neutral model setup, or the upstream Web UI, use
+    [upstream msgvault](https://msgvault.io/docs/). Report problems with this
+    fork at [metcalfc/msgvault issues](https://github.com/metcalfc/msgvault/issues).
 
 msgvault keeps email, chat, meetings, calendars, and contacts on your own
 hardware. These guides help you bring data in, find what matters, and maintain

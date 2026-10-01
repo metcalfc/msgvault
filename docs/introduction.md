@@ -1,12 +1,14 @@
 ---
-last_edited: "2026-08-30"
+last_edited: "2026-10-01"
 title: Introduction
 description: Why msgvault was created and what problem it solves.
 ---
 
 msgvault is a local-first archive for communications and relationships. To
 start using it, follow [Setup](setup.md) or [Choose a Source](guides/sources.md).
-For the current product overview, visit [msgvault.io](https://msgvault.io/).
+This fork builds on upstream [kenn-io/msgvault](https://github.com/kenn-io/msgvault);
+the story below is upstream's account of why msgvault exists. For upstream's
+product overview, visit [msgvault.io](https://msgvault.io/).
 
 ## Why I built msgvault
 

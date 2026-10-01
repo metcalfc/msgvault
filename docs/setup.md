@@ -12,47 +12,17 @@ mail providers, chats, meetings, contacts, or local exports, use
 Already using 0.19? Read [the changelog’s upgrade notes](changelog.md#upgrade-and-compatibility) before
 opening an existing archive with a newer build.
 
-## Install Release
-
-This fork supports macOS and Linux. The commands below install upstream
-releases; build from your fork checkout to use its changes.
-
-**macOS / Linux:**
-```bash
-curl -fsSL https://msgvault.io/install.sh | bash
-```
-
-The installer detects your OS and architecture, downloads the latest release from [GitHub Releases](https://github.com/kenn-io/msgvault/releases), verifies the SHA-256 checksum, and installs the binary.
-
-!!! tip "Running on a headless server?"
-    msgvault works on headless machines (SSH, VPS, NAS, Docker), but OAuth requires a browser for the initial authorization. You'll authorize on your local machine and copy the token file to the server. See [Headless Server Setup](/docs/guides/oauth-setup/#headless-server-setup) for the copy-token workflow, or jump to the [Remote Deployment](/docs/guides/remote-deployment/) guide for a full NAS/server setup with Docker Compose.
-
-Verify the installation:
-
-```bash
-msgvault --help
-```
-
-## Conda-Forge
-
-If you use [conda](https://docs.conda.io/) or [pixi](https://pixi.sh/):
-
-```bash
-# Using pixi (recommended)
-pixi global install msgvault
-
-# Using conda
-conda install -c conda-forge msgvault
-```
-
 ## Build From Source
 
-On macOS and Linux, source builds require Go 1.27+, Bun 1.3.14+, Node.js
-(20.19+ on 20.x, 22.13+ on 22.x, or 24+), and a C/C++ compiler (GCC or Clang).
-Bun builds the browser application embedded in the binary, and Node runs the
-embed validator that `make install` invokes. CGO is required because msgvault
-uses `mattn/go-sqlite3` (SQLite with FTS5) and `duckdb-go/v2` (Parquet
-analytics), both of which compile native extensions.
+This fork has no release binaries, so you install it by building from source.
+It supports macOS and Linux.
+
+Source builds require Go 1.27+, Bun 1.3.14+, Node.js (20.19+ on 20.x, 22.13+
+on 22.x, or 24+), and a C/C++ compiler (GCC or Clang). Bun builds the browser
+application embedded in the binary, and Node runs the embed validator that
+`make install` invokes. CGO is required because msgvault uses
+`mattn/go-sqlite3` (SQLite with FTS5) and `duckdb-go/v2` (Parquet analytics),
+both of which compile native extensions.
 
 On Debian/Ubuntu also install `libsqlite3-dev`, which provides the `sqlite3.h`
 header needed to compile the default `sqlite_vec` extension:
@@ -61,20 +31,33 @@ header needed to compile the default `sqlite_vec` extension:
 sudo apt install -y libsqlite3-dev
 ```
 
+Clone the fork and install:
+
 ```bash
-# From your fork checkout:
+git clone https://github.com/metcalfc/msgvault.git
+cd msgvault
 make install
 ```
 
-On macOS and Linux this installs to `~/.local/bin` or `$GOPATH/bin`. For a
-debug build use `make build`, or `make build-release` for an optimized binary
-with stripped debug symbols.
+This installs to `~/.local/bin` or `$GOPATH/bin`. For a debug build use
+`make build`, or `make build-release` for an optimized binary with stripped
+debug symbols.
 
 Verify the installation:
 
 ```bash
 msgvault --help
 ```
+
+!!! tip "Running on a headless server?"
+    msgvault works on headless machines (SSH, VPS, NAS, Docker), but OAuth requires a browser for the initial authorization. You'll authorize on your local machine and copy the token file to the server. See [Headless Server Setup](/docs/guides/oauth-setup/#headless-server-setup) for the copy-token workflow, or jump to the [Remote Deployment](/docs/guides/remote-deployment/) guide for a full NAS/server setup with Docker Compose.
+
+## Upstream msgvault releases
+
+The install script, Homebrew, and conda-forge packages install upstream
+[kenn-io/msgvault](https://github.com/kenn-io/msgvault) releases, not this
+fork. Use them if you want the upstream experience, including Windows support.
+See the [upstream setup guide](https://msgvault.io/docs/setup/).
 
 ## Configure OAuth
 

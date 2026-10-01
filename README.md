@@ -5,39 +5,69 @@
 <h1 align="center">msgvault</h1>
 
 <p align="center">
-  <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.27+-00ADD8?logo=go" alt="Go 1.27+"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
-  <a href="https://msgvault.io"><img src="https://img.shields.io/badge/Docs-msgvault.io-blue" alt="Docs"></a>
-  <a href="https://discord.gg/fDnmxB8Wkq"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&amp;logoColor=white" alt="Discord"></a>
+  A fork of <a href="https://github.com/kenn-io/msgvault">kenn-io/msgvault</a>, with gratitude.
 </p>
 
 <p align="center">
-  <a href="https://msgvault.io/docs/">Documentation</a> ·
-  <a href="https://msgvault.io/docs/setup/">Setup Guide</a> ·
-  <a href="https://msgvault.io/docs/usage/tui/">Interactive TUI</a>
+  <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.27+-00ADD8?logo=go" alt="Go 1.27+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://github.com/kenn-io/msgvault"><img src="https://img.shields.io/badge/Fork_of-kenn--io%2Fmsgvault-blue?logo=github" alt="Fork of kenn-io/msgvault"></a>
+  <a href="https://github.com/metcalfc/msgvault/issues"><img src="https://img.shields.io/badge/Issues-metcalfc%2Fmsgvault-5865F2?logo=github" alt="Issues for this fork"></a>
 </p>
 
-## About this fork
+<p align="center">
+  <a href="docs/index.md">Documentation</a> ·
+  <a href="docs/setup.md">Setup Guide</a> ·
+  <a href="docs/usage/tui.md">Interactive TUI</a>
+</p>
 
-This is a fork of [kenn-io/msgvault](https://github.com/kenn-io/msgvault) that
-has diverged substantially. The maintainer intends to submit work upstream
-where it fits, but expects this fork to keep these differences:
+## Built on msgvault
+
+This project is a fork of [kenn-io/msgvault](https://github.com/kenn-io/msgvault).
+Nearly everything here started there: the archive, importers, daemon, CLI,
+TUI, and documentation. Thank you to the msgvault maintainers and contributors
+for building it in the open and sharing it under the MIT license.
+
+The fork has diverged substantially. We intend to keep contributing changes
+back upstream where they fit. If you want the upstream experience, including
+Windows support, a provider-neutral model setup, and the upstream Web UI, use
+[upstream msgvault](https://github.com/kenn-io/msgvault) and its
+[documentation](https://msgvault.io/docs/).
+
+### How this fork differs
 
 - **A different Web UI.**
-- **Deeper use of Jev**, TypeSafe's judgment models, across people, identity,
-  and enrichment. See [Jev judgments](docs/usage/jev-judgments.md).
+- **Deeper use of Jev**, TypeSafe's judgment model, for narrow yes/no and
+  choice questions, such as identity and organization matching during enrichment,
+  duplicate people, correspondent and meeting types, and evidence checks in
+  profile sweeps. Each feature is off until you enable it and consent, and
+  falls back to plain rules or skips when Jev is unavailable. See
+  [Jev judgments](docs/usage/jev-judgments.md).
 - **macOS and Linux only.** Native Windows support has been removed.
-- **Fewer model providers.** The fork specializes in the providers its
-  maintainer uses rather than supporting a provider-neutral matrix. See
-  [recommended configuration](docs/usage/recommended-configuration.md) for
-  what is wired in today.
+- **A narrower set of model providers.** The fork focuses on local
+  models through Ollama for embeddings and people inference, Exa for public
+  profile enrichment, and Jev for narrow judgments, rather than a
+  provider-neutral matrix. Other providers remain in the code but are not a
+  focus. See [recommended configuration](docs/usage/recommended-configuration.md).
+
+### Where to report issues
 
 Report problems with this fork at
 [metcalfc/msgvault issues](https://github.com/metcalfc/msgvault/issues). Report
 a problem to [kenn-io/msgvault issues](https://github.com/kenn-io/msgvault/issues)
 only when it also reproduces with an upstream release or upstream `main`.
 
-![A person profile in this fork's Web UI for a synthetic contact, showing last contact, recent email threads, and saved context such as location and how we met](.github/assets/fork-person-profile.png)
+<p align="center">
+  <img src=".github/assets/fork-people.png" width="720" alt="The People view listing five synthetic contacts, each with an example email address and a last-contact date, most recent first">
+  <br>
+  <em>People: everyone you have been in touch with, most recent first (synthetic data).</em>
+</p>
+
+<p align="center">
+  <img src=".github/assets/fork-person-profile.png" width="720" alt="A synthetic person profile showing last contact, recent email threads with snippets, and saved context such as location and how we met">
+  <br>
+  <em>A person profile: last contact, recent threads, and the context you saved (synthetic data).</em>
+</p>
 
 **Keep your communications and relationships in an archive you own.**
 
@@ -77,38 +107,23 @@ for the choices and consent steps.
 
 ## Installation
 
-**macOS / Linux:**
-```bash
-curl -fsSL https://msgvault.io/install.sh | bash
-```
-
-**macOS via Homebrew**
-```bash
-brew install msgvault
-```
-
-The installer detects your OS and architecture, downloads the latest release from [GitHub Releases](https://github.com/kenn-io/msgvault/releases), verifies the SHA-256 checksum, and installs the binary. You can review the script ([bash](https://msgvault.io/install.sh)) before running, or download a release binary directly from GitHub.
-
-This fork supports macOS and Linux.
-The installers above fetch upstream releases. To build this fork from source instead (requires **Go 1.27+**, **Bun
-1.3.14+**, **Node.js 20.19+ on 20.x, 22.13+ on 22.x, or 24+**, and a C/C++
-compiler for CGO and to statically link DuckDB; on Debian/Ubuntu also install
-`libsqlite3-dev` for the `sqlite3.h` header used by the default `sqlite_vec`
-build):
+This fork has no release binaries; build it from source on macOS or Linux.
+You need **Go 1.27+**, **Bun 1.3.14+**, **Node.js 20.19+ on 20.x, 22.13+ on
+22.x, or 24+**, and a C/C++ compiler for CGO and to statically link DuckDB. On
+Debian/Ubuntu also install `libsqlite3-dev` for the `sqlite3.h` header used by
+the default `sqlite_vec` build.
 
 ```bash
-# From your fork checkout:
+git clone https://github.com/metcalfc/msgvault.git
+cd msgvault
 make install
 ```
 
-**Conda-Forge:**
+See the [setup guide](docs/setup.md) for details.
 
-You can install msgvault [from conda-forge](https://prefix.dev/channels/conda-forge/packages/msgvault) using Pixi or Conda:
-
-```bash
-pixi global install msgvault
-conda install -c conda-forge msgvault
-```
+**Upstream msgvault:** the `msgvault.io` install script, Homebrew, and
+conda-forge packages install upstream releases, not this fork. See the
+[upstream setup guide](https://msgvault.io/docs/setup/) if you want those.
 
 ## Quick Start
 
@@ -122,8 +137,8 @@ msgvault sync-full you@gmail.com --limit 100
 msgvault serve
 ```
 
-Open the `API server` URL printed by `msgvault serve`. The release binary
-includes the browser application; it needs no separate Node or Bun installation
+Open the `API server` URL printed by `msgvault serve`. The binary includes the
+browser application; it needs no separate Node or Bun installation
 at runtime. Use `msgvault tui` for the terminal interface.
 
 For another provider or a local export, start with
@@ -135,7 +150,7 @@ first sync, and running on your own server.
 
 | I want to… | Read |
 |---|---|
-| Understand the product | [Product overview](https://msgvault.io/) and [archive lifecycle](https://msgvault.io/guide/) |
+| Understand the product | [Introduction](docs/introduction.md), or upstream's [product overview](https://msgvault.io/) and [archive lifecycle](https://msgvault.io/guide/) |
 | Catch up after 0.19 | [Changelog and upgrade notes](docs/changelog.md#0200) |
 | Search messages and attachments | [Searching](docs/usage/searching.md) and [document indexing](docs/usage/document-indexing.md) |
 | Maintain contacts and relationships | [People and profiles](docs/usage/people.md) |
@@ -155,4 +170,5 @@ the [upstream documentation](https://msgvault.io/docs/).
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Copyright (c) 2025-2026 Wes McKinney, as stated in the
+[LICENSE](LICENSE) file. This fork is distributed under the same license.
