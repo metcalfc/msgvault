@@ -186,6 +186,12 @@ func (s *Server) handleLinkEquivalentEmailAddresses(w http.ResponseWriter, r *ht
 	}
 	result, err := linker.LinkEquivalentEmailAddressesContext(r.Context(), true)
 	if err != nil {
+		// Batches that committed before the failure already changed
+		// identity clusters, so the cache is refreshed for them too. The
+		// refresh outlives a cancelled request.
+		if result != nil && result.Linked > 0 {
+			s.refreshIdentityCacheState(context.WithoutCancel(r.Context()))
+		}
 		s.writeIdentityMatchError(w, err)
 		return
 	}

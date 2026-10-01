@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/store"
 )
 
@@ -576,4 +577,40 @@ func TestLinkEquivalentEmailAddressesEndpointLinksSharedMailbox(t *testing.T) {
 	require.NoError(json.Unmarshal(response.Body.Bytes(), &repeat), response.Body.String())
 	assert.Equal(store.EmailEquivalenceResult{Participants: 2}, repeat)
 	assert.Equal(1, st.refreshCalls, "a pass that links nothing leaves the cache alone")
+}
+
+// partialEquivalenceStore runs the real pass, then reports a failure as a
+// later batch would after earlier batches committed their links. A real
+// mid-run batch failure cannot be produced deterministically.
+type partialEquivalenceStore struct {
+	*stubIdentityCacheStore
+}
+
+func (s *partialEquivalenceStore) LinkEquivalentEmailAddressesContext(
+	ctx context.Context, force bool,
+) (*store.EmailEquivalenceResult, error) {
+	result, err := s.Store.LinkEquivalentEmailAddressesContext(ctx, force)
+	if err != nil {
+		return result, err
+	}
+	return result, errors.New("later batch failed")
+}
+
+func TestLinkEquivalentEmailAddressesEndpointRefreshesAfterPartialRun(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	_, st := newIdentityLinkTestServer(t)
+	partial := &partialEquivalenceStore{stubIdentityCacheStore: st}
+	srv := NewServer(&config.Config{Server: config.ServerConfig{APIPort: 8080}}, partial, nil, testLogger())
+	primary := st.mustParticipant(t, "pat@example.com", "Pat Example", "example.com")
+	tagged := st.mustParticipant(t, "pat+news@example.com", "", "example.com")
+
+	response := personRequest(t, srv, http.MethodPost,
+		"/api/v1/identity/email-equivalence/link", nil, "")
+	require.Equal(http.StatusInternalServerError, response.Code, response.Body.String())
+	members, err := st.ClusterMembers(primary)
+	require.NoError(err)
+	require.Equal([]int64{primary, tagged}, members, "the committed batch kept its link")
+	assert.Equal(1, st.refreshCalls, "committed links refresh the cache even when the run fails")
 }
