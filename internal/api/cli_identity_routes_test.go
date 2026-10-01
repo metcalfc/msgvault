@@ -50,11 +50,11 @@ type cliIdentityDiscoveryTestStore struct {
 	listSourcesErr error
 }
 
-func (s *cliIdentityDiscoveryTestStore) ListSources(sourceType string) ([]*store.Source, error) {
+func (s *cliIdentityDiscoveryTestStore) ListSourcesContext(ctx context.Context, sourceType string) ([]*store.Source, error) {
 	if s.listSourcesErr != nil {
 		return nil, s.listSourcesErr
 	}
-	return s.Store.ListSources(sourceType)
+	return s.Store.ListSourcesContext(ctx, sourceType)
 }
 
 func (s *cliIdentityDiscoveryTestStore) CountIdentityDiscoveryMessagesContext(

@@ -2541,10 +2541,15 @@ func (s *Store) ensureAttachmentOccurrenceUniqueIndexes(ctx context.Context) err
 // Callers on hot request paths must not invoke it per request — see the
 // server-level memoization in handleCLISearch.
 func (s *Store) NeedsFTSBackfill() bool {
+	return s.NeedsFTSBackfillContext(context.Background())
+}
+
+// NeedsFTSBackfillContext bounds the full completeness probe by ctx.
+func (s *Store) NeedsFTSBackfillContext(ctx context.Context) bool {
 	if !s.fts5Available {
 		return false
 	}
-	return s.dialect.FTSNeedsBackfill(s.db.DB)
+	return s.dialect.FTSNeedsBackfill(ctx, s.db.DB)
 }
 
 // NeedsFTSBackfillQuick is the cheap, hot-path-safe form of NeedsFTSBackfill:

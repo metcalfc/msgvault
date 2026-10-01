@@ -40,30 +40,30 @@ func TestSQLiteFTSProbePresence(t *testing.T) {
 			db := newFTSProbeDB(t, zero)
 			d := &SQLiteDialect{}
 			ctx := context.Background()
-			assert.False(d.FTSNeedsBackfill(db))
+			assert.False(d.FTSNeedsBackfill(t.Context(), db))
 			assert.False(d.FTSNeedsBackfillQuick(ctx, db))
 			_, err := db.Exec("INSERT INTO messages VALUES (1), (2), (3)")
 			req.NoError(err)
-			assert.True(d.FTSNeedsBackfill(db))
+			assert.True(d.FTSNeedsBackfill(t.Context(), db))
 			assert.True(d.FTSNeedsBackfillQuick(ctx, db))
 			_, err = db.Exec("INSERT INTO messages_fts(rowid, text) VALUES (1, ''), (3, 'synthetic'), (4, 'extra')")
 			req.NoError(err)
-			assert.True(d.FTSNeedsBackfill(db), "equal counts must not hide the interior hole")
+			assert.True(d.FTSNeedsBackfill(t.Context(), db), "equal counts must not hide the interior hole")
 			assert.False(d.FTSNeedsBackfillQuick(ctx, db), "quick probe only checks the tail")
 			_, err = db.Exec("INSERT INTO messages_fts(rowid, text) VALUES (2, '')")
 			req.NoError(err)
-			assert.False(d.FTSNeedsBackfill(db), "empty text still counts as indexed")
+			assert.False(d.FTSNeedsBackfill(t.Context(), db), "empty text still counts as indexed")
 			assert.False(d.FTSNeedsBackfillQuick(ctx, db))
 			_, err = db.Exec("DELETE FROM messages_fts WHERE rowid IN (3, 4)")
 			req.NoError(err)
-			assert.True(d.FTSNeedsBackfill(db))
+			assert.True(d.FTSNeedsBackfill(t.Context(), db))
 			assert.True(d.FTSNeedsBackfillQuick(ctx, db))
 			_, err = db.Exec("DELETE FROM messages WHERE id = 3")
 			req.NoError(err)
-			assert.False(d.FTSNeedsBackfill(db), "deleted messages need no index entry")
+			assert.False(d.FTSNeedsBackfill(t.Context(), db), "deleted messages need no index entry")
 			_, err = db.Exec("DELETE FROM messages_fts WHERE rowid = 1")
 			req.NoError(err)
-			assert.True(d.FTSNeedsBackfill(db), "lowest ID hole must be found")
+			assert.True(d.FTSNeedsBackfill(t.Context(), db), "lowest ID hole must be found")
 			assert.False(d.FTSNeedsBackfillQuick(ctx, db))
 			_, err = db.Exec("INSERT INTO messages VALUES (4)")
 			req.NoError(err)
@@ -71,6 +71,7 @@ func TestSQLiteFTSProbePresence(t *testing.T) {
 			cancelled, cancel := context.WithCancel(ctx)
 			cancel()
 			assert.False(d.FTSNeedsBackfillQuick(cancelled, db))
+			assert.False(d.FTSNeedsBackfill(cancelled, db), "full probe must honor cancellation too")
 		})
 	}
 }
@@ -87,7 +88,7 @@ func TestSQLiteFTSProbeAvoidsStoredContent(t *testing.T) {
 	_, err = db.Exec("DROP TABLE messages_fts_content")
 	req.NoError(err)
 	d := &SQLiteDialect{}
-	assert.True(d.FTSNeedsBackfill(db))
+	assert.True(d.FTSNeedsBackfill(t.Context(), db))
 	assert.True(d.FTSNeedsBackfillQuick(context.Background(), db))
 }
 
@@ -102,7 +103,7 @@ func TestSQLiteFTSProbeErrors(t *testing.T) {
 			_, err = db.Exec(damage)
 			req.NoError(err)
 			d := &SQLiteDialect{}
-			assert.False(d.FTSNeedsBackfill(db), "errors must not be treated as gaps")
+			assert.False(d.FTSNeedsBackfill(t.Context(), db), "errors must not be treated as gaps")
 			assert.False(d.FTSNeedsBackfillQuick(context.Background(), db))
 		})
 	}
@@ -154,7 +155,7 @@ func FuzzSQLiteFTSProbePresence(f *testing.F) {
 			_, err = db.Exec("INSERT INTO messages_fts(rowid, text) VALUES (?, '')", id)
 			req.NoError(err)
 		}
-		assert.Equal(wantGap, (&SQLiteDialect{}).FTSNeedsBackfill(db))
+		assert.Equal(wantGap, (&SQLiteDialect{}).FTSNeedsBackfill(t.Context(), db))
 	})
 }
 
@@ -174,7 +175,7 @@ func BenchmarkSQLiteFTSProbe(b *testing.B) {
 	b.Run("production", func(b *testing.B) {
 		req := require.New(b)
 		for range b.N {
-			req.False((&SQLiteDialect{}).FTSNeedsBackfill(db))
+			req.False((&SQLiteDialect{}).FTSNeedsBackfill(b.Context(), db))
 		}
 	})
 	b.Run("virtual", func(b *testing.B) {

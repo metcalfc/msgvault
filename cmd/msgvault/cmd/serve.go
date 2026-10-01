@@ -1586,8 +1586,12 @@ var _ api.PersonBriefStore = (*storeAPIAdapter)(nil)
 var _ api.MeetingImporter = (*storeAPIAdapter)(nil)
 var _ api.SourceStatusStore = (*storeAPIAdapter)(nil)
 var _ api.EntityLabelStore = (*storeAPIAdapter)(nil)
-var _ api.CLIStore = (*storeAPIAdapter)(nil)
-var _ api.ContextCLIStore = (*storeAPIAdapter)(nil)
+var _ api.CLIScopeStore = (*storeAPIAdapter)(nil)
+var _ api.CLIStatsStore = (*storeAPIAdapter)(nil)
+var _ api.CLIAccountStore = (*storeAPIAdapter)(nil)
+var _ api.CLIIdentityStore = (*storeAPIAdapter)(nil)
+var _ api.CLIIdentityDiscoveryStore = (*storeAPIAdapter)(nil)
+var _ api.CLIIndexStore = (*storeAPIAdapter)(nil)
 var _ api.CLICollectionStore = (*storeAPIAdapter)(nil)
 var _ api.CLIStartupMigrationStore = (*storeAPIAdapter)(nil)
 var _ api.CLICacheBuilder = (*storeAPIAdapter)(nil)
@@ -1604,7 +1608,6 @@ var _ api.DeletionManifestCanceller = (*storeAPIAdapter)(nil)
 var _ api.CLIDeduplicatePlanner = (*storeAPIAdapter)(nil)
 var _ api.CLIEmbeddingsPlanner = (*storeAPIAdapter)(nil)
 var _ api.CLIDedupDeleteStore = (*storeAPIAdapter)(nil)
-var _ api.ContextCLIDedupDeleteStore = (*storeAPIAdapter)(nil)
 var _ api.IdentityLinkStore = (*storeAPIAdapter)(nil)
 var _ api.IdentityMatchStore = (*storeAPIAdapter)(nil)
 var _ api.PersonProfileStore = (*storeAPIAdapter)(nil)
@@ -1910,24 +1913,16 @@ func (a *storeAPIAdapter) SearchMessagesQueryContext(ctx context.Context, q *sea
 	return a.store.SearchMessagesQueryContext(ctx, q, offset, limit)
 }
 
-func (a *storeAPIAdapter) NeedsFTSBackfill() bool {
-	return a.store.NeedsFTSBackfill()
+func (a *storeAPIAdapter) NeedsFTSBackfillContext(ctx context.Context) bool {
+	return a.store.NeedsFTSBackfillContext(ctx)
 }
 
-func (a *storeAPIAdapter) NeedsFTSBackfillQuick() bool {
-	return a.store.NeedsFTSBackfillQuick()
+func (a *storeAPIAdapter) BackfillFTSContext(ctx context.Context, progress func(done, total int64)) (int64, error) {
+	return a.store.BackfillFTSContext(ctx, progress)
 }
 
 func (a *storeAPIAdapter) NeedsFTSBackfillQuickContext(ctx context.Context) bool {
 	return a.store.NeedsFTSBackfillQuickContext(ctx)
-}
-
-func (a *storeAPIAdapter) BackfillFTS(progress func(done, total int64)) (int64, error) {
-	return a.store.BackfillFTS(progress)
-}
-
-func (a *storeAPIAdapter) RebuildFTS(progress func(done, total int64)) (int64, error) {
-	return a.store.RebuildFTS(progress)
 }
 
 func (a *storeAPIAdapter) RebuildFTSContext(

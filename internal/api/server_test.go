@@ -2059,3 +2059,47 @@ func (m *mockStore) GetSourcesByIdentifierOrDisplayNameContext(_ context.Context
 func (m *mockStore) GetSourcesByTypeAndAccountContext(_ context.Context, sourceType, account string) ([]*store.Source, error) {
 	return m.GetSourcesByTypeAndAccount(sourceType, account)
 }
+
+func (m *mockStore) ListSourcesContext(_ context.Context, sourceType string) ([]*store.Source, error) {
+	return m.ListSources(sourceType)
+}
+
+func (m *mockStore) UpdateSourceDisplayNameContext(_ context.Context, id int64, name string) error {
+	return m.UpdateSourceDisplayName(id, name)
+}
+
+func (m *mockStore) ListAccountIdentitiesContext(_ context.Context, id int64) ([]store.AccountIdentity, error) {
+	return m.ListAccountIdentities(id)
+}
+
+func (m *mockStore) AddAccountIdentityContext(_ context.Context, id int64, address, signal string) error {
+	return m.AddAccountIdentity(id, address, signal)
+}
+
+func (m *mockStore) RemoveAccountIdentityContext(_ context.Context, id int64, address string) (int64, error) {
+	return m.RemoveAccountIdentity(id, address)
+}
+
+func (m *mockStore) CountMessagesForSourceContext(_ context.Context, id int64) (int64, error) {
+	return m.CountMessagesForSource(id)
+}
+
+func (m *mockStore) CountSourceDeletedMessagesContext(_ context.Context, ids ...int64) (int64, error) {
+	return m.CountSourceDeletedMessages(ids...)
+}
+
+func (m *mockStore) NeedsFTSBackfillContext(_ context.Context) bool {
+	return m.NeedsFTSBackfill()
+}
+
+func (m *mockStore) NeedsFTSBackfillQuickContext(_ context.Context) bool {
+	return m.NeedsFTSBackfillQuick()
+}
+
+func (m *mockStore) BackfillFTSContext(_ context.Context, progress func(done, total int64)) (int64, error) {
+	return m.BackfillFTS(progress)
+}
+
+func (m *mockStore) RebuildFTSContext(_ context.Context, progress func(done, total int64)) (int64, error) {
+	return m.RebuildFTS(progress)
+}

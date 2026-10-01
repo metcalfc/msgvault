@@ -872,7 +872,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	collection := r.URL.Query().Get("collection")
 	scope := cliScope{}
 	if account != "" || collection != "" {
-		cliStore, apiErr := s.cliStore()
+		cliStore, apiErr := s.cliScopeStore(r.Context())
 		if apiErr != nil {
 			writeAPIHTTPError(w, apiErr)
 			return
@@ -1422,7 +1422,7 @@ func parseRequiredInt64Query(r *http.Request, name string) (int64, error) {
 func (s *Server) similarSearchFilter(r *http.Request) (vector.Filter, *apiHTTPError) {
 	var filter vector.Filter
 	if account := r.URL.Query().Get("account"); account != "" {
-		cliStore, apiErr := s.cliStore()
+		cliStore, apiErr := s.cliScopeStore(r.Context())
 		if apiErr != nil {
 			return filter, apiErr
 		}

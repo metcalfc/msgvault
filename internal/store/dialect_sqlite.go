@@ -497,11 +497,11 @@ const sqliteFTSNeedsBackfillVirtualSQL = `SELECT EXISTS (SELECT 1 FROM messages 
 // avoid reading stored FTS content. columnsize=0 indices have no docsize table
 // and fall back to the virtual table. Checking every message catches interior
 // holes left when indexing fails during sync but later messages are indexed.
-func (d *SQLiteDialect) FTSNeedsBackfill(db *sql.DB) bool {
+func (d *SQLiteDialect) FTSNeedsBackfill(ctx context.Context, db *sql.DB) bool {
 	var exists bool
-	err := db.QueryRowContext(context.Background(), sqliteFTSNeedsBackfillDocsizeSQL).Scan(&exists)
+	err := db.QueryRowContext(ctx, sqliteFTSNeedsBackfillDocsizeSQL).Scan(&exists)
 	if d.IsNoSuchTableError(err) {
-		err = db.QueryRowContext(context.Background(), sqliteFTSNeedsBackfillVirtualSQL).Scan(&exists)
+		err = db.QueryRowContext(ctx, sqliteFTSNeedsBackfillVirtualSQL).Scan(&exists)
 	}
 	return err == nil && exists
 }

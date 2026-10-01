@@ -37,216 +37,6 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-// CLIStore exposes archive operations needed by CLI-compatible HTTP routes.
-// These routes preserve local CLI output contracts while keeping SQLite access
-// inside the daemon process.
-type CLIStore interface {
-	GetStatsForScope(sourceIDs []int64) (*store.Stats, error)
-	GetSourcesByIdentifierOrDisplayName(query string) ([]*store.Source, error)
-	GetSourcesByTypeAndAccount(sourceType, accountEmail string) ([]*store.Source, error)
-	GetCollectionByName(name string) (*store.CollectionWithSources, error)
-	UpdateSourceDisplayName(sourceID int64, displayName string) error
-	ListSources(sourceType string) ([]*store.Source, error)
-	GetSourceByID(id int64) (*store.Source, error)
-	ListAccountIdentities(sourceID int64) ([]store.AccountIdentity, error)
-	AddAccountIdentity(sourceID int64, address, signal string) error
-	RemoveAccountIdentity(sourceID int64, address string) (int64, error)
-	CountMessagesForSource(sourceID int64) (int64, error)
-	CountSourceDeletedMessages(sourceIDs ...int64) (int64, error)
-	NeedsFTSBackfill() bool
-	NeedsFTSBackfillQuick() bool
-	BackfillFTS(progress func(done, total int64)) (int64, error)
-	RebuildFTS(progress func(done, total int64)) (int64, error)
-}
-
-// ctxCLIStatsStore is an optional extension of CLIStore for stores that can
-// cancel scoped statistics queries with the request. Older CLIStore
-// implementations retain the context-free compatibility path.
-type ctxCLIStatsStore interface {
-	GetStatsForScopeContext(ctx context.Context, sourceIDs []int64) (*store.Stats, error)
-}
-
-// ContextCLIStore is the production request-aware extension for CLIStore
-// database reads and maintenance work. bindCLIStoreContext keeps the legacy
-// CLIStore surface available to in-process compatibility implementations while
-// statically checked production adapters implement this complete extension.
-type ContextCLIStore interface {
-	GetStatsForScopeContext(ctx context.Context, sourceIDs []int64) (*store.Stats, error)
-	GetSourcesByIdentifierOrDisplayNameContext(ctx context.Context, query string) ([]*store.Source, error)
-	GetSourcesByTypeAndAccountContext(ctx context.Context, sourceType, accountEmail string) ([]*store.Source, error)
-	GetCollectionByNameContext(ctx context.Context, name string) (*store.CollectionWithSources, error)
-	UpdateSourceDisplayNameContext(ctx context.Context, sourceID int64, displayName string) error
-	ListSourcesContext(ctx context.Context, sourceType string) ([]*store.Source, error)
-	GetSourceByIDContext(ctx context.Context, id int64) (*store.Source, error)
-	ListAccountIdentitiesContext(ctx context.Context, sourceID int64) ([]store.AccountIdentity, error)
-	AddAccountIdentityContext(ctx context.Context, sourceID int64, address, signal string) error
-	RemoveAccountIdentityContext(ctx context.Context, sourceID int64, address string) (int64, error)
-	CountIdentityDiscoveryMessagesContext(ctx context.Context, sourceID int64) (int64, error)
-	ScanIdentityDiscoveryPageContext(
-		ctx context.Context,
-		sourceID, afterID int64,
-		limit int,
-	) (store.IdentityDiscoveryPage, error)
-	ScanIdentityObservationsForSourceMessageIDsContext(
-		ctx context.Context,
-		sourceID int64,
-		sourceMessageIDs []string,
-	) ([]store.IdentityObservation, error)
-	AddAccountIdentitiesBatchContext(
-		ctx context.Context,
-		sourceID int64,
-		candidates []store.IdentityConfirmation,
-	) ([]store.IdentityConfirmationOutcome, error)
-	MergeConfirmedAccountIdentitySignalsContext(
-		ctx context.Context,
-		sourceID int64,
-		candidates []store.IdentityConfirmation,
-	) ([]store.IdentityConfirmationOutcome, error)
-	CountMessagesForSourceContext(ctx context.Context, sourceID int64) (int64, error)
-	CountSourceDeletedMessagesContext(ctx context.Context, sourceIDs ...int64) (int64, error)
-	NeedsFTSBackfillQuickContext(ctx context.Context) bool
-	RebuildFTSContext(ctx context.Context, progress func(done, total int64)) (int64, error)
-}
-
-type requestCLIStore struct {
-	CLIStore
-
-	contextStore ContextCLIStore
-	ctx          context.Context
-}
-
-func bindCLIStoreContext(ctx context.Context, st CLIStore) CLIStore {
-	contextStore, ok := st.(ContextCLIStore)
-	if !ok {
-		// Intentional compatibility fallback for in-process stores that
-		// predate ContextCLIStore. The daemon production adapter has a static
-		// interface assertion and production-path cancellation coverage.
-		return st
-	}
-	return &requestCLIStore{CLIStore: st, contextStore: contextStore, ctx: ctx}
-}
-
-func (s *requestCLIStore) GetStatsForScope(sourceIDs []int64) (*store.Stats, error) {
-	return s.contextStore.GetStatsForScopeContext(s.ctx, sourceIDs)
-}
-
-func (s *requestCLIStore) GetStatsForScopeContext(
-	ctx context.Context,
-	sourceIDs []int64,
-) (*store.Stats, error) {
-	return s.contextStore.GetStatsForScopeContext(ctx, sourceIDs)
-}
-
-func (s *requestCLIStore) GetSourcesByIdentifierOrDisplayName(query string) ([]*store.Source, error) {
-	return s.contextStore.GetSourcesByIdentifierOrDisplayNameContext(s.ctx, query)
-}
-
-func (s *requestCLIStore) GetSourcesByTypeAndAccount(
-	sourceType, accountEmail string,
-) ([]*store.Source, error) {
-	return s.contextStore.GetSourcesByTypeAndAccountContext(s.ctx, sourceType, accountEmail)
-}
-
-func (s *requestCLIStore) GetCollectionByName(name string) (*store.CollectionWithSources, error) {
-	return s.contextStore.GetCollectionByNameContext(s.ctx, name)
-}
-
-func (s *requestCLIStore) UpdateSourceDisplayName(sourceID int64, displayName string) error {
-	return s.contextStore.UpdateSourceDisplayNameContext(s.ctx, sourceID, displayName)
-}
-
-func (s *requestCLIStore) ListSources(sourceType string) ([]*store.Source, error) {
-	return s.contextStore.ListSourcesContext(s.ctx, sourceType)
-}
-
-func (s *requestCLIStore) GetSourceByID(id int64) (*store.Source, error) {
-	return s.contextStore.GetSourceByIDContext(s.ctx, id)
-}
-
-func (s *requestCLIStore) ListAccountIdentities(sourceID int64) ([]store.AccountIdentity, error) {
-	return s.contextStore.ListAccountIdentitiesContext(s.ctx, sourceID)
-}
-
-func (s *requestCLIStore) AddAccountIdentity(sourceID int64, address, signal string) error {
-	return s.contextStore.AddAccountIdentityContext(s.ctx, sourceID, address, signal)
-}
-
-func (s *requestCLIStore) RemoveAccountIdentity(sourceID int64, address string) (int64, error) {
-	return s.contextStore.RemoveAccountIdentityContext(s.ctx, sourceID, address)
-}
-
-func (s *requestCLIStore) CountIdentityDiscoveryMessagesContext(
-	_ context.Context,
-	sourceID int64,
-) (int64, error) {
-	return s.contextStore.CountIdentityDiscoveryMessagesContext(s.ctx, sourceID)
-}
-
-func (s *requestCLIStore) ScanIdentityDiscoveryPageContext(
-	_ context.Context,
-	sourceID, afterID int64,
-	limit int,
-) (store.IdentityDiscoveryPage, error) {
-	return s.contextStore.ScanIdentityDiscoveryPageContext(s.ctx, sourceID, afterID, limit)
-}
-
-func (s *requestCLIStore) ScanIdentityObservationsForSourceMessageIDsContext(
-	_ context.Context,
-	sourceID int64,
-	sourceMessageIDs []string,
-) ([]store.IdentityObservation, error) {
-	return s.contextStore.ScanIdentityObservationsForSourceMessageIDsContext(
-		s.ctx,
-		sourceID,
-		sourceMessageIDs,
-	)
-}
-
-func (s *requestCLIStore) AddAccountIdentitiesBatchContext(
-	_ context.Context,
-	sourceID int64,
-	candidates []store.IdentityConfirmation,
-) ([]store.IdentityConfirmationOutcome, error) {
-	return s.contextStore.AddAccountIdentitiesBatchContext(s.ctx, sourceID, candidates)
-}
-
-func (s *requestCLIStore) MergeConfirmedAccountIdentitySignalsContext(
-	_ context.Context,
-	sourceID int64,
-	candidates []store.IdentityConfirmation,
-) ([]store.IdentityConfirmationOutcome, error) {
-	return s.contextStore.MergeConfirmedAccountIdentitySignalsContext(s.ctx, sourceID, candidates)
-}
-
-func (s *requestCLIStore) CountMessagesForSource(sourceID int64) (int64, error) {
-	return s.contextStore.CountMessagesForSourceContext(s.ctx, sourceID)
-}
-
-func (s *requestCLIStore) CountSourceDeletedMessages(sourceIDs ...int64) (int64, error) {
-	return s.contextStore.CountSourceDeletedMessagesContext(s.ctx, sourceIDs...)
-}
-
-func (s *requestCLIStore) NeedsFTSBackfillQuick() bool {
-	return s.contextStore.NeedsFTSBackfillQuickContext(s.ctx)
-}
-
-func (s *requestCLIStore) RebuildFTS(
-	progress func(done, total int64),
-) (int64, error) {
-	return s.contextStore.RebuildFTSContext(s.ctx, progress)
-}
-
-func getCLIStatsForScope(
-	ctx context.Context,
-	st CLIStore,
-	sourceIDs []int64,
-) (*store.Stats, error) {
-	if ctxStore, ok := st.(ctxCLIStatsStore); ok {
-		return ctxStore.GetStatsForScopeContext(ctx, sourceIDs)
-	}
-	return st.GetStatsForScope(sourceIDs)
-}
-
 // CLIStartupMigrationStore exposes one-time startup migrations needed by
 // setup-style CLI commands while keeping writes inside the daemon process.
 type CLIStartupMigrationStore interface {
@@ -307,20 +97,9 @@ type CLIRepairEncodingRunner interface {
 	RunCLIRepairEncoding(ctx context.Context, emit func(CLIRepairEncodingEvent) error) error
 }
 
-// CLIDedupDeleteStore exposes the destructive dedup-delete operations used by
-// the CLI-compatible HTTP routes.
+// CLIDedupDeleteStore requires cancellation for deletion planning, backup,
+// and execution through CLI-compatible HTTP routes.
 type CLIDedupDeleteStore interface {
-	CountAllDeduped() (int64, int64, error)
-	CountDedupedBatches(batchIDs []string) ([]store.DedupedBatchCount, int64, error)
-	DeleteAllDeduped() (int64, int64, error)
-	DeleteDedupedBatch(batchID string) (int64, error)
-	DeleteDedupedBatches(batchIDs []string) (int64, error)
-	BackupDatabase(dst string) error
-}
-
-// ContextCLIDedupDeleteStore is the production request-aware extension for
-// destructive dedup-delete planning, backup, and execution.
-type ContextCLIDedupDeleteStore interface {
 	CountAllDedupedContext(ctx context.Context) (int64, int64, error)
 	CountDedupedBatchesContext(
 		ctx context.Context,
@@ -330,64 +109,6 @@ type ContextCLIDedupDeleteStore interface {
 	DeleteDedupedBatchContext(ctx context.Context, batchID string) (int64, error)
 	DeleteDedupedBatchesContext(ctx context.Context, batchIDs []string) (int64, error)
 	BackupDatabaseContext(ctx context.Context, dst string) error
-}
-
-type requestCLIDedupDeleteStore struct {
-	CLIDedupDeleteStore
-
-	contextStore ContextCLIDedupDeleteStore
-	ctx          context.Context
-}
-
-func bindCLIDedupDeleteStoreContext(
-	ctx context.Context,
-	st CLIDedupDeleteStore,
-) CLIDedupDeleteStore {
-	contextStore, ok := st.(ContextCLIDedupDeleteStore)
-	if !ok {
-		// Compatibility fallback for in-process stores. The production daemon
-		// adapter is statically checked against the context extension.
-		return st
-	}
-	return &requestCLIDedupDeleteStore{
-		CLIDedupDeleteStore: st,
-		contextStore:        contextStore,
-		ctx:                 ctx,
-	}
-}
-
-func (s *requestCLIDedupDeleteStore) CountAllDeduped() (int64, int64, error) {
-	return s.contextStore.CountAllDedupedContext(s.ctx)
-}
-
-func (s *requestCLIDedupDeleteStore) CountDedupedBatches(
-	batchIDs []string,
-) ([]store.DedupedBatchCount, int64, error) {
-	return s.contextStore.CountDedupedBatchesContext(s.ctx, batchIDs)
-}
-
-func (s *requestCLIDedupDeleteStore) DeleteAllDeduped() (int64, int64, error) {
-	return s.contextStore.DeleteAllDedupedContext(s.ctx)
-}
-
-func (s *requestCLIDedupDeleteStore) DeleteDedupedBatch(batchID string) (int64, error) {
-	return s.contextStore.DeleteDedupedBatchContext(s.ctx, batchID)
-}
-
-func (s *requestCLIDedupDeleteStore) DeleteDedupedBatches(batchIDs []string) (int64, error) {
-	return s.contextStore.DeleteDedupedBatchesContext(s.ctx, batchIDs)
-}
-
-func (s *requestCLIDedupDeleteStore) BackupDatabase(dst string) error {
-	return s.contextStore.BackupDatabaseContext(s.ctx, dst)
-}
-
-func (s *Server) cliStore() (CLIStore, *apiHTTPError) {
-	cliStore, ok := s.store.(CLIStore)
-	if !ok {
-		return nil, cliStoreUnavailableError()
-	}
-	return cliStore, nil
 }
 
 func cliStoreUnavailableError() *apiHTTPError {
@@ -887,12 +608,11 @@ func (s *Server) handleCLIStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cliStore, apiErr := s.cliStore()
+	cliStore, apiErr := s.cliScopeStore(r.Context())
 	if apiErr != nil {
 		writeAPIHTTPError(w, apiErr)
 		return
 	}
-	cliStore = bindCLIStoreContext(r.Context(), cliStore)
 
 	scope, err := resolveCLIStatsScope(cliStore, account, collection)
 	if err != nil {
@@ -905,7 +625,12 @@ func (s *Server) handleCLIStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := getCLIStatsForScope(r.Context(), cliStore, sourceIDs)
+	statsStore, apiErr := cliCapability[CLIStatsStore](s)
+	if apiErr != nil {
+		writeAPIHTTPError(w, apiErr)
+		return
+	}
+	stats, err := statsStore.GetStatsForScopeContext(r.Context(), sourceIDs)
 	if err != nil {
 		if s.writeIfContextError(w, err) {
 			return
@@ -2244,9 +1969,8 @@ func (s *Server) planCLIDeleteDeduped(
 	if apiErr != nil {
 		return cliDeleteDedupedPlanResponse{}, apiErr
 	}
-	dedupStore = bindCLIDedupDeleteStoreContext(ctx, dedupStore)
 
-	result, err := planCLIDeleteDedupedWith(dedupStore, req.scope())
+	result, err := planCLIDeleteDedupedWith(ctx, dedupStore, req.scope())
 	if err != nil {
 		return cliDeleteDedupedPlanResponse{}, s.cliDedupDeleteError(err)
 	}
@@ -2261,9 +1985,8 @@ func (s *Server) executeCLIDeleteDeduped(
 	if apiErr != nil {
 		return cliDeleteDedupedExecuteResponse{}, apiErr
 	}
-	dedupStore = bindCLIDedupDeleteStoreContext(ctx, dedupStore)
 
-	plan, err := planCLIDeleteDedupedWith(dedupStore, req.scope())
+	plan, err := planCLIDeleteDedupedWith(ctx, dedupStore, req.scope())
 	if err != nil {
 		return cliDeleteDedupedExecuteResponse{}, s.cliDedupDeleteError(err)
 	}
@@ -2303,7 +2026,7 @@ func (s *Server) executeCLIDeleteDeduped(
 				fmt.Sprintf("Backup database failed: %v", err),
 			)
 		}
-		if err := dedupStore.BackupDatabase(backupPath); err != nil {
+		if err := dedupStore.BackupDatabaseContext(ctx, backupPath); err != nil {
 			return cliDeleteDedupedExecuteResponse{}, newAPIHTTPError(
 				http.StatusInternalServerError,
 				"dedup_backup_failed",
@@ -2315,7 +2038,7 @@ func (s *Server) executeCLIDeleteDeduped(
 	var deletedTotal int64
 	var batchCount int64
 	if req.AllHidden {
-		deleted, distinct, err := dedupStore.DeleteAllDeduped()
+		deleted, distinct, err := dedupStore.DeleteAllDedupedContext(ctx)
 		if err != nil {
 			return cliDeleteDedupedExecuteResponse{}, fmt.Errorf("delete all dedup-hidden: %w", err)
 		}
@@ -2323,7 +2046,7 @@ func (s *Server) executeCLIDeleteDeduped(
 		batchCount = distinct
 	} else {
 		batchCount = int64(len(req.BatchIDs))
-		deletedTotal, err = dedupStore.DeleteDedupedBatches(req.BatchIDs)
+		deletedTotal, err = dedupStore.DeleteDedupedBatchesContext(ctx, req.BatchIDs)
 		if err != nil {
 			return cliDeleteDedupedExecuteResponse{}, fmt.Errorf("delete selected dedup batches: %w", err)
 		}
@@ -2337,6 +2060,7 @@ func (s *Server) executeCLIDeleteDeduped(
 }
 
 func planCLIDeleteDedupedWith(
+	ctx context.Context,
 	dedupStore CLIDedupDeleteStore,
 	req cliDeleteDedupedScopeRequest,
 ) (cliDeleteDedupedPlanResponse, error) {
@@ -2345,7 +2069,7 @@ func planCLIDeleteDedupedWith(
 	}
 
 	if req.AllHidden {
-		total, distinct, err := dedupStore.CountAllDeduped()
+		total, distinct, err := dedupStore.CountAllDedupedContext(ctx)
 		if err != nil {
 			return cliDeleteDedupedPlanResponse{}, err
 		}
@@ -2355,7 +2079,7 @@ func planCLIDeleteDedupedWith(
 		}, nil
 	}
 
-	stats, total, err := dedupStore.CountDedupedBatches(req.BatchIDs)
+	stats, total, err := dedupStore.CountDedupedBatchesContext(ctx, req.BatchIDs)
 	if err != nil {
 		return cliDeleteDedupedPlanResponse{}, err
 	}
@@ -2461,13 +2185,17 @@ func (s *Server) handleCLISearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "store_unavailable", "Database not available")
 		return
 	}
-	cliStore, apiErr := s.cliStore()
+	cliStore, apiErr := s.cliScopeStore(r.Context())
 	if apiErr != nil {
 		writeAPIHTTPError(w, apiErr)
 		return
 	}
-	cliStore = bindCLIStoreContext(r.Context(), cliStore)
 
+	indexStore, apiErr := cliCapability[CLIIndexStore](s)
+	if apiErr != nil {
+		writeAPIHTTPError(w, apiErr)
+		return
+	}
 	account := r.URL.Query().Get("account")
 	collection := r.URL.Query().Get("collection")
 
@@ -2527,7 +2255,7 @@ func (s *Server) handleCLISearch(w http.ResponseWriter, r *http.Request) {
 		// waits on it: the probe and any backfill run in the background
 		// and the response only reports their state so the CLI can warn
 		// that results may be incomplete while a backfill runs.
-		IndexState: s.ensureCLISearchIndexAsync(cliStore),
+		IndexState: s.ensureCLISearchIndexAsync(r.Context(), indexStore),
 	}
 
 	results, err := s.queryEngineForContext(r.Context()).Search(r.Context(), parsed, limit, offset)
@@ -2547,7 +2275,7 @@ func (s *Server) handleCLISearch(w http.ResponseWriter, r *http.Request) {
 // — a minute on a large archive — and it used to run inline on the first
 // search of every daemon process, which reads as a hung CLI. A failed
 // backfill clears the running flag so a later search retries.
-func (s *Server) ensureCLISearchIndexAsync(cliStore CLIStore) string {
+func (s *Server) ensureCLISearchIndexAsync(ctx context.Context, cliStore CLIIndexStore) string {
 	if s.ftsIndexComplete.Load() {
 		return ""
 	}
@@ -2557,17 +2285,28 @@ func (s *Server) ensureCLISearchIndexAsync(cliStore CLIStore) string {
 		// very first search already warns that results may be incomplete
 		// instead of staying silent for the minutes the full probe can take.
 		state := cliSearchIndexStateChecking
-		if cliStore.NeedsFTSBackfillQuick() {
+		if cliStore.NeedsFTSBackfillQuickContext(ctx) {
 			state = cliSearchIndexStateBuilding
 		}
+		s.importMu.Lock()
+		if s.importsClosed {
+			s.importMu.Unlock()
+			s.ftsEnsureRunning.Store(false)
+			return ""
+		}
+		s.importWG.Add(1)
+		s.importMu.Unlock()
 		s.ftsIndexState.Store(state)
-		go s.runCLISearchIndexEnsure(cliStore)
+		go func() {
+			defer s.importWG.Done()
+			s.runCLISearchIndexEnsure(cliStore)
+		}()
 	}
 	state, _ := s.ftsIndexState.Load().(string)
 	return state
 }
 
-func (s *Server) runCLISearchIndexEnsure(cliStore CLIStore) {
+func (s *Server) runCLISearchIndexEnsure(cliStore CLIIndexStore) {
 	defer s.ftsEnsureRunning.Store(false)
 	// The probe runs outside the operation gate, so a rebuild-fts can clear
 	// and repopulate the index while it scans. A "complete" observation is
@@ -2579,7 +2318,7 @@ func (s *Server) runCLISearchIndexEnsure(cliStore CLIStore) {
 	// re-probes and backfills under the gate, serialized with rebuilds.
 	rebuildGen := s.ftsRebuildGen.Load()
 	if !s.probeFTSBackfillNeeded(cliStore) {
-		if rebuildGen%2 == 0 && s.ftsRebuildGen.Load() == rebuildGen {
+		if s.importContext.Err() == nil && rebuildGen%2 == 0 && s.ftsRebuildGen.Load() == rebuildGen {
 			s.ftsIndexComplete.Store(true)
 		}
 		s.ftsIndexState.Store("")
@@ -2589,14 +2328,14 @@ func (s *Server) runCLISearchIndexEnsure(cliStore CLIStore) {
 	// Background gate work, not request work: a backfill queued behind a
 	// long sync should wait its turn rather than force the sync to yield,
 	// since no request is blocked on it anymore.
-	done, ok := s.beginBackgroundOperationGateWork(context.Background(), "a search index build")
+	done, ok := s.beginBackgroundOperationGateWork(s.importContext, "a search index build")
 	if !ok {
 		s.ftsIndexState.Store("")
 		return
 	}
 	defer done()
-	if !cliStore.NeedsFTSBackfill() {
-		s.ftsIndexComplete.Store(true)
+	if !cliStore.NeedsFTSBackfillContext(s.importContext) {
+		s.ftsIndexComplete.Store(s.importContext.Err() == nil)
 		s.ftsIndexState.Store("")
 		return
 	}
@@ -2612,11 +2351,11 @@ func (s *Server) runCLISearchIndexEnsure(cliStore CLIStore) {
 // probeFTSBackfillNeeded runs the expensive first-search completeness probe
 // as a labeled activity, and logs the duration when it is slow enough to be
 // what a user just sat through.
-func (s *Server) probeFTSBackfillNeeded(cliStore CLIStore) bool {
+func (s *Server) probeFTSBackfillNeeded(cliStore CLIIndexStore) bool {
 	end := s.beginActivity("checking the search index")
 	defer end()
 	started := time.Now()
-	needs := cliStore.NeedsFTSBackfill()
+	needs := cliStore.NeedsFTSBackfillContext(s.importContext)
 	if elapsed := time.Since(started); elapsed > time.Second {
 		s.logger.Info("search index completeness probe finished",
 			"needs_backfill", needs,
@@ -2629,12 +2368,12 @@ func (s *Server) probeFTSBackfillNeeded(cliStore CLIStore) bool {
 // backfillFTSWithActivity runs the FTS backfill with its progress mirrored
 // into the activity label, so authenticated /health reports live counts
 // instead of the gate's static "a search index build".
-func (s *Server) backfillFTSWithActivity(cliStore CLIStore) (int64, error) {
+func (s *Server) backfillFTSWithActivity(cliStore CLIIndexStore) (int64, error) {
 	end := s.beginActivity("building the search index")
 	defer end()
 	started := time.Now()
 	s.logger.Info("building CLI search index")
-	n, err := cliStore.BackfillFTS(func(done, total int64) {
+	n, err := cliStore.BackfillFTSContext(s.importContext, func(done, total int64) {
 		s.setActivityLabel(fmt.Sprintf(
 			"building the search index (%d/%d messages)", done, total))
 	})
@@ -2649,12 +2388,11 @@ func (s *Server) backfillFTSWithActivity(cliStore CLIStore) (int64, error) {
 }
 
 func (s *Server) handleCLIRebuildFTS(w http.ResponseWriter, r *http.Request) {
-	cliStore, apiErr := s.cliStore()
+	cliStore, apiErr := cliCapability[CLIIndexStore](s)
 	if apiErr != nil {
 		writeAPIHTTPError(w, apiErr)
 		return
 	}
-	cliStore = bindCLIStoreContext(r.Context(), cliStore)
 
 	writeEvent := newCLINDJSONEventWriter[cliRebuildFTSEvent](w)
 
@@ -2677,7 +2415,7 @@ func (s *Server) handleCLIRebuildFTS(w http.ResponseWriter, r *http.Request) {
 	s.ftsIndexComplete.Store(false)
 
 	var writeErr error
-	indexed, err := cliStore.RebuildFTS(func(done, total int64) {
+	indexed, err := cliStore.RebuildFTSContext(r.Context(), func(done, total int64) {
 		if writeErr != nil {
 			return
 		}
@@ -2716,14 +2454,13 @@ func (s *Server) handleCLIAccounts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "store_unavailable", "Database not available")
 		return
 	}
-	cliStore, apiErr := s.cliStore()
+	cliStore, apiErr := cliCapability[CLIAccountStore](s)
 	if apiErr != nil {
 		writeAPIHTTPError(w, apiErr)
 		return
 	}
-	cliStore = bindCLIStoreContext(r.Context(), cliStore)
 
-	sources, err := cliStore.ListSources("")
+	sources, err := cliStore.ListSourcesContext(r.Context(), "")
 	if err != nil {
 		s.logger.Error("failed to list CLI accounts", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list accounts")
@@ -2752,7 +2489,7 @@ func (s *Server) handleCLIAccounts(w http.ResponseWriter, r *http.Request) {
 			accounts = append(accounts, newCLIAccountResponse(src, grouped[src.ID].Live, grouped[src.ID].SourceDeleted))
 			continue
 		}
-		count, err := cliStore.CountMessagesForSource(src.ID)
+		count, err := cliStore.CountMessagesForSourceContext(r.Context(), src.ID)
 		if err != nil {
 			s.logger.Error("failed to count CLI account messages",
 				"source_id", src.ID,
@@ -2761,7 +2498,7 @@ func (s *Server) handleCLIAccounts(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "internal_error", "Failed to list accounts")
 			return
 		}
-		sourceDeleted, err := cliStore.CountSourceDeletedMessages(src.ID)
+		sourceDeleted, err := cliStore.CountSourceDeletedMessagesContext(r.Context(), src.ID)
 		if err != nil {
 			s.logger.Error("failed to count CLI account source-deleted messages",
 				"source_id", src.ID,
@@ -2802,13 +2539,12 @@ func (s *Server) updateCLIAccount(
 	ctx context.Context,
 	req accountops.UpdateRequest,
 ) (accountops.UpdateResult, error) {
-	cliStore, apiErr := s.cliStore()
+	cliStore, apiErr := cliCapability[CLIAccountStore](s)
 	if apiErr != nil {
 		return accountops.UpdateResult{}, apiErr
 	}
-	cliStore = bindCLIStoreContext(ctx, cliStore)
 
-	result, err := accountops.UpdateDisplayName(cliStore, req)
+	result, err := accountops.UpdateDisplayName(&requestCLIAccountStore{requestCLIScopeStore{cliStore, ctx}, cliStore}, req)
 	if err != nil {
 		return accountops.UpdateResult{}, s.operationError(
 			err,
@@ -2973,11 +2709,10 @@ func (s *Server) getCLIIdentities(
 			"Database not available",
 		)
 	}
-	cliStore, apiErr := s.cliStore()
+	cliStore, apiErr := s.cliIdentityStore(ctx)
 	if apiErr != nil {
 		return cliIdentitiesResponse{}, apiErr
 	}
-	cliStore = bindCLIStoreContext(ctx, cliStore)
 
 	if sourceIDSet && sourceID <= 0 {
 		return cliIdentitiesResponse{}, newAPIHTTPError(
@@ -3060,11 +2795,10 @@ func (s *Server) getCLIIdentities(
 }
 
 func (s *Server) addCLIIdentity(ctx context.Context, req identityops.AddRequest) (identityops.AddResult, error) {
-	cliStore, apiErr := s.cliStore()
+	cliStore, apiErr := s.cliIdentityStore(ctx)
 	if apiErr != nil {
 		return identityops.AddResult{}, apiErr
 	}
-	cliStore = bindCLIStoreContext(ctx, cliStore)
 
 	result, err := identityops.Add(cliStore, req)
 	if err != nil {
@@ -3097,13 +2831,9 @@ func (s *Server) importCLIIdentities(
 	ctx context.Context,
 	req identityops.ImportRequest,
 ) (identityops.ImportResult, error) {
-	cliStore, apiErr := s.cliStore()
+	discoveryStore, apiErr := s.cliDiscoveryStore(ctx)
 	if apiErr != nil {
 		return identityops.ImportResult{}, apiErr
-	}
-	discoveryStore, ok := bindCLIStoreContext(ctx, cliStore).(identityops.DiscoveryStore)
-	if !ok {
-		return identityops.ImportResult{}, cliStoreUnavailableError()
 	}
 
 	result, err := identityops.Import(ctx, discoveryStore, req)
@@ -3149,14 +2879,9 @@ func (s *Server) handleCLIIdentityDiscover(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	cliStore, apiErr := s.cliStore()
+	discoveryStore, apiErr := s.cliDiscoveryStore(r.Context())
 	if apiErr != nil {
 		writeAPIHTTPError(w, apiErr)
-		return
-	}
-	discoveryStore, ok := bindCLIStoreContext(r.Context(), cliStore).(identityops.DiscoveryStore)
-	if !ok {
-		writeAPIHTTPError(w, cliStoreUnavailableError())
 		return
 	}
 
@@ -3171,7 +2896,7 @@ func (s *Server) handleCLIIdentityDiscover(w http.ResponseWriter, r *http.Reques
 			))
 			return
 		}
-		configured, configErr := s.cfg.FastmailSourceFor(cliStore, source.ID)
+		configured, configErr := s.cfg.FastmailSourceFor(discoveryStore, source.ID)
 		if configErr != nil {
 			wrappedConfigErr := fmt.Errorf("resolve [[fastmail]] configuration for source %d: %w", source.ID, configErr)
 			classifiedConfigErr := opserr.Invalid(wrappedConfigErr)
@@ -3285,11 +3010,10 @@ func discoveryAddedIdentity(outcomes []store.IdentityConfirmationOutcome) bool {
 }
 
 func (s *Server) removeCLIIdentity(ctx context.Context, req identityops.RemoveRequest) (identityops.RemoveResult, error) {
-	cliStore, apiErr := s.cliStore()
+	cliStore, apiErr := s.cliIdentityStore(ctx)
 	if apiErr != nil {
 		return identityops.RemoveResult{}, apiErr
 	}
-	cliStore = bindCLIStoreContext(ctx, cliStore)
 
 	result, err := identityops.Remove(cliStore, req)
 	if err != nil {
@@ -3608,7 +3332,7 @@ func cliCollectionResponseFromStore(
 	return resp, nil
 }
 
-func collectCLIIdentityRows(st CLIStore, sourceIDs []int64) ([]cliIdentityRowResponse, error) {
+func collectCLIIdentityRows(st identityops.Store, sourceIDs []int64) ([]cliIdentityRowResponse, error) {
 	out := make([]cliIdentityRowResponse, 0)
 	for _, sid := range sourceIDs {
 		src, err := st.GetSourceByID(sid)
@@ -3681,7 +3405,7 @@ func statsResponseFromStore(stats *store.Stats) StatsResponse {
 	}
 }
 
-func resolveCLIStatsScope(st CLIStore, account, collection string) (cliScope, error) {
+func resolveCLIStatsScope(st collectionops.AccountResolverStore, account, collection string) (cliScope, error) {
 	switch {
 	case account != "" && collection != "":
 		return cliScope{}, opserr.Invalid(errMutuallyExclusiveScope)
@@ -3705,12 +3429,12 @@ func cliEmptyScopeMessage(account, collection string) string {
 	}
 }
 
-func resolveCLIAccountScope(st CLIStore, input string) (cliScope, error) {
+func resolveCLIAccountScope(st collectionops.AccountResolverStore, input string) (cliScope, error) {
 	scope, err := collectionops.ResolveAccount(st, input)
 	return cliScope{Account: scope}, err
 }
 
-func resolveCLICollectionScope(st CLIStore, input string) (cliScope, error) {
+func resolveCLICollectionScope(st collectionops.AccountResolverStore, input string) (cliScope, error) {
 	collScope, err := collectionops.ResolveCollection(st, input)
 	return cliScope{
 		Account:    collectionops.Scope{Input: collScope.Input},

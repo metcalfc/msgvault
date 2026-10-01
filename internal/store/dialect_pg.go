@@ -550,9 +550,9 @@ func postgresFTSNeedsBackfillSQL() string {
 // on each startup. EXISTS short-circuits at the first NULL row. The versioned
 // partial btree index created by EnsureFTSIndex makes even the false
 // case index-served and self-pruning as backfill completes.
-func (d *PostgreSQLDialect) FTSNeedsBackfill(db *sql.DB) bool {
+func (d *PostgreSQLDialect) FTSNeedsBackfill(ctx context.Context, db *sql.DB) bool {
 	var exists bool
-	if err := db.QueryRow(
+	if err := db.QueryRowContext(ctx,
 		postgresFTSNeedsBackfillSQL(),
 	).Scan(&exists); err != nil {
 		return false

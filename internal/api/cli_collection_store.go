@@ -8,8 +8,7 @@ import (
 )
 
 // CLICollectionStore is the request-aware database contract for collection
-// routes. Unlike the older CLIStore bridge, these routes require cancellation
-// support from every implementation.
+// routes. Every implementation must support request cancellation.
 type CLICollectionStore interface {
 	GetCollectionByNameContext(ctx context.Context, name string) (*store.CollectionWithSources, error)
 	ListCollectionsContext(ctx context.Context) ([]*store.CollectionWithSources, error)
