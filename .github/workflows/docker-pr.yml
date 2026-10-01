@@ -1,6 +1,6 @@
 name: Docker
 
-# Run the main-pinned build and smoke checks on Namespace.
+# Run this checkout's build and smoke checks.
 on:
   pull_request:
     paths:
@@ -23,4 +23,4 @@ permissions: read-all
 
 jobs:
   validate:
-    uses: kenn-io/msgvault/.github/workflows/docker.yml@main
+    uses: ./.github/workflows/docker.yml
