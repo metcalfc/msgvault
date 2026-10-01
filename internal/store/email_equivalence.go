@@ -171,11 +171,11 @@ func (s *Store) emailEquivalenceWatermarkContext(ctx context.Context) (int64, er
 	if !found || version != strconv.Itoa(emailEquivalenceRuleVersion) {
 		return 0, nil
 	}
-	id, err := strconv.ParseInt(covered, 10, 64)
-	if err != nil {
-		return 0, nil
+	// An unreadable watermark only costs one full rescan.
+	if id, parseErr := strconv.ParseInt(covered, 10, 64); parseErr == nil {
+		return id, nil
 	}
-	return id, nil
+	return 0, nil
 }
 
 // planEmailEquivalencePairsContext scans every email participant once and

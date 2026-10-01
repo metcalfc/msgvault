@@ -148,11 +148,12 @@ func TestGmailAccount(t *testing.T) {
 
 func TestIsGmailDomain(t *testing.T) {
 	t.Parallel()
+	assert := assert.New(t)
 
-	assert.True(t, emailaddr.IsGmailDomain("gmail.com"))
-	assert.True(t, emailaddr.IsGmailDomain("GoogleMail.com"))
-	assert.False(t, emailaddr.IsGmailDomain("example.com"))
-	assert.False(t, emailaddr.IsGmailDomain("mail.gmail.com"))
+	assert.True(emailaddr.IsGmailDomain("gmail.com"))
+	assert.True(emailaddr.IsGmailDomain("GoogleMail.com"))
+	assert.False(emailaddr.IsGmailDomain("example.com"))
+	assert.False(emailaddr.IsGmailDomain("mail.gmail.com"))
 }
 
 func TestEquivalenceString(t *testing.T) {
