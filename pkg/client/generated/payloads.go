@@ -172,6 +172,10 @@ type MergePersonsBody = MergePersonRequest
 
 type AppendPersonNoteBody = AppendPersonNoteRequest
 
+type DetachPersonParticipantsBody = DetachPersonParticipantsRequest
+
+type ReattachPersonParticipantsBody = ReattachPersonParticipantsRequest
+
 type PatchPersonStructuredProfileBody = PersonProfilePatchRequest
 
 type SplitPersonMergeBody = SplitPersonRequest

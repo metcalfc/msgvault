@@ -683,6 +683,16 @@ type AppendPersonNotePath struct {
 	ID int64 `json:"id"`
 }
 
+type DetachPersonParticipantsPath struct {
+	// ID Durable person ID
+	ID int64 `json:"id"`
+}
+
+type ReattachPersonParticipantsPath struct {
+	// ID Durable person ID
+	ID int64 `json:"id"`
+}
+
 type GetPersonStructuredProfilePath struct {
 	// ID Durable person ID
 	ID int64 `json:"id"`

@@ -153,6 +153,24 @@ func (m MergePersonsHeaders) Validate() error {
 	return runtime.ConvertValidatorError(typesValidator.Struct(m))
 }
 
+type DetachPersonParticipantsHeaders struct {
+	// IfMatch Strong ETag returned by the latest person profile read. Must be the exact single tag from that read; the RFC 7232 forms `*` and comma-separated tag lists are not supported.
+	IfMatch string `json:"If-Match" validate:"required"`
+}
+
+func (d DetachPersonParticipantsHeaders) Validate() error {
+	return runtime.ConvertValidatorError(typesValidator.Struct(d))
+}
+
+type ReattachPersonParticipantsHeaders struct {
+	// IfMatch Strong ETag returned by the latest person profile read. Must be the exact single tag from that read; the RFC 7232 forms `*` and comma-separated tag lists are not supported.
+	IfMatch string `json:"If-Match" validate:"required"`
+}
+
+func (r ReattachPersonParticipantsHeaders) Validate() error {
+	return runtime.ConvertValidatorError(typesValidator.Struct(r))
+}
+
 type PatchPersonStructuredProfileHeaders struct {
 	// IfMatch Strong ETag returned by the latest person profile read. Must be the exact single tag from that read; the RFC 7232 forms `*` and comma-separated tag lists are not supported.
 	IfMatch string `json:"If-Match" validate:"required"`

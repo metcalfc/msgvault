@@ -116,6 +116,8 @@ import type {
   DeleteSettingsPeopleInferenceProviderPathParameters,
   DeleteSettingsProviderCredentialPathParameters,
   DeletionManifestDetail,
+  DetachPersonParticipantsPathParameters,
+  DetachPersonParticipantsRequest,
   DirectoryPeopleResponse,
   DiscoverEvent,
   DiscoverRequest,
@@ -335,6 +337,7 @@ import type {
   PersonMergeSnapshotResponse,
   PersonMergesResponse,
   PersonNetwork,
+  PersonParticipantDetachResult,
   PersonProfileHistory,
   PersonProfilePatchRequest,
   PersonRelationship,
@@ -358,6 +361,8 @@ import type {
   PutSettingsProviderCredentialPathParameters,
   QueryRequest,
   QueryResult,
+  ReattachPersonParticipantsPathParameters,
+  ReattachPersonParticipantsRequest,
   RejectIdentityMatchCandidatePathParameters,
   RejectOrganizationMatchReviewPathParameters,
   RejectPersonBriefPathParameters,
@@ -3066,6 +3071,44 @@ export const appendPersonNote = (
       headers: { "Content-Type": "application/json" },
       data: appendPersonNoteRequest,
       params,
+    },
+    options,
+  );
+};
+/**
+ * Unbinds the named participants from the person, cuts their identity links to the person's other participants, and records the decision as rejected identity match candidates so automatic matching cannot attach them again. Messages are unchanged. Undo with POST /people/{id}/participants/reattach.
+ * @summary Remove archive identities from a person
+ */
+export const detachPersonParticipants = (
+  { id }: DetachPersonParticipantsPathParameters,
+  detachPersonParticipantsRequest: DetachPersonParticipantsRequest,
+  options?: SecondParameter<typeof orvalFetch<PersonParticipantDetachResult>>,
+) => {
+  return orvalFetch<PersonParticipantDetachResult>(
+    {
+      url: `/api/v1/people/${encodeURIComponent(String(id))}/participants/detach`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: detachPersonParticipantsRequest,
+    },
+    options,
+  );
+};
+/**
+ * Reverses one detachment: rebinds its participants, restores the identity links it cut, returns the identity match candidates it rejected to their earlier decisions, and deletes the rejections it created.
+ * @summary Undo a removal of archive identities from a person
+ */
+export const reattachPersonParticipants = (
+  { id }: ReattachPersonParticipantsPathParameters,
+  reattachPersonParticipantsRequest: ReattachPersonParticipantsRequest,
+  options?: SecondParameter<typeof orvalFetch<PersonParticipantDetachResult>>,
+) => {
+  return orvalFetch<PersonParticipantDetachResult>(
+    {
+      url: `/api/v1/people/${encodeURIComponent(String(id))}/participants/reattach`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: reattachPersonParticipantsRequest,
     },
     options,
   );

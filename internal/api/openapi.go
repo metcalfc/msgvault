@@ -407,7 +407,13 @@ import (
 // jev.sweep_claim_grounding, jev.person_duplicates, and
 // jev.person_profile_choices enabled and automatic. Additive (minor bump).
 // 2.46.0 adds opt-in stream to SQL queries for bounded-memory JSON exports.
-const APISchemaVersion = "2.46.0"
+// 2.47.0 adds POST /people/{id}/participants/detach, which removes archive
+// identities from a person (bindings and identity links) and records the
+// decision as rejected identity match candidates so automatic matching
+// cannot attach them again, and POST /people/{id}/participants/reattach,
+// which undoes one detachment. Both take the person If-Match and return
+// PersonParticipantDetachResult. Additive (minor bump).
+const APISchemaVersion = "2.47.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

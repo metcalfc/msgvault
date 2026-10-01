@@ -2451,6 +2451,34 @@ type AppendPersonNoteErrorResponseJSON409 = ErrorResponse
 
 type AppendPersonNoteErrorResponseJSON503 = ErrorResponse
 
+type DetachPersonParticipantsResponse = PersonParticipantDetachResult
+
+type DetachPersonParticipantsErrorResponse = ErrorResponse
+
+type DetachPersonParticipantsErrorResponseJSON = ErrorResponse
+
+type DetachPersonParticipantsErrorResponseJSON409 = ErrorResponse
+
+type DetachPersonParticipantsErrorResponseJSON428 = ErrorResponse
+
+type DetachPersonParticipantsErrorResponseJSON500 = ErrorResponse
+
+type DetachPersonParticipantsErrorResponseJSON503 = ErrorResponse
+
+type ReattachPersonParticipantsResponse = PersonParticipantDetachResult
+
+type ReattachPersonParticipantsErrorResponse = ErrorResponse
+
+type ReattachPersonParticipantsErrorResponseJSON = ErrorResponse
+
+type ReattachPersonParticipantsErrorResponseJSON409 = ErrorResponse
+
+type ReattachPersonParticipantsErrorResponseJSON428 = ErrorResponse
+
+type ReattachPersonParticipantsErrorResponseJSON500 = ErrorResponse
+
+type ReattachPersonParticipantsErrorResponseJSON503 = ErrorResponse
+
 type GetPersonStructuredProfileResponse = StructuredPersonProfile
 
 type GetPersonStructuredProfileErrorResponse = ErrorResponse
@@ -5532,6 +5560,42 @@ type AppendPersonNoteResp struct {
 	JSON404      *AppendPersonNoteErrorResponseJSON
 	JSON409      *AppendPersonNoteErrorResponseJSON409
 	JSON503      *AppendPersonNoteErrorResponseJSON503
+}
+
+type DetachPersonParticipantsResp200Headers struct {
+	ETag string `header:"ETag"`
+}
+
+type DetachPersonParticipantsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *DetachPersonParticipantsResponse
+	Headers200   *DetachPersonParticipantsResp200Headers
+	JSON400      *DetachPersonParticipantsErrorResponse
+	JSON404      *DetachPersonParticipantsErrorResponseJSON
+	JSON409      *DetachPersonParticipantsErrorResponseJSON409
+	JSON428      *DetachPersonParticipantsErrorResponseJSON428
+	JSON500      *DetachPersonParticipantsErrorResponseJSON500
+	JSON503      *DetachPersonParticipantsErrorResponseJSON503
+}
+
+type ReattachPersonParticipantsResp200Headers struct {
+	ETag string `header:"ETag"`
+}
+
+type ReattachPersonParticipantsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *ReattachPersonParticipantsResponse
+	Headers200   *ReattachPersonParticipantsResp200Headers
+	JSON400      *ReattachPersonParticipantsErrorResponse
+	JSON404      *ReattachPersonParticipantsErrorResponseJSON
+	JSON409      *ReattachPersonParticipantsErrorResponseJSON409
+	JSON428      *ReattachPersonParticipantsErrorResponseJSON428
+	JSON500      *ReattachPersonParticipantsErrorResponseJSON500
+	JSON503      *ReattachPersonParticipantsErrorResponseJSON503
 }
 
 type GetPersonStructuredProfileResp200Headers struct {

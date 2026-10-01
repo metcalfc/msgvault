@@ -2918,6 +2918,14 @@ func (d DeletionTarget) Validate() error {
 	return runtime.ConvertValidatorError(typesValidator.Struct(d))
 }
 
+type DetachPersonParticipantsRequest struct {
+	ParticipantIds []int64 `json:"participant_ids" validate:"required"`
+}
+
+func (d DetachPersonParticipantsRequest) Validate() error {
+	return runtime.ConvertValidatorError(typesValidator.Struct(d))
+}
+
 type DirectoryPeopleResponse struct {
 	NextCursor *string                  `json:"next_cursor,omitzero"`
 	People     []DirectoryPersonSummary `json:"people" validate:"required"`
@@ -10274,6 +10282,50 @@ func (p PersonNetwork) Validate() error {
 	return errors
 }
 
+type PersonParticipantDetachResult struct {
+	CacheState       PersonParticipantDetachResultCacheState `json:"cache_state" validate:"required"`
+	Detachment       PersonParticipantDetachment             `json:"detachment"`
+	IdentityRevision int64                                   `json:"identity_revision"`
+	Person           Person                                  `json:"person"`
+}
+
+func (p PersonParticipantDetachResult) Validate() error {
+	var errors runtime.ValidationErrors
+	if v, ok := any(p.CacheState).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("CacheState", err)
+		}
+	}
+	if v, ok := any(p.Detachment).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("Detachment", err)
+		}
+	}
+	if v, ok := any(p.Person).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("Person", err)
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
+type PersonParticipantDetachment struct {
+	Actor          string     `json:"actor" validate:"required"`
+	CreatedAt      time.Time  `json:"created_at" validate:"required"`
+	ID             int64      `json:"id"`
+	ParticipantIds []int64    `json:"participant_ids" validate:"required"`
+	PersonID       int64      `json:"person_id"`
+	ReattachedAt   *time.Time `json:"reattached_at,omitempty"`
+	ReattachedBy   *string    `json:"reattached_by,omitzero"`
+}
+
+func (p PersonParticipantDetachment) Validate() error {
+	return runtime.ConvertValidatorError(typesValidator.Struct(p))
+}
+
 type PersonProfile struct {
 	DisplayName *string `json:"display_name,omitzero"`
 	ID          int64   `json:"id"`
@@ -10925,6 +10977,14 @@ func (q QueryResult) Validate() error {
 		return nil
 	}
 	return errors
+}
+
+type ReattachPersonParticipantsRequest struct {
+	DetachmentID int64 `json:"detachment_id" validate:"gte=1"`
+}
+
+func (r ReattachPersonParticipantsRequest) Validate() error {
+	return runtime.ConvertValidatorError(typesValidator.Struct(r))
 }
 
 type RejectPersonBriefRequest struct {

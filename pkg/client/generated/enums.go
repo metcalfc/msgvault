@@ -2104,6 +2104,23 @@ func (p PersonMergeResultCacheState) Validate() error {
 	}
 }
 
+type PersonParticipantDetachResultCacheState string
+
+const (
+	PersonParticipantDetachResultCacheStateReady PersonParticipantDetachResultCacheState = "ready"
+	PersonParticipantDetachResultCacheStateStale PersonParticipantDetachResultCacheState = "stale"
+)
+
+// Validate checks if the PersonParticipantDetachResultCacheState value is valid
+func (p PersonParticipantDetachResultCacheState) Validate() error {
+	switch p {
+	case PersonParticipantDetachResultCacheStateReady, PersonParticipantDetachResultCacheStateStale:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid PersonParticipantDetachResultCacheState value, got: %v", p))
+	}
+}
+
 type PersonSplitResultCacheState string
 
 const (
