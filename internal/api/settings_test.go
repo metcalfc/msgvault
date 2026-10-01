@@ -150,12 +150,14 @@ func TestGetSettingsIsSelfDescribingAndIncludesSafeCatalog(t *testing.T) {
 	}
 	for _, key := range []string{
 		"server.bind_addr", "server.api_port", "server.api_key", "server.allow_insecure", "server.trusted_proxies",
-		"vector.backend", "vector.db_path", "vector.skip_extension_create",
+		"vector.backend", "vector.db_path",
 	} {
 		setting := byKey[key]
 		requirements.NotNil(setting, key)
 		assertions.Equal(true, setting["read_only"], key)
 	}
+	assertions.NotContains(byKey, "vector.skip_extension_create", "PostgreSQL extension configuration is unsupported")
+	assertions.Equal([]any{"sqlite-vec"}, byKey["vector.backend"]["options"])
 	for _, key := range []string{"chat.server", "chat.model", "chat.max_results"} {
 		assertions.NotContains(byKey, key, "legacy chat settings have no production consumer")
 	}
