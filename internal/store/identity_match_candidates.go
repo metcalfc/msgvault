@@ -349,6 +349,22 @@ func (s *Store) upsertIdentityMatchCandidateTx(
 			suppressed = true
 		}
 	}
+	// A generated suggestion that would reconnect an identity the user
+	// detached from a person is recorded already rejected, and journaled with
+	// the detachment so Undo restores the decision it would have had.
+	detachmentID, detachedSuppressed := int64(0), false
+	if input.Source != ProvenanceUser && !suppressed && state != IdentityMatchStateRejected {
+		var err error
+		detachmentID, detachedSuppressed, err = s.activePersonDetachmentSeparatingTx(
+			ctx, tx, leftKind, leftID, rightKind, rightID)
+		if err != nil {
+			return nil, false, err
+		}
+		if detachedSuppressed {
+			state, decidedBy, notes = IdentityMatchStateRejected, string(ProvenanceSystem),
+				PersonDetachmentNote
+		}
+	}
 	var id int64
 	decidedAt := any(nil)
 	if decidedBy != nil {
@@ -376,6 +392,15 @@ func (s *Store) upsertIdentityMatchCandidateTx(
 				candidate_id, prior_state, prior_notes, prior_application_pending)
 			VALUES (?, ?, ?, TRUE)`, id, input.State, stringValue(input.Notes)); err != nil {
 			return nil, false, fmt.Errorf("snapshot suppressed candidate: %w", err)
+		}
+	}
+	if detachedSuppressed {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO person_participant_detachment_candidates (
+				detachment_id, candidate_id, created_by_detachment, prior_state,
+				prior_notes, prior_application_pending)
+			VALUES (?, ?, FALSE, ?, ?, TRUE)`,
+			detachmentID, id, input.State, stringValue(input.Notes)); err != nil {
+			return nil, false, fmt.Errorf("journal detachment-suppressed candidate: %w", err)
 		}
 	}
 	candidate, err = getIdentityMatchCandidateTx(ctx, tx, id)

@@ -3471,6 +3471,61 @@ CREATE TABLE IF NOT EXISTS correspondent_kind_candidate_snapshots (
     resolved_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Person participant detachments record each time the user said an archive
+-- identity is not this person. The header keeps the historical person ID
+-- without a foreign key, like person_splits, so the record survives a later
+-- merge or deletion of that person. Members, cut links, and the identity
+-- match candidates the detachment rejected or created are kept so Undo can
+-- restore exactly what the detachment changed. reattached_at marks a
+-- detachment Undo reversed; only an active detachment suppresses new system
+-- match candidates between its participants and the person.
+CREATE TABLE IF NOT EXISTS person_participant_detachments (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id                INTEGER NOT NULL,
+    actor                    TEXT NOT NULL CHECK (actor <> ''),
+    person_revision_before   INTEGER NOT NULL,
+    identity_revision        INTEGER CHECK (identity_revision IS NULL OR identity_revision > 0),
+    created_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    reattached_at            DATETIME,
+    reattached_by            TEXT,
+    CHECK ((reattached_at IS NULL) = (reattached_by IS NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_person_participant_detachments_person
+    ON person_participant_detachments(person_id, id);
+
+CREATE TABLE IF NOT EXISTS person_participant_detachment_members (
+    detachment_id  INTEGER NOT NULL REFERENCES person_participant_detachments(id) ON DELETE CASCADE,
+    participant_id INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+    PRIMARY KEY (detachment_id, participant_id)
+);
+CREATE INDEX IF NOT EXISTS idx_person_participant_detachment_members_participant
+    ON person_participant_detachment_members(participant_id, detachment_id);
+
+CREATE TABLE IF NOT EXISTS person_participant_detachment_links (
+    detachment_id               INTEGER NOT NULL REFERENCES person_participant_detachments(id) ON DELETE CASCADE,
+    participant_a               INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+    participant_b               INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+    identity_match_candidate_id INTEGER,
+    PRIMARY KEY (detachment_id, participant_a, participant_b),
+    CHECK (participant_a < participant_b)
+);
+
+CREATE TABLE IF NOT EXISTS person_participant_detachment_candidates (
+    detachment_id             INTEGER NOT NULL REFERENCES person_participant_detachments(id) ON DELETE CASCADE,
+    candidate_id              INTEGER NOT NULL REFERENCES identity_match_candidates(id) ON DELETE CASCADE,
+    created_by_detachment     BOOLEAN NOT NULL,
+    prior_state               TEXT,
+    prior_decided_by          TEXT,
+    prior_decided_at          DATETIME,
+    prior_notes               TEXT,
+    prior_application_pending BOOLEAN,
+    prior_pre_conflict_state  TEXT,
+    PRIMARY KEY (detachment_id, candidate_id),
+    CHECK (created_by_detachment OR prior_state IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS idx_person_participant_detachment_candidates_candidate
+    ON person_participant_detachment_candidates(candidate_id);
+
 -- ============================================================================
 -- APPLIED MIGRATIONS
 -- ============================================================================
