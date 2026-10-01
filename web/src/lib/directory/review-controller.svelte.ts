@@ -383,6 +383,7 @@ export class DirectoryReviewController {
   ): Promise<void> {
     if (this.disposed) return;
     this.lastMerge = { candidateID, ...success };
+    const notes = this.getDecisionDraft(candidateID);
     this.decisionDrafts.delete(candidateID);
     if (!this.isReviewContextCurrent(context)) return;
     if (this.mergeRequired?.candidateID === candidateID) this.mergeRequired = null;
@@ -390,10 +391,13 @@ export class DirectoryReviewController {
       await entityNames(this.client).settledLabel('person', success.survivor.id, 'the surviving person');
     if (this.disposed || !this.isReviewContextCurrent(context)) return;
     const candidate = this.rows.find((row) => row.id === candidateID);
-    if (candidate?.left_kind === 'participant' && candidate.right_kind === 'person') {
-      // After the merge the participant belongs to the merged profile, so
-      // accepting records the decision without further changes.
-      const accepted = await this.decideIdentity(candidateID, 'accept', undefined, context);
+    if (
+      candidate?.left_kind === 'participant' &&
+      (candidate.right_kind === 'person' || candidate.right_kind === 'participant')
+    ) {
+      // Profile merging resolves ownership, but leaves the identity candidate
+      // pending. Finish the original decision for either supported pairing.
+      const accepted = await this.decideIdentity(candidateID, 'accept', notes, context);
       if (!accepted.ok) return;
       this.status = `People merged into ${name}. Identity match accepted.`;
       return;

@@ -667,9 +667,9 @@ describe('DirectoryReviewController', () => {
     expect(new URL(requests[2]!.url).searchParams.get('origin')).toBe('person_duplicate');
   });
 
-  it('accepts a contact match after the user resolves its merge', async () => {
+  it.each(['person', 'participant'])('accepts a participant-to-%s match after resolving its merge', async (rightKind) => {
     const requests: Request[] = [];
-    const contactCandidate = { ...candidate(6), left_kind: 'participant', left_id: 60, right_kind: 'person', right_id: 61 };
+    const contactCandidate = { ...candidate(6), left_kind: 'participant', left_id: 60, right_kind: rightKind, right_id: 61 };
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = requestOf(input);
       requests.push(request);
@@ -689,11 +689,51 @@ describe('DirectoryReviewController', () => {
       responseETag: '"person-61-r2"'
     } as unknown as import('./person-merge').PersonMergeSuccess;
 
+    controller.setDecisionDraft(6, 'Reviewed the synthetic identity evidence');
     await controller.completePersonMerge(6, context, success);
 
     const posts = requests.filter((request) => request.method === 'POST');
     expect(posts).toHaveLength(1);
     expect(new URL(posts[0]!.url).pathname).toBe('/api/v1/identity/match-candidates/6/accept');
+    expect(await posts[0]!.json()).toEqual({ notes: 'Reviewed the synthetic identity evidence' });
     expect(controller.status).toBe('People merged into Synthetic survivor. Identity match accepted.');
+  });
+
+  it('keeps the pending decision and note when acceptance fails after a successful merge', async () => {
+    const pending = { ...candidate(6), left_kind: 'participant', right_kind: 'participant' };
+    const requests: Request[] = [];
+    let acceptanceFails = true;
+    const client = createAPIClient(vi.fn<typeof fetch>(async (input) => {
+      const request = requestOf(input);
+      requests.push(request);
+      if (request.method === 'POST') {
+        if (acceptanceFails) return Response.json({ error: 'unavailable', message: 'Try acceptance again' }, { status: 503 });
+        return Response.json({ candidate: { ...pending, state: 'accepted' }, identity_revision: 4, cache_state: 'ready' });
+      }
+      return page([]);
+    }));
+    const controller = new DirectoryReviewController(client);
+    controller.rows = [pending];
+    controller.setDecisionDraft(6, 'Keep this reviewed evidence');
+    const success = {
+      result: { cache_state: 'ready' }, survivor: { id: 61, display_name: 'Synthetic survivor' },
+      responseETag: '"person-61-r2"'
+    } as import('./person-merge').PersonMergeSuccess;
+    await controller.completePersonMerge(6, controller.reviewContextSnapshot(), success);
+    expect(controller.rows).toEqual([pending]);
+    expect(controller.decisionError).toBe('Try acceptance again');
+    expect(controller.getDecisionDraft(6)).toBe('Keep this reviewed evidence');
+    expect(controller.lastMerge?.survivor.id).toBe(61);
+
+    acceptanceFails = false;
+    expect((await controller.acceptIdentity(6)).ok).toBe(true);
+    expect(controller.rows).toEqual([]);
+    expect(controller.getDecisionDraft(6)).toBe('');
+    const posts = requests.filter((request) => request.method === 'POST');
+    expect(posts).toHaveLength(2);
+    for (const request of posts) {
+      expect(new URL(request.url).pathname).toBe('/api/v1/identity/match-candidates/6/accept');
+      expect(await request.json()).toEqual({ notes: 'Keep this reviewed evidence' });
+    }
   });
 });

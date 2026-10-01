@@ -27,15 +27,16 @@ type meetingRef struct {
 type manifest struct {
 	Meetings      map[string]meetingRef `json:"meetings"`
 	ParticipantID int64                 `json:"participant_id"`
+	Reviews       *reviewManifest       `json:"reviews,omitempty"`
 }
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: meeting-fixture DATA_DIR")
+	if len(os.Args) != 2 && (len(os.Args) != 3 || os.Args[2] != "--reviews") {
+		fmt.Fprintln(os.Stderr, "usage: meeting-fixture DATA_DIR [--reviews]")
 		os.Exit(2)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	result, err := seed(ctx, os.Args[1])
+	result, err := seed(ctx, os.Args[1], len(os.Args) == 3)
 	cancel()
 	if err == nil {
 		err = json.MarshalWrite(os.Stdout, result)
@@ -46,7 +47,7 @@ func main() {
 	}
 }
 
-func seed(ctx context.Context, dataDir string) (*manifest, error) {
+func seed(ctx context.Context, dataDir string, withReviews bool) (*manifest, error) {
 	// #nosec G703 -- this test-only producer writes beneath its explicit scratch directory.
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return nil, err
@@ -107,6 +108,12 @@ func seed(ctx context.Context, dataDir string) (*manifest, error) {
 	}
 	if out.ParticipantID == 0 {
 		return nil, errors.New("importers did not record the synthetic attendee")
+	}
+	if withReviews {
+		out.Reviews, err = seedReviews(ctx, st)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }

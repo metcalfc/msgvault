@@ -18,6 +18,12 @@ type MeetingRef = { message_id: number; source_id: number };
 type SeedManifest = {
   meetings: Record<"granola" | "notion" | "circleback", MeetingRef>;
   participant_id: number;
+  reviews?: {
+    link_candidate_id: number;
+    merge_candidate_id: number;
+    survivor_id: number;
+    absorbed_id: number;
+  };
 };
 export type MeetingDaemon = SeedManifest & {
   origin: string;
@@ -43,10 +49,11 @@ async function stop(child: ChildProcess): Promise<void> {
   }
 }
 
-export const test = base.extend<{ daemon: MeetingDaemon }>({
+export const test = base.extend<{ daemon: MeetingDaemon; seedReviews: boolean }>({
+  seedReviews: [false, { option: true }],
   userAgent,
   daemon: [
-    async ({}, use, testInfo) => {
+    async ({ seedReviews }, use, testInfo) => {
       const scratch = await mkdtemp(join(tmpdir(), "msgvault-meeting-e2e-"));
       const archive = join(scratch, "archive");
       let child: ChildProcess | undefined;
@@ -90,6 +97,7 @@ export const test = base.extend<{ daemon: MeetingDaemon }>({
             "fts5 sqlite_vec",
             "./scripts/meeting-fixture",
             archive,
+            ...(seedReviews ? ["--reviews"] : []),
           ],
           {
             cwd: repo,
