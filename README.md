@@ -17,6 +17,28 @@
   <a href="https://msgvault.io/docs/usage/tui/">Interactive TUI</a>
 </p>
 
+## About this fork
+
+This is a fork of [kenn-io/msgvault](https://github.com/kenn-io/msgvault) that
+has diverged substantially. The maintainer intends to submit work upstream
+where it fits, but expects this fork to keep these differences:
+
+- **A different Web UI.**
+- **Deeper use of Jev**, TypeSafe's judgment models, across people, identity,
+  and enrichment. See [Jev judgments](docs/usage/jev-judgments.md).
+- **macOS and Linux only.** Native Windows support has been removed.
+- **Fewer model providers.** The fork specializes in the providers its
+  maintainer uses rather than supporting a provider-neutral matrix. See
+  [recommended configuration](docs/usage/recommended-configuration.md) for
+  what is wired in today.
+
+Report problems with this fork at
+[metcalfc/msgvault issues](https://github.com/metcalfc/msgvault/issues). Report
+a problem to [kenn-io/msgvault issues](https://github.com/kenn-io/msgvault/issues)
+only when it also reproduces with an upstream release or upstream `main`.
+
+![A person profile in this fork's Web UI for a synthetic contact, showing last contact, recent email threads, and saved context such as location and how we met](.github/assets/fork-person-profile.png)
+
 **Keep your communications and relationships in an archive you own.**
 
 msgvault is a local-first, open-source archive for email, chat, meetings,
@@ -126,9 +148,10 @@ first sync, and running on your own server.
 
 ## Community
 
-Join the [msgvault Discord](https://discord.gg/fDnmxB8Wkq),
-[report an issue](https://github.com/kenn-io/msgvault/issues), or read the
-[full documentation](https://msgvault.io/docs/).
+[Report an issue with this fork](https://github.com/metcalfc/msgvault/issues).
+For upstream msgvault, join the [msgvault Discord](https://discord.gg/fDnmxB8Wkq),
+[report an upstream issue](https://github.com/kenn-io/msgvault/issues), or read
+the [upstream documentation](https://msgvault.io/docs/).
 
 ## License
 
