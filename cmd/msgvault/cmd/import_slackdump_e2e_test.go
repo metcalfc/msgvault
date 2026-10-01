@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/store"
@@ -20,23 +19,22 @@ func TestImportSlackdumpEndToEnd(t *testing.T) {
 	require := require.New(t)
 
 	markDaemonCLISubprocessForTest(t)
-	t.Cleanup(saveMessengerState(t))
-	resetImportSlackdumpFlagsAfterTest(t)
+	root := newProductionRootCommand()
 
 	home := t.TempDir()
 	fixture, err := filepath.Abs("../../../internal/slack/testdata/slackdump/standard")
 	require.NoError(err)
 
 	var stdout bytes.Buffer
-	rootCmd.SetOut(&stdout)
-	rootCmd.SetErr(io.Discard)
-	rootCmd.SetArgs([]string{
+	root.SetOut(&stdout)
+	root.SetErr(io.Discard)
+	root.SetArgs([]string{
 		"--home", home,
 		"import-slackdump",
 		"--me", "alice@example.com",
 		fixture,
 	})
-	require.NoError(rootCmd.ExecuteContext(context.Background()))
+	require.NoError(root.ExecuteContext(context.Background()))
 	assert.Contains(stdout.String(), "Import complete!")
 	assert.Contains(stdout.String(), "Messages:      6 processed, 6 added, 0 updated")
 	assert.Contains(stdout.String(), "Attachments:   2 stored, 1 missing, 0 skipped")
@@ -92,23 +90,22 @@ func TestImportSlackdumpNoDefaultIdentity(t *testing.T) {
 	require := require.New(t)
 
 	markDaemonCLISubprocessForTest(t)
-	t.Cleanup(saveMessengerState(t))
-	resetImportSlackdumpFlagsAfterTest(t)
+	root := newProductionRootCommand()
 
 	home := t.TempDir()
 	fixture, err := filepath.Abs("../../../internal/slack/testdata/slackdump/standard")
 	require.NoError(err)
 
-	rootCmd.SetOut(io.Discard)
-	rootCmd.SetErr(io.Discard)
-	rootCmd.SetArgs([]string{
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+	root.SetArgs([]string{
 		"--home", home,
 		"import-slackdump",
 		"--me", "UALICE",
 		"--no-default-identity",
 		fixture,
 	})
-	require.NoError(rootCmd.ExecuteContext(context.Background()))
+	require.NoError(root.ExecuteContext(context.Background()))
 
 	st, err := store.Open(filepath.Join(home, "msgvault.db"))
 	require.NoError(err)
@@ -125,8 +122,7 @@ func TestImportSlackdumpPartialFailureConfirmsIdentity(t *testing.T) {
 	require := require.New(t)
 
 	markDaemonCLISubprocessForTest(t)
-	t.Cleanup(saveMessengerState(t))
-	resetImportSlackdumpFlagsAfterTest(t)
+	root := newProductionRootCommand()
 
 	home := t.TempDir()
 	fixture, err := filepath.Abs("../../../internal/slack/testdata/slackdump/standard")
@@ -139,15 +135,15 @@ func TestImportSlackdumpPartialFailureConfirmsIdentity(t *testing.T) {
 		0o600,
 	))
 
-	rootCmd.SetOut(io.Discard)
-	rootCmd.SetErr(io.Discard)
-	rootCmd.SetArgs([]string{
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+	root.SetArgs([]string{
 		"--home", home,
 		"import-slackdump",
 		"--me", "UALICE",
 		exportRoot,
 	})
-	err = rootCmd.ExecuteContext(context.Background())
+	err = root.ExecuteContext(context.Background())
 	require.Error(err)
 	require.ErrorContains(err, "2024-01-02.json")
 
@@ -164,16 +160,4 @@ func TestImportSlackdumpPartialFailureConfirmsIdentity(t *testing.T) {
 	require.NoError(err)
 	require.Len(identities, 1)
 	assert.Equal(t, "T_TEST:UALICE", identities[0].Address)
-}
-
-func resetImportSlackdumpFlagsAfterTest(t *testing.T) {
-	t.Helper()
-	command, _, err := rootCmd.Find([]string{"import-slackdump"})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		command.Flags().VisitAll(func(flag *pflag.Flag) {
-			require.NoError(t, flag.Value.Set(flag.DefValue))
-			flag.Changed = false
-		})
-	})
 }

@@ -157,9 +157,6 @@ func TestRenderIdentityDiscoverProgressWrapsWriterError(t *testing.T) {
 }
 
 func TestIdentityDiscoverProviderSourceIDApplyConfirmJSONUsesHTTPAndSuppressesProgress(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	assertions := assert.New(t)
 	requirements := require.New(t)
 	dataDir := t.TempDir()
@@ -188,25 +185,12 @@ func TestIdentityDiscoverProviderSourceIDApplyConfirmJSONUsesHTTPAndSuppressesPr
 	t.Cleanup(srv.Close)
 	writeStatsHTTPDaemonRuntime(t, dataDir, srv)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-
-	t.Cleanup(func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-
-		for _, name := range []string{"source-id", "apply", "provider", "confirm", "json"} {
-			freshCommandForTest(t, newIdentityCommand(), "discover").Flags().Lookup(name).Changed = false
-		}
-	})
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	var stdout, stderr bytes.Buffer

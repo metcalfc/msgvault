@@ -286,7 +286,6 @@ func (s *Store) upsertIdentityMatchCandidateTx(
 	candidate, err := findIdentityMatchCandidateTx(
 		ctx, tx, leftKind, leftID, rightKind, rightID, input.Basis,
 		serviceID, input.ScopeKind, input.ScopeValue, input.NormalizedValue,
-		"",
 	)
 	if err == nil {
 		if err := s.recordIdentityMatchCandidateSourceTx(
@@ -1521,7 +1520,6 @@ func findIdentityMatchCandidateTx(
 	basis IdentityMatchBasis,
 	serviceID any,
 	scopeKind, scopeValue, normalizedValue *string,
-	lockClause string,
 ) (*IdentityMatchCandidate, error) {
 	var id int64
 	err := tx.QueryRowContext(ctx, `SELECT id FROM identity_match_candidates
@@ -1531,7 +1529,7 @@ func findIdentityMatchCandidateTx(
 		  AND (scope_kind = ? OR (scope_kind IS NULL AND CAST(? AS TEXT) IS NULL))
 		  AND (scope_value = ? OR (scope_value IS NULL AND CAST(? AS TEXT) IS NULL))
 		  AND (normalized_value = ? OR
-		       (normalized_value IS NULL AND CAST(? AS TEXT) IS NULL))`+lockClause,
+		       (normalized_value IS NULL AND CAST(? AS TEXT) IS NULL))`,
 		leftKind, leftID, rightKind, rightID, basis,
 		serviceID, serviceID,
 		stringValue(scopeKind), stringValue(scopeKind),

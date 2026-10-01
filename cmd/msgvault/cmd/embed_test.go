@@ -285,44 +285,19 @@ func TestEmbeddingsActivatePromptsBeforeDaemonRunner(t *testing.T) {
 	assert.Equal("Generation 3 activated.\n", stdout.String(), "stdout")
 }
 
-// TestRunEmbeddingsResume_PreservesBackstopFlag pins the resume behavior:
-// resume forces incremental mode (saves/restores flags.embedFullRebuild + flags.embedYes) but
-// must leave flags.embedBackstop exactly as the operator set it, so
-// `embeddings resume --backstop` actually runs a backstop pass.
+// TestRunEmbeddingsResume_PreservesBackstopFlag pins the options resume hands
+// to the build path: `embeddings resume --backstop` must run a backstop pass,
+// and resume must never become a full rebuild, because it has no
+// --full-rebuild flag to read.
 func TestRunEmbeddingsResume_PreservesBackstopFlag(t *testing.T) {
-	embeddingsResumeCmd := newEmbeddingTestCommand(t, "resume")
-	flags := embeddingCommandOptions{}
-	cfg := testConfigValue()
+	resumeCmd := newEmbeddingTestCommand(t, "resume")
+	require.NoError(t, resumeCmd.ParseFlags([]string{"--backstop"}))
 
-	assert := assert.New(t)
+	flags := readEmbeddingCommandOptions(resumeCmd)
 
-	// Save and restore all three globals so the test is hermetic.
-
-	// Operator state: full-rebuild on (resume must clear it), backstop on
-	// (resume must NOT touch it). Point at an empty config so the run errors
-	// out early (vector disabled) without needing a real backend.
-	flags.embedFullRebuild = true
-	flags.embedYes = false
-	flags.embedBackstop = true
-	oldCfg := cfg
-	cfg = &config.Config{}
-	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	t.Cleanup(func() { cfg = oldCfg })
-
-	cmd := embeddingsResumeCmd
-	cmd.SetContext(testCtx)
-	oldCtx := cmd.Context()
-	cmd.SetContext(testCtx)
-	t.Cleanup(func() { cmd.SetContext(oldCtx) })
-
-	// Errors because vector is not enabled — that's fine; we only assert the
-	// flag-preservation contract of runEmbeddingsResume.
-	_ = runEmbeddingsResume(cmd, nil)
-
-	assert.True(flags.embedBackstop, "resume must NOT clobber flags.embedBackstop")
-	assert.True(flags.embedFullRebuild, "resume must restore flags.embedFullRebuild to its prior value")
-	assert.False(flags.embedYes, "resume must restore flags.embedYes to its prior value")
+	assert.True(t, flags.embedBackstop, "resume must forward --backstop")
+	assert.False(t, flags.embedFullRebuild, "resume must stay incremental")
+	assert.False(t, flags.embedYes, "resume must not auto-confirm")
 }
 
 func TestListEmbeddingGenerationsIncludesActiveAndBuilding(t *testing.T) {

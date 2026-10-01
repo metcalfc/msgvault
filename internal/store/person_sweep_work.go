@@ -727,11 +727,9 @@ func (s *Store) upsertPersonSweepWorkTx(
 func (s *Store) upsertPersonSweepWorkTxMode(
 	ctx context.Context, tx *loggedTx, personID, dirtyThrough int64, forceAvailable bool,
 ) error {
-	lockSuffix := ""
-
 	var trackedPersonID int64
 	err := tx.QueryRowContext(ctx, `
-		SELECT person_id FROM person_tracking WHERE person_id = ?`+lockSuffix,
+		SELECT person_id FROM person_tracking WHERE person_id = ?`,
 		personID).Scan(&trackedPersonID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil

@@ -13,36 +13,13 @@ import (
 )
 
 func TestImportMboxCmd_GoogleGroupsTakeout(t *testing.T) {
-	cfg := testConfigValue()
-	cfgFile := ""
-	homeDir := ""
-	logger := testLoggerValue()
-	verbose := false
-
 	markDaemonCLISubprocessForTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
 	tmp := t.TempDir()
 
-	// Save/restore global state for cmd package.
-	prevCfg := cfg
-	prevLogger := logger
-	prevCfgFile := cfgFile
-	prevHomeDir := homeDir
-	prevVerbose := verbose
-	prevOut := rootCmd.OutOrStdout()
-	prevErr := rootCmd.ErrOrStderr()
-	t.Cleanup(func() {
-		cfg = prevCfg
-		logger = prevLogger
-		cfgFile = prevCfgFile
-		homeDir = prevHomeDir
-		verbose = prevVerbose
-		rootCmd.SetOut(prevOut)
-		rootCmd.SetErr(prevErr)
-		rootCmd.SetArgs(nil)
-	})
+	root := newProductionRootCommand()
 
 	zipPath := filepath.Join(tmp, "takeout.zip")
 	raw := `From synthetic@example.invalid Mon Jan 1 12:00:00 +0000 2024
@@ -71,10 +48,10 @@ Synthetic attachment.
 		"Takeout/Groups/googlegroups.com/other-group@googlegroups.com/topics.mbox": strings.ReplaceAll(strings.ReplaceAll(raw, "test-group", "other-group"), "one@example.com", "two@example.com"),
 		"Takeout/Groups/googlegroups.com/test-group@googlegroups.com/members.csv":  "Email\nalice@example.com\n",
 	})
-	rootCmd.SetOut(io.Discard)
-	rootCmd.SetErr(io.Discard)
-	rootCmd.SetArgs([]string{"--home", tmp, "import-mbox", "test-group@googlegroups.com", zipPath, "--source-type", "google-groups", "--label", "test-group", "--no-resume"})
-	require.NoError(rootCmd.ExecuteContext(context.Background()))
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+	root.SetArgs([]string{"--home", tmp, "import-mbox", "test-group@googlegroups.com", zipPath, "--source-type", "google-groups", "--label", "test-group", "--no-resume"})
+	require.NoError(root.ExecuteContext(context.Background()))
 	st, err := store.Open(filepath.Join(tmp, "msgvault.db"))
 	require.NoError(err)
 	t.Cleanup(func() { _ = st.Close() })

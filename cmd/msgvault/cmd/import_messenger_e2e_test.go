@@ -13,54 +13,27 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-func saveMessengerState(t *testing.T) func() {
-	t.Helper()
-	cfg := testConfigValue()
-	cfgFile := ""
-	homeDir := ""
-	logger := testLoggerValue()
-	verbose := false
-
-	prevCfg := cfg
-	prevLogger := logger
-	prevCfgFile := cfgFile
-	prevHomeDir := homeDir
-	prevVerbose := verbose
-	prevOut := rootCmd.OutOrStdout()
-	prevErr := rootCmd.ErrOrStderr()
-	return func() {
-		cfg = prevCfg
-		logger = prevLogger
-		cfgFile = prevCfgFile
-		homeDir = prevHomeDir
-		verbose = prevVerbose
-		rootCmd.SetOut(prevOut)
-		rootCmd.SetErr(prevErr)
-		rootCmd.SetArgs(nil)
-	}
-}
-
 func TestImportMessenger_JSON_EndToEnd(t *testing.T) {
 	markDaemonCLISubprocessForTest(t)
 
 	require := require.New(t)
 	assert := assert.New(t)
 	tmp := t.TempDir()
-	t.Cleanup(saveMessengerState(t))
+	root := newProductionRootCommand()
 
 	fixture, err := filepath.Abs("../../../internal/fbmessenger/testdata/json_simple")
 	require.NoError(err)
 
 	var stdout bytes.Buffer
-	rootCmd.SetOut(&stdout)
-	rootCmd.SetErr(io.Discard)
-	rootCmd.SetArgs([]string{
+	root.SetOut(&stdout)
+	root.SetErr(io.Discard)
+	root.SetArgs([]string{
 		"--home", tmp,
 		"import-messenger",
 		"--me", "test.user@facebook.messenger",
 		fixture,
 	})
-	require.NoError(rootCmd.ExecuteContext(context.Background()), "import-messenger")
+	require.NoError(root.ExecuteContext(context.Background()), "import-messenger")
 	assert.Contains(stdout.String(), "Import complete", "stdout missing Import complete")
 
 	st, err := store.Open(filepath.Join(tmp, "msgvault.db"))
@@ -80,21 +53,21 @@ func TestImportMessenger_HTML_EndToEnd(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	tmp := t.TempDir()
-	t.Cleanup(saveMessengerState(t))
+	root := newProductionRootCommand()
 
 	fixture, err := filepath.Abs("../../../internal/fbmessenger/testdata/html_simple")
 	require.NoError(err)
 
 	var stdout bytes.Buffer
-	rootCmd.SetOut(&stdout)
-	rootCmd.SetErr(io.Discard)
-	rootCmd.SetArgs([]string{
+	root.SetOut(&stdout)
+	root.SetErr(io.Discard)
+	root.SetArgs([]string{
 		"--home", tmp,
 		"import-messenger",
 		"--me", "test.user@facebook.messenger",
 		fixture,
 	})
-	require.NoError(rootCmd.ExecuteContext(context.Background()), "import-messenger")
+	require.NoError(root.ExecuteContext(context.Background()), "import-messenger")
 	assert.Contains(stdout.String(), "Import complete", "stdout missing Import complete")
 	st, err := store.Open(filepath.Join(tmp, "msgvault.db"))
 	require.NoError(err)
@@ -113,7 +86,6 @@ func TestImportMessengerRunsPostSourceMigrationWithoutMessengerIdentity(t *testi
 	require := require.New(t)
 	assert := assert.New(t)
 	tmp := t.TempDir()
-	t.Cleanup(saveMessengerState(t))
 	testCfg := lifecycleTestConfig(tmp)
 	testCfg.Identity.Addresses = []string{"legacy@example.com"}
 	testCtx := withStoreResolverConfig(t, testCfg)
@@ -160,17 +132,17 @@ func TestImportMessenger_MissingDir(t *testing.T) {
 	markDaemonCLISubprocessForTest(t)
 
 	tmp := t.TempDir()
-	t.Cleanup(saveMessengerState(t))
+	root := newProductionRootCommand()
 
-	rootCmd.SetOut(io.Discard)
-	rootCmd.SetErr(io.Discard)
-	rootCmd.SetArgs([]string{
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+	root.SetArgs([]string{
 		"--home", tmp,
 		"import-messenger",
 		"--me", "test.user@facebook.messenger",
 		filepath.Join(tmp, "does", "not", "exist"),
 	})
-	err := rootCmd.ExecuteContext(context.Background())
+	err := root.ExecuteContext(context.Background())
 	require.Error(t, err, "expected error for missing dir")
 	msg := err.Error()
 	assert.True(t, strings.Contains(msg, "not found") || strings.Contains(msg, "no such"),

@@ -904,7 +904,7 @@ type rfc822IDBackfillBatch struct {
 }
 
 func (s *Store) rfc822IDBackfillBatchQuery(
-	sourceIDs []int64, lastID int64, lockRows bool,
+	sourceIDs []int64, lastID int64,
 ) (string, []any) {
 	scopeClause, scopeArgs := rfc822IDBackfillSourceScope(sourceIDs)
 	query := `SELECT m.id, m.source_id, mr.raw_data, mr.raw_format, mr.compression
@@ -916,9 +916,6 @@ func (s *Store) rfc822IDBackfillBatchQuery(
 		  AND m.id > ?` + scopeClause + `
 		ORDER BY m.id
 		LIMIT ?`
-	if lockRows {
-		query += ""
-	}
 	args := append([]any{lastID}, scopeArgs...)
 	args = append(args, s.rfc822IDBackfillBatch())
 	return query, args
@@ -973,7 +970,7 @@ func (s *Store) PlanRFC822IDBackfill(
 	digest := newRFC822IDBackfillDigest()
 
 	for {
-		query, args := s.rfc822IDBackfillBatchQuery(sourceIDs, lastID, false)
+		query, args := s.rfc822IDBackfillBatchQuery(sourceIDs, lastID)
 		rows, err := s.db.QueryContext(ctx, query, args...)
 		if err != nil {
 			return RFC822IDBackfillPlan{}, fmt.Errorf("fetch RFC822 ID backfill batch: %w", err)
@@ -1089,7 +1086,7 @@ func (s *Store) applyRFC822IDBackfillRows(
 	lastID := int64(0)
 	digest := newRFC822IDBackfillDigest()
 	for {
-		query, args := s.rfc822IDBackfillBatchQuery(sourceIDs, lastID, true)
+		query, args := s.rfc822IDBackfillBatchQuery(sourceIDs, lastID)
 		//nolint:rowserrcheck // The bounded-page reader owns rows and checks Err.
 		rows, err := conn.QueryContext(ctx, query, args...)
 		if err != nil {

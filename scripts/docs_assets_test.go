@@ -319,8 +319,18 @@ print("\n".join(row[0] for row in conn.execute("SELECT name FROM sqlite_master W
 	}
 }
 
+// requireRipgrep skips where rg is absent. The Linux CI test job installs it,
+// so the real script still runs against real rg there.
+func requireRipgrep(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("rg not installed; check-docs-media.sh needs it")
+	}
+}
+
 func runCheckDocsMediaReferenceTest(t *testing.T, docsLine, wantMessage string) {
 	t.Helper()
+	requireRipgrep(t)
 	script, err := filepath.Abs("check-docs-media.sh")
 	require.NoError(t, err)
 	repo := t.TempDir()
@@ -335,6 +345,7 @@ func runCheckDocsMediaReferenceTest(t *testing.T, docsLine, wantMessage string) 
 }
 
 func TestCheckDocsAcceptsAllowedMediaReferences(t *testing.T) {
+	requireRipgrep(t)
 	script, err := filepath.Abs("check-docs-media.sh")
 	require.NoError(t, err)
 	repo := t.TempDir()

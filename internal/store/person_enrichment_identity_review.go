@@ -164,7 +164,7 @@ func (s *Store) ListPersonEnrichmentIdentityReviewsContext(
 			review := item.review
 			profile, ok := profiles[item.fingerprint]
 			if !ok {
-				profile, err = s.loadPersonEnrichmentProfile(ctx, tx, item.fingerprint, false)
+				profile, err = s.loadPersonEnrichmentProfile(ctx, tx, item.fingerprint)
 				if err != nil {
 					return err
 				}
@@ -448,7 +448,7 @@ func (s *Store) lockPersonEnrichmentReviewTx(
 	if err := s.lockAttributeDefinitionCatalogTx(ctx, tx, false); err != nil {
 		return reviewAttempt{}, err
 	}
-	unlocked, err := s.loadPersonEnrichmentCommitAttempt(ctx, tx, attemptID, false)
+	unlocked, err := s.loadPersonEnrichmentCommitAttempt(ctx, tx, attemptID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return reviewAttempt{}, ErrPersonEnrichmentReviewNotFound
 	}
@@ -462,14 +462,14 @@ func (s *Store) lockPersonEnrichmentReviewTx(
 		ctx, tx, unlocked.PersonID, unlocked.ProfileFingerprint); err != nil {
 		return reviewAttempt{}, err
 	}
-	attempt, err := s.loadPersonEnrichmentCommitAttempt(ctx, tx, attemptID, true)
+	attempt, err := s.loadPersonEnrichmentCommitAttempt(ctx, tx, attemptID)
 	if err != nil {
 		return reviewAttempt{}, err
 	}
 	if attempt.State != personEnrichmentStateIdentityUncertain {
 		return reviewAttempt{}, ErrPersonEnrichmentReviewStateChanged
 	}
-	profile, err := s.loadPersonEnrichmentProfile(ctx, tx, attempt.ProfileFingerprint, false)
+	profile, err := s.loadPersonEnrichmentProfile(ctx, tx, attempt.ProfileFingerprint)
 	if err != nil {
 		return reviewAttempt{}, err
 	}

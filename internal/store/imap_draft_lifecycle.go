@@ -39,7 +39,7 @@ func (s *Store) GetIMAPDraftContext(ctx context.Context, draftID string) (IMAPDr
 	if err := validateIMAPDraftID(draftID); err != nil {
 		return IMAPDraft{}, err
 	}
-	return loadIMAPDraft(ctx, s.db, "", draftID)
+	return loadIMAPDraft(ctx, s.db, draftID)
 }
 
 func validateIMAPDraftID(draftID string) error {
@@ -54,7 +54,6 @@ func loadIMAPDraft(
 	q interface {
 		QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 	},
-	lockClause string,
 	draftID string,
 ) (IMAPDraft, error) {
 	var (
@@ -79,7 +78,7 @@ func loadIMAPDraft(
 		       pending_replacement_uidvalidity, pending_replacement_uid,
 		       pending_code
 		FROM imap_drafts
-		WHERE draft_id = ?`+lockClause, draftID).Scan(
+		WHERE draft_id = ?`, draftID).Scan(
 		&draft.DraftID, &draft.SourceID, &draft.CurrentMessageID,
 		&draft.CurrentReceipt.Mailbox, &draft.CurrentReceipt.UIDValidity,
 		&draft.CurrentReceipt.UID, &draft.Revision, &discardedAt,
@@ -152,7 +151,7 @@ func checkedIMAPDraftUint32(value int64) (uint32, error) {
 }
 
 func (s *Store) loadIMAPDraftTx(ctx context.Context, tx *loggedTx, draftID string) (IMAPDraft, error) {
-	return loadIMAPDraft(ctx, tx, "", draftID)
+	return loadIMAPDraft(ctx, tx, draftID)
 }
 
 func (s *Store) lockIMAPDraftTx(ctx context.Context, tx *loggedTx, draftID string) error {

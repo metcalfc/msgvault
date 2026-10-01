@@ -118,7 +118,7 @@ func (s *Store) ListPersonEnrichmentProfilesContext(
 	}
 	profiles := make([]personenrichment.ProviderProfile, 0, len(fingerprints))
 	for _, fingerprint := range fingerprints {
-		profile, err := s.loadPersonEnrichmentProfile(ctx, s.db, fingerprint, false)
+		profile, err := s.loadPersonEnrichmentProfile(ctx, s.db, fingerprint)
 		if err != nil {
 			return nil, fmt.Errorf("load person enrichment profile %q: %w", fingerprint, err)
 		}

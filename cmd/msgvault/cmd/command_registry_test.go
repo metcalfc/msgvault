@@ -25,6 +25,8 @@ func commandCatalog(root *cobra.Command) map[string]*cobra.Command {
 func TestProductionRootOwnsIndependentCommandTrees(t *testing.T) {
 	first := commandCatalog(newProductionRootCommand())
 	second := commandCatalog(newProductionRootCommand())
+	// A broken registry would leave only the root, which compares equal to itself.
+	require.Greater(t, len(first), 100, "production root registers its commands")
 	require.Len(t, second, len(first))
 	for path, command := range first {
 		t.Run(path, func(t *testing.T) {

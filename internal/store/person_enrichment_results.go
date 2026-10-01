@@ -157,7 +157,7 @@ func (s *Store) preparePersonEnrichmentCommit(
 	if err := validateEnrichmentHostIdentityAssessment(commit.IdentityAssessment, result); err != nil {
 		return nil, err
 	}
-	attempt, err := s.loadPersonEnrichmentCommitAttempt(ctx, s.db, commit.AttemptID, false)
+	attempt, err := s.loadPersonEnrichmentCommitAttempt(ctx, s.db, commit.AttemptID)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ func (s *Store) preparePersonEnrichmentCommit(
 	} else if err := verifyPersonEnrichmentCommitAttemptEnvelope(commit, result, attempt); err != nil {
 		return nil, err
 	}
-	profile, err := s.loadPersonEnrichmentProfile(ctx, s.db, commit.ProfileFingerprint, false)
+	profile, err := s.loadPersonEnrichmentProfile(ctx, s.db, commit.ProfileFingerprint)
 	if err != nil {
 		return nil, err
 	}
@@ -416,7 +416,7 @@ func (s *Store) recheckPersonEnrichmentCommitTx(
 		ctx, tx, commit.PersonID, commit.ProfileFingerprint); err != nil {
 		return enrichmentCommitDisposition{}, err
 	}
-	attempt, err := s.loadPersonEnrichmentCommitAttempt(ctx, tx, commit.AttemptID, true)
+	attempt, err := s.loadPersonEnrichmentCommitAttempt(ctx, tx, commit.AttemptID)
 	if err != nil {
 		return enrichmentCommitDisposition{}, err
 	}
@@ -454,7 +454,7 @@ func (s *Store) recheckPersonEnrichmentCommitTx(
 		if err := requireOneLeaseRow(updated); err != nil {
 			return enrichmentCommitDisposition{}, err
 		}
-		attempt, err = s.loadPersonEnrichmentCommitAttempt(ctx, tx, commit.AttemptID, true)
+		attempt, err = s.loadPersonEnrichmentCommitAttempt(ctx, tx, commit.AttemptID)
 		if err != nil {
 			return enrichmentCommitDisposition{}, err
 		}
@@ -504,7 +504,7 @@ func (s *Store) recheckPersonEnrichmentCommitTx(
 		return enrichmentCommitDisposition{}, fmt.Errorf(
 			"%w: person revision", errPersonEnrichmentResultEnvelopeChanged)
 	}
-	currentProfile, err := s.loadPersonEnrichmentProfile(ctx, tx, commit.ProfileFingerprint, true)
+	currentProfile, err := s.loadPersonEnrichmentProfile(ctx, tx, commit.ProfileFingerprint)
 	if err != nil {
 		return enrichmentCommitDisposition{}, err
 	}
@@ -918,13 +918,10 @@ const personEnrichmentCommitAttemptSelect = `SELECT id, run_id, person_id,
 	FROM person_enrichment_attempts WHERE id = ?`
 
 func (s *Store) loadPersonEnrichmentCommitAttempt(
-	ctx context.Context, queryer contextRowQuerier, attemptID int64, lock bool,
+	ctx context.Context, queryer contextRowQuerier, attemptID int64,
 ) (personEnrichmentCommitAttempt, error) {
 	var attempt personEnrichmentCommitAttempt
 	query := personEnrichmentCommitAttemptSelect
-	if lock {
-		query += ""
-	}
 	err := queryer.QueryRowContext(ctx, query, attemptID).Scan(
 		&attempt.ID, &attempt.RunID, &attempt.PersonID, &attempt.ProfileFingerprint,
 		&attempt.TriggerKind, &attempt.TriggerGeneration, &attempt.PersonRevision,
@@ -963,15 +960,12 @@ type storedPersonEnrichmentPolicy struct {
 }
 
 func (s *Store) loadPersonEnrichmentProfile(
-	ctx context.Context, queryer contextRowQuerier, fingerprint string, lock bool,
+	ctx context.Context, queryer contextRowQuerier, fingerprint string,
 ) (personenrichment.ProviderProfile, error) {
 	var storedFingerprint, name, kind, namespace, endpoint, apiKeyEnv, policyJSON string
 	query := `SELECT fingerprint, provider_name, provider_kind, provider_namespace,
 		endpoint, api_key_env, CAST(policy_json AS TEXT)
 		FROM person_enrichment_profiles WHERE fingerprint = ?`
-	if lock {
-		query += ""
-	}
 	if err := queryer.QueryRowContext(ctx, query, fingerprint).Scan(
 		&storedFingerprint, &name, &kind, &namespace, &endpoint, &apiKeyEnv, &policyJSON); err != nil {
 		return personenrichment.ProviderProfile{}, fmt.Errorf("load person enrichment profile: %w", err)
@@ -1015,7 +1009,7 @@ func (s *Store) loadPersonEnrichmentProfile(
 func (s *Store) LoadProviderProfile(
 	ctx context.Context, fingerprint string,
 ) (personenrichment.ProviderProfile, error) {
-	profile, err := s.loadPersonEnrichmentProfile(ctx, s.db, fingerprint, false)
+	profile, err := s.loadPersonEnrichmentProfile(ctx, s.db, fingerprint)
 	if err != nil {
 		return personenrichment.ProviderProfile{}, err
 	}

@@ -62,16 +62,7 @@ func runPersonDirectoryCommand(ctx context.Context, t *testing.T, args ...string
 		prepareInvocation(cmd)
 		return nil
 	}
-	localFlag := rootCmd.PersistentFlags().Lookup("local")
-	savedValue := localFlag.Value.String()
-	savedChanged := localFlag.Changed
-	_ = localFlag.Value.Set(localFlag.DefValue)
-	localFlag.Changed = false
-	t.Cleanup(func() {
-		_ = localFlag.Value.Set(savedValue)
-		localFlag.Changed = savedChanged
-	})
-	root.PersistentFlags().AddFlag(localFlag)
+	root.PersistentFlags().AddFlag(newRootCommand().PersistentFlags().Lookup("local"))
 	person := &cobra.Command{Use: personValue}
 	person.AddCommand(newPersonDirectoryCommand())
 	root.AddCommand(person)
@@ -224,11 +215,8 @@ func TestPersonDirectoryCommandHumanOutputShowsRecentContactFields(t *testing.T)
 	assert := assert.New(t)
 	require := require.New(t)
 	_, testCtx := personDirectoryTestResponse(t, http.StatusOK, personDirectoryCLIPayload)
-	sibling := freshCommandForTest(t, newPersonCommand(), "get")
-	require.NoError(sibling.Flags().Set(flagJSON, "true"))
 	output, err := runPersonDirectoryCommand(testCtx, t)
 	require.NoError(err)
-	assert.Equal("true", sibling.Flags().Lookup(flagJSON).Value.String())
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 	require.Len(lines, 4)
 	columns := regexp.MustCompile(` {2,}`)

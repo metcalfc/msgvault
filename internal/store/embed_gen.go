@@ -210,7 +210,6 @@ func (s *Store) SetEmbedGenGroupIfUnchanged(
 			query += ` AND conversation_id = ?`
 			args = append(args, metadataVersion.ConversationID)
 		}
-		query += ""
 		var id int64
 		err := conn.QueryRowContext(ctx, query, args...).Scan(&id)
 		if errors.Is(err, sql.ErrNoRows) {

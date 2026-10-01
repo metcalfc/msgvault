@@ -460,7 +460,6 @@ func (s *Store) startSyncOnce(
 		}
 	}()
 
-	rebind := identityRebind
 	now := s.dialect.Now()
 
 	// BEGIN IMMEDIATE serializes this check with concurrent source writers,
@@ -472,7 +471,7 @@ func (s *Store) startSyncOnce(
 	} else {
 		var lockedID int64
 		if err := conn.QueryRowContext(ctx,
-			rebind("SELECT id FROM sources WHERE id = ?"),
+			"SELECT id FROM sources WHERE id = ?",
 			sourceID,
 		).Scan(&lockedID); err != nil {
 			return 0, fmt.Errorf("lock source row: %w", err)
@@ -482,11 +481,11 @@ func (s *Store) startSyncOnce(
 		return 0, err
 	}
 	if operationID != "" {
-		result, err := conn.ExecContext(ctx, rebind(fmt.Sprintf(`
+		result, err := conn.ExecContext(ctx, fmt.Sprintf(`
 			UPDATE sync_operations
 			SET status = 'running', started_at = COALESCE(started_at, %s)
 			WHERE id = ? AND source_id = ? AND status IN ('pending', 'running')
-		`, now)), operationID, sourceID)
+		`, now), operationID, sourceID)
 		if err != nil {
 			return 0, fmt.Errorf("start sync operation %q: %w", operationID, err)
 		}
@@ -506,7 +505,7 @@ func (s *Store) startSyncOnce(
 		return 0, fmt.Errorf("capture sync person sweep lower bound: %w", err)
 	}
 	if err := conn.QueryRowContext(ctx,
-		rebind(fmt.Sprintf(`
+		fmt.Sprintf(`
 				INSERT INTO sync_runs (
 					source_id, sync_type, started_at, status, messages_processed,
 					messages_added, messages_updated, errors_count,
@@ -514,15 +513,15 @@ func (s *Store) startSyncOnce(
 				)
 				VALUES (?, ?, %s, 'running', 0, 0, 0, 0, NULLIF(?, ''), NULLIF(?, ''))
 				RETURNING id
-			`, now)),
+			`, now),
 		sourceID, syncType, requestFingerprint, operationID,
 	).Scan(&syncRunID); err != nil {
 		return 0, fmt.Errorf("insert sync_run: %w", err)
 	}
-	if _, err := conn.ExecContext(ctx, rebind(`
+	if _, err := conn.ExecContext(ctx, `
 		INSERT INTO person_sweep_sync_publications
 			(sync_run_id, source_id, lower_sequence)
-		VALUES (?, ?, ?)`), syncRunID, sourceID, personSweepLowerBound); err != nil {
+		VALUES (?, ?, ?)`, syncRunID, sourceID, personSweepLowerBound); err != nil {
 		return 0, fmt.Errorf("record sync person sweep lower bound: %w", err)
 	}
 

@@ -19,35 +19,12 @@ import (
 )
 
 func TestImportMboxCmd_EndToEnd_MboxFile(t *testing.T) {
-	cfg := testConfigValue()
-	cfgFile := ""
-	homeDir := ""
-	logger := testLoggerValue()
-	verbose := false
-
 	markDaemonCLISubprocessForTest(t)
 
 	require := require.New(t)
 	tmp := t.TempDir()
 
-	// Save/restore global state for cmd package.
-	prevCfg := cfg
-	prevLogger := logger
-	prevCfgFile := cfgFile
-	prevHomeDir := homeDir
-	prevVerbose := verbose
-	prevOut := rootCmd.OutOrStdout()
-	prevErr := rootCmd.ErrOrStderr()
-	t.Cleanup(func() {
-		cfg = prevCfg
-		logger = prevLogger
-		cfgFile = prevCfgFile
-		homeDir = prevHomeDir
-		verbose = prevVerbose
-		rootCmd.SetOut(prevOut)
-		rootCmd.SetErr(prevErr)
-		rootCmd.SetArgs(nil)
-	})
+	root := newProductionRootCommand()
 
 	raw1 := email.NewMessage().
 		From("Alice <alice@example.com>").
@@ -85,9 +62,9 @@ func TestImportMboxCmd_EndToEnd_MboxFile(t *testing.T) {
 	mboxPath := filepath.Join(tmp, "export.mbox")
 	require.NoError(os.WriteFile(mboxPath, []byte(mbox.String()), 0600), "write mbox")
 
-	rootCmd.SetOut(io.Discard)
-	rootCmd.SetErr(io.Discard)
-	rootCmd.SetArgs([]string{
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+	root.SetArgs([]string{
 		"--home", tmp,
 		"import-mbox",
 		"me@hey.com", mboxPath,
@@ -96,7 +73,7 @@ func TestImportMboxCmd_EndToEnd_MboxFile(t *testing.T) {
 		"--no-resume",
 		"--checkpoint-interval", "1",
 	})
-	require.NoError(rootCmd.ExecuteContext(context.Background()), "import-mbox")
+	require.NoError(root.ExecuteContext(context.Background()), "import-mbox")
 
 	st, err := store.Open(filepath.Join(tmp, "msgvault.db"))
 	require.NoError(err, "open store")
@@ -122,34 +99,11 @@ func TestImportMboxCmd_EndToEnd_MboxFile(t *testing.T) {
 }
 
 func TestImportMboxCmd_AttachmentFailureIsBestEffort(t *testing.T) {
-	cfg := testConfigValue()
-	cfgFile := ""
-	homeDir := ""
-	logger := testLoggerValue()
-	verbose := false
-
 	markDaemonCLISubprocessForTest(t)
 
 	tmp := t.TempDir()
 
-	// Save/restore global state for cmd package.
-	prevCfg := cfg
-	prevLogger := logger
-	prevCfgFile := cfgFile
-	prevHomeDir := homeDir
-	prevVerbose := verbose
-	prevOut := rootCmd.OutOrStdout()
-	prevErr := rootCmd.ErrOrStderr()
-	t.Cleanup(func() {
-		cfg = prevCfg
-		logger = prevLogger
-		cfgFile = prevCfgFile
-		homeDir = prevHomeDir
-		verbose = prevVerbose
-		rootCmd.SetOut(prevOut)
-		rootCmd.SetErr(prevErr)
-		rootCmd.SetArgs(nil)
-	})
+	root := newProductionRootCommand()
 
 	// Force attachment storage errors by making the attachments path a file.
 	require.NoError(t, os.WriteFile(filepath.Join(tmp, "attachments"), []byte("not a dir"), 0600), "write attachments sentinel")
@@ -174,9 +128,9 @@ func TestImportMboxCmd_AttachmentFailureIsBestEffort(t *testing.T) {
 	mboxPath := filepath.Join(tmp, "export.mbox")
 	require.NoError(t, os.WriteFile(mboxPath, []byte(mbox.String()), 0600), "write mbox")
 
-	rootCmd.SetOut(io.Discard)
-	rootCmd.SetErr(io.Discard)
-	rootCmd.SetArgs([]string{
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+	root.SetArgs([]string{
 		"--home", tmp,
 		"import-mbox",
 		"me@hey.com", mboxPath,
@@ -187,40 +141,15 @@ func TestImportMboxCmd_AttachmentFailureIsBestEffort(t *testing.T) {
 
 	// Attachment storage failures are best-effort: the import
 	// succeeds even though the attachment file can't be written.
-	require.NoError(t, rootCmd.ExecuteContext(context.Background()), "expected success")
+	require.NoError(t, root.ExecuteContext(context.Background()), "expected success")
 }
 
 func TestImportMboxCmd_ReturnsCanceledWhenContextCanceled(t *testing.T) {
-	cfg := testConfigValue()
-	cfgFile := ""
-	homeDir := ""
-	logger := testLoggerValue()
-	verbose := false
-
 	markDaemonCLISubprocessForTest(t)
 
 	tmp := t.TempDir()
 
-	// Save/restore global state for cmd package.
-	prevCfg := cfg
-	prevLogger := logger
-	prevRootCtx := rootCmd.Context()
-	prevCfgFile := cfgFile
-	prevHomeDir := homeDir
-	prevVerbose := verbose
-	prevOut := rootCmd.OutOrStdout()
-	prevErr := rootCmd.ErrOrStderr()
-	t.Cleanup(func() {
-		cfg = prevCfg
-		logger = prevLogger
-		rootCmd.SetContext(prevRootCtx)
-		cfgFile = prevCfgFile
-		homeDir = prevHomeDir
-		verbose = prevVerbose
-		rootCmd.SetOut(prevOut)
-		rootCmd.SetErr(prevErr)
-		rootCmd.SetArgs(nil)
-	})
+	root := newProductionRootCommand()
 
 	raw := email.NewMessage().
 		From("Alice <alice@example.com>").
@@ -241,9 +170,9 @@ func TestImportMboxCmd_ReturnsCanceledWhenContextCanceled(t *testing.T) {
 	mboxPath := filepath.Join(tmp, "export.mbox")
 	require.NoError(t, os.WriteFile(mboxPath, []byte(mbox.String()), 0600), "write mbox")
 
-	rootCmd.SetOut(io.Discard)
-	rootCmd.SetErr(io.Discard)
-	rootCmd.SetArgs([]string{
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+	root.SetArgs([]string{
 		"--home", tmp,
 		"import-mbox",
 		"me@hey.com", mboxPath,
@@ -255,41 +184,18 @@ func TestImportMboxCmd_ReturnsCanceledWhenContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := rootCmd.ExecuteContext(ctx)
+	err := root.ExecuteContext(ctx)
 	require.Error(t, err, "expected error")
 	require.ErrorIs(t, err, context.Canceled, "expected context.Canceled")
 }
 
 func TestImportMboxCmd_EndToEnd_ZipResumeAcrossFiles(t *testing.T) {
-	cfg := testConfigValue()
-	cfgFile := ""
-	homeDir := ""
-	logger := testLoggerValue()
-	verbose := false
-
 	markDaemonCLISubprocessForTest(t)
 
 	require := require.New(t)
 	tmp := t.TempDir()
 
-	// Save/restore global state for cmd package.
-	prevCfg := cfg
-	prevLogger := logger
-	prevCfgFile := cfgFile
-	prevHomeDir := homeDir
-	prevVerbose := verbose
-	prevOut := rootCmd.OutOrStdout()
-	prevErr := rootCmd.ErrOrStderr()
-	t.Cleanup(func() {
-		cfg = prevCfg
-		logger = prevLogger
-		cfgFile = prevCfgFile
-		homeDir = prevHomeDir
-		verbose = prevVerbose
-		rootCmd.SetOut(prevOut)
-		rootCmd.SetErr(prevErr)
-		rootCmd.SetArgs(nil)
-	})
+	root := newProductionRootCommand()
 
 	raw1 := email.NewMessage().
 		From("Alice <alice@example.com>").
@@ -398,9 +304,9 @@ func TestImportMboxCmd_EndToEnd_ZipResumeAcrossFiles(t *testing.T) {
 	require.NoError(st.Close(), "close store")
 
 	// Resume import from the zip export and ensure it continues into subsequent files.
-	rootCmd.SetOut(io.Discard)
-	rootCmd.SetErr(io.Discard)
-	rootCmd.SetArgs([]string{
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+	root.SetArgs([]string{
 		"--home", tmp,
 		"import-mbox",
 		"me@hey.com", zipPath,
@@ -408,7 +314,7 @@ func TestImportMboxCmd_EndToEnd_ZipResumeAcrossFiles(t *testing.T) {
 		"--checkpoint-interval", "1",
 		"--no-attachments",
 	})
-	require.NoError(rootCmd.ExecuteContext(context.Background()), "import-mbox resume")
+	require.NoError(root.ExecuteContext(context.Background()), "import-mbox resume")
 
 	st2, err := store.Open(filepath.Join(tmp, "msgvault.db"))
 	require.NoError(err, "open store")
@@ -417,6 +323,13 @@ func TestImportMboxCmd_EndToEnd_ZipResumeAcrossFiles(t *testing.T) {
 	var messageCount int
 	require.NoError(st2.DB().QueryRow(`SELECT COUNT(*) FROM messages`).Scan(&messageCount), "count messages")
 	require.Equal(3, messageCount, "messageCount")
+
+	// A resumed run carries the checkpoint's counters forward, so the run that
+	// finishes the first zip member reports msg1 (carried) plus msg2. A fresh
+	// import would re-read msg1 as a duplicate and report only msg2.
+	var resumedAdded int
+	require.NoError(st2.DB().QueryRow(`SELECT messages_added FROM sync_runs WHERE id > ? AND status = 'completed' ORDER BY id LIMIT 1`, syncID).Scan(&resumedAdded), "resumed run")
+	require.Equal(2, resumedAdded, "resumed run messages_added")
 
 	for _, subj := range []string{"One", "Two", "Three"} {
 		var c int

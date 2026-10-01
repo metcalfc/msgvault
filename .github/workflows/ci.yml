@@ -88,8 +88,9 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Install SQLite development headers
-        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      # ripgrep lets the scripts package run check-docs-media.sh for real.
+      - name: Install SQLite development headers and ripgrep
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev ripgrep
 
       - name: Configure Namespace Go cache
         uses: namespacelabs/nscloud-cache-action@1124a6f3ce44e5cf84cc22111530961f4d2a15f9 # v1
@@ -219,8 +220,10 @@ jobs:
         working-directory: web
         run: bun install --frozen-lockfile
 
+      # web-assets-check builds and embeds the UI, then runs the asset
+      # validator's own tests.
       - name: Check, test, and build frontend
-        run: make web-check web-test web-build
+        run: make web-check web-test web-assets-check
 
       # The e2e specs generate their archive fixture by running a Go test;
       # compile it here so the first Playwright test doesn't pay the cold

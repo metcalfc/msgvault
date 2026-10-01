@@ -170,7 +170,7 @@ func (s *Store) GetGmailDraftContext(ctx context.Context, draftID string) (Gmail
 	if err := validateGmailDraftID(draftID); err != nil {
 		return GmailDraft{}, err
 	}
-	return loadGmailDraft(ctx, s.db, "", draftID)
+	return loadGmailDraft(ctx, s.db, draftID)
 }
 
 func loadGmailDraft(
@@ -178,7 +178,6 @@ func loadGmailDraft(
 	q interface {
 		QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 	},
-	lockClause string,
 	draftID string,
 ) (GmailDraft, error) {
 	var (
@@ -198,7 +197,7 @@ func loadGmailDraft(
 		       pending_original_gmail_message_id, pending_raw,
 		       pending_replacement_gmail_message_id, pending_code
 		FROM gmail_drafts
-		WHERE draft_id = ?`+lockClause, draftID).Scan(
+		WHERE draft_id = ?`, draftID).Scan(
 		&draft.DraftID, &draft.SourceID, &draft.CurrentReceipt.GmailDraftID,
 		&draft.CurrentMessageID, &draft.CurrentReceipt.GmailMessageID,
 		&draft.CurrentReceipt.ThreadID, &draft.Revision, &discardedAt,
@@ -245,7 +244,7 @@ func loadGmailDraft(
 }
 
 func (s *Store) loadGmailDraftTx(ctx context.Context, tx *loggedTx, draftID string) (GmailDraft, error) {
-	return loadGmailDraft(ctx, tx, "", draftID)
+	return loadGmailDraft(ctx, tx, draftID)
 }
 
 func (s *Store) lockGmailDraftTx(ctx context.Context, tx *loggedTx, draftID string) error {
