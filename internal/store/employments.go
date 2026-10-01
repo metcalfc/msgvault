@@ -775,10 +775,8 @@ func (s *Store) classifyEmploymentConflictTx(ctx context.Context, tx *loggedTx, 
 	return ErrEmploymentDuplicateActive
 }
 
-// employmentWriteWithConflictSavepointTx recovers a unique violation before
-// asking the database which partial index was hit. PostgreSQL aborts the whole
-// transaction after SQLSTATE 23505; rolling back to the savepoint restores a
-// queryable transaction while SQLite preserves the same classification path.
+// employmentWriteWithConflictSavepointTx rolls a failed write back to its
+// savepoint before querying which partial unique constraint was violated.
 func (s *Store) employmentWriteWithConflictSavepointTx(
 	ctx context.Context, tx *loggedTx, input EmploymentInput, current bool, excludeID int64,
 	write func() (*Employment, error),

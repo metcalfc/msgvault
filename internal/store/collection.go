@@ -53,8 +53,7 @@ var ErrCollectionImmutable = errors.New(
 // AddSourcesToCollection / RemoveSourcesFromCollection / DeleteCollection
 // so users don't get a silent revert on the next CLI invocation.
 //
-// Concurrency: the create step uses INSERT OR IGNORE (dialect-rewritten
-// for PostgreSQL via dialect.InsertOrIgnore) followed by an unconditional
+// Concurrency: the create step uses INSERT OR IGNORE followed by an unconditional
 // SELECT, so two processes calling this at the same time both succeed —
 // the second insert is ignored, both selects return the same row id.
 // Earlier this used SELECT-then-INSERT, which raced when a CLI command
@@ -64,9 +63,8 @@ func (s *Store) EnsureDefaultCollection() error {
 }
 
 // EnsureDefaultCollectionContext is the context-aware form of
-// EnsureDefaultCollection. InitSchemaContext uses it so its last step is
-// interruptible like the rest: on PostgreSQL these statements queue behind any
-// conflicting lock on collections or collection_sources.
+// EnsureDefaultCollection. InitSchemaContext uses it so its final setup step
+// is cancellable along with the rest of schema initialization.
 func (s *Store) EnsureDefaultCollectionContext(ctx context.Context) error {
 	if _, err := s.db.ExecContext(
 		ctx,

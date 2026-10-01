@@ -27,10 +27,8 @@ import (
 func TestEnsureRecipientEnvelopeUniqueIndex_LegacyTableRebuild(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	// SQLite-only: this test rebuilds the legacy table shape through
-	// sqlite_master-visible DDL. On PostgreSQL the migration only drops a
-	// nameable table constraint, and the alias-row behavior it enables is
-	// covered by the merge and discovery tests on both backends.
+	// Rebuild the legacy SQLite table to verify migration of its
+	// recipient uniqueness constraint.
 	dbPath := filepath.Join(t.TempDir(), "envelope_unique.db")
 	st, err := Open(dbPath)
 	require.NoError(err, "Open")

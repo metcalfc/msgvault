@@ -131,8 +131,7 @@ func (s *Store) repairListIDsApply(
 // lockListIDRepairSQLiteWriter makes the repair's first SQLite statement a
 // writer-lock acquisition. A deferred SQLite transaction that reads first can
 // never upgrade after another WAL writer commits, so it must reserve the writer
-// slot before keyset scanning. PostgreSQL returns an empty row-lock template
-// here and keeps its per-row SELECT FOR UPDATE behavior in applyListIDRepairBatch.
+// slot before keyset scanning.
 func (s *Store) lockListIDRepairSQLiteWriter(ctx context.Context, tx *loggedTx) error {
 	// content_changed_at is deliberately excluded from SQLite's
 	// trg_messages_last_modified UPDATE OF scope. A self-assignment still

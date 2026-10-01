@@ -32,11 +32,8 @@ import (
 func TestEnsureParticipantsPhoneUniqueIndex_LegacyNonUnique(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	// SQLite-only: this test pokes at sqlite_master and reseats the
-	// applied_migrations row directly. The PG equivalent of the
-	// migration is exercised by TestEnsureParticipantByPhone_Concurrent
-	// (which would error at the first concurrent insert without a
-	// real UNIQUE constraint).
+	// Inspect the SQLite index and reseat the migration ledger entry
+	// to exercise the upgrade path.
 	dbPath := filepath.Join(t.TempDir(), "phone_unique.db")
 	st, err := Open(dbPath)
 	require.NoError(err, "Open")

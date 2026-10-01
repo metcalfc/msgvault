@@ -328,8 +328,7 @@ func (s *Store) ensurePersonSweepCursorsTx(
 			return nil, nil, err
 		}
 	}
-	// The no-op update is the portable lock: SQLite takes its singleton writer
-	// slot and PostgreSQL takes the clock row lock used by every journal append.
+	// The no-op update reserves SQLite's writer slot before reading the clock.
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE person_sweep_change_clock SET sequence = sequence WHERE singleton = TRUE`); err != nil {
 		return nil, nil, fmt.Errorf("lock person sweep change clock: %w", err)

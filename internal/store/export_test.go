@@ -12,14 +12,14 @@ import (
 // ParseDBTime is exported for testing unexported timestamp parsing behavior.
 var ParseDBTime = parseDBTime
 
-// DBPathForTest returns the backend address used by a Store so an integration
+// DBPathForTest returns the SQLite database path so an integration
 // test can open a second independent handle to the same isolated database.
 func DBPathForTest(s *Store) string {
 	return s.dbPath
 }
 
-// MessagesTableColumns returns the live column names of the messages table on
-// whichever backend the store uses. Test-only: it exists so
+// MessagesTableColumns returns the SQLite messages table's live column names.
+// Test-only: it exists so
 // TestMessagesColumnClassificationIsExhaustive can compare the real table
 // against MessagesContentColumns + MessagesNonContentColumns. No production
 // caller reads the schema this way, so it stays out of the package's API.
@@ -164,8 +164,8 @@ func (s *Store) SetListIDRepairAfterScanMutationForTest(
 	return func() { s.listIDRepairAfterScanHook = nil }
 }
 
-// SetListIDRepairAfterFingerprintLockHookForTest pauses after PostgreSQL has
-// acquired the candidate's fingerprint lock and before its conditional update.
+// SetListIDRepairAfterFingerprintLockHookForTest pauses immediately before
+// the candidate's conditional update.
 func (s *Store) SetListIDRepairAfterFingerprintLockHookForTest(fn func()) func() {
 	s.listIDRepairAfterFingerprintLockHook = fn
 	return func() { s.listIDRepairAfterFingerprintLockHook = nil }

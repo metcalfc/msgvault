@@ -2708,10 +2708,9 @@ func globalConfigFlagArgs(options ...invocationOptions) []string {
 }
 
 // rebuildCacheAfterScheduledSync rebuilds the Parquet cache if it is stale
-// after a scheduled sync. The cache is SQLite-only, so it is skipped on
-// PostgreSQL DSNs. The build runs in a subprocess (see buildCacheSubprocess)
-// to keep DuckDB's bundled SQLite library out of a long-lived daemon's
-// address space (issue #379).
+// after a scheduled sync. The build runs in a subprocess (see
+// buildCacheSubprocess) to keep DuckDB's bundled SQLite library out of a
+// long-lived daemon's address space (issue #379).
 //
 // Readiness and throttle checks run in the background refresher, away from
 // the scheduler's operation gate. The caller returns as soon as the request

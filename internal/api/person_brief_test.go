@@ -103,8 +103,7 @@ func (f *personBriefAPIFixture) generationID(t *testing.T) int64 {
 	return id
 }
 
-// personBriefAPIJSONBind matches the JSON bind the store's own writer uses, so
-// the fixture inserts JSON rather than bytes on PostgreSQL.
+// personBriefAPIJSONBind matches the placeholder the store uses for JSON values.
 func personBriefAPIJSONBind() string { return "?" }
 
 type personBriefAPISeed struct {
@@ -239,7 +238,7 @@ func TestPersonBriefHTTPStripsControlCharactersFromBriefProse(t *testing.T) {
 	requirements := require.New(t)
 	f := newPersonBriefAPIFixture(t)
 	output := personBriefAPIStructure()
-	// Use a non-NUL C0 control so PostgreSQL can persist the raw fixture.
+	// Seed terminal escape sequences and control characters to exercise sanitization.
 	output.LastMeaningfulInteraction.Summary = "they were\x1b[2J preparing\x01 for a role change"
 	output.Highlights[0].Text = "they\x1b]0;owned\x07 mentioned a move"
 	output.FollowUps[0].Why = "the\u009b role change was pending"

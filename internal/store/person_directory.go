@@ -133,8 +133,8 @@ type directoryRawCandidateCursor struct {
 }
 
 // DirectoryPeoplePageContext returns a deterministic, cursor-paginated page
-// over promoted people. Its SQL uses only portable normalization and matching
-// so SQLite and PostgreSQL share lexical, filtering, and cursor semantics.
+// over promoted people. Normalization and matching preserve consistent
+// lexical ordering, filtering, and cursor semantics.
 func (s *Store) DirectoryPeoplePageContext(
 	ctx context.Context,
 	query DirectoryPeopleQuery,

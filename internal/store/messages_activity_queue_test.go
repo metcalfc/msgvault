@@ -12,7 +12,7 @@ import (
 )
 
 // TestMessagesActivityColumnsAreRealColumns keeps the trigger's hand-written
-// column list honest against the live table on both backends: a typo or a
+// column list consistent with the SQLite schema: a typo or a
 // renamed column would otherwise fail only when the trigger is next rebuilt on
 // an upgrading archive.
 func TestMessagesActivityColumnsAreRealColumns(t *testing.T) {

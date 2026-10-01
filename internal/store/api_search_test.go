@@ -11,14 +11,9 @@ import (
 	"go.kenn.io/msgvault/internal/testutil/storetest"
 )
 
-// TestSearchMessagesQuery_TokenlessTextTerms verifies that text terms which
-// reduce to nothing usable under the FTS tokenizer ("!!!", "---", "")
-// neither error nor short-circuit through the FTS function. PG's
-// to_tsquery('simple', ”) raises "text-search query doesn't contain
-// lexemes" and SQLite's FTS5 MATCH on an empty/punctuation-only string is
-// a syntax error; the store now substitutes a FALSE condition so the
-// query returns zero rows from any backend without ever building a
-// malformed FTS argument. Runs under both SQLite and PostgreSQL.
+// TestSearchMessagesQuery_TokenlessTextTerms verifies that text with no
+// searchable tokens produces zero results without constructing an invalid
+// FTS5 MATCH argument.
 func TestSearchMessagesQuery_TokenlessTextTerms(t *testing.T) {
 	require := require.New(t)
 	f := storetest.New(t)
@@ -79,14 +74,9 @@ func TestSearchMessagesQuery_TokenlessTextTerms(t *testing.T) {
 	}
 }
 
-// TestSearchMessages_LegacyRawString verifies the legacy SearchMessages
-// entrypoint (raw-string FTS query) sanitizes its input through the
-// dialect's BuildFTSArg pipeline. Previously it bound the raw string
-// straight into FTSSearchClause's placeholder, so any whitespace or
-// metacharacter in a user search would reach to_tsquery on PG (parser
-// error) or FTS5 MATCH on SQLite (syntax error). Routing through
-// SearchMessagesQuery shares the same FALSE fallback as
-// TokenlessTextTerms and lets multi-word queries actually work.
+// TestSearchMessages_LegacyRawString verifies that raw search input goes
+// through the production query parser and FTS5 argument builder, including
+// multi-word terms and the tokenless FALSE fallback.
 func TestSearchMessages_LegacyRawString(t *testing.T) {
 	f := storetest.New(t)
 
@@ -111,9 +101,7 @@ func TestSearchMessages_LegacyRawString(t *testing.T) {
 	_, err := f.Store.BackfillFTS(nil)
 	require.NoError(t, err, "BackfillFTS")
 
-	// Multi-word query was the canonical PG failure: "invoice review"
-	// fed straight into to_tsquery would error. Now it tokenizes into
-	// two terms AND'd by the dialect helper.
+	// A multi-word query must pass through the parser and match both terms.
 	t.Run("multi_word_match", func(t *testing.T) {
 		msgs, total, err := f.Store.SearchMessages("invoice review", 0, 50)
 		require.NoError(t, err, "SearchMessages('invoice review')")

@@ -66,9 +66,9 @@ const (
 	personMergeSnapshotBytes   personMergeSnapshotValueKind = "bytes"
 )
 
-// personMergeSnapshotValue is a portable, typed SQL value. A compile-time
-// table registry chooses each column's kind, keeping SQLite and PostgreSQL
-// driver representations from changing canonical JSON.
+// personMergeSnapshotValue is a typed SQL value. A compile-time table
+// registry chooses each column's kind so driver representations do not change
+// canonical JSON.
 type personMergeSnapshotValue struct {
 	Kind    personMergeSnapshotValueKind `json:"kind"`
 	Integer *int64                       `json:"integer,omitzero" nullable:"false"`

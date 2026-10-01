@@ -13,9 +13,8 @@ import (
 	"go.kenn.io/msgvault/internal/testutil/storetest"
 )
 
-// TestSearchFast_MetadataOnly runs against SQLite by default and PostgreSQL in
-// the test-pg lane. It exercises the production query engine and real FTS
-// index so body terms cannot accidentally leak back into the metadata path.
+// TestSearchFast_MetadataOnly exercises the production SQLite query engine
+// and real FTS index so body terms cannot leak into the metadata path.
 func TestSearchFast_MetadataOnly(t *testing.T) {
 	rootRequire := require.New(t)
 	rootAssert := assert.New(t)
@@ -236,10 +235,9 @@ func TestSearchFast_StructuredMetadataUnicodeCaseFold(t *testing.T) {
 	}
 }
 
-// TestSearchMessageBodies_BodyColumnOnly runs against SQLite by default and
-// PostgreSQL in the test-pg lane. Every non-body FTS field carries the same
-// term in a different message, proving the optional capability scopes the
-// index to the body column/weight instead of returning composite hits.
+// TestSearchMessageBodies_BodyColumnOnly uses the real SQLite FTS index.
+// Every non-body field carries the same term in a different message, proving
+// the optional capability scopes the index to the body column.
 func TestSearchMessageBodies_BodyColumnOnly(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

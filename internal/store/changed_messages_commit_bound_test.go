@@ -18,21 +18,11 @@ import (
 	"go.kenn.io/msgvault/internal/testutil"
 )
 
-// These tests are about ONE property: a change that is stamped before a page is
-// read but committed after it must still reach the consumer.
-//
-// It is the property the feed did not have. Both backends stamp
-// content_changed_at when the statement runs and publish the row when its
-// transaction commits, so bounding a page at the database clock lets the cursor
-// settle above a change that has not appeared yet — and the keyset lower bound
-// (`>= since AND (> since OR id > since_id)`) then excludes it on every future
-// request. Measured before the fix: 40 of 40 tombstones lost from one
-// PostgreSQL run of MarkMessagesDeletedFromReader, and rows lost on SQLite
-// wherever a committed write shared a millisecond with an uncommitted one on a
-// higher id.
-//
-// The page is now bounded below the oldest write that could still commit
-// instead, which the store publishes as ChangedMessagePage.CompleteThrough.
+// These tests verify that a change stamped before a page is read but committed
+// afterward still reaches the consumer. SQLite timestamps have millisecond
+// resolution, so a committed row and a pending row can share a watermark.
+// The published CompleteThrough bound must prevent the cursor from advancing
+// past a pending change.
 
 // changeFeedPollLimit is the page size these tests poll with. Large enough that
 // no scenario here is split across pages, so a missing row means a missing row
@@ -269,8 +259,8 @@ func oldestWatermark(t *testing.T, st *store.Store, ids []int64) time.Time {
 	return oldest
 }
 
-// nullableFeedTime scans a watermark from either backend: PostgreSQL hands
-// back a time.Time, SQLite the text the trigger wrote.
+// nullableFeedTime accepts text and time.Time watermark representations
+// returned by database/sql scans.
 type nullableFeedTime struct {
 	at    time.Time
 	valid bool
@@ -362,14 +352,6 @@ func readWatermarkInTx(t *testing.T, st *store.Store, tx *sql.Tx, id int64) time
 // The bound is what has to fix this. Nothing about the row, the trigger, or the
 // cursor encoding is wrong; the page simply must not publish a cursor from an
 // instant that still has writes pending.
-//
-// SQLite only. PostgreSQL stamps microseconds, so two writes sharing an instant
-// is not its route to this loss; a transaction that outlives a poll is, and
-// TestListChangedMessages_LaterCommitDoesNotStrandAnEarlierPendingChange is
-// that. The arrangement here would also misrepresent PostgreSQL's bound, which
-// is the oldest open transaction's START: pinning a watermark to an instant
-// before its own transaction began is something no writer does — every real
-// stamp comes from the database clock while the transaction is running.
 func TestListChangedMessages_SameInstantUncommittedChangeIsNotStranded(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -395,9 +377,8 @@ func TestListChangedMessages_SameInstantUncommittedChangeIsNotStranded(t *testin
 	_, err := st.DB().Exec(st.Rebind(pinned), "high-changed", sharedParam, high)
 	require.NoError(err, "the committed change")
 
-	// The same instant takes a second change on the lower id, which stays
-	// uncommitted while the consumer polls. On SQLite this is the write holding
-	// the single writer slot; on PostgreSQL it is one transaction among many.
+	// The lower-ID change shares the committed row's timestamp and holds
+	// SQLite's writer slot while the consumer polls.
 	tx, err := st.DB().BeginTx(context.Background(), nil)
 	require.NoError(err, "begin the pending write")
 	defer func() { _ = tx.Rollback() }()
@@ -472,24 +453,11 @@ func TestListChangedMessages_CompleteThroughHoldsBelowAPendingChange(t *testing.
 			"bound never recovers is stalled, not merely cautious", final.CompleteThrough)
 }
 
-// TestListChangedMessages_DeletionRunTombstonesAllArrive runs the production
-// path that first exposed this, through the store's own public API only.
-//
-// MarkMessagesDeletedFromReader deliberately holds ONE transaction across a
-// streamed deletion run, so its whole batch of tombstones is stamped early and
-// published late. Racing it with an ordinary import loop and a consumer polling
-// the way the HTTP handler does lost all 40 tombstones on PostgreSQL. A mirror
-// built on this feed would keep 40 deleted messages forever and never learn
-// otherwise.
-//
-// Two assertions, and the second is the sharper one. "No tombstone was lost"
-// depends on the race actually being lost, which is luck. "complete_through
-// never reached into the batch's stamp range while the batch was uncommitted"
-// is the property that MAKES the loss possible, and it is checked on every page
-// the consumer reads during the run. A bound that enters that range while the
-// transaction is open is a defect whether or not a row happened to fall through
-// it — and it is the only way the feed can deliver a PREFIX of one batch and
-// strand the rest, which is the shape a loss of this kind takes.
+// TestListChangedMessages_DeletionRunTombstonesAllArrive exercises streamed
+// deletion and concurrent import traffic through the public Store API. The
+// deletion transaction stamps tombstones before they become visible. Every
+// tombstone must reach the consumer, and CompleteThrough must stay below
+// pending stamps until their transaction commits.
 func TestListChangedMessages_DeletionRunTombstonesAllArrive(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -527,8 +495,8 @@ func TestListChangedMessages_DeletionRunTombstonesAllArrive(t *testing.T) {
 	})
 	t.Cleanup(stopWorkers)
 
-	// Ordinary sync traffic arriving while the deletion run is open. On
-	// PostgreSQL these commit alongside it; on SQLite they queue behind it.
+	// Ordinary sync traffic queues behind the deletion transaction
+	// until SQLite releases its writer slot.
 	workers.Go(func() {
 		for i := 0; ; i++ {
 			select {
@@ -701,20 +669,11 @@ func TestListChangedMessages_BoundNeverEntersABatchesStampRange(t *testing.T) {
 			"of it never arrived: %v", stranded)
 }
 
-// TestListChangedMessages_ConcurrentTransactionalWritersLoseNothing is the
-// unstaged version: writers, a poller, no fixture arranging anything. One
-// writer batches (stamp, hold, commit) on the LOW ids and one writes plain
-// autocommit statements on the high ids, which is the traffic mix an importer
-// and a live sync produce together.
-//
-// It reaches the loss by both routes at once. On PostgreSQL the batched
-// writer's transaction outlives a poll. On SQLite writers are serialised, so
-// instead the autocommit writer commits in the same millisecond the batched
-// writer has already stamped, on a higher id. Measured before the fix: rows
-// lost on both backends.
-//
-// Every message's FINAL value must reach the consumer. Intermediate values may
-// be missed — the feed reports that a message changed, not each change.
+// TestListChangedMessages_ConcurrentTransactionalWritersLoseNothing races a
+// batched writer on low IDs with autocommit writes on high IDs and a poller.
+// SQLite serializes writers, but their stamps can share a millisecond. Every
+// message's final value must reach the consumer; intermediate values may be
+// coalesced because the feed reports changed messages rather than events.
 func TestListChangedMessages_ConcurrentTransactionalWritersLoseNothing(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -846,9 +805,6 @@ func storedWatermarks(t *testing.T, st *store.Store, ids []int64) map[int64]stri
 // rows, leave the consumer's cursor exactly where it was, and resolve at the
 // first quiet moment. Callers are told not to derive a lag from it, because
 // subtracting it from the clock saturates time.Duration.
-//
-// SQLite only: PostgreSQL reads its bound from pg_stat_activity, which needs no
-// lock and cannot be blocked this way.
 func TestListChangedMessages_BlockedFirstProbePublishesNoBound(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

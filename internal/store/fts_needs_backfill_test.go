@@ -10,11 +10,8 @@ import (
 	"go.kenn.io/msgvault/internal/testutil/storetest"
 )
 
-// TestStore_NeedsFTSBackfill_Transition (finding for P2) verifies the
-// FTSNeedsBackfill contract on BOTH backends: it reports true while any message
-// lacks an FTS entry and false once backfill has populated them all. On
-// PostgreSQL the probe is the EXISTS(search_fts IS NULL) short-circuit; on
-// SQLite it is the MAX(rowid) vs MAX(id) comparison. Both must agree.
+// TestStore_NeedsFTSBackfill_Transition verifies that the full completeness
+// probe reports missing FTS entries and becomes false after backfill.
 func TestStore_NeedsFTSBackfill_Transition(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -39,10 +36,8 @@ func TestStore_NeedsFTSBackfill_Transition(t *testing.T) {
 		"NeedsFTSBackfill must be false after a complete backfill")
 }
 
-// TestStore_NeedsFTSBackfillQuick_Transition verifies the cheap probe's
-// contract on both backends: true while the index tail is unindexed, false
-// once backfill completes. (Interior holes are explicitly out of contract on
-// SQLite — the full NeedsFTSBackfill anti-join is authoritative for those.)
+// TestStore_NeedsFTSBackfillQuick_Transition verifies the cheap tail probe.
+// Interior holes are covered by the full NeedsFTSBackfill probe.
 func TestStore_NeedsFTSBackfillQuick_Transition(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -65,15 +60,9 @@ func TestStore_NeedsFTSBackfillQuick_Transition(t *testing.T) {
 		"quick probe must be false after a complete backfill")
 }
 
-// TestStore_NeedsFTSBackfill_HoleAtLowestID (F4) verifies that a hole left at a
-// LOW id while later ids are indexed is detected on BOTH backends. This is the
-// case the old SQLite MAX(rowid)-vs-MAX(id) heuristic missed: the FTS MAX still
-// equals the messages MAX, so it reported "no backfill needed" even though id 1
-// was unindexed. Holes are reachable in practice because UpsertFTS failures
-// during sync are warn-and-continue while the message row still commits.
-//
-// Runs on both backends; before the fix this passed on PG (EXISTS probe) and
-// failed on SQLite, proving the divergence.
+// TestStore_NeedsFTSBackfill_HoleAtLowestID verifies that a missing low-ID
+// entry is detected even when later messages are indexed. Comparing only
+// MAX(rowid) with MAX(id) would miss this incomplete index.
 func TestStore_NeedsFTSBackfill_HoleAtLowestID(t *testing.T) {
 	require := require.New(t)
 	f := storetest.New(t)

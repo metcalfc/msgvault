@@ -46,7 +46,7 @@ type ParticipantLinkContext struct {
 }
 
 // GetParticipantIdentityContext returns display and provenance context for a
-// participant cluster. loggedDB rebinds each query for PostgreSQL.
+// participant cluster.
 func (s *Store) GetParticipantIdentityContext(
 	ctx context.Context, participantIDs []int64,
 ) (*ParticipantIdentityContext, error) {

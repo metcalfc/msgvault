@@ -250,11 +250,8 @@ func requireNullTime(nt sql.NullTime, field string) (time.Time, error) {
 }
 
 func scanSource(sc scanner) (*Source, error) {
-	// Scan timestamps into sql.NullTime / time.Time. The pgx/v5 stdlib
-	// driver decodes TIMESTAMP/TIMESTAMPTZ as time.Time at the driver
-	// level and refuses to convert that to *string; go-sqlite3 also
-	// accepts time.Time destinations and parses its stored formats
-	// internally, so a single typed scan path works for both backends.
+	// Scan timestamps into sql.NullTime / time.Time. go-sqlite3 parses its
+	// stored timestamp formats into these typed destinations.
 	// Required fields are scanned through sql.NullTime so a NULL value
 	// (a schema invariant violation) is reported with field context
 	// rather than the driver's opaque "unsupported Scan" error.
@@ -280,8 +277,7 @@ func scanSource(sc scanner) (*Source, error) {
 }
 
 func scanSyncRun(sc scanner) (*SyncRun, error) {
-	// Scan timestamps into typed columns — see scanSource for the
-	// dialect-portability rationale.
+	// Scan timestamps into typed columns; see scanSource for null handling.
 	var run SyncRun
 	var startedAt sql.NullTime
 	err := sc.Scan(
@@ -376,9 +372,8 @@ type SourceImportItem struct {
 
 // StartSync creates a new sync run record and returns its ID. It first takes a
 // non-blocking execution lock for the source and holds that lock until the run
-// completes or fails. SQLite uses an OS file lock; PostgreSQL uses a session
-// advisory lock on a dedicated connection. Both release automatically when
-// the worker process exits. Once the execution lock is held, any running row
+// completes or fails. The OS file lock releases automatically when the
+// worker process exits. Once the execution lock is held, any running row
 // for that source has no live owner and is failed before the new row is added.
 // The stale-row transition and INSERT share a writer-locked transaction.
 func (s *Store) StartSync(sourceID int64, syncType string) (int64, error) {
@@ -468,11 +463,8 @@ func (s *Store) startSyncOnce(
 	rebind := s.dialect.Rebind
 	now := s.dialect.Now()
 
-	// Serialize against concurrent StartSync for the same source.
-	// SQLite already serializes writers under BEGIN IMMEDIATE; PG
-	// needs an explicit row lock on the source so the read snapshot
-	// for the check below cannot miss a concurrently committed
-	// running run.
+	// BEGIN IMMEDIATE serializes this check with concurrent source writers,
+	// so recovery observes the latest committed run state.
 	if releaseWhenDone {
 		if err := s.recoverAbandonedSyncSourceQueries(ctx, conn, sourceID, now); err != nil {
 			return 0, err
@@ -1690,8 +1682,6 @@ func (s *Store) UpdateSourceDisplayNameContext(
 }
 
 // UpdateSourceSyncConfig updates the JSON sync configuration for an IMAP source.
-// The sync_config column is JSONB on PG; the dialect supplies the
-// appropriate placeholder cast (?::JSONB on PG, bare ? on SQLite).
 func (s *Store) UpdateSourceSyncConfig(sourceID int64, configJSON string) error {
 	_, err := s.db.Exec(fmt.Sprintf(`
 		UPDATE sources

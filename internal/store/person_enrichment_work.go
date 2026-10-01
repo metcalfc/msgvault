@@ -1832,10 +1832,8 @@ func lockPersonEnrichmentPersonTx(
 			return 0, sql.ErrNoRows
 		}
 	} else {
-		// PostgreSQL enrichment transactions only mutate non-key person fields.
-		// A NO KEY UPDATE lock still serializes those transactions with each
-		// other while remaining compatible with the KEY SHARE lock PostgreSQL
-		// takes for sweep-work foreign-key publication.
+		// Legacy nonempty-dialect branch; SQLite's SelectForUpdate returns an
+		// empty string and reserves the writer slot above.
 		lockClause = " FOR NO KEY UPDATE"
 	}
 	var revision int64

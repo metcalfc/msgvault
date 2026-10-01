@@ -113,9 +113,7 @@ func TestStore_RemoveSource(t *testing.T) {
 	require.NoError(err, "count labels")
 	assert.Equal(0, labelCount, "label count")
 
-	// Verify FTS rows are gone (SQLite FTS5 vtable only; on PG the
-	// equivalent invariant — search_fts cleared — is covered by the
-	// dialect-level FTSDeleteSQL test).
+	// Verify that source removal deletes its FTS5 entries.
 	if f.Store.FTS5Available() {
 		var ftsCount int
 		err = f.Store.DB().QueryRow(

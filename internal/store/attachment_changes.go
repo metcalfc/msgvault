@@ -39,8 +39,7 @@ type AttachmentChange struct {
 var ErrAttachmentChangeConsumerMissing = errors.New("attachment change consumer is not registered")
 
 // RegisterAttachmentChangeConsumer establishes a race-free journal boundary.
-// PostgreSQL explicitly waits out and blocks attachment/message writers;
-// SQLite's first INSERT takes its one database writer lock. Changes committed
+// The first INSERT takes SQLite's one database writer lock. Changes committed
 // before that boundary are covered by the required full reconciliation, while
 // every later relevant change is journaled.
 func (s *Store) RegisterAttachmentChangeConsumer(

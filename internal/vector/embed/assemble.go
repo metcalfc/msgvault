@@ -89,10 +89,9 @@ type SourceSnapshot struct {
 	state *sourceSnapshotState
 }
 
-// BeginSourceSnapshot opens the transaction used for one assembly batch and
-// pins the journal clock immediately. PostgreSQL needs REPEATABLE READ;
-// SQLite establishes its stable view with the first clock read in the normal
-// read transaction.
+// BeginSourceSnapshot opens the read transaction for one assembly batch
+// and pins the journal clock immediately. SQLite establishes the stable
+// view with that first clock read.
 func BeginSourceSnapshot(ctx context.Context, st *store.Store) (SourceSnapshot, error) {
 	if st == nil {
 		return SourceSnapshot{}, errors.New("begin embedding source snapshot: nil store")

@@ -392,7 +392,7 @@ func TestPersonMergeAndSplitTreatIdentityJudgmentsLikeTheirAttempts(t *testing.T
 
 // TestPersonEnrichmentAttemptStateVocabularyMatchesTheSchema checks that the
 // one state list the migration and validation derive from is exactly what a
-// fresh archive's table admits, on the backend under test.
+// fresh SQLite archive's table admits.
 func TestPersonEnrichmentAttemptStateVocabularyMatchesTheSchema(t *testing.T) {
 	requirements := require.New(t)
 	checks := assert.New(t)

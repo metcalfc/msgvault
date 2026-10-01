@@ -28,7 +28,6 @@ func (c recipientOrphanCleanup) total() int64 {
 // unique index keeps writer idempotency (one row per participant AND
 // address) while letting distinct alias snapshots coexist.
 //
-// PostgreSQL drops the table-level constraint by catalog-discovered name.
 // SQLite enforces a table-level UNIQUE through an undroppable
 // sqlite_autoindex, so a legacy table is rebuilt: copy into a
 // constraint-free twin, swap, and recreate the plain indexes the DROP TABLE
@@ -40,11 +39,9 @@ func (c recipientOrphanCleanup) total() int64 {
 // yet when the schema files run (so the index cannot live there), and this
 // migration must therefore run after the legacy ADD COLUMN loop.
 //
-// Everything runs in one runMaintenance transaction: the copy and the
-// unique-index build over the archive's largest-row-count table exceed the
-// pool-wide 30s statement_timeout on PostgreSQL (finding S1), and a
-// cancelled or failed run rolls back whole — the ledger entry is written
-// only after success, so the next open retries.
+// Everything runs in one runMaintenance transaction. A cancelled or failed
+// copy or index build rolls back whole. The ledger entry is written only
+// after success, so the next open retries.
 func (s *Store) ensureRecipientEnvelopeUniqueIndex(ctx context.Context) error {
 	return s.runOnceMigration(
 		ctx, migrationRecipientEnvelopeUnique, 1, false,

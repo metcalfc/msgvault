@@ -2141,14 +2141,9 @@ func (s *Store) RecomputeContactStateContext(
 	})
 }
 
-// lockActivityProjectionQueueFreshnessTx closes PostgreSQL's READ COMMITTED
-// phantom window between observing an empty projection queue and publishing
-// fresh contact state. Trigger inserts take ROW EXCLUSIVE and therefore wait
-// behind this SHARE lock. The identity-mutation row must always be locked
-// first, matching BeginExclusive's global PostgreSQL lock order.
-//
-// SQLite writer transactions already serialize the queue observation and
-// contact-state write, so no extra statement is required there.
+// lockActivityProjectionQueueFreshnessTx needs no extra statement on SQLite:
+// writer transactions already serialize the projection queue observation and
+// contact-state publication.
 func (s *Store) lockActivityProjectionQueueFreshnessTx(
 	ctx context.Context,
 	tx *loggedTx,

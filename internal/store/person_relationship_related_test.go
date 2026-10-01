@@ -586,8 +586,7 @@ func TestResolveRelatedValueSecondOccurrenceReusesActiveEdge(t *testing.T) {
 	require.NotNil(first.Relationship)
 
 	// A distinct occurrence of the same assertion must reuse the active
-	// edge and record its own accepted ledger row, inside one transaction
-	// (on PostgreSQL the duplicate insert must not abort it).
+	// edge and record its own accepted ledger row inside one transaction.
 	secondRef := "card-2.vcf"
 	second, err := f.Store.ResolveRelatedValueContext(ctx, store.RelatedImport{
 		PersonID: aliceID, RawValue: bob.VCardUID, RawType: "agent",

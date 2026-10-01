@@ -264,9 +264,8 @@ func (p SemanticPersonEmbeddingProfile) Validate() error {
 	return err
 }
 
-// Canonical validates a possibly database-normalized profile and returns its
-// canonical policy JSON. PostgreSQL JSONB is allowed to normalize whitespace
-// and key ordering, but never policy content.
+// Canonical validates a profile and returns canonical policy JSON.
+// Whitespace and key ordering may differ, but policy content must match.
 func (p SemanticPersonEmbeddingProfile) Canonical() (SemanticPersonEmbeddingProfile, error) {
 	want, err := newSemanticPersonEmbeddingProfile(semanticPersonEmbeddingPolicy{
 		Purpose: p.Purpose, Destination: p.Destination, APIFormat: p.APIFormat,

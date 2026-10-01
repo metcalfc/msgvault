@@ -1337,7 +1337,7 @@ func (s *Store) lockDocumentVectorGenerationIfExists(
 ) (DocumentVectorGenerationState, bool, bool, error) {
 	// The index-state row is the serialization point for source/profile changes.
 	// Taking it before the generation/publication row gives claim, commit, and
-	// the later activation path one lock order on both database backends.
+	// the later activation path one consistent lock order.
 	if _, err := q.Exec(`UPDATE document_index_state SET revision = revision WHERE singleton = 1`); err != nil {
 		return "", false, false, fmt.Errorf("lock document vector index state: %w", err)
 	}

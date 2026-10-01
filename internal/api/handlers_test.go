@@ -8277,7 +8277,7 @@ func TestHandleMessageInline_MissingCID(t *testing.T) {
 }
 
 // TestHandleMessageInline_UnsupportedEngine verifies that engines which
-// can't fetch raw MIME (Postgres scaffold, remote engine) surface a stable
+// can't fetch raw MIME surface a stable
 // 501 instead of a generic 500.
 func TestHandleMessageInline_UnsupportedEngine(t *testing.T) {
 	t.Parallel()

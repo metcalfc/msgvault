@@ -9,8 +9,7 @@ import (
 	"go.kenn.io/msgvault/internal/testutil"
 )
 
-// This test runs through the selected real store dialect. The default suite
-// exercises SQLite; make test-pg exercises the same migration on PostgreSQL.
+// This test runs the archive identity migration against a real SQLite store.
 func TestArchiveIdentityMigrationExecutesOnSelectedDialect(t *testing.T) {
 	require := require.New(t)
 	st := testutil.NewTestStore(t)

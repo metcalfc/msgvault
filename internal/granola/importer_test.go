@@ -434,9 +434,8 @@ func TestImport_NormalizesSentAtToUTC(t *testing.T) {
 	_, err := imp.Import(context.Background(), ImportOptions{Identifier: "alice@example.com"})
 	require.NoError(err)
 	// Instant equality proves the -05:00 source offset was normalized: the
-	// stored value IS 20:00 UTC. Comparing rendered text instead would tie
-	// the assertion to the session/local timezone and fail on non-UTC
-	// machines (PostgreSQL renders timestamptz in the session zone).
+	// stored value IS 20:00 UTC. Normalize the scanned value to UTC so the
+	// assertion does not depend on its rendered timezone.
 	var sentAt time.Time
 	require.NoError(st.DB().QueryRow(`SELECT sent_at FROM messages`).Scan(&sentAt))
 	assert.Equal(time.Date(2026, 6, 1, 20, 0, 0, 0, time.UTC), sentAt.UTC())

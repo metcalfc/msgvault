@@ -227,7 +227,7 @@ func TestPatchPersonRelationshipIsAtomicAndBumpsRevisionOnce(t *testing.T) {
 
 // TestPersonRelationshipConstraintsAreEnforcedByTheDatabase deliberately
 // writes through Store.DB(), bypassing Go validation, so each portable CHECK
-// is exercised on both SQLite and PostgreSQL rather than merely asserted at a
+// is exercised in SQLite rather than merely asserted at a
 // store boundary.
 func TestPersonRelationshipConstraintsAreEnforcedByTheDatabase(t *testing.T) {
 	require := require.New(t)

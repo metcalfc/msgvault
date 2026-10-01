@@ -293,7 +293,7 @@ func TestVisualWorkerRejectsObsoleteFenceAndNonFiniteProviderVector(t *testing.T
 func TestVisualWorkerRenewsClaimsDuringProviderRequest(t *testing.T) {
 	f, _, work := workerFixture(t, 1)
 	// Keep database setup and cleanup outside the bubble. Map its fake clock
-	// onto the fixture's claim timestamps for both SQLite and PostgreSQL.
+	// onto the SQLite fixture's claim timestamps.
 	claimStart := time.Now().UTC()
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)

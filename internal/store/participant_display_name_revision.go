@@ -10,10 +10,9 @@ import (
 
 const participantDisplayNameRevisionKey = "participant_display_name_revision"
 
-// lockParticipantDirectoryMutationTxContext serializes multi-participant
-// ensures with participant merges on PostgreSQL. Those operations otherwise
-// acquire participant row locks in different logical orders and can deadlock.
-// SQLite already serializes writers, so it needs no additional lock.
+// lockParticipantDirectoryMutationTxContext needs no additional statement:
+// SQLite already serializes participant ensures and merges through its writer
+// lock.
 func (s *Store) lockParticipantDirectoryMutationTxContext(
 	ctx context.Context, tx *loggedTx,
 ) error {

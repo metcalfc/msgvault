@@ -307,9 +307,8 @@ func (s *Store) completeAcceptedOccurrenceTx(
 }
 
 // createMatchedRelatedEdgeTx adds the canonical edge for a matched occurrence
-// under a savepoint: PostgreSQL aborts a transaction whose statement raised a
-// unique violation, so duplicate recovery must roll the failed INSERT back
-// before it can look up the existing active edge.
+// under a savepoint so duplicate recovery can roll back the failed INSERT
+// before looking up the existing active edge.
 func (s *Store) createMatchedRelatedEdgeTx(
 	ctx context.Context, tx *loggedTx, in RelatedImport,
 	matchedPersonID int64, relationshipType RelationshipType, actor string,
@@ -332,10 +331,8 @@ func (s *Store) createMatchedRelatedEdgeTx(
 }
 
 // addOrReuseActivePersonRelationshipTx inserts the canonical edge for input,
-// returning the existing active edge instead when it is already present. The
-// insert runs under a savepoint because PostgreSQL aborts a transaction whose
-// statement raised a unique violation, and the caller's transaction must
-// survive to look up the existing edge.
+// returning the existing active edge instead when it is already present. A
+// savepoint isolates the failed insert before the existing edge lookup.
 func (s *Store) addOrReuseActivePersonRelationshipTx(
 	ctx context.Context, tx *loggedTx, input PersonRelationshipInput,
 	validatedActor string, notes sql.NullString,

@@ -294,8 +294,7 @@ func TestDeleteKeyedAttachmentsExceptContextOnlyRemovesStalePrefixRows(t *testin
 		keys = append(keys, key)
 	}
 	require.NoError(rows.Err())
-	// SQLite orders text byte-wise while PostgreSQL uses its database
-	// collation, so only the surviving set matters here, not row order.
+	// Only the surviving set matters here; row order is not part of the contract.
 	assert.ElementsMatch([]string{
 		"imazingXcsv:attachment:foreign", "imazing_csv:attachment:current", "mime:2",
 	}, keys)

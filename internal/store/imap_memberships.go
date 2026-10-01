@@ -394,8 +394,8 @@ type storedIMAPMembership struct {
 }
 
 // loadIMAPMailboxMemberships reads every saved membership of one mailbox so a
-// Reset delta can diff against it. Flags are decoded rather than compared as
-// stored text: SQLite returns the JSON we wrote, PostgreSQL reformats it.
+// Reset delta can diff against it. Flags are decoded to compare their values
+// rather than their JSON encoding.
 func loadIMAPMailboxMemberships(
 	tx *loggedTx, sourceID int64, mailbox string,
 ) (map[imapMembershipUID]storedIMAPMembership, error) {

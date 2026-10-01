@@ -72,8 +72,7 @@ func (b *Backend) BackfillEmbedGenForUpgrade(ctx context.Context) error {
 		// The main handle was opened read-only (MCP: store.OpenReadOnly,
 		// _query_only=true). The backfill WRITES messages.embed_gen and the
 		// applied_migrations ledger, which the query-only handle rejects.
-		// Skip it entirely — mirrors pgvector's SkipMigrate read-only guard.
-		// A write-path process (serve, embeddings CLI) runs the backfill
+		// A write-path process (serve or the embeddings CLI) runs this backfill
 		// instead.
 		return nil
 	}

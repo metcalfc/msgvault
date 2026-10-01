@@ -988,7 +988,7 @@ func verifyVisualOwner(q querier, owner VisualOwner) error {
 	return nil
 }
 
-// visualContentStampExpr is the dialect-portable CAS stamp of a message's
+// visualContentStampExpr is the CAS stamp of a message's
 // context columns. CAST defeats driver time coercion so the stamp
 // round-trips byte-identically between claim and commit.
 const visualContentStampExpr = `COALESCE(CAST(content_changed_at AS TEXT), '')`

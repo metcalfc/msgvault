@@ -43,13 +43,9 @@ var (
 	// generation ID that does not exist in index_generations.
 	ErrUnknownGeneration = errors.New("unknown generation")
 
-	// ErrGenerationRetired is returned by Upsert when the target
-	// generation has already been retired. A retired generation's
-	// embeddings may have been deleted (pgvector deletes them so the
-	// shared HNSW graph stays generation-clean), so writing to it would
-	// re-pollute the index and drift message_count. Callers (e.g. a
-	// stale embed worker whose claims were reclaimed) should treat this
-	// as a benign "drop the batch" signal rather than a hard failure.
+	// ErrGenerationRetired is returned by Upsert when the target generation
+	// has retired. Retired generations are immutable; callers such as stale
+	// embed workers whose claims were reclaimed should drop the batch.
 	ErrGenerationRetired = errors.New("generation is retired")
 
 	// ErrBuildingInProgress is returned when CreateGeneration is called
@@ -68,22 +64,17 @@ var (
 	ErrScopeUnresolvable = errors.New("embedding scope unresolvable")
 
 	// ErrRefuseActivateEmptyScope is returned by ActivateGeneration when
-	// force is false and the backend's source-scoped build scope matches no
-	// live messages. Activating would swap in an empty index and auto-retire
-	// the serving generation (deleting its embeddings on pgvector), so every
-	// non-forced activation path — the CLI drain, the daemon scheduler, and
-	// `embeddings activate` — is refused at the backend gate. The usual
+	// force is false and the source-scoped build matches no live messages.
+	// Activating would replace the serving index with an empty generation,
+	// so the backend refuses every non-forced activation path. A common
 	// cause is a scoped account that exists but has never been synced.
 	ErrRefuseActivateEmptyScope = errors.New("refusing to activate: the source-scoped build scope matches no live messages")
 
 	// ErrRefuseRetireActive is returned by RetireGeneration when force is
-	// false and the target generation is in state='active'. Retiring the
-	// serving generation is destructive on backends that delete a retired
-	// generation's embeddings (pgvector), so the backend refuses without an
-	// explicit force (the CLI surfaces this as `--force-active`). The state
-	// guard is enforced atomically inside the retire transaction, so a
-	// concurrent activation between a caller's pre-flight read and the flip
-	// cannot delete the now-serving generation's embeddings.
+	// false and the target generation is active. The CLI requires
+	// --force-active to stop serving it. The guard runs atomically inside
+	// the retire transaction, so a concurrent activation cannot cause an
+	// unforced retirement of the now-serving generation.
 	ErrRefuseRetireActive = errors.New("refusing to retire the active (serving) generation without force")
 
 	// ErrEmbeddingTimeout is returned by the hybrid engine when the

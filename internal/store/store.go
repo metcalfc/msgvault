@@ -393,7 +393,6 @@ func (s *Store) Close() error {
 // CheckpointWAL forces a WAL checkpoint, folding the WAL back into the main
 // database file. Uses TRUNCATE mode which also resets the WAL file to zero
 // bytes. Returns nil on success; callers may log but should not fail on error.
-// No-op for non-SQLite backends.
 func (s *Store) CheckpointWAL() error {
 	return s.dialect.CheckpointWAL(s.db.DB)
 }
@@ -1622,9 +1621,7 @@ func (s *Store) InitSchemaContext(ctx context.Context) error {
 		return fmt.Errorf("initialize meeting projections: %w", err)
 	}
 
-	// Probe availability through the dialect so it works uniformly for
-	// backends that carry FTS inside their main schema. The probe is a query
-	// like any other and carries ctx: it returns a bool, so a cancellation that
+	// Probe FTS availability with ctx. The probe returns a bool, so a cancellation that
 	// was not reported as an error would be recorded as "search is unavailable"
 	// on a store the daemon is about to hand to callers.
 	available, err := s.dialect.FTSAvailable(ctx, s.db.DB)

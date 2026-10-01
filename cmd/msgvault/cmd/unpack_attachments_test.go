@@ -23,11 +23,9 @@ func TestUnpackAttachmentsReportsRepairStats(t *testing.T) {
 	require.Contains(t, out.String(), "Pruned 2 stale packed blob mapping(s).")
 }
 
-// TestRefuseUnpackWithLiveDaemon pins the unpack preflight: unlike the SQLite
-// write lock (which acquireDirectSQLiteWriteLock skips for PostgreSQL DSNs),
-// this guard rejects unpack on every backend while any responding daemon owns
-// the archive — including one whose API version is incompatible with this
-// client, since it holds pack files open all the same.
+// TestRefuseUnpackWithLiveDaemon pins the unpack preflight: any responding
+// daemon blocks unpack, including one whose API version is incompatible
+// with this client, since it holds pack files open all the same.
 func TestRefuseUnpackWithLiveDaemon(t *testing.T) {
 	require := require.New(t)
 	dataDir := t.TempDir()

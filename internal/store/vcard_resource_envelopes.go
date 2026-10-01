@@ -115,7 +115,7 @@ func (s *Store) putVCardResourceEnvelopeContext(
 	// rather than waiting, and the retry starts over from the reads. The
 	// projection-serialized mode is the exception: it takes the writer lock
 	// first (lockPersonVCardProjectionTx) so a busy neighbour cannot starve
-	// it, and the retry there covers PostgreSQL deadlocks and identity races.
+	// it, and the retry also covers identity races.
 	return retryContendedWrite(ctx, s, "write vCard resource envelope",
 		func() (*VCardResourceEnvelopeRecord, error) {
 			return s.writeVCardResourceEnvelopeOnce(
@@ -133,11 +133,9 @@ func (s *Store) writeVCardResourceEnvelopeOnce(
 ) (*VCardResourceEnvelopeRecord, error) {
 	var result *VCardResourceEnvelopeRecord
 	err := runTx(ctx, func(tx *loggedTx) error {
-		// The projection row lock has to come before every other statement:
-		// on PostgreSQL it is what stops a semantic write from committing
-		// inside this transaction's snapshot window, and holding it from the
-		// first statement leaves no gap the recheck below cannot see. See
-		// person_vcard_projection_revision.go.
+		// Reserve the writer slot before reading projection inputs so no semantic
+		// write can commit between the fingerprint recheck and the envelope
+		// update. See person_vcard_projection_revision.go.
 		if expectedProjectionFingerprint != "" {
 			if err := s.lockPersonVCardProjectionTx(
 				ctx, tx, input.PersonID, expectedProjectionFingerprint,
@@ -569,9 +567,7 @@ func prepareVCardEnvelope(
 // still at expectedRevision. The statement changes nothing, but as a
 // revision-qualified UPDATE it fails the same way a real one does when another
 // writer got there first: SQLite refuses the writer lock to a transaction whose
-// read snapshot is stale (SQLITE_BUSY, retried from the reads), PostgreSQL
-// re-evaluates the WHERE against the replaced row and matches nothing, or under
-// REPEATABLE READ reports a serialization failure. Reads alone can commit
+// read snapshot is stale (SQLITE_BUSY, retried from the reads). Reads alone can commit
 // successfully against a row that has already moved on; this cannot.
 func (s *Store) claimVCardResourceRevisionTx(
 	ctx context.Context, tx *loggedTx, id int64,
@@ -589,9 +585,8 @@ func (s *Store) claimVCardResourceRevisionTx(
 }
 
 // vcardResourceCASOutcome translates the result of a revision-qualified UPDATE
-// on vcard_resource_envelopes. Exactly one affected row is success. Zero rows,
-// or PostgreSQL's serialization failure under REPEATABLE READ, both mean
-// another writer replaced the row after the caller read it, and become the
+// on vcard_resource_envelopes. Exactly one affected row is success. Zero rows
+// mean another writer replaced the row after the caller read it, and become the
 // write conflict; a unique-index violation is an identity collision. Busy
 // errors pass through untranslated so retryContendedWrite restarts the
 // transaction from its reads.

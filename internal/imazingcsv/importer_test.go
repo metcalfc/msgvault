@@ -1192,9 +1192,8 @@ func TestImporterClassifiesAttachmentMediaTypes(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(5, summary.AttachmentsStored)
 
-	// Sort in Go rather than SQL: PostgreSQL and SQLite collate filenames
-	// differently (contract.pdf before or after uppercase IMG names), so the
-	// assertion order must not depend on the backend's collation.
+	// Sort in Go so the assertion has deterministic filename order without
+	// relying on the database's row order or collation.
 	rows, err := st.DB().Query(`
 		SELECT filename, mime_type, media_type FROM attachments`)
 	require.NoError(err)

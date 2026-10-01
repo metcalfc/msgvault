@@ -465,11 +465,3 @@ func TestMergeRetiresLosingProfileValuesAndAttributes(t *testing.T) {
 	require.NoError(err,
 		"a superseded reference on a merged redirect must not block person deletion")
 }
-
-// TestOrganizationReplacementRetriesEmploymentDeadlock forces the lock cycle
-// between organization replacement (organization row, then the rows of the
-// people employed there) and an employment write (person row, then the
-// employer row). The blocker plays the employment writer: it holds the person
-// and asks for the organization once the replacement is parked on the person.
-// PostgreSQL's detector aborts one side; the replacement has to absorb that
-// and finish once the blocker lets go.

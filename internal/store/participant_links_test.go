@@ -441,7 +441,7 @@ func TestMergeParticipantsRefreshesSenderAttribution(t *testing.T) {
 // ErrAlreadyLinked.
 //
 // This runs against the file-backed store from storetest.New (real
-// separate connections, real SQLite/PostgreSQL locking), following the
+// separate connections and real SQLite locking), following the
 // pattern of TestEnsureParticipant_Concurrent.
 func TestLinkParticipants_ConcurrentDisjointClusters(t *testing.T) {
 	require := require.New(t)

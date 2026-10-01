@@ -298,7 +298,7 @@ func applyOwnerIdentityRuleTx(ctx context.Context, tx *loggedTx, clusters []corr
 // anyNotPersonClassificationTx is a one-row probe for any classification
 // other than person. Identity writers call it on every revision bump, so it
 // also tolerates a SQLite archive opened before the table existed (schema
-// initialization creates it; PostgreSQL archives always have it).
+// initialization creates it).
 func (s *Store) anyNotPersonClassificationTx(ctx context.Context, tx *loggedTx) (bool, error) {
 	var classified int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM (

@@ -18,7 +18,7 @@ import (
 // and addr are present, otherwise the bare email/phone, otherwise the
 // bare name. The store-backed API used to read only p.email_address,
 // which dropped phone-only and identifier-only participants (synctech
-// SMS/MMS, etc.). Standard SQL (CASE + ||) — works on SQLite and PG.
+// SMS/MMS, etc.). Uses SQLite CASE expressions and string concatenation.
 const participantDisplaySQL = `COALESCE(
 		CASE
 			WHEN COALESCE(NULLIF(TRIM(mr.display_name), ''), NULLIF(TRIM(p.display_name), '')) <> ''
@@ -460,12 +460,8 @@ func (s *Store) GetMessagesWithBodiesByIDsContext(ctx context.Context, ids []int
 // batch-loaded recipients and labels. The raw query string is split on
 // whitespace into TextTerms and the work is delegated to
 // SearchMessagesQuery so both call sites share one FTS-argument
-// pipeline. Previously this function bound the raw user string straight
-// into FTSSearchClause's placeholder, which on PostgreSQL fed
-// to_tsquery un-escaped input (whitespace and metacharacters in user
-// queries broke the parser) and on SQLite let FTS5 metacharacters
-// reach the MATCH parser. Routing through BuildFTSArg sanitizes per
-// dialect and reuses the FALSE fallback for tokenless inputs.
+// pipeline. BuildFTSArg quotes user terms before they reach the FTS5 MATCH
+// parser and reuses the FALSE fallback for tokenless inputs.
 func (s *Store) SearchMessages(query string, offset, limit int) ([]APIMessage, int64, error) {
 	return s.SearchMessagesContext(context.Background(), query, offset, limit)
 }
@@ -517,8 +513,7 @@ func (s *Store) searchMessagesQueryImpl(
 	var args []any
 
 	// The FTS index covers source-deleted messages too: soft deletion only
-	// stamps deleted_from_source_at, leaving the FTS5 row (and the PG
-	// tsvector on the surviving messages row) intact. Honoring the
+	// stamps deleted_from_source_at, leaving the FTS5 row intact. Honoring the
 	// caller-requested scope here lets the explore lexical resolver search
 	// deleted or unrestricted populations; every caller that leaves the
 	// scope at its zero value keeps the historical active-only behavior.
@@ -535,9 +530,7 @@ func (s *Store) searchMessagesQueryImpl(
 		conditions = append(conditions, LiveMessagesWhere("m", true))
 	}
 
-	// FTS text terms. ftsEnabled is the authoritative signal that FTS is
-	// active — ftsJoin may be empty on dialects (e.g. PostgreSQL) whose
-	// tsvector lives on the main table and needs no extra join.
+	// Enable FTS only when the index is available and the query has text terms.
 	ftsEnabled := len(q.TextTerms) > 0 && ftsAvailable
 	var ftsJoin, ftsOrder, ftsExpr string
 	var ftsOrderArgCount int
@@ -545,10 +538,8 @@ func (s *Store) searchMessagesQueryImpl(
 		ftsExpr = s.dialect.BuildFTSArg(q.TextTerms)
 		if ftsExpr == "" {
 			// Every text term reduced to nothing usable (punctuation-
-			// only input like "!!!" or "---"). Dispatching the dialect's
-			// FTS WHERE here would feed PG's to_tsquery an empty string
-			// ("text-search query doesn't contain lexemes") and SQLite's
-			// FTS5 MATCH a syntax error. Substitute FALSE so the query
+			// only input like "!!!" or "---"). An empty FTS5 MATCH argument
+			// would cause a syntax error. Substitute FALSE so the query
 			// returns zero rows without ever touching the FTS function,
 			// matching the (expr="FALSE", arg="") fallback that the
 			// query package's BuildFTSTerm uses for the same input.
@@ -654,11 +645,8 @@ func (s *Store) searchMessagesQueryImpl(
 			"%"+escapeLike(strings.ToLower(lbl))+"%")
 	}
 
-	// subject: filter — LOWER on both sides for PG portability.
-	// SQLite's default LIKE is ASCII-case-insensitive; PG's is strict-
-	// case, so a bare `m.subject LIKE '%invoice%'` returned zero hits
-	// against "Invoice from acme" on PG. Every other LIKE in this
-	// function already wraps with LOWER.
+	// Apply subject substring filters using the same LOWER convention as
+	// the other LIKE filters in this function.
 	for _, term := range q.SubjectTerms {
 		// An empty subject term would build LIKE '%%' and match every
 		// message; skip it. (The parser already drops empties; this guards
@@ -734,8 +722,7 @@ func (s *Store) searchMessagesQueryImpl(
 	// search endpoints resolve an account or collection to its source IDs
 	// and put them here; without this condition the scope is validated at
 	// the front door and then silently dropped, returning every account's
-	// messages. Uses the same IN-placeholder style as message_type so it
-	// works on both SQLite and PostgreSQL after Rebind.
+	// messages. Uses the same IN-placeholder style as message_type.
 	if len(q.AccountIDs) > 0 {
 		placeholders := make([]string, len(q.AccountIDs))
 		for i, id := range q.AccountIDs {
@@ -898,8 +885,7 @@ func escapeLike(s string) string {
 }
 
 // searchMessagesLike is a fallback search using LIKE with batch-loaded
-// recipients and labels. Wraps both sides in LOWER for PG portability —
-// SQLite's ASCII LIKE is case-insensitive by default but PG's is strict.
+// recipients and labels. Lowercases the stored values and search term.
 func (s *Store) searchMessagesLike(query string, offset, limit int) ([]APIMessage, int64, error) {
 	likePattern := "%" + escapeLike(strings.ToLower(query)) + "%"
 
@@ -964,11 +950,8 @@ func (s *Store) searchMessagesLike(query string, offset, limit int) ([]APIMessag
 	return messages, total, nil
 }
 
-// nullableTimestamp is a sql.Scanner that accepts time.Time (pgx/v5
-// stdlib for TIMESTAMP/TIMESTAMPTZ), string, []byte (SQLite for
-// computed COALESCE expressions whose declared datetime affinity is
-// lost), and nil. The sql.NullTime path that previously covered both
-// drivers is not sufficient for SQLite: when SELECT COALESCE(...) is
+// nullableTimestamp is a sql.Scanner that accepts time.Time, string, []byte,
+// and nil. sql.NullTime is not sufficient for SQLite: when SELECT COALESCE(...) is
 // used over datetime columns, go-sqlite3 may surface the value as
 // TEXT because the COALESCE result has no column type info, and
 // NullTime's Scan rejects strings.
@@ -1030,8 +1013,7 @@ func (r *requiredTimestamp) Scan(src any) error {
 // Timestamps go through nullableTimestamp because the sent_at column
 // is a COALESCE(m.sent_at, m.received_at, m.internal_date) computed
 // expression with no declared datetime type, which on SQLite can come
-// back as TEXT and trip sql.NullTime.Scan. pgx/v5 still delivers
-// time.Time, which nullableTimestamp also handles.
+// back as TEXT and trip sql.NullTime.Scan.
 func scanMessageRows(rows *loggedRows) ([]APIMessage, []int64, error) {
 	var messages []APIMessage
 	var ids []int64
@@ -1328,13 +1310,11 @@ type ChangedMessage struct {
 	ContentChangedAt    time.Time
 }
 
-// ChangedMessagePage is what the feed returns. ServerTime is the DATABASE's
-// clock at query time, for the caller's overlap arithmetic — read from the
-// database, not from the Go process: on PostgreSQL the watermarks come from the
-// database server, and comparing them against a possibly-skewed application
-// clock makes the overlap advice meaningless. It is populated on an empty page
-// too, which is why the feed cannot simply return a slice: a caught-up consumer
-// gets no rows, and there would be nothing left to derive it from.
+// ChangedMessagePage is what the feed returns. ServerTime is the database's
+// clock at query time, for the caller's overlap arithmetic. Reading it from
+// SQLite keeps it consistent with the clock used by watermark triggers.
+// It is populated on an empty page too, so a caught-up consumer receives a
+// clock reading even when there are no rows to derive one from.
 //
 // CompleteThrough is the instant the page is complete through: every change
 // committed strictly before it, at or after the requested cursor, is REACHABLE
@@ -1344,10 +1324,9 @@ type ChangedMessage struct {
 // instead of from the last row's (ContentChangedAt, ID) skips everything
 // between the two. It is the page's upper bound
 // (Dialect.WatermarkBounds.CommitBound), never after ServerTime, and the gap
-// between the two is how stale the bound is — the oldest in-flight write
-// transaction's own age on PostgreSQL, and on SQLite the age of the last proof
-// that the database was quiescent, which is an upper bound on that age rather
-// than a measurement of it (see WatermarkBounds). An empty page carries the
+// between the two is the age of the last proof that the database was quiescent.
+// This is an upper bound on an in-flight writer's age rather than a measurement
+// of it (see WatermarkBounds). An empty page carries the
 // bound too, and that is the point: without it a feed held back by a long
 // transaction is indistinguishable from a caught-up one.
 //
@@ -1371,8 +1350,8 @@ type ChangedMessagePage struct {
 //
 // The second one is a shape rather than a magic id value because no id value
 // can express it. The keyset tiebreak is `id > n`, and there is no int64 that
-// sorts below every legal id: `id` is SQLite's INTEGER PRIMARY KEY — the rowid
-// — and BIGINT on PostgreSQL, and the schema constrains it no further, so 0,
+// sorts below every legal id: `id` is SQLite's INTEGER PRIMARY KEY — the rowid —
+// and the schema constrains it no further, so 0,
 // negatives, and math.MinInt64 itself are all legal (the backfill tests seed
 // both ends of the range deliberately). Any sentinel value would silently drop
 // the row that happened to carry it, which is the failure this feed exists to
@@ -1479,37 +1458,22 @@ const changedMessagesFromInstantQuery = changedMessagesSelect + changedMessagesB
 // boundaries.
 //
 // The page also stops strictly below the instant returned as CompleteThrough,
-// which is the oldest write that could still commit, NOT the database clock.
+// which is a safe bound below writes that could still commit, not the database clock.
 // The distinction is the difference between a feed that loses rows and one that
-// does not. Both backends stamp the watermark when the statement runs and
+// does not. SQLite stamps the watermark when the statement runs and
 // publish the row when its transaction commits, so a change can be stamped in
 // an instant the clock has already left and become visible only later; a page
 // bounded at the clock parks the consumer's cursor above it, and it then fails
-// both arms of the lower bound on every future request. Measured before this
-// bound existed: MarkMessagesDeletedFromReader, which deliberately holds one
-// transaction across a streamed deletion run, lost all 40 of its tombstones on
-// PostgreSQL against a consumer polling the way the handler does; plain
-// autocommit writes lost rows in 3 runs out of 8; and on SQLite a
-// same-millisecond write on a lower id that committed after a page was read was
-// stranded permanently.
+// both arms of the lower bound on every future request. Without this bound,
+// a same-millisecond write on a lower id that commits after a page is read can
+// be stranded permanently.
 //
-// Bounding below the oldest write that could still commit cannot lose a row
-// whose transaction the bound can see, because every uncommitted stamp is at or
-// above the start of the transaction that made it. A PostgreSQL prepared
-// transaction is the write it cannot see: it holds its locks with no owning
-// session, so no start time is observable for it (see pgWatermarkBoundsQuery in
-// dialect_pg.go). Two costs come with it. The newest changes wait for the next
-// poll, as before. And the feed stops advancing for as long as any write
-// transaction stays open — a connection left idle in a transaction that has
-// written to the message table holds the bound still. That is why
-// CompleteThrough is on the page and published by the handler: a stalled feed
-// must not look like a caught-up one. A writer connected as a different
-// PostgreSQL role is inside the guarantee too, at the cost of a stall or a
-// refusal rather than a loss (see PostgreSQLDialect.visibilityFloor). What
-// remains outside the guarantee is enumerated in exactly one place,
-// docs/api-server.md's delivery contract. This comment deliberately does not
-// restate that list: it has been corrected in one copy and left false in
-// another too many times.
+// ReadWatermarkBounds advances the bound only after acquiring SQLite's writer
+// slot, proving that no earlier writer remains in flight. Newest changes wait
+// for a later poll, and an open write transaction holds the bound still.
+// CompleteThrough lets consumers distinguish that stalled feed from a
+// caught-up one. See docs/api-server.md's delivery contract for the limits of
+// this guarantee.
 //
 // A limit of zero or less asks for no rows; that is not an error.
 func (s *Store) ListChangedMessages(
@@ -1527,10 +1491,6 @@ func (s *Store) ListChangedMessages(
 	// runs may be invisible to that query's snapshot yet carry an earlier
 	// stamp, and a consumer resuming from a reading taken afterwards would skip
 	// it. A reading taken first is never later than the data it accompanies.
-	//
-	// PostgreSQL's bound read also verifies that `messages` resolves through the
-	// connection's search_path. Keep it ahead of the NULL preflight so a missing
-	// table produces that actionable diagnostic instead of a bare query error.
 	bounds, err := s.dialect.ReadWatermarkBounds(ctx, s.db.DB)
 	if err != nil {
 		return ChangedMessagePage{}, err

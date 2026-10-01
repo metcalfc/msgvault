@@ -43,7 +43,7 @@ func TestRecordAndGetPackedBlobs(t *testing.T) {
 	require.NotNil(got)
 	assert.Equal(entries[0], *got)
 
-	// CRC32C above int32 max must round-trip on both backends (BIGINT column).
+	// CRC32C above int32 max must round-trip through the integer column.
 	assert.Equal(uint32(4022250974), got.CRC32C)
 
 	missing, err := st.GetAttachmentPackEntry(

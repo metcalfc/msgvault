@@ -79,9 +79,7 @@ const conversationLabelRecentMessages = 50
 //     (conversation_id, sent_at DESC) probes, and recent reads only messages
 //     at or after it as an index range scan. Messages without sent_at are
 //     outside the window; the cutoff lookup skips them explicitly so the
-//     window does not depend on where a database sorts NULLs (PostgreSQL
-//     puts them first in DESC order). This path runs only on SQLite today:
-//     pgEngine does not expose the SQLite text engine.
+//     window does not depend on NULL ordering.
 //   - The sets are MATERIALIZED so the planner evaluates each once instead
 //     of re-probing messages per member.
 //   - members reads conversation_participants by its primary key; only a

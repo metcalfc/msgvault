@@ -22,12 +22,11 @@ var personEnrichmentAttemptStates = []string{
 // list: 'queued', 'starting', ...
 var personEnrichmentAttemptStateSQLList = "'" + strings.Join(personEnrichmentAttemptStates, "', '") + "'"
 
-// personEnrichmentAttemptStateCheck is the column check both backends use.
+// personEnrichmentAttemptStateCheck defines the allowed attempt states.
 var personEnrichmentAttemptStateCheck = `CHECK(state IN (` + personEnrichmentAttemptStateSQLList + `))`
 
-// personEnrichmentAttemptStateConstraint is the constraint name both backends
-// use. PostgreSQL auto-names an inline column check exactly this way, so an
-// archive that predates the named constraint drops under the same name.
+// personEnrichmentAttemptStateConstraint names the check on the rebuilt
+// person_enrichment_attempts table.
 const personEnrichmentAttemptStateConstraint = "person_enrichment_attempts_state_check"
 
 // migratePersonEnrichmentIdentityUncertain widens person_enrichment_attempts

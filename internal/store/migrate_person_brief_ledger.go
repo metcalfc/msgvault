@@ -12,9 +12,8 @@ import (
 // migration and the rebuilt table cannot drift.
 const personFactClaimOriginCheck = `CHECK (origin IN ('extraction', 'enrichment', 'brief', 'system', 'invalid'))`
 
-// personFactClaimOriginConstraint is the constraint name both backends use.
-// PostgreSQL auto-names an inline column check exactly this way, so an archive
-// that predates the named constraint drops under the same name.
+// personFactClaimOriginConstraint names the origin check on the rebuilt
+// person_fact_claims table.
 const personFactClaimOriginConstraint = "person_fact_claims_origin_check"
 
 // migratePersonFactClaimOriginBrief widens person_fact_claims.origin so a claim
@@ -115,8 +114,8 @@ func validatePersonFactClaimOriginRows(ctx context.Context, tx *loggedTx) error 
 
 // migratePersonSweepAttemptBriefFailure adds the attempt column that records
 // why a brief call did not produce a version while the attempt itself
-// succeeded. Adding a column preserves every row on both backends, and IF NOT
-// EXISTS (PostgreSQL) or a column probe (SQLite) makes it idempotent.
+// succeeded. Adding a column preserves every row, and a column probe makes
+// the migration idempotent.
 func (s *Store) migratePersonSweepAttemptBriefFailure(ctx context.Context) error {
 	return s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
 

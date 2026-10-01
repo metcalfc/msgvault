@@ -13,9 +13,9 @@ const cardDAVConflictPendingInvariant = `pending_operation IS NULL OR
 	 previous_mapping_revision IS NOT NULL AND pending_started_at IS NOT NULL)`
 
 // ensureCardDAVConflictPendingInvariant finishes the legacy conflict-table
-// upgrade after the dialect's ADD COLUMN statements. PostgreSQL can add the
-// table constraint in place. SQLite cannot, so an old table is rebuilt in one
-// transaction with all rows and the two public indexes restored before commit.
+// upgrade after the ADD COLUMN statements. SQLite cannot add the table
+// constraint in place, so an old table is rebuilt in one transaction with all
+// rows and the two public indexes restored before commit.
 func (s *Store) ensureCardDAVConflictPendingInvariant(ctx context.Context) error {
 
 	var tableSQL sql.NullString

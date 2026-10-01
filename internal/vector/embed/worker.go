@@ -55,8 +55,8 @@ type WorkStore interface {
 // MaxConsecutiveFailures defaults to 5, Log defaults to slog.Default().
 type WorkerDeps struct {
 	Backend vector.Backend
-	// VectorsDB is the generation-side DB handle (vectors.db on SQLite,
-	// the shared main DB on PG). Used for embed_runs and the watermark.
+	// VectorsDB is the SQLite vectors.db handle for generation metadata,
+	// embed_runs, and the watermark.
 	VectorsDB *sql.DB
 	// MainDB is the main msgvault.db handle (messages + bodies). Used by
 	// embedBatch's body-fetch query.
@@ -75,23 +75,13 @@ type WorkerDeps struct {
 	// and returns an error. A successful batch resets the counter.
 	// Default 5.
 	MaxConsecutiveFailures int
-	// Rebind translates ?-placeholders to the driver's native form.
-	// nil is treated as the identity (used by SQLite); pgvector callers
-	// must wire in (&store.PostgreSQLDialect{}).Rebind so the embed_runs,
-	// watermark, and body-fetch statements run on pgx.
+	// Rebind transforms query placeholders. Nil preserves SQLite's native
+	// ? placeholders in embed_runs, watermark, and body-fetch statements.
 	Rebind func(string) string
-	// LastModifiedExpr is the SELECT expression embedBatch uses to read each
-	// message's last_modified CAS token. It MUST scan into a value that
-	// round-trips by exact equality when bound back into the CAS UPDATE's
-	// `WHERE last_modified = ?`:
-	//   - SQLite: "CAST(m.last_modified AS TEXT)" — the CAST defeats
-	//     go-sqlite3's DATETIME→time.Time auto-coercion (which reformats the
-	//     value and breaks equality); the worker scans a string and binds the
-	//     same string back.
-	//   - PostgreSQL: "m.last_modified" — pgx scans/binds time.Time, equality
-	//     holds.
-	// Zero value defaults to the SQLite CAST form (the default backend); the
-	// pgvector caller sets "m.last_modified".
+	// LastModifiedExpr reads the message last_modified CAS token. It must
+	// round-trip by exact equality when bound into WHERE last_modified = ?.
+	// The default CAST(m.last_modified AS TEXT) avoids go-sqlite3's
+	// DATETIME-to-time.Time coercion; the worker binds the same string back.
 	LastModifiedExpr string
 	Log              *slog.Logger
 	// TotalPending is the work depth at run start, used by a Progress
@@ -159,8 +149,7 @@ func NewWorker(d WorkerDeps) *Worker {
 	}
 	lmExpr := d.LastModifiedExpr
 	if lmExpr == "" {
-		// Default to the SQLite CAST form (the default backend); pgvector
-		// callers set "m.last_modified".
+		// Read the SQLite CAS token as text to preserve exact equality.
 		lmExpr = "CAST(m.last_modified AS TEXT)"
 	}
 	return &Worker{deps: d, wm: NewWatermark(d.VectorsDB, rebind), rebind: rebind, lastModifiedExpr: lmExpr}

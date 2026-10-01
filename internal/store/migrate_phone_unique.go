@@ -53,13 +53,8 @@ const (
 //     already unique),
 //  3. recreate it as UNIQUE.
 //
-// Works identically on SQLite and PostgreSQL (DROP INDEX IF EXISTS
-// and partial UNIQUE indexes are supported on both).
-// Bound to ctx throughout: this is a one-shot upgrade step run from
-// InitSchemaContext, its index build runs with the pool-wide statement_timeout
-// disabled, and on PostgreSQL the DROP/CREATE INDEX queues behind any
-// conflicting lock on participants -- so on context.Background() it would
-// ignore SIGINT and SIGTERM for as long as that lock is held.
+// The one-shot upgrade runs from InitSchemaContext and carries ctx through
+// the deduplication and index rebuild so cancellation can stop the work.
 func (s *Store) ensureParticipantsPhoneUniqueIndex(ctx context.Context) error {
 	applied, err := s.IsMigrationAppliedContext(ctx, migrationPhoneUniqueIndex, 1)
 	if err != nil {
@@ -78,14 +73,8 @@ func (s *Store) ensureParticipantsPhoneUniqueIndex(ctx context.Context) error {
 		return err
 	}
 
-	// Route the whole migration (dedupe + DROP + CREATE UNIQUE INDEX) through
-	// ONE runMaintenance transaction, mirroring the attachment unique-index
-	// migration in InitSchema. runMaintenance disables the pool-wide 30s
-	// statement_timeout for this tx: both the dedupe DELETEs/UPDATEs and the
-	// UNIQUE-index build over the full participants table scale with participant
-	// count and can exceed 30s on a large archive (finding S1). Running them in
-	// one tx also guarantees the index is built against the just-deduped table.
-	// No-op timeout reset on SQLite.
+	// Run deduplication and the DROP/CREATE UNIQUE INDEX in one maintenance
+	// transaction so the index is built against the just-deduplicated table.
 	if err := s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
 		if err := s.dedupeParticipantsByPhone(ctx, tx); err != nil {
 			return fmt.Errorf("dedupe participants by phone: %w", err)
@@ -162,8 +151,8 @@ func (s *Store) ensureIdentityMatchCandidateSourceSupportColumns(
 // references (participant_identifiers etc.).
 //
 // Runs on the caller-supplied maintenance transaction (ctx, tx) so the dedupe
-// and the subsequent UNIQUE-index build share one statement_timeout-disabled tx
-// (finding S1) and the index is built against the just-deduped table.
+// and the subsequent UNIQUE-index build share one transaction, with the index
+// built against the just-deduplicated table.
 func (s *Store) dedupeParticipantsByPhone(ctx context.Context, tx *loggedTx) error {
 	// Pull every participant id involved in a duplicate-phone
 	// group, ordered so the per-phone winner (lowest id) comes
@@ -385,7 +374,7 @@ func (s *Store) mergeParticipant(ctx context.Context, tx *loggedTx, winner, lose
 	// (7) Preserve contact metadata: fill the winner's empty fields from
 	// the loser before the delete below discards them, mirroring the
 	// coalesce in MergeParticipants (messages.go). email_address is
-	// UNIQUE (idx_participants_email on both backends), so the loser must
+	// UNIQUE (idx_participants_email), so the loser must
 	// release its value before the winner can take it — inside this same
 	// tx, so a failure rolls the whole migration back. phone_number needs
 	// no transfer: winner and loser share it by construction (that is

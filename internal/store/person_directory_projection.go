@@ -22,7 +22,7 @@ const (
 // ensureDirectoryProjectionInfrastructure installs the durable, Go-canonical
 // Directory projection. Base-table triggers only enqueue changed person IDs;
 // Store transactions refresh those IDs with the canonical Go representation
-// before commit, which keeps SQLite and PostgreSQL behavior identical.
+// before commit, keeping the projection consistent with the source write.
 func (s *Store) ensureDirectoryProjectionInfrastructure(ctx context.Context) error {
 	for _, statement := range []string{
 		`CREATE TABLE IF NOT EXISTS directory_people (
@@ -231,9 +231,7 @@ func (s *Store) RefreshDirectoryProjectionContext(ctx context.Context) error {
 // their projection rows. Claiming is a DELETE ... RETURNING so it is the
 // transaction's first write: SQLite takes the writer lock before any read
 // (a deferred transaction that reads first cannot upgrade once another
-// writer commits), and a concurrent PostgreSQL refresh waits on the row
-// locks and then finds nothing left to claim instead of rebuilding the same
-// person and colliding on the projection primary keys.
+// writer commits). Concurrent refreshes therefore serialize their claims.
 func (s *Store) refreshDirectoryProjectionsTx(ctx context.Context, tx *loggedTx) error {
 	if !s.directoryProjectionReady {
 		return nil
@@ -247,8 +245,7 @@ func (s *Store) refreshDirectoryProjectionsTx(ctx context.Context, tx *loggedTx)
 
 // refreshDirectoryProjectionsBeforeCommitTx keeps ordinary writes independent
 // from concurrent profile-table DDL, snapshot tests, and other refreshes.
-// PostgreSQL aborts a transaction on a lock or serialization failure, so the
-// refresh runs behind a savepoint: contention rolls back only the derived
+// The refresh runs behind a savepoint: contention rolls back only the derived
 // projection work and leaves its dirty rows for the next refresh.
 func (s *Store) refreshDirectoryProjectionsBeforeCommitTx(ctx context.Context, tx *loggedTx) error {
 	if !s.directoryProjectionReady {

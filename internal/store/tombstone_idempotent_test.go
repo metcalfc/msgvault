@@ -12,23 +12,12 @@ import (
 	"go.kenn.io/msgvault/internal/testutil"
 )
 
-// deletedSentinel is a fixed, far-past timestamp string parseable by both the
-// SQLite DATETIME column and the PostgreSQL TIMESTAMPTZ column (same format
-// baselineLM uses for last_modified in last_modified_test.go). Because a
-// provider repair scan re-reports the same already-deleted IDs on every run,
-// the five tombstone writers must leave an existing stamp alone; stamping a
-// sentinel this far from "now" makes an unguarded rewrite trivially visible
-// regardless of clock or driver timestamp resolution.
+// deletedSentinel is a fixed past timestamp used to detect unintended
+// tombstone rewrites when providers report already-deleted messages again.
 const deletedSentinel = "2000-01-01 00:00:00+00"
 
-// setDeletedFromSourceAt stamps sourceMessageID's tombstone directly,
-// bypassing the writers under test, so tests can seed an "already tombstoned"
-// row with a value distinguishable from any real "now" the writers would
-// produce. It returns the value as the DATABASE renders it back, which is what
-// callers must compare against rather than deletedSentinel:
-// PostgreSQL renders a TIMESTAMPTZ through the session's TimeZone setting, so
-// a test asserting against the literal only holds under UTC. baselineLM in
-// last_modified_test.go reads its sentinel back for the same reason.
+// setDeletedFromSourceAt seeds a tombstone directly and returns its stored
+// representation for comparisons with later reads.
 func setDeletedFromSourceAt(t *testing.T, st *store.Store, sourceID int64, sourceMessageID string) string {
 	t.Helper()
 	_, err := st.DB().Exec(st.Rebind(`
@@ -41,9 +30,8 @@ func setDeletedFromSourceAt(t *testing.T, st *store.Store, sourceID int64, sourc
 	return seeded.String
 }
 
-// readDeletedFromSourceAt reads deleted_from_source_at as a comparable string
-// on both backends (CAST to TEXT defeats go-sqlite3's DATETIME->time.Time
-// coercion, matching the readLM helper's trick in last_modified_test.go).
+// readDeletedFromSourceAt casts the tombstone to TEXT to avoid the driver's
+// DATETIME-to-time.Time conversion.
 func readDeletedFromSourceAt(t *testing.T, st *store.Store, sourceID int64, sourceMessageID string) sql.NullString {
 	t.Helper()
 	var s sql.NullString
@@ -157,7 +145,7 @@ func TestTombstoneWriters_StillSetFreshStamp(t *testing.T) {
 // TestTombstoneWriters_DoNotBumpLastModifiedForAlreadyTombstoned pins the
 // other half of the idempotency contract: the guard must make the UPDATE
 // affect zero rows for an already-tombstoned message, so the
-// trg_messages_last_modified (SQLite) / set_messages_last_modified (PG)
+// trg_messages_last_modified
 // trigger never fires and last_modified is not bumped. Before the fix, every
 // re-scan of the already-deleted population would bump last_modified,
 // forcing incremental consumers to reprocess it on every run.

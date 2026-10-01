@@ -100,9 +100,8 @@ func ConfigureSQLLogging(opts SQLLogOptions) {
 //
 // loggedDB also owns the dialect's placeholder-rebind step: every
 // SQL string passed to Query/Exec/QueryRow is run through rebind
-// before reaching the driver. Call sites in the store package can
-// emit portable `?` placeholders and get the correct `$N` form on
-// PostgreSQL without any per-call wrapping.
+// before reaching the driver. SQLite's rebind function preserves the
+// caller's `?` placeholders unchanged.
 type loggedDB struct {
 	*sql.DB
 

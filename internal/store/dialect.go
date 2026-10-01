@@ -152,7 +152,7 @@ type Dialect interface {
 	// bound to its cancellation context.
 	EnsureFTSIndex(q querier) error
 
-	// ValidateMessageWatermarks checks cheap, backend-specific invariants that
+	// ValidateMessageWatermarks checks inexpensive watermark invariants that
 	// must hold on every open even when the versioned trigger migration is
 	// already applied.
 	ValidateMessageWatermarks(q querier) error

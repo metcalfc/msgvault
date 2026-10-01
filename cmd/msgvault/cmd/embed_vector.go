@@ -66,10 +66,9 @@ func runEmbed(cmd *cobra.Command) error {
 		vectorsDB *sql.DB
 		closeFn   func() error
 		rebind    func(string) string
-		// lastModifiedExpr is the dialect-correct SELECT expression for the
-		// embed worker's last_modified CAS token. SQLite needs CAST(... AS
-		// TEXT) to defeat go-sqlite3's DATETIME→time.Time coercion (which
-		// would break round-trip equality); PG uses the bare column.
+		// lastModifiedExpr reads the embed worker's last_modified CAS token
+		// as text, avoiding go-sqlite3's DATETIME-to-time.Time coercion so
+		// the value preserves exact equality when bound back into the update.
 		lastModifiedExpr = "CAST(m.last_modified AS TEXT)"
 	)
 
@@ -129,10 +128,9 @@ func runEmbed(cmd *cobra.Command) error {
 	if len(scope.SourceIDs) > 0 && live == 0 {
 		if rebuildInProgress {
 			// Draining a build whose scope matches nothing would reach
-			// remaining == 0 immediately and activate an EMPTY generation,
-			// auto-retiring the currently active index (on pgvector that
-			// deletes its embeddings). An existing-but-unsynced account is
-			// the likely cause, so refuse instead of destroying a working
+			// remaining == 0 immediately and activate an empty generation,
+			// auto-retiring the current index. An existing but unsynced account
+			// is the likely cause, so refuse instead of replacing a working
 			// index behind a stderr notice.
 			return fmt.Errorf("embedding scope %s matched 0 live messages; activating generation %d would replace the current index with an empty one — sync the scoped account(s) first, or retire the building generation (msgvault embeddings retire %d) and fix [vector.embed.scope]/--account/--collection", scope.Fingerprint(), gen, gen)
 		}

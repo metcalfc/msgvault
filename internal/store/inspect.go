@@ -5,10 +5,9 @@ import (
 	"errors"
 )
 
-// inspectTimeLayout is the stable format used to render TIMESTAMP /
-// TIMESTAMPTZ columns scanned out of either backend for test
-// assertions. Date and clock components are spelled out separately so
-// assertDateFallback's `strings.Contains` checks continue to match.
+// inspectTimeLayout is the stable UTC format used for timestamp inspection
+// and test assertions. Date and clock components are spelled out separately so
+// assertDateFallback's strings.Contains checks continue to match.
 const inspectTimeLayout = "2006-01-02 15:04:05"
 
 func formatInspectTime(t sql.NullTime) string {
@@ -39,10 +38,8 @@ func (s *Store) InspectMessage(sourceMessageID string) (*MessageInspection, erro
 		RecipientDisplayName: make(map[string]string),
 	}
 
-	// Get basic message fields and thread info. Scan timestamps as
-	// sql.NullTime — pgx decodes TIMESTAMPTZ into time.Time and refuses
-	// the conversion to *sql.NullString that the old code attempted, so
-	// the prior shape errored out on PostgreSQL before returning a row.
+	// Get basic message fields and thread info. Scan nullable timestamps as
+	// sql.NullTime before rendering their stable UTC representation.
 	var sentAt, internalDate sql.NullTime
 	err := s.db.QueryRow(`
 		SELECT m.sent_at, m.internal_date, m.deleted_from_source_at, c.source_conversation_id
@@ -223,10 +220,8 @@ func (s *Store) InspectAttachment(sourceMessageID string) (filename, mimeType st
 }
 
 // InspectMessageDates returns sent_at and internal_date for a message,
-// formatted as "2006-01-02 15:04:05" in UTC. Scanning directly into
-// *string fails on PostgreSQL — pgx decodes TIMESTAMPTZ into time.Time
-// and refuses the implicit conversion — so the read goes through
-// sql.NullTime first.
+// formatted as "2006-01-02 15:04:05" in UTC. The read uses sql.NullTime to
+// preserve nullability before formatting.
 func (s *Store) InspectMessageDates(sourceMessageID string) (sentAt, internalDate string, err error) {
 	var sentAtT, internalDateT sql.NullTime
 	err = s.db.QueryRow(

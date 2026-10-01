@@ -4354,9 +4354,9 @@ func (s *Server) handleTextStats(w http.ResponseWriter, r *http.Request) {
 }
 
 // isEngineUnsupported reports whether err indicates the configured query
-// engine cannot satisfy the requested operation. Postgres and remote engines
-// both have methods that return sentinel errors instead of data; mapping
-// those to a stable status code keeps the API honest about engine
+// engine cannot satisfy the requested operation. Engine methods can return
+// capability sentinel errors instead of data; mapping those to a stable
+// status code keeps the API honest about engine
 // capabilities rather than emitting 500 for predictable misses.
 func isEngineUnsupported(err error) bool {
 	return errors.Is(err, query.ErrNotImplemented) || errors.Is(err, daemonclient.ErrNotSupported)

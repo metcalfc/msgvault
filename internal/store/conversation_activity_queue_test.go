@@ -111,9 +111,6 @@ func TestConversationStatsRecomputeDoesNotRequeueActivity(t *testing.T) {
 // with more members than SQLite's 32,766 bound-variable cap. The removal
 // DELETE binds the desired set as one JSON parameter; a placeholder per
 // member made large Slack/Teams channel synchronization fail outright.
-// SQLite-only: the regression targets SQLite's variable cap and PostgreSQL
-// shares the same statement shape, while 66k round trips to a PostgreSQL
-// server would dominate the suite's runtime.
 func TestReplaceConversationParticipantsHandlesHugeMemberships(t *testing.T) {
 
 	require := require.New(t)

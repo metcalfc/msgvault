@@ -35,12 +35,9 @@ host or pass --local to select this machine's local archive intentionally.`,
 var unpackAttachmentsAfterDaemonLock func()
 
 // refuseUnpackWithLiveDaemon rejects unpack while any responding daemon owns
-// the archive, on every backend. The SQLite write lock (taken next by
-// openWritableStoreAndInit) already guarantees exclusivity there, but
-// PostgreSQL deployments skip that filesystem lock entirely, and a running
-// daemon's blob store holds pack files open (which blocks their deletion on
-// Windows) regardless of backend. Any responding daemon counts, compatible
-// with this client or not — it holds pack readers all the same.
+// the archive. A daemon's blob store holds pack files open, which blocks their
+// deletion on Windows. Any responding daemon counts, compatible with this
+// client or not. openWritableStoreAndInit takes the SQLite write lock next.
 func refuseUnpackWithLiveDaemon(dataDir string) error {
 	if findAnyDaemonRuntime(dataDir) != nil {
 		return errors.New(

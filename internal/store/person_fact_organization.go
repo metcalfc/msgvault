@@ -197,7 +197,7 @@ func (s *Store) materializeLockedPersonFactOrganizationTx(
 		var organization *Organization
 		var loadErr error
 		if lockSet != nil {
-			// The lookup-key advisory lock is already retained by the generation
+			// The writer lock is already retained by the generation
 			// scope. A row found only now was created earlier by this transaction.
 			organization, loadErr = getOrganizationTx(ctx, tx, candidateIDs[0])
 		} else {

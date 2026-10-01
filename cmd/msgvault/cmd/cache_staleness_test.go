@@ -501,8 +501,7 @@ func TestCacheStalenessCounts_UseDeletionIndexes(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	// The Parquet cache staleness check is a SQLite-only ETL path;
-	// cacheNeedsBuild returns early for PostgreSQL DSNs.
+	// The Parquet cache staleness check reads the local SQLite archive.
 	s := testutil.NewSQLiteTestStore(t)
 
 	_, err := s.DB().Exec(

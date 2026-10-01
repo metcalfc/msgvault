@@ -177,8 +177,8 @@ func rfc822MessageIDStorageForms(id string) []string {
 	}
 
 	// Mirror FindDuplicatesByRFC822ID's dialect expression exactly. SQLite
-	// groups BLOB bytes so embedded NUL remains ordinary data; PostgreSQL TEXT
-	// rejects NUL. Both unwrap <id> only when id's edge bytes are not brackets
+	// groups BLOB bytes so embedded NUL remains ordinary data. Unwrap <id>
+	// only when id's edge bytes are not brackets
 	// or an ASCII space. Trimming or UTF-8 repair here would make fetch disagree
 	// with discovery.
 	forms := []string{id}
@@ -203,8 +203,7 @@ func (s *Store) findDuplicatesByRFC822IDQuery(sourceIDs []int64) (string, []any)
 		// idx_messages_source as cheaper, then sorts every scoped row into a
 		// temporary GROUP BY B-tree. The canonical/source index is ordered for
 		// grouping and covers the source filter, so select it for the exact
-		// production shape. PostgreSQL has no INDEXED BY syntax and retains its
-		// cost-based choice.
+		// production shape.
 		from += " INDEXED BY " + rfc822CanonicalIndexName
 	}
 	query := `
@@ -707,9 +706,8 @@ func (s *Store) DeleteDedupedBatchesContext(
 		return 0, nil
 	}
 
-	// runMaintenance disables the pool-wide 30s statement_timeout for this
-	// tx: the cascade DELETE is unbounded and exceeds 30s on a large archive
-	// (finding S1). No-op timeout reset on SQLite.
+	// Delete the requested batches and their cascaded rows in one maintenance
+	// transaction.
 	var deleted int64
 	err := s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
 		for _, batchID := range batchIDs {
@@ -808,11 +806,8 @@ func (s *Store) DeleteAllDeduped() (deleted int64, distinctBatches int64, err er
 func (s *Store) DeleteAllDedupedContext(
 	ctx context.Context,
 ) (deleted int64, distinctBatches int64, err error) {
-	// runMaintenance wraps the count + cascade DELETE in one transaction with
-	// the pool-wide 30s statement_timeout disabled: the unbounded cascade
-	// DELETE exceeds 30s on a large archive (finding S1). The count and the
-	// delete share the tx so they observe the same snapshot, as before.
-	// No-op timeout reset on SQLite.
+	// The count and cascade delete share one maintenance transaction so they
+	// observe the same snapshot.
 	err = s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
 		if err := tx.QueryRowContext(ctx, `
 			SELECT COUNT(DISTINCT delete_batch_id)

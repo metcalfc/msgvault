@@ -13,7 +13,7 @@ const (
 
 // ensureParticipantIdentifierServiceScopeIndex runs after the legacy-column
 // migrations. Schema scripts run before those migrations, so an index that
-// names the new columns cannot safely live in schema.sql/schema_pg.sql: on a
+// names the new columns cannot safely live in schema.sql: on a
 // legacy table CREATE TABLE IF NOT EXISTS is a no-op and the index build would
 // fail before the columns could be added.
 func (s *Store) ensureParticipantIdentifierServiceScopeIndex(ctx context.Context) error {

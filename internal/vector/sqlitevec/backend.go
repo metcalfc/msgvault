@@ -47,9 +47,8 @@ type Options struct {
 	// — e.g. the MCP server's store.OpenReadOnly (_query_only=true). When
 	// set, Open SKIPS BackfillEmbedGenForUpgrade, which would otherwise
 	// WRITE messages.embed_gen + applied_migrations through the read-only
-	// main handle and fail. This mirrors pgvector.Options.SkipMigrate's
-	// read-only guard. Migrate still runs because it only writes vectors.db,
-	// which is opened read-write regardless.
+	// main handle and fail. Migrate still runs because it only writes
+	// vectors.db, which is opened read-write regardless.
 	ReadOnly bool
 	// ANNWorkCeiling bounds rows considered by one accelerated search. Zero
 	// selects the production default. Requests above the ceiling use exact
@@ -770,8 +769,7 @@ func (b *Backend) Upsert(ctx context.Context, gen vector.GenerationID, chunks []
 	// writers (Activate/Retire), so this read is consistent for the life of
 	// the upsert. sqlitevec's vec0 PARTITION KEY isolates retired rows so it
 	// does not delete them on retire, making re-pollution impossible here;
-	// the guard is kept for symmetry with the pgvector backend and to
-	// document the invariant that retired generations are immutable.
+	// the guard enforces that retired generations remain immutable.
 	var dim int
 	var state string
 	err = tx.QueryRowContext(ctx,

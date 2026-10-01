@@ -135,12 +135,7 @@ func looksLikeEmail(addr string) bool {
 //
 // Concurrency: the read-modify-write runs inside a transaction that first
 // takes lockIdentityMutationTx's write lock, mirroring LinkParticipants so
-// every identity mutation serializes against the others. PostgreSQL also
-// takes a row-level lock on the account_identities row with
-// SELECT ... FOR UPDATE so the merge sees the latest committed value.
-// On a still-empty row two callers may both fall through INSERT — the
-// unique-key violation is caught by the retry loop, which then sees the
-// other writer's row and merges into it.
+// every identity mutation serializes against the others.
 func (s *Store) AddAccountIdentity(sourceID int64, address, signal string) error {
 	return s.AddAccountIdentityContext(context.Background(), sourceID, address, signal)
 }
@@ -278,7 +273,7 @@ func (s *Store) mergeAccountIdentitySignalsTx(
 // a row was inserted and whether one was present to merge into.
 //
 // The lookup keys on address_key, the persisted comparison-canonical form,
-// so both backends match under the same Go-owned rule and the partial unique
+// so matching follows the Go-owned rule and the partial unique
 // index on (source_id, address_key) can reject a concurrent case-variant
 // insert (the retry loop in the callers then re-reads and merges). Rows
 // written by binaries that predate the column carry address_key = ” until

@@ -11,9 +11,7 @@ import (
 )
 
 // TestImportIndexesFTS verifies imported messages (including voice-note
-// transcriptions) land in the SQLite FTS5 index. Gated on the fts5 build tag
-// and skipped on PostgreSQL, which uses a tsvector column instead of the
-// messages_fts vtable (fbmessenger FTS test pattern).
+// transcriptions) land in the SQLite FTS5 index. Gated on the fts5 build tag.
 func TestImportIndexesFTS(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

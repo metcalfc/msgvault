@@ -59,7 +59,7 @@ func adoptionLabelNames(t *testing.T, st *store.Store, messageID int64) []string
 // A failing label reconciliation must roll the guarded rekey back with the
 // labels: the old composite key stays put, so the adoption stays retryable.
 // The label write fails through a real constraint — a nonexistent label ID
-// violates the foreign key on both SQLite and PostgreSQL.
+// violates the SQLite foreign key.
 func TestAdoptMessageSourceIDContextRollsBackLabelFailure(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

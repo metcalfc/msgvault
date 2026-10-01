@@ -695,9 +695,8 @@ func (s *Store) GetAttributeDefinitionBySlugContext(
 	return definition, nil
 }
 
-// getAttributeDefinitionBySlugTx loads a definition inside tx, locking its
-// row on backends with row locks so writability and option checks stay valid
-// until the transaction commits.
+// getAttributeDefinitionBySlugTx loads a definition from the transaction's
+// snapshot for writability and option checks.
 func (s *Store) getAttributeDefinitionBySlugTx(
 	ctx context.Context, tx *loggedTx, objectType AttributeObjectType, slug string,
 ) (*AttributeDefinition, error) {

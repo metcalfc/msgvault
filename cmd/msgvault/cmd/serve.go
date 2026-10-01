@@ -109,9 +109,9 @@ var runDerivedCacheSubprocess = func(ctx context.Context, analyticsDir string) e
 	if errors.Is(err, ErrDerivedRefreshRequiresFullBuild) ||
 		strings.Contains(err.Error(), ErrDerivedRefreshRequiresFullBuild.Error()) {
 		// Escalate only to repair an existing cache. A derived refresh must
-		// never create a cache that configuration (engine="sql",
-		// auto_build_cache=false, PostgreSQL) deliberately leaves absent;
-		// the caller reports the cache stale instead.
+		// never create a cache that configuration (engine="sql" or
+		// auto_build_cache=false) deliberately leaves absent; the caller
+		// reports the cache stale instead.
 		readiness, inspectErr := query.InspectCacheReadiness(analyticsDir)
 		if inspectErr != nil || readiness == query.CacheAbsent {
 			return err

@@ -6,7 +6,7 @@ import "strings"
 // projector reads: the candidate row (activityCandidateColumns in
 // activity_queries.go) plus the sender/ownership inputs of its person
 // derivation. Only a change to one of these can move a message's activity
-// event, so only these fire trg_activity_queue_messages_update on both backends.
+// event, so only these fire trg_activity_queue_messages_update.
 //
 // Every other column stays out on purpose. Bookkeeping such as embed_gen,
 // search_fts, indexing_version, and last_modified is rewritten archive-wide by
@@ -39,8 +39,8 @@ var MessagesActivityColumns = []string{
 }
 
 // activityTriggerColumnList renders MessagesActivityColumns for a
-// `... UPDATE OF <cols> ON messages ...` clause. Both dialects call this, so
-// their trigger definitions cannot disagree.
+// `... UPDATE OF <cols> ON messages ...` clause, keeping trigger definitions
+// aligned with the activity column classification.
 func activityTriggerColumnList() string {
 	return strings.Join(MessagesActivityColumns, ", ")
 }
@@ -50,7 +50,7 @@ func activityTriggerColumnList() string {
 // fires on the columns a statement NAMES, and UpsertMessage's ON CONFLICT
 // clause re-assigns most of these on every re-sync of a known message.
 //
-// distinctOp is "IS NOT" for SQLite, "IS DISTINCT FROM" for PostgreSQL.
+// distinctOp is SQLite's null-safe "IS NOT" comparison.
 func activityValueGuard(distinctOp string) string {
 	return columnValueGuard(MessagesActivityColumns, distinctOp)
 }

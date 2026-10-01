@@ -90,9 +90,8 @@ type laneReport struct {
 }
 
 // setupConsentState is a best-effort view of recorded consents. A nil
-// pointer means the archive could not be read (missing database, daemon
-// incompatibility, PostgreSQL unreachable) and every consent is reported as
-// unknown rather than missing.
+// pointer means the archive could not be read (for example, a missing
+// database or incompatible daemon), so every consent is reported as unknown.
 type setupConsentState struct {
 	Documents         bool
 	Visual            bool

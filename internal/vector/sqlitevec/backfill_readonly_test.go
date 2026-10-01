@@ -28,19 +28,11 @@ func backfillLedgerMarked(t *testing.T, db *sql.DB) bool {
 	return n > 0
 }
 
-// TestBackfillEmbedGen_ReadOnlyMainDB_Skipped is the regression guard for
-// Codex #3: the MCP server opens the main DB query-only
-// (store.OpenReadOnly, _query_only=true), but setupVectorFeatures ->
-// sqlitevec.Open ran BackfillEmbedGenForUpgrade, which WRITES
-// messages.embed_gen + applied_migrations through that read-only handle. The
-// readOnly flag was honored on PG (SkipMigrate) but ignored on SQLite, so
-// MCP startup failed (or wrote through the query-only handle) whenever the
-// backfill ledger was not yet marked.
-//
-// With Options.ReadOnly plumbed from the MCP readOnly arg, the backfill
-// self-guards: a read-only Open with an UNMARKED ledger and an active
-// generation must NOT attempt the write, must NOT error, and must leave the
-// ledger unmarked. Migrate still runs (vectors.db is read-write).
+// TestBackfillEmbedGen_ReadOnlyMainDB_Skipped guards MCP startup with a
+// query-only main database. BackfillEmbedGenForUpgrade writes embed_gen
+// and applied_migrations, so Options.ReadOnly must prevent it from running.
+// An unmarked ledger and active generation must neither trigger writes nor
+// cause an error. Migrate still runs against the writable vectors.db.
 func TestBackfillEmbedGen_ReadOnlyMainDB_Skipped(t *testing.T) {
 	assert := assert.New(
 		t,

@@ -164,9 +164,8 @@ func (s *Store) GetSourcesByDisplayName(displayName string) ([]*Source, error) {
 // their per-source identifier — a natural key like a calendarId — from the
 // OAuth account/token key, which lives in sync_config.account_email. A single
 // account may own many sources (e.g. several calendars), all sharing one token
-// file. Filtering happens in Go after a typed list query so it stays
-// dialect-portable (no SQLite json_extract vs PG ->> divergence); the set of one
-// account's sources is small, so this is not a hot path. A source whose
+// file. Filtering happens in Go after a typed list query. One account's
+// source set is small, so this is not a hot path. A source whose
 // sync_config is NULL or unparseable is skipped rather than aborting the scan.
 func (s *Store) GetSourcesByTypeAndAccount(sourceType, accountEmail string) ([]*Source, error) {
 	return s.GetSourcesByTypeAndAccountContext(context.Background(), sourceType, accountEmail)
@@ -206,11 +205,7 @@ func (s *Store) GetSourcesByTypeAndAccountContext(
 // CASCADE handles conversations, messages, labels, attachments, sync state.
 // Orphaned participants are left for a future `gc` command.
 //
-// Runs under runMaintenance: the cascade DELETE removes millions of rows
-// across messages/recipients/labels/bodies/raw on a large archive and the
-// FTSDelete rewrites every matching tsvector, so the maintenance hatch
-// disables the pool-wide 30s statement_timeout for this tx (finding S1).
-// No-op timeout reset on SQLite.
+// The FTS cleanup and cascading delete share one maintenance transaction.
 func (s *Store) RemoveSource(sourceID int64) error {
 	return s.runMaintenance(context.Background(), func(ctx context.Context, tx *loggedTx) error {
 		return s.removeSourceExec(ctx, tx, sourceID)

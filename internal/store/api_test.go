@@ -161,8 +161,8 @@ func TestParseSQLiteTime(t *testing.T) {
 // /SearchMessages /GetMessages for the COALESCE(sent_at, received_at,
 // internal_date) expression. SQLite's go-sqlite3 driver can return
 // that computed column as string or []byte (no declared datetime
-// affinity); pgx/v5 always delivers time.Time for TIMESTAMP columns.
-// The scanner must accept all of these without erroring.
+// affinity). The scanner also accepts time.Time values and must handle
+// each representation without erroring.
 func TestNullableTimestampScan(t *testing.T) {
 	checks := assert.New(t)
 	requirements := require.New(t)
@@ -580,8 +580,7 @@ func TestSearchMessagesLikeLiteralWildcards(t *testing.T) {
 // COALESCE(sent_at, received_at, internal_date) is NULL for all of them — the
 // ambiguous shared-sort-key case. Without the PK tiebreaker, LIMIT/OFFSET paging
 // over them could drop or duplicate an id across adjacent pages. This path is
-// only reachable white-box (unexported method) and is engine-agnostic SQL, so it
-// is exercised here on SQLite; the cross-backend store-API paths are covered by
+// an unexported method, exercised directly here; public API paths are covered by
 // TestStoreAPI_PaginationStability_IdenticalSentAt.
 func TestSearchMessagesLikePaginationStability(t *testing.T) {
 	require := require.New(t)

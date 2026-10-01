@@ -13,14 +13,9 @@ import (
 	"go.kenn.io/msgvault/internal/testutil"
 )
 
-// Watermark literals used by the tests that need a KNOWN ordering instead of
-// whatever the trigger stamped. They are written in the canonical form the
-// SQLite trigger emits (strftime('%Y-%m-%d %H:%M:%f')) because SQLite compares
-// these values lexically: a literal in any other shape (a "+00" suffix, say)
-// would sort below an equal instant written by the trigger and the fixture
-// would be testing the fixture rather than the query. PostgreSQL parses the
-// same literal into a TIMESTAMPTZ and compares instants, so one spelling works
-// on both backends.
+// Watermark literals use the SQLite trigger's canonical millisecond format.
+// SQLite compares these values lexically, so alternate spellings of an equal
+// instant would test fixture ordering rather than the query.
 const (
 	watermarkEarly  = "2001-02-03 04:05:06.000"
 	watermarkMiddle = "2002-02-03 04:05:06.000"
@@ -81,11 +76,8 @@ func setWatermark(t *testing.T, st *store.Store, value any, ids ...int64) {
 	}
 }
 
-// setWatermarkAt forces content_changed_at to an exact INSTANT rather than a
-// fixed literal, binding it the way each backend compares it: SQLite stores the
-// trigger's textual format and compares lexically, PostgreSQL parses a real
-// timestamptz. Tests that have to place a watermark relative to the database
-// clock need this; tests that only need a known ordering use the literals above.
+// setWatermarkAt binds an exact instant using the SQLite trigger's timestamp
+// format so lexical comparisons agree with production watermarks.
 func setWatermarkAt(t *testing.T, st *store.Store, when time.Time, ids ...int64) {
 	t.Helper()
 	value := when.UTC().Format(store.SQLiteTimestampLayout)
@@ -513,10 +505,6 @@ func TestListChangedMessages_ZeroCursorReturnsEverything(t *testing.T) {
 
 // TestListChangedMessages_UnreadableWatermarkReturnsAnError ensures corrupt
 // cursor state blocks the feed loudly instead of producing a synthetic cursor.
-//
-// SQLite always, whatever backend the run targets: PostgreSQL's
-// content_changed_at is a typed TIMESTAMPTZ and cannot hold a value its driver
-// refuses to parse, so there is nothing to pin there.
 func TestListChangedMessages_UnreadableWatermarkReturnsAnError(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -550,20 +538,10 @@ func TestListChangedMessages_NullWatermarkReturnsAnError(t *testing.T) {
 }
 
 // TestListChangedMessages_ReportsTheStoredWatermarkNotTheRequestCursor keeps
-// content_changed_at a property of the row.
-//
-// Strict handling for unreadable watermarks must not rewrite one the scanner
-// reads perfectly well. A readable watermark can
-// legitimately sort below the cursor on SQLite: SQLiteDialect.TimestampParam
-// truncates the cursor to the millisecond the column stores, so a cursor
-// carrying finer resolution — one derived from a client's own clock, or replayed
-// from a PostgreSQL deployment, which stamps microseconds — selects rows below
-// itself by design. Rewriting those rows publishes a change time that never
-// happened, and two consumers polling with different cursors see different
-// change times for the same row.
-//
-// SQLite only: PostgreSQL compares real timestamps, so no row it returns can be
-// below the cursor and there is nothing to rewrite.
+// the watermark a property of the row. SQLite truncates request cursors to
+// milliseconds, so a finer-resolution cursor may select a row just below it.
+// The response must preserve the stored time rather than replacing it with
+// the requested cursor.
 func TestListChangedMessages_ReportsTheStoredWatermarkNotTheRequestCursor(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

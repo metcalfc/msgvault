@@ -230,10 +230,9 @@ func (s *Store) appendPersonSweepChangeTx(
 	return nil
 }
 
-// appendPersonSweepMessageInsert is the SQLite production-path equivalent of
-// the PostgreSQL message INSERT trigger. SQLite deliberately has no row
-// trigger on this hot path because even an inert trigger forces a statement
-// journal for every message insert.
+// appendPersonSweepMessageInsert journals message inserts from the production
+// write path. There is no row trigger on this hot path because even an inert
+// trigger forces a statement journal for every message insert.
 func appendPersonSweepMessageInsert(q querier, d Dialect, messageID int64) error {
 	recipientRole := personSweepRecipientRolePredicate("mr.recipient_type")
 	roster := personSweepRosterPredicateSQL("pp.person_id")
@@ -610,9 +609,8 @@ func (s *Store) publishDocumentOccurrencePersonSweepChangeTx(
 }
 
 // These fragments mirror personscope's default from/to/group union. Journal
-// triggers use literal row aliases instead of bind arguments, so keeping the
-// shared semantics here prevents the SQLite and PostgreSQL definitions from
-// growing separate interpretations of archive membership.
+// triggers use literal row aliases instead of bind arguments; shared fragments
+// keep their interpretation of archive membership consistent.
 func personSweepRecipientRolePredicate(recipientType string) string {
 	return fmt.Sprintf("LOWER(%s) IN ('from', 'to', 'cc', 'bcc')", recipientType)
 }

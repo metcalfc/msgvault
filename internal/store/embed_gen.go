@@ -15,7 +15,7 @@ import (
 // SetEmbedGen UPDATE. Each statement binds one placeholder per id plus
 // one for the target generation, so 500 ids = 501 bound parameters —
 // comfortably under SQLite's historical 999 (and the store's 900-param
-// convention; see insertInChunks) and PostgreSQL's 65,535. Mirrors the
+// convention; see insertInChunks). Mirrors the
 // store's existing chunking discipline so an oversized embed batch never
 // blows the driver bind ceiling. A var (not const) only so tests can
 // lower it to exercise the chunk boundary; production never reassigns it.
@@ -32,8 +32,8 @@ var embedGenStampChunkRows = 500
 // watermark; pass 0 for a full scan (the backstop). Results are ordered
 // by id so the caller can advance the watermark to the batch's max id.
 //
-// This runs against the MAIN db (messages + embed_gen live there on both
-// backends). On SQLite the embeddings themselves live in vectors.db, so
+// This runs against the main database, which holds messages and embed_gen.
+// The embeddings themselves live in vectors.db, so
 // this find-work query and the SetEmbedGen stamp cannot share a tx with
 // the embeddings upsert — the worker orders the steps (upsert, then
 // stamp) and relies on idempotency, see internal/vector/embed/worker.go.
@@ -118,14 +118,11 @@ func (s *Store) SetEmbedGen(ctx context.Context, ids []int64, target int64) erro
 // when the worker read that message's content. SetEmbedGenIfUnchanged
 // stamps embed_gen only while last_modified still equals this value.
 //
-// LastModified is carried as an opaque `any` so the worker can round-trip
-// whatever the driver scanned without the store needing a backend-specific
-// type: on SQLite the worker scans CAST(last_modified AS TEXT) into a string
-// (defeating go-sqlite3's DATETIME→time.Time coercion, which would otherwise
-// reformat the value and break equality on the round-trip) and binds the same
-// string back; on PostgreSQL it scans a time.Time and binds the same
-// time.Time back. The WHERE comparison runs entirely server-side against the
-// stored value.
+// LastModified is carried as an opaque `any`. The worker scans
+// CAST(last_modified AS TEXT) into a string, avoiding go-sqlite3's
+// DATETIME-to-time.Time coercion, which would reformat the value and break
+// equality on the round-trip. It binds the same string back so the WHERE
+// comparison uses the stored representation.
 type EmbedGenStamp struct {
 	ID           int64
 	LastModified any
@@ -149,13 +146,8 @@ type EmbedGenMetadataVersion struct {
 // live membership, conversation identity, or metadata digest no longer matches
 // the assembly snapshot.
 //
-// SQLite starts with BEGIN IMMEDIATE, so a writer cannot enter between verify
-// and stamp. PostgreSQL first takes the embedding-change clock's exclusive
-// transaction lock, then locks every message and every metadata row used by
-// the digest. Persistence takes the shared clock lock before its row locks, so
-// this ordering prevents a message/conversation lock inversion. Locking the
-// conversation row also serializes membership inserts via their foreign-key
-// check, closing the phantom-member race.
+// BEGIN IMMEDIATE prevents another writer from entering between verification
+// and stamping, including writes that change conversation membership.
 //
 // The embed_gen update fires the row-level last_modified trigger. This group
 // path restores each verified token inside the same write transaction because
@@ -274,13 +266,9 @@ func (s *Store) SetEmbedGenGroupIfUnchanged(
 	return true, nil
 }
 
-// ParticipantRevisionSQLite and ParticipantRevisionPostgres render
-// participants.updated_at (aliased p) for the embedding metadata digest. The
-// coverage CAS here and the assembler's snapshot read must produce
-// byte-identical revisions, so both use these exact expressions. The
-// PostgreSQL form is pinned with to_char because CAST(timestamptz AS TEXT)
-// renders per-session TimeZone/DateStyle — a divergence would make the CAS
-// miss on every scope and republish forever.
+// ParticipantRevisionSQLite renders participants.updated_at (aliased p) for
+// the embedding metadata digest. The coverage CAS and the assembler's snapshot
+// read must use this exact expression to produce byte-identical revisions.
 const (
 	ParticipantRevisionSQLite = "CAST(p.updated_at AS TEXT)"
 )
@@ -343,11 +331,9 @@ func (s *Store) embedGenMetadataDigest(
 // closes the read→stamp race that an unconditional stamp would lose by
 // marking the row embedded-with-stale-content.
 //
-// The worker's own stamp UPDATE bumps last_modified on BOTH backends via
-// their triggers: this UPDATE sets only embed_gen (not last_modified), so the
-// SQLite AFTER-UPDATE trigger fires (its WHEN OLD.last_modified = NEW... holds)
-// and re-stamps last_modified, and the PG BEFORE-UPDATE trigger fires too (its
-// WHEN OLD.last_modified IS NOT DISTINCT FROM NEW... holds) and sets
+// The worker's own stamp UPDATE bumps last_modified through SQLite's
+// AFTER-UPDATE trigger: the UPDATE sets only embed_gen, so the trigger's
+// WHEN OLD.last_modified = NEW.last_modified guard holds and it sets
 // last_modified = CURRENT_TIMESTAMP. The WHERE comparison matches against the
 // PRE-trigger value, so a legitimate stamp still affects exactly 1 row (it is
 // NOT a CAS miss); only a value that changed BEFORE this UPDATE ran blocks it.
@@ -373,7 +359,7 @@ func (s *Store) embedGenMetadataDigest(
 //
 // ACCEPTED RESIDUAL — 1-second CAS resolution (single-user). The CAS token is
 // last_modified, defaulted/bumped by CURRENT_TIMESTAMP (schema.sql:310 and the
-// AFTER/BEFORE-UPDATE triggers), which has 1-SECOND resolution on both backends.
+// AFTER-UPDATE trigger), which has 1-SECOND resolution.
 // So a content edit that lands in the SAME WHOLE SECOND as the worker's content
 // read leaves last_modified textually UNCHANGED — this CAS then matches and
 // stamps embed_gen=target on an embedding built from the now-stale text, a
@@ -431,8 +417,8 @@ func (s *Store) ResetEmbedGen(ctx context.Context, ids []int64) error {
 }
 
 // CoverageCounts reports embedding coverage for activeGen, computed from
-// the MAIN db (messages + embed_gen) so it is a single-DB query on both
-// backends and needs no access to the embeddings store.
+// the main database (messages + embed_gen), without accessing the separate
+// embeddings store.
 //
 //   - live:     total live messages (the embedding universe).
 //   - stamped:  live messages stamped embed_gen = activeGen. This is the

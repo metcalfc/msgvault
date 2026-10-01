@@ -7,17 +7,9 @@ import (
 	"go.kenn.io/msgvault/internal/testutil"
 )
 
-// TestInitSchemaWindowHookFiresOnlyForItsOwnStore pins the invariant that makes
-// the test-only migration seams safe to use in a binary where more than one
-// Store migrates at a time.
-//
-// The fixtures in internal/testutil build PostgreSQL schemas on background
-// workers, so an InitSchema can be running on some other Store at any moment
-// while a test has a seam installed. When these seams were package-level
-// variables that was a live defect, not a theoretical one: the window hook
-// writes through the Store that installed it, so a background migration firing
-// it after the installing test returned failed with "sql: database is closed" —
-// and, worse, could have written into a live test's archive.
+// TestInitSchemaWindowHookFiresOnlyForItsOwnStore verifies that a migration
+// hook installed on one Store cannot run during another Store's migration.
+// A shared hook could write to the wrong archive or a closed database.
 func TestInitSchemaWindowHookFiresOnlyForItsOwnStore(t *testing.T) {
 	require := require.New(t)
 	owner := testutil.NewTestStore(t)

@@ -103,14 +103,9 @@ func (s *Store) LatestEmbeddingChangeSequence(ctx context.Context) (int64, error
 // contextual generation reconciles the complete current snapshot, so changes
 // made before this point do not need historical journal rows.
 //
-// On PostgreSQL the enable must fence in-flight source transactions: every
-// source mutation statement holds the shared clock advisory lock until its
-// transaction ends, and a transaction whose statements ran while capture was
-// disabled produced no journal rows. Taking the exclusive form first waits
-// for those transactions to finish, so each source transaction either commits
-// before capture starts (visible to the reconciliation snapshot) or journals.
-// SQLite needs no fence: its single-writer lock means no source transaction
-// can be in flight while the enable statement runs.
+// SQLite's single-writer lock means no source mutation transaction can be
+// in flight while the enable statement runs. Each mutation commits before
+// capture starts or is journaled after capture is enabled.
 func (s *Store) EnableEmbeddingChangeJournal(ctx context.Context) error {
 	const enable = `UPDATE embedding_change_clock SET enabled = TRUE WHERE singleton = 1`
 	{

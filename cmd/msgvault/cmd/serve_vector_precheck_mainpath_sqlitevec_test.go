@@ -2,9 +2,7 @@
 
 package cmd
 
-// precheckTestMainPath is a backend-appropriate mainPath for the generic
-// precheckVectorFeatures tests. On a sqlite_vec build (with or without
-// pgvector) a SQLite filesystem path is a supported backend, so the precheck
-// does not fail fast on missing build-tag support and the cron/validate paths
-// are exercised as intended.
+// precheckTestMainPath is a SQLite filesystem path for precheckVectorFeatures
+// tests built with sqlite_vec, allowing the cron and validation paths to run
+// without failing first on missing build-tag support.
 const precheckTestMainPath = "/tmp/msgvault.db"

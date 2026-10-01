@@ -245,13 +245,9 @@ func TestEngine_ScopedIndexRequiresMatchingMessageTypeFilter(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestFTSTerms covers the FreeText → dialect-neutral term-slice
-// tokenizer directly (no DB needed). FreeText is split on whitespace
-// and terms the FTS5/tsquery tokenizers would drop entirely
-// (punctuation-only) are removed; the raw words are kept verbatim
-// (per-dialect quoting/lexeme-splitting happens later in each backend's
-// BuildFTSTerm). Returns nil when nothing usable remains so the caller
-// skips the BM25 branch instead of dispatching a malformed query.
+// TestFTSTerms covers whitespace splitting and punctuation-only term
+// filtering without a database. Words remain verbatim for later FTS5
+// escaping by BuildFTSTerm. No usable terms means the caller skips BM25.
 func TestFTSTerms(t *testing.T) {
 	cases := []struct {
 		name string

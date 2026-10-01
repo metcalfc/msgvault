@@ -53,9 +53,8 @@ func (s *Store) FindObservationsByProviderUserIDContext(
 		ORDER BY o.participant_id, o.id
 		LIMIT ?
 	`
-	// No s.Rebind here: loggedDB.QueryContext rebinds placeholders itself
-	// (internal/store/db_logger.go). Rebinding twice corrupts the query on
-	// PostgreSQL. Only tests, which reach the raw handle through st.DB(), call
+	// No s.Rebind here: loggedDB.QueryContext already owns placeholder handling
+	// (internal/store/db_logger.go). Tests using the raw st.DB() handle call
 	// st.Rebind explicitly.
 	return s.queryParticipantObservationsContext(
 		ctx, query, providerUserID, observationLookupLimit(limit))

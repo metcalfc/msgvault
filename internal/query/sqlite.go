@@ -14,9 +14,7 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-// SQLiteEngine implements Engine using direct SQL queries.
-// Despite its name, it is dialect-agnostic and supports both SQLite
-// (default) and PostgreSQL via the dialect field.
+// SQLiteEngine implements Engine using direct queries against the SQLite archive.
 type SQLiteEngine struct {
 	db      *sql.DB
 	dialect Dialect
@@ -33,10 +31,7 @@ func NewSQLiteEngine(db *sql.DB) *SQLiteEngine {
 	return &SQLiteEngine{db: db, dialect: SQLiteQueryDialect{}}
 }
 
-// NewEngineWithDialect creates a query engine with an explicit dialect.
-// Use this to construct a PostgreSQL-backed engine:
-//
-//	engine := query.NewEngineWithDialect(db, query.PostgreSQLQueryDialect{})
+// NewEngineWithDialect creates a SQLite query engine with explicit SQL helpers.
 func NewEngineWithDialect(db *sql.DB, d Dialect) *SQLiteEngine {
 	return &SQLiteEngine{db: db, dialect: d}
 }
@@ -53,16 +48,8 @@ func (e *SQLiteEngine) hasFTSTable(ctx context.Context) bool {
 		return e.ftsResult
 	}
 
-	// The dialect's HasFTSTableSQL() probe is the existence check for BOTH
-	// backends: SQLite checks sqlite_master for the messages_fts virtual
-	// table; PostgreSQL checks information_schema for the messages.search_fts
-	// column. We must NOT run a hardcoded SQLite-only `SELECT 1 FROM
-	// messages_fts` secondary probe unconditionally — on PostgreSQL there is
-	// no messages_fts relation (PG uses an inline search_fts TSVECTOR column),
-	// so that probe errors with `relation "messages_fts" does not exist`
-	// (42P01), causing FTS to be cached as unavailable and PG Search to
-	// silently fall back to subject/snippet LIKE instead of the tsvector
-	// ranking path.
+	// Check sqlite_master for the messages_fts virtual table before probing
+	// whether its FTS5 module is available.
 	var count int
 	err := e.queryRowContext(ctx, e.dialect.HasFTSTableSQL()).Scan(&count)
 	if err != nil {
@@ -76,13 +63,10 @@ func (e *SQLiteEngine) hasFTSTable(ctx context.Context) bool {
 		return false
 	}
 
-	// Dialect-aware liveness probe. SQLite's existence check (sqlite_master)
-	// does NOT prove the fts5 module is loadable: a DB built by an
-	// fts5-enabled binary still lists messages_fts in sqlite_master when
-	// opened by a no-fts5 binary, but querying it fails with
-	// `no such module: fts5`. Run the dialect's liveness SQL to confirm the
-	// table is actually queryable, mirroring store.SQLiteDialect.FTSAvailable.
-	// PostgreSQL returns "" here (its column probe is authoritative).
+	// SQLite's existence check does not prove the FTS5 module is loadable:
+	// a database built with FTS5 still lists messages_fts when opened by a
+	// binary without FTS5. Probe the table to confirm it is queryable,
+	// mirroring store.SQLiteDialect.FTSAvailable.
 	if liveness := e.dialect.FTSLivenessSQL(); liveness != "" {
 		var probe int
 		lerr := e.queryRowContext(ctx, liveness).Scan(&probe)
@@ -224,9 +208,7 @@ func buildAggregateSQL(dim aggDimension, filterJoins string, filterWhere string,
 		groupExpr = dim.groupExpr
 	}
 
-	// The outer derived table needs an explicit alias — PostgreSQL
-	// rejects subqueries in FROM without one ("syntax error at or near
-	// ')'"); SQLite tolerates either form, so `AS agg` is portable.
+	// Name the aggregate derived table explicitly.
 	return fmt.Sprintf(`
 		SELECT key, count, total_size, attachment_size, attachment_count, total_unique
 		FROM (
@@ -1074,15 +1056,10 @@ func (e *SQLiteEngine) ListMessages(ctx context.Context, filter MessageFilter) (
 	return results, nil
 }
 
-// messageSummaryIDChunk caps how many ids GetMessageSummariesByIDs binds into
-// a single IN-list statement — for the base summary query and for the
-// per-message label/participant hydration that follows it. SQLite refuses a
-// statement carrying more than 32766 bound parameters by default, and one id
-// is one parameter here; the eval command's dense vector/hybrid modes can
-// over-fetch a ranked result set well past that at a large -n. This engine
-// is dialect-agnostic (SQLite and PostgreSQL share it), and PostgreSQL's own
-// parameter ceiling is far higher, so chunking — rather than a SQLite-only
-// rewrite of the IN clause — is the one code path that stays correct on both.
+// messageSummaryIDChunk caps the IDs bound in each summary query and its
+// label/participant hydration queries. SQLite limits bound parameters, and
+// one ID consumes one parameter. Vector/hybrid evaluation can over-fetch
+// large result sets, so hydrate them in bounded chunks.
 const messageSummaryIDChunk = 500
 
 // GetMessageSummariesByIDs returns summary rows (no body, no raw
@@ -1218,10 +1195,9 @@ func (e *SQLiteEngine) GetMessage(ctx context.Context, id int64) (*MessageDetail
 // In practice, Gmail IDs are random enough that collisions are astronomically unlikely.
 // If you need to guarantee uniqueness, use the internal ID from GetMessage instead.
 //
-// A2 (deferred): the unscoped match mirrors the deletion write path
-// (internal/store/messages.go MarkMessageDeletedByGmailID). Adding a source_id
-// scope here is deferred for the same reason — see that function's doc and
-// docs/internal/PG_STATUS.md.
+// Source scoping remains deferred, matching MarkMessageDeletedByGmailID
+// in internal/store/messages.go. Use the internal message ID when account
+// identity must be unambiguous.
 func (e *SQLiteEngine) GetMessageBySourceID(ctx context.Context, sourceMessageID string) (*MessageDetail, error) {
 	return e.getMessageByQuery(ctx, "m.source_message_id = ?", sourceMessageID)
 }
@@ -1376,11 +1352,9 @@ func (e *SQLiteEngine) GetTotalStats(ctx context.Context, opts StatsOptions) (*T
 		return e.getSearchMatchStats(ctx, conditions, args, searchFTSJoin)
 	}
 
-	// Message stats — when the FTS join is present, use a subquery so the
-	// outer COUNT sees only messages rows. The FTS JOIN is 1:1, and the
-	// search filters from buildSearchQueryParts are all EXISTS-based (no
-	// 1:N multiplication). SELECT without DISTINCT is correct and avoids the
-	// PostgreSQL restriction that bans SELECT DISTINCT in subqueries with ORDER BY.
+	// Message stats: with an FTS join, use a subquery so the outer COUNT
+	// sees only message rows. The FTS join is 1:1 and search filters use
+	// EXISTS, avoiding row multiplication without DISTINCT.
 	var msgQuery string
 	if joinClause != "" {
 		msgQuery = fmt.Sprintf(`
@@ -1483,14 +1457,9 @@ func statsUseMatchingPopulation(opts StatsOptions) bool {
 // GetDeletionTargetsByFilter returns source-bound message targets matching a filter.
 // This is more efficient than ListMessages when you only need the IDs.
 //
-// All filter predicates that would otherwise need 1:N joins
-// (recipients, labels) are expressed as EXISTS subqueries so messages
-// can never appear in the result set more than once. Without that, we
-// would need SELECT DISTINCT — and PostgreSQL rejects SELECT DISTINCT
-// when ORDER BY references columns not in the SELECT list, breaking
-// the "most recent first" ordering callers (MCP, TUI) depend on under
-// Pagination.Limit. The EXISTS form also matches the SQL guidance in
-// CLAUDE.md ("Never use SELECT DISTINCT with JOINs — use EXISTS").
+// Recipient and label predicates use EXISTS subqueries to avoid duplicating
+// messages through 1:N joins. This preserves the most-recent-first ordering
+// and limit without DISTINCT, matching the SQL guidance in AGENTS.md.
 func (e *SQLiteEngine) GetDeletionTargetsByFilter(ctx context.Context, filter MessageFilter) ([]DeletionTarget, error) {
 	var conditions []string
 	var args []any
@@ -1941,8 +1910,8 @@ func (e *SQLiteEngine) buildSearchQueryPartsWithVisibility(ctx context.Context, 
 		args = append(args, "%"+escapeSQLiteLike(label)+"%")
 	}
 
-	// Subject filter. Use the dialect's Unicode-aware fold on both sides so
-	// SQLite and PostgreSQL retain the same case-insensitive substring contract.
+	// Subject filters fold both sides for Unicode-aware, case-insensitive
+	// substring matching.
 	if len(q.SubjectTerms) > 0 {
 		for _, term := range q.SubjectTerms {
 			conditions = append(conditions, metadataContainsExpression(e.dialect, "m.subject"))
@@ -1977,9 +1946,8 @@ func (e *SQLiteEngine) buildSearchQueryPartsWithVisibility(ctx context.Context, 
 		conditions = append(conditions, e.dialect.BoolTrueExpr("m.has_attachments"))
 	}
 
-	// Date range filters use backend-native instant comparisons. PostgreSQL
-	// retains typed TIMESTAMPTZ comparisons; SQLite parses both operands so
-	// mixed UTC and offset-bearing DATETIME strings compare chronologically.
+	// Date range filters parse both operands so mixed UTC and offset-bearing
+	// SQLite DATETIME strings compare chronologically.
 	if q.AfterDate != nil {
 		conditions = append(conditions, e.dialect.DateComparison("m.sent_at", ">="))
 		args = append(args, e.dialect.DateParam(*q.AfterDate))
@@ -2009,9 +1977,7 @@ func (e *SQLiteEngine) buildSearchQueryPartsWithVisibility(ctx context.Context, 
 				args = append(args, arg)
 			}
 		} else {
-			// Fall back to LIKE-based search on subject/snippet only.
-			// LOWER both sides so PostgreSQL's case-sensitive LIKE
-			// returns the same hits as SQLite's ASCII-folded LIKE.
+			// Fall back to case-insensitive LIKE search on subject/snippet only.
 			for _, term := range q.TextTerms {
 				likeTerm := "%" + escapeSQLiteLike(term) + "%"
 				conditions = append(conditions,

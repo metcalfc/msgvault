@@ -313,7 +313,7 @@ func (ftsModuleMissingDialect) FTSLivenessSQL() string {
 	return `SELECT 1 FROM messages_fts_module_absent LIMIT 1`
 }
 
-// TestHasFTSTable_LivenessProbeFailureFallsBack pins pg-fts-sql-1: when the
+// TestHasFTSTable_LivenessProbeFailureFallsBack verifies that when the
 // messages_fts table is listed in sqlite_master but is not actually
 // queryable (fts5 module absent), hasFTSTable must return false so Search
 // falls back to LIKE instead of emitting a `no such module: fts5` error.

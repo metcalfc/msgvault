@@ -146,11 +146,8 @@ const sqliteSenderJoin = `LEFT JOIN message_recipients mr_from ON mr_from.id = (
 		)
 		LEFT JOIN participants p_sender ON p_sender.id = COALESCE(mr_from.participant_id, m.sender_id)`
 
-// rebindFunc converts a query written with ? placeholders into the
-// driver-native form. Helpers in this file accept it explicitly so the
-// PostgreSQL path (pgx/v5/stdlib needs $1, $2, …) and the SQLite/DuckDB
-// path (both accept ?) share a single implementation. Pass
-// noopRebind when the underlying driver accepts ? natively.
+// rebindFunc transforms queries written with ? placeholders. SQLite and
+// DuckDB accept them natively, so their callers pass noopRebind.
 type rebindFunc func(string) string
 
 // noopRebind passes the query through unchanged.

@@ -257,9 +257,9 @@ const (
 
 // analyticsCacheNotice asks the daemon which analytics engine currently
 // serves requests (GET /health, no cache scans or archive access). Deliberate
-// live SQL (engine = "sql", PostgreSQL) reports a different mode and stays
-// silent, as do daemons predating the field. Best-effort: errors return an
-// empty notice rather than blocking launch.
+// live SQL (engine = "sql") reports a different mode and stays silent, as do
+// daemons predating the field. Errors return an empty notice instead of
+// blocking launch.
 func analyticsCacheNotice(ctx context.Context, client *daemonclient.Client) string {
 	mode, err := currentAnalyticsMode(ctx, client)
 	if err != nil || mode != api.AnalyticsModeSQLFallback {

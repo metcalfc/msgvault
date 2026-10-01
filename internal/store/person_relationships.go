@@ -118,9 +118,8 @@ func (s *Store) AddPersonRelationshipContext(
 	if err != nil {
 		return nil, err
 	}
-	// Relationship writes bump both endpoints' projections and so lock two
-	// person rows; a concurrent person deletion or another edge write can
-	// take them in the other order on PostgreSQL. A deadlock victim retries.
+	// Relationship writes bump both endpoints' projections. Retry contention
+	// from a fresh transaction so all reads and projection updates stay atomic.
 	return retryContendedWrite(ctx, s, "add person relationship",
 		func() (*PersonRelationship, error) {
 			var created *PersonRelationship
@@ -634,8 +633,7 @@ type PersonRelationshipListOptions struct {
 // one row without DISTINCT. A self-edge would break that guarantee, which is
 // why the table forbids one structurally.
 //
-// Ordering is CASE-based rather than a bare boolean sort so SQLite's 0/1
-// integers and PostgreSQL's booleans produce the same sequence.
+// CASE expressions make the relationship ordering priorities explicit.
 func (s *Store) ListPersonRelationshipsContext(
 	ctx context.Context, personID int64, opts PersonRelationshipListOptions,
 ) ([]PersonRelationshipView, error) {

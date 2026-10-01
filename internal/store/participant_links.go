@@ -253,15 +253,8 @@ func (s *Store) bumpIdentityRevisionContext(
 // producing a cycle and breaking the forest invariant documented in
 // schema.sql. On SQLite the UPDATE forces the transaction to acquire the
 // RESERVED (write) lock immediately, so the edge read that follows is
-// serialized against other writers. On PostgreSQL the UPDATE takes a row
-// lock on the identity-revision row, so concurrent link/unlink
-// transactions queue on it.
+// serialized against other writers.
 //
-// ORDERING CONTRACT (PostgreSQL): any transaction that both writes a table
-// in exclusiveLockTables and touches the identity-revision row (this lock
-// or bumpIdentityRevision) must acquire the row BEFORE its first table
-// write. BeginExclusive takes the row and then LOCK TABLE over that list,
-// so the reverse order deadlocks against a serialized source removal.
 // Transactions with a cheap no-op fast path should check it read-only
 // first and take this lock only when they will actually write (see
 // SetParticipantIdentifier and the legacy identity migration).
@@ -714,7 +707,7 @@ func (s *Store) rejectAcceptedIdentityMatchesAcrossUnlinkTx(
 	}
 
 	// Scan accepted participant candidates without interpolating the component
-	// into an IN list: a large identity cluster can exceed SQLite or PostgreSQL
+	// into an IN list: a large identity cluster can exceed SQLite
 	// bind-parameter limits. The component and split checks below keep the
 	// result bounded to the original cluster in memory.
 	rows, err := tx.Query(`
@@ -850,10 +843,8 @@ func (s *Store) rewriteLinksForMerge(tx *loggedTx, loser, winner int64) error {
 }
 
 // rewriteLinksForMergeContext is the context-aware form of
-// rewriteLinksForMerge. The legacy phone-unique migration uses it: its merge
-// runs inside a maintenance transaction with the pool-wide statement_timeout
-// disabled, so on PostgreSQL nothing but ctx can cut short a statement here
-// that is waiting on a conflicting lock.
+// rewriteLinksForMerge. The legacy phone-unique migration uses it so a
+// cancelled maintenance transaction can stop its link rewrites.
 func (s *Store) rewriteLinksForMergeContext(
 	ctx context.Context, tx *loggedTx, loser, winner int64,
 ) error {

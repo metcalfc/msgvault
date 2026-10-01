@@ -270,7 +270,6 @@ func (s *Store) personNetworkLayerSourcesQuery(
 	// CROSS JOIN pins the frontier as the outer loop on SQLite, so each
 	// frontier node probes its adjacency index instead of the planner
 	// scanning every edge and filtering by the small frontier set.
-	// PostgreSQL treats CROSS JOIN plus WHERE as an ordinary inner join.
 	branches := make([]string, 0, 4)
 	if len(people) > 0 {
 		addCTE("frontier_people", people)

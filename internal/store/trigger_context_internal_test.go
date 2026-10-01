@@ -10,8 +10,8 @@ import (
 )
 
 // cancelDuringTriggersDialect cancels the initialisation the moment trigger
-// replacement begins, then delegates. It wraps whatever dialect the store was
-// built with, so it changes when the cancellation lands and nothing else.
+// replacement begins, then delegates to the SQLite dialect. It changes only
+// when cancellation lands.
 type cancelDuringTriggersDialect struct {
 	Dialect
 
@@ -23,23 +23,9 @@ func (d cancelDuringTriggersDialect) EnsureTriggers(q querier) error {
 	return d.Dialect.EnsureTriggers(q)
 }
 
-// TestInitSchema_TriggerReplacementStopsWhenTheContextIsCancelled is the second
-// half of the operator's exit from a long upgrade.
-//
-// Trigger replacement runs under runMaintenance, which disables the pool-wide
-// statement_timeout first, and it DROPs and CREATEs triggers on `messages`. On
-// PostgreSQL those statements queue behind any conflicting lock on the table —
-// an import's, say — with no timeout left to cut them off. Handed the raw
-// transaction, whose Exec and QueryRow bottom out in context.Background(), they
-// ignore SIGINT and SIGTERM for as long as that lock is held, and the operator's
-// only remaining move is SIGKILL on a process in the middle of writing.
-//
-// The existing backfill cancellation test cannot catch this: it cancels at a
-// batch boundary, which is a later step and a different querier.
-//
-// The wiring under test is dialect-independent — it is which querier the call
-// site hands the dialect — so this runs on SQLite, where a store can be opened
-// without the package's external test helpers.
+// TestInitSchema_TriggerReplacementStopsWhenTheContextIsCancelled verifies
+// that trigger replacement uses the migration context for its DDL. Backfill
+// cancellation tests run later and cannot detect a context-free trigger querier.
 func TestInitSchema_TriggerReplacementStopsWhenTheContextIsCancelled(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

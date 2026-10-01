@@ -484,7 +484,7 @@ func (s *Store) MessageExistsBatchContext(ctx context.Context, sourceID int64, s
 // MessageSourceIDsInSnowflakeInterval returns canonical decimal source IDs in
 // the exact numeric interval (lower, upper] for one source and conversation.
 // Snowflakes are compared as decimal strings so values above signed int64 are
-// ordered correctly on both SQLite and PostgreSQL.
+// ordered correctly without signed integer conversion.
 func (s *Store) MessageSourceIDsInSnowflakeInterval(
 	sourceID, conversationID int64, lower, upper string,
 ) ([]string, error) {
@@ -776,15 +776,12 @@ func (s *Store) listUnresolvedMessageReplies(
 	return unresolved, nil
 }
 
-// SetMessageMetadata writes the messages.metadata JSON/JSONB column for an
-// already-persisted message. The column exists in both dialects (schema.sql:
-// `metadata JSON`, schema_pg.sql: `metadata JSONB`) but the hot upsertMessageSQL
-// path never writes it, so non-email importers that need structured per-message
-// metadata (e.g. calendar events: end/all_day/status/recurrence) call this
-// immediately after UpsertMessage returns the id. Passing an invalid
-// sql.NullString writes SQL NULL, clearing the column. The dialect supplies the
-// JSONB cast on PG (?::JSONB) and a bare ? on SQLite, so a JSON string binds in
-// both backends.
+// SetMessageMetadata writes the messages.metadata JSON column for an
+// already-persisted message. The hot upsertMessageSQL path never writes it,
+// so importers that need structured per-message metadata (e.g. calendar event
+// end/all_day/status/recurrence fields) call this after UpsertMessage returns
+// the id. Passing an invalid sql.NullString writes SQL NULL, clearing the
+// column.
 func (s *Store) SetMessageMetadata(messageID int64, metadata sql.NullString) error {
 	return s.SetMessageMetadataContext(context.Background(), messageID, metadata)
 }
@@ -2173,13 +2170,10 @@ type Participant struct {
 	Domain       sql.NullString
 }
 
-// EnsureParticipant gets or creates a participant by email. Atomic via
-// INSERT … ON CONFLICT … DO NOTHING followed by an in-transaction lookup,
-// so two goroutines (or two processes against PostgreSQL) cannot race
-// between a SELECT-empty and the follow-up INSERT and both succeed — one
-// would otherwise lose to the unique constraint on (email_address) with a
-// 23505 error. Display name and domain are left untouched on conflict to
-// preserve any hand-edited values.
+// EnsureParticipant gets or creates a participant by email. INSERT ... ON
+// CONFLICT ... DO NOTHING followed by an in-transaction lookup lets concurrent
+// callers converge on the same row without a unique-constraint error. Display
+// name and domain are left untouched on conflict to preserve hand-edited values.
 func (s *Store) EnsureParticipant(email, displayName, domain string) (int64, error) {
 	return s.EnsureParticipantContext(context.Background(), email, displayName, domain)
 }
@@ -2222,8 +2216,8 @@ func ensureParticipantWith(
 ) (int64, error) {
 	displayName = textutil.StripLabelEmoji(displayName)
 	// ON CONFLICT must mirror the partial unique index on
-	// participants(email_address) WHERE email_address IS NOT NULL — both
-	// PG and SQLite require the WHERE clause on the conflict target to
+	// participants(email_address) WHERE email_address IS NOT NULL. SQLite
+	// requires the WHERE clause on the conflict target to
 	// match the partial index exactly. INSERT ... DO NOTHING lets us use
 	// RowsAffected to distinguish an actual insert from an idempotent retry.
 	for range 3 {
@@ -2256,10 +2250,7 @@ func ensureParticipantWith(
 		if !errors.Is(err, sql.ErrNoRows) {
 			return 0, err
 		}
-		// PostgreSQL does not retain a row lock after ON CONFLICT DO NOTHING.
-		// A concurrent participant merge can therefore delete the conflicting
-		// row before the SELECT. Retry so the ensure recreates the row instead
-		// of leaking that transient gap to callers.
+		// Retry if the expected participant row is absent after the insert.
 	}
 	return 0, fmt.Errorf("ensure participant %q after concurrent deletion", email)
 }
@@ -2599,10 +2590,9 @@ func mergeLabelByName(
 	if err != nil {
 		return fmt.Errorf("find conflicting label: %w", err)
 	}
-	// Drop associations that would conflict after reassignment (message
-	// already linked to keepID). This is the portable equivalent of
-	// SQLite's UPDATE OR IGNORE — done explicitly so PostgreSQL works the
-	// same way.
+	// Drop associations that would conflict after reassignment because the
+	// message is already linked to keepID. The remaining rows can then move
+	// without violating the association key.
 	if _, err = q.Exec(`
 		DELETE FROM message_labels
 		WHERE label_id = ?
@@ -3346,7 +3336,7 @@ func (s *Store) GetRandomMessageIDs(sourceID int64, limit int) ([]int64, error) 
 
 	// For large tables, use random offset sampling
 	// This is O(limit) instead of O(n) for ORDER BY RANDOM()
-	// Generate random offsets in Go for dialect portability (SQLite vs Postgres)
+	// Generate random offsets in Go for the sampled message lookups.
 	// Use explicitly seeded RNG for true randomness across process runs.
 	// math/rand is fine — this picks rows for sampling, not authentication.
 	rng := rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec // sampling RNG, not security
@@ -3355,7 +3345,7 @@ func (s *Store) GetRandomMessageIDs(sourceID int64, limit int) ([]int64, error) 
 	seen := make(map[int64]bool)
 
 	for len(ids) < limit {
-		// Generate random offset in Go (portable across SQLite/Postgres)
+		// Generate a random offset for this sample.
 		offset := rng.Int63n(total)
 
 		var id int64
@@ -3444,9 +3434,7 @@ func (s *Store) BackfillFTSContext(
 		return 0, nil
 	}
 
-	// runMaintenance disables the pool-wide 30s statement_timeout for the
-	// clear: FTSClearSQL is a full-table tsvector rewrite that exceeds 30s on
-	// a large archive (finding S1). No-op timeout reset on SQLite.
+	// Clear the FTS table inside a maintenance transaction before backfilling.
 	if err := s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
 		_, err := tx.ExecContext(ctx, s.dialect.FTSClearSQL())
 		return err
@@ -3474,13 +3462,7 @@ func (s *Store) RebuildFTSContext(
 	ctx context.Context,
 	progress func(done, total int64),
 ) (int64, error) {
-	// runMaintenance disables the pool-wide 30s statement_timeout for the
-	// schema teardown/rebuild. On PG, FTSRebuildSchema runs a full-table
-	// `UPDATE messages SET search_fts = NULL` (identical cost to the hatched
-	// FTSClearSQL) plus a GIN rebuild over a populated table — both can exceed
-	// 30s on a large archive and would cancel the rebuild-fts recovery command
-	// with SQLSTATE 57014 (finding S1). On SQLite the reset SQL is "" so this
-	// is an ordinary transaction around the DROP/CREATE of messages_fts.
+	// Drop and recreate messages_fts in one maintenance transaction.
 	if err := s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
 		return s.dialect.FTSRebuildSchema(ctx, tx)
 	}); err != nil {
@@ -3986,7 +3968,7 @@ func (s *Store) EnsureParticipantByPhone(phone, displayName, identifierType stri
 
 	// The conflict target mirrors the partial unique index on
 	// participants(phone_number) WHERE phone_number IS NOT NULL exactly,
-	// which is required by both PG and SQLite for partial-index ON CONFLICT
+	// which SQLite requires for partial-index ON CONFLICT
 	// to bind. INSERT ... DO NOTHING lets the actual insert be distinguished
 	// from an existing participant; a guarded UPDATE then reports whether an
 	// existing blank display name was really filled.
@@ -5454,8 +5436,8 @@ func (s *Store) IsAttachmentPathReferenced(storagePath string) (bool, error) {
 // occurrence provenance. It fails closed to role unknown/legacy_api and keeps
 // the legacy best-effort content-hash identity. New and source-aware writers
 // use UpsertAttachmentRecord. `size` is widened to int64 at the bind boundary
-// so 32-bit builds cannot truncate large attachments before the column (BIGINT
-// on PG, INTEGER on SQLite).
+// so 32-bit builds cannot truncate large attachments before the SQLite INTEGER
+// column receives the value.
 //
 // When contentHash is empty (the rare untyped-blob path used by some
 // importers), the unique index does not cover the row; a best-effort

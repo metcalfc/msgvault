@@ -492,8 +492,7 @@ func TestDocumentStatusHTTPCorruptDurableScopeRemainsRetryableAndPrivate(t *test
 		RetentionPosture: profile.RetentionPosture, TrainingPosture: profile.TrainingPosture,
 	}))
 	const corruptScopeRecord = "corrupt-current-scope-record"
-	// Valid JSON with the wrong shape exercises scope decoding on both the
-	// SQLite text column and PostgreSQL JSONB column.
+	// Valid JSON with the wrong shape exercises scope decoding of the stored text.
 	_, err = fixture.Store.DB().ExecContext(t.Context(), fixture.Store.Rebind(
 		`UPDATE document_extraction_profiles SET allowed_media_types = ? WHERE id = ?`,
 	), `{"media_type":"`+corruptScopeRecord+`"}`, profile.ID)

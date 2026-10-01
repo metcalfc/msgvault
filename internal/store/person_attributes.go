@@ -536,10 +536,8 @@ func (s *Store) supersedePersonAttributeValueOnce(
 	return write, nil
 }
 
-// lockPersonFactAttributeTx joins attribute writes to the same
-// generation-then-target lock order used by automatic fact resolution. The
-// initial definition lookup is intentionally unlocked: taking its row lock
-// before these advisory locks would invert the automatic resolver's order.
+// lockPersonFactAttributeTx reserves the writer slot and follows the same
+// generation-then-target ordering as automatic fact resolution.
 func (s *Store) lockPersonFactAttributeTx(
 	ctx context.Context, tx *loggedTx, personID int64, definitionSlug string,
 ) error {

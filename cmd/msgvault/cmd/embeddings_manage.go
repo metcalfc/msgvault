@@ -104,7 +104,7 @@ func fillFullCoverage(ctx context.Context, backend vector.Backend, scope vector.
 // upgraded SQLite archive (whose messages table predates the embed_gen
 // column) gets the column added before any management command reads
 // embed_gen via CoverageCounts. Mirrors the serve.go / runEmbed pattern.
-// Cheap and idempotent on an already-current schema; harmless on PG.
+// Cheap and idempotent on an already-current schema.
 func ensureMainSchema(state *invocation) error {
 	state = invocationState(context.Background(), state)
 	if state == nil || state.cfg == nil {
@@ -322,16 +322,12 @@ func runEmbeddingsRetire(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Route the state transition through the vector backend so the
-	// delete-on-retire invariant lives in one place (pgvector deletes the
-	// retired generation's embeddings; sqlitevec retains them). The
-	// active-gen preflight above is a friendly fast-fail, but the backend's
-	// RetireGeneration enforces the same guard ATOMICALLY inside the retire
-	// transaction: when force is false it refuses to retire a generation that
-	// is state='active' (returning vector.ErrRefuseRetireActive) WITHOUT
-	// deleting embeddings — so a concurrent activation between the preflight
-	// read and this call cannot delete the now-serving generation's
-	// embeddings. We pass --force-active as force to bypass the gate.
+	// Route the state transition through the vector backend. The active-gen
+	// preflight above gives a friendly fast-fail; RetireGeneration enforces
+	// the same guard atomically inside its transaction. Without force it
+	// returns ErrRefuseRetireActive, so a concurrent activation cannot retire
+	// the now-serving generation. sqlitevec retains retired embeddings,
+	// isolated by generation.
 	backend, closeBackend, err := openEmbeddingsBackend(cmd.Context())
 	if err != nil {
 		return err
@@ -441,14 +437,12 @@ func runEmbeddingsActivate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Route through the vector backend so the auto-retire of the previously
-	// active generation deletes its embeddings on PG (the same delete-on-retire
-	// invariant as the retire path). The backend's ActivateGeneration requires
-	// the target to be in 'building' state, enforces the coverage (no-missing)
-	// gate ATOMICALLY with the state flip (unless force), and auto-retires the
-	// prior active generation in one transaction. The fingerprint check above
-	// is the only gate the backend cannot make (it does not know the config
-	// fingerprint); the coverage gate is owned by the backend.
+	// Route activation through the backend. It requires a building target,
+	// checks coverage unless forced, and atomically promotes it while
+	// retiring the previous active generation. The SQLite coverage check
+	// reads the main database before the vectors.db state transaction.
+	// The fingerprint check above stays here because the backend does not
+	// know the configured fingerprint.
 	backend, closeBackend, err := openEmbeddingsBackend(cmd.Context())
 	if err != nil {
 		return err
@@ -680,12 +674,8 @@ func remainingCoverageHint(gen vector.GenerationID, remaining int64) string {
 // metadata and returns a handle, a rebind function for SQL placeholders, a
 // close callback, and any error.
 //
-// On PostgreSQL deployments the embedding tables live in the main Postgres
-// database alongside messages — there is no separate vectors.db. On SQLite
-// deployments the metadata lives in vectors.db as before.
-//
-// rebind converts ? placeholders to $1, $2, … for PostgreSQL; it is the
-// identity function for SQLite so all query helpers can use it unconditionally.
+// Embedding generation metadata lives in the separate SQLite vectors.db.
+// The rebind callback is the identity function for its ? placeholders.
 func openEmbeddingsMetadataDB(ctx context.Context) (*sql.DB, func(string) string, func(), error) {
 	state := invocationFromContext(ctx)
 	if state == nil || state.cfg == nil {
@@ -711,16 +701,13 @@ func openEmbeddingsMetadataDB(ctx context.Context) (*sql.DB, func(string) string
 	return db, rebind, func() { _ = db.Close() }, nil
 }
 
-// openEmbeddingsBackend constructs the vector backend for the active dialect,
-// mirroring how embed_vector.go builds it. The CLI retire/activate commands
-// route their state transitions through the backend so a SINGLE implementation
-// owns the delete-on-retire invariant (pgvector deletes a retired generation's
-// embeddings so the shared HNSW graph stays generation-clean; sqlitevec retains
-// them because its vec0 PARTITION KEY isolates retired rows). Raw-SQL helpers
-// that only flip index_generations.state would bypass that invariant on PG.
+// openEmbeddingsBackend constructs the SQLite vector backend, mirroring
+// embed_vector.go. The CLI retire/activate commands use its transactional
+// guards for generation state changes. Retired rows remain isolated by
+// vec0's generation partition key.
 //
-// Returns the backend and a close callback. On a build without the relevant
-// vector tag the package stubs' Open returns ErrNotBuilt.
+// Returns the backend and a close callback. Without sqlite_vec, the package
+// stub's Open returns ErrNotBuilt.
 func openEmbeddingsBackend(ctx context.Context) (vector.Backend, func(), error) {
 	state := invocationFromContext(ctx)
 	if state == nil || state.cfg == nil {

@@ -11,10 +11,9 @@ import (
 
 // acquireDirectSQLiteWriteLock claims the cross-process write-owner lock on
 // behalf of a direct (non-daemon) CLI writer using the local SQLite archive.
-// PostgreSQL deployments do not use this local filesystem lock. On success it
-// returns a release func that the caller must defer. When the SQLite archive is
-// already owned it returns an actionable error instead of silently contending on
-// the database file.
+// On success it returns a release func that the caller must defer. When the
+// archive is already owned it returns an actionable error instead of silently
+// contending on the database file.
 //
 // The lock is taken non-blocking, so there is no context parameter: a writer
 // either claims the free SQLite archive immediately or is told who holds it.
@@ -62,9 +61,8 @@ func archiveOwnedError(dataDir string) error {
 
 // directSQLiteWriterOwnsArchive reports whether a direct CLI writer currently
 // owns the local SQLite archive: the write-owner lock is held while no daemon
-// advertises a runtime record. PostgreSQL deployments do not use this lock. A
-// live daemon legitimately owns the lock, so its presence means this is not a
-// direct-writer situation.
+// advertises a runtime record. A live daemon legitimately owns the lock, so
+// its presence means this is not a direct-writer situation.
 func directSQLiteWriterOwnsArchive(cfg *config.Config) (bool, error) {
 	if cfg == nil {
 		return false, nil

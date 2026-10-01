@@ -307,10 +307,9 @@ func (s *Store) DeletePersonWithEnrichmentSuppressionsContext(
 		}
 	}
 	input.CurrentIdentifiers = validated
-	// The deletion locks this person and then, through the counterpart bump,
-	// everyone they share an edge with; relationship writes bump the same
-	// rows in a different order. On PostgreSQL the two can deadlock, so a
-	// deadlock victim starts over from a clean transaction.
+	// The deletion also bumps relationship counterparts' projections. Retry
+	// contention from a fresh transaction so deletion and projection changes
+	// remain atomic.
 	return retryContendedWriteErr(ctx, s, "delete person", func() error {
 		return s.deletePersonOnce(ctx, input)
 	})
@@ -585,10 +584,8 @@ func (s *Store) UpdatePersonDisplayNameContext(
 	ctx context.Context, id, expectedRevision int64, displayName *string,
 ) (*Person, error) {
 	displayName = normalizePersonDisplayName(displayName)
-	// The rename locks the identity row, this person, and then every
-	// relationship counterpart; relationship writes lock the same person
-	// rows in their own order. On PostgreSQL the two can deadlock, so a
-	// deadlock victim starts over from a clean transaction.
+	// The rename updates identity and relationship-counterpart projections.
+	// Retry contention from a fresh transaction so all changes remain atomic.
 	return retryContendedWrite(ctx, s, "update person display name",
 		func() (*Person, error) {
 			return s.updatePersonDisplayNameOnce(ctx, id, expectedRevision, displayName)

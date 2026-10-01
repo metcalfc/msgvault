@@ -22,9 +22,8 @@ const managedDraftRetainedMessageSQL = `EXISTS (
 		   OR draft_owner.pending_original_message_id = messages.id
 	)`
 
-// ErrGCUnsupported is returned before mutation when archive GC is requested
-// against PostgreSQL. PostgreSQL retention and compaction require an
-// operator-managed backup and VACUUM policy outside this SQLite command.
+// ErrGCUnsupported is a legacy compatibility sentinel. The SQLite-only
+// implementation does not return it.
 var ErrGCUnsupported = errors.New("msgvault gc is SQLite-only")
 
 // GCPlan records both the destructive target and the adjacent population that

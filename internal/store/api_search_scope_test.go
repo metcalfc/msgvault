@@ -14,7 +14,7 @@ import (
 // restricts search results to the given source IDs. The HTTP search
 // endpoints resolve an account/collection to source IDs and set this field;
 // before the fix searchMessagesQueryImpl never referenced it, so every
-// account returned byte-identical results. Runs under SQLite and PostgreSQL.
+// account returned byte-identical results.
 func TestSearchMessagesQuery_AccountScoping(t *testing.T) {
 	require := require.New(t)
 	f := storetest.New(t)
@@ -89,7 +89,7 @@ func TestSearchMessagesQuery_AccountScoping(t *testing.T) {
 // deletion. The FTS index keeps entries for source-deleted messages (soft
 // deletion only stamps deleted_from_source_at), so scope=deleted must return
 // them and scope=any must return everything; the zero value keeps the
-// historical active-only behavior. Runs under SQLite and PostgreSQL.
+// historical active-only behavior.
 func TestSearchMessagesQuery_DeletionScope(t *testing.T) {
 	require := require.New(t)
 	f := storetest.New(t)

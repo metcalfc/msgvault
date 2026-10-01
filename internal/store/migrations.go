@@ -59,7 +59,7 @@ const (
 	// v4: source deletion/reimport, scope unlink/relink, and identity
 	// reassignment publish lane-exact document_text changes with the serving
 	// occurrence's attachment and occurrence coordinates. Archives that ran v3
-	// must reinstall both backend trigger sets so document evidence lifecycle
+	// must reinstall the trigger set so document evidence lifecycle
 	// changes can match the canonical document lane instead of only the owning
 	// conversation_text or meeting_text row.
 	migrationPersonSweepChangeTriggers   = "person_sweep_change_triggers_v5"
@@ -71,7 +71,7 @@ const (
 	// v3: the SQLite conversation trigger narrowed from a blanket
 	// AFTER UPDATE to conversation_type changes only; archives that
 	// installed the blanket trigger need the repair to re-run.
-	// v4: the messages trigger narrowed on both backends to
+	// v4: the messages trigger narrowed to
 	// MessagesActivityColumns with a value-change guard, so embedding and
 	// FTS bookkeeping sweeps no longer requeue the archive.
 	migrationActivityProjectionTriggers = "activity_projection_triggers_v4"

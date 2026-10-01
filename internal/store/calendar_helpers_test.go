@@ -12,10 +12,8 @@ import (
 	"go.kenn.io/msgvault/internal/testutil/storetest"
 )
 
-// TestSetMessageMetadata_RoundTrip proves the new metadata write path persists
-// JSON to the messages.metadata column (JSON on SQLite, JSONB on PG) and reads
-// back semantically intact. Runs under both dialects (make test-pg) so the
-// JSONBindExpr cast is exercised on Postgres.
+// TestSetMessageMetadata_RoundTrip verifies that the production metadata
+// write preserves JSON values when read back from the messages table.
 func TestSetMessageMetadata_RoundTrip(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -32,8 +30,7 @@ func TestSetMessageMetadata_RoundTrip(t *testing.T) {
 	require.NoError(err)
 	require.True(got.Valid, "metadata should be non-NULL after write")
 
-	// Compare semantically: PG JSONB normalizes whitespace/key order, so a raw
-	// string compare would be brittle across dialects.
+	// Compare JSON values rather than whitespace or key order.
 	var parsed map[string]any
 	require.NoError(json.Unmarshal([]byte(got.String), &parsed))
 	assert.Equal("confirmed", parsed["status"])

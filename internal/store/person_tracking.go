@@ -147,9 +147,8 @@ func (s *Store) setPersonTrackingTx(
 			}
 		}
 	} else {
-		// Delete enrollment first. PostgreSQL publishers hold a key-share
-		// lock on this row through their work upsert, so tracking-off waits
-		// for that publication and then removes any row it committed.
+		// Delete enrollment and pending work in the same writer transaction, so
+		// tracking-off cannot leave work published under the removed enrollment.
 		if _, err = tx.ExecContext(ctx,
 			`DELETE FROM person_tracking WHERE person_id = ?`, personID); err == nil {
 			_, err = tx.ExecContext(ctx,

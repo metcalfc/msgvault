@@ -236,8 +236,8 @@ var (
 	ErrRelationshipTypeSymmetricLabels     = errors.New("a symmetric relationship type requires identical forward and reverse labels")
 )
 
-// maxRelationshipTypeSlugBytes bounds the immutable machine slug. It is well
-// under PostgreSQL's btree key limit and long enough for any real label.
+// maxRelationshipTypeSlugBytes bounds the immutable machine slug while
+// allowing descriptive relationship labels.
 const maxRelationshipTypeSlugBytes = 64
 
 // maxRelationshipTypeLabelBytes bounds mutable presentation strings so a

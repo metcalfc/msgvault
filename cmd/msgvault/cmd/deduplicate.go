@@ -1063,11 +1063,7 @@ func randomBatchToken() string {
 // main/-wal/-shm triple, this is atomic and handles uncheckpointed WAL
 // pages without any external coordination.
 //
-// PostgreSQL has no in-engine VACUUM INTO equivalent — backups go
-// through pg_dump / pg_basebackup / replication, all of which require
-// server-side access and credentials this CLI does not own. Refuse
-// with a pointer to --no-backup so the user can make an informed
-// choice (run pg_dump out-of-band, or skip the safety net).
+// The Store performs the backup against the open SQLite archive.
 func backupDatabase(st *store.Store, dst string) error {
 	return st.BackupDatabase(dst)
 }

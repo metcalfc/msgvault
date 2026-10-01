@@ -96,10 +96,9 @@ const sqliteCheckpointBusyTimeout = time.Second
 
 // ReadWatermarkBounds implements Dialect.
 //
-// SQLite has no pg_stat_activity: nothing exposes when another connection's
-// write transaction began, or whether one is open at all. What it has instead
-// is a single writer. Acquiring the write lock is therefore a proof rather than
-// an observation — while this probe holds it, no other write transaction
+// SQLite does not expose when another connection's write transaction began.
+// It permits only one writer. Acquiring the write lock is therefore a proof
+// rather than an observation — while this probe holds it, no other write transaction
 // exists, so every content_changed_at stamp in the database has committed. The
 // clock read inside that lock is a valid commit bound:
 //
@@ -120,7 +119,7 @@ const sqliteCheckpointBusyTimeout = time.Second
 // in flight: probes run only when something reads the bound, so a writer that
 // started a moment ago inherits the whole gap since the last quiet reading. It
 // is an upper bound on the writer's age, which is the safe direction, but it is
-// not a measurement of it — unlike PostgreSQL's, which reads xact_start.
+// not a measurement of it.
 //
 // A fresh dialect that has never completed a probe reports the zero time, so
 // the feed publishes nothing until it first sees the database idle. That is the
@@ -360,8 +359,7 @@ func (d *SQLiteDialect) JSONIsDistinctExpr(col string) string { return col + " I
 // tokenizer (no Unicode letter or digit — e.g. "!!!", "---", "") are
 // dropped. If all terms drop, returns "" so the caller can
 // short-circuit instead of dispatching a malformed FTS5 MATCH that
-// errors at the driver. Mirrors the empty-fallback shape in
-// PostgreSQLDialect.BuildFTSArg.
+// errors at the driver.
 func (d *SQLiteDialect) BuildFTSArg(terms []string) string {
 	quoted := make([]string, 0, len(terms))
 	for _, t := range terms {
@@ -409,30 +407,19 @@ func (d *SQLiteDialect) FTSUpsert(q querier, doc FTSDoc) error {
 
 // FTSSearchClause returns SQL fragments for FTS5 full-text search.
 //
-// The bm25 weights approximate PostgreSQL's setweight field-priority
-// preferences (subject heaviest, then sender, then body / other
-// recipients) for typical email shapes. PostgreSQL assigns recipients
-// weight C and body weight D so body-only search can distinguish them,
-// then supplies explicit rank weights that keep C and D equivalent. This is a
-// best-effort SQLite tuning, NOT a strict cross-backend parity guarantee.
+// The bm25 weights prioritize subject hits, then sender hits, then body and
+// recipient hits, with respective weights of 10, 4, and 1.
 //
 // Weights are positional over every column declared in messages_fts —
 // UNINDEXED columns count too even though they cannot match — so the
 // leading 1.0 is the placeholder for `message_id UNINDEXED`. The
 // remaining slots map to (subject, body, from_addr, to_addr, cc_addr).
-// PostgreSQL applies setweight 'A'=1.0 to subject and 'B'=0.4 to sender,
-// with explicit C/D rank weights of 0.1 for recipients/body — a 10:4:1 ratio,
-// which bm25 reproduces as 10/1/4/1/1 across (subject, body, from, to,
-// cc). bm25 returns lower (more negative) scores for more relevant rows,
-// so callers ORDER BY this expression ascending (the default).
+// Their weights are 10/1/4/1/1. bm25 returns lower (more negative) scores for
+// more relevant rows, so callers ORDER BY this expression ascending (the default).
 //
-// Known divergence: SQLite's bm25() applies Okapi BM25 document-length
-// normalization while PostgreSQL's default ts_rank() does not, so very
-// long subject-hit documents can still rank below short body-hit
-// documents on SQLite while PG ranks them subject-first. See the
-// docs-site search ranking page ("Where Ordering Can Diverge") and
-// TestFTSRank_KnownDivergence for the expected-behavior pin and
-// rationale.
+// SQLite's bm25() also applies document-length normalization, so a very long
+// document with a subject hit can rank below a short document with a body hit.
+// See docs/architecture/search-ranking.md for the ranking model.
 func (d *SQLiteDialect) FTSSearchClause() (join, where, orderBy string, orderArgCount int) {
 	return "JOIN messages_fts ON messages_fts.rowid = m.id",
 		"messages_fts MATCH ?",
@@ -587,9 +574,9 @@ func (d *SQLiteDialect) ValidateMessageWatermarks(q querier) error {
 // no trigger of ours can re-enter them.
 //
 // content_changed_at's triggers are built here because their column list comes
-// from MessagesContentColumns, shared with the PostgreSQL dialect so the two
-// backends cannot drift, and because DROP + CREATE can replace a definition on
-// an existing archive where CREATE TRIGGER IF NOT EXISTS silently would not.
+// from MessagesContentColumns, the shared content-change policy, and because
+// DROP + CREATE can replace a definition on an existing archive where
+// CREATE TRIGGER IF NOT EXISTS silently would not.
 // The same DROP + CREATE is what lets the re-scoped last_modified trigger reach
 // an archive that already carries schema.sql's older, blanket definition.
 func (d *SQLiteDialect) EnsureTriggers(q querier) error {
@@ -1726,9 +1713,9 @@ func dropPersonSweepSQLiteTriggers(q querier) error {
 // before the conversation_type ADD COLUMN migration has run.
 //
 // The messages trigger is built here rather than in schema.sql because its
-// column list comes from MessagesActivityColumns, shared with the PostgreSQL
-// dialect so the two backends cannot drift, and because DROP + CREATE replaces
-// the blanket definition an earlier build left on an existing archive where
+// column list comes from MessagesActivityColumns, the shared activity-change
+// policy, and because DROP + CREATE replaces the blanket definition an earlier
+// build left on an existing archive where
 // CREATE TRIGGER IF NOT EXISTS silently would not. The recipient triggers are
 // repaired here in addition to their fresh-schema bootstrap definitions
 // because the legacy envelope migration rebuilds their table and must restore
@@ -1822,12 +1809,10 @@ func (d *SQLiteDialect) EnsureActivityProjectionTriggers(q querier) error {
 // silently disarms ApplyMessageDateRepairs, whose CAS compares against exactly
 // that written token. `UPDATE OF` matches on the columns a statement NAMES, so
 // excluding content_changed_at excludes the stamp and nothing else.
-// PostgreSQL needs none of this: it stamps in a BEFORE trigger, in place.
 //
 // Read from the live table rather than MessagesContentColumns +
-// MessagesNonContentColumns so it cannot drift from the real schema and so
-// PostgreSQL-only columns (search_fts) are naturally absent. EnsureTriggers
-// runs after LegacyColumnMigrations, so every column already exists.
+// MessagesNonContentColumns so it cannot drift from the real schema.
+// EnsureTriggers runs after LegacyColumnMigrations, so every column already exists.
 //
 // The names are read as SEPARATE VALUES and quoted individually, because they
 // are interpolated into DDL and the ARCHIVE supplies them: SQLite accepts any
@@ -2255,8 +2240,6 @@ func (d *SQLiteDialect) IsBusyError(err error) bool {
 	return false
 }
 
-// IsSerializationFailureError always returns false for SQLite. Only one write
-// transaction runs at a time, so a locked row can never have been changed and
-// committed by another transaction while this one held its snapshot — the
-// condition PostgreSQL reports as SQLSTATE 40001 does not arise.
+// IsSerializationFailureError always returns false for SQLite. Snapshot upgrade
+// conflicts are reported as busy errors and recognized by IsBusyError.
 func (d *SQLiteDialect) IsSerializationFailureError(err error) bool { return false }

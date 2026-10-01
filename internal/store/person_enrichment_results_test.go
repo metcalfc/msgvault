@@ -1059,16 +1059,9 @@ func TestPersonEnrichmentResultMetadataStructsDoNotExposeSecretsOrRawIdentifiers
 	}
 }
 
-// TestPersonEnrichmentResultCommitAndLeaseRenewalDoNotDeadlock pins the lock
-// order between a result commit and the worker's concurrent lease renewal.
-// The commit is held after it has locked the attempt row, and a renewal for the
-// same attempt is started against it. Before the work row was locked ahead of
-// the attempt row here, the renewal took the work row and then waited on the
-// attempt row while the released commit waited on the work row, and PostgreSQL
-// aborted one side with "deadlock detected". With the shared order the renewal
-// simply waits for the commit; it then either renews or, because the commit
-// settled the work row, reports a stale lease. Either is fine; a deadlock is
-// not.
+// TestPersonEnrichmentResultCommitAndLeaseRenewalDoNotDeadlock holds a result
+// commit while renewal starts for the same attempt. Renewal must wait for the
+// commit and then either succeed or report a stale lease, without deadlocking.
 func TestPersonEnrichmentResultCommitAndLeaseRenewalDoNotDeadlock(t *testing.T) {
 	checks := assert.New(t)
 	requirements := require.New(t)

@@ -30,11 +30,8 @@ import (
 // derive from the query string (e.g. a SourceID coming from an HTTP
 // account parameter) — just set them on the returned Filter.
 //
-// rebind converts the ? placeholders in the participant/label lookup
-// SQL to the driver's native form. Pass the dialect's Rebind on
-// PostgreSQL (so ? becomes $N — pgx rejects bare ?); pass nil (or
-// SQLiteDialect.Rebind, which is identity) on SQLite to leave the
-// queries unchanged.
+// rebind transforms the participant/label lookup queries. Pass nil or
+// SQLiteDialect.Rebind to preserve their native ? placeholders.
 func BuildFilter(ctx context.Context, db *sql.DB, rebind func(string) string, q *search.Query) (vector.Filter, error) {
 	var f vector.Filter
 	if q == nil {

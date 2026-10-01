@@ -278,7 +278,7 @@ type ChunkHit struct {
 }
 
 // ChunkScoringBackend scores every embedded chunk of a message against a
-// query vector. sqlitevec and pgvector backends implement this.
+// query vector. The sqlitevec backend implements this capability.
 type ChunkScoringBackend interface {
 	Backend
 	ScoreMessageChunks(ctx context.Context, gen GenerationID, messageID int64, queryVec []float32) ([]ChunkHit, error)
@@ -322,30 +322,20 @@ type Backend interface {
 	// of silently mixing inconsistently-prepared vectors.
 	CreateGeneration(ctx context.Context, model string, dimension int, fingerprint string) (GenerationID, error)
 
-	// ActivateGeneration atomically retires the current active generation
-	// (if any, deleting its embeddings on backends that share an index
-	// graph) and promotes gen to active. The promotion enforces that gen is
-	// in state='building' and — unless force is true — that gen has full
-	// coverage (no live message still needs embedding for it, i.e.
-	// missing==0). On PG the coverage gate is folded into the same
-	// transaction as the state flip; on SQLite (cross-DB) it is a Go
-	// pre-check before the flip, with the full-scan backstop covering the
-	// TOCTOU window. force bypasses the coverage gate (operator `--force`).
-	// On a gate failure the backend returns a precise error distinguishing
-	// missing-coverage vs not-building.
+	// ActivateGeneration atomically retires the current active generation,
+	// if any, and promotes gen from building to active. Unless force is true,
+	// a coverage check against the main database must find no live messages
+	// still needing embeddings. That cross-database check precedes the state
+	// transaction; the full-scan backstop covers its TOCTOU window. force
+	// bypasses the coverage check (--force). Failures distinguish missing
+	// coverage from a target that is not building.
 	ActivateGeneration(ctx context.Context, gen GenerationID, force bool) error
 
-	// RetireGeneration marks gen as retired (a state flip on its
-	// index_generations row), and on backends that share an index graph
-	// (pgvector) also deletes the generation's embeddings so the shared HNSW
-	// graph stays generation-clean. (There is no pending queue to reap under
-	// scan-and-fill.) Unless force is true, the state-flip UPDATE refuses to
-	// retire a generation in state='active', returning ErrRefuseRetireActive
-	// WITHOUT deleting anything; the guard is enforced atomically inside the
-	// retire transaction so a concurrent activation between a caller's
-	// pre-flight read and the flip cannot retire (and on pgvector delete the
-	// embeddings of) the now-serving generation. force bypasses the guard
-	// (operator `--force-active`) and retires unconditionally.
+	// RetireGeneration marks gen as retired while retaining its embeddings
+	// in the generation-isolated SQLite vector table. Unless force is true,
+	// the transaction refuses to retire an active generation and returns
+	// ErrRefuseRetireActive. This atomic guard protects a generation activated
+	// after a caller's preflight. force bypasses the guard (--force-active).
 	RetireGeneration(ctx context.Context, gen GenerationID, force bool) error
 
 	// ActiveGeneration returns the current active generation, or
@@ -362,14 +352,12 @@ type Backend interface {
 	// (embed_gen == gen) messages actually have at least one embedding row
 	// for gen. This is the "embedded" leg of the coverage readout (live /
 	// embedded / blank / missing). It lives on the backend because the
-	// embeddings table is in vectors.db on SQLite (and the main DB on PG);
+	// embeddings table is in the separate SQLite vectors.db;
 	// only the backend holds that handle. The live+stamped+scope intersection
-	// is REQUIRED for the coverage invariant to hold: SQLite intersects the
-	// vectors.db embedding ids against an in-scope live+stamped query on the
-	// main DB (cross-DB json_each, mirroring dropDeletedFromSource), while
-	// PostgreSQL uses a single JOIN to messages. Distinct from
-	// Stats.EmbeddingCount only in intent: this is the dedicated coverage
-	// helper and never folds the aggregate (gen == 0) path.
+	// is required for the coverage invariant: embedding IDs in vectors.db
+	// are intersected with in-scope, live, stamped messages in the main DB
+	// using json_each, mirroring dropDeletedFromSource. Unlike the aggregate
+	// Stats path, this helper always counts one generation.
 	EmbeddedMessageCount(ctx context.Context, gen GenerationID) (int64, error)
 
 	// LoadVector returns the embedding for a specific message in the
@@ -387,9 +375,7 @@ type Backend interface {
 	// and would only be recovered by a full-scan backstop. Lowering is a MIN
 	// against the stored watermark, so it never pushes the cursor FORWARD past
 	// unswept work; a row already at/below the watermark is left untouched.
-	// minID < 1 is a no-op. The watermark lives in vectors.db on SQLite and
-	// the main DB on PostgreSQL, so each backend implements it against its
-	// own handle/dialect. Idempotent.
+	// minID < 1 is a no-op. The watermark lives in vectors.db. Idempotent.
 	ResetWatermarkBelow(ctx context.Context, minID int64) error
 
 	Close() error
@@ -466,11 +452,8 @@ type FusingBackend interface {
 type FusedRequest struct {
 	// FTSTerms are dialect-neutral, already-tokenized and
 	// punctuation-filtered search terms. An empty/nil slice skips the
-	// BM25 leg (vector-only). Each FusingBackend renders the terms via
-	// its own query dialect's BuildFTSTerm (SQLite FTS5 MATCH;
-	// PostgreSQL to_tsquery with :* prefix lexemes), so both backends
-	// prefix-match the SAME term set rather than diverging on a
-	// pre-built dialect-specific expression.
+	// BM25 leg (vector-only). The backend renders terms using
+	// SQLiteQueryDialect.BuildFTSTerm for FTS5 prefix matching.
 	FTSTerms []string
 	// FTSMatchAny ORs FTSTerms instead of AND-ing them. The hybrid
 	// engine sets it only for its fallback after the AND-ed leg found

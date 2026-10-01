@@ -27,10 +27,8 @@ func DriverName() string { return "sqlite3" }
 // Available reports whether this build includes sqlite-vec support.
 func Available() bool { return false }
 
-// Options is the stub configuration type for builds without sqlite_vec.
-// The fields mirror the real Options so callers compiled with || pgvector
-// can reference sqlitevec.Options without a compile error; the struct is
-// never populated at runtime when the PG code path is taken.
+// Options mirrors the configuration type for builds without sqlite_vec
+// so callers compile while Open reports ErrNotBuilt.
 type Options struct {
 	Path            string
 	MainPath        string
@@ -44,24 +42,19 @@ type Options struct {
 	AcceleratorMode string
 }
 
-// Backend is the stub backend type for builds without sqlite_vec.
-// It implements vector.Backend so that files tagged (sqlite_vec || pgvector)
-// compile cleanly in a pgvector-only build; none of these methods are
-// called at runtime because callers guard the SQLite branch behind
-// store.IsPostgresURL and take the PG path instead.
+// Backend implements vector.Backend for builds without sqlite_vec.
+// Its operations report ErrNotBuilt where the extension is required.
 type Backend struct{}
 
 // Compile-time assertion: stub Backend must satisfy vector.Backend.
 var _ vector.Backend = (*Backend)(nil)
 
-// Open always returns ErrNotBuilt in builds without sqlite_vec. In
-// practice, callers guard this call behind store.IsPostgresURL so it is
-// never reached at runtime when the pgvector tag is set without sqlite_vec.
+// Open always returns ErrNotBuilt in builds without sqlite_vec.
 func Open(_ context.Context, _ Options) (*Backend, error) {
 	return nil, ErrNotBuilt
 }
 
-// DB returns nil; satisfies call-site compilation for the pgvector-only path.
+// DB returns nil because this stub has no database handle.
 func (b *Backend) DB() *sql.DB { return nil }
 
 // Close is a no-op stub.

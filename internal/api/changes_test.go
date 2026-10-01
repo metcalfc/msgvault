@@ -139,14 +139,11 @@ func setChangesWatermarkAt(t *testing.T, st *store.Store, when time.Time, ids ..
 
 // seedChangedMessageAtID seeds one message on an exact id, which is how a test
 // reaches an id no auto-increment hands out. 0 and negatives are legal ids: the
-// column is SQLite's INTEGER PRIMARY KEY — the rowid — and BIGINT on
-// PostgreSQL, and the schema constrains neither further.
+// column is SQLite's INTEGER PRIMARY KEY — the rowid — and the schema imposes
+// no positive-only constraint.
 //
-// The two backends need opposite orders, the same way seedMessageAtID in
-// internal/store's tests does: SQLite takes any 64-bit rowid, so the row is
-// inserted first and moved afterwards; PostgreSQL's id is GENERATED ALWAYS AS
-// IDENTITY and refuses the UPDATE outright, so the identity sequence is
-// repositioned before the insert instead.
+// SQLite takes any 64-bit rowid, so the row is inserted first and moved
+// afterwards, the same way seedMessageAtID in internal/store's tests does.
 func seedChangedMessageAtID(t *testing.T, st *store.Store, id int64) int64 {
 	t.Helper()
 
@@ -167,9 +164,8 @@ func setChangesMessageTimestamp(t *testing.T, st *store.Store, id int64, col str
 }
 
 // subSecondWatermark is a watermark literal carrying the finest sub-second
-// resolution the target backend actually produces: microseconds on PostgreSQL,
-// milliseconds on SQLite (strftime('%f') stops there, and the SQLite cursor
-// parameter is encoded at that same resolution). Either way the fraction is
+// resolution SQLite produces: milliseconds (strftime('%f') stops there, and
+// the cursor parameter is encoded at that same resolution). The fraction is
 // non-zero, which is what the RFC3339Nano serialisation has to preserve.
 func subSecondWatermark(st *store.Store) string {
 
@@ -534,7 +530,7 @@ func TestChangesEndpoint_CursorAboveTheDatabaseClockRecovers(t *testing.T) {
 // the clamped position: the store's keyset predicate is
 // `>= cursor AND (> cursor OR id > tiebreak)`, so any tiebreak VALUE skips the
 // rows at the bound whose ids do not sort above it. Message ids are not all
-// positive — `id` is SQLite's rowid and BIGINT on PostgreSQL, with no further
+// positive — `id` is SQLite's rowid, with no further
 // constraint in the schema — and SQLite stamps at millisecond resolution, so a
 // write landing in the same millisecond as the bound on a row at id 0 or below
 // is reachable rather than theoretical. Dropping it would be silent and
@@ -1053,8 +1049,7 @@ func (s *stubChangedMessageLister) ListChangedMessages(
 	return s.page, nil
 }
 
-// failingChangedMessageLister refuses the watermark query the way a real store
-// does — PostgreSQL refuses it outright when it has never seen every writer.
+// failingChangedMessageLister returns a store failure from the watermark query.
 type failingChangedMessageLister struct {
 	*mockStore
 	stubArchiveIdentity
@@ -1069,9 +1064,8 @@ func (s *failingChangedMessageLister) ListChangedMessages(
 }
 
 // TestChangesEndpoint_StoreFailureIsA500WithTheDetailOnlyInTheLog pins where a
-// refused watermark query is reported. The store's own message names the remedy
-// (a PostgreSQL grant) and the database objects behind it, so it belongs in the
-// operator's log and not in a response any API client can read.
+// refused watermark query is reported. Detailed database diagnostics belong in
+// the operator's log and not in a response any API client can read.
 func TestChangesEndpoint_StoreFailureIsA500WithTheDetailOnlyInTheLog(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

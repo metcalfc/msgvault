@@ -9,11 +9,9 @@ import (
 // TestSQLiteBuildFTSTerm asserts the SQLite dialect renders a
 // dialect-neutral term slice into an FTS5 MATCH argument: each term is
 // double-quote-wrapped with a trailing "*" for prefix matching, embedded
-// double-quotes are doubled (FTS5 escaping that neutralizes operator
-// injection), and stray "*" inside a term is stripped. This is the
-// injection-relevant counterpart to TestPostgreSQLBuildFTSTerm and keeps
-// dialect.go's FTS5 escaping (quote-doubling, star-stripping) under
-// direct test now that the hybrid path renders terms per-dialect.
+// double-quotes are doubled to neutralize FTS5 operator injection, and
+// stray "*" inside a term is stripped. This exercises the escaping used
+// by the query engine and hybrid search.
 func TestSQLiteBuildFTSTerm(t *testing.T) {
 	d := SQLiteQueryDialect{}
 

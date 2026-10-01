@@ -24,8 +24,7 @@ import (
 // relative order, so LIMIT/OFFSET pagination could drop or duplicate the same
 // id across adjacent pages. The m.id DESC tiebreaker makes paging deterministic.
 //
-// Runs on whichever backend testutil.NewTestStore selects; a postgres:// DSN in
-// MSGVAULT_TEST_DB exercises the PG path (the engine the Q2 fix did not touch).
+// Runs against the real SQLite store.
 func TestStoreAPI_PaginationStability_IdenticalSentAt(t *testing.T) {
 	require := require.New(t)
 	st := testutil.NewTestStore(t)

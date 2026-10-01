@@ -19,8 +19,8 @@ import (
 // searchMessagesQueryImpl — which share the same from-side LEFT JOIN as the
 // FTS path. A message with multiple recipient_type='from' rows must NOT be
 // duplicated by these queries either. Internal-package test (SQLite) so it can
-// drive the unexported fallback directly; the join fix is dialect-agnostic and
-// the cross-backend coverage lives in TestStoreAPI_MultipleFromRows_NoDuplication.
+// drive the unexported fallback directly. Public API coverage lives in
+// TestStoreAPI_MultipleFromRows_NoDuplication.
 func TestSearchMessagesLike_MultipleFromRows_NoDuplication(t *testing.T) {
 	require := require.New(t)
 	st := openTestStore(t)

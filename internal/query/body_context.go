@@ -201,9 +201,8 @@ func sqliteSearchableBodyContextTerms(ctx context.Context, terms []string) ([]st
 }
 
 // attachMessageBodySearchContexts extracts contexts in a bounded number of
-// set-based operations. Each backend searches bounded, overlapping chunks
-// with its native FTS implementation, so context matching cannot drift from
-// SQLite unicode61 or PostgreSQL's simple text-search configuration.
+// set-based operations. SQLite FTS5 searches bounded, overlapping chunks
+// with unicode61 tokenization, matching the body-search index semantics.
 func (e *SQLiteEngine) attachMessageBodySearchContexts(
 	ctx context.Context,
 	results []MessageSummary,

@@ -134,9 +134,9 @@ func (h *daemonAnalyticsInitHandle) Swapped() bool {
 }
 
 // prepareDaemonAnalyticsEngine creates the state that can be installed before
-// the scheduler and HTTP server start. SQL and PostgreSQL need no cache
-// maintenance and retain the old synchronous selection. Auto and DuckDB defer
-// cache inspection/build/open until the listener is already serving.
+// the scheduler and HTTP server start. SQL needs no cache maintenance and
+// retains synchronous selection. Auto and DuckDB defer cache inspection,
+// building, and opening until the listener is already serving.
 func prepareDaemonAnalyticsEngine(
 	ctx context.Context,
 	c *config.Config,

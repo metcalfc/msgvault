@@ -28,7 +28,7 @@ type MaintenanceReport struct {
 // RunDailyMaintenance refreshes SQLite planner statistics and truncates the
 // WAL, retrying the checkpoint while readers keep it busy. It returns an
 // error when checkpoint attempts fail or ctx is cancelled; an optimize failure
-// is reported in the result. A no-op for PostgreSQL and read-only stores.
+// is reported in the result. Read-only stores perform no maintenance.
 func (s *Store) RunDailyMaintenance(ctx context.Context) (MaintenanceReport, error) {
 	var report MaintenanceReport
 	if s.readOnly {

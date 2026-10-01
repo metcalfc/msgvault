@@ -8,42 +8,21 @@ import (
 	"slices"
 )
 
-// The projection fingerprint alone cannot decide whether a rendered envelope
-// is still current. It is computed from a snapshot, rechecked inside the
-// commit transaction, and on PostgreSQL that transaction's REPEATABLE READ
-// snapshot is established before the recheck runs — so a semantic write that
-// commits between the two is invisible to the recheck and the commit stores a
-// projection of state that no longer exists. Rechecking harder cannot close
-// that window; nothing the commit transaction reads can show it a commit its
-// own snapshot excludes.
+// The projection fingerprint is computed from a snapshot and rechecked in
+// the envelope commit transaction. persons.vcard_projection_revision records
+// changes to the semantic inputs read by loadPersonVCardSnapshotTx without
+// changing the person's own compare-and-swap token.
 //
-// persons.vcard_projection_revision closes it by giving both sides one row to
-// meet on. Every writer that can change what loadPersonVCardSnapshotTx reads
-// bumps the affected persons' revision inside its own transaction, which takes
-// that row's write lock; the envelope commit locks the same row as its FIRST
-// statement (lockPersonVCardProjectionTx). Ordering then decides the outcome
-// and both outcomes are correct: a writer that reaches the row first makes the
-// commit's lock fail with a serialization error (the row moved under its
-// snapshot), which is reported as the same projection conflict a changed
-// fingerprint would be; a writer that arrives second blocks until the commit
-// finishes and lands after it. Writes that commit BEFORE the commit
-// transaction starts need none of this — the fingerprint recheck already sees
-// them.
+// The envelope commit reserves SQLite's writer slot as its FIRST statement
+// (lockPersonVCardProjectionTx), before reading the snapshot or fingerprint.
+// This prevents a component writer from committing between the recheck and
+// the envelope update. A deferred transaction that read first could instead
+// lose its writer upgrade with SQLITE_BUSY_SNAPSHOT; taking the writer slot
+// first makes it wait its turn. Changes committed before the transaction are
+// visible to the fingerprint recheck.
 //
-// The bump must be an UPDATE, not a SELECT ... FOR UPDATE. Two lock requests
-// serialize, but a lock alone leaves the row version untouched, so the commit
-// would take the lock after the writer released it and still recheck against
-// its own stale snapshot without any error to warn it.
-//
-// On SQLite the row lock is the database writer lock, and the commit has to
-// take it before it reads anything (Dialect.RowWriterLockSQL). Component
-// writers take the writer lock with their first statement, so a commit that
-// read the snapshot first would keep losing SQLITE_BUSY_SNAPSHOT to them and
-// starve; taking the lock first makes it wait its turn instead. The column
-// still moves on SQLite, which is what makes the mechanism testable there.
-//
-// This comment is the authoritative description; schema.sql and schema_pg.sql
-// point here.
+// Every component writer bumps affected projection revisions inside its own
+// transaction. schema.sql points here for this synchronization contract.
 
 // bumpPersonVCardProjectionsTx records that this transaction changed the
 // semantic input of each person's native vCard projection. It deliberately
@@ -267,18 +246,10 @@ func (s *Store) bumpAllVCardProjectionsTx(
 	return nil
 }
 
-// lockPersonVCardProjectionTx takes the person's projection row lock. It must
-// be the first statement of the envelope commit transaction, so the lock is
-// held for the whole of it and no projection writer can commit between the
-// fingerprint recheck and the envelope UPDATE. On SQLite the dialect's writer
-// lock statement comes first, so the transaction is a writer before it reads;
-// on PostgreSQL the SELECT ... FOR UPDATE is the lock.
-//
-// A serialization failure here is not an error to surface raw: it means a
-// projection writer committed after this transaction's snapshot, which is the
-// stale-render case ErrVCardProjectionConflict already names. The fingerprint
-// that state would have produced is unknowable from inside an aborted
-// transaction, so the conflict carries the expected value only.
+// lockPersonVCardProjectionTx reserves SQLite's writer slot before checking
+// that the person exists. It must be the first statement of the envelope
+// commit transaction so no projection writer can commit between the
+// fingerprint recheck and the envelope UPDATE.
 func (s *Store) lockPersonVCardProjectionTx(
 	ctx context.Context, tx *loggedTx,
 	personID int64, expectedFingerprint string,

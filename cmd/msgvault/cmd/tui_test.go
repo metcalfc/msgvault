@@ -302,10 +302,9 @@ func TestTUIPeopleBackendGatesBriefsOnTheBriefSchema(t *testing.T) {
 }
 
 // TestAnalyticsCacheNotice verifies the pre-launch warning keys off the
-// analytics mode the daemon itself reports on /health: only the live-SQL
-// fallback mode warns, while deliberate live SQL (engine = "sql",
-// PostgreSQL), cache-backed DuckDB, daemons predating the field, and
-// health-endpoint failures all stay silent.
+// analytics mode the daemon reports on /health: only live-SQL fallback warns.
+// Deliberate live SQL (engine = "sql"), cache-backed DuckDB, daemons predating
+// the field, and health-endpoint failures all stay silent.
 func TestAnalyticsCacheNotice(t *testing.T) {
 	tests := []struct {
 		name       string

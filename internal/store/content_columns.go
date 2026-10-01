@@ -7,7 +7,7 @@ import (
 
 // MessagesContentColumns are the columns of `messages` whose modification means
 // the message changed in a way a reader must see again. This list drives the
-// content_changed_at triggers on both backends.
+// content_changed_at triggers.
 //
 // The invariant tying this list to the change feed is one-directional: every
 // field ChangedMessage carries must appear here, EXCEPT id, source_id, and
@@ -89,12 +89,12 @@ var MessagesNonContentColumns = []string{
 	"last_modified",       // the other watermark
 	"content_changed_at",  // itself
 	"embed_gen",           // embedding watermark -- the whole reason this list exists
-	"search_fts",          // PostgreSQL-only tsvector, maintained by the FTS path
+	"search_fts",          // Legacy PostgreSQL column classification; absent from SQLite schemas
 }
 
 // contentChangedTriggerColumnList renders MessagesContentColumns for a
-// `... UPDATE OF <cols> ON messages ...` clause. Both dialects call this, so
-// their trigger definitions cannot disagree.
+// `... UPDATE OF <cols> ON messages ...` clause, keeping trigger definitions
+// aligned with the content column classification.
 func contentChangedTriggerColumnList() string {
 	return strings.Join(MessagesContentColumns, ", ")
 }
@@ -102,9 +102,9 @@ func contentChangedTriggerColumnList() string {
 // contentChangedValueGuard renders the "did any content column actually change
 // value?" half of the trigger's WHEN clause.
 //
-// The column list alone is not enough. Both backends fire `UPDATE OF` on the
-// columns a statement NAMES, regardless of whether the value changed (measured
-// on both), and the `ON CONFLICT ... DO UPDATE SET` of UpsertMessage's
+// The column list alone is not enough. SQLite fires `UPDATE OF` on the
+// columns a statement NAMES, regardless of whether the value changed, and
+// the `ON CONFLICT ... DO UPDATE SET` of UpsertMessage's
 // statement (upsertMessageSQL in messages.go) unconditionally re-assigns ten
 // content columns on every re-sync of a known message. Without this guard every message a sync
 // touches reports as changed and the feed carries no information.
@@ -114,13 +114,13 @@ func contentChangedTriggerColumnList() string {
 // uses to decide whether a subject really changed (the embed_gen CASE in that
 // same ON CONFLICT clause).
 //
-// distinctOp is "IS NOT" for SQLite, "IS DISTINCT FROM" for PostgreSQL.
+// distinctOp is SQLite's null-safe "IS NOT" comparison.
 func contentChangedValueGuard(distinctOp string) string {
 	return columnValueGuard(MessagesContentColumns, distinctOp)
 }
 
 // columnValueGuard renders `(OLD.a <op> NEW.a OR OLD.b <op> NEW.b ...)` for a
-// trigger WHEN clause or plpgsql IF over the given columns.
+// trigger WHEN clause over the given columns.
 func columnValueGuard(columns []string, distinctOp string) string {
 	clauses := make([]string, 0, len(columns))
 	for _, c := range columns {

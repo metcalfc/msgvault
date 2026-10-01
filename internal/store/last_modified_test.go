@@ -50,10 +50,8 @@ func baselineLM(t *testing.T, st *store.Store, id int64) string {
 	return readLM(t, st, id)
 }
 
-// readLM reads last_modified as a comparable string on both backends. On
-// SQLite it CASTs to TEXT to defeat go-sqlite3's DATETIME→time.Time coercion
-// (the same trick the embed worker uses); on PostgreSQL it casts to text in
-// SQL so the comparison is a plain string on either backend.
+// readLM casts last_modified to TEXT so the driver returns the stored
+// watermark string without DATETIME-to-time.Time conversion.
 func readLM(t *testing.T, st *store.Store, id int64) string {
 	t.Helper()
 	expr := "CAST(last_modified AS TEXT)"
@@ -80,17 +78,10 @@ func TestLastModified_MessageUpdateBumps(t *testing.T) {
 	assert.NotEqual(t, base, got, "message UPDATE must bump last_modified")
 }
 
-// TestLastModified_ExplicitWriteSurvivesContentUpdate pins the yield documented
-// on baselineLM: a statement that sets last_modified by hand keeps that value
-// rather than having it re-stamped.
-//
-// The risk is backend-specific and only appears once content_changed_at exists.
-// PostgreSQL stamps that watermark in a BEFORE trigger, assigning NEW in place,
-// so the caller's statement stays a single UPDATE. SQLite cannot assign to NEW,
-// so its content_changed_at trigger issues a SECOND UPDATE of the same row —
-// and a last_modified trigger that fires on every UPDATE re-fires on that one,
-// overwriting the value the caller just wrote. ApplyMessageDateRepairs' CAS
-// compares against exactly this token, so losing the write disarms it silently.
+// TestLastModified_ExplicitWriteSurvivesContentUpdate checks that a caller's
+// explicit watermark survives a content update. SQLite's content_changed_at
+// trigger issues a second UPDATE, so an overly broad last_modified trigger
+// could overwrite the token used by ApplyMessageDateRepairs' compare-and-swap.
 func TestLastModified_ExplicitWriteSurvivesContentUpdate(t *testing.T) {
 	st := testutil.NewTestStore(t)
 	control := seedMessage(t, st, 91)
@@ -98,9 +89,8 @@ func TestLastModified_ExplicitWriteSurvivesContentUpdate(t *testing.T) {
 
 	const explicit = "2000-06-15 12:30:45+00"
 
-	// Control: an explicit write naming no content column. Both backends
-	// already yield to this, so its stored form is the canonical rendering of
-	// the literal on this backend — which is what the real case must match.
+	// Control: a write naming no content column establishes the stored
+	// representation of the explicit watermark for comparison.
 	_, err := st.DB().Exec(
 		st.Rebind(`UPDATE messages SET last_modified = ? WHERE id = ?`), explicit, control)
 	require.NoError(t, err, "explicit last_modified write alone")
@@ -201,10 +191,8 @@ func TestLastModified_BodyInsertBumpsParent(t *testing.T) {
 // and backfilled to a non-NULL value for the pre-existing rows, and (c) the
 // re-created trigger then functions as the CAS watermark.
 //
-// SQLite-only: it relies on ALTER TABLE DROP COLUMN and SQLite's deferred
-// trigger column resolution. PostgreSQL's ADD COLUMN ... DEFAULT
-// CURRENT_TIMESTAMP backfills automatically and its triggers are created
-// after the column, so the upgrade ordering risk does not apply there.
+// This reconstructs the legacy schema using ALTER TABLE DROP COLUMN
+// and exercises SQLite's deferred trigger column resolution.
 func TestLastModified_UpgradePathMissingColumn(t *testing.T) {
 
 	require := require.New(t)
@@ -305,10 +293,6 @@ INSERT INTO message_bodies (message_id, body_text) VALUES (1, 'body one'), (2, '
 // other test in this file misses because a fresh database gets the scoped
 // definition from the start. EnsureTriggers DROPs before it CREATEs precisely
 // so the fix reaches an existing archive; nothing else pins that.
-//
-// SQLite-only: PostgreSQL stamps content_changed_at in a BEFORE trigger, in
-// place, so it has no second UPDATE to re-enter and no blanket trigger to
-// replace.
 func TestLastModified_UpgradeReplacesBlanketTrigger(t *testing.T) {
 
 	require := require.New(t)
@@ -397,7 +381,7 @@ VALUES (1, 1, 1, 'm1', 'email', 'original one'),
 	//     statement that also changes a content column is NOT overwritten by the
 	//     content_changed_at stamp's second UPDATE. Compared against a control
 	//     that writes the same literal alone, so the assertion is about the
-	//     clobber and not about how this backend renders the literal.
+	//     clobber and not about how SQLite renders the literal.
 	const explicit = "2000-06-15 12:30:45+00"
 	_, err = st.DB().Exec(
 		st.Rebind(`UPDATE messages SET last_modified = ? WHERE id = ?`), explicit, int64(2))

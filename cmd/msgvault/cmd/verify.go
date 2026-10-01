@@ -147,10 +147,7 @@ func runVerifyLocal(cmd *cobra.Command, args []string) error {
 
 	// Run SQLite integrity check before any Gmail work. Users with a
 	// corrupt database should see the repair hint even if their OAuth
-	// token is expired or the network is down. PostgreSQL has no
-	// in-engine integrity_check; print a notice so users know the
-	// check was skipped intentionally and point them at the right
-	// out-of-band tool.
+	// token is expired or the network is down.
 	var dbCorrupt bool
 	var dbIntegrityOK *bool
 	if !verifySkipDBCheck {
@@ -411,11 +408,7 @@ func runVerifyLocal(cmd *cobra.Command, args []string) error {
 // runIntegrityCheck runs PRAGMA integrity_check on the database and returns
 // any error strings. An empty slice means the database is healthy.
 //
-// PostgreSQL has no in-engine analogue; its corruption checks live in
-// external admin tooling (pg_amcheck, pg_dump --section=data) that
-// require server-side privileges this CLI does not assume. On PG we
-// return no errors so the rest of `verify` (Gmail message round-trip)
-// still runs — the user is expected to monitor PG health separately.
+// The check runs against the open SQLite archive.
 func runIntegrityCheck(s *store.Store) ([]string, error) {
 
 	rows, err := s.DB().Query("PRAGMA integrity_check(100)")

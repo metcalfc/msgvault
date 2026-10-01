@@ -47,8 +47,8 @@ func TestDirectoryPeoplePageContextRanksExactAndPrefixBeforeFuzzyMatches(t *test
 	assert.Equal(t, []int64{alice.ID, alicf.ID}, directoryPersonIDs(page.People))
 }
 
-// This catches backend-specific SQL lowercasing: Directory matching must use
-// the same Go-canonical Unicode token representation on every backend.
+// Directory matching must use Go-canonical Unicode tokens rather than
+// relying on SQLite SQL lowercasing.
 func TestDirectoryPeoplePageContextMatchesUnicodeCaseFoldedTokens(t *testing.T) {
 	st := testutil.NewTestStore(t)
 	emile := createDirectoryPerson(t, st, "Émile Example", "emile@example.test", "friend", "active", "Acme")
@@ -60,7 +60,7 @@ func TestDirectoryPeoplePageContextMatchesUnicodeCaseFoldedTokens(t *testing.T) 
 
 // This catches canonical-equivalence regressions across every persisted key:
 // composed and decomposed spellings must qualify, filter, sort, and resume
-// through the same cursor sequence on the configured backend.
+// through the same SQLite cursor sequence.
 func TestDirectoryPeoplePageContextNormalizesCanonicalUnicodeAcrossKeys(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

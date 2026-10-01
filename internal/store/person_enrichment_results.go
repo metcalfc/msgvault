@@ -408,10 +408,8 @@ func (s *Store) recheckPersonEnrichmentCommitTx(
 	// (RenewLease, BeginAttempt, AuthorizeAttemptDispatch, the schedule and
 	// release paths) locks person_enrichment_work first and then
 	// person_enrichment_attempts, and the worker's lease-renewal goroutine runs
-	// RenewLease concurrently with this commit. Locking the attempt first here
-	// inverted that order and PostgreSQL reported "deadlock detected" on the
-	// renewal whenever a renewal tick landed during a result commit. The lock
-	// is taken by key alone, without verifying the lease: a replayed commit
+	// RenewLease concurrently with this commit. The ordering read is taken by
+	// key alone, without verifying the lease: a replayed commit
 	// whose work row has already been settled must still reach the replay
 	// disposition below, and the lease itself is verified afterwards.
 	if err := lockEnrichmentWorkRowForOrderingTx(

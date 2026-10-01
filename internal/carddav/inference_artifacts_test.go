@@ -203,8 +203,8 @@ func TestPendingRecoveryAndCancellationShareHTTPBarrierAcrossServices(t *testing
 	server := httptest.NewTestServer(t, nil)
 	// The in-memory transport accepts any address; use a literal to avoid DNS.
 	server.URL = "http://127.0.0.1"
-	// PostgreSQL's shared admin connection lives for the whole test process.
-	// Create the database outside the bubble so it does not keep it alive.
+	// Create the database outside the bubble so its background goroutines do
+	// not keep the bubble alive.
 	service, st, personID, _ := seededMutationServiceForServer(t, server)
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)

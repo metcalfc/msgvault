@@ -765,14 +765,10 @@ func (s *Store) adjustPersonSweepDailyUsage(ctx context.Context, tx *loggedTx, d
 // transaction (usage -> batch -> work lock order) so a concurrent reclaim can
 // never slip between lease validation and the batch transition.
 //
-// That lock order is the reverse of ClaimPersonSweep's reclaim (work first,
-// then attempt, batch, and daily usage), so PostgreSQL's deadlock detector can
-// abort the mark with 40P01 while a successor claims the same person. The
-// whole transaction therefore runs under the bounded busy-write retry policy:
-// a deadlock victim restarts from a fresh transaction and converges to either
-// success or the typed ErrLeaseLost once the winning side has committed. The
-// lock order itself is preserved — it is what keeps the lease fence atomic
-// against Apply and Finalize.
+// The whole transaction uses the bounded busy-write retry policy. Contention
+// restarts from a fresh transaction and converges to success or ErrLeaseLost
+// once the winning side has committed. Lease validation and the transition
+// remain atomic against Apply and Finalize.
 func (s *Store) MarkPersonSweepBudgetStarted(
 	ctx context.Context, reservation peoplesweep.BudgetReservation, lease peoplesweep.Lease,
 ) error {

@@ -14,24 +14,11 @@ import (
 	"go.kenn.io/msgvault/internal/testutil"
 )
 
-// TestDateBoundary_StoreAPIMatchesEngine pins the C8 fix: the store-API
-// date filters (internal/store/api.go) must bind the raw time.Time rather
-// than an RFC3339 ('T'-separated) string, so the after:/before: day boundary
-// lands in exactly the same place as the query engine, on both backends.
-//
-// The hazard the fix removes:
-//   - On PG TIMESTAMPTZ, a formatted offset-less string is parsed in the
-//     session TimeZone, not UTC, shifting the boundary under a non-UTC session.
-//   - Against SQLite's space-separated stored timestamps, the 'T' byte (0x54)
-//     sorts after a space (0x20), shifting the boundary the other way.
-//
-// A message stored at exactly midnight UTC is the worst case: a one-byte
-// boundary shift flips its inclusion. The test asserts the store API agrees
-// with the engine for every after:/before: bound around that midnight — no
-// off-by-one-day divergence between the two paths or the two backends.
-//
-// Runs against whichever backend testutil.NewTestStore selects; setting
-// MSGVAULT_TEST_DB to a postgres:// DSN exercises the PG path too.
+// TestDateBoundary_StoreAPIMatchesEngine verifies that the store API and
+// query engine agree on after:/before: boundaries around midnight UTC.
+// SQLite's space-separated timestamps must compare as instants: comparing
+// an RFC3339 string lexically would put its T separator after a space and
+// shift the boundary. A message at exactly midnight exposes that difference.
 func TestDateBoundary_StoreAPIMatchesEngine(t *testing.T) {
 	require := require.New(t)
 	st := testutil.NewTestStore(t)

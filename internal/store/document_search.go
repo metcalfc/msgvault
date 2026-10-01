@@ -254,8 +254,8 @@ func (s *Store) ResolveDocumentVectorSearchOccurrences(
 			return nil, false, fmt.Errorf("%w: semantic hit token is duplicated", ErrDocumentSearchInvalidRequest)
 		}
 		seenTokens[hit.Token] = struct{}{}
-		// Explicit parameter casts keep PostgreSQL from inferring a parameter-only
-		// VALUES column as text (which would order rank 10 before rank 2).
+		// Explicit casts keep the VALUES columns typed for text identifiers,
+		// numeric rank ordering, and floating-point scores.
 		values = append(values, "(CAST(? AS TEXT), CAST(? AS INTEGER), CAST(? AS DOUBLE PRECISION))")
 		args = append(args, hit.Token, hit.Rank, hit.Score)
 	}

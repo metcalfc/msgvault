@@ -206,9 +206,8 @@ func TestDirectoryPeoplePageSucceedsOnTheConfiguredBackend(t *testing.T) {
 	assert.Equal(t, alice.ID, page.People[0].ID)
 }
 
-// This uses storetest's selected backend (SQLite by default, PostgreSQL when
-// MSGVAULT_TEST_DB is configured) to keep keyset ordering identical across
-// the exact, prefix, and one-edit tiers.
+// This checks keyset ordering across exact, prefix, and one-edit Directory
+// search tiers using the real SQLite store.
 func TestDirectoryPeoplePageSequenceOnTheConfiguredBackend(t *testing.T) {
 	st := storetest.New(t).Store
 	exact := createDirectoryPerson(t, st, "Alice Exact", "alice-exact@example.test", "friend", "active", "Acme")
@@ -233,7 +232,7 @@ func TestDirectoryPeoplePageSequenceOnTheConfiguredBackend(t *testing.T) {
 	assert.Equal(t, []int64{exact.ID, prefix.ID, fuzzy.ID}, got)
 }
 
-// This runs on the configured backend and protects the persisted canonical
+// This protects the persisted SQLite canonical
 // order key from whitespace or Unicode collation drift between page requests.
 func TestDirectoryPeopleUnicodeCursorSequenceOnTheConfiguredBackend(t *testing.T) {
 	require := require.New(t)
@@ -301,7 +300,7 @@ func TestDirectoryPeopleLastContactRangeAndCursorOnTheConfiguredBackend(t *testi
 	assert.Equal([]int64{middle.ID}, directoryPersonIDs(exact.People))
 }
 
-// Delete keys are only an indexed prefilter: this configured-backend fixture
+// Delete keys are only an indexed prefilter: this SQLite fixture
 // proves the actual canonical token distance before Directory returns a row.
 func TestDirectoryPeopleFuzzyTokenDistanceOnTheConfiguredBackend(t *testing.T) {
 	require := require.New(t)
@@ -376,10 +375,8 @@ func TestDirectoryProjectionEmploymentMoveOnTheConfiguredBackend(t *testing.T) {
 	assert.Equal(t, []int64{second.ID}, directoryPersonIDs(page.People))
 }
 
-// Two writers that refresh the same dirty person at the same time must both
-// succeed. PostgreSQL READ COMMITTED lets both transactions read the same
-// dirty row, so the second refresh must tolerate the first one committing
-// its projection rows in between.
+// Two writers refreshing the same dirty person must both succeed and leave
+// a consistent Directory projection after their serialized SQLite writes.
 func TestDirectoryProjectionConcurrentRefreshOnTheConfiguredBackend(t *testing.T) {
 	require := require.New(t)
 	st := storetest.New(t).Store

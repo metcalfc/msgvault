@@ -506,15 +506,12 @@ func setupVectorFeatures(ctx context.Context, mainStore *store.Store, mainPath s
 	}
 	mainDB := mainStore.DB()
 
-	// Resolve the dialect once from the main DSN. The worker is
-	// dialect-portable via Rebind, so the serve daemon and MCP run vector
-	// features on PostgreSQL the same way `msgvault embed` does. SQLite's
-	// Rebind is identity so the SQLite path is unchanged.
+	// Use SQLite SQL helpers for the main archive. Rebind leaves placeholders
+	// unchanged.
 	var dialect store.Dialect = &store.SQLiteDialect{}
-	// lastModifiedExpr is the dialect-correct SELECT expression for the embed
-	// worker's last_modified CAS token. SQLite needs CAST(... AS TEXT) to
-	// defeat go-sqlite3's DATETIME→time.Time coercion (which would break
-	// round-trip equality); PG uses the bare column.
+	// lastModifiedExpr reads the embed worker's last_modified CAS token as text.
+	// The CAST avoids go-sqlite3's DATETIME-to-time.Time coercion, preserving
+	// exact equality when the token is bound back into the update.
 	lastModifiedExpr := "CAST(m.last_modified AS TEXT)"
 
 	var (
@@ -585,10 +582,8 @@ func setupVectorFeatures(ctx context.Context, mainStore *store.Store, mainPath s
 			RRFK:                vecCfg.Search.RRFK,
 			KPerSignal:          vecCfg.Search.KPerSignal,
 			SubjectBoost:        vecCfg.Search.SubjectBoost,
-			// BuildFilter's participant/label lookups run against mainDB with ?
-			// placeholders. On PG those must become $N or pgx rejects them, so
-			// the serve/MCP hybrid engine (shared via vectorFeatures.HybridEngine)
-			// carries the dialect's Rebind. SQLite's Rebind is identity.
+			// BuildFilter's participant/label lookups use ? placeholders
+			// against mainDB. SQLite's Rebind leaves them unchanged.
 			Rebind:     dialect.Rebind,
 			BuildScope: vecCfg.Embed.Scope.BuildScope(),
 		})

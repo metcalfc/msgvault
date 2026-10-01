@@ -121,10 +121,7 @@ func hiddenSinceBuildCountSQL() string {
 // updated. Collects all staleness signals before returning so that
 // e.g. a mixed add+delete sync correctly reports both.
 //
-// The Parquet cache is a SQLite-only ETL — when dbPath points at a
-// PostgreSQL DSN, this returns "no build needed" rather than dispatching
-// SQLite-shaped queries against pgx (which would fail on the ?
-// placeholders and the sqlite_master probe).
+// The Parquet cache is derived from the local SQLite archive at dbPath.
 func cacheNeedsBuild(dbPath, analyticsDir string) cacheStaleness {
 	return cacheNeedsBuildContext(context.Background(), dbPath, analyticsDir)
 }

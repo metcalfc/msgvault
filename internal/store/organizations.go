@@ -386,13 +386,9 @@ func (s *Store) CountOrganizationsContext(
 	return count, nil
 }
 
-// ReplaceOrganizationContext atomically replaces root fields and lifecycle state.
-//
-// The write locks the organization row and then the rows of everyone employed
-// there, to bump their vCard projections. Employment writes take those same
-// locks in the opposite order (claimEmploymentPeopleTx, then the employer FOR
-// UPDATE), so on PostgreSQL the two can deadlock; the detector aborts one side
-// and retryContendedWrite runs this side again from a clean transaction.
+// ReplaceOrganizationContext atomically replaces root fields and lifecycle
+// state and bumps employees' vCard projections. Contention retries start from
+// a fresh transaction so organization and projection updates remain atomic.
 func (s *Store) ReplaceOrganizationContext(
 	ctx context.Context, id, expectedRevision int64, input OrganizationInput, retired bool,
 ) (*Organization, error) {

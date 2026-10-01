@@ -170,17 +170,9 @@ func (c *cancelAtStatement) install(db *loggedDB) {
 	}
 }
 
-// TestInitSchemaContext_MigrationLedgerStopsWhenTheContextIsCancelled covers the
-// ledger reads and writes that gate every one-time migration in the method.
-//
-// Each gated step asks the applied_migrations ledger whether it has already run
-// and, when it finishes, records that it has. Both statements went through the
-// contextless wrappers, which substitute context.Background(): on PostgreSQL
-// they queue behind any conflicting lock on applied_migrations — the lock an
-// interrupted upgrade's own re-run takes — and ignore SIGINT and SIGTERM for as
-// long as it is held. The write is the worse of the two: reached with the
-// context already cancelled it stamps "this migration is done" for a migration
-// that was cut off, and the next open skips it forever.
+// TestInitSchemaContext_MigrationLedgerStopsWhenTheContextIsCancelled checks
+// that migration ledger reads and writes honor cancellation. An interrupted
+// migration must not be recorded as complete and skipped on the next open.
 func TestInitSchemaContext_MigrationLedgerStopsWhenTheContextIsCancelled(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -279,15 +271,9 @@ func TestInitSchemaContext_RelationshipSeedHonoursContext(t *testing.T) {
 	assert.Zero(count, "a cancelled relationship seed must roll back its transaction")
 }
 
-// TestInitSchemaContext_LegacyPhoneMergeStopsWhenTheContextIsCancelled covers
-// the link-graph rewrite inside the phone-unique migration's participant merge.
-//
-// The merge itself was bound to the context, but the link rewrite it calls to
-// repoint participant_links was not: it reads every link edge and rewrites the
-// affected cluster through the contextless wrappers. It runs inside the same
-// maintenance transaction as the rest of the migration, which has the pool-wide
-// statement_timeout deliberately disabled, so on PostgreSQL nothing but the
-// context can cut short its wait for a conflicting lock.
+// TestInitSchemaContext_LegacyPhoneMergeStopsWhenTheContextIsCancelled checks
+// that cancellation reaches the participant-link rewrite within the phone
+// merge migration's maintenance transaction.
 func TestInitSchemaContext_LegacyPhoneMergeStopsWhenTheContextIsCancelled(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -406,8 +392,8 @@ func TestInitSchemaContext_LegacyCalendarAttributionStopsWhenTheContextIsCancell
 }
 
 // cancelAtDialectStepDialect cancels the initialisation at the moment the step
-// under test asks the dialect what to run, then delegates. It wraps whatever
-// dialect the store was built with, so it changes WHEN the cancellation lands
+// under test asks the SQLite dialect what to run, then delegates. It changes
+// when cancellation lands
 // and nothing else. Each hook fires on the call that immediately precedes the
 // statements it is named for.
 type cancelAtDialectStepDialect struct {
@@ -437,9 +423,8 @@ type cancelDuringFTSIndexDialect struct {
 
 func (d *cancelDuringFTSIndexDialect) EnsureFTSIndex(q querier) error {
 	d.cancel()
-	// Stands in for the real index build: SQLite's EnsureFTSIndex is a no-op,
-	// and PostgreSQL's GIN build is the statement whose lock wait an operator
-	// has to be able to interrupt.
+	// SQLite's EnsureFTSIndex is normally a no-op. This real index statement
+	// makes cancellation observable at the same production call boundary.
 	d.probed = true
 	_, d.probe = q.Exec(
 		`CREATE INDEX IF NOT EXISTS idx_messages_fts_index_probe ON messages(id)`)
@@ -464,19 +449,9 @@ func (d cancelDuringFTSProbeDialect) FTSAvailable(
 	return d.Dialect.FTSAvailable(ctx, db)
 }
 
-// TestInitSchemaContext_FTSIndexBuildRunsOnTheBoundTransaction covers the last
-// piece of DDL in the method that was still handed the raw transaction.
-//
-// EnsureFTSIndex runs under runMaintenance, which disables the pool-wide
-// statement_timeout first, and on PostgreSQL it builds a GIN index and a partial
-// index over `messages`. Handed the raw transaction — whose Exec substitutes
-// context.Background() — a build queued behind a conflicting lock on that table
-// has nothing left to cut it off, and ignores SIGINT and SIGTERM for as long as
-// the lock is held. The trigger DDL beside it was bound two rounds earlier; this
-// one was not.
-//
-// The wiring under test is dialect-independent — it is which querier the call
-// site hands the dialect — so this runs on SQLite.
+// TestInitSchemaContext_FTSIndexBuildRunsOnTheBoundTransaction verifies that
+// the index hook receives a context-bound querier. A test dialect adds real
+// SQLite DDL to the normally empty hook to observe cancellation at that seam.
 func TestInitSchemaContext_FTSIndexBuildRunsOnTheBoundTransaction(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -554,24 +529,10 @@ func (d cancelAtDialectStepDialect) SchemaFTS() string {
 	return d.Dialect.SchemaFTS()
 }
 
-// TestInitSchemaContext_DDLStopsWhenTheContextIsCancelled covers the rest of the
-// migration the earlier cancellation tests do not reach.
-//
-// InitSchemaContext advertises the whole upgrade as interruptible, and an
-// operator's SIGINT or SIGTERM has to be able to reach it: on PostgreSQL every
-// one of these statements queues behind any conflicting lock on the table it
-// touches — an import's, say — and a statement issued on context.Background()
-// ignores the signal for as long as that lock is held, leaving SIGKILL on a
-// process in the middle of writing as the only remaining move. The schema
-// scripts, the legacy ADD COLUMN loop (which is where content_changed_at itself
-// arrives on an upgraded archive) and the FTS schema all ran that way.
-//
-// The existing tests cancel at a backfill batch boundary and during trigger
-// replacement, which are later steps and different queriers.
-//
-// The wiring under test is dialect-independent — it is which exec each call
-// site uses — so this runs on SQLite, where a store can be opened without the
-// package's external test helpers.
+// TestInitSchemaContext_DDLStopsWhenTheContextIsCancelled checks cancellation
+// at schema scripts, legacy column migrations, and FTS schema creation.
+// Backfill and trigger tests exercise different call sites and cannot prove
+// that these DDL statements receive the migration context.
 func TestInitSchemaContext_DDLStopsWhenTheContextIsCancelled(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -631,15 +592,9 @@ func TestInitSchemaContext_DDLStopsWhenTheContextIsCancelled(t *testing.T) {
 	}
 }
 
-// TestEnsureParticipantsPhoneUniqueIndex_HonoursItsContext covers the other
-// long step InitSchemaContext calls out to.
-//
-// The phone-index migration dedupes participants and rebuilds a UNIQUE index
-// over the whole table inside one maintenance transaction — which has the
-// pool-wide statement_timeout deliberately disabled, so on PostgreSQL nothing
-// but the context can cut short its wait for a conflicting lock. It ran on
-// context.Background(), so InitSchemaContext's promise to stop on a signal did
-// not cover it.
+// TestEnsureParticipantsPhoneUniqueIndex_HonoursItsContext verifies that
+// participant deduplication and unique-index rebuilding honor the migration
+// context throughout their maintenance transaction.
 func TestEnsureParticipantsPhoneUniqueIndex_HonoursItsContext(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

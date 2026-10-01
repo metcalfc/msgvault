@@ -51,10 +51,8 @@ func (s *Store) ensureArchiveUID() error {
 }
 
 // ensureArchiveUIDContext is the context-aware form of ensureArchiveUID. Its
-// transaction and every statement in it carry ctx, so an operator's SIGINT can
-// reach it: on PostgreSQL these statements queue behind any conflicting lock on
-// archive_metadata or applied_migrations, and a background context makes that
-// wait unreachable by a signal.
+// transaction and every statement carry ctx so cancellation reaches archive
+// identity initialization.
 func (s *Store) ensureArchiveUIDContext(ctx context.Context) error {
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
 		random := make([]byte, 32)

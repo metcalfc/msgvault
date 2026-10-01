@@ -233,13 +233,9 @@ func gmailAuditRecipientAddress(evidence GmailAuditEvidence, recipientType strin
 	return ""
 }
 
-// TestGmailAuditEvidencePageReadsOneCoherentSnapshot observes the production
-// page load at the real driver boundary (SQLite here; the same test runs on
-// PostgreSQL when MSGVAULT_TEST_DB points at one). The gate pauses the page
-// load right before the first statement touching the second record's rows;
-// a concurrent repair commit lands in that window. One page must then read
-// every record from the snapshot its first statement established — a
-// committed rewrite must not split the page across two database states.
+// TestGmailAuditEvidencePageReadsOneCoherentSnapshot pauses the SQLite page
+// load before reading the second record while a repair commits. All records
+// must come from the snapshot established by the page's first statement.
 func TestGmailAuditEvidencePageReadsOneCoherentSnapshot(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

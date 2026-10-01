@@ -38,8 +38,8 @@ CREATE INDEX IF NOT EXISTS idx_communication_service_aliases_service
 
 -- Commit-ordered discovery for context-coupled embedding documents. The
 -- singleton clock is advanced in the same source transaction as every event.
--- It deliberately replaces an autoincrement/sequence allocator: SQLite's one
--- writer and PostgreSQL's row lock then make sequence order equal commit order,
+-- It deliberately replaces an autoincrement/sequence allocator: SQLite's single
+-- writer makes sequence order equal commit order,
 -- and a rollback restores both the clock and the appended event.
 CREATE TABLE IF NOT EXISTS embedding_change_clock (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -369,7 +369,7 @@ CREATE TABLE IF NOT EXISTS participant_identifiers (
 -- person retires its UID forever (no tombstones; a later re-promotion of
 -- the same cluster creates a new person with a new UID), and a future
 -- person-merge must keep the surviving person's UID and retire the other.
--- AUTOINCREMENT (IDENTITY on PostgreSQL) matters here: person IDs are
+-- AUTOINCREMENT matters here: person IDs are
 -- durable external handles, so a deleted person's ID must never be
 -- recycled for a later person the way plain rowid allocation would.
 -- vcard_projection_revision serializes native vCard envelope commits against
@@ -2571,15 +2571,15 @@ CREATE INDEX IF NOT EXISTS idx_participant_links_b
 -- both be storable and the duplicate-active-edge rule would not hold.
 --
 -- vcard_related_type is mutable interchange metadata and UNIQUE (NULLs are
--- distinct in both backends) so each registered RELATED TYPE value resolves
+-- distinct in SQLite) so each registered RELATED TYPE value resolves
 -- to exactly one type on import. Startup seed reconciliation preserves a
 -- user's mapping choice instead of restoring the original seed value.
 --
 -- ownership is TEXT ('system' | 'user') rather than an is_system boolean, and
 -- carries no CHECK: the roadmap leaves room for a third ownership kind such as
 -- vendor or plugin, and widening a TEXT vocabulary needs no SQLite table
--- rebuild whereas a boolean would need a new column. It is validated in Go so
--- both backends reject the same values.
+-- rebuild whereas a boolean would need a new column. Go validates allowed values
+-- before writes.
 CREATE TABLE IF NOT EXISTS relationship_types (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     universal_id       TEXT NOT NULL UNIQUE,
@@ -2711,8 +2711,8 @@ CREATE TABLE IF NOT EXISTS person_relationship_reviews (
 );
 
 -- One review per parsed property occurrence. COALESCE makes the nullable
--- provenance/property identity fields participate in uniqueness identically
--- on SQLite and PostgreSQL while preserving exact re-import idempotency.
+-- provenance/property identity fields participate in uniqueness while preserving
+-- exact re-import idempotency.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_person_relationship_reviews_occurrence_unique
     ON person_relationship_reviews(
         person_id, raw_related_type, raw_related_value, source,
@@ -3491,7 +3491,7 @@ CREATE TABLE IF NOT EXISTS applied_migrations (
 -- thumbnails) to sealed pack files under attachments/packs/. Rows exist only
 -- for live packed blobs; loose files have no row. pack_offset et al mirror
 -- the pack footer's entry so reads need no footer parse ("offset" is a
--- reserved word in SQLite and PostgreSQL, hence the prefix).
+-- SQL keyword, hence the prefix).
 CREATE TABLE IF NOT EXISTS attachment_pack_index (
     blob_hash   TEXT PRIMARY KEY,
     pack_id     TEXT NOT NULL,
@@ -4363,9 +4363,9 @@ CREATE INDEX IF NOT EXISTS idx_activity_projection_queue_pending
 
 -- trg_activity_queue_messages_update is NOT defined here. It is scoped to the
 -- columns the projector reads (MessagesActivityColumns, activity_columns.go)
--- and built by SQLiteDialect.EnsureActivityProjectionTriggers, where the shared
--- column list keeps it identical to the PostgreSQL definition. A blanket AFTER
--- UPDATE here requeued the whole archive on every embed/FTS backfill.
+-- and built by SQLiteDialect.EnsureActivityProjectionTriggers from that shared
+-- column list. A blanket AFTER UPDATE here requeued the whole archive on every
+-- embed/FTS backfill.
 
 CREATE TRIGGER IF NOT EXISTS trg_activity_queue_recipients_insert
 AFTER INSERT ON message_recipients FOR EACH ROW

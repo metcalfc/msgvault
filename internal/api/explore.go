@@ -1529,7 +1529,7 @@ func (s *Server) resolveExploreVectorSearch(ctx context.Context, w http.Response
 		// issuing path runs: a one-off scoped rebuild (or any full rebuild)
 		// can activate a NEW generation without changing the configured
 		// scope, leaving the daemon "ready" while the snapshot's generation
-		// is retired — on pgvector its embeddings are already deleted.
+		// is retired.
 		// Fresh searches would get index_stale; a cached snapshot must not
 		// slip past that. A same-fingerprint swap invalidates the snapshot
 		// too (its candidates reference the retired generation), so the

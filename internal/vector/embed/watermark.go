@@ -10,29 +10,21 @@ import (
 )
 
 // Watermark reads and writes per-generation forward-scan resume points in
-// the embed_watermark table. It lives WITH the generations it watermarks:
-// vectors.db on SQLite, the main PostgreSQL database on PG. The worker
+// vectors.db's embed_watermark table alongside generation metadata. The worker
 // seeds its scan from GetWatermark at run start and advances it after each
 // successful batch via SetWatermark.
 //
-// The watermark is a pure optimization. Losing it (or never seeding it)
-// only restarts the next scan from id 0, which is harmless: the scan
-// predicate (embed_gen IS NULL OR embed_gen <> gen) plus the idempotent
-// embeddings upsert make re-sweeping already-covered rows a no-op. The
-// full-scan backstop ignores the watermark entirely.
-//
-// The upsert SQL (INSERT ... ON CONFLICT ... DO UPDATE SET ... =
-// excluded....) is portable across SQLite (3.24+) and PostgreSQL, so
-// Watermark needs no dialect probe beyond rebind.
+// The watermark is a pure optimization. Losing it restarts the next scan
+// from ID 0; the embed_gen predicate and idempotent Upsert prevent duplicate
+// work from changing results. The full-scan backstop ignores it entirely.
 type Watermark struct {
 	db     *sql.DB
 	rebind func(string) string
 }
 
-// NewWatermark returns a Watermark bound to db (the generation-side DB).
-// The caller retains ownership of db. rebind translates ?-placeholders to
-// the driver's native form; pass nil (or an identity func) for SQLite and
-// the PostgreSQL dialect's Rebind for pgx.
+// NewWatermark returns a Watermark bound to the generation database.
+// The caller retains ownership of db. Pass nil or an identity rebind
+// callback to retain SQLite's ? placeholders.
 func NewWatermark(db *sql.DB, rebind func(string) string) *Watermark {
 	if rebind == nil {
 		rebind = func(q string) string { return q }

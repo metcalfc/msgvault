@@ -82,9 +82,8 @@ func Migrate(ctx context.Context, db *sql.DB, defaultDim int) error {
 	if err := migrateVecTablesToChunked(ctx, db); err != nil {
 		return fmt.Errorf("migrate vec tables to chunked layout: %w", err)
 	}
-	// defaultDim is informational, mirroring pgvector: a multimodal-only
-	// configuration has no text/person embedding dimension, and text
-	// generations create their dimension-specific table in CreateGeneration.
+	// A multimodal-only configuration has no text/person embedding dimension.
+	// Text generations create their dimension-specific table in CreateGeneration.
 	if defaultDim <= 0 {
 		return nil
 	}

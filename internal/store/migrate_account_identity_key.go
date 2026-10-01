@@ -13,7 +13,7 @@ import (
 // NormalizeIdentifierForCompare(address), case-variant duplicates of one
 // logical identity are merged into a single row, and a partial unique index
 // on (source_id, address_key) enforces the invariant at the schema level for
-// every keyed writer, whichever process or backend it comes from.
+// every keyed writer, whichever process it comes from.
 //
 // It runs on every store open, after LegacyColumnMigrations has added the
 // column. The gate is the scan itself, not a run-once ledger entry: a
@@ -44,16 +44,14 @@ func (s *Store) ensureAccountIdentityAddressKeys(ctx context.Context) error {
 	}
 	// The index is created after the repair because CREATE UNIQUE INDEX
 	// fails while case-variant duplicates still share a derived key. It
-	// lives here rather than in schema.sql/schema_pg.sql because on an
-	// upgraded archive those scripts execute before the legacy-column loop
+	// lives here rather than in schema.sql because on an upgraded archive
+	// the schema script executes before the legacy-column loop
 	// has added address_key. The WHERE clause exempts the '' sentinel:
 	// previous-release inserts land with the column default and must not
 	// collide with each other; the next open keys them through the repair
-	// above. Ledgered so the DDL runs once per archive, and built through
-	// the maintenance escape hatch so a lock held by a concurrent identity
-	// writer cannot trip the pool-wide PostgreSQL statement timeout and
-	// fail the open; IF NOT EXISTS covers a cancellation between the
-	// create and the ledger write.
+	// above. Ledgered so the DDL runs once per archive, inside a maintenance
+	// transaction. IF NOT EXISTS covers a cancellation between the create
+	// and the ledger write.
 	return s.runOnceMigration(ctx, migrationAccountIdentityAddressKeyIndex, 1, false,
 		func(ctx context.Context) error {
 			return s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
@@ -108,12 +106,10 @@ type accountIdentityGroupKey struct {
 	key      string
 }
 
-// repairAccountIdentityAddressKeys runs through the maintenance escape hatch:
-// a duplicate collapse refreshes source-wide message attribution, whose cost
-// scales with archive size, and the ordinary pool-wide PostgreSQL statement
-// timeout would cancel it on a large upgraded source and fail every
-// subsequent open. The identity-mutation lock is taken first, matching the
-// lock order of every other identity writer.
+// repairAccountIdentityAddressKeys runs in a maintenance transaction. A
+// duplicate collapse refreshes source-wide message attribution, whose cost
+// scales with archive size. The identity-mutation lock is taken first, matching
+// the lock order of every other identity writer.
 func (s *Store) repairAccountIdentityAddressKeys(ctx context.Context) error {
 	return s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
 		if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {

@@ -53,7 +53,7 @@ func TestMessagesColumnClassificationIsExhaustive(t *testing.T) {
 	}
 	for col := range classified {
 		if col == "search_fts" {
-			continue // PostgreSQL-only column
+			continue // Legacy classifier entry absent from the SQLite schema.
 		}
 		assert.True(actualSet[col], "%q is classified but is not a column of messages", col)
 	}
@@ -64,11 +64,8 @@ func TestMessagesContentColumns_IncludeListID(t *testing.T) {
 		"changing a List-Id must make consumers re-read the message")
 }
 
-// contentChangedPast is the fixed far-past watermark the helpers stamp before
-// exercising a write, so "did the trigger fire?" is an exact string comparison
-// instead of a sleep long enough for the clock to tick. It is written in a form
-// both backends accept: SQLite stores the text verbatim in its DATETIME column,
-// PostgreSQL parses it as TIMESTAMPTZ.
+// contentChangedPast is a fixed past watermark stored as SQLite text.
+// It makes trigger assertions exact without waiting for the clock to advance.
 const contentChangedPast = "2000-01-01 00:00:00+00"
 
 // seedMessage inserts one message with a unique source_message_id derived from
@@ -182,11 +179,8 @@ func altParticipantID(t *testing.T, st *store.Store, id int64) int64 {
 	return pid
 }
 
-// updateMessageColumn writes a genuinely different, type-appropriate value to
-// col. Foreign keys (conversation_id, sender_id) get a freshly created valid
-// parent row rather than an arbitrary integer; metadata routes through
-// SetMessageMetadata so the JSONB cast PostgreSQL requires comes from the
-// dialect instead of being duplicated here.
+// updateMessageColumn writes a different, type-appropriate value. Foreign
+// keys get valid parent rows, and metadata uses the production Store helper.
 func updateMessageColumn(t *testing.T, st *store.Store, id int64, col string) error {
 	t.Helper()
 	corrected := time.Date(2021, 3, 4, 5, 6, 7, 0, time.UTC)
@@ -276,17 +270,15 @@ func TestContentChangedAt_BookkeepingUpdateDoesNotBump(t *testing.T) {
 	}
 }
 
-// TestContentChangedAt_SameValueWriteDoesNotBump: both backends fire UPDATE OF
-// on the columns a statement NAMES, not the ones whose value changed. Without
-// the value guard this passes vacuously and the feed reports every message a
-// sync touches.
+// TestContentChangedAt_SameValueWriteDoesNotBump verifies that naming a
+// content column in UPDATE does not stamp a change unless its value changes.
 func TestContentChangedAt_SameValueWriteDoesNotBump(t *testing.T) {
 	st := testutil.NewTestStore(t)
 	id := seedMessage(t, st, 1)
 	base := stampContentChangedAt(t, st, id)
 
 	// Self-assignment puts five content columns in the SET list -- all that
-	// UPDATE OF inspects on either backend -- while changing no value, NULL
+	// UPDATE OF inspects -- while changing no value, NULL
 	// columns included.
 	_, err := st.DB().Exec(st.Rebind(`
 		UPDATE messages
@@ -370,12 +362,10 @@ func TestContentChangedAt_BodyWriteBumpsParent(t *testing.T) {
 		"a message_bodies UPDATE must bump the parent's content_changed_at")
 }
 
-// TestContentChangedAt_NewRowIsStamped proves every new message is stamped
-// non-NULL, whichever writer this backend uses for inserts: the BEFORE INSERT
-// trigger on PostgreSQL, the column DEFAULT on a SQLite database created from
-// schema.sql (which then gets no INSERT trigger at all), the INSERT trigger on
-// a SQLite database upgraded by ALTER TABLE. A NULL watermark drops the row out
-// of the range query permanently.
+// TestContentChangedAt_NewRowIsStamped verifies that new rows receive a
+// watermark, through the column default on fresh archives or the insert
+// trigger on upgraded archives. A NULL watermark would exclude the row from
+// the change feed.
 func TestContentChangedAt_NewRowIsStamped(t *testing.T) {
 	st := testutil.NewTestStore(t)
 	id := seedMessage(t, st, 1)
@@ -401,11 +391,8 @@ func TestContentChangedAt_LastModifiedUnaffected(t *testing.T) {
 	st := testutil.NewTestStore(t)
 	id := seedMessage(t, st, 1)
 
-	// Baseline last_modified after the stamp, not before. On PostgreSQL the
-	// stamp is a plain UPDATE and bumps last_modified; on SQLite the trigger's
-	// UPDATE OF scope excludes content_changed_at, so a statement naming only
-	// that column does not. Ordering this way makes the assertion below hold on
-	// either backend without asserting which one applies.
+	// Read both baselines after seeding content_changed_at. Subsequent metadata
+	// writes must preserve both watermarks.
 	ccBase := stampContentChangedAt(t, st, id)
 	lmBase := baselineLM(t, st, id)
 
@@ -419,16 +406,9 @@ func TestContentChangedAt_LastModifiedUnaffected(t *testing.T) {
 		"the same bookkeeping-only update must leave content_changed_at alone")
 }
 
-// stampLastModified writes an explicit last_modified value directly. The write
-// is not re-bumped by a trigger: the value differs from the stored one, so the
-// last_modified trigger's WHEN guard (OLD.last_modified = NEW.last_modified)
-// yields to it. The upgrade test needs a distinguishable, known-past
-// value to prove the content_changed_at backfill seeds from last_modified
-// rather than from "now"; unlike stampContentChangedAt (which stamps
-// content_changed_at to a fixed constant), the value here must vary and must
-// survive SQLite's strftime parsing in the backfill SQL, so it is passed with
-// no timezone suffix -- a bare "YYYY-MM-DD HH:MM:SS" is the one form both
-// SQLite's strftime and PostgreSQL's TIMESTAMPTZ parser accept unambiguously.
+// stampLastModified writes a known past value that the trigger must preserve.
+// The backfill uses SQLite strftime to seed content_changed_at from this value;
+// the fixture uses a bare YYYY-MM-DD HH:MM:SS timestamp.
 func stampLastModified(t *testing.T, st *store.Store, id int64, value string) {
 	t.Helper()
 	_, err := st.DB().Exec(
@@ -437,7 +417,7 @@ func stampLastModified(t *testing.T, st *store.Store, id int64, value string) {
 }
 
 // contentChangedAtTriggerNames are the four triggers EnsureTriggers can create
-// (dialect_sqlite.go, dialect_pg.go): two on messages (INSERT, UPDATE) and two
+// in dialect_sqlite.go: two on messages (INSERT, UPDATE) and two
 // on message_bodies (INSERT, UPDATE), all of which reference content_changed_at
 // and must be dropped before SQLite will allow the column itself to be dropped.
 // Only three of them exist on a SQLite database created from schema.sql, whose
@@ -454,14 +434,8 @@ var contentChangedAtTriggerNames = []struct {
 	{"trg_message_bodies_content_changed_upd", "message_bodies"},
 }
 
-// dropContentChangedAtColumn tears content_changed_at back out of a store
-// built by testutil.NewTestStore, reproducing the shape of an archive that
-// predates the column, on both backends. SQLite refuses ALTER TABLE ... DROP
-// COLUMN while any trigger or index still references the column, so the
-// removal must happen in dependency order: triggers first, then the index,
-// then the column. DROP TRIGGER syntax differs by backend -- PostgreSQL
-// triggers are namespaced per-table and require "ON <table>"; SQLite triggers
-// are named at the schema level and reject a table clause.
+// dropContentChangedAtColumn reconstructs an archive predating the watermark.
+// SQLite requires removal of dependent triggers and indexes before the column.
 func dropContentChangedAtColumn(t *testing.T, st *store.Store) {
 	t.Helper()
 	for _, trg := range contentChangedAtTriggerNames {
@@ -505,7 +479,7 @@ func clearContentChangedBackfillLedger(t *testing.T, st *store.Store) {
 // ADD COLUMN carries a default, and they would never appear in the feed.
 //
 // A store from testutil.NewTestStore already has the column, its index, the
-// triggers this backend creates for it, and the backfill's ledger row, so the
+// triggers SQLite creates for it, and the backfill's ledger row, so the
 // naive version of this test would find nothing to upgrade: InitSchema would
 // skip the backfill (ledger already marked applied) and the ADD COLUMN
 // migration would be a silent no-op (IsDuplicateColumnError).
@@ -553,9 +527,7 @@ func TestContentChangedAt_UpgradeFromDatabaseWithoutColumn(t *testing.T) {
 // hours of work. As a single transaction, an interruption anywhere in it — an
 // operator's Ctrl-C, an OOM kill, a laptop lid — rolls back every row, so the
 // next start begins again from nothing and the archive can never finish
-// upgrading if the window between restarts is shorter than the backfill. On
-// PostgreSQL each abandoned attempt also leaves a whole table's worth of dead
-// tuples behind.
+// upgrading if the window between restarts is shorter than the backfill.
 //
 // Batched, an interruption costs only the batch in flight. This test proves
 // both halves: rows stamped before the interruption are still stamped after it,
@@ -731,13 +703,8 @@ func TestContentChangedAt_BackfillStopsWhenTheContextIsCancelled(t *testing.T) {
 	assert.True(applied, "the completed backfill must record itself")
 }
 
-// seedMessageAtID seeds message n and gives it an explicit id, so a test can
-// place a row anywhere in the id space the backfill has to cope with. The two
-// backends need opposite orders: SQLite's `INTEGER PRIMARY KEY` is the rowid and
-// takes any 64-bit value, so the row is inserted first and moved afterwards;
-// PostgreSQL's id is `GENERATED ALWAYS AS IDENTITY`, which refuses an UPDATE
-// outright, so the identity sequence is repositioned before the insert instead.
-// Returns the id, having checked the row really landed on it.
+// seedMessageAtID inserts a message and moves its INTEGER PRIMARY KEY to the
+// requested ID, allowing backfill tests to cover gaps and boundary values.
 func seedMessageAtID(t *testing.T, st *store.Store, n int, id int64) int64 {
 	t.Helper()
 
@@ -881,9 +848,6 @@ func TestContentChangedAt_BackfillSkipsIDRangesWithNoWork(t *testing.T) {
 // range predicate excludes NULL, and the migration ledger guarantees the
 // `WHERE content_changed_at IS NULL` scan never runs again, so the row is
 // invisible to the feed forever.
-//
-// PostgreSQL cannot fail this way — last_modified is a real TIMESTAMPTZ there
-// and the backfill copies it without conversion — so this is SQLite-only.
 func TestContentChangedAt_BackfillNeverMintsANullWatermark(t *testing.T) {
 
 	require := require.New(t)
@@ -1321,12 +1285,9 @@ func TestContentChangedAt_NoncanonicalDefaultIsRejected(t *testing.T) {
 		"and stamp them in the one shape the feed's lexical cursor can order")
 }
 
-// TestContentChangedAt_NullWatermarkIsStamped pins the null-safe comparison in
-// the UPDATE trigger's yield guard. With `=` (SQLite) or `=`/`<>` (PostgreSQL)
-// instead of IS / IS NOT DISTINCT FROM, `OLD.content_changed_at = NEW.content_changed_at`
-// evaluates to NULL for a row whose watermark is NULL, the WHEN clause is never
-// satisfied, and that row is stranded outside the feed forever. Rows can carry a
-// NULL watermark on an archive copied or restored from a pre-backfill database.
+// TestContentChangedAt_NullWatermarkIsStamped verifies the UPDATE trigger
+// uses the null-safe IS comparison. Using = would evaluate to NULL for two
+// NULL watermarks and leave restored pre-backfill rows outside the feed.
 func TestContentChangedAt_NullWatermarkIsStamped(t *testing.T) {
 	st := testutil.NewTestStore(t)
 	id := seedMessage(t, st, 1)

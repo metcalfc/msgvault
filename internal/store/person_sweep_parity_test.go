@@ -825,9 +825,7 @@ func parityResolutionSnapshots(t *testing.T, f *personSweepParityFixture) []pari
 			&item.ProviderPolicyFingerprint, &resolvedAt, &item.DecisionKey, &item.ClaimKey,
 			&item.Action, &item.Reason, &item.ScoreJSON, &item.CompetingClaimKey,
 			&item.ProjectionKind, &item.ProjectionRowID))
-		// PostgreSQL stores score_json as JSONB, which re-serializes key order
-		// and spacing; canonicalize through Go so both backends compare the
-		// exact same value-keyed JSON.
+		// Canonicalize JSON so comparison checks values rather than key order or spacing.
 		var scoreValue map[string]any
 		require.NoError(t, json.Unmarshal([]byte(item.ScoreJSON), &scoreValue))
 		canonicalScore, err := json.Marshal(scoreValue)
