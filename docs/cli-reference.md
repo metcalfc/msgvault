@@ -2285,6 +2285,29 @@ the daemon also refreshes them after each successful CardDAV sync and in a daily
 
 ---
 
+## person link-equivalent-addresses
+
+Link archive addresses that deliver to the same mailbox, across the whole
+archive. The command goes through the daemon.
+
+```bash
+msgvault person link-equivalent-addresses [--json]
+```
+
+Anything after `+` is ignored on every domain, and Gmail also ignores dots and
+treats googlemail.com as gmail.com; those pairs are linked. Non-Gmail
+addresses that differ only by dots, and pairs whose addresses belong to two
+different profiles, are left for Reviews. Pairs you unlinked or rejected stay
+apart. The daemon runs the same pass after every successful sync or import for
+newly added addresses; this command rescans everything and is safe to repeat.
+
+The output counts email participants scanned, new links, pairs that were
+already linked, new review suggestions, profile conflicts, and pairs left
+apart by an earlier decision or a not-a-person mark. See
+[Addresses that share a mailbox](/docs/usage/people/#addresses-that-share-a-mailbox).
+
+---
+
 ## person kind
 
 Mark an observed person as not a person, or as a person again. The choice

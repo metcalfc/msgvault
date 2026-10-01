@@ -125,6 +125,7 @@ import type {
   DocumentSearchResponse,
   DocumentVectorOperationsResponse,
   DomainSummary,
+  EmailEquivalenceResult,
   Employment,
   EmploymentBody,
   EmploymentsResponse,
@@ -1777,6 +1778,18 @@ export const setCorrespondentKind = (
   );
 };
 /**
+ * Links participants whose addresses deliver to the same mailbox: anything after a plus sign is ignored on every domain, and Gmail also ignores dots and treats googlemail.com as gmail.com. Each link is an ordinary participant link owned by an accepted email_equivalence candidate, so unlinking undoes it for good. Addresses on two different people, and non-Gmail addresses that differ only by dots, become reviewable candidates instead. The daemon runs the same pass after each successful import; this endpoint scans the whole archive even when nothing is new. Repeating it is safe.
+ * @summary Link email addresses that share a mailbox
+ */
+export const linkEquivalentEmailAddresses = (
+  options?: SecondParameter<typeof orvalFetch<EmailEquivalenceResult>>,
+) => {
+  return orvalFetch<EmailEquivalenceResult>(
+    { url: `/api/v1/identity/email-equivalence/link`, method: "POST" },
+    options,
+  );
+};
+/**
  * @summary Assert two participants are the same person
  */
 export const linkIdentityParticipants = (
@@ -1794,7 +1807,7 @@ export const linkIdentityParticipants = (
   );
 };
 /**
- * Candidates are evidence-backed suggestions, never applied links. Only a repeated stable provider or Beeper user ID is confirmed automatically; a username, phone, email, display name, or shared conversation is evidence and waits for an explicit decision.
+ * Candidates are evidence-backed suggestions, never applied links. Only a repeated stable provider or Beeper user ID, or two addresses that deliver to the same mailbox (basis email_equivalence), is confirmed automatically; a username, phone, email, dot-only address variant (email_dot_variant), display name, or shared conversation is evidence and waits for an explicit decision.
  * @summary List reviewable identity match candidates
  */
 export const listIdentityMatchCandidates = (

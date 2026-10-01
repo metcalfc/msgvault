@@ -20,6 +20,18 @@ All notable changes to msgvault, grouped by release.
   **Undo** reverses either one. `POST /api/v1/people/{id}/participants/detach`
   and `/reattach` remove and restore identities. Requires API schema 2.47.0.
   See [Clean up a person's contact methods](/docs/usage/people/#clean-up-a-persons-contact-methods).
+
+- Addresses that deliver to one mailbox become one identity. Anything after
+  `+` is ignored on every domain, and Gmail also ignores dots and treats
+  googlemail.com as gmail.com, so `pat+news@example.com` joins
+  `pat@example.com`. Non-Gmail addresses that differ only by dots are
+  suggested in Reviews instead. Each link can be undone on the person's page
+  and stays undone; addresses on two different profiles wait in Reviews
+  rather than merging. The first sync after upgrading checks the whole
+  archive; `msgvault person link-equivalent-addresses` (or
+  `POST /api/v1/identity/email-equivalence/link`) checks it on demand. See
+  [Addresses that share a mailbox](/docs/usage/people/#addresses-that-share-a-mailbox).
+  Requires API schema 2.48.0.
 - Names and short profile labels drop emoji as msgvault imports them, so
   "🎉 Ana" and "Ana ✨" both read "Ana". This covers email and chat display
   names, calendar attendees, CardDAV contact names, and enrichment or sweep

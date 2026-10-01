@@ -511,6 +511,10 @@ type ClientInterface interface {
 	SetCorrespondentKind(ctx context.Context, options *SetCorrespondentKindRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetCorrespondentKindResponse, error)
 	SetCorrespondentKindWithResponse(ctx context.Context, options *SetCorrespondentKindRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetCorrespondentKindResp, error)
 
+	// LinkEquivalentEmailAddresses Link email addresses that share a mailbox
+	LinkEquivalentEmailAddresses(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*LinkEquivalentEmailAddressesResponse, error)
+	LinkEquivalentEmailAddressesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*LinkEquivalentEmailAddressesResp, error)
+
 	// LinkIdentityParticipants Assert two participants are the same person
 	LinkIdentityParticipants(ctx context.Context, options *LinkIdentityParticipantsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LinkIdentityParticipantsResponse, error)
 	LinkIdentityParticipantsWithResponse(ctx context.Context, options *LinkIdentityParticipantsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LinkIdentityParticipantsResp, error)
@@ -8458,6 +8462,68 @@ func (c *Client) SetCorrespondentKind(ctx context.Context, options *SetCorrespon
 	}
 
 	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/api/v1/identity/correspondent-kinds/{id}")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+	return responseParser(ctx, resp)
+}
+
+// LinkEquivalentEmailAddresses Link email addresses that share a mailbox
+func (c *Client) LinkEquivalentEmailAddresses(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*LinkEquivalentEmailAddressesResponse, error) {
+	var err error
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/api/v1/identity/email-equivalence/link",
+		Method:     "POST",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	responseParser := func(ctx context.Context, resp *runtime.Response) (*LinkEquivalentEmailAddressesResponse, error) {
+		bodyBytes := resp.Content
+		if resp.StatusCode != 200 {
+			target := new(LinkEquivalentEmailAddressesErrorResponse)
+			// Handle empty error response body gracefully - skip unmarshal if no content
+			if len(bodyBytes) > 0 {
+				if err = json.Unmarshal(bodyBytes, target); err != nil {
+					return nil, &runtime.ResponseDecodeError{
+						StatusCode:    resp.StatusCode,
+						ContentType:   resp.Headers.Get("Content-Type"),
+						ContentLength: len(bodyBytes),
+						TargetType:    "LinkEquivalentEmailAddressesErrorResponse",
+						Body:          bodyBytes,
+						Err:           err,
+					}
+				}
+			}
+			// Return error with (possibly empty) target
+			if errTarget, ok := any(*target).(error); ok {
+				return nil, runtime.NewClientAPIError(errTarget, runtime.WithStatusCode(resp.StatusCode))
+			}
+			return nil, runtime.NewClientAPIError(fmt.Errorf("API error (status %d): %v", resp.StatusCode, *target),
+				runtime.WithStatusCode(resp.StatusCode))
+		}
+		target := new(LinkEquivalentEmailAddressesResponse)
+		// Handle empty response body gracefully
+		if len(bodyBytes) == 0 {
+			return target, nil
+		}
+		if err = json.Unmarshal(bodyBytes, target); err != nil {
+			return nil, &runtime.ResponseDecodeError{
+				StatusCode:    resp.StatusCode,
+				ContentType:   resp.Headers.Get("Content-Type"),
+				ContentLength: len(bodyBytes),
+				TargetType:    "LinkEquivalentEmailAddressesResponse",
+				Body:          bodyBytes,
+				Err:           err,
+			}
+		}
+		return target, nil
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/api/v1/identity/email-equivalence/link")
 	if err != nil {
 		return nil, fmt.Errorf("error executing request: %w", err)
 	}

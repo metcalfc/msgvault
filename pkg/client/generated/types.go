@@ -3597,6 +3597,16 @@ func (d DurationTotals) Validate() error {
 	return errors
 }
 
+type EmailEquivalenceResult struct {
+	AlreadyLinked int64 `json:"already_linked"`
+	Conflicts     int64 `json:"conflicts"`
+	Linked        int64 `json:"linked"`
+	Participants  int64 `json:"participants"`
+	Skipped       bool  `json:"skipped"`
+	Suggested     int64 `json:"suggested"`
+	Suppressed    int64 `json:"suppressed"`
+}
+
 type Employment struct {
 	AddressID      *int64       `json:"address_id,omitempty"`
 	Confidence     *float64     `json:"confidence,omitempty"`

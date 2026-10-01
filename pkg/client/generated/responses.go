@@ -1343,6 +1343,10 @@ type SetCorrespondentKindErrorResponseJSON = ErrorResponse
 
 type SetCorrespondentKindErrorResponseJSON503 = ErrorResponse
 
+type LinkEquivalentEmailAddressesResponse = EmailEquivalenceResult
+
+type LinkEquivalentEmailAddressesErrorResponse = ErrorResponse
+
 type LinkIdentityParticipantsResponse = IdentityLinkResponse
 
 type LinkIdentityParticipantsErrorResponse struct {
@@ -4592,6 +4596,14 @@ type SetCorrespondentKindResp struct {
 	JSON404      *SetCorrespondentKindErrorResponse
 	JSON409      *SetCorrespondentKindErrorResponseJSON
 	JSON503      *SetCorrespondentKindErrorResponseJSON503
+}
+
+type LinkEquivalentEmailAddressesResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	JSON200      *LinkEquivalentEmailAddressesResponse
+	JSON503      *LinkEquivalentEmailAddressesErrorResponse
 }
 
 type LinkIdentityParticipantsResp struct {

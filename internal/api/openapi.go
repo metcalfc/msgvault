@@ -413,7 +413,10 @@ import (
 // cannot attach them again, and POST /people/{id}/participants/reattach,
 // which undoes one detachment. Both take the person If-Match and return
 // PersonParticipantDetachResult. Additive (minor bump).
-const APISchemaVersion = "2.47.0"
+// 2.48.0 adds POST /identity/email-equivalence/link, which links participants
+// whose addresses deliver to the same mailbox, and the email_equivalence and
+// email_dot_variant identity match bases. Additive (minor bump).
+const APISchemaVersion = "2.48.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

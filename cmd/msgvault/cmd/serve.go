@@ -2741,6 +2741,12 @@ func (a *storeAPIAdapter) BuildContactMatchCandidatesContext(
 	return a.store.BuildContactMatchCandidatesContext(ctx)
 }
 
+func (a *storeAPIAdapter) LinkEquivalentEmailAddressesContext(
+	ctx context.Context, force bool,
+) (*store.EmailEquivalenceResult, error) {
+	return a.store.LinkEquivalentEmailAddressesContext(ctx, force)
+}
+
 func (a *storeAPIAdapter) DescribeIdentityMatchCandidatesContext(
 	ctx context.Context, candidates []store.IdentityMatchCandidate,
 ) ([]store.IdentityMatchEndpointSummary, []store.ContactMatchStatus, error) {

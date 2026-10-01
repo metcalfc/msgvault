@@ -20,7 +20,9 @@ const basisLabels: Record<string, string> = {
   stable_provider_id: 'same provider identity',
   service_scope_username: 'same username on a service',
   email: 'email', phone: 'phone', display_name: 'same display name',
-  conversation_membership: 'shared conversation'
+  conversation_membership: 'shared conversation',
+  email_equivalence: 'same mailbox address',
+  email_dot_variant: 'address differs only by dots'
 };
 
 function linkOriginText(edge: PersonClusterEdge): string {

@@ -107,9 +107,10 @@ func (s *Server) registerIdentityMatchRoutes(api huma.API) {
 	list := rawAPIV1Operation("listIdentityMatchCandidates", http.MethodGet,
 		"/identity/match-candidates", "List reviewable identity match candidates")
 	list.Description = "Candidates are evidence-backed suggestions, never applied links. " +
-		"Only a repeated stable provider or Beeper user ID is confirmed automatically; a " +
-		"username, phone, email, display name, or shared conversation is evidence and waits " +
-		"for an explicit decision."
+		"Only a repeated stable provider or Beeper user ID, or two addresses that deliver " +
+		"to the same mailbox (basis email_equivalence), is confirmed automatically; a " +
+		"username, phone, email, dot-only address variant (email_dot_variant), display " +
+		"name, or shared conversation is evidence and waits for an explicit decision."
 	list.Responses = jsonResponsesFor[IdentityMatchCandidatesResponse](api)
 	addErrorResponses(api, list.Responses, http.StatusServiceUnavailable)
 	registerRawHumaRoute(api, list, s.handleListIdentityMatchCandidates)
@@ -151,6 +152,43 @@ func (s *Server) registerIdentityMatchRoutes(api huma.API) {
 	build.Responses = jsonResponsesFor[store.ContactMatchBuildResult](api)
 	addErrorResponses(api, build.Responses, http.StatusServiceUnavailable)
 	registerRawHumaRoute(api, build, s.handleBuildContactMatchCandidates)
+
+	equivalence := rawAPIV1Operation("linkEquivalentEmailAddresses", http.MethodPost,
+		"/identity/email-equivalence/link", "Link email addresses that share a mailbox")
+	equivalence.Description = "Links participants whose addresses deliver to the same " +
+		"mailbox: anything after a plus sign is ignored on every domain, and Gmail also " +
+		"ignores dots and treats googlemail.com as gmail.com. Each link is an ordinary " +
+		"participant link owned by an accepted email_equivalence candidate, so unlinking " +
+		"undoes it for good. Addresses on two different people, and non-Gmail addresses " +
+		"that differ only by dots, become reviewable candidates instead. The daemon runs " +
+		"the same pass after each successful import; this endpoint scans the whole " +
+		"archive even when nothing is new. Repeating it is safe."
+	equivalence.Responses = jsonResponsesFor[store.EmailEquivalenceResult](api)
+	addErrorResponses(api, equivalence.Responses, http.StatusServiceUnavailable)
+	registerRawHumaRoute(api, equivalence, s.handleLinkEquivalentEmailAddresses)
+}
+
+// EmailEquivalenceLinker links participants whose addresses share a mailbox.
+type EmailEquivalenceLinker interface {
+	LinkEquivalentEmailAddressesContext(
+		ctx context.Context, force bool,
+	) (*store.EmailEquivalenceResult, error)
+}
+
+func (s *Server) handleLinkEquivalentEmailAddresses(w http.ResponseWriter, r *http.Request) {
+	linker, ok := s.store.(EmailEquivalenceLinker)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "identity_matches_unavailable",
+			"Identity match review is unavailable")
+		return
+	}
+	result, err := linker.LinkEquivalentEmailAddressesContext(r.Context(), true)
+	if err != nil {
+		s.writeIdentityMatchError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleBuildContactMatchCandidates(w http.ResponseWriter, r *http.Request) {

@@ -546,3 +546,30 @@ func TestAcceptEmptyBodyIsAllowed(t *testing.T) {
 	require.NoError(json.Unmarshal(response.Body.Bytes(), &accepted), response.Body.String())
 	assert.Nil(accepted.Candidate.Notes, "notes are optional")
 }
+
+func TestLinkEquivalentEmailAddressesEndpointLinksSharedMailbox(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, st := newIdentityLinkTestServer(t)
+	primary := st.mustParticipant(t, "pat@example.com", "Pat Example", "example.com")
+	tagged := st.mustParticipant(t, "pat+news@example.com", "", "example.com")
+
+	response := personRequest(t, srv, http.MethodPost,
+		"/api/v1/identity/email-equivalence/link", nil, "")
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	var first store.EmailEquivalenceResult
+	require.NoError(json.Unmarshal(response.Body.Bytes(), &first), response.Body.String())
+	assert.Equal(store.EmailEquivalenceResult{Participants: 2, Linked: 1}, first)
+	members, err := st.ClusterMembers(primary)
+	require.NoError(err)
+	assert.Equal([]int64{primary, tagged}, members)
+
+	// A repeat request rescans the archive and changes nothing.
+	response = personRequest(t, srv, http.MethodPost,
+		"/api/v1/identity/email-equivalence/link", nil, "")
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	var repeat store.EmailEquivalenceResult
+	require.NoError(json.Unmarshal(response.Body.Bytes(), &repeat), response.Body.String())
+	assert.Equal(store.EmailEquivalenceResult{Participants: 2}, repeat)
+}

@@ -37,7 +37,9 @@ describe('identityChipText', () => {
   it.each([
     ['archive_observation', 'stable_provider_id', 'matched from archived contacts (same provider identity)'],
     ['archive_observation', 'service_scope_username', 'matched from archived contacts (same username on a service)'],
-    ['user', 'display_name', 'matched from user input (same display name)']
+    ['user', 'display_name', 'matched from user input (same display name)'],
+    ['system', 'email_equivalence', 'matched from the system (same mailbox address)'],
+    ['user', 'email_dot_variant', 'matched from user input (address differs only by dots)']
   ])('explains %s / %s', (source, basis, expected) => {
     const text = identityChipText(identifier(), undefined, [edge(10, { kind: 'candidate', source, basis })]);
     expect(text.subtitle).toBe(expected);

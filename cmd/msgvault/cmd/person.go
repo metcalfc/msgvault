@@ -714,6 +714,7 @@ func init() {
 	personCmd.AddCommand(newPersonBriefCommand())
 	personCmd.AddCommand(newPersonAgendaCommand())
 	personCmd.AddCommand(newPersonContactMatchesCommand())
+	personCmd.AddCommand(newPersonLinkEquivalentAddressesCommand())
 	personCmd.AddCommand(newPersonKindCommand())
 	personCmd.AddCommand(newPersonJudgeCommand())
 	personCmd.AddCommand(personPromoteCmd, personGetCmd, personListCmd,

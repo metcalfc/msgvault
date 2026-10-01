@@ -239,6 +239,7 @@ export * from "./domainSearchHTTPResponse";
 export * from "./domainSummary";
 export * from "./duplicateCostRisk";
 export * from "./durationTotals";
+export * from "./emailEquivalenceResult";
 export * from "./employment";
 export * from "./employmentBody";
 export * from "./employmentBodySource";

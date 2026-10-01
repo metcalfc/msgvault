@@ -70,6 +70,38 @@ entered. A saved profile's display name is cleaned only when msgvault can
 tell it was never renamed; any profile renamed since it was created keeps
 its name, even if the name matches one msgvault imported.
 
+### Addresses that share a mailbox
+
+Many addresses deliver to one inbox. msgvault links them into one observed
+person so their messages and history appear together.
+
+| Addresses | What happens |
+|---|---|
+| `pat+news@example.com` and `pat@example.com` | Linked automatically. Anything after the first `+` is a tag, on every domain. |
+| `sam.doe@gmail.com`, `samdoe@gmail.com`, and `samdoe@googlemail.com` | Linked automatically. Gmail ignores dots, and googlemail.com is gmail.com. |
+| `lee.roe@example.org` and `leeroe@example.org` | Suggested in Reviews, not linked. Outside Gmail, dots can mean a different mailbox. |
+| `PAT@Example.com` and `pat@example.com` | Linked automatically. Case never matters. |
+
+- **When it runs:** after every successful sync or import, for addresses
+  added since the last run. The first sync after upgrading checks the whole
+  archive once. Run `msgvault person link-equivalent-addresses` to check the
+  whole archive now; repeating it is safe.
+- **What a link is:** an ordinary identity link with the reason "same
+  mailbox address". It appears on the person's page like any other link.
+- **Undo:** unlink the address on the person's page, or reject the accepted
+  match in Reviews. msgvault records that decision and never links that pair
+  again. New tags on the same mailbox still join the remaining identity, but
+  never pull the address you split off back in.
+- **Two saved profiles:** when the addresses already belong to two different
+  person profiles, msgvault does not merge the profiles. The pair waits in
+  Reviews; accepting it offers the merge.
+- **Not a person:** a pair that involves a record you marked as not a person
+  is set aside. Marking it a person again returns the pair to Reviews.
+
+A local part that starts with `+`, such as `+alerts@example.com`, has no
+mailbox name before the tag, so it only matches itself. Phone numbers and
+chat handles are not covered by this rule.
+
 ## Promote a durable person
 
 Directory starts empty until you save profiles or import contacts. In
