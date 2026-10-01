@@ -732,16 +732,7 @@ func TestPersonSearchProductionCompositionDoesNotPublishReadyWithoutThePersonEng
 
 func newPersonSearchTestCommand(ctx context.Context, t *testing.T) (*cobra.Command, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
-	savedLimit, savedJSON := personSearchLimit, personSearchJSON
-	personSearchLimit, personSearchJSON = defaultPersonSearchLimit, false
-	t.Cleanup(func() {
-		personSearchLimit, personSearchJSON = savedLimit, savedJSON
-	})
-	command := &cobra.Command{
-		Use: personSearchCmd.Use, Args: personSearchCmd.Args, RunE: personSearchCmd.RunE,
-	}
-	command.Flags().IntVar(&personSearchLimit, "limit", defaultPersonSearchLimit, "")
-	command.Flags().BoolVar(&personSearchJSON, flagJSON, false, "")
+	command := newPersonSearchCommand()
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 	command.SetOut(stdout)
 	command.SetErr(stderr)
@@ -753,9 +744,9 @@ func TestPersonSearchProductionCommandRegistrationAndFlags(t *testing.T) {
 	check := assert.New(t)
 	must := require.New(t)
 
-	command, remaining, err := personCmd.Find([]string{"search"})
+	command, remaining, err := newPersonCommand().Find([]string{"search"})
 	must.NoError(err)
-	check.Same(personSearchCmd, command)
+	check.Equal("search", command.Name())
 	check.Empty(remaining)
 	limitFlag := command.Flags().Lookup("limit")
 	must.NotNil(limitFlag)

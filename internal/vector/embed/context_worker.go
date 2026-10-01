@@ -18,18 +18,6 @@ import (
 	"go.kenn.io/msgvault/internal/vector"
 )
 
-// ContextWorkStore is the source-side surface required by ContextWorker.
-// *store.Store implements it.
-type ContextWorkStore interface {
-	ScanEmbeddingChanges(ctx context.Context, after int64, limit int) ([]store.EmbeddingChange, error)
-	LatestEmbeddingChangeSequence(ctx context.Context) (int64, error)
-	ScanForEmbeddingScoped(ctx context.Context, target, afterID int64, limit int, messageTypes []string, sourceIDs []int64) ([]int64, error)
-	SetEmbedGenGroupIfUnchanged(ctx context.Context, stamps []store.EmbedGenStamp, metadata store.EmbedGenMetadataVersion, target int64) (bool, error)
-	ResetEmbedGen(ctx context.Context, ids []int64) error
-}
-
-var _ ContextWorkStore = (*store.Store)(nil)
-
 // defaultContextRunUTF8Bytes caps one worker tick at roughly ten maximum-size
 // Voyage requests. Durable journal and reconciliation cursors resume remaining
 // work on the next tick without repeating completed publications.
@@ -51,7 +39,7 @@ type ContextWorkerHooks struct {
 type ContextWorkerDeps struct {
 	Backend    vector.Backend
 	Publisher  vector.DocumentPublisher
-	Store      ContextWorkStore
+	Store      *store.Store
 	Assembler  Assembler
 	Client     SemanticClient
 	BuildScope vector.BuildScope
@@ -78,8 +66,7 @@ type ContextConvergence struct {
 
 // ContextWorker drains contextual mutations and reconciles all source scopes.
 type ContextWorker struct {
-	deps   ContextWorkerDeps
-	source *store.Store
+	deps ContextWorkerDeps
 }
 
 // NewContextWorker applies bounded defaults. Configuration errors are returned
@@ -98,8 +85,7 @@ func NewContextWorker(d ContextWorkerDeps) *ContextWorker {
 	if d.Log == nil {
 		d.Log = slog.Default()
 	}
-	source, _ := d.Store.(*store.Store)
-	return &ContextWorker{deps: d, source: source}
+	return &ContextWorker{deps: d}
 }
 
 // ReclaimStale matches the ordinary worker contract. Contextual work has no
@@ -172,7 +158,7 @@ func (w *ContextWorker) runBackstop(ctx context.Context, gen vector.GenerationID
 
 func (w *ContextWorker) validate() error {
 	if w.deps.Backend == nil || w.deps.Publisher == nil || w.deps.Store == nil ||
-		w.deps.Assembler == nil || w.deps.Client == nil || w.source == nil {
+		w.deps.Assembler == nil || w.deps.Client == nil {
 		return errors.New("context worker: backend, publisher, concrete store, assembler, and client are required")
 	}
 	return nil
@@ -215,7 +201,7 @@ func (w *ContextWorker) run(ctx context.Context, gen vector.GenerationID) (res R
 	if err := w.deps.Publisher.AdvanceDocumentChangeWatermark(ctx, gen, 0); err != nil {
 		return res, fmt.Errorf("initialize contextual journal ownership: %w", err)
 	}
-	if err := w.source.EnableEmbeddingChangeJournal(ctx); err != nil {
+	if err := w.deps.Store.EnableEmbeddingChangeJournal(ctx); err != nil {
 		return res, err
 	}
 	defer func() {
@@ -388,7 +374,7 @@ func (w *ContextWorker) drainJournal(ctx context.Context, gen vector.GenerationI
 		if err != nil {
 			return fmt.Errorf("read contextual progress: %w", err)
 		}
-		snapshot, err := BeginSourceSnapshot(ctx, w.source)
+		snapshot, err := BeginSourceSnapshot(ctx, w.deps.Store)
 		if err != nil {
 			return err
 		}
@@ -433,7 +419,7 @@ func (w *ContextWorker) drainJournal(ctx context.Context, gen vector.GenerationI
 				if budget, ok := ctx.Value(contextRunBudgetKey{}).(*contextRunBudget); ok && budget.used >= budget.limit {
 					return errContextRunBudgetExhausted
 				}
-				pageSnapshot, err := BeginSourceSnapshot(ctx, w.source)
+				pageSnapshot, err := BeginSourceSnapshot(ctx, w.deps.Store)
 				if err != nil {
 					return err
 				}
@@ -493,7 +479,7 @@ func (w *ContextWorker) drainJournal(ctx context.Context, gen vector.GenerationI
 		}
 		for start := 0; start < len(scopes); start += w.deps.ChangeBatchSize {
 			end := min(start+w.deps.ChangeBatchSize, len(scopes))
-			pageSnapshot, err := BeginSourceSnapshot(ctx, w.source)
+			pageSnapshot, err := BeginSourceSnapshot(ctx, w.deps.Store)
 			if err != nil {
 				return err
 			}
@@ -565,7 +551,7 @@ func (w *ContextWorker) drainOrdinaryDiscovery(ctx context.Context, gen vector.G
 			return nil
 		}
 		res.Claimed += len(ids)
-		snapshot, err := BeginSourceSnapshot(ctx, w.source)
+		snapshot, err := BeginSourceSnapshot(ctx, w.deps.Store)
 		if err != nil {
 			return err
 		}
@@ -1304,7 +1290,7 @@ func (w *ContextWorker) reconcile(ctx context.Context, gen vector.GenerationID, 
 		}
 		for {
 			pageAfter := after
-			snapshot, err := BeginSourceSnapshot(ctx, w.source)
+			snapshot, err := BeginSourceSnapshot(ctx, w.deps.Store)
 			if err != nil {
 				return err
 			}
@@ -1405,7 +1391,7 @@ func (w *ContextWorker) reconcile(ctx context.Context, gen vector.GenerationID, 
 			first := sort.Search(len(scopes), func(i int) bool { return scopes[i].key > resumeScope })
 			scopes = scopes[first:]
 		}
-		snapshot, err := BeginSourceSnapshot(ctx, w.source)
+		snapshot, err := BeginSourceSnapshot(ctx, w.deps.Store)
 		if err != nil {
 			return err
 		}

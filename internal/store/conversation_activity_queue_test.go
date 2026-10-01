@@ -112,7 +112,6 @@ func TestConversationStatsRecomputeDoesNotRequeueActivity(t *testing.T) {
 // DELETE binds the desired set as one JSON parameter; a placeholder per
 // member made large Slack/Teams channel synchronization fail outright.
 func TestReplaceConversationParticipantsHandlesHugeMemberships(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)

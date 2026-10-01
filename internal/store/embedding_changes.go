@@ -45,13 +45,13 @@ func (s *Store) ScanEmbeddingChanges(
 	if limit <= 0 {
 		return []EmbeddingChange{}, nil
 	}
-	rows, err := s.db.QueryContext(ctx, s.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT sequence, kind, message_id, old_message_type, new_message_type, old_conversation_id,
 		       new_conversation_id, old_sent_at, new_sent_at, participant_id
 		FROM embedding_changes
 		WHERE sequence > ?
 		ORDER BY sequence
-		LIMIT ?`), after, limit)
+		LIMIT ?`, after, limit)
 	if err != nil {
 		return nil, fmt.Errorf("scan embedding changes: %w", err)
 	}
@@ -114,7 +114,6 @@ func (s *Store) EnableEmbeddingChangeJournal(ctx context.Context) error {
 		}
 		return nil
 	}
-
 }
 
 // PruneEmbeddingChangesThrough removes the journal prefix consumed by every
@@ -124,8 +123,7 @@ func (s *Store) PruneEmbeddingChangesThrough(ctx context.Context, sequence int64
 	if sequence <= 0 {
 		return 0, nil
 	}
-	result, err := s.db.ExecContext(ctx, s.Rebind(
-		`DELETE FROM embedding_changes WHERE sequence <= ?`), sequence)
+	result, err := s.db.ExecContext(ctx, `DELETE FROM embedding_changes WHERE sequence <= ?`, sequence)
 	if err != nil {
 		return 0, fmt.Errorf("prune embedding changes through %d: %w", sequence, err)
 	}
@@ -136,14 +134,14 @@ func (s *Store) PruneEmbeddingChangesThrough(ctx context.Context, sequence int64
 	return pruned, nil
 }
 
-func coalesceLatestMessageChanges(q querier, dialect Dialect, messageID int64) error {
-	query := dialect.Rebind(`
+func coalesceLatestMessageChanges(q querier, messageID int64) error {
+	query := `
 		SELECT sequence, kind, message_id, old_message_type, new_message_type, old_conversation_id,
 		       new_conversation_id, old_sent_at, new_sent_at, participant_id
 		  FROM embedding_changes
 		 WHERE message_id = ?
 		 ORDER BY sequence DESC
-		 LIMIT 1 OFFSET ?`)
+		 LIMIT 1 OFFSET ?`
 	changes := make([]EmbeddingChange, 0, 2)
 	for offset := range 2 {
 		var change EmbeddingChange
@@ -164,8 +162,7 @@ func coalesceLatestMessageChanges(q querier, dialect Dialect, messageID int64) e
 	if len(changes) != 2 || !sameEmbeddingChangeScope(changes[0], changes[1]) {
 		return nil
 	}
-	if _, err := q.Exec(dialect.Rebind(
-		`DELETE FROM embedding_changes WHERE sequence = ?`), changes[1].Sequence); err != nil {
+	if _, err := q.Exec(`DELETE FROM embedding_changes WHERE sequence = ?`, changes[1].Sequence); err != nil {
 		return fmt.Errorf("coalesce duplicate message journal change: %w", err)
 	}
 	return nil

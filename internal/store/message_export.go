@@ -186,7 +186,7 @@ func (s *Store) exportMessageSources(
 		`
 		args = messageArgs
 	}
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(query), args...)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("query message export sources: %w", err)
 	}
@@ -249,7 +249,7 @@ func (s *Store) exportMessageConversations(
 		sourcePredicate = " AND " + clause
 		args = append(args, sourceArgs...)
 	}
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT s.source_type, s.identifier, c.source_conversation_id,
 		       COALESCE(c.title, ''), c.conversation_type,
 		       COALESCE(c.metadata, '{}')
@@ -261,7 +261,7 @@ func (s *Store) exportMessageConversations(
 			WHERE m.conversation_id = c.id AND `+predicate+`
 		)`+sourcePredicate+`
 		ORDER BY s.source_type, s.identifier, c.source_conversation_id
-	`), args...)
+	`, args...)
 	if err != nil {
 		return fmt.Errorf("query message export conversations: %w", err)
 	}
@@ -338,7 +338,7 @@ func (s *Store) exportMessageRows(
 			)
 		}
 		args = append(args, messageExportPageSize)
-		rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
+		rows, err := s.db.QueryContext(ctx, `
 			SELECT m.id, s.source_type, s.identifier, m.source_message_id,
 			       c.source_conversation_id, m.message_type,
 			       COALESCE(m.subject, ''), COALESCE(m.metadata, '{}'),
@@ -370,7 +370,7 @@ func (s *Store) exportMessageRows(
 			         COALESCE(m.sent_at, m.received_at, m.internal_date),
 			         m.source_message_id, m.id
 			LIMIT ?
-		`), args...)
+		`, args...)
 		if err != nil {
 			return fmt.Errorf("query message export page: %w", err)
 		}
@@ -385,7 +385,7 @@ func (s *Store) exportMessageRows(
 			var text sql.NullString
 			if err := s.db.QueryRowContext(
 				ctx,
-				s.dialect.Rebind(`SELECT body_text FROM message_bodies WHERE message_id = ?`),
+				`SELECT body_text FROM message_bodies WHERE message_id = ?`,
 				row.id,
 			).Scan(&text); err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return fmt.Errorf("load message export body: %w", err)

@@ -193,7 +193,7 @@ func newPersonKindListCommand() *cobra.Command {
 				}
 				source := "-"
 				if record.Source != nil {
-					source = string(*record.Source)
+					source = *record.Source
 				}
 				if probability, ok := record.Probabilities["individual_person"]; ok {
 					source += " (person " + strconv.FormatFloat(probability, 'f', 2, 64) + ")"

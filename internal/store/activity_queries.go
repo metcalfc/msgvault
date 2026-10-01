@@ -142,8 +142,7 @@ func (s *Store) LoadQueuedActivityCandidatesContext(
 	if limit <= 0 {
 		return []ActivityCandidate{}, nil
 	}
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(
-		activityCandidateStateCTE+`
+	rows, err := s.db.QueryContext(ctx, activityCandidateStateCTE+`
 		SELECT `+activityCandidateColumns+`,
 		       1 AS queue_exists, q.revision, q.processed_revision
 		FROM activity_projection_queue q
@@ -153,7 +152,7 @@ func (s *Store) LoadQueuedActivityCandidatesContext(
 		WHERE q.revision > q.processed_revision
 		ORDER BY m.id
 		LIMIT ?
-	`), limit)
+	`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("load queued activity candidates: %w", err)
 	}
@@ -176,8 +175,7 @@ func (s *Store) ScanForActivityProjectionContext(
 	if limit <= 0 {
 		return []ActivityCandidate{}, nil
 	}
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(
-		activityCandidateStateCTE+`
+	rows, err := s.db.QueryContext(ctx, activityCandidateStateCTE+`
 		SELECT `+activityCandidateColumns+`,
 		       CASE WHEN q.message_id IS NULL THEN 0 ELSE 1 END AS queue_exists,
 		       COALESCE(q.revision, 0), COALESCE(q.processed_revision, 0)
@@ -200,7 +198,7 @@ func (s *Store) ScanForActivityProjectionContext(
 		  )
 		ORDER BY m.id
 		LIMIT ?
-	`), afterID, limit)
+	`, afterID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("scan for activity projection: %w", err)
 	}
@@ -222,8 +220,7 @@ func (s *Store) ScanAllActivityCandidatesContext(
 	if limit <= 0 {
 		return []ActivityCandidate{}, nil
 	}
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(
-		activityCandidateStateCTE+`
+	rows, err := s.db.QueryContext(ctx, activityCandidateStateCTE+`
 		SELECT `+activityCandidateColumns+`,
 		       CASE WHEN q.message_id IS NULL THEN 0 ELSE 1 END AS queue_exists,
 		       COALESCE(q.revision, 0), COALESCE(q.processed_revision, 0)
@@ -234,7 +231,7 @@ func (s *Store) ScanAllActivityCandidatesContext(
 		WHERE m.id > ?
 		ORDER BY m.id
 		LIMIT ?
-	`), afterID, limit)
+	`, afterID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("scan all activity candidates: %w", err)
 	}
@@ -287,8 +284,7 @@ func (s *Store) loadActivityCandidatesByIDQueryerContext(
 		for index, messageID := range chunk {
 			args[index] = messageID
 		}
-		rows, err := queryer.QueryContext(ctx, s.dialect.Rebind(
-			activityCandidateStateCTE+`
+		rows, err := queryer.QueryContext(ctx, activityCandidateStateCTE+`
 		SELECT `+activityCandidateColumns+`,
 		       CASE WHEN q.message_id IS NULL THEN 0 ELSE 1 END AS queue_exists,
 		       COALESCE(q.revision, 0), COALESCE(q.processed_revision, 0)
@@ -298,7 +294,7 @@ func (s *Store) loadActivityCandidatesByIDQueryerContext(
 		CROSS JOIN activity_current_state r
 		WHERE m.id IN (`+placeholders+`)
 		ORDER BY m.id
-		`), args...)
+		`, args...)
 		if err != nil {
 			return nil, fmt.Errorf("load exact activity candidates: %w", err)
 		}
@@ -629,7 +625,7 @@ func (s *Store) attachActivityCounterpartChunkContext(
 	args = append(args, messageIDs...)
 	args = append(args, messageIDs...)
 	args = append(args, messageIDs...)
-	rows, err := queryer.QueryContext(ctx, s.dialect.Rebind(query), args...)
+	rows, err := queryer.QueryContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("load activity counterparts: %w", err)
 	}

@@ -35,10 +35,6 @@ import (
 	"go.kenn.io/msgvault/internal/textutil"
 )
 
-var fullRebuild bool
-var buildCacheAutoFlag bool
-var buildCacheDerivedOnlyFlag bool
-var buildCacheScheduledAutoFlag bool
 var scheduledCacheBuildNow = time.Now
 
 const buildCacheDaemonSubprocessEnv = "MSGVAULT_DAEMON_BUILD_CACHE_PARENT_PID"
@@ -322,11 +318,13 @@ func readCacheSyncCountersWithRow(queryRow func(string, ...any) *sql.Row) (cache
 	return counters, err
 }
 
-var buildCacheCmd = &cobra.Command{
-	Use:     "build-cache",
-	Aliases: []string{"build-parquet"}, // Backward compatibility
-	Short:   "Build analytics cache for fast TUI queries",
-	Long: `Build analytics cache from the SQLite database.
+func newBuildCacheCommand() *cobra.Command {
+	var fullRebuild, buildCacheAutoFlag, buildCacheDerivedOnlyFlag, buildCacheScheduledAutoFlag bool
+	command := &cobra.Command{
+		Use:     "build-cache",
+		Aliases: []string{"build-parquet"}, // Backward compatibility
+		Short:   "Build analytics cache for fast TUI queries",
+		Long: `Build analytics cache from the SQLite database.
 
 This command exports normalized tables to Parquet files for fast aggregate queries.
 DuckDB joins the Parquet files at query time, which is much faster than joining
@@ -343,28 +341,50 @@ The cache files are stored in ~/.msgvault/analytics/:
 
 By default, this performs an incremental update (only adding new messages).
 	Use --full-rebuild to recreate all cache files from scratch.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		state := invocationFromCommand(cmd)
-		if state == nil || state.cfg == nil {
-			return errors.New("configuration is unavailable")
-		}
-		mode, err := requestedBuildCacheMode(
-			fullRebuild,
-			buildCacheAutoFlag,
-			buildCacheDerivedOnlyFlag,
-			buildCacheScheduledAutoFlag,
-		)
-		if err != nil {
-			return err
-		}
-		if isDaemonBuildCacheChild() {
-			return runBuildCacheLocalMode(mode, state)
-		}
-		if mode == buildCacheModeDerived || mode == buildCacheModeAuto || mode == buildCacheModeScheduledAuto {
-			return errors.New("--auto, --scheduled-auto, and --derived-only are internal daemon-child modes")
-		}
-		return runBuildCacheHTTP(cmd, fullRebuild)
-	},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			state := invocationFromCommand(cmd)
+			if state == nil || state.cfg == nil {
+				return errors.New("configuration is unavailable")
+			}
+			mode, err := requestedBuildCacheMode(
+				fullRebuild,
+				buildCacheAutoFlag,
+				buildCacheDerivedOnlyFlag,
+				buildCacheScheduledAutoFlag,
+			)
+			if err != nil {
+				return err
+			}
+			if isDaemonBuildCacheChild() {
+				return runBuildCacheLocalMode(mode, state)
+			}
+			if mode == buildCacheModeDerived || mode == buildCacheModeAuto || mode == buildCacheModeScheduledAuto {
+				return errors.New("--auto, --scheduled-auto, and --derived-only are internal daemon-child modes")
+			}
+			return runBuildCacheHTTP(cmd, fullRebuild)
+		},
+	}
+	command.Flags().BoolVar(&fullRebuild, "full-rebuild", false, "Rebuild all cache files from scratch")
+	// --auto marks a daemon-spawned, staleness-derived build whose rebuild
+	// decision is re-evaluated under the build lock; explicit user builds
+	// stay unconditional. Internal, so hidden.
+	command.Flags().BoolVar(&buildCacheAutoFlag, "auto", false, "Internal: staleness-derived build; re-evaluated under the build lock")
+	_ = command.Flags().MarkHidden("auto")
+	command.Flags().BoolVar(
+		&buildCacheDerivedOnlyFlag,
+		"derived-only",
+		false,
+		"Internal: refresh version-15 derived identity datasets",
+	)
+	_ = command.Flags().MarkHidden("derived-only")
+	command.Flags().BoolVar(
+		&buildCacheScheduledAutoFlag,
+		"scheduled-auto",
+		false,
+		"Internal: scheduled staleness-derived build with lock-held interval recheck",
+	)
+	_ = command.Flags().MarkHidden("scheduled-auto")
+	return command
 }
 
 func requestedBuildCacheMode(full, auto, derived, scheduledAuto bool) (buildCacheMode, error) {
@@ -1870,31 +1890,35 @@ func validateStagedReplacementDatasets(
 	return nil
 }
 
-var cacheStatsCmd = &cobra.Command{
-	Use:     "cache-stats",
-	Aliases: []string{"parquet-stats"}, // Backward compatibility
-	Short:   "Show statistics about the analytics cache",
-	Long: `Display statistics about the analytics cache, including row counts and file sizes.
+func newCacheStatsCommand() *cobra.Command {
+	command := &cobra.Command{
+		Use:     "cache-stats",
+		Aliases: []string{"parquet-stats"}, // Backward compatibility
+		Short:   "Show statistics about the analytics cache",
+		Long: `Display statistics about the analytics cache, including row counts and file sizes.
 
 Total messages counts the analytics-cache population: it includes messages
 deleted from their source account (the archive retains them) but excludes
 dedup-hidden rows and messages without a timestamp. This differs from the
 'stats' command, which reports active messages from the SQLite system of
 record.`,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		st, _, err := OpenHTTPStore(cmd.Context())
-		if err != nil {
-			return err
-		}
-		defer func() { _ = st.Close() }()
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, _, err := OpenHTTPStore(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer func() { _ = st.Close() }()
 
-		stats, err := st.GetCLICacheStats(cmd.Context())
-		if err != nil {
-			return fmt.Errorf("cache stats: %w", err)
-		}
-		return printCacheStats(cmd.OutOrStdout(), cmd.ErrOrStderr(), stats)
-	},
+			stats, err := st.GetCLICacheStats(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("cache stats: %w", err)
+			}
+			return printCacheStats(cmd.OutOrStdout(), cmd.ErrOrStderr(), stats)
+		},
+	}
+
+	return command
 }
 
 func printCacheStats(out io.Writer, errOut io.Writer, stats *cacheops.CacheStats) error {
@@ -2834,26 +2858,6 @@ func scheduledCacheBuildDelay(
 }
 
 func init() {
-	rootCmd.AddCommand(buildCacheCmd)
-	rootCmd.AddCommand(cacheStatsCmd)
-	buildCacheCmd.Flags().BoolVar(&fullRebuild, "full-rebuild", false, "Rebuild all cache files from scratch")
-	// --auto marks a daemon-spawned, staleness-derived build whose rebuild
-	// decision is re-evaluated under the build lock; explicit user builds
-	// stay unconditional. Internal, so hidden.
-	buildCacheCmd.Flags().BoolVar(&buildCacheAutoFlag, "auto", false, "Internal: staleness-derived build; re-evaluated under the build lock")
-	_ = buildCacheCmd.Flags().MarkHidden("auto")
-	buildCacheCmd.Flags().BoolVar(
-		&buildCacheDerivedOnlyFlag,
-		"derived-only",
-		false,
-		"Internal: refresh version-15 derived identity datasets",
-	)
-	_ = buildCacheCmd.Flags().MarkHidden("derived-only")
-	buildCacheCmd.Flags().BoolVar(
-		&buildCacheScheduledAutoFlag,
-		"scheduled-auto",
-		false,
-		"Internal: scheduled staleness-derived build with lock-held interval recheck",
-	)
-	_ = buildCacheCmd.Flags().MarkHidden("scheduled-auto")
+	registerCommandFactory(newBuildCacheCommand)
+	registerCommandFactory(newCacheStatsCommand)
 }

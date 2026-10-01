@@ -99,7 +99,7 @@ func TestListDeletions_ShowsCancelled(t *testing.T) {
 	require.NoError(mgr.CancelManifest(manifest.ID), "CancelManifest")
 
 	var buf bytes.Buffer
-	require.NoError(runListDeletionsForManager(mgr, &buf), "runListDeletionsForManager")
+	require.NoError(runListDeletionsForManager(mgr, &buf, false), "runListDeletionsForManager")
 
 	assert.Contains(buf.String(), "Cancelled", "output missing 'Cancelled' header")
 	// The full batch ID must appear untruncated so it can be fed to
@@ -117,12 +117,8 @@ func TestListDeletions_JSONEmitsFullIDs(t *testing.T) {
 	manifest := deletion.NewManifest("a very long description that would otherwise be truncated in the table", []string{"abc123", "def456"})
 	require.NoError(manifest.Save(filepath.Join(tmpDir, "pending", manifest.ID+".json")), "save manifest")
 
-	oldJSON := listDeletionsJSON
-	listDeletionsJSON = true
-	t.Cleanup(func() { listDeletionsJSON = oldJSON })
-
 	var buf bytes.Buffer
-	require.NoError(runListDeletionsForManager(mgr, &buf), "runListDeletionsForManager")
+	require.NoError(runListDeletionsForManager(mgr, &buf, true), "runListDeletionsForManager")
 
 	var out []map[string]any
 	require.NoError(json.Unmarshal(buf.Bytes(), &out), "decode JSON output")
@@ -145,24 +141,6 @@ func TestDeleteStagedFailsFastWhenArchiveOwned(t *testing.T) {
 	testCtx := withStoreResolverConfig(t, lifecycleTestConfig(dataDir))
 	t.Setenv(remoteDeleteEnvVar, "1")
 
-	savedPermanent := deletePermanent
-	savedYes := deleteYes
-	savedDryRun := deleteDryRun
-	savedList := deleteList
-	savedAccount := deleteAccount
-	deletePermanent = false
-	deleteYes = true
-	deleteDryRun = false
-	deleteList = false
-	deleteAccount = ""
-	t.Cleanup(func() {
-		deletePermanent = savedPermanent
-		deleteYes = savedYes
-		deleteDryRun = savedDryRun
-		deleteList = savedList
-		deleteAccount = savedAccount
-	})
-
 	mgr, err := deletion.NewManager(filepath.Join(dataDir, "deletions"))
 	require.NoError(
 		err, "NewManager")
@@ -177,10 +155,10 @@ func TestDeleteStagedFailsFastWhenArchiveOwned(t *testing.T) {
 
 	t.Cleanup(func() { require.NoError(owner.Close(), "close owner lock") })
 
-	cmd := &cobra.Command{Use: "delete-staged"}
+	cmd := newDeleteStagedCommand()
 	cmd.SetContext(testCtx)
-	cmd.SetContext(testCtx)
-	err = deleteStagedCmd.RunE(cmd, nil)
+	require.NoError(cmd.Flags().Set("yes", "true"))
+	err = cmd.RunE(cmd, nil)
 	require.Error(err, "delete-staged should fail while the archive is owned")
 	assert.Contains(err.Error(), "write operation is in progress")
 	assert.Contains(err.Error(), "cannot start")
@@ -493,7 +471,6 @@ func TestDeleteStagedRejectsUnsupportedSourceBeforeClaim(t *testing.T) {
 	testCtx := withStoreResolverConfig(t, cfg)
 	t.Setenv(remoteDeleteEnvVar, "1")
 	t.Setenv(daemonCLISubprocessEnv, strconv.Itoa(os.Getppid()))
-	resetDeleteStagedRoutingGlobals(t)
 
 	st, err := store.Open(cfg.DatabaseDSN())
 	require.NoError(err)
@@ -528,7 +505,6 @@ func TestDeleteStagedOAuthSetupFailureLeavesManifestPending(t *testing.T) {
 	testCtx := withStoreResolverConfig(t, cfg)
 	t.Setenv(remoteDeleteEnvVar, "1")
 	t.Setenv(daemonCLISubprocessEnv, strconv.Itoa(os.Getppid()))
-	resetDeleteStagedRoutingGlobals(t)
 
 	st, err := store.Open(cfg.DatabaseDSN())
 	require.NoError(err)

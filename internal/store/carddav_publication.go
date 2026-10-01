@@ -110,7 +110,7 @@ func (s *Store) prepareCardDAVPublicationContext(ctx context.Context, plan CardD
 		prepared, err = s.prepareCardDAVPublicationTx(ctx, tx, plan, review)
 		return err
 	})
-	if review != nil && (s.dialect.IsSerializationFailureError(err) || errors.Is(err, ErrVCardProjectionConflict) || errors.Is(err, ErrCardDAVStalePlan) || errors.Is(err, ErrCardDAVNoWriteTarget)) {
+	if review != nil && (errors.Is(err, ErrVCardProjectionConflict) || errors.Is(err, ErrCardDAVStalePlan) || errors.Is(err, ErrCardDAVNoWriteTarget)) {
 		return nil, ErrCardDAVReviewStale
 	}
 	return prepared, err
@@ -131,7 +131,7 @@ func (s *Store) prepareCardDAVPublicationTx(ctx context.Context, tx *loggedTx, p
 		}
 		var generation int64
 		if err := tx.QueryRowContext(ctx, `SELECT connection_generation FROM carddav_accounts
-			WHERE id = 1`+s.dialect.SelectForUpdate()).Scan(&generation); err != nil {
+			WHERE id = 1`).Scan(&generation); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrCardDAVNoWriteTarget
 			}
@@ -141,8 +141,7 @@ func (s *Store) prepareCardDAVPublicationTx(ctx context.Context, tx *loggedTx, p
 		var canCreate, canUpdate, canDelete sql.NullBool
 		if err := tx.QueryRowContext(ctx, `SELECT sync_revision, can_create, can_update, can_delete
 			FROM carddav_address_books
-			WHERE id = ? AND is_write_target = TRUE AND is_subscribed = TRUE`+
-			s.dialect.SelectForUpdate(), plan.AddressBookID).Scan(
+			WHERE id = ? AND is_write_target = TRUE AND is_subscribed = TRUE`, plan.AddressBookID).Scan(
 			&bookRevision, &canCreate, &canUpdate, &canDelete,
 		); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -153,7 +152,7 @@ func (s *Store) prepareCardDAVPublicationTx(ctx context.Context, tx *loggedTx, p
 		if s.cardDAVReviewPersonLockHook != nil {
 			s.cardDAVReviewPersonLockHook()
 		}
-		if err := s.lockPersonVCardProjectionTx(ctx, tx, plan.PersonID, plan.LocalHash); err != nil {
+		if err := s.lockPersonVCardProjectionTx(ctx, tx, plan.PersonID); err != nil {
 			return err
 		}
 		inference, err := s.getCardDAVInferenceExportStateTx(ctx, tx, plan.PersonID)
@@ -173,7 +172,7 @@ func (s *Store) prepareCardDAVPublicationTx(ctx context.Context, tx *loggedTx, p
 		if plan.Desired && snapshot.Fingerprint != plan.LocalHash {
 			return ErrCardDAVStalePlan
 		}
-		current, err := getCardDAVPublicationFrom(ctx, tx, plan.PersonID, s.dialect.SelectForUpdate())
+		current, err := getCardDAVPublicationFrom(ctx, tx, plan.PersonID)
 		if err != nil && !errors.Is(err, ErrCardDAVPublicationNotFound) {
 			return err
 		}
@@ -189,7 +188,7 @@ func (s *Store) prepareCardDAVPublicationTx(ctx context.Context, tx *loggedTx, p
 			return nil
 		}
 
-		resource, err := findCardDAVResourceForPersonTx(ctx, tx, plan.AddressBookID, plan.PersonID, s.dialect.SelectForUpdate())
+		resource, err := findCardDAVResourceForPersonTx(ctx, tx, plan.AddressBookID, plan.PersonID)
 		if err != nil && !errors.Is(err, ErrCardDAVResourceNotFound) {
 			return err
 		}
@@ -287,7 +286,7 @@ func (s *Store) prepareCardDAVPublicationTx(ctx context.Context, tx *loggedTx, p
 				if err != nil {
 					return fmt.Errorf("persist unchanged CardDAV publication: %w", err)
 				}
-				prepared, err = getCardDAVPublicationFrom(ctx, tx, plan.PersonID, "")
+				prepared, err = getCardDAVPublicationFrom(ctx, tx, plan.PersonID)
 				if err == nil {
 					prepared.Noop = true
 				}
@@ -369,14 +368,14 @@ func (s *Store) prepareCardDAVPublicationTx(ctx context.Context, tx *loggedTx, p
 				return err
 			}
 		}
-		prepared, err = getCardDAVPublicationFrom(ctx, tx, plan.PersonID, "")
+		prepared, err = getCardDAVPublicationFrom(ctx, tx, plan.PersonID)
 		return err
 	}()
 	return prepared, err
 }
 
 func (s *Store) GetCardDAVPublicationContext(ctx context.Context, personID int64) (*CardDAVPublication, error) {
-	return getCardDAVPublicationFrom(ctx, s.db, personID, "")
+	return getCardDAVPublicationFrom(ctx, s.db, personID)
 }
 
 func (s *Store) GetCardDAVPublicationStateSourceContext(
@@ -464,7 +463,7 @@ func (s *Store) RefreshCardDAVPublicationFenceContext(
 			return err
 		}
 		mappingRevision := int64(0)
-		resource, resourceErr := findCardDAVResourceForPersonTx(ctx, tx, current.AddressBookID, personID, s.dialect.SelectForUpdate())
+		resource, resourceErr := findCardDAVResourceForPersonTx(ctx, tx, current.AddressBookID, personID)
 		if current.PreviousMappingRevision > 0 {
 			if resourceErr != nil && (current.PendingOperation != CardDAVMutationDelete || !errors.Is(resourceErr, ErrCardDAVResourceNotFound)) {
 				return resourceErr
@@ -485,7 +484,7 @@ func (s *Store) RefreshCardDAVPublicationFenceContext(
 		if err != nil {
 			return err
 		}
-		publication, err = getCardDAVPublicationFrom(ctx, tx, personID, "")
+		publication, err = getCardDAVPublicationFrom(ctx, tx, personID)
 		return err
 	})
 	return publication, err
@@ -524,11 +523,11 @@ func (s *Store) FenceCardDAVCreateCollisionContext(
 		}
 		var generation, bookRevision int64
 		if err := tx.QueryRowContext(ctx, `SELECT connection_generation FROM carddav_accounts
-			WHERE id = 1`+s.dialect.SelectForUpdate()).Scan(&generation); err != nil {
+			WHERE id = 1`).Scan(&generation); err != nil {
 			return err
 		}
 		if err := tx.QueryRowContext(ctx, `SELECT sync_revision FROM carddav_address_books
-			WHERE id = ?`+s.dialect.SelectForUpdate(), current.AddressBookID).Scan(&bookRevision); err != nil {
+			WHERE id = ?`, current.AddressBookID).Scan(&bookRevision); err != nil {
 			return err
 		}
 		if generation != current.ConnectionGeneration || bookRevision != current.BookSyncRevision {
@@ -575,7 +574,7 @@ func (s *Store) FenceCardDAVCreateCollisionContext(
 		if affected, _ := result.RowsAffected(); affected != 1 {
 			return ErrCardDAVStalePlan
 		}
-		fenced, err = getCardDAVPublicationFrom(ctx, tx, current.PersonID, "")
+		fenced, err = getCardDAVPublicationFrom(ctx, tx, current.PersonID)
 		return err
 	})
 	return fenced, err
@@ -594,12 +593,10 @@ func (s *Store) CommitCardDAVPublicationContext(
 			return ErrCardDAVStalePlan
 		}
 		var generation, bookRevision int64
-		if err := tx.QueryRowContext(ctx, `SELECT connection_generation FROM carddav_accounts WHERE id = 1`+
-			s.dialect.SelectForUpdate()).Scan(&generation); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT connection_generation FROM carddav_accounts WHERE id = 1").Scan(&generation); err != nil {
 			return err
 		}
-		if err := tx.QueryRowContext(ctx, `SELECT sync_revision FROM carddav_address_books WHERE id = ?`+
-			s.dialect.SelectForUpdate(), current.AddressBookID).Scan(&bookRevision); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT sync_revision FROM carddav_address_books WHERE id = ?", current.AddressBookID).Scan(&bookRevision); err != nil {
 			return err
 		}
 		if generation != current.ConnectionGeneration || bookRevision != current.BookSyncRevision {
@@ -619,7 +616,7 @@ func (s *Store) CommitCardDAVPublicationContext(
 			if err := s.clearPersonCardDAVInferenceApprovalTx(ctx, tx, current.PersonID); err != nil {
 				return err
 			}
-			resource, err := findCardDAVResourceForPersonTx(ctx, tx, current.AddressBookID, current.PersonID, s.dialect.SelectForUpdate())
+			resource, err := findCardDAVResourceForPersonTx(ctx, tx, current.AddressBookID, current.PersonID)
 			if errors.Is(err, ErrCardDAVResourceNotFound) && current.MappingRevision == 0 {
 				_, err = tx.ExecContext(ctx, `DELETE FROM carddav_publications WHERE person_id = ?`, current.PersonID)
 				return err
@@ -653,7 +650,7 @@ func (s *Store) CommitCardDAVPublicationContext(
 		}
 		var resource *CardDAVResource
 		if current.PendingOperation == CardDAVMutationCreate {
-			resource, err = findCardDAVResourceForPersonTx(ctx, tx, current.AddressBookID, current.PersonID, s.dialect.SelectForUpdate())
+			resource, err = findCardDAVResourceForPersonTx(ctx, tx, current.AddressBookID, current.PersonID)
 			if errors.Is(err, ErrCardDAVResourceNotFound) && current.MappingRevision == 0 {
 				var personRevision int64
 				if err := tx.QueryRowContext(ctx, `SELECT revision FROM persons WHERE id = ?`, current.PersonID).Scan(&personRevision); err != nil {
@@ -690,7 +687,7 @@ func (s *Store) CommitCardDAVPublicationContext(
 				}
 			}
 		} else {
-			resource, err = findCardDAVResourceForPersonTx(ctx, tx, current.AddressBookID, current.PersonID, s.dialect.SelectForUpdate())
+			resource, err = findCardDAVResourceForPersonTx(ctx, tx, current.AddressBookID, current.PersonID)
 			if err != nil {
 				return err
 			}
@@ -912,7 +909,7 @@ func getCardDAVRetryAfterFrom(ctx context.Context, queryer contextRowQuerier) (*
 }
 
 func getCardDAVPublicationFrom(
-	ctx context.Context, queryer contextRowQuerier, personID int64, suffix string,
+	ctx context.Context, queryer contextRowQuerier, personID int64,
 ) (*CardDAVPublication, error) {
 	var result CardDAVPublication
 	var bookID, generation, bookRevision, mappingRevision, previousMapping sql.NullInt64
@@ -925,7 +922,7 @@ func getCardDAVPublicationFrom(
 		pending_operation, outgoing_body, outgoing_semantic_hash, local_hash,
 		remote_etag, connection_generation, book_sync_revision, mapping_revision,
 		previous_mapping_revision, create_recovery_used, mutation_revision,
-		pending_started_at, approved_body_sha256, approved_inference_revision, approved_mutation_revision, outgoing_envelope_metadata FROM carddav_publications WHERE person_id = ?`+suffix, personID).Scan(
+		pending_started_at, approved_body_sha256, approved_inference_revision, approved_mutation_revision, outgoing_envelope_metadata FROM carddav_publications WHERE person_id = ?`, personID).Scan(
 		&result.PersonID, &result.Desired, &bookID, &href, &operation, &outgoing,
 		&outgoingHash, &localHash, &remoteETag, &generation, &bookRevision,
 		&mappingRevision, &previousMapping, &result.CreateRecoveryUsed,
@@ -956,7 +953,7 @@ func getCardDAVPublicationFrom(
 
 func findCardDAVResourceForPersonTx(
 	ctx context.Context, queryer contextRowQuerier,
-	bookID, personID int64, suffix string,
+	bookID, personID int64,
 ) (*CardDAVResource, error) {
 	var count int
 	if err := queryer.QueryRowContext(ctx, `SELECT COUNT(*) FROM carddav_resources
@@ -967,7 +964,7 @@ func findCardDAVResourceForPersonTx(
 		return nil, ErrCardDAVResourceAmbiguous
 	}
 	resource, err := scanCardDAVResource(queryer.QueryRowContext(ctx,
-		cardDAVResourceSelect+` WHERE address_book_id = ? AND person_id = ?`+suffix,
+		cardDAVResourceSelect+` WHERE address_book_id = ? AND person_id = ?`,
 		bookID, personID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrCardDAVResourceNotFound

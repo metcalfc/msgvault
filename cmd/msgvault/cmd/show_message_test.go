@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/kit/daemon"
@@ -17,7 +17,6 @@ import (
 )
 
 func TestOutputMessageTextSanitizesMultilineBody(t *testing.T) {
-	assert := assert.New(t)
 	done := captureStdout(t)
 	err := outputMessageText(&query.MessageDetail{
 		ID:              42,
@@ -28,11 +27,11 @@ func TestOutputMessageTextSanitizesMultilineBody(t *testing.T) {
 	out := done()
 
 	require.NoError(t, err)
-	assert.Contains(out, "first line\nsecond line")
-	assert.NotContains(out, "\x1b")
-	assert.NotContains(out, "\x07")
-	assert.NotContains(out, "\u009b")
-	assert.NotContains(out, "Deleted from source:")
+	assert.Contains(t, out, "first line\nsecond line")
+	assert.NotContains(t, out, "\x1b")
+	assert.NotContains(t, out, "\x07")
+	assert.NotContains(t, out, "\u009b")
+	assert.NotContains(t, out, "Deleted from source:")
 }
 
 func TestOutputMessageTextShowsDeletedFromSource(t *testing.T) {
@@ -51,39 +50,34 @@ func TestOutputMessageTextShowsDeletedFromSource(t *testing.T) {
 }
 
 func TestOutputMessageJSONShowsDeletedFromSourceOnlyWhenPresent(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
 	deletedAt := time.Date(2026, time.August, 17, 20, 19, 46, 0, time.FixedZone("UTC+2", 2*60*60))
 	done := captureStdout(t)
-	require.NoError(outputMessageJSON(&query.MessageDetail{DeletedAt: &deletedAt}))
+	require.NoError(t, outputMessageJSON(&query.MessageDetail{DeletedAt: &deletedAt}))
 	var got map[string]any
-	require.NoError(json.Unmarshal([]byte(done()), &got))
-	assert.Equal("2026-08-17T18:19:46Z", got["deleted_from_source_at"])
+	require.NoError(t, json.Unmarshal([]byte(done()), &got))
+	assert.Equal(t, "2026-08-17T18:19:46Z", got["deleted_from_source_at"])
 
 	done = captureStdout(t)
-	require.NoError(outputMessageJSON(&query.MessageDetail{}))
+	require.NoError(t, outputMessageJSON(&query.MessageDetail{}))
 	got = nil
-	require.NoError(json.Unmarshal([]byte(done()), &got))
-	assert.NotContains(got, "deleted_from_source_at")
+	require.NoError(t, json.Unmarshal([]byte(done()), &got))
+	assert.NotContains(t, got, "deleted_from_source_at")
 }
 
 func TestShowMessageUsesLocalDaemonHTTPAndPreservesTextOutput(t *testing.T) {
 	cfg := testConfigValue()
 	useLocal := false
 
-	require := require.New(t)
-	assert := assert.New(t)
 	dataDir := t.TempDir()
 	server, messageRequests := messageHTTPDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
 	savedCfg := cfg
 	savedUseLocal := useLocal
-	savedJSON := showMessageJSON
+
 	defer func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		showMessageJSON = savedJSON
 	}()
 
 	cfg = &config.Config{
@@ -94,42 +88,40 @@ func TestShowMessageUsesLocalDaemonHTTPAndPreservesTextOutput(t *testing.T) {
 	_ = testCtx
 	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
-	showMessageJSON = false
+	showMessageJSON := false
 
 	done := captureStdout(t)
-	cmd := &cobra.Command{Use: "show-message", RunE: showMessageCmd.RunE, Args: showMessageCmd.Args}
+	cmd := newShowMessageCommand()
+	require.NoError(t, cmd.Flags().Set("json", strconv.FormatBool(showMessageJSON)))
 	cmd.SetContext(testCtx)
 	cmd.SetArgs([]string{"remote-42"})
 
 	err := cmd.Execute()
 	out := done()
-	require.NoError(err, "show-message")
+	require.NoError(t, err, "show-message")
 
-	assert.Equal(1, int(messageRequests.Load()), "message endpoint calls")
-	assert.Contains(out, "Message ID: 42 (Gmail: remote-42)", "message id")
-	assert.Contains(out, "From:    Alice <alice@example.com>", "from")
-	assert.Contains(out, "To:      Bob <bob@example.com>", "to")
-	assert.Contains(out, "Subject: Test Subject", "subject")
-	assert.Contains(out, "Hello over HTTP", "body")
+	assert.Equal(t, 1, int(messageRequests.Load()), "message endpoint calls")
+	assert.Contains(t, out, "Message ID: 42 (Gmail: remote-42)", "message id")
+	assert.Contains(t, out, "From:    Alice <alice@example.com>", "from")
+	assert.Contains(t, out, "To:      Bob <bob@example.com>", "to")
+	assert.Contains(t, out, "Subject: Test Subject", "subject")
+	assert.Contains(t, out, "Hello over HTTP", "body")
 }
 
 func TestShowMessageHTTPNotFoundPreservesCLIError(t *testing.T) {
 	cfg := testConfigValue()
 	useLocal := false
 
-	require := require.New(t)
-	assert := assert.New(t)
 	dataDir := t.TempDir()
 	server := messageHTTPNotFoundDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
 	savedCfg := cfg
 	savedUseLocal := useLocal
-	savedJSON := showMessageJSON
+
 	defer func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		showMessageJSON = savedJSON
 	}()
 
 	cfg = &config.Config{
@@ -140,20 +132,21 @@ func TestShowMessageHTTPNotFoundPreservesCLIError(t *testing.T) {
 	_ = testCtx
 	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
-	showMessageJSON = false
+	showMessageJSON := false
 
 	done := captureStdout(t)
-	cmd := &cobra.Command{Use: "show-message", RunE: showMessageCmd.RunE, Args: showMessageCmd.Args}
+	cmd := newShowMessageCommand()
+	require.NoError(t, cmd.Flags().Set("json", strconv.FormatBool(showMessageJSON)))
 	cmd.SetContext(testCtx)
 	cmd.SetArgs([]string{"missing"})
 
 	err := cmd.Execute()
 	out := done()
-	require.Error(err, "show-message")
+	require.Error(t, err, "show-message")
 
-	assert.Empty(out, "stdout")
-	require.ErrorContains(err, "message not found: missing", "not found error")
-	assert.NotContains(err.Error(), "API error", "transport details")
+	assert.Empty(t, out, "stdout")
+	require.ErrorContains(t, err, "message not found: missing", "not found error")
+	assert.NotContains(t, err.Error(), "API error", "transport details")
 }
 
 func messageHTTPDaemon(t *testing.T) (*httptest.Server, *atomic.Int32) {
@@ -235,80 +228,76 @@ func TestResolveMessageIDArg(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require := require.New(t)
-			assert := assert.New(t)
 			got, err := resolveMessageIDArg(tt.in)
 			if tt.wantErr {
-				require.Error(err, "resolveMessageIDArg(%q)", tt.in)
-				assert.Contains(err.Error(), "invalid message ID", "error text")
+				require.Error(t, err, "resolveMessageIDArg(%q)", tt.in)
+				assert.Contains(t, err.Error(), "invalid message ID", "error text")
 				return
 			}
-			require.NoError(err, "resolveMessageIDArg(%q)", tt.in)
-			assert.Equal(tt.want, got, "resolveMessageIDArg(%q)", tt.in)
+			require.NoError(t, err, "resolveMessageIDArg(%q)", tt.in)
+			assert.Equal(t, tt.want, got, "resolveMessageIDArg(%q)", tt.in)
 		})
 	}
 }
 
 func TestOutputMessageLabelsSanitizedOnlyForText(t *testing.T) {
-	assert, require := assert.New(t), require.New(t)
 	label := "Résolu\x1b[2J\x1b]52;c;eA==\x07\x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\"
 	msg := &query.MessageDetail{Labels: []string{label, "ordinary"}}
 	done := captureStdout(t)
 	err := outputMessageText(msg)
 	out := done()
-	require.NoError(err)
-	assert.Contains(out, "Labels:  Résolulink, ordinary\n")
-	assert.NotContains(out, "\x1b")
+	require.NoError(t, err)
+	assert.Contains(t, out, "Labels:  Résolulink, ordinary\n")
+	assert.NotContains(t, out, "\x1b")
 
 	done = captureStdout(t)
 	err = outputMessageJSON(msg)
 	out = done()
-	require.NoError(err)
+	require.NoError(t, err)
 	var got struct {
 		Labels []string `json:"labels"`
 	}
-	require.NoError(json.Unmarshal([]byte(out), &got))
-	assert.Equal([]string{label, "ordinary"}, got.Labels)
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	assert.Equal(t, []string{label, "ordinary"}, got.Labels)
 }
 
 func TestShowMessageJSONPreservesRFCMessageIDFromDaemon(t *testing.T) {
 	cfg := testConfigValue()
 	useLocal := false
 
-	assert, require := assert.New(t), require.New(t)
 	dataDir := t.TempDir()
 	server, _ := messageHTTPDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
-	oldCfg, oldLocal, oldJSON := cfg, useLocal, showMessageJSON
-	t.Cleanup(func() { cfg, useLocal, showMessageJSON = oldCfg, oldLocal, oldJSON })
+	oldCfg, oldLocal := cfg, useLocal
+	t.Cleanup(func() { cfg, useLocal = oldCfg, oldLocal })
 	cfg = &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
 	_ = testCtx
-	useLocal, showMessageJSON = true, true
+	useLocal = true
+	showMessageJSON := true
 	done := captureStdout(t)
-	cmd := &cobra.Command{Use: "show-message", RunE: showMessageCmd.RunE, Args: showMessageCmd.Args}
+	cmd := newShowMessageCommand()
+	require.NoError(t, cmd.Flags().Set("json", strconv.FormatBool(showMessageJSON)))
 	cmd.SetContext(testCtx)
 	cmd.SetArgs([]string{"remote-42"})
 	err := cmd.Execute()
 	output := done()
-	require.NoError(err)
+	require.NoError(t, err)
 	var decoded map[string]any
-	require.NoError(json.Unmarshal([]byte(output), &decoded))
-	assert.Equal("Case-ID@example.test", decoded["rfc822_message_id"])
+	require.NoError(t, json.Unmarshal([]byte(output), &decoded))
+	assert.Equal(t, "Case-ID@example.test", decoded["rfc822_message_id"])
 }
 
 func TestOutputMessageJSONIncludesAbsentRFCMessageID(t *testing.T) {
-	assertions := assert.New(t)
-	requirements := require.New(t)
 	done := captureStdout(t)
 	err := outputMessageJSON(&query.MessageDetail{})
 	output := done()
-	requirements.NoError(err)
+	require.NoError(t, err)
 	var decoded map[string]any
-	requirements.NoError(json.Unmarshal([]byte(output), &decoded))
+	require.NoError(t, json.Unmarshal([]byte(output), &decoded))
 	value, ok := decoded["rfc822_message_id"].(string)
-	requirements.True(ok, "RFC Message-ID must be present as a string")
-	assertions.Empty(value)
+	require.True(t, ok, "RFC Message-ID must be present as a string")
+	assert.Empty(t, value)
 }
 
 func TestOutputMessageJSONIncludesBrowserURL(t *testing.T) {

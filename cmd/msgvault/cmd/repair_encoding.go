@@ -21,40 +21,6 @@ import (
 	"go.kenn.io/msgvault/internal/textutil"
 )
 
-var repairEncodingCmd = &cobra.Command{
-	Use:   "repair-encoding",
-	Short: "Repair invalid UTF-8 encoding in message text fields",
-	Long: `Scan for messages with invalid UTF-8 and repair them.
-
-This command repairs invalid UTF-8 in:
-- Subject
-- Body text
-- Body HTML
-- Snippet
-- Participant display names, email addresses, and domains
-- Conversation titles and source IDs
-- Label names and attachment filenames
-
-For each invalid field, it:
-1. Re-parses the raw MIME data to extract text with proper charset handling
-2. If re-parsing fails, attempts charset detection (Windows-1252, Latin-1, etc.)
-3. As a last resort, replaces invalid bytes with the replacement character
-
-Invalid RFC 822 Message-ID values are reported and left unchanged because
-replacing bytes could make distinct identifiers collide. Recover their
-original values separately from a verified source. The analytics cache
-exports invalid Message-IDs as NULL.
-
-This is useful after a sync that may have produced invalid UTF-8 due to
-charset detection issues in the MIME parser.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if isDaemonCLISubprocess() {
-			return runRepairEncodingLocal(cmd)
-		}
-		return runRepairEncodingHTTP(cmd)
-	},
-}
-
 func runRepairEncodingLocal(cmd *cobra.Command) (runErr error) {
 	ctx := cmd.Context()
 	state := invocationFromCommand(cmd)
@@ -908,6 +874,42 @@ func (r *byteReader) Read(p []byte) (n int, err error) {
 	return n, nil
 }
 
-func init() {
-	rootCmd.AddCommand(repairEncodingCmd)
+func newRepairEncodingCmd() *cobra.Command {
+	repairEncodingCmd := &cobra.Command{
+		Use:   "repair-encoding",
+		Short: "Repair invalid UTF-8 encoding in message text fields",
+		Long: `Scan for messages with invalid UTF-8 and repair them.
+
+This command repairs invalid UTF-8 in:
+- Subject
+- Body text
+- Body HTML
+- Snippet
+- Participant display names, email addresses, and domains
+- Conversation titles and source IDs
+- Label names and attachment filenames
+
+For each invalid field, it:
+1. Re-parses the raw MIME data to extract text with proper charset handling
+2. If re-parsing fails, attempts charset detection (Windows-1252, Latin-1, etc.)
+3. As a last resort, replaces invalid bytes with the replacement character
+
+Invalid RFC 822 Message-ID values are reported and left unchanged because
+replacing bytes could make distinct identifiers collide. Recover their
+original values separately from a verified source. The analytics cache
+exports invalid Message-IDs as NULL.
+
+This is useful after a sync that may have produced invalid UTF-8 due to
+charset detection issues in the MIME parser.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if isDaemonCLISubprocess() {
+				return runRepairEncodingLocal(cmd)
+			}
+			return runRepairEncodingHTTP(cmd)
+		},
+	}
+
+	return repairEncodingCmd
 }
+
+func init() { registerCommandFactory(newRepairEncodingCmd) }

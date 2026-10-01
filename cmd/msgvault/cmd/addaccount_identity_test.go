@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/config"
@@ -22,7 +21,6 @@ import (
 )
 
 func TestAddAccountRejectsInvalidAddress(t *testing.T) {
-	saveAddAccountFlags(t)
 	for _, email := range []string{"not-an-email", "", "User <user@example.com>", "user@example.com,other@example.com", " user@example.com", "user@example.com\n"} {
 		t.Run(email, func(t *testing.T) {
 			cmd := newAddAccountCmd()
@@ -34,7 +32,6 @@ func TestAddAccountRejectsInvalidAddress(t *testing.T) {
 }
 
 func TestAddAccountAcceptsEmailAddress(t *testing.T) {
-	saveAddAccountFlags(t)
 	for _, email := range []string{"user@example.com", "User.Name+archive@gmail.com", "user@googlemail.com"} {
 		t.Run(email, func(t *testing.T) {
 			cmd := newAddAccountCmd()
@@ -88,7 +85,7 @@ func TestAddAccountCachedTokenIdentity(t *testing.T) {
 			for _, profile := range []string{"user@example.com", "other@example.com", "unavailable"} {
 				t.Run(fmt.Sprintf("existing=%t/legacy=%t/profile=%s", existing, legacy, profile), func(t *testing.T) {
 					assert, require := assert.New(t), require.New(t)
-					saveAddAccountFlags(t)
+
 					home := t.TempDir()
 					secrets := filepath.Join(home, "client.json")
 					require.NoError(os.WriteFile(secrets, []byte(fakeClientSecrets), 0600))
@@ -122,8 +119,8 @@ func TestAddAccountCachedTokenIdentity(t *testing.T) {
 						})
 					}
 					ctx = testInvocationContext(ctx, cfg, invocationOptions{})
-					cmd := &cobra.Command{Use: addAccountUse, RunE: runAddAccountLocal}
-					registerAddAccountFlags(cmd)
+					cmd := newAddAccountLocalCmd()
+
 					cmd.SetContext(ctx)
 					cmd.SetArgs([]string{"user@example.com", "--display-name", "Updated", "--no-default-identity"})
 					err = cmd.ExecuteContext(ctx)

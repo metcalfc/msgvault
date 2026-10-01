@@ -94,16 +94,16 @@ func TestContextJudgeSendsNothingWithoutConsentOrForSensitiveTargets(t *testing.
 	items := []peoplesweep.EvidenceItem{contextItem(1, "I joined Example Labs.")}
 
 	_, err := sweepjudge.NewContextJudge(service, false, nil).JudgeContext(t.Context(), employmentTarget(), items)
-	assert.ErrorIs(err, jev.ErrConsentRequired)
+	require.ErrorIs(t, err, jev.ErrConsentRequired)
 
 	jevtest.GrantConsent(t, st, cfg, sweepjudge.EvidenceRerankFeature())
 	_, err = sweepjudge.NewContextJudge(service, true, nil).JudgeContext(t.Context(), employmentTarget(), items)
-	assert.ErrorIs(err, jev.ErrAutomaticDisabled, "a scheduled sweep needs automatic = true")
+	require.ErrorIs(t, err, jev.ErrAutomaticDisabled, "a scheduled sweep needs automatic = true")
 
 	sensitive := employmentTarget()
 	sensitive.Sensitive = true
 	_, err = sweepjudge.NewContextJudge(service, false, nil).JudgeContext(t.Context(), sensitive, items)
-	assert.Error(err)
+	require.Error(t, err)
 	assert.Empty(server.Requests())
 }
 

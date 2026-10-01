@@ -18,19 +18,21 @@ import (
 	"go.kenn.io/msgvault/internal/vcard"
 )
 
-var (
+type imessageImportOptions struct {
 	importImessageDBPath   string
 	importImessageBefore   string
 	importImessageAfter    string
 	importImessageLimit    int
 	importImessageMe       string
 	importImessageContacts string
-)
+}
 
-var importImessageCmd = &cobra.Command{
-	Use:   "import-imessage",
-	Short: "Import iMessages from local database",
-	Long: `Import iMessages from macOS's local Messages database (chat.db).
+func newImportImessageCommand() *cobra.Command {
+	options := &imessageImportOptions{}
+	command := &cobra.Command{
+		Use:   "import-imessage",
+		Short: "Import iMessages from local database",
+		Long: `Import iMessages from macOS's local Messages database (chat.db).
 
 Reads messages from ~/Library/Messages/chat.db and stores them in the
 msgvault archive. This is a read-only operation that does not modify
@@ -53,10 +55,38 @@ Examples:
   msgvault import-imessage --limit 100
   msgvault import-imessage --db-path /path/to/chat.db
   msgvault import-imessage --contacts ~/contacts.vcf`,
-	RunE: runImportImessage,
+		RunE: func(cmd *cobra.Command, args []string) error { return runImportImessage(cmd, args, options) },
+	}
+
+	command.Flags().StringVar(
+		&options.importImessageDBPath, "db-path", "",
+		"path to chat.db (default: ~/Library/Messages/chat.db)",
+	)
+	command.Flags().StringVar(
+		&options.importImessageBefore, "before", "",
+		"only messages before this date (YYYY-MM-DD)",
+	)
+	command.Flags().StringVar(
+		&options.importImessageAfter, "after", "",
+		"only messages after this date (YYYY-MM-DD)",
+	)
+	command.Flags().IntVar(
+		&options.importImessageLimit, "limit", 0,
+		"limit number of messages (for testing)",
+	)
+	command.Flags().StringVar(
+		&options.importImessageMe, "me", "",
+		"your phone/email for recipient tracking (default: source identifier 'local')",
+	)
+	command.Flags().StringVar(
+		&options.importImessageContacts, "contacts", "",
+		"path to .vcf file used to backfill participant display names by phone/email",
+	)
+
+	return command
 }
 
-func runImportImessage(cmd *cobra.Command, args []string) error {
+func runImportImessage(cmd *cobra.Command, args []string, options *imessageImportOptions) error {
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -71,18 +101,18 @@ func runImportImessage(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
-	chatDBPath, err := resolveChatDBPath()
+	chatDBPath, err := options.resolveChatDBPath()
 	if err != nil {
 		return err
 	}
 
-	clientOpts, err := buildImessageOpts(state.logger)
+	clientOpts, err := options.buildImessageOpts(state.logger)
 	if err != nil {
 		return err
 	}
-	if importImessageMe != "" {
+	if options.importImessageMe != "" {
 		clientOpts = append(
-			clientOpts, imessage.WithOwnerHandle(importImessageMe),
+			clientOpts, imessage.WithOwnerHandle(options.importImessageMe),
 		)
 	}
 
@@ -117,9 +147,9 @@ func runImportImessage(cmd *cobra.Command, args []string) error {
 	if totalEstimate > 0 {
 		fmt.Printf("Messages to import: ~%d\n", totalEstimate)
 	}
-	printImessageDateFilter()
-	if importImessageLimit > 0 {
-		fmt.Printf("Limit: %d messages\n", importImessageLimit)
+	options.printImessageDateFilter()
+	if options.importImessageLimit > 0 {
+		fmt.Printf("Limit: %d messages\n", options.importImessageLimit)
 	}
 	fmt.Println()
 
@@ -128,28 +158,28 @@ func runImportImessage(cmd *cobra.Command, args []string) error {
 		if ctx.Err() != nil {
 			fmt.Println("\nImport interrupted.")
 			printImessageSummary(summary, startTime)
-			return finishImessageImport(s, state)
+			return options.finishImessageImport(s, state)
 		}
 		return fmt.Errorf("import failed: %w", err)
 	}
 
 	printImessageSummary(summary, startTime)
-	return finishImessageImport(s, state)
+	return options.finishImessageImport(s, state)
 }
 
 // finishImessageImport runs the post-import name backfill, refreshes
 // generated chat titles, and triggers an analytics cache rebuild that picks up
 // the participant/conversation changes (the default staleness check only
 // notices new/deleted messages, not title or display_name updates).
-func finishImessageImport(s *store.Store, state *invocation) error {
+func (options *imessageImportOptions) finishImessageImport(s *store.Store, state *invocation) error {
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
 	}
 	cfg := state.cfg
 	mutated := false
 
-	if importImessageContacts != "" {
-		if applyImessageContacts(s, importImessageContacts) {
+	if options.importImessageContacts != "" {
+		if applyImessageContacts(s, options.importImessageContacts) {
 			mutated = true
 		}
 	}
@@ -260,15 +290,15 @@ func applyImessageContacts(s *store.Store, vcfPath string) bool {
 	return phoneMatches > 0 || emailMatches > 0
 }
 
-func resolveChatDBPath() (string, error) {
-	if importImessageDBPath != "" {
-		if _, err := os.Stat(importImessageDBPath); os.IsNotExist(err) {
+func (options *imessageImportOptions) resolveChatDBPath() (string, error) {
+	if options.importImessageDBPath != "" {
+		if _, err := os.Stat(options.importImessageDBPath); os.IsNotExist(err) {
 			return "", fmt.Errorf(
 				"iMessage database not found at %s",
-				importImessageDBPath,
+				options.importImessageDBPath,
 			)
 		}
-		return importImessageDBPath, nil
+		return options.importImessageDBPath, nil
 	}
 
 	home, err := os.UserHomeDir()
@@ -286,13 +316,13 @@ func resolveChatDBPath() (string, error) {
 	return path, nil
 }
 
-func buildImessageOpts(logger *slog.Logger) ([]imessage.ClientOption, error) {
+func (options *imessageImportOptions) buildImessageOpts(logger *slog.Logger) ([]imessage.ClientOption, error) {
 	var opts []imessage.ClientOption
 	opts = append(opts, imessage.WithImessageLogger(logger))
 
-	if importImessageAfter != "" {
+	if options.importImessageAfter != "" {
 		t, err := time.ParseInLocation(
-			"2006-01-02", importImessageAfter, time.Local,
+			"2006-01-02", options.importImessageAfter, time.Local,
 		)
 		if err != nil {
 			return nil, fmt.Errorf(
@@ -302,9 +332,9 @@ func buildImessageOpts(logger *slog.Logger) ([]imessage.ClientOption, error) {
 		opts = append(opts, imessage.WithAfterDate(t))
 	}
 
-	if importImessageBefore != "" {
+	if options.importImessageBefore != "" {
 		t, err := time.ParseInLocation(
-			"2006-01-02", importImessageBefore, time.Local,
+			"2006-01-02", options.importImessageBefore, time.Local,
 		)
 		if err != nil {
 			return nil, fmt.Errorf(
@@ -314,23 +344,23 @@ func buildImessageOpts(logger *slog.Logger) ([]imessage.ClientOption, error) {
 		opts = append(opts, imessage.WithBeforeDate(t))
 	}
 
-	if importImessageLimit > 0 {
-		opts = append(opts, imessage.WithLimit(importImessageLimit))
+	if options.importImessageLimit > 0 {
+		opts = append(opts, imessage.WithLimit(options.importImessageLimit))
 	}
 
 	return opts, nil
 }
 
-func printImessageDateFilter() {
-	if importImessageAfter == "" && importImessageBefore == "" {
+func (options *imessageImportOptions) printImessageDateFilter() {
+	if options.importImessageAfter == "" && options.importImessageBefore == "" {
 		return
 	}
 	parts := []string{}
-	if importImessageAfter != "" {
-		parts = append(parts, "after "+importImessageAfter)
+	if options.importImessageAfter != "" {
+		parts = append(parts, "after "+options.importImessageAfter)
 	}
-	if importImessageBefore != "" {
-		parts = append(parts, "before "+importImessageBefore)
+	if options.importImessageBefore != "" {
+		parts = append(parts, "before "+options.importImessageBefore)
 	}
 	fmt.Printf("Date filter: %s\n", strings.Join(parts, ", "))
 }
@@ -380,30 +410,4 @@ func resolveImessageSource(s *store.Store) (*store.Source, error) {
 	return s.GetOrCreateSource("apple_messages", localValue)
 }
 
-func init() {
-	importImessageCmd.Flags().StringVar(
-		&importImessageDBPath, "db-path", "",
-		"path to chat.db (default: ~/Library/Messages/chat.db)",
-	)
-	importImessageCmd.Flags().StringVar(
-		&importImessageBefore, "before", "",
-		"only messages before this date (YYYY-MM-DD)",
-	)
-	importImessageCmd.Flags().StringVar(
-		&importImessageAfter, "after", "",
-		"only messages after this date (YYYY-MM-DD)",
-	)
-	importImessageCmd.Flags().IntVar(
-		&importImessageLimit, "limit", 0,
-		"limit number of messages (for testing)",
-	)
-	importImessageCmd.Flags().StringVar(
-		&importImessageMe, "me", "",
-		"your phone/email for recipient tracking (default: source identifier 'local')",
-	)
-	importImessageCmd.Flags().StringVar(
-		&importImessageContacts, "contacts", "",
-		"path to .vcf file used to backfill participant display names by phone/email",
-	)
-	rootCmd.AddCommand(importImessageCmd)
-}
+func init() { registerCommandFactory(newImportImessageCommand) }

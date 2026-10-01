@@ -30,19 +30,27 @@ import (
 	"go.kenn.io/msgvault/internal/vector/sqlitevec"
 )
 
-var (
-	evalQrels  string
-	evalTopics string
-	evalModes  string
-	evalDocKey string
-	evalLimit  int
-	evalJSON   bool
-)
+type evalCommandOptions struct {
+	evalQrels               string
+	evalTopics              string
+	evalModes               string
+	evalDocKey              string
+	evalLimit               int
+	evalJSON                bool
+	evalRerankJev           string
+	evalRerankTop           int
+	evalRerankMaxRequests   int
+	evalRerankCostStopUSD   float64
+	evalRerankInputUSDPerM  float64
+	evalRerankOutputUSDPerM float64
+}
 
-var evalCmd = &cobra.Command{
-	Use:   "eval",
-	Short: "Evaluate retrieval quality against relevance judgments (qrels)",
-	Long: `Measure retrieval quality over a set of labeled queries.
+func newEvalCommand() *cobra.Command {
+	options := &evalCommandOptions{}
+	command := &cobra.Command{
+		Use:   "eval",
+		Short: "Evaluate retrieval quality against relevance judgments (qrels)",
+		Long: `Measure retrieval quality over a set of labeled queries.
 
 Runs each topic through one or more search modes (fts, vector, hybrid) against
 the local archive and scores the ranking against relevance judgments using
@@ -128,28 +136,31 @@ way. Compare runs only across the same topics file.
 
 Example:
   msgvault eval --qrels qrels.txt --topics topics.tsv --modes fts,vector,hybrid -n 100`,
-	Args: cobra.NoArgs,
-	RunE: runEval,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error { return runEval(cmd, args, options) },
+	}
+
+	command.Flags().StringVar(&options.evalQrels, "qrels", "", "Path to TREC-format relevance judgments (required)")
+	command.Flags().StringVar(&options.evalTopics, "topics", "", "Path to topics TSV: <qid>\\t<query> (required)")
+	command.Flags().StringVar(&options.evalModes, "modes", "fts,vector,hybrid", "Comma-separated search modes to evaluate")
+	// The registry's key set is fixed even though its entries are built per
+	// run, so rendering the usage string from a throwaway registry is safe.
+	command.Flags().StringVar(&options.evalDocKey, "doc-key", "message", "Which id qrels reference: "+docKeyNames(newDocKeyRegistry()))
+	command.Flags().IntVarP(&options.evalLimit, "limit", "n", 100, "Distinct documents retrieved per query")
+	command.Flags().BoolVar(&options.evalJSON, flagJSON, false, "Output as JSON")
+	command.Flags().StringVar(&options.evalRerankJev, "rerank-jev", "", "Opt in to TypeSafe Jev reranking; sends the query and bounded message text (per-candidate,batched)")
+	command.Flags().IntVar(&options.evalRerankTop, "rerank-top", 30, "Maximum messages to send to Jev per retrieved ranking")
+	command.Flags().IntVar(&options.evalRerankMaxRequests, "rerank-max-requests", 1000, "Maximum TypeSafe requests for this eval invocation")
+	command.Flags().Float64Var(&options.evalRerankCostStopUSD, "rerank-cost-stop-usd", 0, "Required local Jev cost stop in USD when reranking is enabled")
+	command.Flags().Float64Var(&options.evalRerankInputUSDPerM, "rerank-input-usd-per-million", 0, "Required Jev input price in USD per million tokens")
+	command.Flags().Float64Var(&options.evalRerankOutputUSDPerM, "rerank-output-usd-per-million", 0, "Required Jev output price in USD per million tokens")
+	_ = command.MarkFlagRequired("qrels")
+	_ = command.MarkFlagRequired("topics")
+	return command
 }
 
 func init() {
-	rootCmd.AddCommand(evalCmd)
-	evalCmd.Flags().StringVar(&evalQrels, "qrels", "", "Path to TREC-format relevance judgments (required)")
-	evalCmd.Flags().StringVar(&evalTopics, "topics", "", "Path to topics TSV: <qid>\\t<query> (required)")
-	evalCmd.Flags().StringVar(&evalModes, "modes", "fts,vector,hybrid", "Comma-separated search modes to evaluate")
-	// The registry's key set is fixed even though its entries are built per
-	// run, so rendering the usage string from a throwaway registry is safe.
-	evalCmd.Flags().StringVar(&evalDocKey, "doc-key", "message", "Which id qrels reference: "+docKeyNames(newDocKeyRegistry()))
-	evalCmd.Flags().IntVarP(&evalLimit, "limit", "n", 100, "Distinct documents retrieved per query")
-	evalCmd.Flags().BoolVar(&evalJSON, flagJSON, false, "Output as JSON")
-	evalCmd.Flags().StringVar(&evalRerankJev, "rerank-jev", "", "Opt in to TypeSafe Jev reranking; sends the query and bounded message text (per-candidate,batched)")
-	evalCmd.Flags().IntVar(&evalRerankTop, "rerank-top", 30, "Maximum messages to send to Jev per retrieved ranking")
-	evalCmd.Flags().IntVar(&evalRerankMaxRequests, "rerank-max-requests", 1000, "Maximum TypeSafe requests for this eval invocation")
-	evalCmd.Flags().Float64Var(&evalRerankCostStopUSD, "rerank-cost-stop-usd", 0, "Required local Jev cost stop in USD when reranking is enabled")
-	evalCmd.Flags().Float64Var(&evalRerankInputUSDPerM, "rerank-input-usd-per-million", 0, "Required Jev input price in USD per million tokens")
-	evalCmd.Flags().Float64Var(&evalRerankOutputUSDPerM, "rerank-output-usd-per-million", 0, "Required Jev output price in USD per million tokens")
-	_ = evalCmd.MarkFlagRequired("qrels")
-	_ = evalCmd.MarkFlagRequired("topics")
+	registerCommandFactory(newEvalCommand)
 }
 
 // errNoFreeText marks a topic that vector and hybrid modes structurally cannot
@@ -287,6 +298,8 @@ func docKeyNames(registry map[string]docKeySpec) string {
 // exists to expose, and a single unanswerable topic should not throw away
 // every other topic's score.
 type runDiagnostics struct {
+	limit          int
+	docKey         string
 	QrelsLoad      eval.LoadStats `json:"qrels_load"`
 	TopicsLoad     eval.LoadStats `json:"topics_load"`
 	UnhydratedHits int            `json:"unhydrated_hits,omitempty"`
@@ -384,7 +397,7 @@ func (d *runDiagnostics) notes() []string {
 		out = append(out, fmt.Sprintf(
 			"%d topic/mode runs could not fill %d distinct %s keys within the over-fetch budget (%dx -n); "+
 				"their metrics are computed over a shallower list than requested",
-			d.DepthShortfalls, evalLimit, evalDocKey, eval.MaxOverFetchFactor))
+			d.DepthShortfalls, d.limit, d.docKey, eval.MaxOverFetchFactor))
 	}
 	if d.PoolShortfalls > 0 {
 		out = append(out, fmt.Sprintf(
@@ -393,7 +406,7 @@ func (d *runDiagnostics) notes() []string {
 				"exist beyond the pool — this is a reachability limit, not an exhausted corpus. "+
 				"Raise [vector.search].k_per_signal to rank deeper, and note that doing so changes the "+
 				"fusion, so only compare runs at the same setting",
-			d.PoolShortfalls, evalLimit, evalDocKey, kPerSignalSuffix(d.kPerSignal)))
+			d.PoolShortfalls, d.limit, d.docKey, kPerSignalSuffix(d.kPerSignal)))
 	}
 	out = append(out, d.SkippedCells...)
 	return out
@@ -714,38 +727,38 @@ func parseTopic(t eval.Topic, diag *runDiagnostics) (*search.Query, bool) {
 	return q, true
 }
 
-func runEval(cmd *cobra.Command, args []string) error {
-	return runEvalWithRerankerFactory(cmd, args, func(shape, key string, budget *rerank.Budget) (evalReranker, error) {
+func runEval(cmd *cobra.Command, args []string, options *evalCommandOptions) error {
+	return runEvalWithRerankerFactory(cmd, args, options, func(shape, key string, budget *rerank.Budget) (evalReranker, error) {
 		return rerank.NewJev(shape, key, budget, nil)
 	})
 }
 
-func runEvalWithRerankerFactory(cmd *cobra.Command, _ []string, makeReranker evalRerankerFactory) error {
+func runEvalWithRerankerFactory(cmd *cobra.Command, _ []string, options *evalCommandOptions, makeReranker evalRerankerFactory) error {
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
 	}
 	cfg := state.cfg
 	registry := newDocKeyRegistry()
-	keySpec, ok := registry[evalDocKey]
+	keySpec, ok := registry[options.evalDocKey]
 	if !ok {
-		return usageErr(cmd, fmt.Errorf("invalid --doc-key %q (want %s)", evalDocKey, docKeyNames(registry)))
+		return usageErr(cmd, fmt.Errorf("invalid --doc-key %q (want %s)", options.evalDocKey, docKeyNames(registry)))
 	}
 	// A non-positive depth is not a "use the default" signal: fts would fall
 	// back to an internal 100 while the vector backend would return nothing
 	// for k=0, so the same flag would mean two different things. Reject it.
-	if evalLimit <= 0 {
-		return usageErr(cmd, fmt.Errorf("--limit must be a positive integer, got %d", evalLimit))
+	if options.evalLimit <= 0 {
+		return usageErr(cmd, fmt.Errorf("--limit must be a positive integer, got %d", options.evalLimit))
 	}
-	modes, needVec, err := parseEvalModes(evalModes)
+	modes, needVec, err := parseEvalModes(options.evalModes)
 	if err != nil {
 		return usageErr(cmd, err)
 	}
-	rerankOptions, err := readEvalRerankOptions(cmd)
+	rerankOptions, err := readEvalRerankOptions(cmd, options)
 	if err != nil {
 		return usageErr(cmd, err)
 	}
-	cutoffs := eval.CutoffsForDepth(evalLimit)
+	cutoffs := eval.CutoffsForDepth(options.evalLimit)
 	ctx := cmd.Context()
 	if len(rerankOptions.Shapes) > 0 {
 		var cancel context.CancelFunc
@@ -753,13 +766,13 @@ func runEvalWithRerankerFactory(cmd *cobra.Command, _ []string, makeReranker eva
 		defer cancel()
 	}
 
-	diag := &runDiagnostics{}
-	qrels, qrelsStats, err := eval.LoadQrels(evalQrels)
+	diag := &runDiagnostics{limit: options.evalLimit, docKey: options.evalDocKey}
+	qrels, qrelsStats, err := eval.LoadQrels(options.evalQrels)
 	if err != nil {
 		return err
 	}
 	diag.QrelsLoad = qrelsStats
-	topics, topicsStats, err := eval.LoadTopics(evalTopics)
+	topics, topicsStats, err := eval.LoadTopics(options.evalTopics)
 	if err != nil {
 		return err
 	}
@@ -772,12 +785,12 @@ func runEvalWithRerankerFactory(cmd *cobra.Command, _ []string, makeReranker eva
 	if qrelsStats.Parsed == 0 {
 		return fmt.Errorf("no judgments parsed from %s (%s); expected whitespace-separated "+
 			"\"<qid> <iter> <docid> <rel>\" — a three-column file without the iteration column is the usual cause",
-			evalQrels, qrelsStats)
+			options.evalQrels, qrelsStats)
 	}
 	if len(topics) == 0 {
 		return fmt.Errorf("no topics loaded from %s (%s); expected tab-separated "+
 			"\"<qid>\\t<query text>\" — spaces where tabs are expected is the usual cause",
-			evalTopics, topicsStats)
+			options.evalTopics, topicsStats)
 	}
 	if len(rerankOptions.Shapes) > 0 {
 		judgedTopics := 0
@@ -829,7 +842,7 @@ func runEvalWithRerankerFactory(cmd *cobra.Command, _ []string, makeReranker eva
 	// vector path is opened and before the first topic is scored, so a run that
 	// cannot be trusted stops instead of printing a number.
 	judged := judgedDocIDs(qrels)
-	multiSource, err := requireDisjointSourceIDs(ctx, s, evalDocKey, keySpec, judged)
+	multiSource, err := requireDisjointSourceIDs(ctx, s, options.evalDocKey, keySpec, judged)
 	if err != nil {
 		return err
 	}
@@ -842,7 +855,7 @@ func runEvalWithRerankerFactory(cmd *cobra.Command, _ []string, makeReranker eva
 		fts:         s,
 		qeng:        query.NewEngine(s.DB()),
 		key:         keySpec,
-		limit:       evalLimit,
+		limit:       options.evalLimit,
 		diag:        diag,
 		captureHits: len(rerankOptions.Shapes) > 0,
 	}
@@ -879,8 +892,8 @@ func runEvalWithRerankerFactory(cmd *cobra.Command, _ []string, makeReranker eva
 
 	// Record corpus size regardless of mode: recall numbers are unreadable
 	// without knowing how big the haystack was.
-	ev.prov.QrelsPath = evalQrels
-	ev.prov.TopicsPath = evalTopics
+	ev.prov.QrelsPath = options.evalQrels
+	ev.prov.TopicsPath = options.evalTopics
 	ev.collectCorpusStats(s.DB())
 
 	aggs := make(map[string]*eval.Aggregate, len(modes))
@@ -973,14 +986,14 @@ func runEvalWithRerankerFactory(cmd *cobra.Command, _ []string, makeReranker eva
 		}
 		return fmt.Errorf("none of the %d topics had relevance judgments in %s "+
 			"(qrels: %s; topics: %s); check that the qids in both files refer to the same queries",
-			len(topics), evalQrels, qrelsStats, topicsStats)
+			len(topics), options.evalQrels, qrelsStats, topicsStats)
 	}
 
-	report := evalReport{
+	report := evalReport{limit: options.evalLimit, docKey: options.evalDocKey,
 		modes: modes, aggs: aggs, lats: lats, catAggs: catAggs, catCounts: catCounts,
 		prov: ev.prov, topics: scored, cutoffs: cutoffs, diag: diag, rerank: rerankReport,
 	}
-	if evalJSON {
+	if options.evalJSON {
 		if reportErr := report.json(cmd.OutOrStdout()); reportErr != nil {
 			return reportErr
 		}
@@ -1567,6 +1580,8 @@ func sortedCategories(catCounts map[string]int) []string {
 
 // evalReport is everything one run produced, ready to render.
 type evalReport struct {
+	limit     int
+	docKey    string
 	modes     []string
 	aggs      map[string]*eval.Aggregate
 	lats      map[string]*eval.LatencyTracker
@@ -1603,7 +1618,7 @@ func (r evalReport) metricHeaders() (p, ndcg, recall, hit1, hit10, mapAt, mrr st
 }
 
 func (r evalReport) table(w io.Writer) error {
-	if _, err := fmt.Fprintf(w, "Evaluated %d topics (doc-key=%s, n=%d)\n", r.topics, evalDocKey, evalLimit); err != nil {
+	if _, err := fmt.Fprintf(w, "Evaluated %d topics (doc-key=%s, n=%d)\n", r.topics, r.docKey, r.limit); err != nil {
 		return fmt.Errorf("write eval report: %w", err)
 	}
 	if !r.cutoffs.IsStandard() {
@@ -1744,8 +1759,8 @@ func (r evalReport) json(w io.Writer) error {
 	}
 	out := map[string]any{
 		"topics_evaluated": r.topics,
-		"doc_key":          evalDocKey,
-		"limit":            evalLimit,
+		"doc_key":          r.docKey,
+		"limit":            r.limit,
 		// One entry per metric, including the two whose depth is the retrieval
 		// depth rather than a cutoff of their own, so a consumer can read every
 		// metric's depth the same way instead of knowing which are special.

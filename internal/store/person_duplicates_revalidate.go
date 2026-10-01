@@ -281,8 +281,8 @@ func anyOwnerParticipantTx(ctx context.Context, tx *loggedTx, participantIDs []i
 			if err := rows.Scan(&id, &kind, &value); err != nil {
 				return fmt.Errorf("scan owner candidate identifier: %w", err)
 			}
-			switch {
-			case kind == "email":
+			switch kind {
+			case "email":
 				if _, ok := lower[strings.ToLower(value)]; ok && !hasEmail[id] {
 					owner = true
 				}

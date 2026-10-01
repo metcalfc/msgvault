@@ -15,13 +15,6 @@ import (
 )
 
 var (
-	syncNotionMeetingsLimit int
-	syncNotionMeetingsAfter string
-	syncNotionMeetingsFull  bool
-	syncNotionMeetingsProbe bool
-)
-
-var (
 	newNotionMeetingsClient = func(baseURL, token string) notionmeetings.Source {
 		return notionmeetings.NewClient(baseURL, token)
 	}
@@ -134,127 +127,6 @@ func runNotionMeetingsProbe(ctx context.Context, out io.Writer, client notionMee
 	return nil
 }
 
-var addNotionMeetingsCmd = &cobra.Command{
-	Use:   "add-notion-meetings [identifier]",
-	Short: "Register and validate a Notion AI Meeting Notes source",
-	Args:  cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		state := invocationFromCommand(cmd)
-		if state == nil || state.cfg == nil {
-			return errors.New("configuration is unavailable")
-		}
-		cfg := state.cfg
-		if !isDaemonCLISubprocess() {
-			return runDaemonCLICommandHTTPFromCobra(cmd, args)
-		}
-		source, err := resolveNotionMeetingsSource(args, cfg)
-		if err != nil {
-			return err
-		}
-		accountEmail, err := source.EffectiveAccountEmail()
-		if err != nil {
-			return err
-		}
-		if strings.TrimSpace(source.Token) == "" {
-			return fmt.Errorf("[[notion_meetings]] entry %q has no token\n\n%s", source.Identifier, notionMeetingsConfigHint)
-		}
-		client := newNotionMeetingsClient(notionmeetings.DefaultBaseURL, source.Token)
-		if err := runNotionMeetingsProbe(cmd.Context(), cmd.OutOrStdout(), client); err != nil {
-			return err
-		}
-		st, cleanup, err := openWritableStoreAndInitForIngestInvocation(state)
-		if err != nil {
-			return err
-		}
-		defer cleanup()
-		if _, err := registerMeetingSource(cmd.OutOrStdout(), st, sourceTypeNotionMeetings,
-			source.Identifier, accountEmail); err != nil {
-			return err
-		}
-		if err := runPostSourceCreateMigrationsForInvocation(st, state); err != nil {
-			return fmt.Errorf("post-source-create migrations: %w", err)
-		}
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nNotion meeting source %s registered.\n", source.Identifier)
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Run: msgvault sync-notion-meetings %s\n", source.Identifier)
-		return nil
-	},
-}
-
-var syncNotionMeetingsCmd = &cobra.Command{
-	Use:   "sync-notion-meetings [identifier]",
-	Short: "Sync Notion AI Meeting Notes",
-	Long: `Sync the latest visible Notion AI Meeting Notes into the canonical meeting archive.
-
-Notion currently returns at most 50 attendee-visible meetings and does not
-provide a discovery cursor. Every run checks that visible window. --after is
-a local visible-set filter. --limit caps discovery work but not due transcript
-maintenance. --probe validates access without printing meeting content.`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		state := invocationFromCommand(cmd)
-		if state == nil || state.cfg == nil {
-			return errors.New("configuration is unavailable")
-		}
-		cfg := state.cfg
-		if !isDaemonCLISubprocess() {
-			return runDaemonCLICommandHTTPFromCobra(cmd, args)
-		}
-		sources, err := resolveNotionMeetingsSources(args, syncNotionMeetingsProbe, cfg)
-		if err != nil {
-			return err
-		}
-
-		var after time.Time
-		if syncNotionMeetingsAfter != "" {
-			parsed, err := time.Parse(time.DateOnly, syncNotionMeetingsAfter)
-			if err != nil {
-				return usageErr(cmd, fmt.Errorf("invalid --after %q (expected YYYY-MM-DD): %w", syncNotionMeetingsAfter, err))
-			}
-			after = parsed.UTC()
-		}
-		for _, source := range sources {
-			if strings.TrimSpace(source.Token) == "" {
-				return fmt.Errorf("[[notion_meetings]] entry %q has no token", source.Identifier)
-			}
-			if _, err := source.EffectiveAccountEmail(); err != nil {
-				return err
-			}
-		}
-		if syncNotionMeetingsProbe {
-			source := sources[0]
-			return runNotionMeetingsProbe(cmd.Context(), cmd.OutOrStdout(),
-				newNotionMeetingsClient(notionmeetings.DefaultBaseURL, source.Token))
-		}
-
-		st, cleanup, err := openWritableStoreAndInitForIngestInvocation(state)
-		if err != nil {
-			return err
-		}
-		defer cleanup()
-		dbPath := cfg.DatabaseDSN()
-		pendingWrites := &notionmeetings.ImportSummary{}
-		for _, source := range sources {
-			accountEmail, _ := source.EffectiveAccountEmail()
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Syncing Notion meetings for %s\n\n", source.Identifier)
-			importer := notionmeetings.NewImporter(st,
-				newNotionMeetingsClient(notionmeetings.DefaultBaseURL, source.Token))
-			summary, importErr := importer.Import(cmd.Context(), notionmeetings.ImportOptions{
-				Identifier: source.Identifier, AccountEmail: accountEmail,
-				Full: syncNotionMeetingsFull || !after.IsZero(), Limit: syncNotionMeetingsLimit,
-				CreatedAfter: after,
-				Progress:     func(line string) { _, _ = fmt.Fprintln(cmd.OutOrStdout(), "  "+line) },
-			})
-			accumulateNotionMeetingsWrites(pendingWrites, summary)
-			if err := finishNotionMeetingsImport(source.Identifier, pendingWrites, importErr,
-				func() error { return rebuildNotionMeetingsCacheAfterWrite(dbPath, state) }); err != nil {
-				return err
-			}
-			writeNotionMeetingsSummary(cmd.OutOrStdout(), summary)
-		}
-		return rebuildNotionMeetingsCacheAfterWrite(dbPath, state)
-	},
-}
-
 func accumulateNotionMeetingsWrites(total, current *notionmeetings.ImportSummary) {
 	if total == nil || current == nil {
 		return
@@ -318,6 +190,91 @@ func runConfiguredNotionMeetingsSync(ctx context.Context, st *store.Store, sourc
 }
 
 func init() {
+	registerCommandFactory(newAddNotionMeetingsCommand)
+	registerCommandFactory(newSyncNotionMeetingsCommand)
+}
+
+func newSyncNotionMeetingsCommand() *cobra.Command {
+	var (
+		syncNotionMeetingsLimit int
+		syncNotionMeetingsAfter string
+		syncNotionMeetingsFull  bool
+		syncNotionMeetingsProbe bool
+	)
+	syncNotionMeetingsCmd := &cobra.Command{
+		Use:   "sync-notion-meetings [identifier]",
+		Short: "Sync Notion AI Meeting Notes",
+		Long: `Sync the latest visible Notion AI Meeting Notes into the canonical meeting archive.
+
+Notion currently returns at most 50 attendee-visible meetings and does not
+provide a discovery cursor. Every run checks that visible window. --after is
+a local visible-set filter. --limit caps discovery work but not due transcript
+maintenance. --probe validates access without printing meeting content.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			state := invocationFromCommand(cmd)
+			if state == nil || state.cfg == nil {
+				return errors.New("configuration is unavailable")
+			}
+			cfg := state.cfg
+			if !isDaemonCLISubprocess() {
+				return runDaemonCLICommandHTTPFromCobra(cmd, args)
+			}
+			sources, err := resolveNotionMeetingsSources(args, syncNotionMeetingsProbe, cfg)
+			if err != nil {
+				return err
+			}
+
+			var after time.Time
+			if syncNotionMeetingsAfter != "" {
+				parsed, err := time.Parse(time.DateOnly, syncNotionMeetingsAfter)
+				if err != nil {
+					return usageErr(cmd, fmt.Errorf("invalid --after %q (expected YYYY-MM-DD): %w", syncNotionMeetingsAfter, err))
+				}
+				after = parsed.UTC()
+			}
+			for _, source := range sources {
+				if strings.TrimSpace(source.Token) == "" {
+					return fmt.Errorf("[[notion_meetings]] entry %q has no token", source.Identifier)
+				}
+				if _, err := source.EffectiveAccountEmail(); err != nil {
+					return err
+				}
+			}
+			if syncNotionMeetingsProbe {
+				source := sources[0]
+				return runNotionMeetingsProbe(cmd.Context(), cmd.OutOrStdout(),
+					newNotionMeetingsClient(notionmeetings.DefaultBaseURL, source.Token))
+			}
+
+			st, cleanup, err := openWritableStoreAndInitForIngestInvocation(state)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+			dbPath := cfg.DatabaseDSN()
+			pendingWrites := &notionmeetings.ImportSummary{}
+			for _, source := range sources {
+				accountEmail, _ := source.EffectiveAccountEmail()
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Syncing Notion meetings for %s\n\n", source.Identifier)
+				importer := notionmeetings.NewImporter(st,
+					newNotionMeetingsClient(notionmeetings.DefaultBaseURL, source.Token))
+				summary, importErr := importer.Import(cmd.Context(), notionmeetings.ImportOptions{
+					Identifier: source.Identifier, AccountEmail: accountEmail,
+					Full: syncNotionMeetingsFull || !after.IsZero(), Limit: syncNotionMeetingsLimit,
+					CreatedAfter: after,
+					Progress:     func(line string) { _, _ = fmt.Fprintln(cmd.OutOrStdout(), "  "+line) },
+				})
+				accumulateNotionMeetingsWrites(pendingWrites, summary)
+				if err := finishNotionMeetingsImport(source.Identifier, pendingWrites, importErr,
+					func() error { return rebuildNotionMeetingsCacheAfterWrite(dbPath, state) }); err != nil {
+					return err
+				}
+				writeNotionMeetingsSummary(cmd.OutOrStdout(), summary)
+			}
+			return rebuildNotionMeetingsCacheAfterWrite(dbPath, state)
+		},
+	}
 	syncNotionMeetingsCmd.Flags().IntVar(&syncNotionMeetingsLimit, "limit", 0,
 		"max visible meetings hydrated and verified per run; due transcript maintenance is additional (0 = unlimited)")
 	syncNotionMeetingsCmd.Flags().StringVar(&syncNotionMeetingsAfter, "after", "",
@@ -326,6 +283,54 @@ func init() {
 		"force selected snapshots through archive upsert instead of skipping matching checksums")
 	syncNotionMeetingsCmd.Flags().BoolVar(&syncNotionMeetingsProbe, "probe", false,
 		"validate capabilities and result shape without printing meeting content")
-	rootCmd.AddCommand(addNotionMeetingsCmd)
-	rootCmd.AddCommand(addManualSyncCacheFlags(syncNotionMeetingsCmd))
+	return addManualSyncCacheFlags(syncNotionMeetingsCmd)
+}
+
+func newAddNotionMeetingsCommand() *cobra.Command {
+	addNotionMeetingsCmd := &cobra.Command{
+		Use:   "add-notion-meetings [identifier]",
+		Short: "Register and validate a Notion AI Meeting Notes source",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			state := invocationFromCommand(cmd)
+			if state == nil || state.cfg == nil {
+				return errors.New("configuration is unavailable")
+			}
+			cfg := state.cfg
+			if !isDaemonCLISubprocess() {
+				return runDaemonCLICommandHTTPFromCobra(cmd, args)
+			}
+			source, err := resolveNotionMeetingsSource(args, cfg)
+			if err != nil {
+				return err
+			}
+			accountEmail, err := source.EffectiveAccountEmail()
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(source.Token) == "" {
+				return fmt.Errorf("[[notion_meetings]] entry %q has no token\n\n%s", source.Identifier, notionMeetingsConfigHint)
+			}
+			client := newNotionMeetingsClient(notionmeetings.DefaultBaseURL, source.Token)
+			if err := runNotionMeetingsProbe(cmd.Context(), cmd.OutOrStdout(), client); err != nil {
+				return err
+			}
+			st, cleanup, err := openWritableStoreAndInitForIngestInvocation(state)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+			if _, err := registerMeetingSource(cmd.OutOrStdout(), st, sourceTypeNotionMeetings,
+				source.Identifier, accountEmail); err != nil {
+				return err
+			}
+			if err := runPostSourceCreateMigrationsForInvocation(st, state); err != nil {
+				return fmt.Errorf("post-source-create migrations: %w", err)
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nNotion meeting source %s registered.\n", source.Identifier)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Run: msgvault sync-notion-meetings %s\n", source.Identifier)
+			return nil
+		},
+	}
+	return addNotionMeetingsCmd
 }

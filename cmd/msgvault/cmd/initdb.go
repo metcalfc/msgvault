@@ -9,44 +9,48 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-var initDBCmd = &cobra.Command{
-	Use:   "init-db",
-	Short: "Initialize the database schema",
-	Long: `Initialize the msgvault database with the required schema.
+func newInitDBCommand() *cobra.Command {
+	command := &cobra.Command{
+		Use:   "init-db",
+		Short: "Initialize the database schema",
+		Long: `Initialize the msgvault database with the required schema.
 
 This command creates all necessary tables for storing messages, attachments,
 labels, and sync state. It is safe to run multiple times - tables are only
 created if they don't already exist.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		state := invocationFromCommand(cmd)
-		if state == nil || state.cfg == nil {
-			return errors.New("configuration is unavailable")
-		}
-		cfg := state.cfg
-		logger := state.logger
-		dbPath := cfg.DatabaseDSN()
-		logger.Info("initializing database", "path", dbPath)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			state := invocationFromCommand(cmd)
+			if state == nil || state.cfg == nil {
+				return errors.New("configuration is unavailable")
+			}
+			cfg := state.cfg
+			logger := state.logger
+			dbPath := cfg.DatabaseDSN()
+			logger.Info("initializing database", "path", dbPath)
 
-		s, info, err := OpenHTTPStore(cmd.Context())
-		if err != nil {
-			return fmt.Errorf("open store: %w", err)
-		}
-		defer func() { _ = s.Close() }()
+			s, info, err := OpenHTTPStore(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("open store: %w", err)
+			}
+			defer func() { _ = s.Close() }()
 
-		logger.Info("database initialized successfully")
+			logger.Info("database initialized successfully")
 
-		result, err := s.InitCLIArchive(cmd.Context())
-		if err != nil {
-			return fmt.Errorf("init archive: %w", err)
-		}
-		if result.Notice != "" {
-			_, _ = fmt.Fprint(cmd.ErrOrStderr(), result.Notice)
-		}
+			result, err := s.InitCLIArchive(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("init archive: %w", err)
+			}
+			if result.Notice != "" {
+				_, _ = fmt.Fprint(cmd.ErrOrStderr(), result.Notice)
+			}
 
-		printInitDBStats(cmd.OutOrStdout(), info, dbPath, result.Stats)
+			printInitDBStats(cmd.OutOrStdout(), info, dbPath, result.Stats)
 
-		return nil
-	},
+			return nil
+		},
+	}
+
+	return command
 }
 
 func printInitDBStats(w io.Writer, info HTTPStoreInfo, dbPath string, stats *store.Stats) {
@@ -66,6 +70,4 @@ func printInitDBStats(w io.Writer, info HTTPStoreInfo, dbPath string, stats *sto
 	_, _ = fmt.Fprintf(w, "  Size:        %.2f MB\n", float64(stats.DatabaseSize)/(1024*1024))
 }
 
-func init() {
-	rootCmd.AddCommand(initDBCmd)
-}
+func init() { registerCommandFactory(newInitDBCommand) }

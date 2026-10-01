@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/config"
@@ -56,7 +55,7 @@ func TestInitDBUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{Use: initDBCmd.Use, RunE: initDBCmd.RunE}
+	cmd := newInitDBCommand()
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)

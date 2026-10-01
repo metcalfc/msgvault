@@ -178,7 +178,8 @@ func TestHeaderSamplingRejectsHeadersWithoutTheirTerminator(t *testing.T) {
 	require.NoError(err)
 	require.NoError(writer.Close())
 	// Keep the decodable start of the headers and corrupt the rest.
-	damaged := append(compressed.Bytes()[:len(compressed.Bytes())/2], 0xff, 0x00, 0xff, 0x13, 0x37)
+	damaged := compressed.Bytes()[:len(compressed.Bytes())/2]
+	damaged = append(damaged, 0xff, 0x00, 0xff, 0x13, 0x37)
 	_, err = f.Store.DB().ExecContext(t.Context(), f.Store.Rebind(
 		`UPDATE message_raw SET raw_data = ?, compression = 'zlib' WHERE message_id = ?`), damaged, corrupt)
 	require.NoError(err)

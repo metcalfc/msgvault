@@ -38,7 +38,6 @@ type GCPlan struct {
 // PlanGCContext counts the rows GC would purge and the dedup-only rows it will
 // explicitly leave in the archive.
 func (s *Store) PlanGCContext(ctx context.Context) (GCPlan, error) {
-
 	return planGCWith(boundQuerier{ctx: ctx, q: s.db})
 }
 
@@ -104,7 +103,6 @@ func (s *Store) ExecuteGCContext(
 	ctx context.Context,
 	expected GCPlan,
 ) (int64, error) {
-
 	var deleted int64
 	err := s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
 		q := boundQuerier{ctx: ctx, q: tx}
@@ -205,7 +203,6 @@ func (s *Store) ExecuteGCContext(
 // run in a transaction, so it uses one dedicated pooled connection and lets
 // SQLite acquire its required exclusive database lock for the statement.
 func (s *Store) VacuumContext(ctx context.Context) error {
-
 	conn, err := s.DB().Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("acquire SQLite connection for VACUUM: %w", err)

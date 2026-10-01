@@ -31,18 +31,21 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-var listDeletionsJSON bool
-
-var listDeletionsCmd = &cobra.Command{
-	Use:   "list-deletions",
-	Short: "List pending and recent deletion batches",
-	Long: `List all deletion batches across all statuses.
+func newListDeletionsCommand() *cobra.Command {
+	command := &cobra.Command{
+		Use:   "list-deletions",
+		Short: "List pending and recent deletion batches",
+		Long: `List all deletion batches across all statuses.
 
 Shows pending, in-progress, completed, and failed deletion batches
 with their ID, status, message count, and creation date. Use --json for
 full, untruncated batch IDs suitable for show-deletion and delete-staged.`,
-	Args: cobra.NoArgs,
-	RunE: runListDeletions,
+		Args: cobra.NoArgs,
+		RunE: runListDeletions,
+	}
+
+	command.Flags().Bool(flagJSON, false, "Output as JSON with full batch IDs")
+	return command
 }
 
 func runListDeletions(cmd *cobra.Command, args []string) error {
@@ -59,10 +62,14 @@ func runListDeletions(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("create manager: %w", err)
 	}
-	return runListDeletionsForManager(manager, cmd.OutOrStdout())
+	jsonOutput, err := cmd.Flags().GetBool(flagJSON)
+	if err != nil {
+		return fmt.Errorf("read --json: %w", err)
+	}
+	return runListDeletionsForManager(manager, cmd.OutOrStdout(), jsonOutput)
 }
 
-func runListDeletionsForManager(mgr *deletion.Manager, w io.Writer) error {
+func runListDeletionsForManager(mgr *deletion.Manager, w io.Writer, jsonOutput bool) error {
 	pending, err := mgr.ListPending()
 	if err != nil {
 		return fmt.Errorf("list pending deletions: %w", err)
@@ -84,7 +91,7 @@ func runListDeletionsForManager(mgr *deletion.Manager, w io.Writer) error {
 		return fmt.Errorf("list cancelled deletions: %w", err)
 	}
 
-	if listDeletionsJSON {
+	if jsonOutput {
 		return writeDeletionsJSON(w, pending, inProgress, completed, failed, cancelled)
 	}
 
@@ -147,11 +154,15 @@ func writeDeletionsJSON(w io.Writer, groups ...[]*deletion.Manifest) error {
 	return json.MarshalEncode(enc, out, json.Deterministic(true))
 }
 
-var showDeletionCmd = &cobra.Command{
-	Use:   "show-deletion <batch-id>",
-	Short: "Show details of a deletion batch",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runShowDeletion,
+func newShowDeletionCommand() *cobra.Command {
+	command := &cobra.Command{
+		Use:   "show-deletion <batch-id>",
+		Short: "Show details of a deletion batch",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runShowDeletion,
+	}
+
+	return command
 }
 
 func runShowDeletion(cmd *cobra.Command, args []string) error {
@@ -216,21 +227,28 @@ func showDeletionKeepCandidates(
 	return api.KeepCandidatesFromSuggestions(rows), nil
 }
 
-var cancelAll bool
-
-var cancelDeletionCmd = &cobra.Command{
-	Use:   "cancel-deletion [batch-id]",
-	Short: "Cancel pending or in-progress deletion batches",
-	Long: `Cancel deletion batches by ID, or use --all to cancel all pending and in-progress batches.
+func newCancelDeletionCommand() *cobra.Command {
+	command := &cobra.Command{
+		Use:   "cancel-deletion [batch-id]",
+		Short: "Cancel pending or in-progress deletion batches",
+		Long: `Cancel deletion batches by ID, or use --all to cancel all pending and in-progress batches.
 
 Examples:
   msgvault cancel-deletion 20260202-195132-Senders-wingide-user
   msgvault cancel-deletion --all`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: runCancelDeletion,
+		Args: cobra.MaximumNArgs(1),
+		RunE: runCancelDeletion,
+	}
+
+	command.Flags().Bool("all", false, "Cancel all pending and in-progress batches")
+	return command
 }
 
 func runCancelDeletion(cmd *cobra.Command, args []string) error {
+	cancelAll, err := cmd.Flags().GetBool("all")
+	if err != nil {
+		return fmt.Errorf("read --all: %w", err)
+	}
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -322,25 +340,15 @@ func runCancelDeletion(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-var (
-	// deletePermanent opts in to permanent batch deletion. Default is
-	// trash (30-day Gmail recovery), which is the safer choice for the
-	// deletion progression: every other rung
-	// (dedup-hide, local hard delete) is locally reversible, so the
-	// remote rung should be too unless the user explicitly says
-	// otherwise.
-	deletePermanent bool
-	deleteYes       bool
-	deleteDryRun    bool
-	deleteList      bool
-	deleteAccount   string
-	deleteSourceID  int64
-	// deletePlannedBatchIDs is an internal daemon-runner guard. The
-	// foreground CLI receives this exact set from the planning endpoint after
-	// showing the summary and confirmation prompt, then passes it to the
-	// daemon subprocess so execution cannot sweep in newly staged batches.
-	deletePlannedBatchIDs []string
-)
+type deleteStagedOptions struct {
+	permanent       bool
+	yes             bool
+	dryRun          bool
+	list            bool
+	account         string
+	sourceID        int64
+	plannedBatchIDs []string
+}
 
 const (
 	deleteStagedConfirmedFlag                = "confirmed"
@@ -912,10 +920,12 @@ func newDeleteStagedScopeEscalation(
 	}
 }
 
-var deleteStagedCmd = &cobra.Command{
-	Use:   "delete-staged [batch-id]",
-	Short: "Execute staged deletions",
-	Long: `Execute pending deletion batches.
+func newDeleteStagedCommand() *cobra.Command {
+	var options deleteStagedOptions
+	command := &cobra.Command{
+		Use:   "delete-staged [batch-id]",
+		Short: "Execute staged deletions",
+		Long: `Execute pending deletion batches.
 
 By default, messages are moved to Gmail trash (recoverable for 30 days).
 Use --permanent for batch-API permanent deletion (fast, no recovery).
@@ -942,283 +952,302 @@ Examples:
   msgvault delete-staged batch-123       # With durable config consent
   msgvault delete-staged --permanent     # With durable config consent
 	MSGVAULT_ENABLE_REMOTE_DELETE=1 msgvault delete-staged --yes  # One command`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		state := invocationFromCommand(cmd)
-		if state == nil || state.cfg == nil {
-			return errors.New("configuration is unavailable")
-		}
-		cfg := state.cfg
-		logger := state.logger
-		daemonSubprocess := isDaemonCLISubprocess()
-		if !daemonSubprocess {
-			return runDeleteStagedHTTP(cmd, args)
-		}
+		RunE: func(cmd *cobra.Command, args []string) error {
+			state := invocationFromCommand(cmd)
+			if state == nil || state.cfg == nil {
+				return errors.New("configuration is unavailable")
+			}
+			cfg := state.cfg
+			logger := state.logger
+			daemonSubprocess := isDaemonCLISubprocess()
+			if !daemonSubprocess {
+				return runDeleteStagedHTTP(cmd, args, options)
+			}
 
-		confirmed, err := cmd.Flags().GetBool(deleteStagedConfirmedFlag)
-		if err != nil {
-			return fmt.Errorf("read --%s flag: %w", deleteStagedConfirmedFlag, err)
-		}
-		skipPrelude, err := cmd.Flags().GetBool(deleteStagedSkipPreludeFlag)
-		if err != nil {
-			return fmt.Errorf("read --%s flag: %w", deleteStagedSkipPreludeFlag, err)
-		}
-		planFingerprint, err := cmd.Flags().GetString(deleteStagedPlanFingerprintFlag)
-		if err != nil {
-			return fmt.Errorf("read --%s flag: %w", deleteStagedPlanFingerprintFlag, err)
-		}
-		scopeEscalationConfirmed, err := cmd.Flags().GetBool(deleteStagedScopeEscalationConfirmedFlag)
-		if err != nil {
-			return fmt.Errorf("read --%s flag: %w", deleteStagedScopeEscalationConfirmedFlag, err)
-		}
-		batchID := ""
-		if len(args) > 0 {
-			batchID = args[0]
-		}
-		plan, err := buildDeleteStagedPlan(deleteStagedPlanOptions{
-			Invocation:          state,
-			BatchID:             batchID,
-			PlannedBatchIDs:     deletePlannedBatchIDs,
-			Permanent:           deletePermanent,
-			Yes:                 deleteYes,
-			DryRun:              deleteDryRun,
-			List:                deleteList,
-			Account:             deleteAccount,
-			SourceID:            deleteSourceID,
-			SourceIDSet:         cmd.Flags().Changed("source-id"),
-			RemoteDeleteEnabled: remoteDeleteEnabled(daemonSubprocess, invocationFromCommand(cmd)),
-		})
-		if err != nil {
-			return err
-		}
-		if planFingerprint != "" && plan.PlanFingerprint != planFingerprint {
-			return errors.New("staged deletion plan changed since confirmation; run msgvault delete-staged again")
-		}
-		if !skipPrelude {
-			_, _ = fmt.Fprint(cmd.OutOrStdout(), plan.Stdout)
-		}
-		if !plan.NeedsExecution {
-			return nil
-		}
-		if plan.BlockedError != "" {
-			return errors.New(plan.BlockedError)
-		}
-		if plan.NeedsConfirmation && !confirmed {
-			ok, err := confirmDeleteStaged(cmd.InOrStdin(), cmd.OutOrStdout(), plan.ConfirmationMode)
-			if err != nil || !ok {
+			confirmed, err := cmd.Flags().GetBool(deleteStagedConfirmedFlag)
+			if err != nil {
+				return fmt.Errorf("read --%s flag: %w", deleteStagedConfirmedFlag, err)
+			}
+			skipPrelude, err := cmd.Flags().GetBool(deleteStagedSkipPreludeFlag)
+			if err != nil {
+				return fmt.Errorf("read --%s flag: %w", deleteStagedSkipPreludeFlag, err)
+			}
+			planFingerprint, err := cmd.Flags().GetString(deleteStagedPlanFingerprintFlag)
+			if err != nil {
+				return fmt.Errorf("read --%s flag: %w", deleteStagedPlanFingerprintFlag, err)
+			}
+			scopeEscalationConfirmed, err := cmd.Flags().GetBool(deleteStagedScopeEscalationConfirmedFlag)
+			if err != nil {
+				return fmt.Errorf("read --%s flag: %w", deleteStagedScopeEscalationConfirmedFlag, err)
+			}
+			batchID := ""
+			if len(args) > 0 {
+				batchID = args[0]
+			}
+			plan, err := buildDeleteStagedPlan(deleteStagedPlanOptions{
+				Invocation:          state,
+				BatchID:             batchID,
+				PlannedBatchIDs:     options.plannedBatchIDs,
+				Permanent:           options.permanent,
+				Yes:                 options.yes,
+				DryRun:              options.dryRun,
+				List:                options.list,
+				Account:             options.account,
+				SourceID:            options.sourceID,
+				SourceIDSet:         cmd.Flags().Changed("source-id"),
+				RemoteDeleteEnabled: remoteDeleteEnabled(daemonSubprocess, invocationFromCommand(cmd)),
+			})
+			if err != nil {
 				return err
 			}
-		}
-		manager := plan.Manager
-		manifests := plan.Manifests
-
-		release, err := acquireDirectSQLiteWriteLock(cfg, state)
-		if err != nil {
-			return err
-		}
-		defer release()
-
-		// Open database early so we can resolve account identifiers.
-		dbPath := cfg.DatabaseDSN()
-		s, err := store.Open(dbPath)
-		if err != nil {
-			return fmt.Errorf("open database: %w", err)
-		}
-		defer func() { _ = s.Close() }()
-
-		if err := s.InitSchema(); err != nil {
-			return fmt.Errorf("init schema: %w", err)
-		}
-		if err := runStartupMigrationsContext(cmd.Context(), s, state); err != nil {
-			return fmt.Errorf("startup migrations: %w", err)
-		}
-		// Resolve the target before any durable claim. The digest-checked claim
-		// below rejects a manifest replacement between this preflight and the
-		// remote call, while the direct write lock keeps the source catalog
-		// stable for the duration of the command.
-		target, err := resolveDeleteStagedTargetWithSourceID(
-			s, manifests, deleteAccount, deleteSourceID, cmd.Flags().Changed("source-id"),
-		)
-		if err != nil {
-			if isDeleteStagedUsageError(err) {
-				return usageErr(cmd, err)
+			if planFingerprint != "" && plan.PlanFingerprint != planFingerprint {
+				return errors.New("staged deletion plan changed since confirmation; run msgvault delete-staged again")
 			}
-			return err
-		}
-		account := target.Account
-		src := target.Source
-
-		// Set up context with cancellation
-		ctx, cancel := context.WithCancel(cmd.Context())
-		defer cancel()
-
-		// Handle Ctrl+C gracefully
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-		go func() {
-			<-sigChan
-			fmt.Println("\nInterrupted. Saving checkpoint...")
-			cancel()
-		}()
-
-		// For Gmail, handle scope escalation before building the client.
-		// buildAPIClient uses standard scopes; deletion may need elevated ones.
-		// Service-account flows get scopes via the JWT assertion (no stored
-		// token), so the scope-escalation prompt only applies to browser OAuth.
-		var clientSecretsPath string
-		if src.SourceType == sourceTypeGmail {
-			if !cfg.OAuth.HasAnyConfig() {
-				return errOAuthNotConfigured(cfg)
+			if !skipPrelude {
+				_, _ = fmt.Fprint(cmd.OutOrStdout(), plan.Stdout)
 			}
-			appName := sourceOAuthApp(src)
-			isServiceAccount := cfg.OAuth.ServiceAccountKeyFor(appName) != ""
-
-			if !isServiceAccount {
-				clientSecretsPath, err = cfg.OAuth.ClientSecretsFor(appName)
-				if err != nil {
+			if !plan.NeedsExecution {
+				return nil
+			}
+			if plan.BlockedError != "" {
+				return errors.New(plan.BlockedError)
+			}
+			if plan.NeedsConfirmation && !confirmed {
+				ok, err := confirmDeleteStaged(cmd.InOrStdin(), cmd.OutOrStdout(), plan.ConfirmationMode)
+				if err != nil || !ok {
 					return err
 				}
+			}
+			manager := plan.Manager
+			manifests := plan.Manifests
 
-				escalation, err := deleteStagedScopeEscalationForSource(account, src, deletePermanent, clientSecretsPath, state)
-				if err != nil {
-					return err
+			release, err := acquireDirectSQLiteWriteLock(cfg, state)
+			if err != nil {
+				return err
+			}
+			defer release()
+
+			// Open database early so we can resolve account identifiers.
+			dbPath := cfg.DatabaseDSN()
+			s, err := store.Open(dbPath)
+			if err != nil {
+				return fmt.Errorf("open database: %w", err)
+			}
+			defer func() { _ = s.Close() }()
+
+			if err := s.InitSchema(); err != nil {
+				return fmt.Errorf("init schema: %w", err)
+			}
+			if err := runStartupMigrationsContext(cmd.Context(), s, state); err != nil {
+				return fmt.Errorf("startup migrations: %w", err)
+			}
+			// Resolve the target before any durable claim. The digest-checked claim
+			// below rejects a manifest replacement between this preflight and the
+			// remote call, while the direct write lock keeps the source catalog
+			// stable for the duration of the command.
+			target, err := resolveDeleteStagedTargetWithSourceID(
+				s, manifests, options.account, options.sourceID, cmd.Flags().Changed("source-id"),
+			)
+			if err != nil {
+				if isDeleteStagedUsageError(err) {
+					return usageErr(cmd, err)
 				}
-				if escalation.Needed {
-					if scopeEscalationConfirmed {
-						if err := authorizeDeletionScopeEscalation(ctx, escalation.Account, escalation.BatchDelete, escalation.ClientSecretsPath); err != nil {
-							return err
+				return err
+			}
+			account := target.Account
+			src := target.Source
+
+			// Set up context with cancellation
+			ctx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
+
+			// Handle Ctrl+C gracefully
+			sigChan := make(chan os.Signal, 1)
+			signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+			go func() {
+				<-sigChan
+				fmt.Println("\nInterrupted. Saving checkpoint...")
+				cancel()
+			}()
+
+			// For Gmail, handle scope escalation before building the client.
+			// buildAPIClient uses standard scopes; deletion may need elevated ones.
+			// Service-account flows get scopes via the JWT assertion (no stored
+			// token), so the scope-escalation prompt only applies to browser OAuth.
+			var clientSecretsPath string
+			if src.SourceType == sourceTypeGmail {
+				if !cfg.OAuth.HasAnyConfig() {
+					return errOAuthNotConfigured(cfg)
+				}
+				appName := sourceOAuthApp(src)
+				isServiceAccount := cfg.OAuth.ServiceAccountKeyFor(appName) != ""
+
+				if !isServiceAccount {
+					clientSecretsPath, err = cfg.OAuth.ClientSecretsFor(appName)
+					if err != nil {
+						return err
+					}
+
+					escalation, err := deleteStagedScopeEscalationForSource(account, src, options.permanent, clientSecretsPath, state)
+					if err != nil {
+						return err
+					}
+					if escalation.Needed {
+						if scopeEscalationConfirmed {
+							if err := authorizeDeletionScopeEscalation(ctx, escalation.Account, escalation.BatchDelete, escalation.ClientSecretsPath); err != nil {
+								return err
+							}
+						} else {
+							if err := promptDeletionScopeEscalation(ctx, escalation.Account, escalation.BatchDelete, escalation.ClientSecretsPath); err != nil {
+								if errors.Is(err, errUserCanceled) {
+									return nil
+								}
+								return err
+							}
 						}
+					}
+				}
+			}
+
+			// Build API client — reuses the same factory as sync.
+			getOAuthMgr := func(appName string) (*oauth.Manager, error) {
+				secretsPath := clientSecretsPath
+				if secretsPath == "" {
+					var err error
+					secretsPath, err = cfg.OAuth.ClientSecretsFor(appName)
+					if err != nil {
+						return nil, err
+					}
+				}
+				scopes := oauth.Scopes
+				if options.permanent {
+					scopes = oauth.ScopesDeletion
+				}
+				return oauth.NewManagerWithScopes(secretsPath, cfg.TokensDir(), logger, scopes)
+			}
+			// For permanent deletion (not trash), service-account flows need the
+			// elevated mail.google.com scope; trash-only uses the standard set.
+			saScopes := oauth.Scopes
+			if options.permanent {
+				saScopes = oauth.ScopesDeletion
+			}
+			client, err := buildAPIClient(ctx, src, getOAuthMgr, saScopes)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = client.Close() }()
+
+			// Create executor
+			executor := deletion.NewExecutor(manager, s, client).
+				WithSourceID(src.ID).
+				WithLogger(logger).
+				WithProgress(&CLIDeletionProgress{})
+			method := deletion.MethodTrash
+			if options.permanent {
+				method = deletion.MethodDelete
+			}
+
+			return runDeleteStagedExecution(func(markCacheDirty func()) error {
+				// Claim each manifest immediately before its executor call. All
+				// credential, scope, and client setup has completed by this point,
+				// and a later batch is never left claimed if an earlier/later claim
+				// fails.
+				for i, plannedManifest := range manifests {
+					m, claimErr := manager.ClaimManifestWithDigest(
+						plannedManifest.ID, method, plan.ManifestDigests[plannedManifest.ID],
+					)
+					if claimErr != nil {
+						return fmt.Errorf("claim batch %s: %w", plannedManifest.ID, claimErr)
+					}
+					if i > 0 {
+						fmt.Println()
+					}
+					fmt.Printf("  [%d/%d] %s (%d messages)\n", i+1, len(manifests), m.Description, len(m.GmailIDs))
+
+					var execErr error
+					// The confirmed method wins: the summary, the confirmation, and
+					// the OAuth scopes above all describe this flag. Planning already
+					// refused a batch whose stored method disagrees, and the executor
+					// refuses again before touching a message, so a batch resumed
+					// through the wrong path fails loudly instead of silently
+					// switching between trash and permanent deletion.
+					useTrash := !options.permanent
+					markCacheDirty()
+
+					if useTrash {
+						// Use individual trash calls (slower but recoverable)
+						opts := deletion.DefaultExecuteOptions()
+						opts.Method = deletion.MethodTrash
+						execErr = executor.Execute(ctx, m.ID, opts)
 					} else {
-						if err := promptDeletionScopeEscalation(ctx, escalation.Account, escalation.BatchDelete, escalation.ClientSecretsPath); err != nil {
-							if errors.Is(err, errUserCanceled) {
-								return nil
+						// Use batch delete for permanent deletion (fast - 1 API call per 1000 messages)
+						execErr = executor.ExecuteBatch(ctx, m.ID)
+					}
+
+					if execErr != nil {
+						if ctx.Err() != nil {
+							fmt.Println("\nInterrupted. Run again to resume.")
+							return nil //nolint:nilerr // An interruption pauses the resumable batch after reporting its state.
+						}
+
+						// A concurrent cancel (e.g. from the web UI/daemon) moved this
+						// batch out of in_progress. Report it plainly and move on to the
+						// next batch rather than surfacing it as a failure.
+						if errors.Is(execErr, deletion.ErrManifestCancelled) {
+							fmt.Printf("  Cancelled: %s\n", m.ID)
+							continue
+						}
+
+						// Check if this is a scope error - offer to re-authorize (Gmail only)
+						if src.SourceType == sourceTypeGmail && isInsufficientScopeError(execErr) {
+							if cfg.OAuth.ServiceAccountKeyFor(sourceOAuthApp(src)) != "" {
+								return fmt.Errorf(
+									"service account lacks required Gmail deletion scope for %s: "+
+										"authorize https://mail.google.com/ for the service account client "+
+										"in Google Admin Console, then run delete-staged again",
+									account,
+								)
 							}
-							return err
-						}
-					}
-				}
-			}
-		}
-
-		// Build API client — reuses the same factory as sync.
-		getOAuthMgr := func(appName string) (*oauth.Manager, error) {
-			secretsPath := clientSecretsPath
-			if secretsPath == "" {
-				var err error
-				secretsPath, err = cfg.OAuth.ClientSecretsFor(appName)
-				if err != nil {
-					return nil, err
-				}
-			}
-			scopes := oauth.Scopes
-			if deletePermanent {
-				scopes = oauth.ScopesDeletion
-			}
-			return oauth.NewManagerWithScopes(secretsPath, cfg.TokensDir(), logger, scopes)
-		}
-		// For permanent deletion (not trash), service-account flows need the
-		// elevated mail.google.com scope; trash-only uses the standard set.
-		saScopes := oauth.Scopes
-		if deletePermanent {
-			saScopes = oauth.ScopesDeletion
-		}
-		client, err := buildAPIClient(ctx, src, getOAuthMgr, saScopes)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = client.Close() }()
-
-		// Create executor
-		executor := deletion.NewExecutor(manager, s, client).
-			WithSourceID(src.ID).
-			WithLogger(logger).
-			WithProgress(&CLIDeletionProgress{})
-		method := deletion.MethodTrash
-		if deletePermanent {
-			method = deletion.MethodDelete
-		}
-
-		return runDeleteStagedExecution(func(markCacheDirty func()) error {
-			// Claim each manifest immediately before its executor call. All
-			// credential, scope, and client setup has completed by this point,
-			// and a later batch is never left claimed if an earlier/later claim
-			// fails.
-			for i, plannedManifest := range manifests {
-				m, claimErr := manager.ClaimManifestWithDigest(
-					plannedManifest.ID, method, plan.ManifestDigests[plannedManifest.ID],
-				)
-				if claimErr != nil {
-					return fmt.Errorf("claim batch %s: %w", plannedManifest.ID, claimErr)
-				}
-				if i > 0 {
-					fmt.Println()
-				}
-				fmt.Printf("  [%d/%d] %s (%d messages)\n", i+1, len(manifests), m.Description, len(m.GmailIDs))
-
-				var execErr error
-				// The confirmed method wins: the summary, the confirmation, and
-				// the OAuth scopes above all describe this flag. Planning already
-				// refused a batch whose stored method disagrees, and the executor
-				// refuses again before touching a message, so a batch resumed
-				// through the wrong path fails loudly instead of silently
-				// switching between trash and permanent deletion.
-				useTrash := !deletePermanent
-				markCacheDirty()
-
-				if useTrash {
-					// Use individual trash calls (slower but recoverable)
-					opts := deletion.DefaultExecuteOptions()
-					opts.Method = deletion.MethodTrash
-					execErr = executor.Execute(ctx, m.ID, opts)
-				} else {
-					// Use batch delete for permanent deletion (fast - 1 API call per 1000 messages)
-					execErr = executor.ExecuteBatch(ctx, m.ID)
-				}
-
-				if execErr != nil {
-					if ctx.Err() != nil {
-						fmt.Println("\nInterrupted. Run again to resume.")
-						return nil
-					}
-
-					// A concurrent cancel (e.g. from the web UI/daemon) moved this
-					// batch out of in_progress. Report it plainly and move on to the
-					// next batch rather than surfacing it as a failure.
-					if errors.Is(execErr, deletion.ErrManifestCancelled) {
-						fmt.Printf("  Cancelled: %s\n", m.ID)
-						continue
-					}
-
-					// Check if this is a scope error - offer to re-authorize (Gmail only)
-					if src.SourceType == sourceTypeGmail && isInsufficientScopeError(execErr) {
-						if cfg.OAuth.ServiceAccountKeyFor(sourceOAuthApp(src)) != "" {
-							return fmt.Errorf(
-								"service account lacks required Gmail deletion scope for %s: "+
-									"authorize https://mail.google.com/ for the service account client "+
-									"in Google Admin Console, then run delete-staged again",
-								account,
-							)
-						}
-						if err := promptDeletionScopeEscalation(ctx, account, !useTrash, clientSecretsPath); err != nil {
-							if errors.Is(err, errUserCanceled) {
-								return nil
+							if err := promptDeletionScopeEscalation(ctx, account, !useTrash, clientSecretsPath); err != nil {
+								if errors.Is(err, errUserCanceled) {
+									return nil
+								}
+								return err
 							}
-							return err
+							fmt.Println("Run delete-staged again to continue.")
+							return nil
 						}
-						fmt.Println("Run delete-staged again to continue.")
-						return nil
+
+						logger.Warn("deletion failed", "batch", m.ID, "error", execErr)
+						return fmt.Errorf("delete batch %s: %w", m.ID, execErr)
 					}
-
-					logger.Warn("deletion failed", "batch", m.ID, "error", execErr)
-					return fmt.Errorf("delete batch %s: %w", m.ID, execErr)
 				}
-			}
 
-			fmt.Println("\nDeletion complete!")
-			return nil
-		}, func() error {
-			return rebuildCacheAfterWrite(dbPath, state)
-		})
-	},
+				fmt.Println("\nDeletion complete!")
+				return nil
+			}, func() error {
+				return rebuildCacheAfterWrite(dbPath, state)
+			})
+		},
+	}
+
+	command.Flags().BoolVar(&options.permanent, "permanent", false, "DESTRUCTIVE: permanently delete via batch API instead of moving to trash (fast, no recovery)")
+	command.Flags().BoolVarP(&options.yes, "yes", "y", false, "Skip confirmation")
+	command.Flags().BoolVar(&options.dryRun, "dry-run", false, "Show what would be deleted")
+	command.Flags().BoolVarP(&options.list, "list", "l", false, "List staged batches without executing")
+	command.Flags().StringVar(&options.account, "account", "", "Account to use (Gmail or IMAP)")
+	command.Flags().Int64Var(&options.sourceID, "source-id", 0, "Exact source ID to use")
+	command.Flags().Bool(deleteStagedConfirmedFlag, false, "Internal confirmation marker")
+	command.Flags().Bool(deleteStagedSkipPreludeFlag, false, "Internal planning marker")
+	command.Flags().StringArrayVar(&options.plannedBatchIDs, deleteStagedPlannedBatchFlag, nil, "Internal planned batch marker")
+	command.Flags().String(deleteStagedPlanFingerprintFlag, "", "Internal plan fingerprint marker")
+	command.Flags().Bool(deleteStagedScopeEscalationConfirmedFlag, false, "Internal scope escalation marker")
+	for _, name := range []string{deleteStagedConfirmedFlag, deleteStagedSkipPreludeFlag, deleteStagedPlannedBatchFlag, deleteStagedPlanFingerprintFlag, deleteStagedScopeEscalationConfirmedFlag} {
+		_ = command.Flags().MarkHidden(name)
+	}
+	command.MarkFlagsMutuallyExclusive("permanent", "yes")
+	command.MarkFlagsMutuallyExclusive("account", "source-id")
+	return command
 }
 
 func runDeleteStagedExecution(work func(markCacheDirty func()) error, refreshCache func() error) error {
@@ -1230,7 +1259,7 @@ func runDeleteStagedExecution(work func(markCacheDirty func()) error, refreshCac
 	return errors.Join(workErr, refreshCache())
 }
 
-func runDeleteStagedHTTP(cmd *cobra.Command, args []string) error {
+func runDeleteStagedHTTP(cmd *cobra.Command, args []string, options deleteStagedOptions) error {
 	batchID := ""
 	if len(args) > 0 {
 		batchID = args[0]
@@ -1244,11 +1273,11 @@ func runDeleteStagedHTTP(cmd *cobra.Command, args []string) error {
 
 	plan, err := st.PlanCLIDeleteStaged(cmd.Context(), daemonclient.CLIDeleteStagedPlanRequest{
 		BatchID:             batchID,
-		Permanent:           deletePermanent,
-		Yes:                 deleteYes,
-		DryRun:              deleteDryRun,
-		List:                deleteList,
-		Account:             deleteAccount,
+		Permanent:           options.permanent,
+		Yes:                 options.yes,
+		DryRun:              options.dryRun,
+		List:                options.list,
+		Account:             options.account,
 		SourceID:            deleteStagedSourceIDPtr(cmd),
 		RemoteDeleteEnabled: remoteDeleteAllowed,
 	})
@@ -1282,7 +1311,7 @@ func runDeleteStagedHTTP(cmd *cobra.Command, args []string) error {
 		if err != nil || !ok {
 			return err
 		}
-		if err := preflightDeleteStagedScopeEscalation(cmd.Context(), plan); err != nil {
+		if err := preflightDeleteStagedScopeEscalation(cmd.Context(), plan, options.permanent); err != nil {
 			return err
 		}
 		if err := cmd.Flags().Set(deleteStagedScopeEscalationConfirmedFlag, "true"); err != nil {
@@ -1304,7 +1333,9 @@ func runDeleteStagedHTTP(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if plan.ResolvedSourceID != nil {
-		deleteAccount = ""
+		if err := cmd.Flags().Set("account", ""); err != nil {
+			return fmt.Errorf("clear resolved deletion account: %w", err)
+		}
 		if accountFlag := cmd.Flags().Lookup("account"); accountFlag != nil {
 			accountFlag.Changed = false
 		}
@@ -1328,7 +1359,7 @@ func deleteStagedSourceIDPtr(cmd *cobra.Command) *int64 {
 	if !cmd.Flags().Changed("source-id") {
 		return nil
 	}
-	value := deleteSourceID
+	value, _ := cmd.Flags().GetInt64("source-id")
 	return &value
 }
 
@@ -1339,7 +1370,7 @@ func deleteStagedSourceIDPtr(cmd *cobra.Command) *int64 {
 // present, and skips its own authorization. Remote daemons keep the
 // subprocess-side flow because tokens live on that host, as do older daemons
 // whose plan response does not name the escalation account.
-func preflightDeleteStagedScopeEscalation(ctx context.Context, plan *daemonclient.CLIDeleteStagedPlan) error {
+func preflightDeleteStagedScopeEscalation(ctx context.Context, plan *daemonclient.CLIDeleteStagedPlan, permanent bool) error {
 	state := invocationFromContext(ctx)
 	if IsRemoteMode(state) || plan.ScopeEscalationAccount == "" {
 		return nil
@@ -1351,7 +1382,7 @@ func preflightDeleteStagedScopeEscalation(ctx context.Context, plan *daemonclien
 	if err != nil {
 		return err
 	}
-	return authorizeDeletionScopeEscalation(ctx, plan.ScopeEscalationAccount, deletePermanent, clientSecretsPath)
+	return authorizeDeletionScopeEscalation(ctx, plan.ScopeEscalationAccount, permanent, clientSecretsPath)
 }
 
 func confirmDeleteStaged(in io.Reader, out io.Writer, mode string) (bool, error) {
@@ -1830,29 +1861,8 @@ func isInsufficientScopeError(err error) bool {
 }
 
 func init() {
-	deleteStagedCmd.Flags().BoolVar(&deletePermanent, "permanent", false, "DESTRUCTIVE: permanently delete via batch API instead of moving to trash (fast, no recovery)")
-	deleteStagedCmd.Flags().BoolVarP(&deleteYes, "yes", "y", false, "Skip confirmation")
-	deleteStagedCmd.Flags().BoolVar(&deleteDryRun, "dry-run", false, "Show what would be deleted")
-	deleteStagedCmd.Flags().BoolVarP(&deleteList, "list", "l", false, "List staged batches without executing")
-	deleteStagedCmd.Flags().StringVar(&deleteAccount, "account", "", "Account to use (Gmail or IMAP)")
-	deleteStagedCmd.Flags().Int64Var(&deleteSourceID, "source-id", 0, "Exact source ID to use")
-	deleteStagedCmd.Flags().Bool(deleteStagedConfirmedFlag, false, "Internal confirmation marker")
-	deleteStagedCmd.Flags().Bool(deleteStagedSkipPreludeFlag, false, "Internal planning marker")
-	deleteStagedCmd.Flags().StringArrayVar(&deletePlannedBatchIDs, deleteStagedPlannedBatchFlag, nil, "Internal planned batch marker")
-	deleteStagedCmd.Flags().String(deleteStagedPlanFingerprintFlag, "", "Internal plan fingerprint marker")
-	deleteStagedCmd.Flags().Bool(deleteStagedScopeEscalationConfirmedFlag, false, "Internal scope escalation marker")
-	_ = deleteStagedCmd.Flags().MarkHidden(deleteStagedConfirmedFlag)
-	_ = deleteStagedCmd.Flags().MarkHidden(deleteStagedSkipPreludeFlag)
-	_ = deleteStagedCmd.Flags().MarkHidden(deleteStagedPlannedBatchFlag)
-	_ = deleteStagedCmd.Flags().MarkHidden(deleteStagedPlanFingerprintFlag)
-	_ = deleteStagedCmd.Flags().MarkHidden(deleteStagedScopeEscalationConfirmedFlag)
-
-	deleteStagedCmd.MarkFlagsMutuallyExclusive("permanent", "yes")
-	deleteStagedCmd.MarkFlagsMutuallyExclusive("account", "source-id")
-	listDeletionsCmd.Flags().BoolVar(&listDeletionsJSON, flagJSON, false, "Output as JSON with full batch IDs")
-	rootCmd.AddCommand(listDeletionsCmd)
-	rootCmd.AddCommand(showDeletionCmd)
-	cancelDeletionCmd.Flags().BoolVar(&cancelAll, "all", false, "Cancel all pending and in-progress batches")
-	rootCmd.AddCommand(cancelDeletionCmd)
-	rootCmd.AddCommand(deleteStagedCmd)
+	registerCommandFactory(newListDeletionsCommand)
+	registerCommandFactory(newShowDeletionCommand)
+	registerCommandFactory(newCancelDeletionCommand)
+	registerCommandFactory(newDeleteStagedCommand)
 }

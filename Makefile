@@ -56,7 +56,7 @@ export GOLANGCI_LINT_CACHE
 # serialize one another while duplicate runners in one worktree can wait.
 GOLANGCI_LINT_TMP ?= $(GOLANGCI_LINT_CACHE)/tmp
 
-.PHONY: build build-release install clean test test-unsharded test-shards test-v fmt lint-tools custom-gcl lint lint-ci vuln-tools vulncheck testify-helper-check tidy openapi api-generate openapi-check api-check web-install web-generate web-check web-test web-test-browser web-e2e web-build web-embed web-assets-check smoke-web-release shootout run-shootout install-hooks bench vcard-registry-check vcard-registry-update docs-install docs-build docs-serve docs-check docs-fixture-test docs-fixture-check docs-fixture-smoke docs-web-screenshots docs-screenshots docs-assets-branch docs-generated-assets-branch docs-deploy-staging docs-deploy help
+.PHONY: build build-release install clean test test-unsharded test-shards test-v fmt lint-tools custom-gcl lint lint-ci vuln-tools vulncheck test-polling-check testify-helper-check tidy openapi api-generate openapi-check api-check web-install web-generate web-check web-test web-test-browser web-e2e web-build web-embed web-assets-check smoke-web-release shootout run-shootout install-hooks bench vcard-registry-check vcard-registry-update docs-install docs-build docs-serve docs-check docs-fixture-test docs-fixture-check docs-fixture-smoke docs-web-screenshots docs-screenshots docs-assets-branch docs-generated-assets-branch docs-deploy-staging docs-deploy help
 
 # Build the binary (debug)
 build: web-embed
@@ -269,7 +269,7 @@ huma-check:
 .PHONY: huma-check
 
 # Run linter (CI, no auto-fix)
-lint-ci: custom-gcl testify-helper-check
+lint-ci: custom-gcl test-polling-check
 	@mkdir -p "$(GOLANGCI_LINT_TMP)"
 	TMPDIR="$(GOLANGCI_LINT_TMP)" "$(CUSTOM_GCL_BIN)" run ./...
 	@if [ -n "$$GITHUB_PATH" ]; then \
@@ -286,9 +286,12 @@ vuln-tools:
 vulncheck: vuln-tools
 	"$(GOVULNCHECK_BIN)" -tags "$(BUILD_TAGS)" ./...
 
-# Enforce testify helper usage and named sub-second polling budgets in tests
-testify-helper-check:
+# Require named sub-second polling budgets in tests
+test-polling-check:
 	go run ./cmd/testify-helper-check -tags="$(BUILD_TAGS)" ./...
+
+# Compatibility alias for existing development scripts.
+testify-helper-check: test-polling-check
 
 # Install pre-commit hook via prek
 install-hooks:
@@ -399,9 +402,9 @@ help:
 	@echo "  test-unsharded - Run every package except SHARDED_TEST_PKGS (CI's test lane)"
 	@echo "  fmt            - Format code"
 	@echo "  lint           - Run linter (auto-fix)"
-	@echo "  lint-ci        - Run linter (CI, no auto-fix; also runs testify-helper-check)"
+	@echo "  lint-ci        - Run linter (CI, no auto-fix; also runs test-polling-check)"
 	@echo "  vulncheck      - Run the pinned Go vulnerability scanner"
-	@echo "  testify-helper-check - Enforce testify helpers and polling budgets in tests"
+	@echo "  test-polling-check - Require named sub-second polling budgets in tests"
 	@echo "  tidy           - Tidy go.mod"
 	@echo "  vcard-registry-check - Network-check IANA registry drift (manual; not CI)"
 	@echo "  vcard-registry-update - Update the vendored IANA vCard registry"

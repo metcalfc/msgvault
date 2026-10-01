@@ -23,7 +23,7 @@ const (
 func (s *Store) GetMessageReplyToMessageIDContext(ctx context.Context, messageID int64) (sql.NullInt64, error) {
 	var replyTo sql.NullInt64
 	err := s.db.QueryRowContext(ctx,
-		s.Rebind(`SELECT reply_to_message_id FROM messages WHERE id = ?`), messageID,
+		`SELECT reply_to_message_id FROM messages WHERE id = ?`, messageID,
 	).Scan(&replyTo)
 	return replyTo, err
 }
@@ -152,7 +152,7 @@ func checkedIMAPDraftUint32(value int64) (uint32, error) {
 }
 
 func (s *Store) loadIMAPDraftTx(ctx context.Context, tx *loggedTx, draftID string) (IMAPDraft, error) {
-	return loadIMAPDraft(ctx, tx, s.dialect.SelectForUpdate(), draftID)
+	return loadIMAPDraft(ctx, tx, "", draftID)
 }
 
 func (s *Store) lockIMAPDraftTx(ctx context.Context, tx *loggedTx, draftID string) error {
@@ -441,7 +441,7 @@ func (s *Store) PublishIMAPDraftReplacementContext(
 				INSERT INTO imap_message_memberships
 					(source_id, mailbox, uidvalidity, uid, message_id, flags, updated_at)
 				VALUES (?, ?, ?, ?, ?, %s, %s)
-			`, s.dialect.JSONBindExpr(), s.dialect.Now()), receipt.SourceID, receipt.Mailbox, receipt.UIDValidity, receipt.UID, messageID, imapDraftFlagsJSON); err != nil {
+			`, "?", s.dialect.Now()), receipt.SourceID, receipt.Mailbox, receipt.UIDValidity, receipt.UID, messageID, imapDraftFlagsJSON); err != nil {
 				return fmt.Errorf("persist replacement IMAP membership: %w", err)
 			}
 			labelID, err := ensureIMAPMailboxLabel(ctx, tx, receipt.SourceID, receipt.Mailbox)

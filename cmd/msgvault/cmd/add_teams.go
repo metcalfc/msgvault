@@ -8,12 +8,6 @@ import (
 	"go.kenn.io/msgvault/internal/microsoft"
 )
 
-var (
-	teamsHeadless             bool
-	teamsTenantID             string
-	noDefaultIdentityAddTeams bool
-)
-
 func newAddTeamsCmd() *cobra.Command {
 	cmd := newAddTeamsLocalCmd()
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -32,6 +26,8 @@ func newAddTeamsCmd() *cobra.Command {
 // process before proxying, so the daemon subprocess never opens a browser
 // or waits on human consent while holding the operation gate.
 func preflightAddTeamsAuthorize(cmd *cobra.Command, email string) error {
+	flags := readAddTeamsOptions(cmd)
+
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -47,12 +43,12 @@ func preflightAddTeamsAuthorize(cmd *cobra.Command, email string) error {
 	}
 	mgr := microsoft.NewGraphManager(
 		cfg.Microsoft.ClientID,
-		microsoftTenantID(teamsTenantID, cfg),
+		microsoftTenantID(flags.teamsTenantID, cfg),
 		cfg.Microsoft.EffectiveRedirectURI(),
 		cfg.TokensDir(),
 		logger,
 	)
-	if teamsHeadless {
+	if flags.teamsHeadless {
 		mgr.UseDeviceCode()
 	}
 	fmt.Printf("Authorizing %s with Microsoft Teams...\n", email)
@@ -85,16 +81,18 @@ Examples:
 		Args: cobra.ExactArgs(1),
 		RunE: runAddTeamsLocal,
 	}
-	cmd.Flags().StringVar(&teamsTenantID, "tenant", "",
+	cmd.Flags().String("tenant", "",
 		"Azure AD tenant ID (default: \"common\" for multi-tenant)")
-	cmd.Flags().BoolVar(&noDefaultIdentityAddTeams, "no-default-identity", false, noDefaultIdentityHelp)
-	cmd.Flags().BoolVar(&teamsHeadless, "headless", false,
+	cmd.Flags().Bool("no-default-identity", false, noDefaultIdentityHelp)
+	cmd.Flags().Bool("headless", false,
 		"Sign in with a device code instead of a local browser")
 	registerOAuthPreflightedFlag(cmd)
 	return cmd
 }
 
 func runAddTeamsLocal(cmd *cobra.Command, args []string) error {
+	flags := readAddTeamsOptions(cmd)
+
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -114,12 +112,12 @@ func runAddTeamsLocal(cmd *cobra.Command, args []string) error {
 	if !preflighted {
 		mgr := microsoft.NewGraphManager(
 			cfg.Microsoft.ClientID,
-			microsoftTenantID(teamsTenantID, cfg),
+			microsoftTenantID(flags.teamsTenantID, cfg),
 			cfg.Microsoft.EffectiveRedirectURI(),
 			cfg.TokensDir(),
 			logger,
 		)
-		if teamsHeadless {
+		if flags.teamsHeadless {
 			mgr.UseDeviceCode()
 		}
 		fmt.Printf("Authorizing %s with Microsoft Teams...\n", email)
@@ -142,7 +140,7 @@ func runAddTeamsLocal(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("set display name: %w", err)
 	}
 
-	if !noDefaultIdentityAddTeams {
+	if !flags.noDefaultIdentityAddTeams {
 		confirmDefaultIdentity(cmd.OutOrStdout(), s, source.ID, email, email, "account-identifier", state.logger)
 	}
 	if err := runPostSourceCreateMigrationsForInvocation(s, state); err != nil {
@@ -159,5 +157,19 @@ func runAddTeamsLocal(cmd *cobra.Command, args []string) error {
 }
 
 func init() {
-	rootCmd.AddCommand(newAddTeamsCmd())
+	registerCommandFactory(newAddTeamsCmd)
+}
+
+type addTeamsOptions struct {
+	noDefaultIdentityAddTeams bool
+	teamsHeadless             bool
+	teamsTenantID             string
+}
+
+func readAddTeamsOptions(cmd *cobra.Command) addTeamsOptions {
+	var flags addTeamsOptions
+	flags.noDefaultIdentityAddTeams, _ = cmd.Flags().GetBool("no-default-identity")
+	flags.teamsHeadless, _ = cmd.Flags().GetBool("headless")
+	flags.teamsTenantID, _ = cmd.Flags().GetString("tenant")
+	return flags
 }

@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"math"
 	"slices"
@@ -420,7 +420,7 @@ func rerankCacheKey(req SearchRequest, generation vector.Generation, identity st
 	write(req.FTSQuery)
 	// The filter's exported field names are a stable hash input here, not a
 	// wire format.
-	filter, err := json.Marshal(req.Filter) //nolint:musttag // hash input only.
+	filter, err := json.Marshal(req.Filter)
 	if err != nil {
 		filter = nil
 	}

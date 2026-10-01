@@ -124,8 +124,7 @@ func (s *Store) validateProfileValueCloseTimeTx(
 ) error {
 	query := fmt.Sprintf(`SELECT active_from, active_until FROM %s
 		WHERE id = ? AND %s = ?
-		  AND superseded_at IS NULL%s`,
-		table, ownerColumn, s.dialect.SelectForUpdate(),
+		  AND superseded_at IS NULL`, table, ownerColumn,
 	)
 	var activeFrom, existingActiveUntil sql.NullTime
 	err := tx.QueryRowContext(ctx, query, valueID, ownerID).Scan(

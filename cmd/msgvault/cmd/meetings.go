@@ -498,5 +498,5 @@ func meetingCommandError(err error) error {
 }
 
 func init() {
-	rootCmd.AddCommand(newMeetingsCommand(defaultMeetingCommandDeps()))
+	registerCommandFactory(func() *cobra.Command { return newMeetingsCommand(defaultMeetingCommandDeps()) })
 }

@@ -60,7 +60,6 @@ func TestRemoveAccountIdentityRecomputesOnlyIdentityDerivedAttribution(t *testin
 }
 
 func TestAddAccountIdentityUpdatesOnlyChangedMessageAttribution(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)

@@ -104,16 +104,17 @@ func record(t *testing.T) {
 				first, err := strconv.Atoi(lines[1][4:8])
 				require.NoError(err)
 				budgets[first%4][first] = budget
-				for _, name := range lines[1:] {
+				for offset, name := range lines[1:] {
 					index, err := strconv.Atoi(name[4:8])
 					require.NoError(err)
-					require.Equal(first%4, index%4, "batches must retain shard assignments")
+					require.Equal(first+4*offset, index, "a batch must retain the requested four-shard partition")
 				}
 				got = append(got, lines[1:]...)
 			}
 			sort.Strings(got)
 			require.Equal(want, got, "every test must run exactly once")
 			for _, batches := range budgets {
+				require.Greater(len(batches), 1, "each shard must execute sequential batches")
 				var starts []int
 				for start := range batches {
 					starts = append(starts, start)

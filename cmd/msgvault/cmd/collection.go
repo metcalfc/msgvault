@@ -11,65 +11,9 @@ import (
 	"go.kenn.io/msgvault/internal/daemonclient"
 )
 
-var collectionCmd = &cobra.Command{
-	Use:   "collection",
-	Short: "Manage named groups of accounts",
-	Long: `Collections are named groupings of accounts that let you view and
-deduplicate across multiple sources as one unified archive.
-
-A default "All" collection is created automatically and includes
-every account.`,
-}
-
-var collectionCreateCmd = &cobra.Command{
-	Use:   "create <name> --accounts <email1,email2,...>",
-	Short: "Create a new collection",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runCollectionCreate,
-}
-
-var collectionListCmd = &cobra.Command{
-	Use:   cmdUseList,
-	Short: "List all collections",
-	Args:  cobra.NoArgs,
-	RunE:  runCollectionList,
-}
-
-var collectionShowCmd = &cobra.Command{
-	Use:   "show <name>",
-	Short: "Show collection details",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runCollectionShow,
-}
-
-var collectionAddCmd = &cobra.Command{
-	Use:   "add <name> --accounts <email1,email2,...>",
-	Short: "Add accounts to a collection",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runCollectionAdd,
-}
-
-var collectionRemoveCmd = &cobra.Command{
-	Use:   "remove <name> --accounts <email1,email2,...>",
-	Short: "Remove accounts from a collection",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runCollectionRemove,
-}
-
-var collectionDeleteCmd = &cobra.Command{
-	Use:   "delete <name>",
-	Short: "Delete a collection (sources and messages are untouched)",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runCollectionDelete,
-}
-
-var (
-	collectionCreateAccounts string
-	collectionAddAccounts    string
-	collectionRemoveAccounts string
-)
-
 func runCollectionCreate(cmd *cobra.Command, args []string) error {
+	collectionCreateAccounts, _ := cmd.Flags().GetString("accounts")
+
 	accounts, err := collectionAccountsFromFlag(cmd, collectionCreateAccounts)
 	if err != nil {
 		return err
@@ -170,6 +114,8 @@ func renderCollectionShow(out io.Writer, coll daemonclient.CLICollection) {
 }
 
 func runCollectionAdd(cmd *cobra.Command, args []string) error {
+	collectionAddAccounts, _ := cmd.Flags().GetString("accounts")
+
 	accounts, err := collectionAccountsFromFlag(cmd, collectionAddAccounts)
 	if err != nil {
 		return err
@@ -197,6 +143,8 @@ func renderCollectionAddResult(out io.Writer, result collectionops.MutationResul
 }
 
 func runCollectionRemove(cmd *cobra.Command, args []string) error {
+	collectionRemoveAccounts, _ := cmd.Flags().GetString("accounts")
+
 	accounts, err := collectionAccountsFromFlag(cmd, collectionRemoveAccounts)
 	if err != nil {
 		return err
@@ -253,8 +201,59 @@ func collectionAccountsFromFlag(cmd *cobra.Command, accounts string) ([]string, 
 	return parsed, nil
 }
 
-func init() {
-	rootCmd.AddCommand(collectionCmd)
+func newCollectionCommand() *cobra.Command {
+	var collectionCmd = &cobra.Command{
+		Use:   "collection",
+		Short: "Manage named groups of accounts",
+		Long: `Collections are named groupings of accounts that let you view and
+deduplicate across multiple sources as one unified archive.
+
+A default "All" collection is created automatically and includes
+every account.`,
+	}
+
+	var collectionCreateCmd = &cobra.Command{
+		Use:   "create <name> --accounts <email1,email2,...>",
+		Short: "Create a new collection",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runCollectionCreate,
+	}
+
+	var collectionListCmd = &cobra.Command{
+		Use:   cmdUseList,
+		Short: "List all collections",
+		Args:  cobra.NoArgs,
+		RunE:  runCollectionList,
+	}
+
+	var collectionShowCmd = &cobra.Command{
+		Use:   "show <name>",
+		Short: "Show collection details",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runCollectionShow,
+	}
+
+	var collectionAddCmd = &cobra.Command{
+		Use:   "add <name> --accounts <email1,email2,...>",
+		Short: "Add accounts to a collection",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runCollectionAdd,
+	}
+
+	var collectionRemoveCmd = &cobra.Command{
+		Use:   "remove <name> --accounts <email1,email2,...>",
+		Short: "Remove accounts from a collection",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runCollectionRemove,
+	}
+
+	var collectionDeleteCmd = &cobra.Command{
+		Use:   "delete <name>",
+		Short: "Delete a collection (sources and messages are untouched)",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runCollectionDelete,
+	}
+
 	collectionCmd.AddCommand(collectionCreateCmd)
 	collectionCmd.AddCommand(collectionListCmd)
 	collectionCmd.AddCommand(collectionShowCmd)
@@ -262,10 +261,11 @@ func init() {
 	collectionCmd.AddCommand(collectionRemoveCmd)
 	collectionCmd.AddCommand(collectionDeleteCmd)
 
-	collectionCreateCmd.Flags().StringVar(&collectionCreateAccounts,
-		"accounts", "", "Comma-separated account emails or source IDs")
-	collectionAddCmd.Flags().StringVar(&collectionAddAccounts,
-		"accounts", "", "Comma-separated account emails or source IDs")
-	collectionRemoveCmd.Flags().StringVar(&collectionRemoveAccounts,
-		"accounts", "", "Comma-separated account emails or source IDs")
+	collectionCreateCmd.Flags().String("accounts", "", "Comma-separated account emails or source IDs")
+	collectionAddCmd.Flags().String("accounts", "", "Comma-separated account emails or source IDs")
+	collectionRemoveCmd.Flags().String("accounts", "", "Comma-separated account emails or source IDs")
+
+	return collectionCmd
 }
+
+func init() { registerCommandFactory(newCollectionCommand) }

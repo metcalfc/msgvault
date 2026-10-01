@@ -23,6 +23,7 @@ import (
 // TestOpenRemoteStore*APISchema* tests, which re-enable it per test.
 // It also blocks real daemon launches, which would rerun this test binary as "serve".
 func TestMain(m *testing.M) {
+	rootCmd = newProductionRootCommand()
 	remoteAPISchemaCheckEnabled = false
 	startServeBackgroundProcessForRun = func(*config.Config, backgroundServeStartOptions) (*backgroundServeProcess, error) {
 		return nil, errors.New("test reached the real background daemon launcher; stub it with stubStartServeBackgroundProcess or disable daemon auto-start")

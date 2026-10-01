@@ -1,4 +1,4 @@
-import { SvelteSet } from 'svelte/reactivity';
+import { ReviewQueue } from './review-queue.svelte';
 
 import type { APIClient } from '../api/client';
 import type { CorrespondentKindRecord } from '../api/generated/models';
@@ -11,74 +11,22 @@ export type CorrespondentDecisionResult = { ok: true } | { ok: false; message: s
  * classify. Every decision is an explicit user classification, which
  * outranks any rule or Jev judgment.
  */
-export class CorrespondentReviewController {
-  rows = $state<CorrespondentKindRecord[]>([]);
-  loading = $state(false);
-  loaded = $state(false);
-  error = $state<string | null>(null);
-  decisionError = $state<string | null>(null);
-  status = $state<string | null>(null);
-  readonly pending = new SvelteSet<number>();
-  private readonly client: APIClient;
-  private abort: AbortController | undefined;
-  private disposed = false;
-
-  constructor(client: APIClient) {
-    this.client = client;
+export class CorrespondentReviewController extends ReviewQueue<CorrespondentKindRecord> {
+  constructor(private readonly client: APIClient) {
+    super((row) => row.canonical_id, async (signal) => {
+      const page = await listUnclear(client, signal);
+      if ('error' in page) throw new Error(page.error);
+      return page.records;
+    });
   }
 
-  isPending(canonicalID: number): boolean {
-    return this.pending.has(canonicalID);
-  }
-
-  async load(): Promise<void> {
-    if (this.disposed) return;
-    this.abort?.abort();
-    const abort = new AbortController();
-    this.abort = abort;
-    this.loading = true;
-    this.error = null;
-    try {
-      const page = await listUnclear(this.client, abort.signal);
-      if (this.disposed || abort.signal.aborted) return;
-      if ('error' in page) {
-        this.error = page.error;
-        return;
-      }
-      this.rows = page.records;
-      this.loaded = true;
-    } finally {
-      if (this.abort === abort) this.loading = false;
-    }
-  }
-
-  async decide(record: CorrespondentKindRecord, kind: CorrespondentKind): Promise<CorrespondentDecisionResult> {
-    const id = record.canonical_id;
-    if (this.disposed || this.pending.has(id)) return { ok: false, message: 'A decision is already pending.' };
-    this.pending.add(id);
-    this.decisionError = null;
-    this.status = null;
-    try {
-      const outcome = await setKind(this.client, id, kind);
-      if (this.disposed) return { ok: false, message: 'Review closed.' };
-      if (!outcome.ok) {
-        this.decisionError = outcome.message;
-        return { ok: false, message: outcome.message };
-      }
-      this.rows = this.rows.filter((row) => row.canonical_id !== id);
-      this.status = kind === 'person'
-        ? `${recordLabel(record)} is a person.`
-        : `${recordLabel(record)} marked as ${kindLabel(kind).toLowerCase()}.`;
-      return { ok: true };
-    } finally {
-      this.pending.delete(id);
-    }
-  }
-
-  destroy(): void {
-    this.disposed = true;
-    this.abort?.abort();
-    this.pending.clear();
+  decide(record: CorrespondentKindRecord, kind: CorrespondentKind): Promise<CorrespondentDecisionResult> {
+    return this.decideRow(record.canonical_id, async () => {
+      const outcome = await setKind(this.client, record.canonical_id, kind);
+      return outcome.ok ? { ok: true, decision: outcome.result } : outcome;
+    }, () => kind === 'person'
+      ? `${recordLabel(record)} is a person.`
+      : `${recordLabel(record)} marked as ${kindLabel(kind).toLowerCase()}.`);
   }
 }
 

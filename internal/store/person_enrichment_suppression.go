@@ -307,7 +307,7 @@ func (s *Store) lockCurrentPersonEnrichmentSuppressionAffectedPeopleTx(
 	}
 	slices.Sort(personIDs)
 	for _, personID := range personIDs {
-		if _, err := lockPersonEnrichmentPersonTx(ctx, tx, s.dialect, personID); err != nil {
+		if _, err := lockPersonEnrichmentPersonTx(ctx, tx, personID); err != nil {
 			return nil, err
 		}
 	}

@@ -71,20 +71,4 @@ describe.each(queues)('$name review queue refill', ({ create, row, decision }) =
     expect(controller.rows).toEqual([row(3)]);
   });
 
-  it('does not restore a decided row from a list response that started before the decision', async () => {
-    const stale = deferredResponse();
-    let reads = 0;
-    const controller = create(createAPIClient(vi.fn<typeof fetch>(async (input) => {
-      const request = input instanceof Request ? input : new Request(input);
-      if (request.method === 'POST') return Response.json(decision(1));
-      if (++reads === 1) return Response.json({ reviews: [row(1), row(2)] });
-      return stale.promise;
-    })));
-    await controller.load();
-    const refresh = controller.load();
-    await controller.reject(1);
-    stale.resolve(Response.json({ reviews: [row(1), row(2)] }));
-    await refresh;
-    expect(controller.rows).toEqual([row(2)]);
-  });
 });

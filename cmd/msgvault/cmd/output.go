@@ -15,33 +15,31 @@ import (
 	"go.kenn.io/msgvault/internal/textutil"
 )
 
-// Common flag variables used across aggregate commands.
-var (
-	aggLimit  int
-	aggAfter  string
-	aggBefore string
-	aggJSON   bool
-)
+type aggregateFlags struct {
+	limit         int
+	after, before string
+	json          bool
+}
 
 // parseCommonFlags converts string flags to AggregateOptions.
-func parseCommonFlags() (query.AggregateOptions, error) {
+func parseCommonFlags(flags aggregateFlags) (query.AggregateOptions, error) {
 	opts := query.DefaultAggregateOptions()
 
-	if aggLimit <= 0 {
-		return opts, fmt.Errorf("limit must be a positive integer, got %d", aggLimit)
+	if flags.limit <= 0 {
+		return opts, fmt.Errorf("limit must be a positive integer, got %d", flags.limit)
 	}
-	opts.Limit = aggLimit
+	opts.Limit = flags.limit
 
-	if aggAfter != "" {
-		t, err := time.Parse("2006-01-02", aggAfter)
+	if flags.after != "" {
+		t, err := time.Parse("2006-01-02", flags.after)
 		if err != nil {
 			return opts, fmt.Errorf("invalid after date: %w", err)
 		}
 		opts.After = &t
 	}
 
-	if aggBefore != "" {
-		t, err := time.Parse("2006-01-02", aggBefore)
+	if flags.before != "" {
+		t, err := time.Parse("2006-01-02", flags.before)
 		if err != nil {
 			return opts, fmt.Errorf("invalid before date: %w", err)
 		}
@@ -52,20 +50,20 @@ func parseCommonFlags() (query.AggregateOptions, error) {
 }
 
 // addCommonAggregateFlags adds shared flags to aggregate commands.
-func addCommonAggregateFlags(cmd *cobra.Command) {
+func addCommonAggregateFlags(cmd *cobra.Command, flags *aggregateFlags) {
 	cmd.Flags().IntVarP(
-		&aggLimit, "limit", "n", 50, "Maximum number of results",
+		&flags.limit, "limit", "n", 50, "Maximum number of results",
 	)
 	cmd.Flags().StringVar(
-		&aggAfter, "after", "",
+		&flags.after, "after", "",
 		"Filter to messages after date (YYYY-MM-DD)",
 	)
 	cmd.Flags().StringVar(
-		&aggBefore, "before", "",
+		&flags.before, "before", "",
 		"Filter to messages before date (YYYY-MM-DD)",
 	)
 	cmd.Flags().BoolVar(
-		&aggJSON, flagJSON, false, "Output as JSON",
+		&flags.json, flagJSON, false, "Output as JSON",
 	)
 }
 

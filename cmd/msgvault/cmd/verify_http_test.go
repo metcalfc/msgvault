@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,15 +32,11 @@ func TestVerifyUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	testCtx := configureRemoteSyncTest(t, server.URL)
-	resetVerifyFlagsForTest(t)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{Use: verifyCmd.Use, Args: verifyCmd.Args, RunE: verifyCmd.RunE}
+	cmd := newVerifyCmd()
 	cmd.SetContext(testCtx)
-	cmd.Flags().IntVar(&verifySampleSize, "sample", 100, "Number of messages to sample for MIME verification")
-	cmd.Flags().BoolVar(&verifySkipDBCheck, "skip-db-check", false, "Skip SQLite integrity check")
-	cmd.Flags().BoolVar(&verifyJSON, flagJSON, false, "Output as JSON")
 	cmd.SetArgs([]string{"alice@example.com", "--sample", "25", "--skip-db-check", "--json"})
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -51,20 +46,4 @@ func TestVerifyUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
 	assert.Equal(int32(1), requests.Load(), "HTTP requests")
 	assert.JSONEq("{\"email\":\"alice@example.com\"}\n", stdout.String())
 	assert.Equal("verify warning\n", stderr.String())
-}
-
-func resetVerifyFlagsForTest(t *testing.T) {
-	t.Helper()
-
-	oldSampleSize := verifySampleSize
-	oldSkipDBCheck := verifySkipDBCheck
-	oldJSON := verifyJSON
-	verifySampleSize = 100
-	verifySkipDBCheck = false
-	verifyJSON = false
-	t.Cleanup(func() {
-		verifySampleSize = oldSampleSize
-		verifySkipDBCheck = oldSkipDBCheck
-		verifyJSON = oldJSON
-	})
 }

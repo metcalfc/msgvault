@@ -67,8 +67,7 @@ func (s *Store) bumpAccountIdentityRevision(tx *loggedTx) error {
 }
 
 func (s *Store) bumpAccountIdentityRevisionContext(ctx context.Context, tx *loggedTx) error {
-	if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(
-		`INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '0')`),
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '0')`,
 		accountIdentityRevisionKey); err != nil {
 		return fmt.Errorf("seed account identity revision: %w", err)
 	}
@@ -297,7 +296,7 @@ func (s *Store) mergeAccountIdentitySignalsTxWith(
 	selectSQL := `SELECT address, address_key, source_signal FROM account_identities
 		WHERE source_id = ? AND (address_key = ?
 			OR (address_key = '' AND ` + match.WhereClause("address") + `))
-		ORDER BY address_key DESC LIMIT 1` + s.dialect.SelectForUpdate()
+		ORDER BY address_key DESC LIMIT 1`
 	err = tx.QueryRowContext(ctx, selectSQL, sourceID, key, match.BindValue()).
 		Scan(&existingAddr, &existingKey, &existing)
 	switch {

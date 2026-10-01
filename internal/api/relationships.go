@@ -486,7 +486,7 @@ func boundParticipantsFingerprint(ids []int64) string {
 	hash := sha256.New()
 	buffer := make([]byte, 8)
 	for _, id := range ids {
-		binary.BigEndian.PutUint64(buffer, uint64(id))
+		binary.BigEndian.PutUint64(buffer, uint64(id)) //nolint:gosec // Encode every ID bit for hashing; no unsigned arithmetic is performed.
 		hash.Write(buffer)
 	}
 	return hex.EncodeToString(hash.Sum(nil)[:16])

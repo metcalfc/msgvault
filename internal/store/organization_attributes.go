@@ -182,7 +182,7 @@ func (s *Store) setOrganizationAttributeValueOnce(
 			}
 		}
 		organization, err := getOrganizationForUpdateTx(
-			ctx, tx, s.dialect, input.OrganizationID)
+			ctx, tx, input.OrganizationID)
 		if err != nil {
 			return err
 		}
@@ -270,8 +270,8 @@ func (s *Store) currentOrganizationAttributeValueTx(
 		FROM organization_attribute_values v
 		JOIN attribute_definitions d ON d.id = v.definition_id
 		WHERE v.organization_id = ? AND v.definition_id = ? AND v.ordinal = ?
-		  AND v.active_until IS NULL AND v.superseded_at IS NULL%s
-	`, organizationAttributeValueColumns, s.dialect.SelectForUpdate()),
+		  AND v.active_until IS NULL AND v.superseded_at IS NULL
+	`, organizationAttributeValueColumns),
 		organizationID, definitionID, ordinal))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil
@@ -335,7 +335,7 @@ func (s *Store) insertOrganizationAttributeValueTx(
 		    active_from, active_until, source, source_ref, confidence, actor
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, %s, ?, ?, ?, ?, ?, ?, ?, ?)
 		RETURNING id
-	`, s.dialect.JSONBindExpr()),
+	`, "?"),
 		input.OrganizationID, definition.ID, ordinal,
 		input.Value.Text, input.Value.Integer, input.Value.Real, input.Value.Boolean,
 		input.Value.Date, input.Value.Timestamp, jsonValue,
@@ -404,7 +404,7 @@ func (s *Store) supersedeOrganizationAttributeValueOnce(
 			ordinal = *input.Ordinal
 		}
 		organization, err := getOrganizationForUpdateTx(
-			ctx, tx, s.dialect, input.OrganizationID)
+			ctx, tx, input.OrganizationID)
 		if err != nil {
 			return err
 		}
@@ -450,8 +450,8 @@ func (s *Store) getOrganizationAttributeDefinitionTx(
 	definition, err := scanAttributeDefinition(tx.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT %s
 		FROM attribute_definitions
-		WHERE object_type = ? AND slug = ?%s
-	`, attributeDefinitionColumns, s.dialect.SelectForUpdate()),
+		WHERE object_type = ? AND slug = ?
+	`, attributeDefinitionColumns),
 		string(AttributeObjectOrganization), slug))
 	if err == nil {
 		return definition, nil
@@ -460,10 +460,10 @@ func (s *Store) getOrganizationAttributeDefinitionTx(
 		return nil, fmt.Errorf("get organization attribute definition %q: %w", slug, err)
 	}
 	var objectType AttributeObjectType
-	scopeErr := tx.QueryRowContext(ctx, fmt.Sprintf(`
+	scopeErr := tx.QueryRowContext(ctx, `
 		SELECT object_type FROM attribute_definitions
-		WHERE slug = ? ORDER BY id LIMIT 1%s
-	`, s.dialect.SelectForUpdate()), slug).Scan(&objectType)
+		WHERE slug = ? ORDER BY id LIMIT 1
+	`, slug).Scan(&objectType)
 	if errors.Is(scopeErr, sql.ErrNoRows) {
 		return nil, ErrAttributeDefinitionNotFound
 	}

@@ -60,12 +60,12 @@ func (s *Store) ensureArchiveUIDContext(ctx context.Context) error {
 			return fmt.Errorf("generate archive UID: %w", err)
 		}
 		uid := hex.EncodeToString(random)
-		statement := s.dialect.InsertOrIgnore(`
+		statement := `
 			INSERT OR IGNORE INTO archive_metadata (key, value)
 			SELECT ?, ?
 			WHERE NOT EXISTS (
 				SELECT 1 FROM applied_migrations WHERE name = ?
-			)`)
+			)`
 		if _, err := tx.ExecContext(ctx, statement, archiveUIDKey, uid, migrationArchiveIdentity); err != nil {
 			return fmt.Errorf("persist archive UID: %w", err)
 		}
@@ -88,7 +88,7 @@ func (s *Store) ensureArchiveUIDContext(ctx context.Context) error {
 			}
 			return fmt.Errorf("verify archive UID: %w", err)
 		}
-		migrationSQL := s.dialect.InsertOrIgnore(`INSERT OR IGNORE INTO applied_migrations (name) VALUES (?)`)
+		migrationSQL := `INSERT OR IGNORE INTO applied_migrations (name) VALUES (?)`
 		if _, err := tx.ExecContext(ctx, migrationSQL, migrationArchiveIdentity); err != nil {
 			return fmt.Errorf("record archive identity migration: %w", err)
 		}

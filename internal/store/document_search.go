@@ -314,7 +314,7 @@ func (s *Store) ResolveDocumentVectorSearchOccurrences(
 		WHERE occurrence_rank = 1
 		ORDER BY semantic_rank, occurrence_key
 		LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, s.Rebind(query), args...)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, false, fmt.Errorf("resolve document vector search occurrences: %w", err)
 	}
@@ -493,7 +493,6 @@ func (s *Store) searchDocumentContent(
 		args = append(args, limit+1)
 		return s.scanDocumentSearchRows(ctx, query, args, true, limit)
 	}
-
 }
 
 func (s *Store) searchDocumentFilenames(
@@ -694,7 +693,7 @@ func (s *Store) scanDocumentSearchRows(
 	contentSignal bool,
 	uniqueOccurrenceLimit int,
 ) ([]documentSearchRow, bool, error) {
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(query), args...)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, false, fmt.Errorf("search document index: %w", err)
 	}
@@ -778,7 +777,7 @@ func (s *Store) populateDocumentLiveCopyCounts(
 	for index := range hashes {
 		args[index] = hashes[index]
 	}
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(query), args...)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("count live document copies: %w", err)
 	}

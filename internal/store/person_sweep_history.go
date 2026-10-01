@@ -120,7 +120,7 @@ func (s *Store) ListPersonSweepRuns(
 	}
 	query += ` ORDER BY r.started_at DESC, r.id DESC LIMIT ?`
 	args = append(args, filter.Limit)
-	rows, err := s.db.QueryContext(ctx, s.Rebind(query), args...)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list person sweep runs: %w", err)
 	}
@@ -184,7 +184,7 @@ func (s *Store) ListPersonSweepAttempts(
 	}
 	query += ` ORDER BY started_at DESC, id DESC LIMIT ?`
 	args = append(args, filter.Limit)
-	rows, err := s.db.QueryContext(ctx, s.Rebind(query), args...)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list person sweep attempts: %w", err)
 	}

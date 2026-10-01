@@ -15,8 +15,8 @@ import (
 // IdentityLinkStore mutates the participant link graph. Implemented by the
 // serve daemon's store adapter as a direct pass-through to *store.Store.
 type IdentityLinkStore interface {
-	LinkParticipants(a, b int64) (int64, error)
-	UnlinkParticipants(a, b int64) (int64, error)
+	LinkParticipantsContext(ctx context.Context, a, b int64) (int64, error)
+	UnlinkParticipantsContext(ctx context.Context, a, b int64) (int64, error)
 }
 
 // ClusterLookupStore resolves a participant's cluster membership and edges,
@@ -74,11 +74,11 @@ func (s *Server) registerIdentityLinkRoutes(api huma.API) {
 }
 
 func (s *Server) handleLinkIdentity(w http.ResponseWriter, r *http.Request) {
-	s.handleIdentityLinkMutation(w, r, IdentityLinkStore.LinkParticipants)
+	s.handleIdentityLinkMutation(w, r, IdentityLinkStore.LinkParticipantsContext)
 }
 
 func (s *Server) handleUnlinkIdentity(w http.ResponseWriter, r *http.Request) {
-	s.handleIdentityLinkMutation(w, r, IdentityLinkStore.UnlinkParticipants)
+	s.handleIdentityLinkMutation(w, r, IdentityLinkStore.UnlinkParticipantsContext)
 }
 
 // handleIdentityLinkMutation is shared by the link and unlink handlers:
@@ -90,12 +90,12 @@ func (s *Server) handleUnlinkIdentity(w http.ResponseWriter, r *http.Request) {
 // Store errors are mapped by kind, not lumped into one status: ErrAlreadyLinked
 // is a 409 (the edge is redundant, not invalid); ErrParticipantNotFound and
 // ErrInvalidParticipantID are 400s (the request named a bad participant);
-// anything else (lock contention, I/O failure, context cancellation) is an
-// internal failure and must not leak driver text to the client as a 400.
+// Cancellation and timeouts use the shared query error response. Other failures
+// (such as lock contention or I/O) must not leak driver text to the client.
 func (s *Server) handleIdentityLinkMutation(
 	w http.ResponseWriter,
 	r *http.Request,
-	mutate func(IdentityLinkStore, int64, int64) (int64, error),
+	mutate func(IdentityLinkStore, context.Context, int64, int64) (int64, error),
 ) {
 	linker, ok := s.store.(IdentityLinkStore)
 	if !ok {
@@ -113,7 +113,7 @@ func (s *Server) handleIdentityLinkMutation(
 		return
 	}
 
-	revision, err := mutate(linker, req.ParticipantA, req.ParticipantB)
+	revision, err := mutate(linker, r.Context(), req.ParticipantA, req.ParticipantB)
 	switch {
 	case errors.Is(err, store.ErrPersonBindingConflict):
 		if s.writePersonMergeRequired(w, r, err) {
@@ -130,6 +130,9 @@ func (s *Server) handleIdentityLinkMutation(
 		writeError(w, http.StatusBadRequest, "invalid_participant_id", err.Error())
 		return
 	case err != nil:
+		if s.writeIfContextError(w, err) {
+			return
+		}
 		s.logger.Error("identity link mutation failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to update participant links")
 		return

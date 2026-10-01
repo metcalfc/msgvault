@@ -115,7 +115,7 @@ func (s *Store) ReplaceCardDAVDiscoveryContext(
 		return nil, nil, err
 	}
 
-	account, err := getCardDAVAccountForUpdateFrom(ctx, tx, s.Rebind, s.dialect.SelectForUpdate())
+	account, err := getCardDAVAccountForUpdateFrom(ctx, tx, s.Rebind, "")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -168,7 +168,7 @@ func (s *Store) ReplaceCardDAVDiscoveryContext(
 	account.HomeURL = input.HomeURL
 	account.HomeURLs = append([]string(nil), homeURLs...)
 	account.DiscoveryRevision++
-	if _, err := tx.ExecContext(ctx, s.Rebind(`
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO carddav_accounts (
 			id, base_url, username, principal_url, home_url,
 			connection_generation, discovery_revision, discovered_at, updated_at
@@ -181,20 +181,19 @@ func (s *Store) ReplaceCardDAVDiscoveryContext(
 			connection_generation = excluded.connection_generation,
 			discovery_revision = excluded.discovery_revision,
 			discovered_at = CURRENT_TIMESTAMP,
-			updated_at = CURRENT_TIMESTAMP`),
+			updated_at = CURRENT_TIMESTAMP`,
 		account.ID, account.BaseURL, account.Username, account.PrincipalURL,
 		account.HomeURL, account.ConnectionGeneration, account.DiscoveryRevision,
 	); err != nil {
 		return nil, nil, fmt.Errorf("save CardDAV account discovery: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, s.Rebind(
-		`DELETE FROM carddav_account_home_urls WHERE account_id = ?`), account.ID); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM carddav_account_home_urls WHERE account_id = ?`, account.ID); err != nil {
 		return nil, nil, fmt.Errorf("clear CardDAV account home URLs: %w", err)
 	}
 	for index, homeURL := range homeURLs {
-		if _, err := tx.ExecContext(ctx, s.Rebind(`
+		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO carddav_account_home_urls (account_id, home_url, discovery_index)
-			VALUES (?, ?, ?)`), account.ID, homeURL, index); err != nil {
+			VALUES (?, ?, ?)`, account.ID, homeURL, index); err != nil {
 			return nil, nil, fmt.Errorf("save CardDAV account home URL: %w", err)
 		}
 	}
@@ -218,8 +217,7 @@ func (s *Store) ReplaceCardDAVDiscoveryContext(
 		if matched == nil {
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, s.Rebind(
-			`DELETE FROM carddav_address_book_urls WHERE address_book_id = ?`), matched.ID); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM carddav_address_book_urls WHERE address_book_id = ?`, matched.ID); err != nil {
 			return nil, nil, fmt.Errorf("clear discovered CardDAV address book URL identities: %w", err)
 		}
 	}
@@ -241,17 +239,17 @@ func (s *Store) ReplaceCardDAVDiscoveryContext(
 				aliasURL = matched.DiscoveryAliasURL
 			}
 			canonicalURLChanged := canonicalURL != matched.CanonicalURL
-			if _, err := tx.ExecContext(ctx, s.Rebind(`
+			if _, err := tx.ExecContext(ctx, `
 				UPDATE carddav_address_books SET
 					canonical_url = ?, discovery_alias_url = NULLIF(?, ''),
 					display_name = ?, discovery_index = ?,
 					supports_sync_collection = ?, supports_multiget = ?,
-					supported_vcard_versions = `+s.dialect.JSONBindExpr()+`, can_create = ?, can_update = ?, can_delete = ?,
+					supported_vcard_versions = ?, can_create = ?, can_update = ?, can_delete = ?,
 					sync_token = CASE WHEN ? THEN '' ELSE sync_token END,
 					needs_full_reconcile = CASE WHEN ? THEN TRUE ELSE needs_full_reconcile END,
 					sync_revision = sync_revision + CASE WHEN ? THEN 1 ELSE 0 END,
 					last_seen_revision = ?, updated_at = CURRENT_TIMESTAMP
-				WHERE id = ?`), canonicalURL, aliasURL,
+				WHERE id = ?`, canonicalURL, aliasURL,
 				discovered.DisplayName, discovered.DiscoveryIndex,
 				discovered.SupportsSyncCollection, discovered.SupportsMultiget,
 				string(versions), discovered.CanCreate, discovered.CanUpdate, discovered.CanDelete,
@@ -274,15 +272,14 @@ func (s *Store) ReplaceCardDAVDiscoveryContext(
 			writeTargetChosen = true
 		}
 		var bookID int64
-		if err := tx.QueryRowContext(ctx, s.Rebind(`
+		if err := tx.QueryRowContext(ctx, `
 			INSERT INTO carddav_address_books (
 				account_id, canonical_url, discovery_alias_url, display_name, discovery_index,
 				supports_sync_collection, supports_multiget, supported_vcard_versions,
 				can_create, can_update, can_delete,
 				is_write_target, is_subscribed, is_lookup_source, last_seen_revision
-			) VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, ?, `+s.dialect.JSONBindExpr()+`, ?, ?, ?, ?, ?, TRUE, ?)
-			RETURNING id`),
-			account.ID, discovered.CanonicalURL, discovered.DiscoveryAliasURL,
+			) VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?)
+			RETURNING id`, account.ID, discovered.CanonicalURL, discovered.DiscoveryAliasURL,
 			discovered.DisplayName, discovered.DiscoveryIndex,
 			discovered.SupportsSyncCollection, discovered.SupportsMultiget, string(versions),
 			discovered.CanCreate, discovered.CanUpdate, discovered.CanDelete,
@@ -459,7 +456,7 @@ func (s *Store) SetCardDAVBookRolesContext(
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
 		var generation int64
 		if err := tx.QueryRowContext(ctx, `SELECT connection_generation FROM carddav_accounts
-			WHERE id = 1`+s.dialect.SelectForUpdate()).Scan(&generation); err != nil {
+			WHERE id = 1`).Scan(&generation); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrCardDAVAddressBookNotFound
 			}
@@ -470,7 +467,7 @@ func (s *Store) SetCardDAVBookRolesContext(
 		var canCreate, canUpdate, canDelete sql.NullBool
 		if err := tx.QueryRowContext(ctx, `SELECT can_create, can_update, can_delete, is_write_target,
 			is_subscribed, is_lookup_source FROM carddav_address_books
-			WHERE id = ?`+s.dialect.SelectForUpdate(), bookID).Scan(
+			WHERE id = ?`, bookID).Scan(
 			&canCreate, &canUpdate, &canDelete,
 			&current.IsWriteTarget, &current.IsSubscribed, &current.IsLookupSource,
 		); err != nil {

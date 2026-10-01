@@ -43,7 +43,7 @@ type AttachmentExclusion struct {
 // ListAttachmentPolicyCandidates returns stored provider media with the
 // source and conversation context needed to apply current configuration.
 func (s *Store) ListAttachmentPolicyCandidates(ctx context.Context) ([]AttachmentPolicyCandidate, error) {
-	rows, err := s.db.QueryContext(ctx, s.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT a.id, a.message_id, src.source_type, src.identifier,
 		       c.conversation_type, COALESCE(c.participant_count, 0),
 		       COALESCE(CAST(c.metadata AS TEXT), ''), COALESCE(a.size, 0),
@@ -66,7 +66,7 @@ func (s *Store) ListAttachmentPolicyCandidates(ctx context.Context) ([]Attachmen
 		    )
 		  )
 		ORDER BY a.id
-	`), attachmentpolicy.StateStored)
+	`, attachmentpolicy.StateStored)
 	if err != nil {
 		return nil, fmt.Errorf("list attachment policy candidates: %w", err)
 	}
@@ -179,13 +179,13 @@ func (s *Store) AttachmentBlobReferenced(ctx context.Context, contentHash, stora
 		return false, nil
 	}
 	var exists bool
-	err := s.db.QueryRowContext(ctx, s.Rebind(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM attachments
 			WHERE (? <> '' AND (content_hash = ? OR thumbnail_hash = ?))
 			   OR (? <> '' AND (storage_path = ? OR thumbnail_path = ?))
 		)
-	`), contentHash, contentHash, contentHash,
+	`, contentHash, contentHash, contentHash,
 		storagePath, storagePath, storagePath).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("check attachment blob reference: %w", err)

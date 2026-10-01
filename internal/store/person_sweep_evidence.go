@@ -288,7 +288,7 @@ func (s *Store) personSweepReconcileChanges(ctx context.Context, request peoples
 			selectCoords = "o.source_id,o.message_id,o.attachment_id,o.occurrence_key"
 			laneFilter = "LOWER(COALESCE(a.media_type,''))='document'"
 		}
-		rows, queryErr := s.db.QueryContext(ctx, s.Rebind(fmt.Sprintf(`SELECT %s FROM messages m JOIN conversations c ON c.id=m.conversation_id %s WHERE %s AND a.id>? AND a.id<=? AND %s AND (%s) ORDER BY a.id LIMIT ?`, selectCoords, join, LiveMessagesWhere("m", true), laneFilter, predicate)), args...)
+		rows, queryErr := s.db.QueryContext(ctx, fmt.Sprintf(`SELECT %s FROM messages m JOIN conversations c ON c.id=m.conversation_id %s WHERE %s AND a.id>? AND a.id<=? AND %s AND (%s) ORDER BY a.id LIMIT ?`, selectCoords, join, LiveMessagesWhere("m", true), laneFilter, predicate), args...)
 		if queryErr != nil {
 			return nil, request.ReconcileAfter, false, fmt.Errorf("scan person sweep attachment reconciliation: %w", queryErr)
 		}
@@ -328,10 +328,10 @@ func (s *Store) personSweepReconcileChanges(ctx context.Context, request peoples
 	args := []any{after, upper}
 	args = append(args, scopeArgs...)
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, s.Rebind(fmt.Sprintf(`
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT m.id FROM messages m JOIN conversations c ON c.id = m.conversation_id
 		WHERE %s AND m.id > ? AND m.id <= ? AND %s AND (%s)
-		ORDER BY m.id LIMIT ?`, LiveMessagesWhere("m", true), lane, predicate)), args...)
+		ORDER BY m.id LIMIT ?`, LiveMessagesWhere("m", true), lane, predicate), args...)
 	if err != nil {
 		return nil, request.ReconcileAfter, false, fmt.Errorf("scan person sweep reconciliation: %w", err)
 	}
@@ -446,7 +446,7 @@ func (s *Store) hydratePersonSweepMessageSet(
 	}
 	args = append(args, scopeArgs...)
 	args = append(args, boundArgs...)
-	rows, err := s.db.QueryContext(ctx, s.Rebind(fmt.Sprintf(`
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT m.id, m.source_id, s.source_type, COALESCE(m.source_message_id, ''),
 		       COALESCE(m.subject, ''), COALESCE(mb.body_text, ''), COALESCE(m.snippet, ''),
 		       COALESCE(m.sent_at, m.received_at, m.internal_date, m.archived_at), m.archived_at
@@ -455,7 +455,7 @@ func (s *Store) hydratePersonSweepMessageSet(
 		LEFT JOIN message_bodies mb ON mb.message_id = m.id
 		WHERE m.id IN (%s) AND %s AND %s AND (%s)%s
 		ORDER BY m.id`, placeholders, LiveMessagesWhere("m", true), laneSQL, predicate,
-		boundSQL)), args...)
+		boundSQL), args...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read person sweep messages: %w", err)
 	}
@@ -570,7 +570,7 @@ func (s *Store) hydratePersonSweepDocumentChange(
 	}
 	args = append(args, scopeArgs...)
 	args = append(args, position, limit+1)
-	rows, queryErr := s.db.QueryContext(ctx, s.Rebind(fmt.Sprintf(`
+	rows, queryErr := s.db.QueryContext(ctx, fmt.Sprintf(`
 			SELECT o.source_id,o.message_id,o.attachment_id,COALESCE(m.source_message_id,''),s.source_type,
 			       o.occurrence_key,dc.chunk_key,dc.text,dc.checksum,h.extraction_id,
 			       COALESCE(m.sent_at,m.received_at,m.internal_date,h.switched_at),h.switched_at,dc.ordinal
@@ -585,7 +585,7 @@ func (s *Store) hydratePersonSweepDocumentChange(
 			JOIN conversations cv ON cv.id=m.conversation_id
 			CROSS JOIN document_index_state ds
 			WHERE %s AND %s AND (%s) AND %s AND dc.ordinal >= ?
-			ORDER BY dc.ordinal LIMIT ?`, documentSearchValidityForConsent("consent"), conditions, predicate, LiveMessagesWhere("m", true))), args...)
+			ORDER BY dc.ordinal LIMIT ?`, documentSearchValidityForConsent("consent"), conditions, predicate, LiveMessagesWhere("m", true)), args...)
 	if queryErr != nil {
 		return nil, "", false, fmt.Errorf("read person sweep document changes: %w", queryErr)
 	}
@@ -787,10 +787,10 @@ func (s *Store) personSweepHistoricalCandidatesQuery(
 	boundSQL, boundArgs := personSweepJournalBoundPredicate(request.PersonID, request.ThroughSequence)
 	args = append(args, boundArgs...)
 	args = append(args, request.Limit)
-	return s.Rebind(fmt.Sprintf(`SELECT m.id FROM messages m
+	return fmt.Sprintf(`SELECT m.id FROM messages m
 		JOIN conversations c ON c.id=m.conversation_id WHERE %s AND (%s) AND (%s)%s%s%s
 		ORDER BY %s DESC,m.id DESC LIMIT ?`, LiveMessagesWhere("m", true), predicate,
-		lanePredicate, authorshipPredicate, datePredicate, boundSQL, eventTime)), args, nil
+		lanePredicate, authorshipPredicate, datePredicate, boundSQL, eventTime), args, nil
 }
 
 func personSweepHistoricalLanePredicate(classes []peoplesweep.SourceClass) string {
@@ -1017,7 +1017,7 @@ func (s *Store) SearchPersonSweepDocuments(ctx context.Context, request peoplesw
 func (s *Store) loadCurrentDocumentChunk(ctx context.Context, extractionID, chunkKey string) (string, string, time.Time, error) {
 	var text, checksum string
 	var recorded requiredTimestamp
-	err := s.db.QueryRowContext(ctx, s.Rebind(`SELECT dc.text,dc.checksum,h.switched_at FROM document_chunks dc JOIN document_extraction_heads h ON h.extraction_id=dc.extraction_id WHERE dc.extraction_id=? AND dc.chunk_key=?`), extractionID, chunkKey).Scan(&text, &checksum, &recorded)
+	err := s.db.QueryRowContext(ctx, `SELECT dc.text,dc.checksum,h.switched_at FROM document_chunks dc JOIN document_extraction_heads h ON h.extraction_id=dc.extraction_id WHERE dc.extraction_id=? AND dc.chunk_key=?`, extractionID, chunkKey).Scan(&text, &checksum, &recorded)
 	if err != nil {
 		return "", "", time.Time{}, fmt.Errorf("load person sweep document chunk: %w", err)
 	}
@@ -1084,7 +1084,7 @@ func (s *Store) alignDocumentItem(ctx context.Context, personID int64, ref peopl
 	args = append([]any{ref.AttachmentID, ref.MessageID, ref.SourceID, ref.OccurrenceKey, ref.ChunkKey}, args...)
 	var text, checksum, extractionID, sourceMessageID, sourceType string
 	var event, recorded requiredTimestamp
-	err = s.db.QueryRowContext(ctx, s.Rebind(fmt.Sprintf(`SELECT dc.text,dc.checksum,h.extraction_id,COALESCE(m.source_message_id,''),s.source_type,COALESCE(m.sent_at,m.received_at,m.internal_date,h.switched_at),h.switched_at FROM document_chunks dc JOIN document_extraction_heads h ON h.extraction_id=dc.extraction_id JOIN document_occurrences o ON o.canonical_blob_hash=h.canonical_blob_hash JOIN attachments a ON a.id=o.attachment_id JOIN messages m ON m.id=o.message_id JOIN sources s ON s.id=m.source_id JOIN conversations c ON c.id=m.conversation_id WHERE a.id=? AND m.id=? AND m.source_id=? AND o.occurrence_key=? AND dc.chunk_key=? AND %s AND (%s)`, LiveMessagesWhere("m", true), predicate)), args...).Scan(&text, &checksum, &extractionID, &sourceMessageID, &sourceType, &event, &recorded)
+	err = s.db.QueryRowContext(ctx, fmt.Sprintf(`SELECT dc.text,dc.checksum,h.extraction_id,COALESCE(m.source_message_id,''),s.source_type,COALESCE(m.sent_at,m.received_at,m.internal_date,h.switched_at),h.switched_at FROM document_chunks dc JOIN document_extraction_heads h ON h.extraction_id=dc.extraction_id JOIN document_occurrences o ON o.canonical_blob_hash=h.canonical_blob_hash JOIN attachments a ON a.id=o.attachment_id JOIN messages m ON m.id=o.message_id JOIN sources s ON s.id=m.source_id JOIN conversations c ON c.id=m.conversation_id WHERE a.id=? AND m.id=? AND m.source_id=? AND o.occurrence_key=? AND dc.chunk_key=? AND %s AND (%s)`, LiveMessagesWhere("m", true), predicate), args...).Scan(&text, &checksum, &extractionID, &sourceMessageID, &sourceType, &event, &recorded)
 	if err != nil {
 		return peoplesweep.EvidenceItem{}, err
 	}

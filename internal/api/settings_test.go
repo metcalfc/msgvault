@@ -2104,7 +2104,7 @@ func TestSettingsStoresAndClearsTheJevCredential(t *testing.T) {
 	requirements.NoError(err)
 	assertions.Contains(string(credentialBytes), "jev/api_key")
 
-	clear := performSettingsRequest(t, srv, http.MethodDelete,
+	cleared := performSettingsRequest(t, srv, http.MethodDelete,
 		"/api/v1/settings/provider-credentials/jev%2Fapi_key", nil, set.Header().Get("ETag"), "")
-	assertions.Equal(http.StatusOK, clear.Code, clear.Body.String())
+	assertions.Equal(http.StatusOK, cleared.Code, cleared.Body.String())
 }

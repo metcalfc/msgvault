@@ -8,7 +8,6 @@ import (
 // Install after legacy columns exist. Source attribution can change the cached
 // owner even when the effective is_from_me flag stays true.
 func (s *Store) ensureCacheSourceAttribution(ctx context.Context) error {
-
 	return s.runOnceMigration(ctx, "cache_message_source_attribution", 1, false,
 		func(ctx context.Context) error {
 			return s.withTxContext(ctx, func(tx *loggedTx) error {

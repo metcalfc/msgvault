@@ -135,7 +135,6 @@ func TestRepairArchiveRewritesStaleDerivedRows(t *testing.T) {
 }
 
 func TestRepairArchiveRollsBackDerivedTextTogether(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -181,7 +180,6 @@ func TestRepairArchiveRollsBackDerivedTextTogether(t *testing.T) {
 }
 
 func TestRepairSourceResumesFromLastSuccessfulRowAfterFailure(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -235,7 +233,6 @@ func TestRepairSourceResumesFromLastSuccessfulRowAfterFailure(t *testing.T) {
 }
 
 func TestRepairArchiveRefreshesSnippetAndFTSWhenBodyIsCurrent(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -275,7 +272,6 @@ func TestRepairArchiveRefreshesSnippetAndFTSWhenBodyIsCurrent(t *testing.T) {
 }
 
 func TestSyncReportsIncompleteRepair(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -420,7 +416,6 @@ func TestSyncHealsRowsFromAnOlderBuild(t *testing.T) {
 }
 
 func TestSyncRunsCurrentRepairAfterV2WasApplied(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 

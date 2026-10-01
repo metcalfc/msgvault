@@ -23,83 +23,10 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-var (
-	backupInitRepo   string
-	backupCreateRepo string
-	backupListRepo   string
-	backupVerifyRepo string
-
-	backupCreateIncludeConfig         bool
-	backupCreateIncludeTokens         bool
-	backupCreateAllowPlaintextSecrets bool
-	backupCreateTag                   string
-	backupCreateForceUnlock           bool
-	backupCreateJobs                  int
-
-	backupVerifyAll         bool
-	backupVerifyQuick       bool
-	backupVerifyForceUnlock bool
-	backupVerifyJobs        int
-
-	backupRestoreRepo             string
-	backupRestoreTarget           string
-	backupRestoreOverwrite        bool
-	backupRestoreForceUnlock      bool
-	backupRestoreJobs             int
-	backupRestoreLooseAttachments bool
-	backupRestoreIntegrityCheck   bool
-
-	// backupCreateProgress selects backup create's progress rendering mode:
-	// auto (default), bar, or plain. It is hidden/undocumented — see
-	// resolveClientBackupProgressFlag in backup_progress.go for why it exists
-	// at all (the daemon-proxied subprocess can't detect the real terminal).
-	backupCreateProgress string
-)
-
 // backupRestoreAfterDaemonPreflight is a narrow test barrier for exercising
 // ownership races between the early diagnostic check and Kit's authoritative
 // target coordination. Production leaves it nil.
 var backupRestoreAfterDaemonPreflight func()
-
-var backupCmd = &cobra.Command{
-	Use:   "backup",
-	Short: "Back up the archive to a snapshot repository",
-}
-
-var backupInitCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize a new backup repository",
-	Args:  cobra.NoArgs,
-	RunE:  runBackupInit,
-}
-
-var backupCreateCmd = &cobra.Command{
-	Use:   "create",
-	Short: "Create a backup snapshot",
-	Args:  cobra.NoArgs,
-	RunE:  runBackupCreate,
-}
-
-var backupListCmd = &cobra.Command{
-	Use:   cmdUseList,
-	Short: "List backup snapshots",
-	Args:  cobra.NoArgs,
-	RunE:  runBackupList,
-}
-
-var backupVerifyCmd = &cobra.Command{
-	Use:   "verify [SNAPSHOT]",
-	Short: "Verify backup repository integrity",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  runBackupVerify,
-}
-
-var backupRestoreCmd = &cobra.Command{
-	Use:   "restore [SNAPSHOT]",
-	Short: "Restore a snapshot into a target directory",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  runBackupRestore,
-}
 
 // resolveBackupRepo applies the standard --repo precedence for every backup
 // subcommand: an explicit flag wins, else the configured [backup] repo,
@@ -115,6 +42,8 @@ func resolveBackupRepo(flagValue string, cfg *config.Config) (string, error) {
 }
 
 func runBackupInit(cmd *cobra.Command, _ []string) error {
+	backupInitRepo, _ := cmd.Flags().GetString("repo")
+
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -135,6 +64,8 @@ func runBackupInit(cmd *cobra.Command, _ []string) error {
 }
 
 func runBackupList(cmd *cobra.Command, _ []string) error {
+	backupListRepo, _ := cmd.Flags().GetString("repo")
+
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -186,6 +117,12 @@ func printBackupSnapshots(w io.Writer, snapshots []*backup.Manifest) error {
 }
 
 func runBackupVerify(cmd *cobra.Command, args []string) error {
+	backupVerifyRepo, _ := cmd.Flags().GetString("repo")
+	backupVerifyAll, _ := cmd.Flags().GetBool("all")
+	backupVerifyQuick, _ := cmd.Flags().GetBool("quick")
+	backupVerifyForceUnlock, _ := cmd.Flags().GetBool("force-unlock")
+	backupVerifyJobs, _ := cmd.Flags().GetInt("jobs")
+
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -236,6 +173,14 @@ func runBackupVerify(cmd *cobra.Command, args []string) error {
 // result. Like verify, it never proxies through the daemon: it reads only
 // the repository and writes only the target, never the live archive.
 func runBackupRestore(cmd *cobra.Command, args []string) error {
+	backupRestoreRepo, _ := cmd.Flags().GetString("repo")
+	backupRestoreTarget, _ := cmd.Flags().GetString("target")
+	backupRestoreOverwrite, _ := cmd.Flags().GetBool("overwrite")
+	backupRestoreForceUnlock, _ := cmd.Flags().GetBool("force-unlock")
+	backupRestoreJobs, _ := cmd.Flags().GetInt("jobs")
+	backupRestoreIntegrityCheck, _ := cmd.Flags().GetBool("integrity-check")
+	backupRestoreLooseAttachments, _ := cmd.Flags().GetBool("loose-attachments")
+
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -881,7 +826,11 @@ func runBackupCreate(cmd *cobra.Command, args []string) error {
 // sensitive. The flag-named plaintext guard lives here so users see their
 // CLI flags in the error; the engine's own sensitive-source guard is the
 // backstop.
-func backupExtrasSpec(cfg *config.Config) (backup.ExtrasSpec, error) {
+func backupExtrasSpec(cmd *cobra.Command, cfg *config.Config) (backup.ExtrasSpec, error) {
+	backupCreateIncludeConfig, _ := cmd.Flags().GetBool("include-config")
+	backupCreateIncludeTokens, _ := cmd.Flags().GetBool("include-tokens")
+	backupCreateAllowPlaintextSecrets, _ := cmd.Flags().GetBool("allow-plaintext-secrets")
+
 	if (backupCreateIncludeConfig || backupCreateIncludeTokens) && !backupCreateAllowPlaintextSecrets {
 		var flag string
 		switch {
@@ -911,6 +860,15 @@ func backupExtrasSpec(cfg *config.Config) (backup.ExtrasSpec, error) {
 }
 
 func runBackupCreateLocal(cmd *cobra.Command) error {
+	backupCreateRepo, _ := cmd.Flags().GetString("repo")
+	backupCreateIncludeConfig, _ := cmd.Flags().GetBool("include-config")
+	backupCreateIncludeTokens, _ := cmd.Flags().GetBool("include-tokens")
+	backupCreateAllowPlaintextSecrets, _ := cmd.Flags().GetBool("allow-plaintext-secrets")
+	backupCreateTag, _ := cmd.Flags().GetString("tag")
+	backupCreateForceUnlock, _ := cmd.Flags().GetBool("force-unlock")
+	backupCreateJobs, _ := cmd.Flags().GetInt("jobs")
+	backupCreateProgress, _ := cmd.Flags().GetString("progress")
+
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -967,7 +925,7 @@ func runBackupCreateLocal(cmd *cobra.Command) error {
 	renderer := newBackupProgressRenderer(cmd.OutOrStdout(), mode)
 	defer renderer.finish()
 
-	extras, err := backupExtrasSpec(cfg)
+	extras, err := backupExtrasSpec(cmd, cfg)
 	if err != nil {
 		return err
 	}
@@ -1051,36 +1009,76 @@ func (f *freezeViaDaemon) End(ctx context.Context) error {
 	return f.client.BackupFreezeEnd(ctx, f.token)
 }
 
-func init() {
-	backupInitCmd.Flags().StringVar(&backupInitRepo, "repo", "", "Backup repository directory")
+func newBackupCmd() *cobra.Command {
+	backupCmd := &cobra.Command{
+		Use:   "backup",
+		Short: "Back up the archive to a snapshot repository",
+	}
 
-	backupCreateCmd.Flags().StringVar(&backupCreateRepo, "repo", "", "Backup repository directory")
-	backupCreateCmd.Flags().BoolVar(&backupCreateIncludeConfig, "include-config", false, "Include config.toml verbatim (may contain API keys) in the snapshot")
-	backupCreateCmd.Flags().BoolVar(&backupCreateIncludeTokens, "include-tokens", false, "Include the tokens directory in the snapshot")
-	backupCreateCmd.Flags().BoolVar(&backupCreateAllowPlaintextSecrets, "allow-plaintext-secrets", false, "Allow capturing secrets in plaintext (required with --include-config/--include-tokens on an unencrypted repository)")
-	backupCreateCmd.Flags().StringVar(&backupCreateTag, "tag", "", "Optional label recorded on the snapshot manifest")
-	backupCreateCmd.Flags().BoolVar(&backupCreateForceUnlock, "force-unlock", false, "Break a stale exclusive repository lock before creating")
-	backupCreateCmd.Flags().IntVar(&backupCreateJobs, "jobs", 0, "Concurrent attachment capture workers (default: one per CPU; use 1 for serial reads on spinning disks or NAS shares)")
-	backupCreateCmd.Flags().StringVar(&backupCreateProgress, "progress", "auto", "Progress output mode: auto, bar, or plain")
+	backupInitCmd := &cobra.Command{
+		Use:   "init",
+		Short: "Initialize a new backup repository",
+		Args:  cobra.NoArgs,
+		RunE:  runBackupInit,
+	}
+
+	backupCreateCmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a backup snapshot",
+		Args:  cobra.NoArgs,
+		RunE:  runBackupCreate,
+	}
+
+	backupListCmd := &cobra.Command{
+		Use:   cmdUseList,
+		Short: "List backup snapshots",
+		Args:  cobra.NoArgs,
+		RunE:  runBackupList,
+	}
+
+	backupVerifyCmd := &cobra.Command{
+		Use:   "verify [SNAPSHOT]",
+		Short: "Verify backup repository integrity",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  runBackupVerify,
+	}
+
+	backupRestoreCmd := &cobra.Command{
+		Use:   "restore [SNAPSHOT]",
+		Short: "Restore a snapshot into a target directory",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  runBackupRestore,
+	}
+
+	backupInitCmd.Flags().String("repo", "", "Backup repository directory")
+
+	backupCreateCmd.Flags().String("repo", "", "Backup repository directory")
+	backupCreateCmd.Flags().Bool("include-config", false, "Include config.toml verbatim (may contain API keys) in the snapshot")
+	backupCreateCmd.Flags().Bool("include-tokens", false, "Include the tokens directory in the snapshot")
+	backupCreateCmd.Flags().Bool("allow-plaintext-secrets", false, "Allow capturing secrets in plaintext (required with --include-config/--include-tokens on an unencrypted repository)")
+	backupCreateCmd.Flags().String("tag", "", "Optional label recorded on the snapshot manifest")
+	backupCreateCmd.Flags().Bool("force-unlock", false, "Break a stale exclusive repository lock before creating")
+	backupCreateCmd.Flags().Int("jobs", 0, "Concurrent attachment capture workers (default: one per CPU; use 1 for serial reads on spinning disks or NAS shares)")
+	backupCreateCmd.Flags().String("progress", "auto", "Progress output mode: auto, bar, or plain")
 	_ = backupCreateCmd.Flags().MarkHidden("progress")
 
-	backupListCmd.Flags().StringVar(&backupListRepo, "repo", "", "Backup repository directory")
+	backupListCmd.Flags().String("repo", "", "Backup repository directory")
 
-	backupVerifyCmd.Flags().StringVar(&backupVerifyRepo, "repo", "", "Backup repository directory")
-	backupVerifyCmd.Flags().BoolVar(&backupVerifyAll, "all", false, "Verify every snapshot instead of only the latest")
-	backupVerifyCmd.Flags().BoolVar(&backupVerifyQuick, "quick", false, "Skip reading and hash-verifying content blobs")
-	backupVerifyCmd.Flags().BoolVar(&backupVerifyForceUnlock, "force-unlock", false, "Break a stale exclusive repository lock before verifying")
-	backupVerifyCmd.Flags().IntVar(&backupVerifyJobs, "jobs", 0, "Concurrent pack readers for full verify (default: one per CPU; use 1 for serial reads on spinning disks or NAS shares)")
+	backupVerifyCmd.Flags().String("repo", "", "Backup repository directory")
+	backupVerifyCmd.Flags().Bool("all", false, "Verify every snapshot instead of only the latest")
+	backupVerifyCmd.Flags().Bool("quick", false, "Skip reading and hash-verifying content blobs")
+	backupVerifyCmd.Flags().Bool("force-unlock", false, "Break a stale exclusive repository lock before verifying")
+	backupVerifyCmd.Flags().Int("jobs", 0, "Concurrent pack readers for full verify (default: one per CPU; use 1 for serial reads on spinning disks or NAS shares)")
 
-	backupRestoreCmd.Flags().StringVar(&backupRestoreRepo, "repo", "", "Backup repository directory")
-	backupRestoreCmd.Flags().StringVar(&backupRestoreTarget, "target", "", "Directory to restore into (required)")
+	backupRestoreCmd.Flags().String("repo", "", "Backup repository directory")
+	backupRestoreCmd.Flags().String("target", "", "Directory to restore into (required)")
 	_ = backupRestoreCmd.MarkFlagRequired("target")
-	backupRestoreCmd.Flags().BoolVar(&backupRestoreOverwrite, "overwrite", false, "Allow restoring into a non-empty target directory")
-	backupRestoreCmd.Flags().BoolVar(&backupRestoreForceUnlock, "force-unlock", false, "Break a stale exclusive repository lock before restoring")
-	backupRestoreCmd.Flags().IntVar(&backupRestoreJobs, "jobs", 0, "Concurrent pack readers (default: one per CPU; use 1 for serial reads on spinning disks or NAS shares)")
-	backupRestoreCmd.Flags().BoolVar(&backupRestoreIntegrityCheck, "integrity-check", false,
+	backupRestoreCmd.Flags().Bool("overwrite", false, "Allow restoring into a non-empty target directory")
+	backupRestoreCmd.Flags().Bool("force-unlock", false, "Break a stale exclusive repository lock before restoring")
+	backupRestoreCmd.Flags().Int("jobs", 0, "Concurrent pack readers (default: one per CPU; use 1 for serial reads on spinning disks or NAS shares)")
+	backupRestoreCmd.Flags().Bool("integrity-check", false,
 		"Run SQLite's full integrity check after restoring (slow for large databases)")
-	backupRestoreCmd.Flags().BoolVar(&backupRestoreLooseAttachments, "loose-attachments", false,
+	backupRestoreCmd.Flags().Bool("loose-attachments", false,
 		"Restore attachments as loose files instead of installing compatible packs")
 
 	backupCmd.AddCommand(backupInitCmd)
@@ -1088,5 +1086,8 @@ func init() {
 	backupCmd.AddCommand(backupListCmd)
 	backupCmd.AddCommand(backupVerifyCmd)
 	backupCmd.AddCommand(backupRestoreCmd)
-	rootCmd.AddCommand(backupCmd)
+
+	return backupCmd
 }
+
+func init() { registerCommandFactory(newBackupCmd) }

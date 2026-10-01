@@ -22,7 +22,6 @@ import (
 )
 
 func TestDraftReplyOutputFailureRefreshesCache(t *testing.T) {
-
 	requirements := require.New(t)
 	assertions := assert.New(t)
 	fixture := newDraftReplyFixture(t)
@@ -68,7 +67,6 @@ func TestDraftReplyOutputFailureRefreshesCache(t *testing.T) {
 }
 
 func TestDraftEditCancelledAfterPublicationRefreshesCache(t *testing.T) {
-
 	requirements := require.New(t)
 	assertions := assert.New(t)
 	fixture := newDraftReplyFixture(t)
@@ -135,7 +133,6 @@ func TestDraftEditCancelledAfterPublicationRefreshesCache(t *testing.T) {
 }
 
 func TestDraftDeleteOutputFailureRefreshesCache(t *testing.T) {
-
 	for _, resume := range []bool{false, true} {
 		name := "normal deletion"
 		if resume {
@@ -200,7 +197,6 @@ func TestDraftDeleteOutputFailureRefreshesCache(t *testing.T) {
 }
 
 func TestDraftRecoverRefreshesCache(t *testing.T) {
-
 	requirements := require.New(t)
 	assertions := assert.New(t)
 	fixture := newDraftReplyFixture(t)
@@ -271,7 +267,6 @@ func TestDraftRecoverRefreshesCache(t *testing.T) {
 }
 
 func TestDraftRecoverPublishedEditCleanupRefreshesCache(t *testing.T) {
-
 	requirements := require.New(t)
 	assertions := assert.New(t)
 	fixture := newDraftReplyFixture(t)

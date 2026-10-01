@@ -356,7 +356,7 @@ func (s *Store) applyListIDRepairBatch(
 				  AND mr.raw_format = ?
 				  AND mr.compression IS NOT DISTINCT FROM ?
 				  AND LENGTH(mr.raw_data) = ?
-				  AND `+s.dialect.BlobPrefixSQL("mr.raw_data")+` = ?`+s.dialect.SelectForUpdate(),
+				  AND `+s.dialect.BlobPrefixSQL("mr.raw_data")+` = ?`,
 			update.row.id, update.listID, update.row.rawFormat, update.row.compression,
 			update.row.rawLength, rawSize, update.row.rawData,
 		).Scan(&messageID)

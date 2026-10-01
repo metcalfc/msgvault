@@ -21,7 +21,6 @@ const personFactClaimOriginConstraint = "person_fact_claims_origin_check"
 // check changes; every column, key, index, and row is preserved, including the
 // claim's evidence links and the resolutions and decisions that reference it.
 func (s *Store) migratePersonFactClaimOriginBrief(ctx context.Context) error {
-
 	return s.migratePersonFactClaimOriginBriefSQLite(ctx)
 }
 
@@ -118,7 +117,6 @@ func validatePersonFactClaimOriginRows(ctx context.Context, tx *loggedTx) error 
 // the migration idempotent.
 func (s *Store) migratePersonSweepAttemptBriefFailure(ctx context.Context) error {
 	return s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
-
 		present, err := sqliteColumnPresent(ctx, tx, "person_sweep_attempts", "brief_failure_class")
 		if err != nil {
 			return err

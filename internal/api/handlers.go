@@ -651,7 +651,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stats, asOf, stale, err := s.statsSnapshots.get(
-		r.Context(), s.importContext, "", s.statsSnapshotWait, s.getStats,
+		r.Context(), s.importContext, "", s.statsSnapshotWait, s.store.GetStatsContext,
 	)
 	if err != nil {
 		if s.writeIfContextError(w, err) {
@@ -735,7 +735,7 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 
 	offset := (page - 1) * pageSize
 
-	messages, total, err := s.listMessages(r.Context(), offset, pageSize)
+	messages, total, err := s.store.ListMessagesContext(r.Context(), offset, pageSize)
 	if err != nil {
 		if s.writeIfContextError(w, err) {
 			return
@@ -798,7 +798,7 @@ func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg, err := s.getMessage(r.Context(), id)
+	msg, err := s.store.GetMessageContext(r.Context(), id)
 	if errors.Is(err, store.ErrMessageNotFound) {
 		writeError(w, http.StatusNotFound, "not_found", "Message not found")
 		return
@@ -1001,16 +1001,10 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		total    int64
 	)
 	useQuery := parsedQuery.HasOperators() || len(parsedQuery.AccountIDs) > 0
-	if searcher, ok := s.store.(ctxMessageSearcher); ok {
-		if useQuery {
-			messages, total, err = searcher.SearchMessagesQueryContext(r.Context(), parsedQuery, offset, pageSize)
-		} else {
-			messages, total, err = searcher.SearchMessagesContext(r.Context(), searchText, offset, pageSize)
-		}
-	} else if useQuery {
-		messages, total, err = s.store.SearchMessagesQuery(parsedQuery, offset, pageSize)
+	if useQuery {
+		messages, total, err = s.store.SearchMessagesQueryContext(r.Context(), parsedQuery, offset, pageSize)
 	} else {
-		messages, total, err = s.store.SearchMessages(searchText, offset, pageSize)
+		messages, total, err = s.store.SearchMessagesContext(r.Context(), searchText, offset, pageSize)
 	}
 	if err != nil {
 		if s.writeIfContextError(w, err) {
@@ -1173,7 +1167,7 @@ func (s *Server) handleHybridSearch(
 	for i, h := range pageHits {
 		hitIDs[i] = h.MessageID
 	}
-	summaries, err := s.getMessagesSummariesByIDs(r.Context(), hitIDs)
+	summaries, err := s.store.GetMessagesSummariesByIDsContext(r.Context(), hitIDs)
 	if err != nil {
 		if s.writeIfContextError(w, err) {
 			return
@@ -1262,7 +1256,7 @@ func (s *Server) enrichHybridMatches(
 		return
 	}
 	for i := range items {
-		msg, err := s.getMessage(ctx, items[i].ID)
+		msg, err := s.store.GetMessageContext(ctx, items[i].ID)
 		if err != nil || msg == nil {
 			s.logger.Warn("hydrate hybrid match body failed", "message_id", items[i].ID, "error", err)
 			continue
@@ -1371,7 +1365,7 @@ func (s *Server) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {
 		wantIDs = append(wantIDs, hit.MessageID)
 	}
 
-	summaries, err := s.getMessagesSummariesByIDs(r.Context(), wantIDs)
+	summaries, err := s.store.GetMessagesSummariesByIDsContext(r.Context(), wantIDs)
 	if err != nil {
 		if s.writeIfContextError(w, err) {
 			return

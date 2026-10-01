@@ -1957,7 +1957,6 @@ func TestStore_PersistMessage_Atomicity(t *testing.T) {
 }
 
 func TestStore_PersistMessageContext_CancellationRollsBack(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)
@@ -2110,7 +2109,6 @@ func TestStore_PersistMessage_Upsert(t *testing.T) {
 }
 
 func TestStore_PersistMessageSerializesSQLiteWritersBeforePriorStateRead(t *testing.T) {
-
 	require := require.New(t)
 	f := storetest.New(t)
 	f.Store.DB().SetMaxOpenConns(2)

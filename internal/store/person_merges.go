@@ -593,7 +593,7 @@ func (s *Store) lockMergePeopleTx(
 	ctx context.Context, tx *loggedTx, survivorID, absorbedID int64,
 ) error {
 	rows, err := tx.QueryContext(ctx, `SELECT id FROM persons
-		WHERE id IN (?, ?) ORDER BY id`+s.dialect.SelectForUpdate(), survivorID, absorbedID)
+		WHERE id IN (?, ?) ORDER BY id`, survivorID, absorbedID)
 	if err != nil {
 		return fmt.Errorf("lock merge people: %w", err)
 	}
@@ -619,8 +619,7 @@ func (s *Store) lockPersonMergeVCardEnvelopesTx(
 	ctx context.Context, tx *loggedTx, survivorID, absorbedID int64,
 ) error {
 	rows, err := tx.QueryContext(ctx, `SELECT id FROM vcard_resource_envelopes
-		WHERE person_id IN (?, ?) ORDER BY id`+s.dialect.SelectForUpdate(),
-		survivorID, absorbedID)
+		WHERE person_id IN (?, ?) ORDER BY id`, survivorID, absorbedID)
 	if err != nil {
 		return fmt.Errorf("lock person merge vCard envelopes: %w", err)
 	}
@@ -1144,7 +1143,7 @@ func (s *Store) movePersonCategoriesTx(
 func (s *Store) movePersonAttributesTx(
 	ctx context.Context, tx *loggedTx, mergeID, survivorID, absorbedID int64,
 ) error {
-	singleValueLockClause := s.dialect.SelectForUpdate()
+	singleValueLockClause := ""
 	if singleValueLockClause != "" {
 		singleValueLockClause += " OF a"
 	}
@@ -1237,7 +1236,7 @@ func (s *Store) movePersonAttributesTx(
 		return err
 	}
 
-	multiValueLockClause := s.dialect.SelectForUpdate()
+	multiValueLockClause := ""
 	if multiValueLockClause != "" {
 		multiValueLockClause += " OF absorbed, survivor"
 	}

@@ -115,8 +115,7 @@ func scopedCorrespondentKindClustersTx(
 func linkComponentsFromTx(ctx context.Context, tx *loggedTx, seeds []int64) (map[int64]int64, error) {
 	// Union-find over the visited participants.
 	parent := make(map[int64]int64, len(seeds))
-	var find func(int64) int64
-	find = func(id int64) int64 {
+	find := func(id int64) int64 {
 		for parent[id] != id {
 			parent[id] = parent[parent[id]]
 			id = parent[id]

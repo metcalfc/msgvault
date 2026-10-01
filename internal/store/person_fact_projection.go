@@ -1148,7 +1148,7 @@ func (s *Store) personFactProjector(
 ) (personFactTargetProjector, error) {
 	switch target.Kind {
 	case personfacts.TargetAttribute:
-		definition, err := s.getAttributeDefinitionByUniversalID(ctx, tx, target.Key, lock)
+		definition, err := s.getAttributeDefinitionByUniversalID(ctx, tx, target.Key)
 		if err != nil {
 			return nil, err
 		}
@@ -1718,7 +1718,7 @@ func reconcilePersonFactEmploymentCompetition(
 func (s *Store) personFactEmploymentProjectionMatchesClaimTx(
 	ctx context.Context, tx *loggedTx, personID, rowID int64, claim personfacts.ResolvedClaim,
 ) (bool, error) {
-	employment, err := getEmploymentForUpdateTx(ctx, tx, s.dialect, rowID)
+	employment, err := getEmploymentForUpdateTx(ctx, tx, rowID)
 	if errors.Is(err, ErrEmploymentNotFound) {
 		return false, nil
 	}
@@ -1728,7 +1728,7 @@ func (s *Store) personFactEmploymentProjectionMatchesClaimTx(
 	if employment.PersonID != personID {
 		return false, nil
 	}
-	organization, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, employment.OrganizationID)
+	organization, err := getOrganizationForUpdateTx(ctx, tx, employment.OrganizationID)
 	if err != nil {
 		return false, err
 	}
@@ -1896,7 +1896,7 @@ func (p *personFactEmploymentProjector) retireExpired(
 			continue
 		}
 		employment, err := getEmploymentForUpdateTx(
-			ctx, p.tx, p.store.dialect, item.Ref.RowID)
+			ctx, p.tx, item.Ref.RowID)
 		if err != nil {
 			return nil, false, err
 		}
@@ -1980,7 +1980,7 @@ func (s *Store) projectEmploymentFactTx(
 		if plan.CurrentRef == nil || plan.CurrentRef.Kind != "employment" {
 			return nil, errors.New("employment retirement requires an exact current employment reference")
 		}
-		current, err := getEmploymentForUpdateTx(ctx, tx, s.dialect, plan.CurrentRef.RowID)
+		current, err := getEmploymentForUpdateTx(ctx, tx, plan.CurrentRef.RowID)
 		if err != nil {
 			return nil, err
 		}
@@ -2067,9 +2067,9 @@ func (s *Store) projectEmploymentFactTx(
 				SELECT %s FROM employments
 				WHERE person_id = ? AND organization_id = ? AND title_normalized IN (%s)
 				  AND %s
-				ORDER BY id%s
+				ORDER BY id
 			`, employmentColumns, placeholders(len(titleGroup)), s.dialect.BoolTrueExpr("is_current"),
-				s.dialect.SelectForUpdate()), args...))
+			), args...))
 			if currentErr == nil {
 				if _, alreadyConsumed := consumed[current.ID]; !alreadyConsumed {
 					corrected, reviseErr := s.reviseEmploymentTx(
@@ -2088,7 +2088,7 @@ func (s *Store) projectEmploymentFactTx(
 		projectedID, projectionErr := s.loadMatchingPersonFactEmploymentProjectionTx(
 			ctx, tx, claim, input, titleGroup, consumed)
 		if projectionErr == nil && value.EndDate != nil {
-			historical, loadErr := getEmploymentForUpdateTx(ctx, tx, s.dialect, projectedID)
+			historical, loadErr := getEmploymentForUpdateTx(ctx, tx, projectedID)
 			if loadErr != nil {
 				return nil, loadErr
 			}
@@ -2379,8 +2379,8 @@ func (p *personFactAttributeProjector) loadCurrentValue(
 		SELECT %s FROM person_attribute_values v
 		JOIN attribute_definitions d ON d.id = v.definition_id
 		WHERE v.id = ? AND v.definition_id = ?
-		  AND v.active_until IS NULL AND v.superseded_at IS NULL%s
-	`, personAttributeValueColumns, p.store.dialect.SelectForUpdate()), rowID, p.definition.ID))
+		  AND v.active_until IS NULL AND v.superseded_at IS NULL
+	`, personAttributeValueColumns), rowID, p.definition.ID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAttributeValueConflict
 	}
@@ -2514,23 +2514,23 @@ func (s *Store) loadPersonFactTargetDescriptorTx(
 	ctx context.Context, tx *loggedTx, kind personfacts.TargetKind, key string,
 	fallback *personfacts.TargetDescriptor, allowSensitive bool,
 ) (personfacts.TargetDescriptor, personFactTargetEligibility, error) {
-	return s.loadPersonFactTargetDescriptor(ctx, tx, kind, key, fallback, allowSensitive, true)
+	return s.loadPersonFactTargetDescriptor(ctx, tx, kind, key, fallback, allowSensitive)
 }
 
 func (s *Store) loadPersonFactTargetDescriptorSnapshotTx(
 	ctx context.Context, tx *loggedTx, kind personfacts.TargetKind, key string,
 	fallback *personfacts.TargetDescriptor, allowSensitive bool,
 ) (personfacts.TargetDescriptor, personFactTargetEligibility, error) {
-	return s.loadPersonFactTargetDescriptor(ctx, tx, kind, key, fallback, allowSensitive, false)
+	return s.loadPersonFactTargetDescriptor(ctx, tx, kind, key, fallback, allowSensitive)
 }
 
 func (s *Store) loadPersonFactTargetDescriptor(
 	ctx context.Context, tx *loggedTx, kind personfacts.TargetKind, key string,
-	fallback *personfacts.TargetDescriptor, allowSensitive, lock bool,
+	fallback *personfacts.TargetDescriptor, allowSensitive bool,
 ) (personfacts.TargetDescriptor, personFactTargetEligibility, error) {
 	switch kind {
 	case personfacts.TargetAttribute:
-		definition, err := s.getAttributeDefinitionByUniversalID(ctx, tx, key, lock)
+		definition, err := s.getAttributeDefinitionByUniversalID(ctx, tx, key)
 		if errors.Is(err, ErrAttributeDefinitionNotFound) {
 			if fallback != nil {
 				return *fallback, personFactTargetEligibility{}, nil
@@ -2574,16 +2574,12 @@ func (s *Store) loadPersonFactTargetDescriptor(
 }
 
 func (s *Store) getAttributeDefinitionByUniversalID(
-	ctx context.Context, tx *loggedTx, universalID string, lock bool,
+	ctx context.Context, tx *loggedTx, universalID string,
 ) (*AttributeDefinition, error) {
-	lockClause := ""
-	if lock {
-		lockClause = s.dialect.SelectForUpdate()
-	}
 	definition, err := scanAttributeDefinition(tx.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT %s FROM attribute_definitions
-		WHERE object_type = ? AND universal_id = ?%s
-	`, attributeDefinitionColumns, lockClause),
+		WHERE object_type = ? AND universal_id = ?
+	`, attributeDefinitionColumns),
 		string(AttributeObjectPerson), universalID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAttributeDefinitionNotFound

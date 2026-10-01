@@ -36,13 +36,9 @@ func TestRepairDatesAlwaysProxiesThroughDaemonCLIRunner(t *testing.T) {
 	_ = testCtx
 	t.Setenv(daemonCLISubprocessEnv, "")
 
-	var apply bool
 	var stdout bytes.Buffer
-	cmd := &cobra.Command{
-		Use: repairDatesCmd.Use, Args: repairDatesCmd.Args, RunE: repairDatesCmd.RunE,
-	}
+	cmd := newRepairDatesCmd()
 	cmd.SetContext(testCtx)
-	cmd.Flags().BoolVar(&apply, "apply", false, "write repaired dates")
 	cmd.SetArgs([]string{"--apply"})
 	cmd.SetOut(&stdout)
 

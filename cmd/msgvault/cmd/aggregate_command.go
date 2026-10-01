@@ -10,13 +10,14 @@ import (
 
 func runAggregateListCommand(
 	cmd *cobra.Command,
+	flags aggregateFlags,
 	view query.ViewType,
 	emptyMessage string,
 	keyHeader string,
 	errorLabel string,
 	configure ...func(*query.AggregateOptions),
 ) error {
-	opts, err := parseCommonFlags()
+	opts, err := parseCommonFlags(flags)
 	if err != nil {
 		return err
 	}
@@ -37,7 +38,7 @@ func runAggregateListCommand(
 
 	// JSON mode must stay machine-parseable even with zero results:
 	// emit an empty array, never prose.
-	if aggJSON {
+	if flags.json {
 		return outputAggregateJSON(results)
 	}
 	if len(results) == 0 {

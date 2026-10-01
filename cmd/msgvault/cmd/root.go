@@ -21,8 +21,6 @@ import (
 	"golang.org/x/oauth2"
 )
 
-var rootCmd = newRootCommand()
-
 func newRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:   daemonService,
@@ -222,7 +220,7 @@ func skipsConfigLoad(cmd *cobra.Command) bool {
 		return true
 	}
 	for c := cmd; c != nil; c = c.Parent() {
-		if c == skillsCmd {
+		if c.Name() == "skills" {
 			return true
 		}
 	}
@@ -317,13 +315,12 @@ func Execute() error {
 // Installs a panic recovery and closes the log file handler on
 // return so every run ends cleanly in the log.
 func ExecuteContext(ctx context.Context) error {
-	ensureSilenceUsageWrapped(rootCmd)
-	return executeRootContext(ctx, rootCmd)
+	return executeRootContext(ctx, newProductionRootCommand())
 }
 
 // executeRootContext gives one root execution a private owner for parsed
-// options, loaded configuration and cleanup resources. The Cobra registry is
-// shared by the process, so callers still serialize full tree executions.
+// options, loaded configuration and cleanup resources. Production callers build
+// a fresh command tree so flag bindings and command contexts are never reused.
 func executeRootContext(ctx context.Context, root *cobra.Command) error {
 	if root == nil {
 		return errors.New("nil root command")
@@ -379,15 +376,20 @@ func usageErr(cmd *cobra.Command, err error) error {
 	return err
 }
 
-var silencedRoots sync.Map
+const silenceUsageWrappedAnnotation = "msgvault.silence-usage-wrapped"
 
 func ensureSilenceUsageWrapped(root *cobra.Command) {
 	if root == nil {
 		return
 	}
-	if _, loaded := silencedRoots.LoadOrStore(root, struct{}{}); !loaded {
-		silenceUsageInRunE(root)
+	if root.Annotations[silenceUsageWrappedAnnotation] == "true" {
+		return
 	}
+	if root.Annotations == nil {
+		root.Annotations = make(map[string]string)
+	}
+	root.Annotations[silenceUsageWrappedAnnotation] = "true"
+	silenceUsageInRunE(root)
 }
 
 // silenceUsageInRunE walks cmd's subtree and replaces each RunE with a

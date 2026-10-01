@@ -56,9 +56,9 @@ func TestClearingRemovesTheOrganizationTheClassificationCreatedOnlyWhenUnused(t 
 			assert.Equal(tc.wantRemoved, cleared.OrganizationRemoved)
 			_, err = f.st.GetOrganizationContext(t.Context(), organizationID)
 			if tc.wantRemoved {
-				assert.ErrorIs(err, store.ErrOrganizationNotFound)
+				require.ErrorIs(err, store.ErrOrganizationNotFound)
 			} else {
-				assert.NoError(err)
+				require.NoError(err)
 			}
 			if tc.otherOrg {
 				_, err = f.st.GetOrganizationContext(t.Context(), remove)
@@ -90,7 +90,7 @@ func TestClearingKeepsAnOrganizationWithItsOwnProfileData(t *testing.T) {
 	require.NoError(err)
 	assert.False(cleared.OrganizationRemoved)
 	_, err = f.st.GetOrganizationContext(t.Context(), organizationID)
-	assert.NoError(err)
+	require.NoError(err)
 }
 
 func TestClearingKeepsAnOrganizationWithASupersededUserContactPoint(t *testing.T) {
@@ -120,7 +120,7 @@ func TestClearingKeepsAnOrganizationWithASupersededUserContactPoint(t *testing.T
 	require.NoError(err)
 	assert.False(cleared.OrganizationRemoved)
 	_, err = f.st.GetOrganizationContext(t.Context(), organizationID)
-	assert.NoError(err)
+	require.NoError(err)
 }
 
 func TestRemovingAnOrganizationRequiresClearingTheKind(t *testing.T) {

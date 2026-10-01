@@ -3,11 +3,11 @@ package cmd
 import "github.com/spf13/cobra"
 
 func init() {
-	rootCmd.AddCommand(newDraftGetCommand())
-	rootCmd.AddCommand(newDraftEditCommand())
-	rootCmd.AddCommand(newDraftDeleteCommand())
-	rootCmd.AddCommand(newDraftRecoverCommand())
-	rootCmd.AddCommand(newDraftSendAsCommand())
+	registerCommandFactory(newDraftGetCommand)
+	registerCommandFactory(newDraftEditCommand)
+	registerCommandFactory(newDraftDeleteCommand)
+	registerCommandFactory(newDraftRecoverCommand)
+	registerCommandFactory(newDraftSendAsCommand)
 }
 
 func newDraftGetCommand() *cobra.Command {

@@ -63,9 +63,9 @@ func (s *Store) OperationTokenKey(ctx context.Context, keyID string) (OperationT
 	if !operationTokenKeyIDPattern.MatchString(keyID) {
 		return OperationTokenKey{}, ErrOperationTokenKeyNotFound
 	}
-	key, err := scanOperationTokenKey(s.db.QueryRowContext(ctx, s.dialect.Rebind(`
+	key, err := scanOperationTokenKey(s.db.QueryRowContext(ctx, `
 		SELECT key_id, key_bytes, state, created_at, retired_at
-		FROM operation_token_keys WHERE key_id = ?`), keyID))
+		FROM operation_token_keys WHERE key_id = ?`, keyID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return OperationTokenKey{}, ErrOperationTokenKeyNotFound
 	}
@@ -135,9 +135,6 @@ func (s *Store) DeleteOperationTokenKey(ctx context.Context, keyID string) error
 func (s *Store) readActiveOperationTokenKey(ctx context.Context, queryer contextRowQuerier) (OperationTokenKey, error) {
 	query := `SELECT key_id, key_bytes, state, created_at, retired_at
 		FROM operation_token_keys WHERE state = 'active'`
-	if queryer == s.db {
-		query = s.dialect.Rebind(query)
-	}
 	return scanOperationTokenKey(queryer.QueryRowContext(ctx, query))
 }
 

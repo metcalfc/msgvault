@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -31,13 +30,13 @@ type evalTopicReport struct {
 }
 
 // runEvalForReport drives the configured eval run and decodes its JSON report.
-func runEvalForReport(ctx context.Context, t *testing.T, out *evalTopicReport) {
+func runEvalForReport(ctx context.Context, t *testing.T, out *evalTopicReport, options *evalCommandOptions) {
 	t.Helper()
-	cmd := &cobra.Command{}
+	cmd := newEvalCommand()
 	cmd.SetContext(ctx)
 
 	done := captureStdout(t)
-	err := runEval(cmd, nil)
+	err := runEval(cmd, nil, options)
 	text := done()
 	require.NoError(t, err, "eval run")
 	require.NoError(t, json.Unmarshal([]byte(text), out), "parse report: %s", text)
@@ -63,13 +62,13 @@ func TestRunEval_SkipsATopicThatParsedToAnEmptyQuery(t *testing.T) {
 
 	dir := t.TempDir()
 	seedRankingDivergenceArchiveIn(t, dir)
-	testCtx := configureEvalRun(t, dir,
+	testCtx, options := configureEvalRun(t, dir,
 		"q1 0 <m1@example.com> 1\n"+
 			"q2 0 <m1@example.com> 1\n",
 		"q1\trenewal\nq2\tsubject:\"\"\n")
 
 	var report evalTopicReport
-	runEvalForReport(testCtx, t, &report)
+	runEvalForReport(testCtx, t, &report, options)
 	scored := report.Results[evalTestMode]
 
 	assert.Equal(1, report.TopicsEvaluated, "the criteria-less topic is not a measurement")
@@ -94,12 +93,12 @@ func TestRunEval_ReportsTopicsWithNoMatchingJudgments(t *testing.T) {
 
 	dir := t.TempDir()
 	seedRankingDivergenceArchiveIn(t, dir)
-	testCtx := configureEvalRun(t, dir,
+	testCtx, options := configureEvalRun(t, dir,
 		"q1 0 <m1@example.com> 1\n",
 		"q1\trenewal\nq2\trenewal\nq3\trenewal\nq4\trenewal\n")
 
 	var report evalTopicReport
-	runEvalForReport(testCtx, t, &report)
+	runEvalForReport(testCtx, t, &report, options)
 
 	assert.Equal(1, report.TopicsEvaluated)
 	assert.Equal([]string{"q2", "q3", "q4"}, report.Diagnostics.UnjudgedTopics,
@@ -128,13 +127,13 @@ func TestRunEval_UnjudgedCoverageNoteCountsWhatWasActuallyScored(t *testing.T) {
 
 	dir := t.TempDir()
 	seedRankingDivergenceArchiveIn(t, dir)
-	testCtx := configureEvalRun(t, dir,
+	testCtx, options := configureEvalRun(t, dir,
 		"q1 0 <m1@example.com> 1\n"+
 			"q2 0 <m1@example.com> 1\n",
 		"q1\trenewal\nq2\tsubject:\"\"\nq3\trenewal\n")
 
 	var report evalTopicReport
-	runEvalForReport(testCtx, t, &report)
+	runEvalForReport(testCtx, t, &report, options)
 
 	assert.Equal(1, report.TopicsEvaluated, "only q1 scores; q2 is judged but criteria-less")
 	assert.Equal([]string{"q3"}, report.Diagnostics.UnjudgedTopics)
@@ -158,15 +157,15 @@ func TestRunEval_CountsEachTopicOnceForARepeatedMode(t *testing.T) {
 
 	dir := t.TempDir()
 	seedRankingDivergenceArchiveIn(t, dir)
-	testCtx := configureEvalRun(t, dir,
+	testCtx, options := configureEvalRun(t, dir,
 		"q1 0 <m1@example.com> 1\nq2 0 <m2@example.com> 1\n",
 		"q1\trenewal\nq2\trenewal\n")
-	// configureEvalRun snapshots and restores every eval flag, so overriding
+	// configureEvalRun owns this invocation's options, so overriding
 	// one after it is safe.
-	evalModes = evalTestMode + "," + evalTestMode
+	options.evalModes = evalTestMode + "," + evalTestMode
 
 	var report evalTopicReport
-	runEvalForReport(testCtx, t, &report)
+	runEvalForReport(testCtx, t, &report, options)
 
 	require.Len(report.Results, 1, "a repeated mode is still one mode")
 	assert.Equal(2, report.TopicsEvaluated)

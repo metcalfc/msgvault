@@ -190,5 +190,5 @@ func writeSuggestCleanup(w io.Writer, output suggestCleanupOutput) {
 }
 
 func init() {
-	rootCmd.AddCommand(newSuggestCleanupCommand())
+	registerCommandFactory(newSuggestCleanupCommand)
 }

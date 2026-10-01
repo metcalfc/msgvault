@@ -9,30 +9,6 @@ import (
 	"go.kenn.io/kit/packstore"
 )
 
-var packAttachmentsCmd = &cobra.Command{
-	Use:   "pack-attachments",
-	Short: "Pack loose attachment files into sealed pack files",
-	Long: `Pack loose content-addressed attachment files into sealed pack files
-under the attachments directory.
-
-Packing means far fewer files on disk and faster backups. Reads work
-transparently from packs; new attachments arrive as loose files and are
-picked up by the next run, so this command is safe to re-run any time.
-
-When the background daemon is running, the operation runs under the
-daemon and is serialized against syncs and backups.
-
-To go back to loose files (e.g., before downgrading msgvault), run
-'msgvault unpack-attachments'.`,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if isDaemonCLISubprocess() {
-			return runPackAttachmentsLocal(cmd)
-		}
-		return runDaemonCLICommandHTTPFromCobra(cmd, args)
-	},
-}
-
 func runPackAttachmentsLocal(cmd *cobra.Command) error {
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
@@ -103,6 +79,32 @@ func writePackAttachmentsStats(out io.Writer, stats packstore.PackStats) {
 	}
 }
 
-func init() {
-	rootCmd.AddCommand(packAttachmentsCmd)
+func newPackAttachmentsCmd() *cobra.Command {
+	packAttachmentsCmd := &cobra.Command{
+		Use:   "pack-attachments",
+		Short: "Pack loose attachment files into sealed pack files",
+		Long: `Pack loose content-addressed attachment files into sealed pack files
+under the attachments directory.
+
+Packing means far fewer files on disk and faster backups. Reads work
+transparently from packs; new attachments arrive as loose files and are
+picked up by the next run, so this command is safe to re-run any time.
+
+When the background daemon is running, the operation runs under the
+daemon and is serialized against syncs and backups.
+
+To go back to loose files (e.g., before downgrading msgvault), run
+'msgvault unpack-attachments'.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if isDaemonCLISubprocess() {
+				return runPackAttachmentsLocal(cmd)
+			}
+			return runDaemonCLICommandHTTPFromCobra(cmd, args)
+		},
+	}
+
+	return packAttachmentsCmd
 }
+
+func init() { registerCommandFactory(newPackAttachmentsCmd) }

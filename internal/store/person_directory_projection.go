@@ -76,7 +76,6 @@ func (s *Store) ensureDirectoryProjectionInfrastructure(ctx context.Context) err
 }
 
 func (s *Store) installDirectoryProjectionTriggers(ctx context.Context) error {
-
 	// The projection is installed once, so every trigger is created IF NOT
 	// EXISTS. The migration backfill that follows marks every person dirty, so
 	// a base write racing the first install is refreshed anyway.
@@ -172,9 +171,7 @@ func directoryProjectionDirty(ctx context.Context, querier contextRowQuerier) (b
 
 func (s *Store) backfillDirectoryProjectionContext(ctx context.Context) error {
 	return s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
-		if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(
-			`INSERT OR IGNORE INTO directory_projection_dirty(person_id) SELECT id FROM persons`,
-		)); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO directory_projection_dirty(person_id) SELECT id FROM persons`); err != nil {
 			return fmt.Errorf("seed directory projection backfill: %w", err)
 		}
 		return s.refreshDirectoryProjectionsTx(ctx, tx)
@@ -258,7 +255,6 @@ func (s *Store) refreshDirectoryProjectionsBeforeCommitTx(ctx context.Context, t
 	{
 		return s.refreshDirectoryProjectionsTx(ctx, tx)
 	}
-
 }
 
 func claimDirtyDirectoryPeopleTx(ctx context.Context, tx *loggedTx) ([]int64, error) {

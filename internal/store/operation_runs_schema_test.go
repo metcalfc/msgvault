@@ -67,7 +67,6 @@ func TestOperationRunOrderIndexes(t *testing.T) {
 	}
 	for indexName, expected := range want {
 		t.Run(indexName, func(t *testing.T) {
-
 			assertSQLiteDescendingIndex(t, st.DB(), expected.table, indexName, expected.columns)
 		})
 	}
@@ -98,7 +97,6 @@ func TestOperationLaneStatusIndexesFilterOnStatus(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.index, func(t *testing.T) {
-
 			assertSQLiteIndexDefinitionContains(t, st.DB(), test.index, test.sqlite)
 		})
 	}

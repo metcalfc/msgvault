@@ -8,6 +8,9 @@ import (
 )
 
 func runVerifyHTTP(cmd *cobra.Command, email string) error {
+	verifySampleSize, _ := cmd.Flags().GetInt("sample")
+	verifySkipDBCheck, _ := cmd.Flags().GetBool("skip-db-check")
+	verifyJSON, _ := cmd.Flags().GetBool(flagJSON)
 	req := daemonclient.CLIVerifyRequest{
 		Email:       email,
 		SampleSize:  verifySampleSize,

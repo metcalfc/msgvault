@@ -475,7 +475,7 @@ func (s *Store) SetDiscordAttachmentMetadata(
 			  AND (
 			      %s
 			  )
-		`, s.dialect.JSONBindExpr(), s.dialect.JSONIsDistinctExpr("attachment_metadata"))
+		`, "?", s.dialect.JSONIsDistinctExpr("attachment_metadata"))
 		resetArgs := []any{nullIfEmpty(""), messageID, nullIfEmpty("")}
 		if len(metadata) > 0 {
 			placeholders := strings.TrimSuffix(strings.Repeat("?,", len(metadata)), ",")
@@ -500,7 +500,7 @@ func (s *Store) SetDiscordAttachmentMetadata(
 				SET attachment_metadata = %s
 				WHERE message_id = ? AND source_attachment_id = ?
 				  AND %s
-			`, s.dialect.JSONBindExpr(), s.dialect.JSONIsDistinctExpr("attachment_metadata")),
+			`, "?", s.dialect.JSONIsDistinctExpr("attachment_metadata")),
 				nullIfEmpty(value), messageID, sourceAttachmentID, nullIfEmpty(value))
 			if err != nil {
 				return fmt.Errorf("update Discord attachment metadata %s: %w", sourceAttachmentID, err)

@@ -19,6 +19,8 @@ import (
 )
 
 func TestSyncUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
+	syncIncrementalCmd := newSyncIncrementalCommand()
+
 	assert := assert.New(t)
 
 	var requests atomic.Int32
@@ -38,14 +40,13 @@ func TestSyncUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	testCtx := configureRemoteSyncTest(t, server.URL)
-	resetSyncFullFlagsForTest(t)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd := &cobra.Command{Use: syncIncrementalCmd.Use, Args: syncIncrementalCmd.Args, RunE: syncIncrementalCmd.RunE}
 	cmd.SetContext(testCtx)
-	cmd.Flags().StringArrayVar(&syncFolders, "folder", []string{}, "IMAP folders to include")
-	cmd.Flags().StringArrayVar(&syncSkipFolders, "skip-folder", []string{}, "IMAP folders to exclude")
+	cmd.Flags().StringArray("folder", []string{}, "IMAP folders to include")
+	cmd.Flags().StringArray("skip-folder", []string{}, "IMAP folders to exclude")
 	cmd.SetArgs([]string{
 		"alice@example.com",
 		"--folder", "INBOX",
@@ -63,6 +64,8 @@ func TestSyncUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
 }
 
 func TestSyncSourceIDUsesConfiguredRemoteHTTP(t *testing.T) {
+	syncIncrementalCmd := newSyncIncrementalCommand()
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/health" {
 			w.Header().Set("Content-Type", "application/json")
@@ -76,7 +79,6 @@ func TestSyncSourceIDUsesConfiguredRemoteHTTP(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	testCtx := configureRemoteSyncTest(t, server.URL)
-	resetSyncFullFlagsForTest(t)
 
 	cmd := &cobra.Command{Use: syncIncrementalCmd.Use, Args: syncIncrementalCmd.Args, RunE: syncIncrementalCmd.RunE}
 	cmd.SetContext(testCtx)
@@ -86,6 +88,8 @@ func TestSyncSourceIDUsesConfiguredRemoteHTTP(t *testing.T) {
 }
 
 func TestSyncSourceIDSelectorValidation(t *testing.T) {
+	syncIncrementalCmd := newSyncIncrementalCommand()
+
 	tests := []struct {
 		name string
 		args []string
@@ -107,6 +111,8 @@ func TestSyncSourceIDSelectorValidation(t *testing.T) {
 }
 
 func TestSyncFullUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
+	syncFullCmd := newSyncFullCommand()
+
 	assert := assert.New(t)
 
 	var requests atomic.Int32
@@ -129,17 +135,16 @@ func TestSyncFullUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	testCtx := configureRemoteSyncTest(t, server.URL)
-	resetSyncFullFlagsForTest(t)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd := &cobra.Command{Use: syncFullCmd.Use, Args: syncFullCmd.Args, RunE: syncFullCmd.RunE}
 	cmd.SetContext(testCtx)
-	cmd.Flags().StringVar(&syncQuery, "query", "", "Gmail search query")
-	cmd.Flags().BoolVar(&syncNoResume, "noresume", false, "Force fresh sync")
-	cmd.Flags().StringVar(&syncBefore, "before", "", "Only messages before this date")
-	cmd.Flags().StringVar(&syncAfter, "after", "", "Only messages after this date")
-	cmd.Flags().IntVar(&syncLimit, "limit", 0, "Limit number of messages")
+	cmd.Flags().String("query", "", "Gmail search query")
+	cmd.Flags().Bool("noresume", false, "Force fresh sync")
+	cmd.Flags().String("before", "", "Only messages before this date")
+	cmd.Flags().String("after", "", "Only messages after this date")
+	cmd.Flags().Int("limit", 0, "Limit number of messages")
 	cmd.SetArgs([]string{
 		"alice@example.com",
 		"--query", "from:bob@example.com",
@@ -382,32 +387,4 @@ func TestPreflightReauth_NoMatch(t *testing.T) {
 
 	require.NoError(t, preflightReauth(context.Background(), c, "Nonexistent", 0))
 	assert.Equal(t, 0, mgr.authorizeCount, "no reauth when nothing matches")
-}
-
-func resetSyncFullFlagsForTest(t *testing.T) {
-	t.Helper()
-
-	oldQuery := syncQuery
-	oldNoResume := syncNoResume
-	oldBefore := syncBefore
-	oldAfter := syncAfter
-	oldLimit := syncLimit
-	oldFolders := syncFolders
-	oldSkipFolders := syncSkipFolders
-	syncQuery = ""
-	syncNoResume = false
-	syncBefore = ""
-	syncAfter = ""
-	syncLimit = 0
-	syncFolders = []string{}
-	syncSkipFolders = []string{}
-	t.Cleanup(func() {
-		syncQuery = oldQuery
-		syncNoResume = oldNoResume
-		syncBefore = oldBefore
-		syncAfter = oldAfter
-		syncLimit = oldLimit
-		syncFolders = oldFolders
-		syncSkipFolders = oldSkipFolders
-	})
 }

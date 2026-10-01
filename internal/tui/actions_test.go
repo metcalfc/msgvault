@@ -306,7 +306,7 @@ func TestStageForDeletion_ViewTypes(t *testing.T) {
 func TestStageForDeletion_ListSelectionUsesExactListID(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	matchingID := tdb.AddMessage(dbtest.MessageOpts{Subject: "matching list"})
 	nonMatchingID := tdb.AddMessage(dbtest.MessageOpts{Subject: "other list"})
@@ -335,7 +335,7 @@ func TestStageForDeletion_ListSelectionUsesExactListID(t *testing.T) {
 func TestStageAllMatchesListScopeRecordsExactProvenance(t *testing.T) {
 	assertions := assert.New(t)
 	requirements := require.New(t)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	matchingID := tdb.AddMessage(dbtest.MessageOpts{Subject: "matching list"})
 	nonMatchingID := tdb.AddMessage(dbtest.MessageOpts{Subject: "other list"})
@@ -376,7 +376,7 @@ func TestStageAllMatchesListScopeRecordsExactProvenance(t *testing.T) {
 func TestStageForDeletion_MultipleListSelectionsAreExactAndStable(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	announceFirstID := tdb.AddMessage(dbtest.MessageOpts{Subject: "announce first"})
 	digestID := tdb.AddMessage(dbtest.MessageOpts{Subject: "digest"})
@@ -496,7 +496,7 @@ func TestStageForDeletion_NoDrillFilter(t *testing.T) {
 func TestStageForDeletion_EmailScopeExcludesMixedMessageTypes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	typedEmailID := tdb.AddMessage(dbtest.MessageOpts{Subject: "typed email", MessageType: emailMessageType})
 	legacyEmailID := tdb.AddMessage(dbtest.MessageOpts{Subject: "legacy email", MessageType: emailMessageType})
@@ -526,7 +526,7 @@ func TestStageForDeletion_EmailScopeExcludesMixedMessageTypes(t *testing.T) {
 }
 
 func TestStageAllMatchesKeepsAttachmentOnlyScope(t *testing.T) {
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	controller := NewActionController(query.NewSQLiteEngine(tdb.DB), t.TempDir(), nil)
 
@@ -540,7 +540,7 @@ func TestStageAllMatchesKeepsAttachmentOnlyScope(t *testing.T) {
 }
 
 func TestStageSelectedAggregateKeepsAttachmentOnlyScope(t *testing.T) {
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	controller := NewActionController(query.NewSQLiteEngine(tdb.DB), t.TempDir(), nil)
 
@@ -557,7 +557,7 @@ func TestStageSelectedAggregateKeepsAttachmentOnlyScope(t *testing.T) {
 func TestStageAggregateSearchUsesDisplayedAggregateScope(t *testing.T) {
 	assertions := assert.New(t)
 	requirements := require.New(t)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	_, err := tdb.DB.Exec(`UPDATE message_bodies SET body_text = 'aggregatebodyneedle' WHERE message_id = 1`)
 	requirements.NoError(err)
@@ -590,7 +590,7 @@ func TestStageAggregateSearchUsesDisplayedAggregateScope(t *testing.T) {
 func TestStageAggregateSelectionUsesDisplayedSearchScope(t *testing.T) {
 	assertions := assert.New(t)
 	requirements := require.New(t)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	_, err := tdb.DB.Exec(`UPDATE message_bodies SET body_text = 'aggregatebodyneedle' WHERE message_id = 1`)
 	requirements.NoError(err)

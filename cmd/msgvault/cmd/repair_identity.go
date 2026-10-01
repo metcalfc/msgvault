@@ -13,11 +13,8 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-var (
-	repairIdentityType string
-)
-
 func newRepairIdentityCmd() *cobra.Command {
+	var repairIdentityType string
 	cmd := &cobra.Command{
 		Use:   "repair-identity [identifier]",
 		Short: "Confirm account identities and recompute is_from_me on existing messages",
@@ -163,5 +160,5 @@ func countFromMe(ctx context.Context, s *store.Store, sourceID int64) int {
 }
 
 func init() {
-	rootCmd.AddCommand(newRepairIdentityCmd())
+	registerCommandFactory(newRepairIdentityCmd)
 }

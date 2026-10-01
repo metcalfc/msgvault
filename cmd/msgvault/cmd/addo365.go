@@ -11,13 +11,6 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-var (
-	o365Headless             bool
-	o365TenantID             string
-	noDefaultIdentityAddO365 bool
-	o365Graph                bool
-)
-
 func newAddO365Cmd() *cobra.Command {
 	cmd := newAddO365LocalCmd()
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -84,17 +77,19 @@ Examples:
 		Args: cobra.ExactArgs(1),
 		RunE: runAddO365Local,
 	}
-	cmd.Flags().StringVar(&o365TenantID, "tenant", "",
+	cmd.Flags().String("tenant", "",
 		"Azure AD tenant ID (default: \"common\" for multi-tenant)")
-	cmd.Flags().BoolVar(&noDefaultIdentityAddO365, "no-default-identity", false, noDefaultIdentityHelp)
-	cmd.Flags().BoolVar(&o365Headless, "headless", false,
+	cmd.Flags().Bool("no-default-identity", false, noDefaultIdentityHelp)
+	cmd.Flags().Bool("headless", false,
 		"Sign in with a device code instead of a local browser")
-	cmd.Flags().BoolVar(&o365Graph, "graph", false, "sync through the Microsoft Graph mail API instead of IMAP")
+	cmd.Flags().Bool("graph", false, "sync through the Microsoft Graph mail API instead of IMAP")
 	registerOAuthPreflightedFlag(cmd)
 	return cmd
 }
 
 func runAddO365Local(cmd *cobra.Command, args []string) error {
+	flags := readAddO365Options(cmd)
+
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -106,13 +101,13 @@ func runAddO365Local(cmd *cobra.Command, args []string) error {
 	if err := requireMicrosoftOAuthConfig(cfg); err != nil {
 		return err
 	}
-	if o365Graph {
+	if flags.o365Graph {
 		return runAddO365GraphLocal(cmd, email)
 	}
 
 	msMgr := microsoft.NewManager(
 		cfg.Microsoft.ClientID,
-		microsoftTenantID(o365TenantID, cfg),
+		microsoftTenantID(flags.o365TenantID, cfg),
 		cfg.Microsoft.EffectiveRedirectURI(),
 		cfg.TokensDir(),
 		logger,
@@ -194,7 +189,7 @@ func runAddO365Local(cmd *cobra.Command, args []string) error {
 
 	// Auto-default-identity must run BEFORE the legacy migration
 	// retry — see comment in account_identity.go.
-	if !noDefaultIdentityAddO365 {
+	if !flags.noDefaultIdentityAddO365 {
 		confirmDefaultIdentity(cmd.OutOrStdout(), s, source.ID, email, email, "account-identifier", state.logger)
 	}
 	if err := runPostSourceCreateMigrationsForInvocation(s, state); err != nil {
@@ -214,25 +209,27 @@ func runAddO365Local(cmd *cobra.Command, args []string) error {
 // authorizeO365 runs the Microsoft sign-in for the account kind: Graph mail
 // with --graph, IMAP otherwise.
 func authorizeO365(cmd *cobra.Command, email string) error {
+	flags := readAddO365Options(cmd)
+
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
 	}
 	cfg := state.cfg
 	logger := state.logger
-	tenant := microsoftTenantID(o365TenantID, cfg)
+	tenant := microsoftTenantID(flags.o365TenantID, cfg)
 	redirect := cfg.Microsoft.EffectiveRedirectURI()
 	fmt.Printf("Authorizing %s with Microsoft...\n", email)
 	var err error
-	if o365Graph {
+	if flags.o365Graph {
 		mgr := microsoft.NewGraphMailManager(cfg.Microsoft.ClientID, tenant, redirect, cfg.TokensDir(), logger)
-		if o365Headless {
+		if flags.o365Headless {
 			mgr.UseDeviceCode()
 		}
 		err = mgr.Authorize(cmd.Context(), email)
 	} else {
 		mgr := microsoft.NewManager(cfg.Microsoft.ClientID, tenant, redirect, cfg.TokensDir(), logger)
-		if o365Headless {
+		if flags.o365Headless {
 			mgr.UseDeviceCode()
 		}
 		err = mgr.Authorize(cmd.Context(), email)
@@ -246,6 +243,8 @@ func authorizeO365(cmd *cobra.Command, email string) error {
 // runAddO365GraphLocal creates an msmail source, the Graph mail counterpart of
 // the IMAP source that add-o365 makes by default.
 func runAddO365GraphLocal(cmd *cobra.Command, email string) error {
+	flags := readAddO365Options(cmd)
+
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -273,7 +272,7 @@ func runAddO365GraphLocal(cmd *cobra.Command, email string) error {
 	if err := s.UpdateSourceDisplayName(source.ID, email); err != nil {
 		return fmt.Errorf("set display name: %w", err)
 	}
-	if !noDefaultIdentityAddO365 {
+	if !flags.noDefaultIdentityAddO365 {
 		confirmDefaultIdentity(cmd.OutOrStdout(), s, source.ID, email, email, "account-identifier", state.logger)
 	}
 	if err := runPostSourceCreateMigrationsForInvocation(s, state); err != nil {
@@ -305,5 +304,21 @@ func isMicrosoftIMAPSource(src *store.Source, email string) bool {
 }
 
 func init() {
-	rootCmd.AddCommand(newAddO365Cmd())
+	registerCommandFactory(newAddO365Cmd)
+}
+
+type addO365Options struct {
+	noDefaultIdentityAddO365 bool
+	o365Graph                bool
+	o365Headless             bool
+	o365TenantID             string
+}
+
+func readAddO365Options(cmd *cobra.Command) addO365Options {
+	var flags addO365Options
+	flags.noDefaultIdentityAddO365, _ = cmd.Flags().GetBool("no-default-identity")
+	flags.o365Graph, _ = cmd.Flags().GetBool("graph")
+	flags.o365Headless, _ = cmd.Flags().GetBool("headless")
+	flags.o365TenantID, _ = cmd.Flags().GetString("tenant")
+	return flags
 }

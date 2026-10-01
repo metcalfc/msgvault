@@ -26,6 +26,7 @@
 </script>
 
 <script lang="ts">
+  import { formatBytes } from '../../util/bytes';
   import { Button, EmptyState } from '@kenn-io/kit-ui';
   import { onDestroy, untrack } from 'svelte';
 
@@ -245,11 +246,7 @@
       : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(parsed);
   }
 
-  function formatBytes(value: number): string {
-    if (value < 1024) return `${value} B`;
-    if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
-    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-  }
+
 </script>
 
 <aside class="reading-pane" aria-label={`Reading pane: ${title}`}>

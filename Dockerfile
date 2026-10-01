@@ -7,7 +7,10 @@ COPY web/package.json web/bun.lock ./web/
 RUN cd web && bun install --frozen-lockfile
 COPY api/openapi.yaml ./api/openapi.yaml
 COPY web/ ./web/
+COPY scripts/check-web-assets.mjs ./scripts/check-web-assets.mjs
 RUN cd web && bun run generate && bun run build
+# Validate the distribution that this image actually embeds.
+RUN bun scripts/check-web-assets.mjs --no-embedded
 
 # Go build stage.
 # Pin by digest for reproducibility; update periodically.

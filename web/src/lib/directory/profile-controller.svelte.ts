@@ -1,3 +1,4 @@
+import { failureMessage } from '../api/failure-message';
 import {
   clearPersonAttribute as generatedClearPersonAttribute,
   createAttributeDefinition as generatedCreateAttributeDefinition,
@@ -785,12 +786,7 @@ async function settle<T>(
 function errorDetails(error: unknown): Record<string, unknown> {
   return typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : {};
 }
-function failureMessage(error: unknown, status: number): string {
-  const details = errorDetails(error);
-  if (typeof details.message === 'string') return details.message;
-  if (error instanceof Error && error.message) return error.message;
-  return status ? `Request failed (${status})` : 'Request failed';
-}
+
 function hasETag(value: string | null | undefined): value is string {
   return typeof value === 'string' && /^"[^\"]+"$/.test(value);
 }

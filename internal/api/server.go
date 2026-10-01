@@ -47,12 +47,12 @@ import (
 
 // MessageStore defines the store operations the API needs.
 type MessageStore interface {
-	GetStats() (*StoreStats, error)
-	ListMessages(offset, limit int) ([]APIMessage, int64, error)
-	GetMessage(id int64) (*APIMessage, error)
-	GetMessagesSummariesByIDs(ids []int64) ([]APIMessage, error)
-	SearchMessages(query string, offset, limit int) ([]APIMessage, int64, error)
-	SearchMessagesQuery(q *search.Query, offset, limit int) ([]APIMessage, int64, error)
+	GetStatsContext(ctx context.Context) (*StoreStats, error)
+	ListMessagesContext(ctx context.Context, offset, limit int) ([]APIMessage, int64, error)
+	GetMessageContext(ctx context.Context, id int64) (*APIMessage, error)
+	GetMessagesSummariesByIDsContext(ctx context.Context, ids []int64) ([]APIMessage, error)
+	SearchMessagesContext(ctx context.Context, query string, offset, limit int) ([]APIMessage, int64, error)
+	SearchMessagesQueryContext(ctx context.Context, q *search.Query, offset, limit int) ([]APIMessage, int64, error)
 }
 
 // MessageIdentityStore is the optional source-identity extension used by
@@ -79,63 +79,6 @@ type PersonAgendaOperations interface {
 	Link(ctx context.Context, personID int64, taskID, list string) (personagenda.Item, error)
 	Update(ctx context.Context, personID int64, taskID string, input personagenda.UpdateInput) (personagenda.Item, error)
 	Unlink(ctx context.Context, personID int64, taskID string) (personagenda.Item, error)
-}
-
-// ctxMessageSearcher is an optional extension of MessageStore for stores that
-// accept a context on the search path. handleSearch prefers it so an
-// abandoned or timed-out request cancels the underlying query instead of
-// running it to completion. Stores that predate it still satisfy MessageStore
-// and fall back to the non-context methods.
-type ctxMessageSearcher interface {
-	SearchMessagesContext(ctx context.Context, query string, offset, limit int) ([]APIMessage, int64, error)
-	SearchMessagesQueryContext(ctx context.Context, q *search.Query, offset, limit int) ([]APIMessage, int64, error)
-}
-
-// CtxMessageStore is an optional extension of MessageStore for stores that
-// accept a context on the non-search read paths. Request handlers prefer it so
-// the request_id carried on r.Context() (via store.WithRequestID) reaches every
-// request-owned SQL query for slow/error logging, and so an abandoned request
-// cancels the underlying queries. Shared stats refreshes retain the initiating
-// request's ID but use the server lifetime for cancellation. Stores that predate
-// it fall back to the non-context methods.
-type CtxMessageStore interface {
-	GetStatsContext(ctx context.Context) (*StoreStats, error)
-	ListMessagesContext(ctx context.Context, offset, limit int) ([]APIMessage, int64, error)
-	GetMessageContext(ctx context.Context, id int64) (*APIMessage, error)
-	GetMessagesSummariesByIDsContext(ctx context.Context, ids []int64) ([]APIMessage, error)
-}
-
-// getStats calls the context-aware store variant when available, so
-// stats queries carry the caller's context and request ID.
-func (s *Server) getStats(ctx context.Context) (*StoreStats, error) {
-	if cs, ok := s.store.(CtxMessageStore); ok {
-		return cs.GetStatsContext(ctx)
-	}
-	return s.store.GetStats()
-}
-
-// listMessages calls the context-aware store variant when available.
-func (s *Server) listMessages(ctx context.Context, offset, limit int) ([]APIMessage, int64, error) {
-	if cs, ok := s.store.(CtxMessageStore); ok {
-		return cs.ListMessagesContext(ctx, offset, limit)
-	}
-	return s.store.ListMessages(offset, limit)
-}
-
-// getMessage calls the context-aware store variant when available.
-func (s *Server) getMessage(ctx context.Context, id int64) (*APIMessage, error) {
-	if cs, ok := s.store.(CtxMessageStore); ok {
-		return cs.GetMessageContext(ctx, id)
-	}
-	return s.store.GetMessage(id)
-}
-
-// getMessagesSummariesByIDs calls the context-aware store variant when available.
-func (s *Server) getMessagesSummariesByIDs(ctx context.Context, ids []int64) ([]APIMessage, error) {
-	if cs, ok := s.store.(CtxMessageStore); ok {
-		return cs.GetMessagesSummariesByIDsContext(ctx, ids)
-	}
-	return s.store.GetMessagesSummariesByIDs(ids)
 }
 
 // ChangedMessageLister is an optional extension of MessageStore for stores that

@@ -140,5 +140,5 @@ func runImportIMazingCSV(cmd *cobra.Command, exportDir string, opts imazingcsv.O
 }
 
 func init() {
-	rootCmd.AddCommand(newImportIMazingCSVCmd())
+	registerCommandFactory(newImportIMazingCSVCmd)
 }

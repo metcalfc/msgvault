@@ -849,7 +849,6 @@ func TestContentChangedAt_BackfillSkipsIDRangesWithNoWork(t *testing.T) {
 // `WHERE content_changed_at IS NULL` scan never runs again, so the row is
 // invisible to the feed forever.
 func TestContentChangedAt_BackfillNeverMintsANullWatermark(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -996,7 +995,6 @@ var contentChangedStampShape = regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2
 // layout, because the two databases can meet — subset.go copies messages
 // between them and the cursor comparison is lexical.
 func TestContentChangedAt_FreshAndUpgradedStampsShareOneFormat(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -1067,7 +1065,6 @@ func insertMessagesTriggerPrograms(t *testing.T, st *store.Store, insert string,
 // changes() it does include rows written by trigger programs — which is exactly
 // what has to be counted.
 func TestContentChangedAt_InsertRunsNoTriggerOnAFreshDatabase(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -1122,7 +1119,6 @@ func TestContentChangedAt_InsertRunsNoTriggerOnAFreshDatabase(t *testing.T) {
 // permanently invisible to the feed, since the backfill has already marked
 // itself applied.
 func TestContentChangedAt_UpgradedDatabaseKeepsTheInsertTrigger(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -1220,7 +1216,6 @@ func readContentChangedAtDefault(t *testing.T, st *store.Store) string {
 // So the archive is refused at open, before a single row can be written with the
 // wrong shape. Loud and immediate beats a feed that quietly loses records.
 func TestContentChangedAt_NoncanonicalDefaultIsRejected(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 

@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/config"
@@ -57,17 +56,11 @@ func TestPersonRelationshipAddPostsTheDeclaredEdge(t *testing.T) {
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
 
-	savedJSON, savedFrom := personJSON, relationshipStartDate
-	personJSON, relationshipStartDate = false, "1994"
-	t.Cleanup(func() { personJSON, relationshipStartDate = savedJSON, savedFrom })
-
 	var output bytes.Buffer
-	command := &cobra.Command{
-		Use: personRelationshipAddCmd.Use, Args: personRelationshipAddCmd.Args, RunE: personRelationshipAddCmd.RunE,
-	}
+	command := freshCommandForTest(t, newPersonRelationshipCommand(), "add")
 	command.SetContext(testCtx)
 	command.SetOut(&output)
-	command.SetArgs([]string{"3", "parent", "4"})
+	command.SetArgs([]string{"3", "parent", "4", "--from", "1994"})
 
 	require.NoError(command.Execute())
 	assert.Equal(int64(3), body.SourcePersonID)
@@ -112,17 +105,11 @@ func TestPersonRelationshipListRendersBothDirections(t *testing.T) {
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
 
-	savedJSON, savedIncludeEnded := personJSON, relationshipIncludeEnded
-	personJSON, relationshipIncludeEnded = false, true
-	t.Cleanup(func() { personJSON, relationshipIncludeEnded = savedJSON, savedIncludeEnded })
-
 	var output bytes.Buffer
-	command := &cobra.Command{
-		Use: personRelationshipListCmd.Use, Args: personRelationshipListCmd.Args, RunE: personRelationshipListCmd.RunE,
-	}
+	command := freshCommandForTest(t, newPersonRelationshipCommand(), "list")
 	command.SetContext(testCtx)
 	command.SetOut(&output)
-	command.SetArgs([]string{"3"})
+	command.SetArgs([]string{"3", "--include-ended"})
 
 	require.NoError(command.Execute())
 	rendered := output.String()
@@ -172,14 +159,8 @@ func TestPersonRelationshipEndSendsIfMatchFromTheCurrentRevision(t *testing.T) {
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
 
-	savedJSON := personJSON
-	personJSON = false
-	t.Cleanup(func() { personJSON = savedJSON })
-
 	var output bytes.Buffer
-	command := &cobra.Command{
-		Use: personRelationshipEndCmd.Use, Args: personRelationshipEndCmd.Args, RunE: personRelationshipEndCmd.RunE,
-	}
+	command := freshCommandForTest(t, newPersonRelationshipCommand(), "end")
 	command.SetContext(testCtx)
 	command.SetOut(&output)
 	command.SetArgs([]string{"11", "2023-05"})
@@ -227,21 +208,9 @@ func TestRelationshipTypeUpdateUsesCurrentRevisionETag(t *testing.T) {
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
 
-	savedJSON, savedForward := personJSON, relationshipTypeUpdateForwardLabel
-	forwardFlag := relationshipTypeUpdateCmd.Flags().Lookup("forward-label")
-	savedChanged := forwardFlag.Changed
-	personJSON = false
-	t.Cleanup(func() {
-		personJSON, relationshipTypeUpdateForwardLabel = savedJSON, savedForward
-		forwardFlag.Changed = savedChanged
-	})
-
 	var output bytes.Buffer
-	command := &cobra.Command{
-		Use: relationshipTypeUpdateCmd.Use, Args: relationshipTypeUpdateCmd.Args, RunE: relationshipTypeUpdateCmd.RunE,
-	}
+	command := freshCommandForTest(t, newRelationshipTypeCommand(), "update")
 	command.SetContext(testCtx)
-	command.Flags().AddFlagSet(relationshipTypeUpdateCmd.Flags())
 	command.SetOut(&output)
 	command.SetArgs([]string{"9", "--forward-label", "guide"})
 
@@ -264,9 +233,7 @@ func TestRelationshipTypeCreateRejectsAnEmptyReverseLabel(t *testing.T) {
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
 
-	command := &cobra.Command{
-		Use: relationshipTypeCreateCmd.Use, Args: relationshipTypeCreateCmd.Args, RunE: relationshipTypeCreateCmd.RunE,
-	}
+	command := freshCommandForTest(t, newRelationshipTypeCommand(), "create")
 	command.SetContext(testCtx)
 	command.SetOut(&bytes.Buffer{})
 	command.SetErr(&bytes.Buffer{})

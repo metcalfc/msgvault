@@ -20,16 +20,6 @@ import (
 	"go.kenn.io/msgvault/internal/testutil"
 )
 
-// TestStoreAPIAdapterImplementsCtxMessageStore is a compile-time guard that the
-// production adapter wired into api.Server satisfies the optional context-aware
-// read interface. If it drifts, api.Server silently falls back to the
-// background-context read path.
-func TestStoreAPIAdapterImplementsCtxMessageStore(t *testing.T) {
-	var adapter api.MessageStore = &storeAPIAdapter{}
-	_, ok := adapter.(api.CtxMessageStore)
-	require.True(t, ok, "storeAPIAdapter must implement api.CtxMessageStore")
-}
-
 func TestStoreAPIAdapterServesAttributeDefinitions(t *testing.T) {
 	st := testutil.NewTestStore(t)
 	srv := api.NewServerWithOptions(api.ServerOptions{
@@ -64,7 +54,6 @@ func TestStoreAPIAdapterServesDocumentVectorStatus(t *testing.T) {
 	require.JSONEq(t, `{"enabled":true,"configured":false}`, response.Body.String())
 }
 
-var _ api.CtxMessageStore = (*storeAPIAdapter)(nil)
 var _ api.MessageIdentityStore = (*storeAPIAdapter)(nil)
 var _ api.MeetingImporter = (*storeAPIAdapter)(nil)
 

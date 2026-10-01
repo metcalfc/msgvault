@@ -36,9 +36,9 @@ func (s *Store) PersonSweepLastContact(
 	}
 	var messageID, sourceID sql.NullInt64
 	var channel sql.NullString
-	err := s.db.QueryRowContext(ctx, s.Rebind(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT last_contact_message_id, last_contact_source_id, last_contact_channel
-		FROM person_contact_state WHERE person_id = ?`), personID).
+		FROM person_contact_state WHERE person_id = ?`, personID).
 		Scan(&messageID, &sourceID, &channel)
 	if errors.Is(err, sql.ErrNoRows) {
 		return peoplesweep.BriefLastContact{}, false, nil
@@ -125,9 +125,9 @@ func (s *Store) HasPersonSweepChangesAfter(
 		return false, errors.New("person sweep change lookup requires a positive person id")
 	}
 	var exists bool
-	if err := s.db.QueryRowContext(ctx, s.Rebind(`
+	if err := s.db.QueryRowContext(ctx, `
 		SELECT EXISTS (SELECT 1 FROM person_sweep_changes
-		WHERE person_id = ? AND sequence > ?)`), personID, sequence).Scan(&exists); err != nil {
+		WHERE person_id = ? AND sequence > ?)`, personID, sequence).Scan(&exists); err != nil {
 		return false, fmt.Errorf("read person %d sweep change activity: %w", personID, err)
 	}
 	return exists, nil

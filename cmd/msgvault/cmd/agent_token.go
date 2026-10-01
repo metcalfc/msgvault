@@ -14,98 +14,112 @@ import (
 	"go.kenn.io/msgvault/pkg/client/generated"
 )
 
-var (
-	agentTokenLabel       string
-	agentTokenPermissions []string
-	agentTokenSourceIDs   string // comma-separated source IDs
-	agentTokenSenders     []string
-	agentTokenJSON        bool
-)
+func newAgentTokenCommand() *cobra.Command {
+	var (
+		agentTokenLabel       string
+		agentTokenPermissions []string
+		agentTokenSourceIDs   string // comma-separated source IDs
+		agentTokenSenders     []string
+		agentTokenJSON        bool
+	)
 
-var agentTokenCmd = &cobra.Command{
-	Use:   "agent-token",
-	Short: "Manage restricted agent grant tokens",
-	Long: "Create, list, and revoke restricted agent grant tokens.\n\n" +
-		"Agent tokens allow delegated callers (e.g. AI agents) to perform a\n" +
-		"limited set of operations on behalf of the archive owner without\n" +
-		"exposing the full owner API key. Each token declares the permissions\n" +
-		"and source IDs it may access. A grant is valid until revoked or until\n" +
-		"the daemon restarts.\n\n" +
-		"Requires agent_access = true and api_key to be set in config.toml.",
-}
+	var agentTokenCmd = &cobra.Command{
+		Use:   "agent-token",
+		Short: "Manage restricted agent grant tokens",
+		Long: "Create, list, and revoke restricted agent grant tokens.\n\n" +
+			"Agent tokens allow delegated callers (e.g. AI agents) to perform a\n" +
+			"limited set of operations on behalf of the archive owner without\n" +
+			"exposing the full owner API key. Each token declares the permissions\n" +
+			"and source IDs it may access. A grant is valid until revoked or until\n" +
+			"the daemon restarts.\n\n" +
+			"Requires agent_access = true and api_key to be set in config.toml.",
+	}
 
-var agentTokenIssueCmd = &cobra.Command{
-	Use:   "issue",
-	Short: "Issue a new agent grant token",
-	Args:  cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		if agentTokenLabel == "" {
-			return errors.New("--label is required")
-		}
-		sourceIDs, err := parseAgentTokenSourceIDs(agentTokenSourceIDs)
-		if err != nil {
-			return err
-		}
-		senderSelections, err := parseAgentTokenSenders(agentTokenSenders)
-		if err != nil {
-			return err
-		}
-		client, _, err := OpenHTTPStore(cmd.Context())
-		if err != nil {
-			return err
-		}
-		result, err := client.IssueAgentToken(cmd.Context(), agentTokenLabel, agentTokenPermissions, sourceIDs, senderSelections)
-		if err != nil {
-			return err
-		}
-		if agentTokenJSON {
-			return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), result, json.Deterministic(true)) // issue output intentionally contains the one-time secret
-		}
-		printAgentTokenIssueResult(cmd, result)
-		return nil
-	},
-}
+	var agentTokenIssueCmd = &cobra.Command{
+		Use:   "issue",
+		Short: "Issue a new agent grant token",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if agentTokenLabel == "" {
+				return errors.New("--label is required")
+			}
+			sourceIDs, err := parseAgentTokenSourceIDs(agentTokenSourceIDs)
+			if err != nil {
+				return err
+			}
+			senderSelections, err := parseAgentTokenSenders(agentTokenSenders)
+			if err != nil {
+				return err
+			}
+			client, _, err := OpenHTTPStore(cmd.Context())
+			if err != nil {
+				return err
+			}
+			result, err := client.IssueAgentToken(cmd.Context(), agentTokenLabel, agentTokenPermissions, sourceIDs, senderSelections)
+			if err != nil {
+				return err
+			}
+			if agentTokenJSON {
+				return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), result, json.Deterministic(true)) // issue output intentionally contains the one-time secret
+			}
+			printAgentTokenIssueResult(cmd, result)
+			return nil
+		},
+	}
 
-var agentTokenListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List active agent grant tokens",
-	Args:  cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		client, _, err := OpenHTTPStore(cmd.Context())
-		if err != nil {
-			return err
-		}
-		tokens, err := client.ListAgentTokens(cmd.Context())
-		if err != nil {
-			return err
-		}
-		if agentTokenJSON {
-			return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), map[string]any{"tokens": tokens}, json.Deterministic(true))
-		}
-		printAgentTokenList(cmd, tokens)
-		return nil
-	},
-}
+	var agentTokenListCmd = &cobra.Command{
+		Use:   "list",
+		Short: "List active agent grant tokens",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client, _, err := OpenHTTPStore(cmd.Context())
+			if err != nil {
+				return err
+			}
+			tokens, err := client.ListAgentTokens(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if agentTokenJSON {
+				return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), map[string]any{"tokens": tokens}, json.Deterministic(true))
+			}
+			printAgentTokenList(cmd, tokens)
+			return nil
+		},
+	}
 
-var agentTokenRevokeCmd = &cobra.Command{
-	Use:   "revoke <token-id>",
-	Short: "Revoke an agent grant token by ID",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		id := strings.TrimSpace(args[0])
-		if id == "" {
-			return errors.New("token ID must not be empty")
-		}
-		client, _, err := OpenHTTPStore(cmd.Context())
-		if err != nil {
-			return err
-		}
-		if err := client.RevokeAgentToken(cmd.Context(), id); err != nil {
-			return err
-		}
-		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Token revoked.")
-		return nil
-	},
+	var agentTokenRevokeCmd = &cobra.Command{
+		Use:   "revoke <token-id>",
+		Short: "Revoke an agent grant token by ID",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := strings.TrimSpace(args[0])
+			if id == "" {
+				return errors.New("token ID must not be empty")
+			}
+			client, _, err := OpenHTTPStore(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if err := client.RevokeAgentToken(cmd.Context(), id); err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Token revoked.")
+			return nil
+		},
+	}
+	agentTokenCmd.AddCommand(agentTokenIssueCmd, agentTokenListCmd, agentTokenRevokeCmd)
+	agentTokenIssueCmd.Flags().StringVar(&agentTokenLabel, "label", "",
+		"Human-readable label for the token (required)")
+	agentTokenIssueCmd.Flags().StringSliceVar(&agentTokenPermissions, "permissions", nil,
+		"Comma-separated list of permissions to grant (e.g. draft.create)")
+	agentTokenIssueCmd.Flags().StringVar(&agentTokenSourceIDs, "source-ids", "",
+		"Comma-separated list of source IDs the token may access")
+	agentTokenIssueCmd.Flags().StringArrayVar(&agentTokenSenders, "sender", nil,
+		"Restrict one source's sender identity (repeat as SOURCE_ID=ADDRESS)")
+	agentTokenIssueCmd.Flags().BoolVar(&agentTokenJSON, flagJSON, false, "Output as JSON")
+	agentTokenListCmd.Flags().BoolVar(&agentTokenJSON, flagJSON, false, "Output as JSON")
+	return agentTokenCmd
 }
 
 // parseAgentTokenSourceIDs parses the comma-separated source IDs flag.
@@ -188,17 +202,5 @@ func printAgentTokenList(cmd *cobra.Command, tokens []generated.AgentTokenView) 
 }
 
 func init() {
-	rootCmd.AddCommand(agentTokenCmd)
-	agentTokenCmd.AddCommand(agentTokenIssueCmd, agentTokenListCmd, agentTokenRevokeCmd)
-
-	agentTokenIssueCmd.Flags().StringVar(&agentTokenLabel, "label", "",
-		"Human-readable label for the token (required)")
-	agentTokenIssueCmd.Flags().StringSliceVar(&agentTokenPermissions, "permissions", nil,
-		"Comma-separated list of permissions to grant (e.g. draft.create)")
-	agentTokenIssueCmd.Flags().StringVar(&agentTokenSourceIDs, "source-ids", "",
-		"Comma-separated list of source IDs the token may access")
-	agentTokenIssueCmd.Flags().StringArrayVar(&agentTokenSenders, "sender", nil,
-		"Restrict one source's sender identity (repeat as SOURCE_ID=ADDRESS)")
-	agentTokenIssueCmd.Flags().BoolVar(&agentTokenJSON, flagJSON, false, "Output as JSON")
-	agentTokenListCmd.Flags().BoolVar(&agentTokenJSON, flagJSON, false, "Output as JSON")
+	registerCommandFactory(newAgentTokenCommand)
 }

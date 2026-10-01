@@ -13,12 +13,12 @@ import (
 	"go.kenn.io/msgvault/internal/daemonclient"
 )
 
-var listAccountsJSON bool
-
-var listAccountsCmd = &cobra.Command{
-	Use:   "list-accounts",
-	Short: "List synced accounts",
-	Long: `List all accounts that have been added to msgvault, across email,
+func newListAccountsCommand() *cobra.Command {
+	var jsonOutput bool
+	command := &cobra.Command{
+		Use:   "list-accounts",
+		Short: "List synced accounts",
+		Long: `List all accounts that have been added to msgvault, across email,
 chat, and meeting sources.
 
 Uses configured remote server or the local daemon by default.
@@ -29,13 +29,16 @@ Shows the account identifier, source type, message count, and last sync time.
 Examples:
 	msgvault list-accounts
 	msgvault list-accounts --json`,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return listHTTPAccounts(cmd)
-	},
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return listHTTPAccounts(cmd, jsonOutput)
+		},
+	}
+	command.Flags().BoolVar(&jsonOutput, flagJSON, false, "Output as JSON")
+	return command
 }
 
-func listHTTPAccounts(cmd *cobra.Command) error {
+func listHTTPAccounts(cmd *cobra.Command, jsonOutput bool) error {
 	s, _, err := OpenHTTPStore(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
@@ -46,13 +49,13 @@ func listHTTPAccounts(cmd *cobra.Command) error {
 	if err != nil {
 		return fmt.Errorf("list accounts: %w", err)
 	}
-	return outputAccountStats(daemonAccountsToStats(accounts))
+	return outputAccountStats(daemonAccountsToStats(accounts), jsonOutput)
 }
 
-func outputAccountStats(stats []accountStats) error {
+func outputAccountStats(stats []accountStats, jsonOutput bool) error {
 	// JSON mode must stay machine-parseable even with zero results:
 	// emit an empty array, never prose.
-	if listAccountsJSON {
+	if jsonOutput {
 		return outputAccountsJSON(stats)
 	}
 	if len(stats) == 0 {
@@ -162,7 +165,4 @@ type accountStats struct {
 	LastSync           *time.Time
 }
 
-func init() {
-	rootCmd.AddCommand(listAccountsCmd)
-	listAccountsCmd.Flags().BoolVar(&listAccountsJSON, flagJSON, false, "Output as JSON")
-}
+func init() { registerCommandFactory(newListAccountsCommand) }

@@ -17,46 +17,23 @@ import (
 )
 
 func TestImportGvoiceStoresVoicemailAudioEndToEnd(t *testing.T) {
-	cfg := testConfigValue()
-	cfgFile := ""
-	homeDir := ""
-	logger := testLoggerValue()
-	verbose := false
-
 	assert := assert.New(t)
 	require := require.New(t)
 	markDaemonCLISubprocessForTest(t)
-	previousBefore := importGvoiceBefore
-	previousAfter := importGvoiceAfter
-	previousLimit := importGvoiceLimit
-	previousNoDefault := noDefaultIdentityImportGVoice
-	previousCfg, previousLogger := cfg, logger
-	previousCfgFile, previousHomeDir, previousVerbose := cfgFile, homeDir, verbose
-	previousOut, previousErr := rootCmd.OutOrStdout(), rootCmd.ErrOrStderr()
-	t.Cleanup(func() {
-		importGvoiceBefore = previousBefore
-		importGvoiceAfter = previousAfter
-		importGvoiceLimit = previousLimit
-		noDefaultIdentityImportGVoice = previousNoDefault
-		cfg, logger = previousCfg, previousLogger
-		cfgFile, homeDir, verbose = previousCfgFile, previousHomeDir, previousVerbose
-		rootCmd.SetOut(previousOut)
-		rootCmd.SetErr(previousErr)
-		rootCmd.SetArgs(nil)
-	})
+	root := newProductionRootCommand()
 
 	home := t.TempDir()
 	voice := writeGvoiceCLIExport(t)
-	rootCmd.SetOut(io.Discard)
-	rootCmd.SetErr(io.Discard)
-	rootCmd.SetArgs([]string{
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+	root.SetArgs([]string{
 		"--home", home,
 		"import-gvoice",
 		"--no-default-identity",
 		voice,
 	})
-	require.NoError(rootCmd.ExecuteContext(context.Background()))
-	runCfg := invocationFromCommand(rootCmd).cfg
+	require.NoError(root.ExecuteContext(context.Background()))
+	runCfg := invocationFromCommand(root).cfg
 
 	st, err := store.Open(filepath.Join(home, "msgvault.db"))
 	require.NoError(err)
@@ -108,14 +85,14 @@ func TestImportGvoiceStoresVoicemailAudioEndToEnd(t *testing.T) {
 	require.NoError(err)
 	_, err = client.Import(t.Context(), st, source.ID)
 	require.NoError(err)
-	rootCmd.SetArgs([]string{
+	root.SetArgs([]string{
 		"--home", home,
 		"import-gvoice",
 		"--no-default-identity",
 		voice,
 	})
-	require.NoError(rootCmd.ExecuteContext(context.Background()))
-	runCfg = invocationFromCommand(rootCmd).cfg
+	require.NoError(root.ExecuteContext(context.Background()))
+	runCfg = invocationFromCommand(root).cfg
 
 	engine, err := query.NewDuckDBEngine(runCfg.AnalyticsDir(), "", nil)
 	require.NoError(err)
@@ -133,7 +110,7 @@ func TestImportGvoiceStoresVoicemailAudioEndToEnd(t *testing.T) {
 	require.NoError(st.DB().QueryRow(
 		`SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM archive_metadata WHERE key = 'derived_data_revision'), 0)`,
 	).Scan(&revisionBefore))
-	require.NoError(rootCmd.ExecuteContext(context.Background()))
+	require.NoError(root.ExecuteContext(context.Background()))
 	require.NoError(st.DB().QueryRow(
 		`SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM archive_metadata WHERE key = 'derived_data_revision'), 0)`,
 	).Scan(&revisionAfter))

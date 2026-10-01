@@ -67,4 +67,4 @@ func newArchiveRemoteImagesCmd() *cobra.Command {
 	return command
 }
 
-func init() { rootCmd.AddCommand(newArchiveRemoteImagesCmd()) }
+func init() { registerCommandFactory(newArchiveRemoteImagesCmd) }

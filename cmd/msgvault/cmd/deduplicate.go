@@ -29,72 +29,17 @@ import (
 
 const deduplicateCommandName = "deduplicate"
 
-var deduplicateCmd = &cobra.Command{
-	Use:     deduplicateCommandName,
-	Aliases: []string{"dedup", "dedupe"},
-	Short:   "Find and merge duplicate messages within an account",
-	Long: `Find and merge duplicate messages within a single account
-(for example, the same mbox imported twice, or stored MIME that
-generates two copies of the same RFC822 Message-ID inside one ingest
-source). Cross-source comparison requires --collection.
-
-Duplicates are grouped by the RFC822 Message-ID header. For each group the
-engine selects a survivor, unions the labels from every copy onto the
-survivor, and hides the pruned copies in the msgvault database.
-
-By default, deduplicate ONLY modifies the msgvault database. Your original
-source files and remote servers are never modified. Hidden rows can be
-restored with --undo, so a dedup run is fully reversible.
-
-Terminology:
-  "account"     One ingest source/archive (a single Gmail OAuth
-                connection, one mbox import, one IMAP source, etc.).
-  "collection"  A named, user-defined grouping of accounts.
-
-Scope:
-  --account <name>      Scope dedup to one account. Never crosses
-                        source boundaries.
-  --collection <name>   Dedup across every member account of a collection.
-                        This is the only way to compare messages across
-                        sources, and it is an explicit user opt-in:
-                        a duplicate Message-ID or matching content hash
-                        across two accounts in the collection will hide
-                        the loser locally. Use --dry-run first to
-                        review what would be merged. Cross-source pruning
-                        is local-only and reversible with --undo;
-                        --delete-dups-from-source-server only stages
-                        remote deletion when the loser and the survivor
-                        share a source and matching normalized raw MIME.
-  (no flag)             Dedup runs per-account independently for every
-                        account. Source boundaries are never crossed.
-
-Use --dry-run to scan and report without writing anything.
-Use --content-hash to also group messages by normalized raw MIME when
-Message-ID matching is insufficient.
-Use --undo <batch-id> to reverse a previous dedup run. Pass --undo
-multiple times to reverse several batches in one invocation; failures
-on one batch do not skip later batches, and any errors are aggregated
-and reported at the end.`,
-	RunE: runDeduplicate,
-}
-
-var (
-	dedupDryRun               bool
-	dedupNoBackup             bool
-	dedupPrefer               string
-	dedupContentHash          bool
-	dedupUndo                 []string
-	dedupAccount              string
-	dedupCollection           string
-	dedupDeleteFromSourceSrvr bool
-	dedupYes                  bool
-	dedupPlanConfirmed        bool
-	dedupPlanFingerprint      string
-	dedupSourcePlans          []string
-	dedupSourceID             int64
-)
-
 func runDeduplicate(cmd *cobra.Command, _ []string) error {
+	dedupDryRun, _ := cmd.Flags().GetBool("dry-run")
+	dedupPrefer, _ := cmd.Flags().GetString("prefer")
+	dedupContentHash, _ := cmd.Flags().GetBool("content-hash")
+	dedupUndo, _ := cmd.Flags().GetStringArray("undo")
+	dedupAccount, _ := cmd.Flags().GetString("account")
+	dedupCollection, _ := cmd.Flags().GetString("collection")
+	dedupDeleteFromSourceSrvr, _ := cmd.Flags().GetBool("delete-dups-from-source-server")
+	dedupPlanConfirmed, _ := cmd.Flags().GetBool("dedup-plan-confirmed")
+	dedupSourceID, _ := cmd.Flags().GetInt64("dedup-source-id")
+
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -102,7 +47,7 @@ func runDeduplicate(cmd *cobra.Command, _ []string) error {
 	cfg := state.cfg
 	logger := state.logger
 	if !isDaemonCLISubprocess() {
-		if deduplicateCanUseDaemonRunner() {
+		if deduplicateCanUseDaemonRunner(cmd) {
 			return runDaemonCLICommandHTTPFromCobra(cmd, nil)
 		}
 		return runDeduplicateInteractiveHTTP(cmd)
@@ -209,11 +154,21 @@ func runDeduplicate(cmd *cobra.Command, _ []string) error {
 	return runDeduplicateOnce(cmd, st, dbPath, config, engine)
 }
 
-func deduplicateCanUseDaemonRunner() bool {
+func deduplicateCanUseDaemonRunner(cmd *cobra.Command) bool {
+	dedupDryRun, _ := cmd.Flags().GetBool("dry-run")
+	dedupUndo, _ := cmd.Flags().GetStringArray("undo")
+	dedupYes, _ := cmd.Flags().GetBool("yes")
+
 	return dedupDryRun || dedupYes || len(dedupUndo) > 0
 }
 
 func runDeduplicateInteractiveHTTP(cmd *cobra.Command) error {
+	dedupPrefer, _ := cmd.Flags().GetString("prefer")
+	dedupContentHash, _ := cmd.Flags().GetBool("content-hash")
+	dedupAccount, _ := cmd.Flags().GetString("account")
+	dedupCollection, _ := cmd.Flags().GetString("collection")
+	dedupDeleteFromSourceSrvr, _ := cmd.Flags().GetBool("delete-dups-from-source-server")
+
 	_ = deduplicateSourcePreference(dedupPrefer, cmd.ErrOrStderr())
 	st, _, err := OpenHTTPStore(cmd.Context())
 	if err != nil {
@@ -718,6 +673,11 @@ func runDeduplicatePerSource(
 	cfgBase dedup.Config,
 	logger *slog.Logger,
 ) error {
+	dedupNoBackup, _ := cmd.Flags().GetBool("no-backup")
+	dedupYes, _ := cmd.Flags().GetBool("yes")
+	dedupPlanConfirmed, _ := cmd.Flags().GetBool("dedup-plan-confirmed")
+	dedupSourcePlans, _ := cmd.Flags().GetStringArray("dedup-source-plan")
+
 	logger = repairLogger(logger)
 	sources, err := st.ListSources("")
 	if err != nil {
@@ -917,6 +877,11 @@ func runDeduplicateOnce(
 	cfgScoped dedup.Config,
 	engine *dedup.Engine,
 ) error {
+	dedupNoBackup, _ := cmd.Flags().GetBool("no-backup")
+	dedupYes, _ := cmd.Flags().GetBool("yes")
+	dedupPlanConfirmed, _ := cmd.Flags().GetBool("dedup-plan-confirmed")
+	dedupPlanFingerprint, _ := cmd.Flags().GetString("dedup-plan-fingerprint")
+
 	if !dedupPlanConfirmed {
 		fmt.Println("Scanning for duplicate messages...")
 	}
@@ -1115,25 +1080,73 @@ func printStillRunningWarning(ids []string) {
 	}
 }
 
-func init() {
-	rootCmd.AddCommand(deduplicateCmd)
-	deduplicateCmd.Flags().BoolVar(&dedupDryRun, "dry-run", false,
+func newDeduplicateCmd() *cobra.Command {
+	deduplicateCmd := &cobra.Command{
+		Use:     deduplicateCommandName,
+		Aliases: []string{"dedup", "dedupe"},
+		Short:   "Find and merge duplicate messages within an account",
+		Long: `Find and merge duplicate messages within a single account
+(for example, the same mbox imported twice, or stored MIME that
+generates two copies of the same RFC822 Message-ID inside one ingest
+source). Cross-source comparison requires --collection.
+
+Duplicates are grouped by the RFC822 Message-ID header. For each group the
+engine selects a survivor, unions the labels from every copy onto the
+survivor, and hides the pruned copies in the msgvault database.
+
+By default, deduplicate ONLY modifies the msgvault database. Your original
+source files and remote servers are never modified. Hidden rows can be
+restored with --undo, so a dedup run is fully reversible.
+
+Terminology:
+  "account"     One ingest source/archive (a single Gmail OAuth
+                connection, one mbox import, one IMAP source, etc.).
+  "collection"  A named, user-defined grouping of accounts.
+
+Scope:
+  --account <name>      Scope dedup to one account. Never crosses
+                        source boundaries.
+  --collection <name>   Dedup across every member account of a collection.
+                        This is the only way to compare messages across
+                        sources, and it is an explicit user opt-in:
+                        a duplicate Message-ID or matching content hash
+                        across two accounts in the collection will hide
+                        the loser locally. Use --dry-run first to
+                        review what would be merged. Cross-source pruning
+                        is local-only and reversible with --undo;
+                        --delete-dups-from-source-server only stages
+                        remote deletion when the loser and the survivor
+                        share a source and matching normalized raw MIME.
+  (no flag)             Dedup runs per-account independently for every
+                        account. Source boundaries are never crossed.
+
+Use --dry-run to scan and report without writing anything.
+Use --content-hash to also group messages by normalized raw MIME when
+Message-ID matching is insufficient.
+Use --undo <batch-id> to reverse a previous dedup run. Pass --undo
+multiple times to reverse several batches in one invocation; failures
+on one batch do not skip later batches, and any errors are aggregated
+and reported at the end.`,
+		RunE: runDeduplicate,
+	}
+
+	deduplicateCmd.Flags().Bool("dry-run", false,
 		"Scan and report only; do not modify data")
-	deduplicateCmd.Flags().BoolVar(&dedupNoBackup, "no-backup", false,
+	deduplicateCmd.Flags().Bool("no-backup", false,
 		"Skip database backup before merging (backup covers pre-dedup state for all sources, not per-batch)")
-	deduplicateCmd.Flags().StringVar(&dedupPrefer, "prefer", "",
+	deduplicateCmd.Flags().String("prefer", "",
 		"Comma-separated source type preference order "+
 			"(default: gmail,imap,mbox,emlx,hey)")
-	deduplicateCmd.Flags().BoolVar(&dedupContentHash, "content-hash", false,
+	deduplicateCmd.Flags().Bool("content-hash", false,
 		"Also detect duplicates by normalized raw MIME content")
-	deduplicateCmd.Flags().StringArrayVar(&dedupUndo, "undo", nil,
+	deduplicateCmd.Flags().StringArray("undo", nil,
 		"Undo a previous dedup run by batch ID "+
 			"(repeat for multiple batches; failures on one batch do not "+
 			"skip later batches and errors are aggregated; cannot be "+
 			"combined with --account or --collection)")
-	deduplicateCmd.Flags().StringVar(&dedupAccount, "account", "",
+	deduplicateCmd.Flags().String("account", "",
 		"Scope dedup to one account; never crosses source boundaries")
-	deduplicateCmd.Flags().StringVar(&dedupCollection, "collection", "",
+	deduplicateCmd.Flags().String("collection", "",
 		"Dedup across every member of a collection; opts into "+
 			"cross-source comparison (use --dry-run to preview)")
 	deduplicateCmd.MarkFlagsMutuallyExclusive("account", "collection")
@@ -1145,20 +1158,19 @@ func init() {
 	// would force a stale-account lookup before reaching the undo path.
 	deduplicateCmd.MarkFlagsMutuallyExclusive("undo", "account")
 	deduplicateCmd.MarkFlagsMutuallyExclusive("undo", "collection")
-	deduplicateCmd.Flags().BoolVar(&dedupDeleteFromSourceSrvr,
-		"delete-dups-from-source-server", false,
+	deduplicateCmd.Flags().Bool("delete-dups-from-source-server", false,
 		"DESTRUCTIVE: stage equivalent same-source duplicates for remote deletion "+
 			"(execution requires durable [deletion] remote_enabled = true in the "+
 			"invoking CLI config, or MSGVAULT_ENABLE_REMOTE_DELETE=1 for one command)")
-	deduplicateCmd.Flags().BoolVarP(&dedupYes, "yes", "y", false,
+	deduplicateCmd.Flags().BoolP("yes", "y", false,
 		"Skip confirmation prompt")
-	deduplicateCmd.Flags().BoolVar(&dedupPlanConfirmed, "dedup-plan-confirmed", false,
+	deduplicateCmd.Flags().Bool("dedup-plan-confirmed", false,
 		"Internal daemon confirmation marker")
-	deduplicateCmd.Flags().StringVar(&dedupPlanFingerprint, "dedup-plan-fingerprint", "",
+	deduplicateCmd.Flags().String("dedup-plan-fingerprint", "",
 		"Internal daemon dedup plan fingerprint")
-	deduplicateCmd.Flags().StringArrayVar(&dedupSourcePlans, "dedup-source-plan", nil,
+	deduplicateCmd.Flags().StringArray("dedup-source-plan", nil,
 		"Internal daemon per-source dedup plan")
-	deduplicateCmd.Flags().Int64Var(&dedupSourceID, "dedup-source-id", 0,
+	deduplicateCmd.Flags().Int64("dedup-source-id", 0,
 		"Internal daemon source scope")
 	_ = deduplicateCmd.Flags().MarkHidden("dedup-plan-confirmed")
 	_ = deduplicateCmd.Flags().MarkHidden("dedup-plan-fingerprint")
@@ -1175,4 +1187,8 @@ func init() {
 	deduplicateCmd.MarkFlagsMutuallyExclusive("undo", "content-hash")
 	deduplicateCmd.MarkFlagsMutuallyExclusive("undo", "no-backup")
 	deduplicateCmd.MarkFlagsMutuallyExclusive("undo", "yes")
+
+	return deduplicateCmd
 }
+
+func init() { registerCommandFactory(newDeduplicateCmd) }

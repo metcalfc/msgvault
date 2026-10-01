@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"go.kenn.io/msgvault/internal/correspondentkind"
-	"go.kenn.io/msgvault/internal/peoplesweep"
 )
 
 // MaxPersonParticipantDetachIDs bounds one detach request so its IN lists
@@ -133,8 +132,7 @@ func (s *Store) lockPersonRevisionTx(
 	ctx context.Context, tx *loggedTx, personID, expected int64,
 ) error {
 	var revision int64
-	err := tx.QueryRowContext(ctx, `SELECT revision FROM persons WHERE id = ?`+
-		s.dialect.SelectForUpdate(), personID).Scan(&revision)
+	err := tx.QueryRowContext(ctx, "SELECT revision FROM persons WHERE id = ?", personID).Scan(&revision)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrPersonNotFound
 	}
@@ -291,7 +289,7 @@ func (s *Store) finishPersonBindingChangeTx(
 		}
 	}
 	if err := s.publishPersonIdentityScopeChangesTx(
-		ctx, tx, trackedPeople, peoplesweep.EvidenceEffectIdentityReassigned,
+		ctx, tx, trackedPeople,
 	); err != nil {
 		return 0, err
 	}
@@ -592,8 +590,7 @@ func (s *Store) reattachPersonParticipantsOnce(
 		}
 		var reattachedAt sql.NullTime
 		err := tx.QueryRowContext(ctx, `SELECT reattached_at FROM person_participant_detachments
-			WHERE id = ? AND person_id = ?`+s.dialect.SelectForUpdate(),
-			request.DetachmentID, personID).Scan(&reattachedAt)
+			WHERE id = ? AND person_id = ?`, request.DetachmentID, personID).Scan(&reattachedAt)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrPersonDetachmentNotFound
 		}

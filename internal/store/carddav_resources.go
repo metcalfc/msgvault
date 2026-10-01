@@ -109,7 +109,7 @@ func (s *Store) ApplyCardDAVSyncPlanContext(
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
 		var generation int64
 		if err := tx.QueryRowContext(ctx, `SELECT connection_generation
-			FROM carddav_accounts WHERE id = 1`+s.dialect.SelectForUpdate()).Scan(&generation); err != nil {
+			FROM carddav_accounts WHERE id = 1`).Scan(&generation); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrCardDAVStalePlan
 			}
@@ -121,8 +121,7 @@ func (s *Store) ApplyCardDAVSyncPlanContext(
 		var book CardDAVAddressBook
 		if err := tx.QueryRowContext(ctx, `SELECT id, account_id, canonical_url,
 			is_subscribed, is_lookup_source, sync_token, sync_revision
-			FROM carddav_address_books WHERE id = ?`+s.dialect.SelectForUpdate(),
-			plan.AddressBookID,
+			FROM carddav_address_books WHERE id = ?`, plan.AddressBookID,
 		).Scan(&book.ID, &book.AccountID, &book.CanonicalURL,
 			&book.IsSubscribed, &book.IsLookupSource, &book.SyncToken, &book.SyncRevision); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -657,7 +656,7 @@ func (s *Store) acceptCardDAVIdentityMatchCandidateContext(
 			return ErrIdentityMatchEndpointUnsupported
 		}
 		resource, err := scanCardDAVResource(tx.QueryRowContext(ctx,
-			cardDAVResourceSelect+` WHERE id = ?`+s.dialect.SelectForUpdate(),
+			cardDAVResourceSelect+` WHERE id = ?`,
 			candidate.LeftID,
 		))
 		if errors.Is(err, sql.ErrNoRows) {
@@ -670,8 +669,7 @@ func (s *Store) acceptCardDAVIdentityMatchCandidateContext(
 			return ErrIdentityMatchAlreadyApplied
 		}
 		var personRevision int64
-		if err := tx.QueryRowContext(ctx, `SELECT revision FROM persons WHERE id = ?`+
-			s.dialect.SelectForUpdate(), candidate.RightID).Scan(&personRevision); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT revision FROM persons WHERE id = ?", candidate.RightID).Scan(&personRevision); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrIdentityMatchEndpointNotFound
 			}
@@ -928,8 +926,7 @@ func (s *Store) rebaseCardDAVImportedProjectionTx(
 ) (bool, error) {
 	sourceRef := fmt.Sprintf("carddav:%d", bookID)
 	var currentDisplay, priorImportedDisplay sql.NullString
-	if err := tx.QueryRowContext(ctx, `SELECT display_name FROM persons WHERE id = ?`+
-		s.dialect.SelectForUpdate(), personID).Scan(&currentDisplay); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT display_name FROM persons WHERE id = ?", personID).Scan(&currentDisplay); err != nil {
 		return false, fmt.Errorf("lock CardDAV projection person: %w", err)
 	}
 	err := tx.QueryRowContext(ctx, `SELECT formatted FROM person_names
@@ -1000,8 +997,7 @@ func (s *Store) retireCardDAVImportedProjectionTx(
 ) error {
 	sourceRef := fmt.Sprintf("carddav:%d", bookID)
 	var currentDisplay, importedDisplay sql.NullString
-	if err := tx.QueryRowContext(ctx, `SELECT display_name FROM persons WHERE id = ?`+
-		s.dialect.SelectForUpdate(), personID).Scan(&currentDisplay); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT display_name FROM persons WHERE id = ?", personID).Scan(&currentDisplay); err != nil {
 		return fmt.Errorf("lock retired CardDAV projection person: %w", err)
 	}
 	err := tx.QueryRowContext(ctx, `SELECT formatted FROM person_names
@@ -1069,8 +1065,7 @@ func (s *Store) refreshCardDAVImportedPersonBindBaselineTx(
 		return nil
 	}
 	var revision int64
-	if err := tx.QueryRowContext(ctx, `SELECT revision FROM persons WHERE id = ?`+
-		s.dialect.SelectForUpdate(), personID).Scan(&revision); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT revision FROM persons WHERE id = ?", personID).Scan(&revision); err != nil {
 		return fmt.Errorf("load rebased CardDAV person revision: %w", err)
 	}
 	hasUserOwnedState, err := s.personHasUserOwnedStateTx(ctx, tx, personID, revision)
@@ -1455,7 +1450,7 @@ func (s *Store) GetCardDAVResourceContext(
 func (s *Store) GetCardDAVResourceForPersonContext(
 	ctx context.Context, bookID, personID int64,
 ) (*CardDAVResource, error) {
-	return findCardDAVResourceForPersonTx(ctx, s.db, bookID, personID, "")
+	return findCardDAVResourceForPersonTx(ctx, s.db, bookID, personID)
 }
 
 func (s *Store) ListCardDAVResourcesContext(
@@ -1482,8 +1477,8 @@ func (s *Store) findCardDAVResourceTx(
 	ctx context.Context, tx *loggedTx, bookID int64, href string,
 ) (*CardDAVResource, error) {
 	resource, err := scanCardDAVResource(tx.QueryRowContext(ctx,
-		cardDAVResourceSelect+` WHERE address_book_id = ? AND href = ?`+
-			s.dialect.SelectForUpdate(), bookID, href))
+		cardDAVResourceSelect+` WHERE address_book_id = ? AND href = ?`,
+		bookID, href))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrCardDAVResourceNotFound
 	}

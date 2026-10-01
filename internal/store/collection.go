@@ -68,10 +68,8 @@ func (s *Store) EnsureDefaultCollection() error {
 func (s *Store) EnsureDefaultCollectionContext(ctx context.Context) error {
 	if _, err := s.db.ExecContext(
 		ctx,
-		s.dialect.InsertOrIgnore(
-			`INSERT OR IGNORE INTO collections (name, description)
+		`INSERT OR IGNORE INTO collections (name, description)
 			 VALUES (?, 'All accounts')`,
-		),
 		DefaultCollectionName,
 	); err != nil {
 		return fmt.Errorf("create default collection: %w", err)
@@ -88,10 +86,8 @@ func (s *Store) EnsureDefaultCollectionContext(ctx context.Context) error {
 	// Add all sources not already in it.
 	if _, err := s.db.ExecContext(
 		ctx,
-		s.dialect.InsertOrIgnore(
-			`INSERT OR IGNORE INTO collection_sources (collection_id, source_id)
+		`INSERT OR IGNORE INTO collection_sources (collection_id, source_id)
 			 SELECT ?, id FROM sources`,
-		),
 		id,
 	); err != nil {
 		return fmt.Errorf("seed default collection membership: %w", err)
@@ -293,11 +289,9 @@ func (s *Store) AddSourcesToCollectionContext(
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
 		for _, sid := range sourceIDs {
 			if _, err := tx.ExecContext(ctx,
-				s.dialect.InsertOrIgnore(
-					`INSERT OR IGNORE INTO collection_sources
+				`INSERT OR IGNORE INTO collection_sources
 					  (collection_id, source_id)
 					 VALUES (?, ?)`,
-				),
 				collID, sid,
 			); err != nil {
 				return fmt.Errorf("add source %d: %w", sid, err)

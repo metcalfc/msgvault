@@ -9,11 +9,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/kit/daemon"
@@ -35,14 +35,10 @@ func TestQueryCommand_UsesLocalDaemonHTTPAndPreservesJSONOutput(t *testing.T) {
 	savedCfg := cfg
 	savedLogger := logger
 	savedUseLocal := useLocal
-	savedQueryFormat := queryFormat
-	savedQueryFresh := queryFresh
 	t.Cleanup(func() {
 		cfg = savedCfg
 		logger = savedLogger
 		useLocal = savedUseLocal
-		queryFormat = savedQueryFormat
-		queryFresh = savedQueryFresh
 	})
 
 	cfg = &config.Config{
@@ -53,16 +49,10 @@ func TestQueryCommand_UsesLocalDaemonHTTPAndPreservesJSONOutput(t *testing.T) {
 	_ = testCtx
 	logger = slog.New(slog.DiscardHandler)
 	useLocal = true
-	queryFormat = outputFormatJSON
-	queryFresh = false
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{
-		Use:  "query [sql]",
-		Args: queryCmd.Args,
-		RunE: queryCmd.RunE,
-	}
+	cmd := newQueryCommand()
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -158,18 +148,13 @@ func TestQueryCommandWaitsForAcceptedBuild(t *testing.T) {
 			server := httptest.NewServer(mux)
 			t.Cleanup(server.Close)
 			writeStatsHTTPDaemonRuntime(t, dataDir, server)
-			savedFormat, savedFresh, savedStream := queryFormat, queryFresh, queryStream
-			t.Cleanup(func() {
-				queryFormat, queryFresh, queryStream = savedFormat, savedFresh, savedStream
-			})
 			cfg := &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
 			testCtx := testInvocationContext(ctx, cfg, invocationOptions{useLocal: true})
-			queryFormat, queryFresh, queryStream = outputFormatJSON, test.fresh, test.stream
 			var stdout, stderr bytes.Buffer
-			cmd := &cobra.Command{
-				Use: "query", Args: queryCmd.Args, RunE: queryCmd.RunE,
-				SilenceErrors: true, SilenceUsage: true,
-			}
+			cmd := newQueryCommand()
+			cmd.SilenceErrors, cmd.SilenceUsage = true, true
+			require.NoError(cmd.Flags().Set("fresh", strconv.FormatBool(test.fresh)))
+			require.NoError(cmd.Flags().Set("stream", strconv.FormatBool(test.stream)))
 			cmd.SetOut(&stdout)
 			cmd.SetErr(&stderr)
 			cmd.SetContext(testCtx)
@@ -358,12 +343,11 @@ func TestQueryCommandStreamsCSV(t *testing.T) {
 			dataDir := t.TempDir()
 			writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-			savedFormat, savedFresh, savedStream := queryFormat, queryFresh, queryStream
-			t.Cleanup(func() { queryFormat, queryFresh, queryStream = savedFormat, savedFresh, savedStream })
-			queryFormat, queryFresh, queryStream = "csv", false, true
 			cfg := &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
 			var stdout, stderr bytes.Buffer
-			cmd := &cobra.Command{Use: "query [sql]", Args: queryCmd.Args, RunE: queryCmd.RunE}
+			cmd := newQueryCommand()
+			require.NoError(cmd.Flags().Set("format", "csv"))
+			require.NoError(cmd.Flags().Set("stream", "true"))
 			cmd.SetContext(testInvocationContext(t.Context(), cfg, invocationOptions{}))
 			cmd.SetOut(&stdout)
 			cmd.SetErr(&stderr)

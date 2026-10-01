@@ -42,7 +42,6 @@ func mustAttributeOrganization(t *testing.T, st *store.Store) *store.Organizatio
 }
 
 func organizationAttributeTestBind(st *store.Store) string {
-
 	return "?"
 }
 

@@ -15,7 +15,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/BurntSushi/toml"
 	"github.com/robfig/cron/v3"
@@ -960,7 +959,10 @@ func decodeConfig(cfg *Config, path string, explicit, homeOverride bool, content
 	// retries) depend on the decoded provider name. Decode over the sentinel
 	// target so ApplyDefaults resolves them for the selected provider.
 	cfg.Attachments.Documents = documentindex.DocumentsConfigDecodeTarget()
-	metadata, err := toml.Decode(string(content), cfg)
+	// Shadow only selectors whose omitted and explicit-zero forms differ.
+	// Embedded concrete sections keep their normal field definitions and tags.
+	wire := configDecode{Config: cfg}
+	metadata, err := toml.Decode(string(content), &wire)
 	if err != nil {
 		if strings.Contains(err.Error(), "invalid escape") ||
 			strings.Contains(err.Error(), "hexadecimal digits after") {
@@ -969,6 +971,7 @@ func decodeConfig(cfg *Config, path string, explicit, homeOverride bool, content
 		}
 		return nil, fmt.Errorf("decode config: %w", err)
 	}
+	wire.applySources()
 	cfg.People.Sweep.ApplyDefaults()
 	for _, key := range metadata.Undecoded() {
 		if key.String() == "carddav.password" {
@@ -981,13 +984,13 @@ func decodeConfig(cfg *Config, path string, explicit, homeOverride bool, content
 			return nil, fmt.Errorf("unknown Gmail draft config key %q", key.String())
 		}
 	}
-	if err := cfg.validateFastmailSources(fastmailSourceIDConfigured(content)); err != nil {
+	if err := cfg.validateFastmailSources(wire.fastmailSourceIDs()); err != nil {
 		return nil, err
 	}
-	if err := cfg.validateIMAPDraftSources(content); err != nil {
+	if err := cfg.validateIMAPDraftSources(wire.IMAP.Drafts); err != nil {
 		return nil, err
 	}
-	if err := cfg.validateGmailDraftSources(content); err != nil {
+	if err := cfg.validateGmailDraftSources(wire.Gmail.Drafts); err != nil {
 		return nil, err
 	}
 
@@ -996,38 +999,7 @@ func decodeConfig(cfg *Config, path string, explicit, homeOverride bool, content
 		return nil, fmt.Errorf("vector.db_path: %w", err)
 	}
 
-	// Expand ~ in paths
-	cfg.Data.DataDir = expandPath(cfg.Data.DataDir)
-	cfg.Data.ExportDir = expandPath(cfg.Data.ExportDir)
-	cfg.Log.Dir = expandPath(cfg.Log.Dir)
-	cfg.OAuth.ClientSecrets = expandPath(cfg.OAuth.ClientSecrets)
-	cfg.OAuth.ServiceAccountKey = expandPath(cfg.OAuth.ServiceAccountKey)
-	cfg.Vector.DBPath = expandPath(cfg.Vector.DBPath)
-	cfg.Vector.Multimodal.CapabilitiesFile = expandPath(cfg.Vector.Multimodal.CapabilitiesFile)
-	cfg.Backup.Repo = expandPath(cfg.Backup.Repo)
-	for name, app := range cfg.OAuth.Apps {
-		app.ClientSecrets = expandPath(app.ClientSecrets)
-		app.ServiceAccountKey = expandPath(app.ServiceAccountKey)
-		cfg.OAuth.Apps[name] = app
-	}
-
-	// When --config is used, resolve relative paths against the config file's
-	// directory so behavior doesn't depend on the working directory.
-	if explicit {
-		cfg.Data.DataDir = resolveRelative(cfg.Data.DataDir, cfg.HomeDir)
-		cfg.Data.ExportDir = resolveRelative(cfg.Data.ExportDir, cfg.HomeDir)
-		cfg.Log.Dir = resolveRelative(cfg.Log.Dir, cfg.HomeDir)
-		cfg.OAuth.ClientSecrets = resolveRelative(cfg.OAuth.ClientSecrets, cfg.HomeDir)
-		cfg.OAuth.ServiceAccountKey = resolveRelative(cfg.OAuth.ServiceAccountKey, cfg.HomeDir)
-		cfg.Vector.DBPath = resolveRelative(cfg.Vector.DBPath, cfg.HomeDir)
-		cfg.Vector.Multimodal.CapabilitiesFile = resolveRelative(cfg.Vector.Multimodal.CapabilitiesFile, cfg.HomeDir)
-		cfg.Backup.Repo = resolveRelative(cfg.Backup.Repo, cfg.HomeDir)
-		for name, app := range cfg.OAuth.Apps {
-			app.ClientSecrets = resolveRelative(app.ClientSecrets, cfg.HomeDir)
-			app.ServiceAccountKey = resolveRelative(app.ServiceAccountKey, cfg.HomeDir)
-			cfg.OAuth.Apps[name] = app
-		}
-	}
+	cfg.normalizePaths(explicit)
 
 	// Re-apply numeric defaults over any zero-valued vector fields that
 	// survived decode (e.g. `max_retries = 0` or an omitted timeout).
@@ -1117,78 +1089,6 @@ func decodeConfig(cfg *Config, path string, explicit, homeOverride bool, content
 	}
 
 	return cfg, nil
-}
-
-func (c *Config) validateIMAPDraftSources(content []byte) error {
-	var raw struct {
-		IMAP struct {
-			Drafts []struct {
-				SourceID *int64 `toml:"source_id"`
-			} `toml:"drafts"`
-		} `toml:"imap"`
-	}
-	_, _ = toml.Decode(string(content), &raw)
-	seen := make(map[int64]struct{}, len(c.IMAP.Drafts))
-	for i := range c.IMAP.Drafts {
-		draft := &c.IMAP.Drafts[i]
-		if i >= len(raw.IMAP.Drafts) || raw.IMAP.Drafts[i].SourceID == nil {
-			return fmt.Errorf("[[imap.drafts]] entry %d: source_id is required", i+1)
-		}
-		if draft.SourceID <= 0 {
-			return fmt.Errorf("[[imap.drafts]] entry %d: source_id must be positive", i+1)
-		}
-		if _, ok := seen[draft.SourceID]; ok {
-			return fmt.Errorf("[[imap.drafts]] entry %d: duplicate source_id selector %d", i+1, draft.SourceID)
-		}
-		seen[draft.SourceID] = struct{}{}
-		if !utf8.ValidString(draft.Mailbox) || strings.TrimSpace(draft.Mailbox) == "" {
-			return fmt.Errorf("[[imap.drafts]] entry %d: mailbox must be nonblank UTF-8", i+1)
-		}
-		if strings.ContainsAny(draft.Mailbox, "\x00\r\n") {
-			return fmt.Errorf("[[imap.drafts]] entry %d: mailbox contains control characters", i+1)
-		}
-	}
-	return nil
-}
-
-func (c *Config) validateGmailDraftSources(content []byte) error {
-	var raw struct {
-		Gmail struct {
-			Drafts []struct {
-				SourceID *int64 `toml:"source_id"`
-			} `toml:"drafts"`
-		} `toml:"gmail"`
-	}
-	_, _ = toml.Decode(string(content), &raw)
-	seen := make(map[int64]struct{}, len(c.Gmail.Drafts))
-	for i := range c.Gmail.Drafts {
-		draft := &c.Gmail.Drafts[i]
-		if i >= len(raw.Gmail.Drafts) || raw.Gmail.Drafts[i].SourceID == nil {
-			return fmt.Errorf("[[gmail.drafts]] entry %d: source_id is required", i+1)
-		}
-		if draft.SourceID <= 0 {
-			return fmt.Errorf("[[gmail.drafts]] entry %d: source_id must be positive", i+1)
-		}
-		if _, ok := seen[draft.SourceID]; ok {
-			return fmt.Errorf("[[gmail.drafts]] entry %d: duplicate source_id selector %d", i+1, draft.SourceID)
-		}
-		seen[draft.SourceID] = struct{}{}
-	}
-	return nil
-}
-
-func fastmailSourceIDConfigured(content []byte) []bool {
-	var raw struct {
-		Fastmail []struct {
-			SourceID *int64 `toml:"source_id"`
-		} `toml:"fastmail"`
-	}
-	_, _ = toml.Decode(string(content), &raw)
-	configured := make([]bool, len(raw.Fastmail))
-	for i := range raw.Fastmail {
-		configured[i] = raw.Fastmail[i].SourceID != nil
-	}
-	return configured
 }
 
 func (c *Config) validateFastmailSources(sourceIDConfigured []bool) error {

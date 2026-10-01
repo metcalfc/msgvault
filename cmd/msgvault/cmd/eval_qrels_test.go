@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -22,29 +21,22 @@ const evalTestMode = "fts"
 // configureEvalRun points the eval command at one scratch directory: its
 // archive as the configured data dir, and the given qrels and topics content
 // written into it, for a message-keyed JSON run over the fts mode alone. The
-// command's package-level config and flag variables are snapshotted and put
-// back when the test ends, so a test that drives runEval directly cannot leak
-// its settings into whatever runs next.
-func configureEvalRun(t *testing.T, dir, qrels, topics string) context.Context {
+// command options belong to the test invocation.
+func configureEvalRun(t *testing.T, dir, qrels, topics string) (context.Context, *evalCommandOptions) {
 	t.Helper()
 	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
 	cfg.Data.DataDir = dir
 
-	savedQrels, savedTopics, savedModes := evalQrels, evalTopics, evalModes
-	savedDocKey, savedLimit, savedJSON := evalDocKey, evalLimit, evalJSON
-	t.Cleanup(func() {
-		evalQrels, evalTopics, evalModes = savedQrels, savedTopics, savedModes
-		evalDocKey, evalLimit, evalJSON = savedDocKey, savedLimit, savedJSON
-	})
+	options := &evalCommandOptions{}
 
-	evalQrels = writeEvalFile(t, dir, "qrels.txt", qrels)
-	evalTopics = writeEvalFile(t, dir, "topics.tsv", topics)
-	evalModes = evalTestMode
-	evalDocKey = "message"
-	evalLimit = 10
-	evalJSON = true
-	return testCtx
+	options.evalQrels = writeEvalFile(t, dir, "qrels.txt", qrels)
+	options.evalTopics = writeEvalFile(t, dir, "topics.tsv", topics)
+	options.evalModes = evalTestMode
+	options.evalDocKey = "message"
+	options.evalLimit = 10
+	options.evalJSON = true
+	return testCtx, options
 }
 
 // TestRunEval_ScoresATopicJudgedEntirelyNonRelevant is the regression for
@@ -70,17 +62,17 @@ func TestRunEval_ScoresATopicJudgedEntirelyNonRelevant(t *testing.T) {
 
 	dir := t.TempDir()
 	seedRankingDivergenceArchiveIn(t, dir)
-	testCtx := configureEvalRun(t, dir,
+	testCtx, options := configureEvalRun(t, dir,
 		"q1 0 <m1@example.com> 1\n"+
 			"q2 0 <m1@example.com> 0\n"+
 			"q2 0 <m2@example.com> 0\n",
 		"q1\trenewal\nq2\trenewal\nq3\trenewal\n")
 
-	cmd := &cobra.Command{}
+	cmd := newEvalCommand()
 	cmd.SetContext(testCtx)
 
 	done := captureStdout(t)
-	err := runEval(cmd, nil)
+	err := runEval(cmd, nil, options)
 	out := done()
 	require.NoError(err, "eval run")
 
@@ -114,12 +106,12 @@ func TestRunEval_FailsWhenNoTopicIsJudged(t *testing.T) {
 
 	dir := t.TempDir()
 	seedRankingDivergenceArchiveIn(t, dir)
-	testCtx := configureEvalRun(t, dir, "other-1 0 <m1@example.com> 0\n", "q1\trenewal\n")
+	testCtx, options := configureEvalRun(t, dir, "other-1 0 <m1@example.com> 0\n", "q1\trenewal\n")
 
-	cmd := &cobra.Command{}
+	cmd := newEvalCommand()
 	cmd.SetContext(testCtx)
 
-	err := runEval(cmd, nil)
+	err := runEval(cmd, nil, options)
 	require.Error(err, "no topic was judged, so there is nothing to report")
 	assert.Contains(err.Error(), "relevance judgments")
 }

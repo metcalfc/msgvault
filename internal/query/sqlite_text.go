@@ -100,7 +100,7 @@ func readSQLiteTextSnapshot[T any](
 	writeSnapshotField(hasher, identity)
 
 	query, args := e.sqliteTextSnapshotQuery(scope)
-	rows, err := tx.QueryContext(ctx, e.dialect.Rebind(query), args...)
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, "", fmt.Errorf("query text snapshot: %w", err)
 	}

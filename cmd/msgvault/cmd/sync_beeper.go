@@ -21,13 +21,6 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-var (
-	syncBeeperLimit    int
-	syncBeeperFull     bool
-	syncBeeperAccounts []string
-	syncBeeperNoMedia  bool
-)
-
 func newSyncBeeperCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sync-beeper",
@@ -50,6 +43,8 @@ Examples:
   msgvault sync-beeper --full`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := readSyncBeeperOptions(cmd)
+
 			state := invocationFromCommand(cmd)
 			if state == nil || state.cfg == nil {
 				return errors.New("configuration is unavailable")
@@ -59,7 +54,7 @@ Examples:
 				return runDaemonCLICommandHTTPFromCobra(cmd, args)
 			}
 
-			imp, accountIDs, dbPath, cleanup, err := openBeeperImporter(syncBeeperAccounts, state)
+			imp, accountIDs, dbPath, cleanup, err := openBeeperImporter(flags.syncBeeperAccounts, state)
 			if err != nil {
 				return err
 			}
@@ -74,9 +69,9 @@ Examples:
 				}
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Syncing Beeper account %s\n", accountID)
 				opts := beeperImportOptions(accountID, cfg)
-				opts.Limit = syncBeeperLimit
-				opts.Full = syncBeeperFull
-				opts.NoMedia = opts.NoMedia || syncBeeperNoMedia
+				opts.Limit = flags.syncBeeperLimit
+				opts.Full = flags.syncBeeperFull
+				opts.NoMedia = opts.NoMedia || flags.syncBeeperNoMedia
 				opts.Progress = func(s string) { _, _ = fmt.Fprintln(cmd.OutOrStdout(), "  "+s) }
 				sum, err := imp.Import(ctx, opts)
 				if ctx.Err() != nil {
@@ -112,10 +107,10 @@ Examples:
 			return cacheErr
 		},
 	}
-	cmd.Flags().IntVar(&syncBeeperLimit, "limit", 0, "max messages per chat this run (0 = no limit; limited backfills resume on the next run)")
-	cmd.Flags().BoolVar(&syncBeeperFull, "full", false, "ignore stored cursors and re-fetch every message (repairs/backfills existing rows in place)")
-	cmd.Flags().StringArrayVar(&syncBeeperAccounts, "account", nil, "Beeper accountID to sync (repeatable; default: all registered accounts)")
-	cmd.Flags().BoolVar(&syncBeeperNoMedia, "no-media", false, "skip attachment downloads for this run")
+	cmd.Flags().Int("limit", 0, "max messages per chat this run (0 = no limit; limited backfills resume on the next run)")
+	cmd.Flags().Bool("full", false, "ignore stored cursors and re-fetch every message (repairs/backfills existing rows in place)")
+	cmd.Flags().StringArray("account", nil, "Beeper accountID to sync (repeatable; default: all registered accounts)")
+	cmd.Flags().Bool("no-media", false, "skip attachment downloads for this run")
 	return cmd
 }
 
@@ -428,5 +423,23 @@ func runScheduledBeeperAttempts(
 }
 
 func init() {
-	rootCmd.AddCommand(addManualSyncCacheFlags(newSyncBeeperCmd()))
+	registerCommandFactory(func() *cobra.Command {
+		return addManualSyncCacheFlags(newSyncBeeperCmd())
+	})
+}
+
+type syncBeeperOptions struct {
+	syncBeeperAccounts []string
+	syncBeeperFull     bool
+	syncBeeperLimit    int
+	syncBeeperNoMedia  bool
+}
+
+func readSyncBeeperOptions(cmd *cobra.Command) syncBeeperOptions {
+	var flags syncBeeperOptions
+	flags.syncBeeperAccounts, _ = cmd.Flags().GetStringArray("account")
+	flags.syncBeeperFull, _ = cmd.Flags().GetBool("full")
+	flags.syncBeeperLimit, _ = cmd.Flags().GetInt("limit")
+	flags.syncBeeperNoMedia, _ = cmd.Flags().GetBool("no-media")
+	return flags
 }

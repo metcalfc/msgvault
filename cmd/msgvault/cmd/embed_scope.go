@@ -23,7 +23,7 @@ import (
 // them. Unknown identifiers are a hard error: a silently skipped account
 // would quietly widen the embedded corpus beyond what the operator asked
 // for.
-func resolveEmbedScopeSourceIDs(s *store.Store, state *invocation) error {
+func resolveEmbedScopeSourceIDs(s *store.Store, state *invocation, flags embeddingCommandOptions) error {
 	state = invocationState(context.Background(), state)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -31,8 +31,8 @@ func resolveEmbedScopeSourceIDs(s *store.Store, state *invocation) error {
 	cfg := state.cfg
 	var ids []int64
 	switch {
-	case len(embedAccounts) > 0 || len(embedCollections) > 0:
-		resolved, err := resolveEmbedScopeFlags(s)
+	case len(flags.embedAccounts) > 0 || len(flags.embedCollections) > 0:
+		resolved, err := resolveEmbedScopeFlags(s, flags)
 		if err != nil {
 			return err
 		}
@@ -54,16 +54,16 @@ func resolveEmbedScopeSourceIDs(s *store.Store, state *invocation) error {
 
 // resolveEmbedScopeFlags resolves the --account and --collection flag values
 // to their union of source IDs.
-func resolveEmbedScopeFlags(s *store.Store) ([]int64, error) {
+func resolveEmbedScopeFlags(s *store.Store, flags embeddingCommandOptions) ([]int64, error) {
 	var ids []int64
-	if len(embedAccounts) > 0 {
-		accountIDs, err := resolveEmbedAccountList(s, embedAccounts, false)
+	if len(flags.embedAccounts) > 0 {
+		accountIDs, err := resolveEmbedAccountList(s, flags.embedAccounts, false)
 		if err != nil {
 			return nil, fmt.Errorf("--account: %w", err)
 		}
 		ids = append(ids, accountIDs...)
 	}
-	for _, name := range embedCollections {
+	for _, name := range flags.embedCollections {
 		name = strings.TrimSpace(name)
 		if name == "" {
 			return nil, errors.New("--collection: collection name is required")
@@ -178,7 +178,7 @@ func ensureEmbedScopeResolved(state *invocation) error {
 		return fmt.Errorf("open main db for embed scope resolution: %w", err)
 	}
 	defer func() { _ = s.Close() }()
-	return resolveEmbedScopeSourceIDs(s, state)
+	return resolveEmbedScopeSourceIDs(s, state, embeddingCommandOptions{})
 }
 
 // resolvedVectorConfig returns a copy of the vector config with the

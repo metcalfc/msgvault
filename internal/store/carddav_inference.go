@@ -361,8 +361,7 @@ func (s *Store) advancePersonInferenceExportRevisionTx(
 	ctx context.Context, tx *loggedTx, personID int64,
 ) error {
 	var lockedID int64
-	if err := tx.QueryRowContext(ctx, `SELECT id FROM persons WHERE id = ?`+
-		s.dialect.SelectForUpdate(), personID).Scan(&lockedID); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT id FROM persons WHERE id = ?", personID).Scan(&lockedID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrPersonNotFound
 		}
@@ -450,7 +449,7 @@ func (s *Store) loadCardDAVPublicationReviewSourceTx(
 		return nil, err
 	}
 	source := &CardDAVPublicationReviewSource{Person: snapshot.Profile.Person, Snapshot: snapshot, Inference: inference}
-	publication, err := getCardDAVPublicationFrom(ctx, tx, personID, "")
+	publication, err := getCardDAVPublicationFrom(ctx, tx, personID)
 	if err != nil && !errors.Is(err, ErrCardDAVPublicationNotFound) {
 		return nil, err
 	}
@@ -487,7 +486,7 @@ func (s *Store) loadCardDAVPublicationReviewSourceTx(
 		}
 		return nil, ErrCardDAVNoWriteTarget
 	}
-	resource, err := findCardDAVResourceForPersonTx(ctx, tx, source.Book.ID, personID, "")
+	resource, err := findCardDAVResourceForPersonTx(ctx, tx, source.Book.ID, personID)
 	if err != nil && !errors.Is(err, ErrCardDAVResourceNotFound) {
 		return nil, err
 	}
@@ -619,14 +618,14 @@ func (s *Store) loadCardDAVPublicationReviewRequiredTx(ctx context.Context, tx *
 	}
 	source.InferenceReviewRequired = state.ReviewRequired(generation, bookID)
 	if source.PendingOperation == CardDAVMutationCreate {
-		pending, err := getCardDAVPublicationFrom(ctx, tx, source.PersonID, "")
+		pending, err := getCardDAVPublicationFrom(ctx, tx, source.PersonID)
 		if err != nil {
 			return err
 		}
 		source.InferenceReviewRequired = source.InferenceReviewRequired || !pending.HasExactBodyApproval()
 	}
 	if source.ConflictID != 0 && state.InferenceRevision > 0 {
-		conflict, err := getCardDAVConflictFrom(ctx, tx, source.ConflictID, "")
+		conflict, err := getCardDAVConflictFrom(ctx, tx, source.ConflictID)
 		if err != nil {
 			return err
 		}
@@ -655,10 +654,10 @@ func (s *Store) lockCardDAVPublicationOperationTx(ctx context.Context, tx *logge
 	if s.cardDAVReviewPersonLockHook != nil {
 		s.cardDAVReviewPersonLockHook()
 	}
-	if err := s.lockPersonVCardProjectionTx(ctx, tx, personID, ""); err != nil {
+	if err := s.lockPersonVCardProjectionTx(ctx, tx, personID); err != nil {
 		return nil, err
 	}
-	current, err := getCardDAVPublicationFrom(ctx, tx, personID, s.dialect.SelectForUpdate())
+	current, err := getCardDAVPublicationFrom(ctx, tx, personID)
 	if err != nil {
 		return nil, err
 	}
@@ -714,10 +713,10 @@ func (s *Store) lockCardDAVPublicationTargetTx(ctx context.Context, tx *loggedTx
 		}
 	}
 	var locked int64
-	if err := tx.QueryRowContext(ctx, `SELECT id FROM carddav_accounts WHERE id = 1`+s.dialect.SelectForUpdate()).Scan(&locked); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT id FROM carddav_accounts WHERE id = 1").Scan(&locked); err != nil {
 		return err
 	}
-	if err := tx.QueryRowContext(ctx, `SELECT id FROM carddav_address_books WHERE id = ?`+s.dialect.SelectForUpdate(), bookID).Scan(&locked); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT id FROM carddav_address_books WHERE id = ?", bookID).Scan(&locked); err != nil {
 		return err
 	}
 	return nil

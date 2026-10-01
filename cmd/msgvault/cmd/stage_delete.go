@@ -14,11 +14,6 @@ import (
 	"go.kenn.io/msgvault/pkg/client/generated"
 )
 
-var (
-	stageDeleteDryRun  bool
-	stageDeleteProtect bool
-)
-
 const (
 	stageDeleteMinAPISchemaVersion = "2.18.0"
 	analyticalCacheUnavailableCode = "analytical_cache_unavailable"
@@ -45,8 +40,8 @@ of the batch instead.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: runStageDelete,
 	}
-	cmd.Flags().BoolVar(&stageDeleteDryRun, "dry-run", false, "Show the staged subset and skipped counts without creating a deletion batch")
-	cmd.Flags().BoolVar(&stageDeleteProtect, "protect", false,
+	cmd.Flags().Bool("dry-run", false, "Show the staged subset and skipped counts without creating a deletion batch")
+	cmd.Flags().Bool("protect", false,
 		"Leave starred, self-sent, and person-sent messages out of the batch instead of only warning")
 	cmd.Flags().Int64("source-id", 0, "Restrict staging to one exact source ID")
 	cmd.Flags().String("ids", "", "Stage these comma-separated internal message IDs instead of a query")
@@ -67,6 +62,7 @@ func runStageDelete(cmd *cobra.Command, args []string) error {
 }
 
 func runStageDeleteFromQuery(cmd *cobra.Command, queryText string) error {
+	stageDeleteDryRun, _ := cmd.Flags().GetBool("dry-run")
 	parsed := search.Parse(queryText)
 	if err := parsed.Err(); err != nil {
 		return usageErr(cmd, err)
@@ -188,7 +184,7 @@ func runStageDeleteFromQuery(cmd *cobra.Command, queryText string) error {
 				Description:    &description,
 				DryRun:         &stageDeleteDryRun,
 				OperationToken: &operationToken,
-				Protect:        stageDeleteProtectFlag(),
+				Protect:        stageDeleteProtectFlag(cmd),
 				Selection:      &selection,
 			},
 		})
@@ -217,6 +213,7 @@ func runStageDeleteFromQuery(cmd *cobra.Command, queryText string) error {
 }
 
 func runStageDeleteFromIDs(cmd *cobra.Command) error {
+	stageDeleteDryRun, _ := cmd.Flags().GetBool("dry-run")
 	rawIDs, err := cmd.Flags().GetString("ids")
 	if err != nil {
 		return usageErr(cmd, fmt.Errorf("invalid --ids: %w", err))
@@ -239,7 +236,7 @@ func runStageDeleteFromIDs(cmd *cobra.Command) error {
 				Description: &description,
 				DryRun:      &stageDeleteDryRun,
 				MessageIds:  messageIDs,
-				Protect:     stageDeleteProtectFlag(),
+				Protect:     stageDeleteProtectFlag(cmd),
 			},
 		})
 	})
@@ -348,7 +345,8 @@ func writeStageDeleteSkipped(w io.Writer, result *generated.StageDeletionRespons
 
 // stageDeleteProtectFlag sends protect only when it is set: the daemon
 // rejects unknown fields, so an older daemon keeps accepting plain staging.
-func stageDeleteProtectFlag() *bool {
+func stageDeleteProtectFlag(cmd *cobra.Command) *bool {
+	stageDeleteProtect, _ := cmd.Flags().GetBool("protect")
 	if !stageDeleteProtect {
 		return nil
 	}
@@ -416,5 +414,5 @@ func stageDeleteDaemonErr(op string, err error) error {
 }
 
 func init() {
-	rootCmd.AddCommand(newStageDeleteCommand())
+	registerCommandFactory(newStageDeleteCommand)
 }

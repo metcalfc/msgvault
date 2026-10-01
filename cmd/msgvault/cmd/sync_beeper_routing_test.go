@@ -189,17 +189,6 @@ func TestPrintBeeperSummaryReportsIdentityReplayPending(t *testing.T) {
 
 func resetSyncBeeperRoutingGlobals(t *testing.T) {
 	t.Helper()
-	oldLimit := syncBeeperLimit
-	oldFull := syncBeeperFull
-	oldAccounts := syncBeeperAccounts
-	t.Cleanup(func() {
-		syncBeeperLimit = oldLimit
-		syncBeeperFull = oldFull
-		syncBeeperAccounts = oldAccounts
-	})
-	syncBeeperLimit = 0
-	syncBeeperFull = false
-	syncBeeperAccounts = nil
 }
 
 func TestSyncBeeperCommandUsesDaemonRunner(t *testing.T) {

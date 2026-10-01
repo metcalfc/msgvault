@@ -236,7 +236,7 @@ func (s *Store) GetDocumentVectorGeneration(ctx context.Context, id int64) (Docu
 	if id <= 0 {
 		return DocumentVectorGeneration{}, errors.New("document vector generation id must be positive")
 	}
-	g, found, err := scanDocumentVectorGeneration(s.db.QueryRowContext(ctx, s.Rebind(`SELECT id, fingerprint, target_extraction_profile_id, embedding_profile, model, dimension, state, created_at, activated_at, retired_at FROM document_vector_generations WHERE id = ?`), id))
+	g, found, err := scanDocumentVectorGeneration(s.db.QueryRowContext(ctx, `SELECT id, fingerprint, target_extraction_profile_id, embedding_profile, model, dimension, state, created_at, activated_at, retired_at FROM document_vector_generations WHERE id = ?`, id))
 	if err != nil {
 		return DocumentVectorGeneration{}, err
 	}
@@ -253,7 +253,7 @@ func (s *Store) GetActiveDocumentVectorGeneration(ctx context.Context) (*Documen
 	return s.getDocumentVectorGenerationByState(ctx, DocumentVectorGenerationActive)
 }
 func (s *Store) getDocumentVectorGenerationByState(ctx context.Context, state DocumentVectorGenerationState) (*DocumentVectorGeneration, error) {
-	g, found, err := scanDocumentVectorGeneration(s.db.QueryRowContext(ctx, s.Rebind(`SELECT id, fingerprint, target_extraction_profile_id, embedding_profile, model, dimension, state, created_at, activated_at, retired_at FROM document_vector_generations WHERE state = ?`), string(state)))
+	g, found, err := scanDocumentVectorGeneration(s.db.QueryRowContext(ctx, `SELECT id, fingerprint, target_extraction_profile_id, embedding_profile, model, dimension, state, created_at, activated_at, retired_at FROM document_vector_generations WHERE state = ?`, string(state)))
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +283,7 @@ func (s *Store) ListDocumentVectorChunkCandidates(ctx context.Context, generatio
 		WHERE g.state <> ? AND ds.target_profile_id = g.target_profile_id AND dc.id > ?
 		  AND ` + documentVectorLiveAuthoritySQL() + `
 		ORDER BY dc.id LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, s.Rebind(query), generationID, string(DocumentVectorGenerationRetired), afterChunkID, limit)
+	rows, err := s.db.QueryContext(ctx, query, generationID, string(DocumentVectorGenerationRetired), afterChunkID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list document vector candidates: %w", err)
 	}
@@ -947,7 +947,7 @@ func (s *Store) ResolveLiveDocumentVectorPublications(
 		  AND h.source_sequence = v.source_sequence
 		  AND v.token IN (` + documentPlaceholders(len(unique)) + `)
 		  AND ` + documentVectorLiveAuthoritySQL()
-	rows, err := s.db.QueryContext(ctx, s.Rebind(query), args...)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("resolve live document vector publications: %w", err)
 	}
@@ -997,11 +997,11 @@ func (s *Store) ListDocumentVectorCleanupTokens(
 	if !found || state != DocumentVectorGenerationRetired {
 		return nil, ErrDocumentVectorInvalidGenerationState
 	}
-	rows, err := s.db.QueryContext(ctx, s.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT generation_id, token
 		FROM document_vector_publications
 		WHERE generation_id = ? AND backend_cleaned_at IS NULL AND token > ?
-		ORDER BY token LIMIT ?`), generationID, afterToken, limit)
+		ORDER BY token LIMIT ?`, generationID, afterToken, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list document vector cleanup tokens: %w", err)
 	}

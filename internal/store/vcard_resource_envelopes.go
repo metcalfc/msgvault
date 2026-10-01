@@ -138,7 +138,7 @@ func (s *Store) writeVCardResourceEnvelopeOnce(
 		// update. See person_vcard_projection_revision.go.
 		if expectedProjectionFingerprint != "" {
 			if err := s.lockPersonVCardProjectionTx(
-				ctx, tx, input.PersonID, expectedProjectionFingerprint,
+				ctx, tx, input.PersonID,
 			); err != nil {
 				return err
 			}
@@ -204,10 +204,9 @@ func (s *Store) insertVCardResourceEnvelopeTx(
 		href, original_raw_bytes, stored_body, resource_metadata,
 		projection_fingerprint, content_hash, etag, revision,
 		created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, `+s.dialect.JSONBindExpr()+`, ?, ?, ?, 1, `+
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, `+
 		s.dialect.Now()+`, `+s.dialect.Now()+`)
-	RETURNING id`,
-		input.PersonID, envelope.CanonicalPersonUID, envelope.SourceRef,
+	RETURNING id`, input.PersonID, envelope.CanonicalPersonUID, envelope.SourceRef,
 		envelope.SourceResourceUID, nullableVCardString(envelope.Href),
 		envelope.OriginalRawBytes, envelope.StoredBody, string(metadata),
 		nullableVCardString(input.ProjectionFingerprint),
@@ -277,11 +276,10 @@ func (s *Store) updateVCardResourceEnvelopeTx(
 	}
 	updated, err := tx.ExecContext(ctx, `UPDATE vcard_resource_envelopes SET
 		href = ?,
-		stored_body = ?, resource_metadata = `+s.dialect.JSONBindExpr()+`,
+		stored_body = ?, resource_metadata = ?,
 		projection_fingerprint = ?, content_hash = ?, etag = ?, revision = ?,
 		updated_at = `+s.dialect.Now()+`
-		WHERE id = ? AND revision = ?`,
-		nullableVCardString(envelope.Href),
+		WHERE id = ? AND revision = ?`, nullableVCardString(envelope.Href),
 		envelope.StoredBody, string(metadata),
 		nullableVCardString(input.ProjectionFingerprint),
 		envelope.ContentHash, envelope.ETag, nextRevision,
@@ -598,10 +596,6 @@ func (s *Store) vcardResourceCASOutcome(
 		switch {
 		case s.dialect.IsConflictError(err):
 			return ErrVCardResourceIdentityExists
-		case s.dialect.IsSerializationFailureError(err):
-			return newVCardResourceWriteConflict(
-				envelope.SourceRef, envelope.SourceResourceUID, expectedRevision,
-			)
 		}
 		return fmt.Errorf("%s: %w", operation, err)
 	}

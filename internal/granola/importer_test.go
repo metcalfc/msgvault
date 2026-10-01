@@ -501,7 +501,6 @@ func TestImport_IdempotentAndRefresh(t *testing.T) {
 }
 
 func TestIngestNote_RawFailureRollsBackCanonicalWrite(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 	api := &fakeAPI{notes: map[string][]byte{}}

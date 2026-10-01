@@ -107,5 +107,5 @@ func slackMediaBackfillExit(ctxErr error, runErrors []error, cacheErr error) err
 }
 
 func init() {
-	rootCmd.AddCommand(newBackfillSlackMediaCmd())
+	registerCommandFactory(newBackfillSlackMediaCmd)
 }

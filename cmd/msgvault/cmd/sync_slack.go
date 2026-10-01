@@ -18,14 +18,6 @@ import (
 	"go.kenn.io/msgvault/internal/textutil"
 )
 
-var (
-	syncSlackLimit       int
-	syncSlackFull        bool
-	syncSlackNoThreads   bool
-	syncSlackNoMedia     bool
-	syncSlackMaintenance bool
-)
-
 func newSyncSlackCmd() *cobra.Command {
 	var syncDMs, syncGroupDMs bool
 	cmd := &cobra.Command{
@@ -50,6 +42,8 @@ Examples:
   msgvault sync-slack --full`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := readSyncSlackOptions(cmd)
+
 			state := invocationFromCommand(cmd)
 			if state == nil || state.cfg == nil {
 				return errors.New("configuration is unavailable")
@@ -94,11 +88,11 @@ Examples:
 				imp := slack.NewImporter(s, slack.NewClient("", token), teamID)
 				opts := slackImportOptions(teamID, userID, cfg)
 				applySlackConversationOverrides(cmd, &opts, syncDMs, syncGroupDMs)
-				opts.Limit = syncSlackLimit
-				opts.Full = syncSlackFull
-				opts.NoThreads = syncSlackNoThreads
-				opts.Maintenance = syncSlackMaintenance
-				opts.NoMedia = opts.NoMedia || syncSlackNoMedia
+				opts.Limit = flags.syncSlackLimit
+				opts.Full = flags.syncSlackFull
+				opts.NoThreads = flags.syncSlackNoThreads
+				opts.Maintenance = flags.syncSlackMaintenance
+				opts.NoMedia = opts.NoMedia || flags.syncSlackNoMedia
 				opts.Progress = func(line string) { writeSlackProgress(cmd.OutOrStdout(), line) }
 				sum, serr := imp.Import(ctx, opts)
 				if ctx.Err() != nil {
@@ -127,11 +121,11 @@ Examples:
 			return slackSyncExit(ctx.Err(), syncErrors, cacheErr)
 		},
 	}
-	cmd.Flags().IntVar(&syncSlackLimit, "limit", 0, "max messages of work per conversation this run, thread replies and a workspace-wide sweep budget included (0 = no limit; every phase resumes next run so standing limited schedules converge; only the maintenance rescan is skipped)")
-	cmd.Flags().BoolVar(&syncSlackFull, "full", false, "start (or continue) a repair session: re-fetch every message, upserting in place; interrupted or --limit-scoped repairs resume across later runs until complete")
-	cmd.Flags().BoolVar(&syncSlackNoThreads, "no-threads", false, "skip thread-reply fetching (backfill inline fetches and the reply sweep) for this run")
-	cmd.Flags().BoolVar(&syncSlackMaintenance, "maintenance", false, "run the maintenance rescan: repair edits and reaction changes on recent messages (archives ignore post-capture mutations by default)")
-	cmd.Flags().BoolVar(&syncSlackNoMedia, "no-media", false, "skip file downloads for this run (files are recorded as pending; backfill-slack-media fetches them later)")
+	cmd.Flags().Int("limit", 0, "max messages of work per conversation this run, thread replies and a workspace-wide sweep budget included (0 = no limit; every phase resumes next run so standing limited schedules converge; only the maintenance rescan is skipped)")
+	cmd.Flags().Bool("full", false, "start (or continue) a repair session: re-fetch every message, upserting in place; interrupted or --limit-scoped repairs resume across later runs until complete")
+	cmd.Flags().Bool("no-threads", false, "skip thread-reply fetching (backfill inline fetches and the reply sweep) for this run")
+	cmd.Flags().Bool("maintenance", false, "run the maintenance rescan: repair edits and reaction changes on recent messages (archives ignore post-capture mutations by default)")
+	cmd.Flags().Bool("no-media", false, "skip file downloads for this run (files are recorded as pending; backfill-slack-media fetches them later)")
 	cmd.Flags().BoolVar(&syncDMs, "dms", true, "include one-to-one DMs for this run, overriding config (true or false)")
 	cmd.Flags().BoolVar(&syncGroupDMs, "group-dms", true, "include group DMs for this run, overriding config (true or false)")
 	return cmd
@@ -346,5 +340,25 @@ func runScheduledSlackAttempts(
 }
 
 func init() {
-	rootCmd.AddCommand(addManualSyncCacheFlags(newSyncSlackCmd()))
+	registerCommandFactory(func() *cobra.Command {
+		return addManualSyncCacheFlags(newSyncSlackCmd())
+	})
+}
+
+type syncSlackOptions struct {
+	syncSlackFull        bool
+	syncSlackLimit       int
+	syncSlackMaintenance bool
+	syncSlackNoMedia     bool
+	syncSlackNoThreads   bool
+}
+
+func readSyncSlackOptions(cmd *cobra.Command) syncSlackOptions {
+	var flags syncSlackOptions
+	flags.syncSlackFull, _ = cmd.Flags().GetBool("full")
+	flags.syncSlackLimit, _ = cmd.Flags().GetInt("limit")
+	flags.syncSlackMaintenance, _ = cmd.Flags().GetBool("maintenance")
+	flags.syncSlackNoMedia, _ = cmd.Flags().GetBool("no-media")
+	flags.syncSlackNoThreads, _ = cmd.Flags().GetBool("no-threads")
+	return flags
 }

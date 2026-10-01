@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +31,7 @@ func TestRepairEncodingUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) 
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{Use: repairEncodingCmd.Use, Args: repairEncodingCmd.Args, RunE: repairEncodingCmd.RunE}
+	cmd := newRepairEncodingCmd()
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)

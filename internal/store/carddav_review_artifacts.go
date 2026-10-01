@@ -28,7 +28,7 @@ func CardDAVPendingReviewFence(source *CardDAVPublicationReviewSource) CardDAVRe
 }
 
 func (s *Store) reviewArtifactError(err error) error {
-	if s.dialect.IsSerializationFailureError(err) || errors.Is(err, ErrVCardProjectionConflict) || errors.Is(err, ErrCardDAVStalePlan) || errors.Is(err, ErrCardDAVPublicationNotFound) || errors.Is(err, ErrCardDAVConflictStale) {
+	if errors.Is(err, ErrVCardProjectionConflict) || errors.Is(err, ErrCardDAVStalePlan) || errors.Is(err, ErrCardDAVPublicationNotFound) || errors.Is(err, ErrCardDAVConflictStale) {
 		return ErrCardDAVReviewStale
 	}
 	return err
@@ -84,7 +84,7 @@ func (s *Store) ValidateCardDAVPendingCreateRetryContext(ctx context.Context, pe
 func (s *Store) ApprovePendingCardDAVCreateContext(ctx context.Context, plan CardDAVPendingCreateApprovalPlan) (*CardDAVPublication, error) {
 	var approved *CardDAVPublication
 	err := s.withTxOptionsContext(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead}, func(tx *loggedTx) error {
-		identity, err := getCardDAVPublicationFrom(ctx, tx, plan.Fence.PersonID, "")
+		identity, err := getCardDAVPublicationFrom(ctx, tx, plan.Fence.PersonID)
 		if err != nil {
 			return err
 		}
@@ -118,7 +118,7 @@ func (s *Store) ApprovePendingCardDAVCreateContext(ctx context.Context, plan Car
 		if err != nil {
 			return err
 		}
-		approved, err = getCardDAVPublicationFrom(ctx, tx, current.PersonID, "")
+		approved, err = getCardDAVPublicationFrom(ctx, tx, current.PersonID)
 		return err
 	})
 	return approved, s.reviewArtifactError(err)
@@ -179,7 +179,7 @@ func (s *Store) LoadCardDAVConflictReviewSourceContext(ctx context.Context, conf
 }
 
 func (s *Store) loadCardDAVConflictReviewSourceTx(ctx context.Context, tx *loggedTx, conflictID int64) (*CardDAVPublicationReviewSource, error) {
-	conflict, err := getCardDAVConflictFrom(ctx, tx, conflictID, "")
+	conflict, err := getCardDAVConflictFrom(ctx, tx, conflictID)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +222,7 @@ func (s *Store) loadCardDAVConflictReviewSourceTx(ctx context.Context, tx *logge
 	if book.ID == 0 || !book.IsSubscribed {
 		return nil, ErrCardDAVNoWriteTarget
 	}
-	publication, err := getCardDAVPublicationFrom(ctx, tx, *resource.PersonID, "")
+	publication, err := getCardDAVPublicationFrom(ctx, tx, *resource.PersonID)
 	if err != nil && !errors.Is(err, ErrCardDAVPublicationNotFound) {
 		return nil, err
 	}
@@ -244,7 +244,7 @@ func CardDAVConflictReviewFence(source *CardDAVPublicationReviewSource, body []b
 // lockCardDAVConflictReviewTx follows account/book/person/publication/resource/conflict
 // order even when the requested conflict belongs to a subscribed non-write book.
 func (s *Store) lockCardDAVConflictReviewTx(ctx context.Context, tx *loggedTx, conflictID int64) (*CardDAVPublicationReviewSource, error) {
-	identity, err := getCardDAVConflictFrom(ctx, tx, conflictID, "")
+	identity, err := getCardDAVConflictFrom(ctx, tx, conflictID)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +254,7 @@ func (s *Store) lockCardDAVConflictReviewTx(ctx context.Context, tx *loggedTx, c
 		}
 	}
 	var id int64
-	if err := tx.QueryRowContext(ctx, `SELECT id FROM carddav_accounts WHERE id=1`+s.dialect.SelectForUpdate()).Scan(&id); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT id FROM carddav_accounts WHERE id=1").Scan(&id); err != nil {
 		return nil, err
 	}
 	if _, err := s.lockCardDAVConflictResolutionBookTx(ctx, tx, identity.AddressBookID); err != nil {
@@ -272,10 +272,10 @@ func (s *Store) lockCardDAVConflictReviewTx(ctx context.Context, tx *loggedTx, c
 	if s.cardDAVReviewPersonLockHook != nil {
 		s.cardDAVReviewPersonLockHook()
 	}
-	if err := s.lockPersonVCardProjectionTx(ctx, tx, personID.Int64, ""); err != nil {
+	if err := s.lockPersonVCardProjectionTx(ctx, tx, personID.Int64); err != nil {
 		return nil, err
 	}
-	if _, err := getCardDAVPublicationFrom(ctx, tx, personID.Int64, s.dialect.SelectForUpdate()); err != nil && !errors.Is(err, ErrCardDAVPublicationNotFound) {
+	if _, err := getCardDAVPublicationFrom(ctx, tx, personID.Int64); err != nil && !errors.Is(err, ErrCardDAVPublicationNotFound) {
 		return nil, err
 	}
 	resource, err := s.findCardDAVResourceTx(ctx, tx, identity.AddressBookID, identity.Href)
@@ -285,7 +285,7 @@ func (s *Store) lockCardDAVConflictReviewTx(ctx context.Context, tx *loggedTx, c
 	if resource.PersonID == nil || *resource.PersonID != personID.Int64 {
 		return nil, ErrCardDAVConflictStale
 	}
-	if _, err := getCardDAVConflictFrom(ctx, tx, conflictID, s.dialect.SelectForUpdate()); err != nil {
+	if _, err := getCardDAVConflictFrom(ctx, tx, conflictID); err != nil {
 		return nil, err
 	}
 	return s.loadCardDAVConflictReviewSourceTx(ctx, tx, conflictID)

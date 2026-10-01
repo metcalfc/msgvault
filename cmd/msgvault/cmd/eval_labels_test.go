@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,17 +26,17 @@ func TestRunEval_LabelsMAPAndMRRAtTheRetrievalDepth(t *testing.T) {
 
 	dir := t.TempDir()
 	seedRankingDivergenceArchiveIn(t, dir)
-	testCtx := configureEvalRun(t, dir, "q1 0 <m1@example.com> 1\n", "q1\trenewal\n")
-	evalLimit = 5
+	testCtx, options := configureEvalRun(t, dir, "q1 0 <m1@example.com> 1\n", "q1\trenewal\n")
+	options.evalLimit = 5
 
 	var report struct {
 		Cutoffs map[string]int            `json:"cutoffs"`
 		Results map[string]map[string]any `json:"results"`
 	}
-	cmd := &cobra.Command{}
+	cmd := newEvalCommand()
 	cmd.SetContext(testCtx)
 	done := captureStdout(t)
-	err := runEval(cmd, nil)
+	err := runEval(cmd, nil, options)
 	out := done()
 	require.NoError(err, "eval run")
 	require.NoError(json.Unmarshal([]byte(out), &report), "parse report: %s", out)
@@ -62,14 +61,14 @@ func TestEvalReport_TableLabelsMAPAndMRRAtTheRetrievalDepth(t *testing.T) {
 
 	dir := t.TempDir()
 	seedRankingDivergenceArchiveIn(t, dir)
-	testCtx := configureEvalRun(t, dir, "q1 0 <m1@example.com> 1\n", "q1\trenewal\n")
-	evalLimit = 5
-	evalJSON = false
+	testCtx, options := configureEvalRun(t, dir, "q1 0 <m1@example.com> 1\n", "q1\trenewal\n")
+	options.evalLimit = 5
+	options.evalJSON = false
 
-	cmd := &cobra.Command{}
+	cmd := newEvalCommand()
 	cmd.SetContext(testCtx)
 	done := captureStdout(t)
-	err := runEval(cmd, nil)
+	err := runEval(cmd, nil, options)
 	out := done()
 	require.NoError(err, "eval run")
 

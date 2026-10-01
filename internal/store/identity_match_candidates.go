@@ -286,7 +286,7 @@ func (s *Store) upsertIdentityMatchCandidateTx(
 	candidate, err := findIdentityMatchCandidateTx(
 		ctx, tx, leftKind, leftID, rightKind, rightID, input.Basis,
 		serviceID, input.ScopeKind, input.ScopeValue, input.NormalizedValue,
-		s.dialect.SelectForUpdate(),
+		"",
 	)
 	if err == nil {
 		if err := s.recordIdentityMatchCandidateSourceTx(
@@ -1113,7 +1113,7 @@ func (s *Store) rewriteIdentityMatchCandidatesForEndpointMergeTx(
 	rows, err := tx.QueryContext(ctx, identityMatchCandidateMergeSelect+`
 		WHERE (left_kind = ? AND left_id = ?)
 		   OR (right_kind = ? AND right_id = ?)
-		ORDER BY id`+s.dialect.SelectForUpdate(),
+		ORDER BY id`,
 		kind, oldID, kind, oldID,
 	)
 	if err != nil {
@@ -1207,7 +1207,7 @@ func (s *Store) loadIdentityMatchCandidateMergeCollisionsTx(
 		  AND (scope_value = ? OR (scope_value IS NULL AND CAST(? AS TEXT) IS NULL))
 		  AND (normalized_value = ? OR
 		       (normalized_value IS NULL AND CAST(? AS TEXT) IS NULL))
-		ORDER BY id`+s.dialect.SelectForUpdate(),
+		ORDER BY id`,
 		candidate.ID, candidate.LeftKind, candidate.LeftID,
 		candidate.RightKind, candidate.RightID, candidate.Basis,
 		candidate.ServiceID, candidate.ServiceID,

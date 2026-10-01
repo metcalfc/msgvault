@@ -63,18 +63,10 @@ func (d entityLabelTestDaemon) person(t *testing.T, email, name string) (*store.
 	return person, participantID
 }
 
-// run executes a copy of a command template with its flags reset, so the
-// package-level flag variables of one test cannot leak into another.
+// run executes an independent production command against the test daemon.
 func (d entityLabelTestDaemon) run(t *testing.T, template *cobra.Command, args ...string) string {
 	t.Helper()
-	savedPersonJSON, savedEmploymentJSON := personJSON, employmentJSON
-	savedAttributesJSON, savedOrganizationJSON := personAttributesJSONOutput, organizationJSON
-	personJSON, employmentJSON, personAttributesJSONOutput, organizationJSON = false, false, false, false
-	t.Cleanup(func() {
-		personJSON, employmentJSON = savedPersonJSON, savedEmploymentJSON
-		personAttributesJSONOutput, organizationJSON = savedAttributesJSON, savedOrganizationJSON
-	})
-	command := cloneEmploymentCommand(template)
+	command := template
 	command.SetContext(d.ctx)
 	var output bytes.Buffer
 	command.SetOut(&output)
@@ -122,17 +114,17 @@ func TestEmploymentOutputNamesPeopleAndOrganizations(t *testing.T) {
 		want     []string
 	}{
 		{
-			name: "organization-scoped list names employees", template: employmentListCmd,
+			name: "organization-scoped list names employees", template: freshCommandForTest(t, newEmploymentCommand(), "list"),
 			args: []string{"--organization", idText(organization.ID)},
 			want: []string{"Avery Example (" + idText(avery.ID) + ")", "Blake Example (" + idText(blake.ID) + ")"},
 		},
 		{
-			name: "person-scoped list names the employer", template: employmentListCmd,
+			name: "person-scoped list names the employer", template: freshCommandForTest(t, newEmploymentCommand(), "list"),
 			args: []string{"--person", idText(avery.ID)},
 			want: []string{"Example Widgets (" + idText(organization.ID) + ")"},
 		},
 		{
-			name: "show names both sides", template: employmentShowCmd,
+			name: "show names both sides", template: freshCommandForTest(t, newEmploymentCommand(), "show"),
 			args: []string{idText(employment.ID)},
 			want: []string{
 				"Person: Avery Example (" + idText(avery.ID) + ")",
@@ -155,11 +147,11 @@ func TestPersonRelationshipOutputNamesBothPeople(t *testing.T) {
 	parent, _ := daemon.person(t, "casey@example.com", "Casey Example")
 	child, _ := daemon.person(t, "drew@example.com", "Drew Example")
 
-	output := daemon.run(t, personRelationshipAddCmd, idText(parent.ID), "parent", idText(child.ID))
+	output := daemon.run(t, freshCommandForTest(t, newPersonRelationshipCommand(), "add"), idText(parent.ID), "parent", idText(child.ID))
 	assert.Contains(t, output,
 		"Casey Example ("+idText(parent.ID)+") is the parent of Drew Example ("+idText(child.ID)+")")
 
-	listed := daemon.run(t, personRelationshipListCmd, idText(child.ID))
+	listed := daemon.run(t, freshCommandForTest(t, newPersonRelationshipCommand(), "list"), idText(child.ID))
 	assert.Contains(t, listed, "Casey Example ("+idText(parent.ID)+")")
 	assert.NotContains(t, listed, parent.VCardUID, "a vCard UID is never a counterpart label")
 }
@@ -174,7 +166,7 @@ func TestPersonRelationshipReviewsNameThePeople(t *testing.T) {
 		VALUES (?, 'Finley', 'friend', 'text', ?, 'system')`), owner.ID, matched.ID)
 	require.NoError(t, err)
 
-	output := daemon.run(t, personRelationshipReviewsCmd)
+	output := daemon.run(t, freshCommandForTest(t, newPersonRelationshipCommand(), "reviews"))
 	assert.Contains(t, output, "Emery Example ("+idText(owner.ID)+")")
 	assert.Contains(t, output, "Finley Example ("+idText(matched.ID)+")")
 }
@@ -186,7 +178,7 @@ func TestPersonOutputNamesParticipantsAndMergeLineage(t *testing.T) {
 	survivor, survivorParticipant := daemon.person(t, "gray@example.com", "Gray Example")
 	absorbed, absorbedParticipant := daemon.person(t, "harper@example.com", "Harper Example")
 
-	got := daemon.run(t, personGetCmd, idText(survivor.ID))
+	got := daemon.run(t, freshCommandForTest(t, newPersonCommand(), "get"), idText(survivor.ID))
 	assert.Contains(got, "Participants: Gray Example ("+idText(survivorParticipant)+")")
 
 	merged := daemon.run(t, newPersonMergeCommand(), idText(survivor.ID), idText(absorbed.ID),
@@ -236,7 +228,7 @@ func TestPersonAttributeRecordReferenceNamesThePerson(t *testing.T) {
 	})
 	require.NoError(err)
 
-	output := daemon.run(t, personAttributesListCmd, idText(owner.ID))
+	output := daemon.run(t, freshCommandForTest(t, newPersonAttributesCommand(), "list"), idText(owner.ID))
 	assert.Contains(output, "Jordan Example ("+idText(referenced.ID)+")")
 	assert.NotContains(output, "person:"+idText(referenced.ID))
 }

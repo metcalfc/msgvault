@@ -894,7 +894,6 @@ func TestDraftRecoverReloadsActionAndSourceAfterSourceLock(t *testing.T) {
 }
 
 func TestDraftRecoverRejectsInvalidPendingOperation(t *testing.T) {
-
 	requirements := require.New(t)
 	assertions := assert.New(t)
 	fixture, _ := newDraftRecoveryFixture(t)

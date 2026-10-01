@@ -107,7 +107,7 @@ func TestSubAggregateDrillDown(t *testing.T) {
 func TestListDrillDownLoadsOnlyTheExactSelectedList(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	matchingID := tdb.AddMessage(dbtest.MessageOpts{Subject: "matching list"})
 	nonMatchingID := tdb.AddMessage(dbtest.MessageOpts{Subject: "other list"})

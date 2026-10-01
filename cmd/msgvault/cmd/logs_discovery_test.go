@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -127,11 +126,10 @@ func TestRenderLogLine(t *testing.T) {
 
 func TestLogsRejectsInvalidLevel(t *testing.T) {
 	require := require.New(t)
-	saved := logsLevel
-	t.Cleanup(func() { logsLevel = saved })
-	logsLevel = "bogus"
 
-	err := runLogsCmd(&cobra.Command{}, nil)
+	cmd := newLogsCommand()
+	cmd.SetArgs([]string{"--level", "bogus"})
+	err := cmd.Execute()
 	require.Error(err, "invalid --level must error")
 	require.ErrorContains(err, "invalid --level", "error text")
 	require.ErrorContains(err, "debug, info, warn, error", "lists valid levels")

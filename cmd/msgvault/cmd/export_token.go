@@ -16,16 +16,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
+type exportTokenOptions struct {
 	exportTokenTo       string
 	exportTokenAPIKey   string
 	exportAllowInsecure bool
-)
+}
 
-var exportTokenCmd = &cobra.Command{
-	Use:   "export-token <email>",
-	Short: "Export OAuth token to a remote msgvault instance",
-	Long: `Export an OAuth token to a remote msgvault server for headless deployment.
+func newExportTokenCommand() *cobra.Command {
+	options := &exportTokenOptions{}
+	command := &cobra.Command{
+		Use:   "export-token <email>",
+		Short: "Export OAuth token to a remote msgvault instance",
+		Long: `Export an OAuth token to a remote msgvault server for headless deployment.
 
 This command reads your local token and uploads it to a remote msgvault
 instance via the API. Use this to set up msgvault on a NAS or server
@@ -49,15 +51,14 @@ Examples:
 
   # With Tailscale (trusted network, HTTP allowed)
   msgvault export-token user@example.com --to http://archive.example:8080 --api-key KEY --allow-insecure`,
-	Args: cobra.ExactArgs(1),
-	RunE: runExportToken,
-}
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error { return runExportToken(cmd, args, options) },
+	}
 
-func init() {
-	exportTokenCmd.Flags().StringVar(&exportTokenTo, "to", "", "Remote msgvault URL (or MSGVAULT_REMOTE_URL env var)")
-	exportTokenCmd.Flags().StringVar(&exportTokenAPIKey, "api-key", "", "API key (or MSGVAULT_REMOTE_API_KEY env var)")
-	exportTokenCmd.Flags().BoolVar(&exportAllowInsecure, "allow-insecure", false, "Allow HTTP (insecure) connections for trusted networks")
-	rootCmd.AddCommand(exportTokenCmd)
+	command.Flags().StringVar(&options.exportTokenTo, "to", "", "Remote msgvault URL (or MSGVAULT_REMOTE_URL env var)")
+	command.Flags().StringVar(&options.exportTokenAPIKey, "api-key", "", "API key (or MSGVAULT_REMOTE_API_KEY env var)")
+	command.Flags().BoolVar(&options.exportAllowInsecure, "allow-insecure", false, "Allow HTTP (insecure) connections for trusted networks")
+	return command
 }
 
 // tokenExporter uploads OAuth tokens to a remote msgvault server.
@@ -196,7 +197,7 @@ func (e *tokenExporter) addAccount(baseURL, apiKey, email string) {
 	}
 }
 
-func runExportToken(cmd *cobra.Command, args []string) error {
+func runExportToken(cmd *cobra.Command, args []string, options *exportTokenOptions) error {
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -205,8 +206,8 @@ func runExportToken(cmd *cobra.Command, args []string) error {
 	email := args[0]
 
 	// Resolution order: flag > env var > config file
-	remoteURL := resolveParam(exportTokenTo, "MSGVAULT_REMOTE_URL", cfg.Remote.URL)
-	apiKey := resolveParam(exportTokenAPIKey, "MSGVAULT_REMOTE_API_KEY", cfg.Remote.APIKey)
+	remoteURL := resolveParam(options.exportTokenTo, "MSGVAULT_REMOTE_URL", cfg.Remote.URL)
+	apiKey := resolveParam(options.exportTokenAPIKey, "MSGVAULT_REMOTE_API_KEY", cfg.Remote.APIKey)
 
 	if remoteURL == "" {
 		return errors.New("remote URL required: use --to flag, MSGVAULT_REMOTE_URL env var, or [remote] url in config.toml")
@@ -222,7 +223,7 @@ func runExportToken(cmd *cobra.Command, args []string) error {
 		stderr:     os.Stderr,
 	}
 
-	allowInsecure := exportAllowInsecure || cfg.Remote.AllowInsecure
+	allowInsecure := options.exportAllowInsecure || cfg.Remote.AllowInsecure
 	result, err := exporter.export(email, remoteURL, apiKey, allowInsecure)
 	if err != nil {
 		return err
@@ -300,3 +301,5 @@ func sanitizeExportTokenPath(tokensDir, email string) string {
 
 	return cleanPath
 }
+
+func init() { registerCommandFactory(newExportTokenCommand) }

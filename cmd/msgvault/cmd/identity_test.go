@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -191,21 +190,13 @@ func TestIdentityDiscoverProviderSourceIDApplyConfirmJSONUsesHTTPAndSuppressesPr
 
 	savedCfg := cfg
 	savedUseLocal := useLocal
-	savedSourceID := identityDiscoverSourceID
-	savedApply := identityDiscoverApply
-	savedProvider := identityDiscoverProvider
-	savedConfirm := append([]string(nil), identityDiscoverConfirm...)
-	savedJSON := identityDiscoverJSON
+
 	t.Cleanup(func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		identityDiscoverSourceID = savedSourceID
-		identityDiscoverApply = savedApply
-		identityDiscoverProvider = savedProvider
-		identityDiscoverConfirm = savedConfirm
-		identityDiscoverJSON = savedJSON
+
 		for _, name := range []string{"source-id", "apply", "provider", "confirm", "json"} {
-			identityDiscoverCmd.Flags().Lookup(name).Changed = false
+			freshCommandForTest(t, newIdentityCommand(), "discover").Flags().Lookup(name).Changed = false
 		}
 	})
 	cfg = &config.Config{
@@ -223,7 +214,7 @@ func TestIdentityDiscoverProviderSourceIDApplyConfirmJSONUsesHTTPAndSuppressesPr
 	root.SetContext(testCtx)
 	root.SetOut(&stdout)
 	root.SetErr(&stderr)
-	root.AddCommand(identityCmd)
+	root.AddCommand(newIdentityCommand())
 	root.SetArgs([]string{
 		"identity", "discover", "--source-id", "14", "--apply", "--provider",
 		"--confirm", "weak@example.test", "--json",
@@ -237,15 +228,12 @@ func TestIdentityDiscoverProviderSourceIDApplyConfirmJSONUsesHTTPAndSuppressesPr
 }
 
 func TestIdentityDiscoverRejectsExplicitZeroSourceID(t *testing.T) {
-	savedSourceID := identityDiscoverSourceID
-	t.Cleanup(func() { identityDiscoverSourceID = savedSourceID })
-	cmd := &cobra.Command{Use: "discover [account]", Args: identityDiscoverArgs}
-	cmd.Flags().Int64Var(&identityDiscoverSourceID, "source-id", 0, "")
+	cmd := freshCommandForTest(t, newIdentityCommand(), "discover")
 	require.NoError(t, cmd.Flags().Set("source-id", "0"))
 
 	err := identityDiscoverArgs(cmd, nil)
 	if err == nil {
-		_, err = identitySourceSelector(cmd, "", identityDiscoverSourceID)
+		_, err = identitySourceSelector(cmd, "", 0)
 	}
 
 	require.Error(t, err)
@@ -292,11 +280,6 @@ func TestIdentityImportRequiresExactlyOneInputSource(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			assertions := assert.New(t)
 			requirements := require.New(t)
-			savedFile, savedStdin := identityImportFile, identityImportStdin
-			t.Cleanup(func() {
-				identityImportFile, identityImportStdin = savedFile, savedStdin
-			})
-			identityImportFile, identityImportStdin = test.file, test.stdin
 			cmd := &cobra.Command{Use: "import [account]"}
 			cmd.Flags().String("file", "", "")
 			cmd.Flags().Bool("stdin", false, "")
@@ -346,21 +329,13 @@ func TestIdentityImportStdinPreviewShowsHumanStates(t *testing.T) {
 func TestIdentityImportRejectsExplicitZeroSourceID(t *testing.T) {
 	assertions := assert.New(t)
 	requirements := require.New(t)
-	savedSourceID, savedFile, savedStdin := identityImportSourceID, identityImportFile, identityImportStdin
-	t.Cleanup(func() {
-		identityImportSourceID, identityImportFile, identityImportStdin = savedSourceID, savedFile, savedStdin
-	})
-	identityImportStdin = false
-	cmd := &cobra.Command{Use: "import [account]", Args: identityImportArgs}
-	cmd.Flags().Int64Var(&identityImportSourceID, "source-id", 0, "")
-	cmd.Flags().StringVar(&identityImportFile, "file", "", "")
-	cmd.Flags().Bool("stdin", false, "")
+	cmd := freshCommandForTest(t, newIdentityCommand(), "import")
 	requirements.NoError(cmd.Flags().Set("source-id", "0"))
 	requirements.NoError(cmd.Flags().Set("file", "aliases.txt"))
 
 	err := identityImportArgs(cmd, nil)
 	if err == nil {
-		_, err = identitySourceSelector(cmd, "", identityImportSourceID)
+		_, err = identitySourceSelector(cmd, "", 0)
 	}
 
 	requirements.Error(err)
@@ -404,9 +379,6 @@ func TestIdentityImportJSONFileApplyUsesSourceIDAndStableOutput(t *testing.T) {
 // identity subcommand tests.  Returns (store, root, stdout buffer, stderr buffer).
 func newIdentityCLITest(t *testing.T) (*store.Store, *cobra.Command, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-	useLocal := false
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "msgvault.db")
 
@@ -415,90 +387,14 @@ func newIdentityCLITest(t *testing.T) (*store.Store, *cobra.Command, *bytes.Buff
 	require.NoError(t, s.InitSchema())
 	t.Cleanup(func() { _ = s.Close() })
 
-	// Save and restore package-level globals.
-	savedCfg := cfg
-	savedLogger := logger
-	savedAccount := identityListAccount
-	savedCollection := identityListCollection
-	savedListJSON := identityListJSON
-	savedShowJSON := identityShowJSON
-	savedAddSignal := identityAddSignal
-	savedListSourceID := identityListSourceID
-	savedShowSourceID := identityShowSourceID
-	savedAddSourceID := identityAddSourceID
-	savedRemoveSourceID := identityRemoveSourceID
-	savedDiscoverSourceID := identityDiscoverSourceID
-	savedDiscoverApply := identityDiscoverApply
-	savedDiscoverProvider := identityDiscoverProvider
-	savedDiscoverConfirm := append([]string(nil), identityDiscoverConfirm...)
-	savedDiscoverJSON := identityDiscoverJSON
-	savedImportSourceID := identityImportSourceID
-	savedImportFile := identityImportFile
-	savedImportStdin := identityImportStdin
-	savedImportSignal := identityImportSignal
-	savedImportApply := identityImportApply
-	savedImportJSON := identityImportJSON
-	savedUseLocal := useLocal
-	t.Cleanup(func() {
-		cfg = savedCfg
-		logger = savedLogger
-		identityListAccount = savedAccount
-		identityListCollection = savedCollection
-		identityListJSON = savedListJSON
-		identityShowJSON = savedShowJSON
-		identityAddSignal = savedAddSignal
-		identityListSourceID = savedListSourceID
-		identityShowSourceID = savedShowSourceID
-		identityAddSourceID = savedAddSourceID
-		identityRemoveSourceID = savedRemoveSourceID
-		identityDiscoverSourceID = savedDiscoverSourceID
-		identityDiscoverApply = savedDiscoverApply
-		identityDiscoverProvider = savedDiscoverProvider
-		identityDiscoverConfirm = savedDiscoverConfirm
-		identityDiscoverJSON = savedDiscoverJSON
-		identityImportSourceID = savedImportSourceID
-		identityImportFile = savedImportFile
-		identityImportStdin = savedImportStdin
-		identityImportSignal = savedImportSignal
-		identityImportApply = savedImportApply
-		identityImportJSON = savedImportJSON
-		useLocal = savedUseLocal
-		// Reset cobra's "Changed" state so mutually-exclusive flag groups
-		// don't carry over between tests that share the package-level command.
-		for _, name := range []string{"account", "collection", "source-id", "json"} {
-			if f := identityListCmd.Flags().Lookup(name); f != nil {
-				f.Changed = false
-			}
-		}
-		for _, cmd := range []*cobra.Command{identityShowCmd, identityAddCmd, identityRemoveCmd} {
-			for _, name := range []string{"source-id", "json", "signal"} {
-				if f := cmd.Flags().Lookup(name); f != nil {
-					f.Changed = false
-				}
-			}
-		}
-		for _, name := range []string{"source-id", "apply", "provider", "confirm", "json"} {
-			if f := identityDiscoverCmd.Flags().Lookup(name); f != nil {
-				f.Changed = false
-			}
-		}
-		for _, name := range []string{"source-id", "file", "stdin", "signal", "apply", "json"} {
-			if f := identityImportCmd.Flags().Lookup(name); f != nil {
-				f.Changed = false
-			}
-		}
-	})
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
 	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
-	logger = slog.New(slog.DiscardHandler)
 	startStoreAPIDaemon(t, tmpDir, s, nil)
 
 	var stdout, stderr bytes.Buffer
@@ -506,7 +402,7 @@ func newIdentityCLITest(t *testing.T) (*store.Store, *cobra.Command, *bytes.Buff
 	root.SetContext(testCtx)
 	root.SetOut(&stdout)
 	root.SetErr(&stderr)
-	root.AddCommand(identityCmd)
+	root.AddCommand(newIdentityCommand())
 
 	return s, root, &stdout, &stderr
 }
@@ -523,11 +419,10 @@ func TestIdentityListUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 
 	savedCfg := cfg
 	savedUseLocal := useLocal
-	savedListJSON := identityListJSON
+
 	t.Cleanup(func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		identityListJSON = savedListJSON
 	})
 
 	cfg = &config.Config{
@@ -539,11 +434,10 @@ func TestIdentityListUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 	_ = testCtx
 	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
-	identityListJSON = false
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{Use: "list", RunE: runIdentityList}
+	cmd := freshCommandForTest(t, newIdentityCommand(), "list")
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -572,11 +466,10 @@ func TestIdentityShowUsesLocalDaemonHTTPAndPreservesHint(t *testing.T) {
 
 	savedCfg := cfg
 	savedUseLocal := useLocal
-	savedShowJSON := identityShowJSON
+
 	t.Cleanup(func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		identityShowJSON = savedShowJSON
 	})
 
 	cfg = &config.Config{
@@ -588,15 +481,10 @@ func TestIdentityShowUsesLocalDaemonHTTPAndPreservesHint(t *testing.T) {
 	_ = testCtx
 	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
-	identityShowJSON = false
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{
-		Use:  "show <account>",
-		Args: identityShowCmd.Args,
-		RunE: runIdentityShow,
-	}
+	cmd := freshCommandForTest(t, newIdentityCommand(), "show")
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -623,11 +511,10 @@ func TestIdentityAddUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 
 	savedCfg := cfg
 	savedUseLocal := useLocal
-	savedSignal := identityAddSignal
+
 	t.Cleanup(func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		identityAddSignal = savedSignal
 	})
 
 	cfg = &config.Config{
@@ -639,15 +526,10 @@ func TestIdentityAddUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 	_ = testCtx
 	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
-	identityAddSignal = "manual"
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{
-		Use:  "add <account> <identifier>",
-		Args: identityAddCmd.Args,
-		RunE: runIdentityAdd,
-	}
+	cmd := freshCommandForTest(t, newIdentityCommand(), "add")
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -692,11 +574,7 @@ func TestIdentityRemoveUsesLocalDaemonHTTPAndPreservesWarning(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{
-		Use:  "remove <account> <identifier>",
-		Args: identityRemoveCmd.Args,
-		RunE: runIdentityRemove,
-	}
+	cmd := freshCommandForTest(t, newIdentityCommand(), "remove")
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)

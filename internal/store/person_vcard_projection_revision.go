@@ -252,7 +252,7 @@ func (s *Store) bumpAllVCardProjectionsTx(
 // fingerprint recheck and the envelope UPDATE.
 func (s *Store) lockPersonVCardProjectionTx(
 	ctx context.Context, tx *loggedTx,
-	personID int64, expectedFingerprint string,
+	personID int64,
 ) error {
 	if lock := s.dialect.RowWriterLockSQL("persons", "vcard_projection_revision"); lock != "" {
 		if _, err := tx.ExecContext(ctx, lock, personID); err != nil {
@@ -260,17 +260,10 @@ func (s *Store) lockPersonVCardProjectionTx(
 		}
 	}
 	var locked int64
-	err := tx.QueryRowContext(ctx,
-		`SELECT id FROM persons WHERE id = ?`+s.dialect.SelectForUpdate(),
-		personID,
-	).Scan(&locked)
+	err := tx.QueryRowContext(ctx, "SELECT id FROM persons WHERE id = ?", personID).Scan(&locked)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return ErrPersonNotFound
-	case s.dialect.IsSerializationFailureError(err):
-		return &VCardProjectionConflictError{
-			PersonID: personID, Expected: expectedFingerprint,
-		}
 	case err != nil:
 		return fmt.Errorf("lock person %d vCard projection: %w", personID, err)
 	}

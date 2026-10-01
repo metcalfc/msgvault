@@ -206,7 +206,6 @@ func TestGmailDraftAbortClearsClaim(t *testing.T) {
 }
 
 func TestGmailDraftPendingOriginalRetainedByGC(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewTestStore(t)

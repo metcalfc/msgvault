@@ -319,9 +319,9 @@ func (s *Store) RecoverSyncRunsContext(ctx context.Context, recoveredAt time.Tim
 	if recoveredAt.IsZero() {
 		return 0, errors.New("sync run recovery time is required")
 	}
-	result, err := s.db.ExecContext(ctx, s.Rebind(`UPDATE sync_runs
+	result, err := s.db.ExecContext(ctx, `UPDATE sync_runs
 		SET status = 'failed', completed_at = ?, error_message = ?
-		WHERE status = 'running'`), s.dialect.TimestampParam(recoveredAt.UTC()), syncRunRestartedError)
+		WHERE status = 'running'`, s.dialect.TimestampParam(recoveredAt.UTC()), syncRunRestartedError)
 	if err != nil {
 		return 0, fmt.Errorf("recover source sync runs: %w", err)
 	}
@@ -460,7 +460,7 @@ func (s *Store) startSyncOnce(
 		}
 	}()
 
-	rebind := s.dialect.Rebind
+	rebind := identityRebind
 	now := s.dialect.Now()
 
 	// BEGIN IMMEDIATE serializes this check with concurrent source writers,
@@ -472,7 +472,7 @@ func (s *Store) startSyncOnce(
 	} else {
 		var lockedID int64
 		if err := conn.QueryRowContext(ctx,
-			rebind(`SELECT id FROM sources WHERE id = ?`+s.dialect.SelectForUpdate()),
+			rebind("SELECT id FROM sources WHERE id = ?"),
 			sourceID,
 		).Scan(&lockedID); err != nil {
 			return 0, fmt.Errorf("lock source row: %w", err)
@@ -544,27 +544,24 @@ func (s *Store) recoverAbandonedSyncSourceQueries(
 	ctx context.Context, q contextStatementQuerier, sourceID int64, now string,
 ) error {
 	var lockedID int64
-	if err := q.QueryRowContext(ctx,
-		s.Rebind(`SELECT id FROM sources WHERE id = ?`+s.dialect.SelectForUpdate()),
-		sourceID,
-	).Scan(&lockedID); err != nil {
+	if err := q.QueryRowContext(ctx, "SELECT id FROM sources WHERE id = ?", sourceID).Scan(&lockedID); err != nil {
 		return fmt.Errorf("lock source row: %w", err)
 	}
-	if _, err := q.ExecContext(ctx, s.Rebind(fmt.Sprintf(`
+	if _, err := q.ExecContext(ctx, fmt.Sprintf(`
 		UPDATE sync_operations
 		SET status = 'failed', finished_at = %s
 		WHERE source_id = ? AND status = 'running'
 		  AND EXISTS (
 			SELECT 1 FROM sync_runs
 			WHERE operation_id = sync_operations.id AND status = 'running'
-		  )`, now)), sourceID); err != nil {
+		  )`, now), sourceID); err != nil {
 		return fmt.Errorf("fail abandoned sync operation: %w", err)
 	}
-	if _, err := q.ExecContext(ctx, s.Rebind(fmt.Sprintf(`
+	if _, err := q.ExecContext(ctx, fmt.Sprintf(`
 		UPDATE sync_runs
 		SET status = 'failed', completed_at = %s,
 			error_message = ?
-		WHERE source_id = ? AND status = 'running'`, now)), syncWorkerExitedMessage, sourceID); err != nil {
+		WHERE source_id = ? AND status = 'running'`, now), syncWorkerExitedMessage, sourceID); err != nil {
 		return fmt.Errorf("fail abandoned sync: %w", err)
 	}
 	return nil
@@ -586,14 +583,14 @@ func (s *Store) rejectConflictingSyncOperation(
 	ctx context.Context, q contextStatementQuerier, sourceID int64, operationID string,
 ) error {
 	var conflictingID string
-	err := q.QueryRowContext(ctx, s.Rebind(`
+	err := q.QueryRowContext(ctx, `
 		SELECT id
 		FROM sync_operations
 		WHERE source_id = ?
 		  AND status IN ('pending', 'running')
 		  AND id != ?
 		LIMIT 1
-	`), sourceID, operationID).Scan(&conflictingID)
+	`, sourceID, operationID).Scan(&conflictingID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
@@ -969,11 +966,11 @@ func (s *Store) CompleteSyncContext(ctx context.Context, syncID int64, finalHist
 	completionStore := s.withoutSyncScope()
 	err := completionStore.withTxContext(ctx, func(tx *loggedTx) error {
 		var sourceID int64
-		err := tx.QueryRowContext(ctx, s.Rebind(fmt.Sprintf(`
+		err := tx.QueryRowContext(ctx, fmt.Sprintf(`
 			UPDATE sync_runs
 			SET status = 'completed', completed_at = %s, cursor_after = ?
 			WHERE id = ? AND status = 'running'
-			RETURNING source_id`, s.dialect.Now())), finalHistoryID, syncID).Scan(&sourceID)
+			RETURNING source_id`, s.dialect.Now()), finalHistoryID, syncID).Scan(&sourceID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("complete sync %d: %w", syncID, ErrSyncRunSuperseded)
 		}
@@ -1577,10 +1574,8 @@ func (s *Store) GetOrCreateSource(sourceType, identifier string) (*Source, error
 	// All would miss this source. Acceptable for a single-user tool;
 	// a future refactor can fold this into a withTx.
 	if _, err := s.db.Exec(
-		s.dialect.InsertOrIgnore(
-			`INSERT OR IGNORE INTO collection_sources (collection_id, source_id)
+		`INSERT OR IGNORE INTO collection_sources (collection_id, source_id)
 			 SELECT id, ? FROM collections WHERE name = ?`,
-		),
 		source.ID, DefaultCollectionName,
 	); err != nil {
 		slog.Warn("failed to add source to default collection (self-heals on next InitSchema)",
@@ -1695,7 +1690,7 @@ func (s *Store) UpdateSourceSyncConfig(sourceID int64, configJSON string) error 
 		UPDATE sources
 		SET sync_config = %s, updated_at = %s
 		WHERE id = ?
-	`, s.dialect.JSONBindExpr(), s.dialect.Now()), configJSON, sourceID)
+	`, "?", s.dialect.Now()), configJSON, sourceID)
 	return err
 }
 

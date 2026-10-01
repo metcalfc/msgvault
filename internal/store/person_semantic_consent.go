@@ -41,9 +41,8 @@ func (s *Store) EnsurePersonSemanticEmbeddingProfile(
 			(fingerprint, purpose, destination, api_format, model, api_key_env,
 			 retention_posture, training_posture, renderer_policy,
 			 disclosed_field_classes, corpus_scope, policy_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, `+s.dialect.JSONBindExpr()+`, ?, `+s.dialect.JSONBindExpr()+`)
-		ON CONFLICT (fingerprint) DO NOTHING`,
-		canonical.Fingerprint, canonical.Purpose, canonical.Destination,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (fingerprint) DO NOTHING`, canonical.Fingerprint, canonical.Purpose, canonical.Destination,
 		canonical.APIFormat, canonical.Model, canonical.APIKeyEnv,
 		canonical.RetentionPosture, canonical.TrainingPosture,
 		canonical.RendererPolicy, string(disclosed), canonical.CorpusScope,

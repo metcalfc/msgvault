@@ -1,3 +1,4 @@
+import { failureMessage } from '../api/failure-message';
 import {
   createEmployment as generatedCreateEmployment,
   createOrganization as generatedCreateOrganization,
@@ -868,10 +869,4 @@ function replaceByID<
   return items.some((item) => item.id === replacement.id)
     ? items.map((item) => (item.id === replacement.id ? replacement : item))
     : [...items, replacement];
-}
-function failureMessage(error: unknown, status: number): string {
-  if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string')
-    return error.message;
-  if (error instanceof Error && error.message) return error.message;
-  return status > 0 ? `Request failed (${status}).` : 'Request failed.';
 }

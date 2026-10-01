@@ -163,14 +163,14 @@ func (s *Store) ListAttachmentChanges(
 	if !consumer.ReconciliationComplete {
 		return nil, errors.New("attachment change consumer requires full reconciliation before replay")
 	}
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT sequence, event_kind, old_message_id, new_message_id,
 		       old_attachment_id, new_attachment_id,
 		       old_content_hash, new_content_hash,
 		       old_source_part_key, new_source_part_key,
 		       old_role, new_role, created_at
 		FROM attachment_change_log
-		WHERE sequence > ? ORDER BY sequence LIMIT ?`), consumer.LastSequence, limit)
+		WHERE sequence > ? ORDER BY sequence LIMIT ?`, consumer.LastSequence, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list attachment changes: %w", err)
 	}

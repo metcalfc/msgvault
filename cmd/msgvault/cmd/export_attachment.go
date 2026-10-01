@@ -14,38 +14,11 @@ import (
 	"go.kenn.io/msgvault/internal/export"
 )
 
-var (
-	exportAttachmentOutput string
-	exportAttachmentJSON   bool
-	exportAttachmentBase64 bool
-)
-
-var exportAttachmentCmd = &cobra.Command{
-	Use:   "export-attachment <content-hash>",
-	Short: "Export an attachment by content hash",
-	Long: `Export an attachment binary by its SHA-256 content hash.
-
-Get the content hash from 'show-message --json':
-  msgvault show-message 45 --json | jq '.attachments[0].content_hash'
-
-Examples:
-  msgvault export-attachment 61ccf192b5bd358738802dc2676d3ceab856f47d26dd29681ac3d335bfd5bbd0
-  msgvault export-attachment 61ccf192... --output invoice.pdf
-
-To export all attachments from a message with original filenames, use
-'msgvault export-attachments <message-id> -o <dir>', which sanitizes
-filenames. Attachment filenames are sender-controlled: do not pass the
-JSON 'filename' field to -o (a name like ../../evil escapes the output
-directory). Use content hashes or your own fixed paths instead.
-
-  msgvault export-attachment 61ccf192... -o -       # stdout (binary)
-  msgvault export-attachment 61ccf192... --base64  # stdout (base64)
-  msgvault export-attachment 61ccf192... --json    # JSON with base64 data`,
-	Args: cobra.ExactArgs(1),
-	RunE: runExportAttachment,
-}
-
 func runExportAttachment(cmd *cobra.Command, args []string) error {
+	exportAttachmentOutput, _ := cmd.Flags().GetString("output")
+	exportAttachmentJSON, _ := cmd.Flags().GetBool(flagJSON)
+	exportAttachmentBase64, _ := cmd.Flags().GetBool("base64")
+
 	contentHash := args[0]
 
 	// Validate hash format using shared validation
@@ -73,6 +46,10 @@ func runExportAttachmentHTTP(cmd *cobra.Command, contentHash string) error {
 	if cmd == nil {
 		return errors.New("command context is required for HTTP attachment export")
 	}
+	exportAttachmentOutput, _ := cmd.Flags().GetString("output")
+	exportAttachmentJSON, _ := cmd.Flags().GetBool(flagJSON)
+	exportAttachmentBase64, _ := cmd.Flags().GetBool("base64")
+
 	s, _, err := OpenHTTPStore(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
@@ -95,7 +72,7 @@ func runExportAttachmentHTTP(cmd *cobra.Command, contentHash string) error {
 	if exportAttachmentBase64 {
 		return errors.Join(exportAttachmentStreamAsBase64(body), body.Close())
 	}
-	return exportAttachmentBinaryDownload(body)
+	return exportAttachmentBinaryDownload(body, exportAttachmentOutput)
 }
 
 func exportAttachmentDataAsJSON(data []byte, contentHash string) error {
@@ -121,7 +98,7 @@ func exportAttachmentStreamAsBase64(r io.Reader) error {
 	return nil
 }
 
-func exportAttachmentBinaryDownload(body io.ReadCloser) (err error) {
+func exportAttachmentBinaryDownload(body io.ReadCloser, outputPath string) (err error) {
 	sourceClosed := false
 	closeSource := func() error {
 		if sourceClosed {
@@ -134,7 +111,6 @@ func exportAttachmentBinaryDownload(body io.ReadCloser) (err error) {
 		err = errors.Join(err, closeSource())
 	}()
 
-	outputPath := exportAttachmentOutput
 	if outputPath == "" || outputPath == "-" {
 		_, copyErr := io.Copy(os.Stdout, body)
 		return errors.Join(copyErr, closeSource())
@@ -246,9 +222,37 @@ func replaceOutputFile(tmpPath, outputPath string) error {
 	return nil
 }
 
-func init() {
-	rootCmd.AddCommand(exportAttachmentCmd)
-	exportAttachmentCmd.Flags().StringVarP(&exportAttachmentOutput, "output", "o", "", "Output file path (default: stdout, use - for stdout)")
-	exportAttachmentCmd.Flags().BoolVar(&exportAttachmentJSON, flagJSON, false, "Output as JSON with base64-encoded data")
-	exportAttachmentCmd.Flags().BoolVar(&exportAttachmentBase64, "base64", false, "Output raw base64 to stdout")
+func newExportAttachmentCmd() *cobra.Command {
+	exportAttachmentCmd := &cobra.Command{
+		Use:   "export-attachment <content-hash>",
+		Short: "Export an attachment by content hash",
+		Long: `Export an attachment binary by its SHA-256 content hash.
+
+Get the content hash from 'show-message --json':
+  msgvault show-message 45 --json | jq '.attachments[0].content_hash'
+
+Examples:
+  msgvault export-attachment 61ccf192b5bd358738802dc2676d3ceab856f47d26dd29681ac3d335bfd5bbd0
+  msgvault export-attachment 61ccf192... --output invoice.pdf
+
+To export all attachments from a message with original filenames, use
+'msgvault export-attachments <message-id> -o <dir>', which sanitizes
+filenames. Attachment filenames are sender-controlled: do not pass the
+JSON 'filename' field to -o (a name like ../../evil escapes the output
+directory). Use content hashes or your own fixed paths instead.
+
+  msgvault export-attachment 61ccf192... -o -       # stdout (binary)
+  msgvault export-attachment 61ccf192... --base64  # stdout (base64)
+  msgvault export-attachment 61ccf192... --json    # JSON with base64 data`,
+		Args: cobra.ExactArgs(1),
+		RunE: runExportAttachment,
+	}
+
+	exportAttachmentCmd.Flags().StringP("output", "o", "", "Output file path (default: stdout, use - for stdout)")
+	exportAttachmentCmd.Flags().Bool(flagJSON, false, "Output as JSON with base64-encoded data")
+	exportAttachmentCmd.Flags().Bool("base64", false, "Output raw base64 to stdout")
+
+	return exportAttachmentCmd
 }
+
+func init() { registerCommandFactory(newExportAttachmentCmd) }

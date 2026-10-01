@@ -26,15 +26,7 @@ type ConversationResponse struct {
 	Total     int64           `json:"total"`
 }
 
-type conversationStore interface {
-	ConversationExists(conversationID int64) (bool, error)
-	GetConversationWindow(conversationID, anchorID int64, before, after int) (*store.ConversationWindow, error)
-}
-
-// ConversationWindowStore is the context-aware conversation reader that
-// production store adapters should implement so conversation endpoints work
-// under a cancellable request context instead of falling back to the
-// legacy background-context path.
+// ConversationWindowStore reads bounded conversations within the request context.
 type ConversationWindowStore interface {
 	ConversationExistsContext(ctx context.Context, conversationID int64) (bool, error)
 	GetConversationWindowContext(
@@ -46,14 +38,11 @@ type ConversationWindowStore interface {
 }
 
 func (s *Server) conversationExists(ctx context.Context, conversationID int64) (bool, error) {
-	if reader, ok := s.store.(ConversationWindowStore); ok {
-		return reader.ConversationExistsContext(ctx, conversationID)
-	}
-	reader, ok := s.store.(conversationStore)
+	reader, ok := s.store.(ConversationWindowStore)
 	if !ok {
 		return false, errors.New("conversation reader unavailable")
 	}
-	return reader.ConversationExists(conversationID)
+	return reader.ConversationExistsContext(ctx, conversationID)
 }
 
 func (s *Server) conversationWindow(
@@ -62,17 +51,11 @@ func (s *Server) conversationWindow(
 	before, after int,
 	start, end *time.Time,
 ) (*store.ConversationWindow, error) {
-	if reader, ok := s.store.(ConversationWindowStore); ok {
-		return reader.GetConversationWindowContext(ctx, conversationID, anchorID, before, after, start, end)
-	}
-	if start != nil || end != nil {
-		return nil, errors.New("conversation reader does not support time-bounded windows")
-	}
-	reader, ok := s.store.(conversationStore)
+	reader, ok := s.store.(ConversationWindowStore)
 	if !ok {
 		return nil, errors.New("conversation reader unavailable")
 	}
-	return reader.GetConversationWindow(conversationID, anchorID, before, after)
+	return reader.GetConversationWindowContext(ctx, conversationID, anchorID, before, after, start, end)
 }
 
 func conversationBound(r *http.Request, name string) (int, error) {

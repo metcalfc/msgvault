@@ -47,7 +47,6 @@ func TestSQLiteBuildFTSTerm(t *testing.T) {
 }
 
 func TestBuildFTSBodyTermScopesExactBodyField(t *testing.T) {
-
 	t.Run("SQLite body column", func(t *testing.T) {
 		expr, arg := (SQLiteQueryDialect{}).BuildFTSBodyTerm([]string{"foo", "bar"})
 		assert.Equal(t, "messages_fts MATCH ?", expr)

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import corpus from './cron-corpus.json';
-import { CRON_PRESETS, describeCron, joinCron, parseCron, scheduleSummary, splitCron } from './cron';
+import { CRON_PRESETS, joinCron, parseCron, scheduleSummary, splitCron } from './cron';
 
 describe('parseCron', () => {
   it('labels each token with its field and position', () => {
@@ -67,13 +67,13 @@ describe('parseCron', () => {
     const parsed = parseCron('CRON_TZ=US/Eastern 0 3 * * *');
     expect(parsed.error).toBeUndefined();
     expect(parsed.zone).toBe('US/Eastern');
-    expect(describeCron('CRON_TZ=Mars/Olympus 0 3 * * *')).toBe('At 03:00 every day, Mars/Olympus time');
+    expect(scheduleSummary('CRON_TZ=Mars/Olympus 0 3 * * *')).toBe('At 03:00 every day, Mars/Olympus time');
   });
 
   it('reads a prefix with no zone name as UTC, like the daemon', () => {
     expect(parseCron('CRON_TZ= 0 3 * * *').zone).toBe('UTC');
     expect(splitCron('TZ= 0 3 * * *')).toEqual({ zone: 'UTC', expression: '0 3 * * *' });
-    expect(describeCron('CRON_TZ= 0 3 * * *')).toBe('At 03:00 every day, UTC time');
+    expect(scheduleSummary('CRON_TZ= 0 3 * * *')).toBe('At 03:00 every day, UTC time');
   });
 
   it('agrees with the daemon parser on the shared corpus', () => {
@@ -91,7 +91,7 @@ describe('parseCron', () => {
   });
 });
 
-describe('describeCron', () => {
+describe('scheduleSummary', () => {
   it.each([
     ['* * * * *', 'Every minute'],
     ['*/15 * * * *', 'Every 15 minutes'],
@@ -123,19 +123,19 @@ describe('describeCron', () => {
     ['CRON_TZ=America/New_York 0 3 * * *', 'At 03:00 every day, America/New York time'],
     ['TZ=UTC */15 * * * *', 'Every 15 minutes, UTC time'],
   ])('describes %s as %s', (expression, description) => {
-    expect(describeCron(expression)).toBe(description);
+    expect(scheduleSummary(expression)).toBe(description);
   });
 
   it('describes every preset without falling back to raw syntax', () => {
     for (const preset of CRON_PRESETS) {
-      const description = describeCron(preset.expression);
+      const description = scheduleSummary(preset.expression);
       expect(description).not.toContain('*');
       expect(description).not.toContain('/');
     }
   });
 
-  it('returns the parse error for invalid input', () => {
-    expect(describeCron('0 3 * *')).toBe('Missing weekday.');
+  it('preserves an invalid stored expression', () => {
+    expect(scheduleSummary('0 3 * *')).toBe('0 3 * *');
   });
 });
 

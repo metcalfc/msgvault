@@ -59,7 +59,6 @@ func TestMeetingProjectionUpgradeAllFormatsTwice(t *testing.T) {
 }
 
 func TestMeetingProjectionCopySubsetRebuildsFromLegacyEvidence(t *testing.T) {
-
 	for _, legacy := range []bool{false, true} {
 		t.Run(fmt.Sprint("legacy=", legacy), func(t *testing.T) {
 			assertions := assert.New(t)

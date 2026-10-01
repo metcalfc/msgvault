@@ -8,10 +8,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var embeddingsOptimizeWorkerCmd = &cobra.Command{
-	Use:    embeddingsOptimizeWorkerName,
-	Hidden: true,
-	RunE: func(*cobra.Command, []string) error {
-		return errors.New("SQLite accelerator worker unavailable without sqlite_vec")
-	},
+func newEmbeddingsOptimizeWorkerCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:    embeddingsOptimizeWorkerName,
+		Hidden: true,
+		RunE: func(*cobra.Command, []string) error {
+			return errors.New("SQLite accelerator worker unavailable without sqlite_vec")
+		},
+	}
 }

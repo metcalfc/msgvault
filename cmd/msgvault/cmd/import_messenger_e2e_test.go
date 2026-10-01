@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/store"
@@ -24,11 +23,6 @@ func saveMessengerState(t *testing.T) func() {
 
 	prevCfg := cfg
 	prevLogger := logger
-	prevMe := importMessengerMe
-	prevFormat := importMessengerFormat
-	prevLimit := importMessengerLimit
-	prevNoResume := importMessengerNoResume
-	prevCheckpoint := importMessengerCheckpointEvery
 	prevCfgFile := cfgFile
 	prevHomeDir := homeDir
 	prevVerbose := verbose
@@ -37,11 +31,6 @@ func saveMessengerState(t *testing.T) func() {
 	return func() {
 		cfg = prevCfg
 		logger = prevLogger
-		importMessengerMe = prevMe
-		importMessengerFormat = prevFormat
-		importMessengerLimit = prevLimit
-		importMessengerNoResume = prevNoResume
-		importMessengerCheckpointEvery = prevCheckpoint
 		cfgFile = prevCfgFile
 		homeDir = prevHomeDir
 		verbose = prevVerbose
@@ -120,6 +109,7 @@ func TestImportMessenger_HTML_EndToEnd(t *testing.T) {
 }
 
 func TestImportMessengerRunsPostSourceMigrationWithoutMessengerIdentity(t *testing.T) {
+	markDaemonCLISubprocessForTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	tmp := t.TempDir()
@@ -137,18 +127,15 @@ func TestImportMessengerRunsPostSourceMigrationWithoutMessengerIdentity(t *testi
 
 	fixture, err := filepath.Abs("../../../internal/fbmessenger/testdata/json_simple")
 	require.NoError(err)
-	importMessengerMe = "test.user@facebook.messenger"
-	importMessengerFormat = "auto"
-	importMessengerCheckpointEvery = 200
 
 	var stdout bytes.Buffer
-	cmd := &cobra.Command{Use: "import-messenger"}
-	cmd.SetContext(testCtx)
+	cmd := newImportMessengerCommand()
+	require.NoError(cmd.Flags().Set("me", "test.user@facebook.messenger"))
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(io.Discard)
 
-	require.NoError(runImportMessenger(cmd, fixture), "import-messenger")
+	require.NoError(cmd.RunE(cmd, []string{fixture}), "import-messenger")
 	assert.Contains(stdout.String(), "Import complete", "stdout missing Import complete")
 
 	st, err = store.Open(testCfg.DatabaseDSN())

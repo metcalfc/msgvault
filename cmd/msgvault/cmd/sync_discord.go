@@ -189,5 +189,7 @@ func importDiscordSource(
 }
 
 func init() {
-	rootCmd.AddCommand(newSyncDiscordCmd(defaultDiscordCommandDeps()))
+	registerCommandFactory(func() *cobra.Command {
+		return newSyncDiscordCmd(defaultDiscordCommandDeps())
+	})
 }

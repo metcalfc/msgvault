@@ -184,7 +184,6 @@ func TestStore_DuplicateGroupFetchMatchesWhitespaceDiscoveryGroups(t *testing.T)
 }
 
 func TestStore_DuplicateGroupFetchPreservesInvalidUTF8(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)
@@ -283,7 +282,6 @@ func TestStore_DuplicateGroupFetchPreservesNonASCIIAndControlEdges(t *testing.T)
 }
 
 func TestStore_DuplicateGroupFetchPreservesEmbeddedNUL(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)
@@ -312,7 +310,6 @@ func TestStore_DuplicateGroupFetchPreservesEmbeddedNUL(t *testing.T) {
 }
 
 func TestStore_DuplicateDiscoveryDoesNotTruncateAtEmbeddedNUL(t *testing.T) {
-
 	f := storetest.New(t)
 	newRFC822Message(t, f, "nul-tail-c", "<ab>\x00c>")
 	newRFC822Message(t, f, "nul-tail-d", "<ab>\x00d>")
@@ -323,7 +320,6 @@ func TestStore_DuplicateDiscoveryDoesNotTruncateAtEmbeddedNUL(t *testing.T) {
 }
 
 func TestStore_DuplicateGroupsPreserveNULTailAsOwnKey(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)

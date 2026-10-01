@@ -84,7 +84,7 @@ func (s *Store) CreateSavedView(ctx context.Context, input SavedViewInput) (*Sav
 		VALUES (?, ?, %s, ?)
 		RETURNING id, name, description, canonical_state, schema_version,
 		          revision, created_at, updated_at
-	`, s.dialect.JSONBindExpr())
+	`, "?")
 	view, err := scanSavedView(s.db.QueryRowContext(ctx, query,
 		validated.Name, validated.Description, string(validated.CanonicalState), validated.SchemaVersion))
 	if err != nil {
@@ -152,7 +152,7 @@ func (s *Store) UpdateSavedView(
 		WHERE id = ? AND revision = ?
 		RETURNING id, name, description, canonical_state, schema_version,
 		          revision, created_at, updated_at
-	`, s.dialect.JSONBindExpr(), s.dialect.Now())
+	`, "?", s.dialect.Now())
 	view, err := scanSavedView(s.db.QueryRowContext(ctx, query,
 		validated.Name, validated.Description, string(validated.CanonicalState), validated.SchemaVersion,
 		id, expectedRevision))

@@ -97,8 +97,6 @@ func TestAddTeamsUsesDaemonRunner(t *testing.T) {
 func TestAddCalendarUsesDaemonRunner(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	saveCalendarGlobals := saveCalendarCommandGlobals()
-	t.Cleanup(saveCalendarGlobals)
 
 	server, runRequests, planRequests := newDaemonCLIAddCalendarTestServer(t, func(req daemonCLIAddCalendarPlanTestRequest) {
 		assert.Equal("alice@example.com", req.Email, "plan email")
@@ -142,8 +140,6 @@ func TestAddCalendarUsesDaemonRunner(t *testing.T) {
 func TestSyncCalendarUsesDaemonRunner(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	saveCalendarGlobals := saveCalendarCommandGlobals()
-	t.Cleanup(saveCalendarGlobals)
 
 	server, requests := newDaemonCLIRunnerTestServer(t, func(req daemonCLIRunTestRequest) {
 		assert.Equal([]string{
@@ -190,8 +186,6 @@ func TestSyncCalendarUsesDaemonRunner(t *testing.T) {
 func TestAddCalendarPromptsScopeEscalationBeforeDaemonRunner(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	saveCalendarGlobals := saveCalendarCommandGlobals()
-	t.Cleanup(saveCalendarGlobals)
 
 	server, runRequests, planRequests := newDaemonCLIAddCalendarTestServer(t, func(req daemonCLIAddCalendarPlanTestRequest) {
 		assert.Equal("alice@example.com", req.Email, "plan email")
@@ -226,54 +220,4 @@ func TestAddCalendarPromptsScopeEscalationBeforeDaemonRunner(t *testing.T) {
 	assert.Equal(1, int(runRequests.Load()), "runner endpoint calls")
 	assert.Contains(stdout.String(), "CALENDAR ACCESS REQUIRED", "frontend prompt")
 	assert.Contains(stdout.String(), "Registered 1 calendar", "daemon stdout")
-}
-
-func saveCalendarCommandGlobals() func() {
-	saved := struct {
-		addOAuthApp   string
-		addHeadless   bool
-		addAll        bool
-		addMinRole    string
-		addCalendars  []string
-		syncOAuthApp  string
-		syncFull      bool
-		syncLimit     int
-		syncAfter     string
-		syncBefore    string
-		syncNoResume  bool
-		syncAll       bool
-		syncMinRole   string
-		syncCalendars []string
-	}{
-		addOAuthApp:   calAddOAuthApp,
-		addHeadless:   calAddHeadless,
-		addAll:        calAddAll,
-		addMinRole:    calAddMinRole,
-		addCalendars:  append([]string(nil), calAddCalendars...),
-		syncOAuthApp:  calSyncOAuthApp,
-		syncFull:      calSyncFull,
-		syncLimit:     calSyncLimit,
-		syncAfter:     calSyncAfter,
-		syncBefore:    calSyncBefore,
-		syncNoResume:  calSyncNoResume,
-		syncAll:       calSyncAll,
-		syncMinRole:   calSyncMinRole,
-		syncCalendars: append([]string(nil), calSyncCalendars...),
-	}
-	return func() {
-		calAddOAuthApp = saved.addOAuthApp
-		calAddHeadless = saved.addHeadless
-		calAddAll = saved.addAll
-		calAddMinRole = saved.addMinRole
-		calAddCalendars = saved.addCalendars
-		calSyncOAuthApp = saved.syncOAuthApp
-		calSyncFull = saved.syncFull
-		calSyncLimit = saved.syncLimit
-		calSyncAfter = saved.syncAfter
-		calSyncBefore = saved.syncBefore
-		calSyncNoResume = saved.syncNoResume
-		calSyncAll = saved.syncAll
-		calSyncMinRole = saved.syncMinRole
-		calSyncCalendars = saved.syncCalendars
-	}
 }

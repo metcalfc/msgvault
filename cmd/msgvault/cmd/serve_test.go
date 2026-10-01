@@ -379,7 +379,7 @@ func TestRunServeStartsReadOnlyWithoutOAuthConfig(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cmd := &cobra.Command{Use: serveCmd.Use}
+	cmd := newServeCommand()
 	cmd.SetContext(testInvocationContext(ctx, cfg, invocationOptions{}))
 	errCh := make(chan error, 1)
 	go func() {
@@ -422,7 +422,7 @@ func TestRunServeFailsPendingImportFromPreviousDaemon(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	cmd := &cobra.Command{Use: serveCmd.Use}
+	cmd := newServeCommand()
 	cmd.SetContext(testInvocationContext(ctx, cfg, invocationOptions{}))
 	errCh := make(chan error, 1)
 	go func() { errCh <- runServe(cmd, nil) }()
@@ -517,7 +517,7 @@ func TestRunServeAutoSelectsAPIPortWhenUnconfigured(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cmd := &cobra.Command{Use: serveCmd.Use}
+	cmd := newServeCommand()
 	cmd.SetContext(testInvocationContext(ctx, cfg, invocationOptions{}))
 	errCh := make(chan error, 1)
 	serveDone := make(chan struct{})
@@ -655,7 +655,7 @@ func TestRunServeDuckDBReportsInitializingWithoutSQLFallback(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	t.Cleanup(cancel)
-	cmd := &cobra.Command{Use: serveCmd.Use}
+	cmd := newServeCommand()
 	cmd.SetContext(testInvocationContext(ctx, cfg, invocationOptions{}))
 	errCh := make(chan error, 1)
 	go func() { errCh <- runServe(cmd, nil) }()
@@ -750,7 +750,7 @@ func TestRunServeAutoSwitchesToDuckDBAfterBackgroundBuild(t *testing.T) {
 		return err
 	})
 
-	cmd := &cobra.Command{Use: serveCmd.Use}
+	cmd := newServeCommand()
 	cmd.SetContext(testInvocationContext(ctx, cfg, invocationOptions{}))
 	errCh := make(chan error, 1)
 	go func() { errCh <- runServe(cmd, nil) }()

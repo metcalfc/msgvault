@@ -15,22 +15,11 @@ import (
 	"go.kenn.io/msgvault/internal/search"
 )
 
-var (
-	searchLimit         int
-	searchOffset        int
-	searchJSON          bool
-	searchAccount       string
-	searchCollection    string
-	searchMode          string
-	searchExplain       bool
-	searchDeletionScope string
-	searchMessageTypes  []string
-)
-
-var searchCmd = &cobra.Command{
-	Use:   "search <query>",
-	Short: "Search messages using Gmail-like query syntax",
-	Long: `Search your archive using Gmail-like query syntax. Email, chat, and
+func newSearchCommand() *cobra.Command {
+	searchCmd := &cobra.Command{
+		Use:   "search <query>",
+		Short: "Search messages using Gmail-like query syntax",
+		Long: `Search your archive using Gmail-like query syntax. Email, chat, and
 meeting records are all searchable; use message_type: to narrow to one of them.
 
 Uses the configured remote server when [remote].url is set; otherwise uses
@@ -64,88 +53,106 @@ Examples:
   msgvault search 'list:"<announce.example.org>"'
   msgvault search project report newer_than:30d
   msgvault search '"exact phrase"' label:INBOX`,
-	Args: cobra.ArbitraryArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// Join all args to form the query (allows unquoted multi-term searches)
-		queryStr := strings.Join(args, " ")
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			searchLimit, _ := cmd.Flags().GetInt("limit")
+			searchOffset, _ := cmd.Flags().GetInt("offset")
+			searchAccount, _ := cmd.Flags().GetString("account")
+			searchCollection, _ := cmd.Flags().GetString("collection")
+			searchMode, _ := cmd.Flags().GetString("mode")
+			searchExplain, _ := cmd.Flags().GetBool("explain")
+			searchDeletionScope, _ := cmd.Flags().GetString("deletion-scope")
+			searchMessageTypes, _ := cmd.Flags().GetStringSlice("message-type")
+			// Join all args to form the query (allows unquoted multi-term searches)
+			queryStr := strings.Join(args, " ")
 
-		if queryStr == "" && searchAccount == "" && searchCollection == "" && len(searchMessageTypes) == 0 {
-			return usageErr(cmd, errors.New("provide a search query or --account/--collection flag"))
-		}
+			if queryStr == "" && searchAccount == "" && searchCollection == "" && len(searchMessageTypes) == 0 {
+				return usageErr(cmd, errors.New("provide a search query or --account/--collection flag"))
+			}
 
-		// Validate mode before any scope work so we fail fast on a typo.
-		if searchMode != "fts" && searchMode != "vector" && searchMode != "hybrid" {
-			return usageErr(cmd, fmt.Errorf("invalid --mode: %q (want fts|vector|hybrid)", searchMode))
-		}
-		if searchDeletionScope != "active" && searchDeletionScope != "deleted" && searchDeletionScope != "any" {
-			return usageErr(cmd, fmt.Errorf(
-				"invalid --deletion-scope: %q (want active|deleted|any)", searchDeletionScope))
-		}
-		if searchMode != "fts" && searchDeletionScope != "active" {
-			return usageErr(cmd, fmt.Errorf(
-				"--deletion-scope=%s is only supported with --mode=fts; vector and hybrid indexes cover active messages only",
-				searchDeletionScope,
-			))
-		}
-
-		// Validate --message-type against the known set, like --mode, so a
-		// typo (e.g. carrier_pigeon) fails fast instead of silently
-		// returning no results.
-		for _, mt := range searchMessageTypes {
-			if !query.IsKnownMessageType(mt) {
+			// Validate mode before any scope work so we fail fast on a typo.
+			if searchMode != "fts" && searchMode != "vector" && searchMode != "hybrid" {
+				return usageErr(cmd, fmt.Errorf("invalid --mode: %q (want fts|vector|hybrid)", searchMode))
+			}
+			if searchDeletionScope != "active" && searchDeletionScope != "deleted" && searchDeletionScope != "any" {
 				return usageErr(cmd, fmt.Errorf(
-					"invalid --message-type: %q (want one of: %s)",
-					mt, strings.Join(query.KnownMessageTypes, ", "),
+					"invalid --deletion-scope: %q (want active|deleted|any)", searchDeletionScope))
+			}
+			if searchMode != "fts" && searchDeletionScope != "active" {
+				return usageErr(cmd, fmt.Errorf(
+					"--deletion-scope=%s is only supported with --mode=fts; vector and hybrid indexes cover active messages only",
+					searchDeletionScope,
 				))
 			}
-		}
 
-		if searchLimit <= 0 {
-			return usageErr(cmd, fmt.Errorf("--limit must be a positive integer, got %d", searchLimit))
-		}
-		if searchOffset < 0 {
-			return usageErr(cmd, fmt.Errorf("--offset must be non-negative, got %d", searchOffset))
-		}
+			// Validate --message-type against the known set, like --mode, so a
+			// typo (e.g. carrier_pigeon) fails fast instead of silently
+			// returning no results.
+			for _, mt := range searchMessageTypes {
+				if !query.IsKnownMessageType(mt) {
+					return usageErr(cmd, fmt.Errorf(
+						"invalid --message-type: %q (want one of: %s)",
+						mt, strings.Join(query.KnownMessageTypes, ", "),
+					))
+				}
+			}
 
-		// Reject known operators with invalid values (e.g. before:2025-13-45)
-		// rather than silently dropping the filter and running a wider query.
-		// Checked before the empty-query test so the user sees the offending
-		// value instead of a misleading "empty search query".
-		if err := search.Parse(queryStr).Err(); err != nil {
-			return usageErr(cmd, err)
-		}
-		if searchMode == "fts" {
-			parsed := search.Parse(queryStr)
-			parsed.MessageTypes = append(parsed.MessageTypes, searchMessageTypes...)
-			if parsed.IsEmpty() && searchAccount == "" && searchCollection == "" {
-				return errors.New("empty search query")
+			if searchLimit <= 0 {
+				return usageErr(cmd, fmt.Errorf("--limit must be a positive integer, got %d", searchLimit))
 			}
-		}
-		if searchMode == "fts" {
-			return runHTTPSearch(cmd, queryStr)
-		}
-		if searchMode != "fts" && searchOffset > 0 {
-			return usageErr(cmd, fmt.Errorf("--offset is not supported with --mode=%s (pagination is single-page)", searchMode))
-		}
-		// Vector and hybrid modes need free-text terms to embed; both
-		// an empty raw query and a filter-only query (e.g. `from:alice`)
-		// would fail at the embed call. Check both up front and surface
-		// a CLI error rather than a late engine-level one. FTS still
-		// allows scoped queryless searches.
-		if searchMode != "fts" {
-			if queryStr == "" {
-				return usageErr(cmd, fmt.Errorf("--mode=%s requires query text to embed; pass a query or use --mode=fts", searchMode))
+			if searchOffset < 0 {
+				return usageErr(cmd, fmt.Errorf("--offset must be non-negative, got %d", searchOffset))
 			}
-			if len(search.Parse(queryStr).TextTerms) == 0 {
-				return usageErr(cmd, fmt.Errorf("--mode=%s requires free-text terms to embed; %q parsed to filters only — add a search phrase or use --mode=fts", searchMode, queryStr))
-			}
-		}
 
-		return runHybridSearch(cmd, queryStr, searchMode, searchExplain)
-	},
+			// Reject known operators with invalid values (e.g. before:2025-13-45)
+			// rather than silently dropping the filter and running a wider query.
+			// Checked before the empty-query test so the user sees the offending
+			// value instead of a misleading "empty search query".
+			if err := search.Parse(queryStr).Err(); err != nil {
+				return usageErr(cmd, err)
+			}
+			if searchMode == "fts" {
+				parsed := search.Parse(queryStr)
+				parsed.MessageTypes = append(parsed.MessageTypes, searchMessageTypes...)
+				if parsed.IsEmpty() && searchAccount == "" && searchCollection == "" {
+					return errors.New("empty search query")
+				}
+			}
+			if searchMode == "fts" {
+				return runHTTPSearch(cmd, queryStr)
+			}
+			if searchMode != "fts" && searchOffset > 0 {
+				return usageErr(cmd, fmt.Errorf("--offset is not supported with --mode=%s (pagination is single-page)", searchMode))
+			}
+			// Vector and hybrid modes need free-text terms to embed; both
+			// an empty raw query and a filter-only query (e.g. `from:alice`)
+			// would fail at the embed call. Check both up front and surface
+			// a CLI error rather than a late engine-level one. FTS still
+			// allows scoped queryless searches.
+			if searchMode != "fts" {
+				if queryStr == "" {
+					return usageErr(cmd, fmt.Errorf("--mode=%s requires query text to embed; pass a query or use --mode=fts", searchMode))
+				}
+				if len(search.Parse(queryStr).TextTerms) == 0 {
+					return usageErr(cmd, fmt.Errorf("--mode=%s requires free-text terms to embed; %q parsed to filters only — add a search phrase or use --mode=fts", searchMode, queryStr))
+				}
+			}
+
+			return runHybridSearch(cmd, queryStr, searchMode, searchExplain)
+		},
+	}
+	configureSearchCommand(searchCmd)
+	return searchCmd
 }
 
 func runHTTPSearch(cmd *cobra.Command, queryStr string) error {
+	searchLimit, _ := cmd.Flags().GetInt("limit")
+	searchOffset, _ := cmd.Flags().GetInt("offset")
+	searchJSON, _ := cmd.Flags().GetBool(flagJSON)
+	searchAccount, _ := cmd.Flags().GetString("account")
+	searchCollection, _ := cmd.Flags().GetString("collection")
+	searchDeletionScope, _ := cmd.Flags().GetString("deletion-scope")
+	searchMessageTypes, _ := cmd.Flags().GetStringSlice("message-type")
 	state := invocationFromCommand(cmd)
 	if state == nil || state.logger == nil {
 		return errors.New("invocation state is unavailable")
@@ -327,18 +334,21 @@ func outputSearchResultsJSON(results []query.MessageSummary) error {
 }
 
 func init() {
-	rootCmd.AddCommand(searchCmd)
-	searchCmd.Flags().IntVarP(&searchLimit, "limit", "n", 50, "Maximum number of results")
-	searchCmd.Flags().IntVar(&searchOffset, "offset", 0, "Skip first N results")
-	searchCmd.Flags().BoolVar(&searchJSON, flagJSON, false, "Output as JSON")
-	searchCmd.Flags().StringVar(&searchAccount, "account", "", "Limit results to a specific account (email address)")
-	searchCmd.Flags().StringVar(&searchCollection, "collection", "",
+	registerCommandFactory(newSearchCommand)
+}
+
+func configureSearchCommand(searchCmd *cobra.Command) {
+	searchCmd.Flags().IntP("limit", "n", 50, "Maximum number of results")
+	searchCmd.Flags().Int("offset", 0, "Skip first N results")
+	searchCmd.Flags().Bool(flagJSON, false, "Output as JSON")
+	searchCmd.Flags().String("account", "", "Limit results to a specific account (email address)")
+	searchCmd.Flags().String("collection", "",
 		"Limit results to all member accounts of one collection")
 	searchCmd.MarkFlagsMutuallyExclusive("account", "collection")
-	searchCmd.Flags().StringVar(&searchMode, "mode", "fts", "Search mode: fts|vector|hybrid")
-	searchCmd.Flags().BoolVar(&searchExplain, "explain", false, "Include per-signal scores in output (hybrid/vector modes)")
-	searchCmd.Flags().StringVar(&searchDeletionScope, "deletion-scope", "active",
+	searchCmd.Flags().String("mode", "fts", "Search mode: fts|vector|hybrid")
+	searchCmd.Flags().Bool("explain", false, "Include per-signal scores in output (hybrid/vector modes)")
+	searchCmd.Flags().String("deletion-scope", "active",
 		"Source deletion scope: active|deleted|any (FTS mode only)")
-	searchCmd.Flags().StringSliceVar(&searchMessageTypes, "message-type", nil,
+	searchCmd.Flags().StringSlice("message-type", nil,
 		"Limit results to message type(s), e.g. email, sms, calendar_event, meeting_transcript")
 }

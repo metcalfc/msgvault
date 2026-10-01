@@ -17,228 +17,6 @@ import (
 	"go.kenn.io/msgvault/pkg/client/generated"
 )
 
-var (
-	employmentJSON                                                                                   bool
-	employmentPersonID, employmentOrganizationID                                                     int64
-	employmentLimit, employmentOffset                                                                int64
-	employmentTitle, employmentRole, employmentDepartment, employmentLocation, employmentDescription string
-	employmentStartDate, employmentEndDate, employmentSource                                         string
-	employmentPrimary, employmentNoPrimary, employmentNotCurrent, employmentCurrentOnly              bool
-	employmentMarkCurrent, employmentClearStart, employmentClearEnd                                  bool
-)
-
-var employmentCmd = &cobra.Command{Use: "employment", Short: "Manage temporal employment records between people and organizations"}
-
-var employmentAddCmd = &cobra.Command{Use: "add", Short: "Add an employment record", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-	body, err := employmentBodyFromFlags(cmd)
-	if err != nil {
-		return err
-	}
-	client, _, err := OpenHTTPStore(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	resp, err := daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusCreated}, func(api *apiclient.Client) (*generated.CreateEmploymentResp, error) {
-		return api.CreateEmploymentWithResponse(cmd.Context(), &generated.CreateEmploymentRequestOptions{Body: &body})
-	})
-	if err != nil {
-		return err
-	}
-	return writeCLIEmployment(cmd, client, resp.JSON201)
-}}
-
-var employmentShowCmd = &cobra.Command{Use: "show <id>", Short: "Show an employment record", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-	id, err := positivePersonCLIArg(cmd, args[0], "employment")
-	if err != nil {
-		return err
-	}
-	client, _, err := OpenHTTPStore(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	resp, err := getCLIEmployment(cmd, client, id)
-	if err != nil {
-		return err
-	}
-	return writeCLIEmployment(cmd, client, resp.JSON200)
-}}
-
-var employmentSetCmd = &cobra.Command{Use: "set <id>", Short: "Update an employment record's mutable fields", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-	id, err := positivePersonCLIArg(cmd, args[0], "employment")
-	if err != nil {
-		return err
-	}
-	if employmentPrimary && employmentNoPrimary {
-		return usageErr(cmd, errors.New("--primary and --no-primary are mutually exclusive"))
-	}
-	client, _, err := OpenHTTPStore(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	current, err := getCLIEmployment(cmd, client, id)
-	if err != nil {
-		return err
-	}
-	if current.JSON200 == nil {
-		return errors.New("employment response was empty")
-	}
-	body, err := employmentSetBody(cmd, current.JSON200)
-	if err != nil {
-		return err
-	}
-	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.PatchEmploymentResp, error) {
-		return api.PatchEmploymentWithResponse(cmd.Context(), &generated.PatchEmploymentRequestOptions{PathParams: &generated.PatchEmploymentPath{ID: id}, Header: &generated.PatchEmploymentHeaders{IfMatch: employmentETag(id, current.JSON200.Revision)}, Body: &body})
-	})
-	if err != nil {
-		return err
-	}
-	return writeCLIEmployment(cmd, client, resp.JSON200)
-}}
-
-var employmentEndCmd = &cobra.Command{Use: "end <id>", Short: "End an employment without deleting its history", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-	id, err := positivePersonCLIArg(cmd, args[0], "employment")
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(employmentEndDate) == "" {
-		return usageErr(cmd, errors.New("--end is required"))
-	}
-	client, _, err := OpenHTTPStore(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	current, err := getCLIEmployment(cmd, client, id)
-	if err != nil {
-		return err
-	}
-	if current.JSON200 == nil {
-		return errors.New("employment response was empty")
-	}
-	body := generated.EndEmploymentBody{EndDate: employmentEndDate}
-	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.EndEmploymentResp, error) {
-		return api.EndEmploymentWithResponse(cmd.Context(), &generated.EndEmploymentRequestOptions{PathParams: &generated.EndEmploymentPath{ID: id}, Header: &generated.EndEmploymentHeaders{IfMatch: employmentETag(id, current.JSON200.Revision)}, Body: &body})
-	})
-	if err != nil {
-		return err
-	}
-	return writeCLIEmployment(cmd, client, resp.JSON200)
-}}
-
-var employmentSetPrimaryCmd = &cobra.Command{Use: "set-primary <id>", Short: "Set the primary current employment", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-	id, err := positivePersonCLIArg(cmd, args[0], "employment")
-	if err != nil {
-		return err
-	}
-	client, _, err := OpenHTTPStore(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	current, err := getCLIEmployment(cmd, client, id)
-	if err != nil {
-		return err
-	}
-	if current.JSON200 == nil {
-		return errors.New("employment response was empty")
-	}
-	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.SetPrimaryEmploymentResp, error) {
-		return api.SetPrimaryEmploymentWithResponse(cmd.Context(), &generated.SetPrimaryEmploymentRequestOptions{PathParams: &generated.SetPrimaryEmploymentPath{ID: id}, Header: &generated.SetPrimaryEmploymentHeaders{IfMatch: employmentETag(id, current.JSON200.Revision)}})
-	})
-	if err != nil {
-		return err
-	}
-	return writeCLIEmployment(cmd, client, resp.JSON200)
-}}
-
-var employmentDeleteCmd = &cobra.Command{Use: "delete <id>", Short: "Permanently delete an employment record", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-	id, err := positivePersonCLIArg(cmd, args[0], "employment")
-	if err != nil {
-		return err
-	}
-	client, _, err := OpenHTTPStore(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	current, err := getCLIEmployment(cmd, client, id)
-	if err != nil {
-		return err
-	}
-	if current.JSON200 == nil {
-		return errors.New("employment response was empty")
-	}
-	_, err = daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusNoContent}, func(api *apiclient.Client) (*generated.DeleteEmploymentResp, error) {
-		return api.DeleteEmploymentWithResponse(cmd.Context(), &generated.DeleteEmploymentRequestOptions{PathParams: &generated.DeleteEmploymentPath{ID: id}, Header: &generated.DeleteEmploymentHeaders{IfMatch: employmentETag(id, current.JSON200.Revision)}})
-	})
-	if err != nil {
-		return err
-	}
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Deleted employment %d\n", id)
-	return nil
-}}
-
-var employmentListCmd = &cobra.Command{Use: cmdUseList, Short: "List employment records", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-	personSet, organizationSet := cmd.Flags().Changed("person"), cmd.Flags().Changed("organization")
-	if !personSet && !organizationSet {
-		return usageErr(cmd, errors.New("--person or --organization is required"))
-	}
-	if personSet && organizationSet {
-		return usageErr(cmd, errors.New("--person and --organization are mutually exclusive"))
-	}
-	var id int64
-	if personSet {
-		id = employmentPersonID
-	} else {
-		id = employmentOrganizationID
-	}
-	if id <= 0 {
-		kind := "organization"
-		if personSet {
-			kind = personValue
-		}
-		return usageErr(cmd, fmt.Errorf("%s ID must be a positive integer", kind))
-	}
-	client, _, err := OpenHTTPStore(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	currentOnly := employmentCurrentOnly
-	var limit, offset *int64
-	if cmd.Flags().Changed("limit") {
-		limit = &employmentLimit
-	}
-	if cmd.Flags().Changed("offset") {
-		offset = &employmentOffset
-	}
-	if personSet {
-		resp, getErr := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ListPersonEmploymentsResp, error) {
-			return api.ListPersonEmploymentsWithResponse(cmd.Context(), &generated.ListPersonEmploymentsRequestOptions{PathParams: &generated.ListPersonEmploymentsPath{ID: id}, Query: &generated.ListPersonEmploymentsQuery{CurrentOnly: &currentOnly, Limit: limit, Offset: offset}})
-		})
-		if getErr != nil {
-			return getErr
-		}
-		if resp.JSON200 == nil {
-			return errors.New("employment list response was empty")
-		}
-		return writeCLIEmploymentList(cmd, client, resp.JSON200, true, employmentJSON)
-	}
-	resp, getErr := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ListOrganizationEmploymentsResp, error) {
-		return api.ListOrganizationEmploymentsWithResponse(cmd.Context(), &generated.ListOrganizationEmploymentsRequestOptions{PathParams: &generated.ListOrganizationEmploymentsPath{ID: id}, Query: &generated.ListOrganizationEmploymentsQuery{CurrentOnly: &currentOnly, Limit: limit, Offset: offset}})
-	})
-	if getErr != nil {
-		return getErr
-	}
-	if resp.JSON200 == nil {
-		return errors.New("employment list response was empty")
-	}
-	return writeCLIEmploymentList(cmd, client, resp.JSON200, false, employmentJSON)
-}}
-
 func getCLIEmployment(cmd *cobra.Command, client *daemonclient.Client, id int64) (*generated.GetEmploymentResp, error) {
 	return daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.GetEmploymentResp, error) {
 		return api.GetEmploymentWithResponse(cmd.Context(), &generated.GetEmploymentRequestOptions{PathParams: &generated.GetEmploymentPath{ID: id}})
@@ -249,6 +27,20 @@ func employmentETag(id, revision int64) string {
 }
 
 func employmentBodyFromFlags(cmd *cobra.Command) (generated.CreateEmploymentBody, error) {
+	employmentPersonID, _ := cmd.Flags().GetInt64("person")
+	employmentOrganizationID, _ := cmd.Flags().GetInt64("organization")
+	employmentTitle, _ := cmd.Flags().GetString("title")
+	employmentRole, _ := cmd.Flags().GetString("role")
+	employmentDepartment, _ := cmd.Flags().GetString("department")
+	employmentLocation, _ := cmd.Flags().GetString("location")
+	employmentDescription, _ := cmd.Flags().GetString("description")
+	employmentStartDate, _ := cmd.Flags().GetString("start")
+	employmentEndDate, _ := cmd.Flags().GetString("end")
+	employmentSource, _ := cmd.Flags().GetString("source")
+	employmentPrimary, _ := cmd.Flags().GetBool("primary")
+	employmentNoPrimary, _ := cmd.Flags().GetBool("no-primary")
+	employmentNotCurrent, _ := cmd.Flags().GetBool("not-current")
+
 	if employmentPrimary && employmentNoPrimary {
 		return generated.CreateEmploymentBody{}, usageErr(cmd, errors.New("--primary and --no-primary are mutually exclusive"))
 	}
@@ -302,6 +94,23 @@ func employmentBodyFromFlags(cmd *cobra.Command) (generated.CreateEmploymentBody
 // employmentSetBody merges changed flags over the fetched record so the
 // full-replace PATCH never wipes fields the user did not mention.
 func employmentSetBody(cmd *cobra.Command, current *generated.Employment) (generated.CreateEmploymentBody, error) {
+	employmentMarkCurrent, _ := cmd.Flags().GetBool("current")
+	employmentClearStart, _ := cmd.Flags().GetBool("clear-start")
+	employmentClearEnd, _ := cmd.Flags().GetBool("clear-end")
+	employmentPersonID, _ := cmd.Flags().GetInt64("person")
+	employmentOrganizationID, _ := cmd.Flags().GetInt64("organization")
+	employmentTitle, _ := cmd.Flags().GetString("title")
+	employmentRole, _ := cmd.Flags().GetString("role")
+	employmentDepartment, _ := cmd.Flags().GetString("department")
+	employmentLocation, _ := cmd.Flags().GetString("location")
+	employmentDescription, _ := cmd.Flags().GetString("description")
+	employmentStartDate, _ := cmd.Flags().GetString("start")
+	employmentEndDate, _ := cmd.Flags().GetString("end")
+	employmentSource, _ := cmd.Flags().GetString("source")
+	employmentPrimary, _ := cmd.Flags().GetBool("primary")
+	employmentNoPrimary, _ := cmd.Flags().GetBool("no-primary")
+	employmentNotCurrent, _ := cmd.Flags().GetBool("not-current")
+
 	body := generated.CreateEmploymentBody{
 		PersonID:       current.PersonID,
 		OrganizationID: current.OrganizationID,
@@ -429,6 +238,8 @@ func cliPartialDateString(value *generated.PartialDate) (string, bool) {
 }
 
 func writeCLIEmployment(cmd *cobra.Command, labeler cliEntityLabeler, employment *generated.Employment) error {
+	employmentJSON, _ := cmd.Flags().GetBool(flagJSON)
+
 	if employment == nil {
 		return errors.New("employment response was empty")
 	}
@@ -503,34 +314,261 @@ func writeCLIEmploymentList(
 	return nil
 }
 
-func init() {
-	rootCmd.AddCommand(employmentCmd)
+func newEmploymentCommand() *cobra.Command {
+	var employmentCmd = &cobra.Command{Use: "employment", Short: "Manage temporal employment records between people and organizations"}
+
+	var employmentAddCmd = &cobra.Command{Use: "add", Short: "Add an employment record", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		body, err := employmentBodyFromFlags(cmd)
+		if err != nil {
+			return err
+		}
+		client, _, err := OpenHTTPStore(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		resp, err := daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusCreated}, func(api *apiclient.Client) (*generated.CreateEmploymentResp, error) {
+			return api.CreateEmploymentWithResponse(cmd.Context(), &generated.CreateEmploymentRequestOptions{Body: &body})
+		})
+		if err != nil {
+			return err
+		}
+		return writeCLIEmployment(cmd, client, resp.JSON201)
+	}}
+
+	var employmentShowCmd = &cobra.Command{Use: "show <id>", Short: "Show an employment record", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := positivePersonCLIArg(cmd, args[0], "employment")
+		if err != nil {
+			return err
+		}
+		client, _, err := OpenHTTPStore(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		resp, err := getCLIEmployment(cmd, client, id)
+		if err != nil {
+			return err
+		}
+		return writeCLIEmployment(cmd, client, resp.JSON200)
+	}}
+
+	var employmentSetCmd = &cobra.Command{Use: "set <id>", Short: "Update an employment record's mutable fields", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		employmentPrimary, _ := cmd.Flags().GetBool("primary")
+		employmentNoPrimary, _ := cmd.Flags().GetBool("no-primary")
+
+		id, err := positivePersonCLIArg(cmd, args[0], "employment")
+		if err != nil {
+			return err
+		}
+		if employmentPrimary && employmentNoPrimary {
+			return usageErr(cmd, errors.New("--primary and --no-primary are mutually exclusive"))
+		}
+		client, _, err := OpenHTTPStore(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		current, err := getCLIEmployment(cmd, client, id)
+		if err != nil {
+			return err
+		}
+		if current.JSON200 == nil {
+			return errors.New("employment response was empty")
+		}
+		body, err := employmentSetBody(cmd, current.JSON200)
+		if err != nil {
+			return err
+		}
+		resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.PatchEmploymentResp, error) {
+			return api.PatchEmploymentWithResponse(cmd.Context(), &generated.PatchEmploymentRequestOptions{PathParams: &generated.PatchEmploymentPath{ID: id}, Header: &generated.PatchEmploymentHeaders{IfMatch: employmentETag(id, current.JSON200.Revision)}, Body: &body})
+		})
+		if err != nil {
+			return err
+		}
+		return writeCLIEmployment(cmd, client, resp.JSON200)
+	}}
+
+	var employmentEndCmd = &cobra.Command{Use: "end <id>", Short: "End an employment without deleting its history", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		employmentEndDate, _ := cmd.Flags().GetString("end")
+
+		id, err := positivePersonCLIArg(cmd, args[0], "employment")
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(employmentEndDate) == "" {
+			return usageErr(cmd, errors.New("--end is required"))
+		}
+		client, _, err := OpenHTTPStore(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		current, err := getCLIEmployment(cmd, client, id)
+		if err != nil {
+			return err
+		}
+		if current.JSON200 == nil {
+			return errors.New("employment response was empty")
+		}
+		body := generated.EndEmploymentBody{EndDate: employmentEndDate}
+		resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.EndEmploymentResp, error) {
+			return api.EndEmploymentWithResponse(cmd.Context(), &generated.EndEmploymentRequestOptions{PathParams: &generated.EndEmploymentPath{ID: id}, Header: &generated.EndEmploymentHeaders{IfMatch: employmentETag(id, current.JSON200.Revision)}, Body: &body})
+		})
+		if err != nil {
+			return err
+		}
+		return writeCLIEmployment(cmd, client, resp.JSON200)
+	}}
+
+	var employmentSetPrimaryCmd = &cobra.Command{Use: "set-primary <id>", Short: "Set the primary current employment", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := positivePersonCLIArg(cmd, args[0], "employment")
+		if err != nil {
+			return err
+		}
+		client, _, err := OpenHTTPStore(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		current, err := getCLIEmployment(cmd, client, id)
+		if err != nil {
+			return err
+		}
+		if current.JSON200 == nil {
+			return errors.New("employment response was empty")
+		}
+		resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.SetPrimaryEmploymentResp, error) {
+			return api.SetPrimaryEmploymentWithResponse(cmd.Context(), &generated.SetPrimaryEmploymentRequestOptions{PathParams: &generated.SetPrimaryEmploymentPath{ID: id}, Header: &generated.SetPrimaryEmploymentHeaders{IfMatch: employmentETag(id, current.JSON200.Revision)}})
+		})
+		if err != nil {
+			return err
+		}
+		return writeCLIEmployment(cmd, client, resp.JSON200)
+	}}
+
+	var employmentDeleteCmd = &cobra.Command{Use: "delete <id>", Short: "Permanently delete an employment record", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := positivePersonCLIArg(cmd, args[0], "employment")
+		if err != nil {
+			return err
+		}
+		client, _, err := OpenHTTPStore(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		current, err := getCLIEmployment(cmd, client, id)
+		if err != nil {
+			return err
+		}
+		if current.JSON200 == nil {
+			return errors.New("employment response was empty")
+		}
+		_, err = daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusNoContent}, func(api *apiclient.Client) (*generated.DeleteEmploymentResp, error) {
+			return api.DeleteEmploymentWithResponse(cmd.Context(), &generated.DeleteEmploymentRequestOptions{PathParams: &generated.DeleteEmploymentPath{ID: id}, Header: &generated.DeleteEmploymentHeaders{IfMatch: employmentETag(id, current.JSON200.Revision)}})
+		})
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Deleted employment %d\n", id)
+		return nil
+	}}
+
+	var employmentListCmd = &cobra.Command{Use: cmdUseList, Short: "List employment records", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		employmentJSON, _ := cmd.Flags().GetBool(flagJSON)
+		employmentPersonID, _ := cmd.Flags().GetInt64("person")
+		employmentOrganizationID, _ := cmd.Flags().GetInt64("organization")
+		employmentCurrentOnly, _ := cmd.Flags().GetBool("current-only")
+		employmentLimit, _ := cmd.Flags().GetInt64("limit")
+		employmentOffset, _ := cmd.Flags().GetInt64("offset")
+
+		personSet, organizationSet := cmd.Flags().Changed("person"), cmd.Flags().Changed("organization")
+		if !personSet && !organizationSet {
+			return usageErr(cmd, errors.New("--person or --organization is required"))
+		}
+		if personSet && organizationSet {
+			return usageErr(cmd, errors.New("--person and --organization are mutually exclusive"))
+		}
+		var id int64
+		if personSet {
+			id = employmentPersonID
+		} else {
+			id = employmentOrganizationID
+		}
+		if id <= 0 {
+			kind := "organization"
+			if personSet {
+				kind = personValue
+			}
+			return usageErr(cmd, fmt.Errorf("%s ID must be a positive integer", kind))
+		}
+		client, _, err := OpenHTTPStore(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		currentOnly := employmentCurrentOnly
+		var limit, offset *int64
+		if cmd.Flags().Changed("limit") {
+			limit = &employmentLimit
+		}
+		if cmd.Flags().Changed("offset") {
+			offset = &employmentOffset
+		}
+		if personSet {
+			resp, getErr := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ListPersonEmploymentsResp, error) {
+				return api.ListPersonEmploymentsWithResponse(cmd.Context(), &generated.ListPersonEmploymentsRequestOptions{PathParams: &generated.ListPersonEmploymentsPath{ID: id}, Query: &generated.ListPersonEmploymentsQuery{CurrentOnly: &currentOnly, Limit: limit, Offset: offset}})
+			})
+			if getErr != nil {
+				return getErr
+			}
+			if resp.JSON200 == nil {
+				return errors.New("employment list response was empty")
+			}
+			return writeCLIEmploymentList(cmd, client, resp.JSON200, true, employmentJSON)
+		}
+		resp, getErr := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ListOrganizationEmploymentsResp, error) {
+			return api.ListOrganizationEmploymentsWithResponse(cmd.Context(), &generated.ListOrganizationEmploymentsRequestOptions{PathParams: &generated.ListOrganizationEmploymentsPath{ID: id}, Query: &generated.ListOrganizationEmploymentsQuery{CurrentOnly: &currentOnly, Limit: limit, Offset: offset}})
+		})
+		if getErr != nil {
+			return getErr
+		}
+		if resp.JSON200 == nil {
+			return errors.New("employment list response was empty")
+		}
+		return writeCLIEmploymentList(cmd, client, resp.JSON200, false, employmentJSON)
+	}}
+
 	employmentCmd.AddCommand(employmentAddCmd, employmentShowCmd, employmentSetCmd, employmentEndCmd, employmentSetPrimaryCmd, employmentDeleteCmd, employmentListCmd)
 	for _, command := range []*cobra.Command{employmentAddCmd, employmentShowCmd, employmentSetCmd, employmentEndCmd, employmentSetPrimaryCmd, employmentListCmd} {
-		command.Flags().BoolVar(&employmentJSON, flagJSON, false, "Output as JSON")
+		command.Flags().Bool(flagJSON, false, "Output as JSON")
 	}
-	employmentSetCmd.Flags().BoolVar(&employmentMarkCurrent, "current", false, "Mark the employment current again")
-	employmentSetCmd.Flags().BoolVar(&employmentClearStart, "clear-start", false, "Remove the start date")
-	employmentSetCmd.Flags().BoolVar(&employmentClearEnd, "clear-end", false, "Remove the end date")
+	employmentSetCmd.Flags().Bool("current", false, "Mark the employment current again")
+	employmentSetCmd.Flags().Bool("clear-start", false, "Remove the start date")
+	employmentSetCmd.Flags().Bool("clear-end", false, "Remove the end date")
 	for _, command := range []*cobra.Command{employmentAddCmd, employmentSetCmd} {
-		command.Flags().Int64Var(&employmentPersonID, "person", 0, "Person ID")
-		command.Flags().Int64Var(&employmentOrganizationID, "organization", 0, "Organization ID")
-		command.Flags().StringVar(&employmentTitle, "title", "", "Employment title")
-		command.Flags().StringVar(&employmentRole, "role", "", "Employment role")
-		command.Flags().StringVar(&employmentDepartment, "department", "", "Department")
-		command.Flags().StringVar(&employmentLocation, "location", "", "Location")
-		command.Flags().StringVar(&employmentDescription, "description", "", "Description")
-		command.Flags().StringVar(&employmentStartDate, "start", "", "Partial start date")
-		command.Flags().StringVar(&employmentEndDate, "end", "", "Partial end date")
-		command.Flags().StringVar(&employmentSource, "source", "", "Value source")
-		command.Flags().BoolVar(&employmentPrimary, "primary", false, "Make primary")
-		command.Flags().BoolVar(&employmentNoPrimary, "no-primary", false, "Do not make primary")
-		command.Flags().BoolVar(&employmentNotCurrent, "not-current", false, "Mark not current")
+		command.Flags().Int64("person", 0, "Person ID")
+		command.Flags().Int64("organization", 0, "Organization ID")
+		command.Flags().String("title", "", "Employment title")
+		command.Flags().String("role", "", "Employment role")
+		command.Flags().String("department", "", "Department")
+		command.Flags().String("location", "", "Location")
+		command.Flags().String("description", "", "Description")
+		command.Flags().String("start", "", "Partial start date")
+		command.Flags().String("end", "", "Partial end date")
+		command.Flags().String("source", "", "Value source")
+		command.Flags().Bool("primary", false, "Make primary")
+		command.Flags().Bool("no-primary", false, "Do not make primary")
+		command.Flags().Bool("not-current", false, "Mark not current")
 	}
-	employmentEndCmd.Flags().StringVar(&employmentEndDate, "end", "", "Partial end date")
-	employmentListCmd.Flags().Int64Var(&employmentPersonID, "person", 0, "Person ID")
-	employmentListCmd.Flags().Int64Var(&employmentOrganizationID, "organization", 0, "Organization ID")
-	employmentListCmd.Flags().BoolVar(&employmentCurrentOnly, "current-only", false, "Only current employments")
-	employmentListCmd.Flags().Int64Var(&employmentLimit, "limit", 0, "Maximum results")
-	employmentListCmd.Flags().Int64Var(&employmentOffset, "offset", 0, "Results to skip")
+	employmentEndCmd.Flags().String("end", "", "Partial end date")
+	employmentListCmd.Flags().Int64("person", 0, "Person ID")
+	employmentListCmd.Flags().Int64("organization", 0, "Organization ID")
+	employmentListCmd.Flags().Bool("current-only", false, "Only current employments")
+	employmentListCmd.Flags().Int64("limit", 0, "Maximum results")
+	employmentListCmd.Flags().Int64("offset", 0, "Results to skip")
+
+	return employmentCmd
 }
+
+func init() { registerCommandFactory(newEmploymentCommand) }

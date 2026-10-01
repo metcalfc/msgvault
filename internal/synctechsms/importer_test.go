@@ -73,7 +73,6 @@ func TestImporterRejectsMissingOwnerPhone(t *testing.T) {
 }
 
 func TestImporterContinuesWhenFTSUpsertFails(t *testing.T) {
-
 	f := storetest.New(t)
 	if f.Store.FTS5Available() {
 		_, err := f.Store.DB().Exec(`DROP TABLE messages_fts`)

@@ -34,7 +34,6 @@ const personEnrichmentAttemptStateConstraint = "person_enrichment_attempts_state
 // key, index, and row is preserved, including the identifiers, citations,
 // sources, and work rows that reference the attempt.
 func (s *Store) migratePersonEnrichmentIdentityUncertain(ctx context.Context) error {
-
 	return s.migratePersonEnrichmentIdentityUncertainSQLite(ctx)
 }
 

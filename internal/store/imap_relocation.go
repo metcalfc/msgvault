@@ -39,7 +39,7 @@ func (s *Store) PersistIMAPRelocationWithParticipantsContext(
 			       m.rfc822_message_id, s.source_type
 			FROM messages m
 			JOIN sources s ON s.id = m.source_id
-			WHERE m.id = ?`+s.dialect.SelectForUpdate(), expected.ID,
+			WHERE m.id = ?`, expected.ID,
 		).Scan(
 			&actual.ID, &actual.SourceID, &actual.SourceMessageID,
 			&storedRFC822MessageID, &sourceType,

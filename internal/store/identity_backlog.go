@@ -49,9 +49,7 @@ func (s *Store) SetIdentityDiscoveryBacklogContext(
 	key := identityDiscoveryBacklogKey(sourceID)
 
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
-		if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(
-			`INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '')`), key,
-		); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '')`, key); err != nil {
 			return fmt.Errorf("seed identity discovery backlog: %w", err)
 		}
 		// Read the previous value back through an UPDATE so the row is locked

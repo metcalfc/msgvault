@@ -15,12 +15,26 @@ import (
 	"go.kenn.io/msgvault/internal/teams"
 )
 
-var backfillTeamsMediaOnlyIncomplete bool
+func writeTeamsMediaBackfillSummary(out io.Writer, sum *teams.ImportSummary) {
+	_, _ = fmt.Fprintln(out)
+	_, _ = fmt.Fprintln(out, "Teams inline-media backfill complete!")
+	_, _ = fmt.Fprintf(out, "  Duration:             %s\n", sum.Duration.Round(time.Second))
+	_, _ = fmt.Fprintf(out, "  Messages processed:   %d\n", sum.MessagesProcessed)
+	_, _ = fmt.Fprintf(out, "  Inline images copied: %d\n", sum.InlineImagesCopied)
+	_, _ = fmt.Fprintf(out, "  Skipped by policy:    %d\n", sum.InlineImagesSkipped)
+	_, _ = fmt.Fprintf(out, "  Errors:               %d\n", sum.Errors)
+}
 
-var backfillTeamsMediaCmd = &cobra.Command{
-	Use:   "backfill-teams-media <email>",
-	Short: "Re-fetch Teams inline media (hostedContents) for already-imported messages",
-	Long: `Re-fetch Microsoft Teams inline media (hostedContents) for messages that
+func init() {
+	registerCommandFactory(newBackfillTeamsMediaCommand)
+}
+
+func newBackfillTeamsMediaCommand() *cobra.Command {
+	var backfillTeamsMediaOnlyIncomplete bool
+	backfillTeamsMediaCmd := &cobra.Command{
+		Use:   "backfill-teams-media <email>",
+		Short: "Re-fetch Teams inline media (hostedContents) for already-imported messages",
+		Long: `Re-fetch Microsoft Teams inline media (hostedContents) for messages that
 were already imported but whose inline images were never downloaded.
 
 This targets ONLY messages whose stored HTML body contains a hostedContents
@@ -33,104 +47,92 @@ missing (e.g. after transient fetch failures), instead of re-fetching all.
 Examples:
   msgvault backfill-teams-media user@company.com
   msgvault backfill-teams-media user@company.com --only-incomplete`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		state := invocationFromCommand(cmd)
-		if state == nil || state.cfg == nil {
-			return errors.New("configuration is unavailable")
-		}
-		cfg := state.cfg
-		logger := state.logger
-		if !isDaemonCLISubprocess() {
-			return runDaemonCLICommandHTTPFromCobra(cmd, args)
-		}
-
-		email := args[0]
-
-		s, cleanup, err := openWritableStoreAndInitForIngestInvocation(state)
-		if err != nil {
-			return err
-		}
-		defer cleanup()
-		dbPath := cfg.DatabaseDSN()
-
-		if cfg.Microsoft.ClientID == "" {
-			return errors.New("microsoft OAuth not configured\n\n" +
-				"Add to your config.toml:\n\n" +
-				"  [microsoft]\n" +
-				"  client_id = \"your-azure-app-client-id\"\n\n" +
-				"See docs for Azure AD app registration setup")
-		}
-
-		mgr := microsoft.NewGraphManager(
-			cfg.Microsoft.ClientID,
-			cfg.Microsoft.EffectiveTenantID(),
-			cfg.Microsoft.EffectiveRedirectURI(),
-			cfg.TokensDir(),
-			logger,
-		)
-		tokenFn, err := mgr.TokenSource(cmd.Context(), email)
-		if err != nil {
-			return fmt.Errorf("load Teams token: %w (run 'add-teams' first)", err)
-		}
-
-		ctx, cancel := context.WithCancel(cmd.Context())
-		defer cancel()
-
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-		defer signal.Stop(sigChan)
-		go func() {
-			select {
-			case <-sigChan:
-				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "\nInterrupted. Stopping...")
-				cancel()
-			case <-ctx.Done():
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			state := invocationFromCommand(cmd)
+			if state == nil || state.cfg == nil {
+				return errors.New("configuration is unavailable")
 			}
-		}()
+			cfg := state.cfg
+			logger := state.logger
+			if !isDaemonCLISubprocess() {
+				return runDaemonCLICommandHTTPFromCobra(cmd, args)
+			}
 
-		qps := float64(cfg.Sync.RateLimitQPS)
-		if qps <= 0 {
-			qps = 5
-		}
-		client := teams.NewClient("https://graph.microsoft.com/v1.0", tokenFn, qps)
-		imp := teams.NewImporter(s, client)
+			email := args[0]
 
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Backfilling Teams inline media for %s\n\n", email)
+			s, cleanup, err := openWritableStoreAndInitForIngestInvocation(state)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+			dbPath := cfg.DatabaseDSN()
 
-		sum, err := imp.BackfillInlineMedia(ctx, teams.ImportOptions{
-			Email:          email,
-			AttachmentsDir: cfg.AttachmentsDir(),
-			MediaPolicy:    cfg.Teams.MediaPolicy(email),
-			OnlyIncomplete: backfillTeamsMediaOnlyIncomplete,
-			Progress:       func(s string) { fmt.Println(s) },
-		})
-		if ctx.Err() != nil {
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "\nInterrupted — re-run backfill-teams-media to resume (idempotent).")
+			if cfg.Microsoft.ClientID == "" {
+				return errors.New("microsoft OAuth not configured\n\n" +
+					"Add to your config.toml:\n\n" +
+					"  [microsoft]\n" +
+					"  client_id = \"your-azure-app-client-id\"\n\n" +
+					"See docs for Azure AD app registration setup")
+			}
+
+			mgr := microsoft.NewGraphManager(
+				cfg.Microsoft.ClientID,
+				cfg.Microsoft.EffectiveTenantID(),
+				cfg.Microsoft.EffectiveRedirectURI(),
+				cfg.TokensDir(),
+				logger,
+			)
+			tokenFn, err := mgr.TokenSource(cmd.Context(), email)
+			if err != nil {
+				return fmt.Errorf("load Teams token: %w (run 'add-teams' first)", err)
+			}
+
+			ctx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
+
+			sigChan := make(chan os.Signal, 1)
+			signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+			defer signal.Stop(sigChan)
+			go func() {
+				select {
+				case <-sigChan:
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "\nInterrupted. Stopping...")
+					cancel()
+				case <-ctx.Done():
+				}
+			}()
+
+			qps := float64(cfg.Sync.RateLimitQPS)
+			if qps <= 0 {
+				qps = 5
+			}
+			client := teams.NewClient("https://graph.microsoft.com/v1.0", tokenFn, qps)
+			imp := teams.NewImporter(s, client)
+
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Backfilling Teams inline media for %s\n\n", email)
+
+			sum, err := imp.BackfillInlineMedia(ctx, teams.ImportOptions{
+				Email:          email,
+				AttachmentsDir: cfg.AttachmentsDir(),
+				MediaPolicy:    cfg.Teams.MediaPolicy(email),
+				OnlyIncomplete: backfillTeamsMediaOnlyIncomplete,
+				Progress:       func(s string) { fmt.Println(s) },
+			})
+			if ctx.Err() != nil {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "\nInterrupted — re-run backfill-teams-media to resume (idempotent).")
+				return rebuildCacheAfterWrite(dbPath, state)
+			}
+			if err != nil {
+				return fmt.Errorf("teams inline-media backfill failed: %w", err)
+			}
+
+			writeTeamsMediaBackfillSummary(cmd.OutOrStdout(), sum)
+
 			return rebuildCacheAfterWrite(dbPath, state)
-		}
-		if err != nil {
-			return fmt.Errorf("teams inline-media backfill failed: %w", err)
-		}
-
-		writeTeamsMediaBackfillSummary(cmd.OutOrStdout(), sum)
-
-		return rebuildCacheAfterWrite(dbPath, state)
-	},
-}
-
-func writeTeamsMediaBackfillSummary(out io.Writer, sum *teams.ImportSummary) {
-	_, _ = fmt.Fprintln(out)
-	_, _ = fmt.Fprintln(out, "Teams inline-media backfill complete!")
-	_, _ = fmt.Fprintf(out, "  Duration:             %s\n", sum.Duration.Round(time.Second))
-	_, _ = fmt.Fprintf(out, "  Messages processed:   %d\n", sum.MessagesProcessed)
-	_, _ = fmt.Fprintf(out, "  Inline images copied: %d\n", sum.InlineImagesCopied)
-	_, _ = fmt.Fprintf(out, "  Skipped by policy:    %d\n", sum.InlineImagesSkipped)
-	_, _ = fmt.Fprintf(out, "  Errors:               %d\n", sum.Errors)
-}
-
-func init() {
+		},
+	}
 	backfillTeamsMediaCmd.Flags().BoolVar(&backfillTeamsMediaOnlyIncomplete, "only-incomplete", false,
 		"retry only messages whose inline media is still missing (e.g. after transient failures)")
-	rootCmd.AddCommand(backfillTeamsMediaCmd)
+	return backfillTeamsMediaCmd
 }

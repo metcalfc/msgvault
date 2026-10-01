@@ -139,13 +139,13 @@ func runEmbeddingsList(cmd *cobra.Command, _ []string) error {
 	if err := ensureEmbedScopeResolved(state); err != nil {
 		return err
 	}
-	db, rebind, closeDB, err := openEmbeddingsMetadataDB(cmd.Context())
+	db, closeDB, err := openEmbeddingsMetadataDB(cmd.Context())
 	if err != nil {
 		return err
 	}
 	defer closeDB()
 
-	rows, err := listEmbeddingGenerations(cmd.Context(), db, rebind)
+	rows, err := listEmbeddingGenerations(cmd.Context(), db)
 	if err != nil {
 		return err
 	}
@@ -276,6 +276,10 @@ func errRetireActiveGeneration(gen vector.GenerationID) error {
 }
 
 func runEmbeddingsRetire(cmd *cobra.Command, args []string) error {
+	return runEmbeddingsRetireWithOptions(cmd, args, readEmbeddingCommandOptions(cmd))
+}
+
+func runEmbeddingsRetireWithOptions(cmd *cobra.Command, args []string, flags embeddingCommandOptions) error {
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -294,13 +298,13 @@ func runEmbeddingsRetire(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	db, rebind, closeDB, err := openEmbeddingsMetadataDB(cmd.Context())
+	db, closeDB, err := openEmbeddingsMetadataDB(cmd.Context())
 	if err != nil {
 		return err
 	}
 	defer closeDB()
 
-	row, err := getEmbeddingGeneration(cmd.Context(), db, rebind, gen)
+	row, err := getEmbeddingGeneration(cmd.Context(), db, gen)
 	if err != nil {
 		return err
 	}
@@ -310,12 +314,12 @@ func runEmbeddingsRetire(cmd *cobra.Command, args []string) error {
 		return nil
 	case vector.GenerationBuilding:
 	case vector.GenerationActive:
-		if !embeddingsRetireForceActive {
+		if !flags.embeddingsRetireForceActive {
 			return errRetireActiveGeneration(gen)
 		}
 	}
 
-	if !embeddingsRetireYes {
+	if !flags.embeddingsRetireYes {
 		prompt := fmt.Sprintf("Retire generation %d (%s)? ", gen, row.Fingerprint)
 		if !confirmEmbed(cmd, prompt) {
 			return errors.New("aborted")
@@ -333,7 +337,7 @@ func runEmbeddingsRetire(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer closeBackend()
-	if err := backend.RetireGeneration(cmd.Context(), gen, embeddingsRetireForceActive); err != nil {
+	if err := backend.RetireGeneration(cmd.Context(), gen, flags.embeddingsRetireForceActive); err != nil {
 		return err
 	}
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Generation %d retired.\n", gen)
@@ -348,12 +352,13 @@ func runEmbeddingsRetireCommand(cmd *cobra.Command, args []string) error {
 }
 
 func runEmbeddingsRetireHTTP(cmd *cobra.Command, args []string) error {
+	flags := readEmbeddingCommandOptions(cmd)
 	gen, err := parseGenerationID(args[0])
 	if err != nil {
 		return err
 	}
-	if !embeddingsRetireYes {
-		if err := confirmEmbeddingsPlanHTTP(cmd, cliEmbeddingsOperationRetire, gen, embeddingsRetireForceActive); err != nil {
+	if !flags.embeddingsRetireYes {
+		if err := confirmEmbeddingsPlanHTTP(cmd, cliEmbeddingsOperationRetire, gen, flags.embeddingsRetireForceActive); err != nil {
 			return err
 		}
 		if err := cmd.Flags().Set("yes", "true"); err != nil {
@@ -364,6 +369,10 @@ func runEmbeddingsRetireHTTP(cmd *cobra.Command, args []string) error {
 }
 
 func runEmbeddingsActivate(cmd *cobra.Command, args []string) error {
+	return runEmbeddingsActivateWithOptions(cmd, args, readEmbeddingCommandOptions(cmd))
+}
+
+func runEmbeddingsActivateWithOptions(cmd *cobra.Command, args []string, flags embeddingCommandOptions) error {
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -385,13 +394,13 @@ func runEmbeddingsActivate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	db, rebind, closeDB, err := openEmbeddingsMetadataDB(cmd.Context())
+	db, closeDB, err := openEmbeddingsMetadataDB(cmd.Context())
 	if err != nil {
 		return err
 	}
 	defer closeDB()
 
-	row, err := getEmbeddingGeneration(cmd.Context(), db, rebind, gen)
+	row, err := getEmbeddingGeneration(cmd.Context(), db, gen)
 	if err != nil {
 		return err
 	}
@@ -399,7 +408,7 @@ func runEmbeddingsActivate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("generation %d is %q, not %q", gen, row.State, vector.GenerationBuilding)
 	}
 	expected := cfg.Vector.GenerationFingerprint()
-	if row.Fingerprint != expected && !embeddingsActivateForce {
+	if row.Fingerprint != expected && !flags.embeddingsActivateForce {
 		return fmt.Errorf("generation %d fingerprint=%q does not match config=%q; pass --force to activate anyway",
 			gen, row.Fingerprint, expected)
 	}
@@ -409,7 +418,7 @@ func runEmbeddingsActivate(cmd *cobra.Command, args []string) error {
 	// revalidation remains the stale-write/deletion safety boundary if source
 	// state changes after this convergence snapshot.
 	var contextualSequence *int64
-	if !embeddingsActivateForce {
+	if !flags.embeddingsActivateForce {
 		state, err := configuredConvergenceState(cmd.Context(), cfg.Vector, gen)
 		if err != nil {
 			return err
@@ -422,11 +431,11 @@ func runEmbeddingsActivate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	active, hasActive, err := activeEmbeddingGeneration(cmd.Context(), db, rebind)
+	active, hasActive, err := activeEmbeddingGeneration(cmd.Context(), db)
 	if err != nil {
 		return err
 	}
-	if !embeddingsActivateYes {
+	if !flags.embeddingsActivateYes {
 		prompt := fmt.Sprintf("Activate generation %d (%s)", gen, row.Fingerprint)
 		if hasActive {
 			prompt += fmt.Sprintf(" and retire active generation %d (%s)", active.ID, active.Fingerprint)
@@ -455,7 +464,7 @@ func runEmbeddingsActivate(cmd *cobra.Command, args []string) error {
 		}
 		err = activator.ActivateGenerationIfConverged(cmd.Context(), gen, *contextualSequence)
 	} else {
-		err = backend.ActivateGeneration(cmd.Context(), gen, embeddingsActivateForce)
+		err = backend.ActivateGeneration(cmd.Context(), gen, flags.embeddingsActivateForce)
 	}
 	if err != nil {
 		return err
@@ -472,12 +481,13 @@ func runEmbeddingsActivateCommand(cmd *cobra.Command, args []string) error {
 }
 
 func runEmbeddingsActivateHTTP(cmd *cobra.Command, args []string) error {
+	flags := readEmbeddingCommandOptions(cmd)
 	gen, err := parseGenerationID(args[0])
 	if err != nil {
 		return err
 	}
-	if !embeddingsActivateYes {
-		if err := confirmEmbeddingsPlanHTTP(cmd, cliEmbeddingsOperationActivate, gen, embeddingsActivateForce); err != nil {
+	if !flags.embeddingsActivateYes {
+		if err := confirmEmbeddingsPlanHTTP(cmd, cliEmbeddingsOperationActivate, gen, flags.embeddingsActivateForce); err != nil {
 			return err
 		}
 		if err := cmd.Flags().Set("yes", "true"); err != nil {
@@ -539,13 +549,13 @@ func planCLIEmbeddingsRetire(
 	if err := ensureMainSchema(invocationFromContext(ctx)); err != nil {
 		return api.CLIEmbeddingsPlanResponse{}, err
 	}
-	db, rebind, closeDB, err := openEmbeddingsMetadataDB(ctx)
+	db, closeDB, err := openEmbeddingsMetadataDB(ctx)
 	if err != nil {
 		return api.CLIEmbeddingsPlanResponse{}, err
 	}
 	defer closeDB()
 
-	row, err := getEmbeddingGeneration(ctx, db, rebind, gen)
+	row, err := getEmbeddingGeneration(ctx, db, gen)
 	if err != nil {
 		return api.CLIEmbeddingsPlanResponse{}, err
 	}
@@ -579,13 +589,13 @@ func planCLIEmbeddingsActivate(
 	if err != nil {
 		return api.CLIEmbeddingsPlanResponse{}, err
 	}
-	db, rebind, closeDB, err := openEmbeddingsMetadataDB(ctx)
+	db, closeDB, err := openEmbeddingsMetadataDB(ctx)
 	if err != nil {
 		return api.CLIEmbeddingsPlanResponse{}, err
 	}
 	defer closeDB()
 
-	row, err := getEmbeddingGeneration(ctx, db, rebind, gen)
+	row, err := getEmbeddingGeneration(ctx, db, gen)
 	if err != nil {
 		return api.CLIEmbeddingsPlanResponse{}, err
 	}
@@ -603,7 +613,7 @@ func planCLIEmbeddingsActivate(
 		}
 	}
 
-	active, hasActive, err := activeEmbeddingGeneration(ctx, db, rebind)
+	active, hasActive, err := activeEmbeddingGeneration(ctx, db)
 	if err != nil {
 		return api.CLIEmbeddingsPlanResponse{}, err
 	}
@@ -671,15 +681,13 @@ func remainingCoverageHint(gen vector.GenerationID, remaining int64) string {
 }
 
 // openEmbeddingsMetadataDB opens the database that holds embedding generation
-// metadata and returns a handle, a rebind function for SQL placeholders, a
-// close callback, and any error.
+// metadata and returns a handle, a close callback, and any error.
 //
 // Embedding generation metadata lives in the separate SQLite vectors.db.
-// The rebind callback is the identity function for its ? placeholders.
-func openEmbeddingsMetadataDB(ctx context.Context) (*sql.DB, func(string) string, func(), error) {
+func openEmbeddingsMetadataDB(ctx context.Context) (*sql.DB, func(), error) {
 	state := invocationFromContext(ctx)
 	if state == nil || state.cfg == nil {
-		return nil, nil, nil, errors.New("configuration is unavailable")
+		return nil, nil, errors.New("configuration is unavailable")
 	}
 	cfg := state.cfg
 
@@ -689,16 +697,15 @@ func openEmbeddingsMetadataDB(ctx context.Context) (*sql.DB, func(string) string
 	}
 	if _, err := os.Stat(vecPath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil, nil, fmt.Errorf("vectors.db not found at %s", vecPath)
+			return nil, nil, fmt.Errorf("vectors.db not found at %s", vecPath)
 		}
-		return nil, nil, nil, fmt.Errorf("stat vectors.db: %w", err)
+		return nil, nil, fmt.Errorf("stat vectors.db: %w", err)
 	}
 	db, err := sql.Open("sqlite3", sqliteDSNWithBusyTimeout(vecPath))
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("open vectors.db: %w", err)
+		return nil, nil, fmt.Errorf("open vectors.db: %w", err)
 	}
-	rebind := (&store.SQLiteDialect{}).Rebind
-	return db, rebind, func() { _ = db.Close() }, nil
+	return db, func() { _ = db.Close() }, nil
 }
 
 // openEmbeddingsBackend constructs the SQLite vector backend, mirroring
@@ -773,10 +780,7 @@ func parseGenerationID(s string) (vector.GenerationID, error) {
 	return vector.GenerationID(id), nil
 }
 
-//nolint:unparam // rebind is a no-op here (no ? placeholders) but kept for signature symmetry with the other embedding-generation query helpers and their shared call sites
-func listEmbeddingGenerations(ctx context.Context, db *sql.DB, rebind func(string) string) ([]embeddingGenerationRow, error) {
-	// No ? placeholders in this query; rebind is a no-op here but kept for
-	// symmetry so all helpers share the same signature.
+func listEmbeddingGenerations(ctx context.Context, db *sql.DB) ([]embeddingGenerationRow, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT g.id, g.model, g.dimension, g.fingerprint, g.state,
 		       g.started_at, g.completed_at, g.activated_at, g.message_count,
@@ -802,13 +806,13 @@ func listEmbeddingGenerations(ctx context.Context, db *sql.DB, rebind func(strin
 	return out, nil
 }
 
-func getEmbeddingGeneration(ctx context.Context, db *sql.DB, rebind func(string) string, gen vector.GenerationID) (embeddingGenerationRow, error) {
-	row := db.QueryRowContext(ctx, rebind(`
+func getEmbeddingGeneration(ctx context.Context, db *sql.DB, gen vector.GenerationID) (embeddingGenerationRow, error) {
+	row := db.QueryRowContext(ctx, `
 		SELECT g.id, g.model, g.dimension, g.fingerprint, g.state,
 		       g.started_at, g.completed_at, g.activated_at, g.message_count,
 		       g.seeded_at
 		  FROM index_generations g
-		 WHERE g.id = ?`), int64(gen))
+		 WHERE g.id = ?`, int64(gen))
 	g, err := scanEmbeddingGeneration(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return embeddingGenerationRow{}, fmt.Errorf("%w: %d", vector.ErrUnknownGeneration, gen)
@@ -819,13 +823,13 @@ func getEmbeddingGeneration(ctx context.Context, db *sql.DB, rebind func(string)
 	return g, nil
 }
 
-func activeEmbeddingGeneration(ctx context.Context, db *sql.DB, rebind func(string) string) (embeddingGenerationRow, bool, error) {
-	row := db.QueryRowContext(ctx, rebind(`
+func activeEmbeddingGeneration(ctx context.Context, db *sql.DB) (embeddingGenerationRow, bool, error) {
+	row := db.QueryRowContext(ctx, `
 		SELECT g.id, g.model, g.dimension, g.fingerprint, g.state,
 		       g.started_at, g.completed_at, g.activated_at, g.message_count,
 		       g.seeded_at
 		  FROM index_generations g
-		 WHERE g.state = ?`), string(vector.GenerationActive))
+		 WHERE g.state = ?`, string(vector.GenerationActive))
 	g, err := scanEmbeddingGeneration(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return embeddingGenerationRow{}, false, nil

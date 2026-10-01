@@ -134,5 +134,5 @@ func runRepairLabelsLocal(cmd *cobra.Command, only string, apply bool) error {
 }
 
 func init() {
-	rootCmd.AddCommand(newRepairLabelsCmd())
+	registerCommandFactory(newRepairLabelsCmd)
 }

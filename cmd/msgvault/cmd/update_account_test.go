@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/kit/daemon"
@@ -54,11 +53,9 @@ func TestUpdateAccountUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 
 	savedCfg := cfg
 	savedUseLocal := useLocal
-	savedDisplayName := updateDisplayName
 	t.Cleanup(func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		updateDisplayName = savedDisplayName
 	})
 
 	cfg = &config.Config{
@@ -70,19 +67,14 @@ func TestUpdateAccountUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 	_ = testCtx
 	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
-	updateDisplayName = "Work"
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{
-		Use:  updateAccountCmd.Use,
-		Args: updateAccountCmd.Args,
-		RunE: updateAccountCmd.RunE,
-	}
+	cmd := newUpdateAccountCmd()
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{"alice@example.com"})
+	cmd.SetArgs([]string{"alice@example.com", "--display-name", "Work"})
 
 	err := cmd.Execute()
 	require.NoError(err, "update-account")
@@ -98,13 +90,6 @@ func TestUpdateAccountSourceIDUsesTypedDaemonRequest(t *testing.T) {
 
 	require := require.New(t)
 	assert := assert.New(t)
-
-	savedDisplayName := updateDisplayName
-	savedSourceID := updateAccountSourceID
-	t.Cleanup(func() {
-		updateDisplayName = savedDisplayName
-		updateAccountSourceID = savedSourceID
-	})
 	requests := &atomic.Int32{}
 	dataDir := t.TempDir()
 	mux := http.NewServeMux()
@@ -156,13 +141,6 @@ func TestUpdateAccountSourceIDUsesTypedDaemonRequest(t *testing.T) {
 }
 
 func TestUpdateAccountSelectorValidation(t *testing.T) {
-	savedDisplayName := updateDisplayName
-	savedSourceID := updateAccountSourceID
-	t.Cleanup(func() {
-		updateDisplayName = savedDisplayName
-		updateAccountSourceID = savedSourceID
-	})
-
 	tests := []struct {
 		name string
 		args []string

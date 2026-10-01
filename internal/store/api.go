@@ -185,7 +185,7 @@ var ErrMessageNotFound = errors.New("message not found")
 func (s *Store) GetMessageSourceContext(ctx context.Context, messageID int64) (*Source, error) {
 	var sourceID int64
 	err := s.db.QueryRowContext(ctx,
-		s.Rebind(`SELECT source_id FROM messages WHERE id = ?`), messageID,
+		`SELECT source_id FROM messages WHERE id = ?`, messageID,
 	).Scan(&sourceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("message %d: %w", messageID, ErrMessageNotFound)

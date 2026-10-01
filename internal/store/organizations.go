@@ -100,11 +100,11 @@ func (s *Store) mergeOrganizationsTx(
 	if firstID > secondID {
 		firstID, secondID = secondID, firstID
 	}
-	first, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, firstID)
+	first, err := getOrganizationForUpdateTx(ctx, tx, firstID)
 	if err != nil {
 		return err
 	}
-	second, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, secondID)
+	second, err := getOrganizationForUpdateTx(ctx, tx, secondID)
 	if err != nil {
 		return err
 	}
@@ -206,12 +206,12 @@ func (s *Store) mergeOrganizationsTx(
 		return fmt.Errorf("retire merged organization attributes: %w", err)
 	}
 	sourceRef := fmt.Sprintf("organization-merge:%d", losingID)
-	if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(`
+	if _, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO organization_names (
 			organization_id, name_kind, formatted, original_value,
 			name_normalized, source, source_ref
 		) VALUES (?, 'former', ?, ?, ?, 'system', ?)
-	`), survivorID, lockedLosing.Name,
+	`, survivorID, lockedLosing.Name,
 		lockedLosing.Name, NormalizeOrganizationName(lockedLosing.Name),
 		sourceRef); err != nil {
 		return fmt.Errorf("retain merged organization name: %w", err)
@@ -409,7 +409,7 @@ func (s *Store) replaceOrganizationOnce(
 		var previousName string
 		var previousRetired bool
 		if err := tx.QueryRowContext(ctx, `SELECT name, retired_at IS NOT NULL
-			FROM organizations WHERE id = ?`+s.dialect.SelectForUpdate(), id).
+			FROM organizations WHERE id = ?`, id).
 			Scan(&previousName, &previousRetired); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrOrganizationNotFound
@@ -459,7 +459,7 @@ func (s *Store) DeleteOrganizationContext(
 	ctx context.Context, id, expectedRevision int64,
 ) error {
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
-		current, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, id)
+		current, err := getOrganizationForUpdateTx(ctx, tx, id)
 		if err != nil {
 			return err
 		}
@@ -549,11 +549,11 @@ func getOrganizationTx(
 }
 
 func getOrganizationForUpdateTx(
-	ctx context.Context, tx *loggedTx, dialect Dialect, id int64,
+	ctx context.Context, tx *loggedTx, id int64,
 ) (*Organization, error) {
 	organization, err := scanOrganization(tx.QueryRowContext(ctx,
-		`SELECT `+organizationColumns+` FROM organizations WHERE id = ?`+
-			dialect.SelectForUpdate(), id))
+		`SELECT `+organizationColumns+` FROM organizations WHERE id = ?`,
+		id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrOrganizationNotFound
 	}

@@ -17,7 +17,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
+type logsOptions struct {
 	logsFollow bool
 	logsLines  int
 	logsRunID  string
@@ -25,12 +25,14 @@ var (
 	logsAll    bool
 	logsGrep   string
 	logsPath   bool
-)
+}
 
-var logsCmd = &cobra.Command{
-	Use:   "logs",
-	Short: "View and tail msgvault's structured log files",
-	Long: `Show msgvault's structured log output from the selected daemon's
+func newLogsCommand() *cobra.Command {
+	var options logsOptions
+	command := &cobra.Command{
+		Use:   "logs",
+		Short: "View and tail msgvault's structured log files",
+		Long: `Show msgvault's structured log output from the selected daemon's
 on-disk logs: the JSON logs under <data dir>/logs and the background
 daemon's <data dir>/serve.log. With [remote].url configured, this shows the
 remote daemon's logs; otherwise it starts or contacts the local daemon.
@@ -50,21 +52,37 @@ Examples:
   msgvault logs --grep deduplicate    # substring over the JSON
   msgvault logs --all                 # every log file we still have
   msgvault logs --path                # print the log path and exit`,
-	Args: cobra.NoArgs,
-	RunE: runLogsCmd,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error { return runLogsCmd(cmd, args, options) },
+	}
+	command.Flags().BoolVarP(&options.logsFollow, "follow", "f", false,
+		"follow today's log file as new lines are written")
+	command.Flags().IntVarP(&options.logsLines, "lines", "n", 50,
+		"number of trailing lines to show before following")
+	command.Flags().StringVar(&options.logsRunID, "run-id", "",
+		"filter to a single run (matches on prefix)")
+	command.Flags().StringVar(&options.logsLevel, "level", "",
+		"filter by log level: debug, info, warn, error")
+	command.Flags().StringVar(&options.logsGrep, "grep", "",
+		"substring filter applied to the raw JSON record")
+	command.Flags().BoolVar(&options.logsAll, "all", false,
+		"read every log file in the logs directory, not just today's")
+	command.Flags().BoolVar(&options.logsPath, "path", false,
+		"print the log directory path and exit")
+	return command
 }
 
 // validLogLevels lists the accepted --level values, matching slog's levels.
 var validLogLevels = []string{"debug", "info", "warn", "error"}
 
-func runLogsCmd(cmd *cobra.Command, args []string) error {
+func runLogsCmd(cmd *cobra.Command, args []string, options logsOptions) error {
 	// Validate --level up front (on the client, before proxying to the
 	// daemon) so a typo fails fast with the allowed set instead of
 	// silently matching nothing.
-	if logsLevel != "" && !slices.Contains(validLogLevels, strings.ToLower(logsLevel)) {
+	if options.logsLevel != "" && !slices.Contains(validLogLevels, strings.ToLower(options.logsLevel)) {
 		return usageErr(cmd, fmt.Errorf(
 			"invalid --level: %q (want one of: %s)",
-			logsLevel, strings.Join(validLogLevels, ", "),
+			options.logsLevel, strings.Join(validLogLevels, ", "),
 		))
 	}
 
@@ -80,12 +98,12 @@ func runLogsCmd(cmd *cobra.Command, args []string) error {
 	dir := cfg.LogsDir()
 	serveLogPath := filepath.Join(cfg.Data.DataDir, "serve.log")
 
-	if logsPath {
+	if options.logsPath {
 		fmt.Println(dir)
 		return nil
 	}
 
-	files, err := findLogFiles(dir, serveLogPath, logsAll)
+	files, err := findLogFiles(dir, serveLogPath, options.logsAll)
 	if err != nil {
 		return err
 	}
@@ -96,16 +114,16 @@ func runLogsCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	filter := logFilter{
-		RunID: logsRunID,
-		Level: strings.ToLower(logsLevel),
-		Grep:  logsGrep,
+		RunID: options.logsRunID,
+		Level: strings.ToLower(options.logsLevel),
+		Grep:  options.logsGrep,
 	}
 
 	// Non-follow mode: load the requested file(s) and print the
 	// last N filtered lines. "Last N" is computed against the
 	// filtered subset so --run-id and --level behave intuitively.
-	if !logsFollow {
-		return printLogFiles(files, logsLines, filter, cmd.OutOrStdout())
+	if !options.logsFollow {
+		return printLogFiles(files, options.logsLines, filter, cmd.OutOrStdout())
 	}
 
 	// Follow mode: print the tail of the most recent file and
@@ -113,7 +131,7 @@ func runLogsCmd(cmd *cobra.Command, args []string) error {
 	// rotated files would be a trap.
 	latest := files[len(files)-1]
 	if err := printLogFiles(
-		[]string{latest}, logsLines, filter, cmd.OutOrStdout(),
+		[]string{latest}, options.logsLines, filter, cmd.OutOrStdout(),
 	); err != nil {
 		return err
 	}
@@ -492,20 +510,4 @@ func formatLogRecord(rec map[string]any) string {
 	return b.String()
 }
 
-func init() {
-	logsCmd.Flags().BoolVarP(&logsFollow, "follow", "f", false,
-		"follow today's log file as new lines are written")
-	logsCmd.Flags().IntVarP(&logsLines, "lines", "n", 50,
-		"number of trailing lines to show before following")
-	logsCmd.Flags().StringVar(&logsRunID, "run-id", "",
-		"filter to a single run (matches on prefix)")
-	logsCmd.Flags().StringVar(&logsLevel, "level", "",
-		"filter by log level: debug, info, warn, error")
-	logsCmd.Flags().StringVar(&logsGrep, "grep", "",
-		"substring filter applied to the raw JSON record")
-	logsCmd.Flags().BoolVar(&logsAll, "all", false,
-		"read every log file in the logs directory, not just today's")
-	logsCmd.Flags().BoolVar(&logsPath, "path", false,
-		"print the log directory path and exit")
-	rootCmd.AddCommand(logsCmd)
-}
+func init() { registerCommandFactory(newLogsCommand) }

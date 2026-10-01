@@ -154,5 +154,5 @@ func runEMLPostImportMigrations(
 }
 
 func init() {
-	rootCmd.AddCommand(newImportEMLCommand())
+	registerCommandFactory(newImportEMLCommand)
 }

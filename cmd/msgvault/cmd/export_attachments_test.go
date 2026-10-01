@@ -18,17 +18,15 @@ import (
 )
 
 func TestExportAttachmentsCmd_Registration(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
 	// Verify the command is registered and has expected configuration
 	cmd, _, err := rootCmd.Find([]string{"export-attachments"})
-	require.NoError(err, "export-attachments command not found")
-	assert.Equal("export-attachments <message-id>", cmd.Use, "Use")
+	require.NoError(t, err, "export-attachments command not found")
+	assert.Equal(t, "export-attachments <message-id>", cmd.Use, "Use")
 
 	// Verify -o flag exists
 	f := cmd.Flags().Lookup("output")
-	require.NotNil(f, "expected --output flag")
-	assert.Equal("o", f.Shorthand, "output shorthand")
+	require.NotNil(t, f, "expected --output flag")
+	assert.Equal(t, "o", f.Shorthand, "output shorthand")
 }
 
 type exportAttachmentsHTTPTestFixture struct {
@@ -75,107 +73,88 @@ func configureExportAttachmentsDaemonTest(t *testing.T, dataDir string) context.
 }
 
 func TestResolveExportAttachmentsOutputDir_CreatesMissingDir(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	oldOutput := exportAttachmentsOutput
-	t.Cleanup(func() { exportAttachmentsOutput = oldOutput })
-
 	target := filepath.Join(t.TempDir(), "nested", "attachments")
-	exportAttachmentsOutput = target
+	exportAttachmentsOutput := target
 
-	got, err := resolveExportAttachmentsOutputDir()
-	require.NoError(err, "resolveExportAttachmentsOutputDir")
+	got, err := resolveExportAttachmentsOutputDir(exportAttachmentsOutput)
+	require.NoError(t, err, "resolveExportAttachmentsOutputDir")
 
 	info, statErr := os.Stat(target)
-	require.NoError(statErr, "stat created dir")
-	assert.True(info.IsDir(), "created path is a directory")
+	require.NoError(t, statErr, "stat created dir")
+	assert.True(t, info.IsDir(), "created path is a directory")
 
 	absTarget, err := filepath.Abs(target)
-	require.NoError(err, "abs target")
-	assert.Equal(absTarget, got, "returned absolute output dir")
+	require.NoError(t, err, "abs target")
+	assert.Equal(t, absTarget, got, "returned absolute output dir")
 }
 
 func TestResolveExportAttachmentsOutputDir_RejectsFilePath(t *testing.T) {
-	oldOutput := exportAttachmentsOutput
-	t.Cleanup(func() { exportAttachmentsOutput = oldOutput })
-
 	filePath := filepath.Join(t.TempDir(), "not-a-dir")
 	require.NoError(t, os.WriteFile(filePath, []byte("x"), 0o600), "write file")
-	exportAttachmentsOutput = filePath
+	exportAttachmentsOutput := filePath
 
-	_, err := resolveExportAttachmentsOutputDir()
+	_, err := resolveExportAttachmentsOutputDir(exportAttachmentsOutput)
 	require.Error(t, err, "expected error for file output path")
 	assert.Contains(t, err.Error(), "not a directory", "error text")
 }
 
 func TestExportAttachments_FullFlow(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
 	fixture := setupExportAttachmentsHTTPTest(t)
 
 	outputDir := t.TempDir()
-	exportAttachmentsOutput = outputDir
-	defer func() { exportAttachmentsOutput = "" }()
+	exportAttachmentsOutput := outputDir
 
-	c := exportAttachmentsCmd
+	c := newExportAttachmentsTestCommand(t, exportAttachmentsOutput)
 	c.SetContext(fixture.ctx)
-	require.NoError(runExportAttachments(c, []string{"1"}), "runExportAttachments")
+	require.NoError(t, runExportAttachments(c, []string{"1"}), "runExportAttachments")
 
 	// Verify both files were exported
 	entries, _ := os.ReadDir(outputDir)
-	require.Len(entries, 2, "expected 2 files")
+	require.Len(t, entries, 2, "expected 2 files")
 
 	names := map[string]bool{}
 	for _, e := range entries {
 		names[e.Name()] = true
 	}
-	assert.True(names["report.pdf"], "expected report.pdf in output")
-	assert.True(names["photo.jpg"], "expected photo.jpg in output")
+	assert.True(t, names["report.pdf"], "expected report.pdf in output")
+	assert.True(t, names["photo.jpg"], "expected photo.jpg in output")
 }
 
 func TestExportAttachmentsUsesLocalDaemonHTTPAndPreservesDirectoryOutput(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
 	outputDir := t.TempDir()
 	fixture := setupExportAttachmentsHTTPTest(t)
-
-	oldOutput := exportAttachmentsOutput
-	defer func() {
-		exportAttachmentsOutput = oldOutput
-	}()
-	exportAttachmentsOutput = outputDir
+	exportAttachmentsOutput := outputDir
 
 	doneErr := captureStderr(t)
-	cmd := exportAttachmentsCmd
+	cmd := newExportAttachmentsTestCommand(t, exportAttachmentsOutput)
 	cmd.SetContext(fixture.ctx)
 
 	err := runExportAttachments(cmd, []string{"gmail_abc123"})
 	stderr := doneErr()
-	require.NoError(err, "runExportAttachments")
+	require.NoError(t, err, "runExportAttachments")
 
 	reportOut, err := os.ReadFile(filepath.Join(outputDir, "report.pdf"))
-	require.NoError(err, "read report")
+	require.NoError(t, err, "read report")
 	photoOut, err := os.ReadFile(filepath.Join(outputDir, "photo.jpg"))
-	require.NoError(err, "read photo")
-	assert.Equal(fixture.reportData, reportOut, "report data")
-	assert.Equal(fixture.photoData, photoOut, "photo data")
-	assert.Equal(1, int(fixture.messageRequests.Load()), "message endpoint calls")
-	assert.Equal(2, int(fixture.attachmentRequests.Load()), "attachment endpoint calls")
-	assert.Contains(stderr, "  report.pdf (", "report stderr")
-	assert.Contains(stderr, "  photo.jpg (", "photo stderr")
-	assert.Contains(stderr, "Exported 2 attachment(s)", "summary")
-	assert.Contains(stderr, "to "+outputDir, "summary dir")
+	require.NoError(t, err, "read photo")
+	assert.Equal(t, fixture.reportData, reportOut, "report data")
+	assert.Equal(t, fixture.photoData, photoOut, "photo data")
+	assert.Equal(t, 1, int(fixture.messageRequests.Load()), "message endpoint calls")
+	assert.Equal(t, 2, int(fixture.attachmentRequests.Load()), "attachment endpoint calls")
+	assert.Contains(t, stderr, "  report.pdf (", "report stderr")
+	assert.Contains(t, stderr, "  photo.jpg (", "photo stderr")
+	assert.Contains(t, stderr, "Exported 2 attachment(s)", "summary")
+	assert.Contains(t, stderr, "to "+outputDir, "summary dir")
 }
 
 func TestExportAttachments_GmailIDFallback(t *testing.T) {
 	fixture := setupExportAttachmentsHTTPTest(t)
 
 	outputDir := t.TempDir()
-	exportAttachmentsOutput = outputDir
-	defer func() { exportAttachmentsOutput = "" }()
+	exportAttachmentsOutput := outputDir
 
 	// Use Gmail source ID instead of numeric ID
-	cmd := exportAttachmentsCmd
+	cmd := newExportAttachmentsTestCommand(t, exportAttachmentsOutput)
 	cmd.SetContext(fixture.ctx)
 	require.NoError(t, runExportAttachments(cmd, []string{"gmail_abc123"}), "runExportAttachments with Gmail ID")
 
@@ -186,7 +165,7 @@ func TestExportAttachments_GmailIDFallback(t *testing.T) {
 func TestExportAttachments_MessageNotFound(t *testing.T) {
 	fixture := setupExportAttachmentsHTTPTest(t)
 
-	cmd := exportAttachmentsCmd
+	cmd := newExportAttachmentsTestCommand(t, "")
 	cmd.SetContext(fixture.ctx)
 	err := runExportAttachments(cmd, []string{"99999"})
 	require.Error(t, err, "expected error for nonexistent message")
@@ -194,23 +173,20 @@ func TestExportAttachments_MessageNotFound(t *testing.T) {
 }
 
 func TestExportAttachments_OutputDirAutoCreated(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
 	fixture := setupExportAttachmentsHTTPTest(t)
 
 	// Point to a non-existent nested directory; it should be created like the
 	// sibling exporters create the file/path they are asked to write to.
 	outputDir := filepath.Join(t.TempDir(), "does-not-exist", "nested")
-	exportAttachmentsOutput = outputDir
-	defer func() { exportAttachmentsOutput = "" }()
+	exportAttachmentsOutput := outputDir
 
-	cmd := exportAttachmentsCmd
+	cmd := newExportAttachmentsTestCommand(t, exportAttachmentsOutput)
 	cmd.SetContext(fixture.ctx)
-	require.NoError(runExportAttachments(cmd, []string{"1"}), "runExportAttachments")
+	require.NoError(t, runExportAttachments(cmd, []string{"1"}), "runExportAttachments")
 
 	entries, err := os.ReadDir(outputDir)
-	require.NoError(err, "read created output dir")
-	assert.Len(entries, 2, "expected 2 exported files")
+	require.NoError(t, err, "read created output dir")
+	assert.Len(t, entries, 2, "expected 2 exported files")
 }
 
 func TestExportAttachments_NotADirectory(t *testing.T) {
@@ -219,10 +195,9 @@ func TestExportAttachments_NotADirectory(t *testing.T) {
 	// Point to a file, not a directory
 	tmpFile := filepath.Join(t.TempDir(), "afile.txt")
 	require.NoError(t, os.WriteFile(tmpFile, []byte("x"), 0644))
-	exportAttachmentsOutput = tmpFile
-	defer func() { exportAttachmentsOutput = "" }()
+	exportAttachmentsOutput := tmpFile
 
-	cmd := exportAttachmentsCmd
+	cmd := newExportAttachmentsTestCommand(t, exportAttachmentsOutput)
 	cmd.SetContext(fixture.ctx)
 	err := runExportAttachments(cmd, []string{"1"})
 	require.Error(t, err, "expected error for file as output dir")

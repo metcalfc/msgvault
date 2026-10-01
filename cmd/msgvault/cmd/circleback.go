@@ -19,13 +19,6 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-var (
-	syncCirclebackLimit int
-	syncCirclebackAfter string
-	syncCirclebackFull  bool
-	syncCirclebackProbe bool
-)
-
 const circlebackConfigHint = `Add to your config.toml:
 
   [[circleback]]
@@ -190,143 +183,6 @@ func runAddCirclebackLocal(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-var syncCirclebackCmd = &cobra.Command{
-	Use:   "sync-circleback [identifier]",
-	Short: "Sync Circleback meetings, notes, and transcripts",
-	Long: `Sync meetings, notes, action items, and transcripts from Circleback.
-
-Incremental by default: each run searches from 48 hours before the last
-successful run's newest meeting, so late edits are picked up; re-fetched
-meetings are upserted in place. With no identifier, every configured
-[[circleback]] source is synced.
-
-Use --full to re-fetch everything; --after bounds a full sync. --probe
-prints the server's tool inventory and a sample search result instead of
-syncing (for diagnosing schema drift). --limit caps newly searched meetings;
-due transcript maintenance items are additional work outside that cap.
-Limited runs do not save search traversal position, so repeated limited runs
-may revisit the same meetings; an unlimited run is required to complete sync.
-
-Examples:
-  msgvault sync-circleback
-  msgvault sync-circleback you@example.com --limit 5
-  msgvault sync-circleback --full --after 2024-01-01
-  msgvault sync-circleback --probe`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		state := invocationFromCommand(cmd)
-		if state == nil || state.cfg == nil {
-			return errors.New("configuration is unavailable")
-		}
-		cfg := state.cfg
-		if !isDaemonCLISubprocess() {
-			return runDaemonCLICommandHTTPFromCobra(cmd, args)
-		}
-
-		var sources []config.CirclebackSource
-		if len(args) > 0 || len(cfg.Circleback) == 1 {
-			src, err := resolveCirclebackSource(args, cfg)
-			if err != nil {
-				return err
-			}
-			sources = []config.CirclebackSource{*src}
-		} else {
-			sources = cfg.Circleback
-		}
-		if len(sources) == 0 {
-			return errors.New("no [[circleback]] sources configured\n\n" + circlebackConfigHint)
-		}
-
-		var after time.Time
-		if syncCirclebackAfter != "" {
-			t, err := time.Parse("2006-01-02", syncCirclebackAfter)
-			if err != nil {
-				return usageErr(cmd, fmt.Errorf("invalid --after %q (expected YYYY-MM-DD): %w", syncCirclebackAfter, err))
-			}
-			after = t.UTC()
-		}
-
-		if syncCirclebackProbe {
-			src := sources[0]
-			return probeCircleback(cmd, &src)
-		}
-
-		s, cleanup, err := openWritableStoreAndInitForIngestInvocation(state)
-		if err != nil {
-			return err
-		}
-		defer cleanup()
-		dbPath := cfg.DatabaseDSN()
-
-		ctx, cancel := context.WithCancel(cmd.Context())
-		defer cancel()
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-		defer signal.Stop(sigChan)
-		go func() {
-			select {
-			case <-sigChan:
-				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "\nInterrupted. Stopping Circleback sync...")
-				cancel()
-			case <-ctx.Done():
-			}
-		}()
-
-		pendingCacheWrites := &circleback.ImportSummary{}
-		for i := range sources {
-			src := sources[i]
-			accountEmail, err := src.EffectiveAccountEmail()
-			if err != nil {
-				return finishCirclebackImport(ctx, src.Identifier, pendingCacheWrites, err, func() error {
-					return rebuildCacheAfterManualSync(dbPath, state)
-				})
-			}
-			if ctx.Err() != nil {
-				return finishCirclebackImport(ctx, src.Identifier, pendingCacheWrites, nil, func() error {
-					return rebuildCacheAfterManualSync(dbPath, state)
-				})
-			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Syncing Circleback for %s\n\n", src.Identifier)
-
-			mgr := circlebackManager(&src, state)
-			session, err := circleback.Connect(ctx, mgr.Endpoint(), mgr.Handler(src.Identifier))
-			if err != nil {
-				return finishCirclebackImport(ctx, src.Identifier, pendingCacheWrites, err, func() error {
-					return rebuildCacheAfterManualSync(dbPath, state)
-				})
-			}
-			imp := circleback.NewImporter(s, session)
-			sum, err := imp.Import(ctx, circleback.ImportOptions{
-				Identifier:   src.Identifier,
-				AccountEmail: accountEmail,
-				Full:         syncCirclebackFull || !after.IsZero(),
-				Limit:        syncCirclebackLimit,
-				CreatedAfter: after,
-				Progress:     func(line string) { _, _ = fmt.Fprintln(cmd.OutOrStdout(), "  "+line) },
-			})
-			accumulateCirclebackWrites(pendingCacheWrites, sum)
-			_ = session.Close()
-			if ctx.Err() != nil || errors.Is(err, context.Canceled) {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "\nInterrupted — re-run sync-circleback to resume.")
-			}
-			if finishErr := finishCirclebackImport(ctx, src.Identifier, pendingCacheWrites, err, func() error {
-				return rebuildCacheAfterManualSync(dbPath, state)
-			}); finishErr != nil {
-				return finishErr
-			}
-
-			writeCirclebackSummary(cmd.OutOrStdout(), sum)
-		}
-
-		if ctx.Err() != nil {
-			return finishCirclebackImport(ctx, sources[len(sources)-1].Identifier, pendingCacheWrites, nil, func() error {
-				return rebuildCacheAfterManualSync(dbPath, state)
-			})
-		}
-		return rebuildCacheAfterManualSync(dbPath, state)
-	},
-}
-
 func finishCirclebackImport(
 	ctx context.Context,
 	identifier string,
@@ -485,11 +341,157 @@ func finishScheduledCirclebackImport(
 }
 
 func init() {
+	registerCommandFactory(newAddCirclebackCmd)
+	registerCommandFactory(newSyncCirclebackCommand)
+}
+
+func newSyncCirclebackCommand() *cobra.Command {
+	var (
+		syncCirclebackLimit int
+		syncCirclebackAfter string
+		syncCirclebackFull  bool
+		syncCirclebackProbe bool
+	)
+	syncCirclebackCmd := &cobra.Command{
+		Use:   "sync-circleback [identifier]",
+		Short: "Sync Circleback meetings, notes, and transcripts",
+		Long: `Sync meetings, notes, action items, and transcripts from Circleback.
+
+Incremental by default: each run searches from 48 hours before the last
+successful run's newest meeting, so late edits are picked up; re-fetched
+meetings are upserted in place. With no identifier, every configured
+[[circleback]] source is synced.
+
+Use --full to re-fetch everything; --after bounds a full sync. --probe
+prints the server's tool inventory and a sample search result instead of
+syncing (for diagnosing schema drift). --limit caps newly searched meetings;
+due transcript maintenance items are additional work outside that cap.
+Limited runs do not save search traversal position, so repeated limited runs
+may revisit the same meetings; an unlimited run is required to complete sync.
+
+Examples:
+  msgvault sync-circleback
+  msgvault sync-circleback you@example.com --limit 5
+  msgvault sync-circleback --full --after 2024-01-01
+  msgvault sync-circleback --probe`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			state := invocationFromCommand(cmd)
+			if state == nil || state.cfg == nil {
+				return errors.New("configuration is unavailable")
+			}
+			cfg := state.cfg
+			if !isDaemonCLISubprocess() {
+				return runDaemonCLICommandHTTPFromCobra(cmd, args)
+			}
+
+			var sources []config.CirclebackSource
+			if len(args) > 0 || len(cfg.Circleback) == 1 {
+				src, err := resolveCirclebackSource(args, cfg)
+				if err != nil {
+					return err
+				}
+				sources = []config.CirclebackSource{*src}
+			} else {
+				sources = cfg.Circleback
+			}
+			if len(sources) == 0 {
+				return errors.New("no [[circleback]] sources configured\n\n" + circlebackConfigHint)
+			}
+
+			var after time.Time
+			if syncCirclebackAfter != "" {
+				t, err := time.Parse("2006-01-02", syncCirclebackAfter)
+				if err != nil {
+					return usageErr(cmd, fmt.Errorf("invalid --after %q (expected YYYY-MM-DD): %w", syncCirclebackAfter, err))
+				}
+				after = t.UTC()
+			}
+
+			if syncCirclebackProbe {
+				src := sources[0]
+				return probeCircleback(cmd, &src)
+			}
+
+			s, cleanup, err := openWritableStoreAndInitForIngestInvocation(state)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+			dbPath := cfg.DatabaseDSN()
+
+			ctx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
+			sigChan := make(chan os.Signal, 1)
+			signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+			defer signal.Stop(sigChan)
+			go func() {
+				select {
+				case <-sigChan:
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "\nInterrupted. Stopping Circleback sync...")
+					cancel()
+				case <-ctx.Done():
+				}
+			}()
+
+			pendingCacheWrites := &circleback.ImportSummary{}
+			for i := range sources {
+				src := sources[i]
+				accountEmail, err := src.EffectiveAccountEmail()
+				if err != nil {
+					return finishCirclebackImport(ctx, src.Identifier, pendingCacheWrites, err, func() error {
+						return rebuildCacheAfterManualSync(dbPath, state)
+					})
+				}
+				if ctx.Err() != nil {
+					return finishCirclebackImport(ctx, src.Identifier, pendingCacheWrites, nil, func() error {
+						return rebuildCacheAfterManualSync(dbPath, state)
+					})
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Syncing Circleback for %s\n\n", src.Identifier)
+
+				mgr := circlebackManager(&src, state)
+				session, err := circleback.Connect(ctx, mgr.Endpoint(), mgr.Handler(src.Identifier))
+				if err != nil {
+					return finishCirclebackImport(ctx, src.Identifier, pendingCacheWrites, err, func() error {
+						return rebuildCacheAfterManualSync(dbPath, state)
+					})
+				}
+				imp := circleback.NewImporter(s, session)
+				sum, err := imp.Import(ctx, circleback.ImportOptions{
+					Identifier:   src.Identifier,
+					AccountEmail: accountEmail,
+					Full:         syncCirclebackFull || !after.IsZero(),
+					Limit:        syncCirclebackLimit,
+					CreatedAfter: after,
+					Progress:     func(line string) { _, _ = fmt.Fprintln(cmd.OutOrStdout(), "  "+line) },
+				})
+				accumulateCirclebackWrites(pendingCacheWrites, sum)
+				_ = session.Close()
+				if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "\nInterrupted — re-run sync-circleback to resume.")
+				}
+				if finishErr := finishCirclebackImport(ctx, src.Identifier, pendingCacheWrites, err, func() error {
+					return rebuildCacheAfterManualSync(dbPath, state)
+				}); finishErr != nil {
+					return finishErr
+				}
+
+				writeCirclebackSummary(cmd.OutOrStdout(), sum)
+			}
+
+			if ctx.Err() != nil {
+				return finishCirclebackImport(ctx, sources[len(sources)-1].Identifier, pendingCacheWrites, nil, func() error {
+					return rebuildCacheAfterManualSync(dbPath, state)
+				})
+			}
+			return rebuildCacheAfterManualSync(dbPath, state)
+		},
+	}
 	syncCirclebackCmd.Flags().IntVar(&syncCirclebackLimit, "limit", 0,
 		"max newly searched meetings per partial run; maintenance items are additional; an unlimited run is required to complete sync (0 = unlimited)")
 	syncCirclebackCmd.Flags().StringVar(&syncCirclebackAfter, "after", "", "full-sync only meetings after this date (YYYY-MM-DD; implies --full)")
 	syncCirclebackCmd.Flags().BoolVar(&syncCirclebackFull, "full", false, "ignore the stored creation watermark and re-fetch every meeting (repairs existing rows in place)")
 	syncCirclebackCmd.Flags().BoolVar(&syncCirclebackProbe, "probe", false, "print the MCP tool inventory and a sample result instead of syncing")
-	rootCmd.AddCommand(newAddCirclebackCmd())
-	rootCmd.AddCommand(addManualSyncCacheFlags(syncCirclebackCmd))
+	return addManualSyncCacheFlags(syncCirclebackCmd)
 }

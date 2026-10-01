@@ -51,9 +51,8 @@ func (s *Store) EnsurePersonEnrichmentProfile(
 		INSERT INTO person_enrichment_profiles
 			(fingerprint, provider_name, provider_kind, provider_namespace,
 			 endpoint, api_key_env, policy_json)
-		VALUES (?, ?, ?, ?, ?, ?, `+s.dialect.JSONBindExpr()+`)
-		ON CONFLICT (fingerprint) DO NOTHING`,
-		profile.Fingerprint, profile.Name, profile.Kind, profile.ProviderNamespace,
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (fingerprint) DO NOTHING`, profile.Fingerprint, profile.Name, profile.Kind, profile.ProviderNamespace,
 		profile.Endpoint, profile.APIKeyEnv, string(profile.PolicyJSON),
 	)
 	if err != nil {
@@ -284,7 +283,7 @@ func (s *Store) revokePersonEnrichmentConsentTx(
 		if s.personEnrichmentTxBarrier != nil {
 			s.personEnrichmentTxBarrier("revoke_before_person_lock")
 		}
-		if _, err := lockPersonEnrichmentPersonTx(ctx, tx, s.dialect, personID); err != nil {
+		if _, err := lockPersonEnrichmentPersonTx(ctx, tx, personID); err != nil {
 			return false, err
 		}
 		if s.personEnrichmentTxBarrier != nil {

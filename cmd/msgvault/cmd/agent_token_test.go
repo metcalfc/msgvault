@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/api"
@@ -34,16 +33,7 @@ func runAgentTokenCommand(
 ) (string, error) {
 	t.Helper()
 	var output bytes.Buffer
-	cmd := &cobra.Command{Use: template.Use, Args: template.Args, RunE: template.RunE}
-	cmd.Flags().AddFlagSet(template.Flags())
-	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
-		if value, ok := flag.Value.(pflag.SliceValue); ok && flag.DefValue == "[]" {
-			require.NoError(t, value.Replace(nil))
-		} else {
-			require.NoError(t, flag.Value.Set(flag.DefValue))
-		}
-		flag.Changed = false
-	})
+	cmd := template
 	cmd.SetOut(&output)
 	cmd.SetErr(&output)
 	cmd.SetArgs(args)
@@ -230,7 +220,7 @@ func TestAgentTokenIssueOutputsSecret(t *testing.T) {
 	})
 	_ = testCtx
 
-	output, err := runAgentTokenCommand(testCtx, t, agentTokenIssueCmd,
+	output, err := runAgentTokenCommand(testCtx, t, freshCommandForTest(t, newAgentTokenCommand(), "issue"),
 		"--label", "Test Agent",
 		"--permissions", "draft.create",
 		"--source-ids", "1",
@@ -244,7 +234,7 @@ func TestAgentTokenIssueOutputsSecret(t *testing.T) {
 	assert.Contains(output, "tok_abc123")
 	assert.Contains(output, "Test Agent")
 	assert.Contains(output, wantSecret, "one-time secret must appear in issue output")
-	output, err = runAgentTokenCommand(testCtx, t, agentTokenIssueCmd,
+	output, err = runAgentTokenCommand(testCtx, t, freshCommandForTest(t, newAgentTokenCommand(), "issue"),
 		"--label", "Test Agent", "--permissions", "draft.create", "--source-ids", "1", "--json")
 	require.NoError(err)
 	assert.True(strings.HasSuffix(output, "\n"), "JSON output must end with a newline")
@@ -271,7 +261,7 @@ func TestAgentTokenListFormatsTable(t *testing.T) {
 	})
 	_ = testCtx
 
-	output, err := runAgentTokenCommand(testCtx, t, agentTokenListCmd)
+	output, err := runAgentTokenCommand(testCtx, t, freshCommandForTest(t, newAgentTokenCommand(), "list"))
 	require.NoError(err)
 
 	assert.Equal(http.MethodGet, gotMethod)
@@ -302,7 +292,7 @@ func TestAgentTokenRevokeCallsDelete(t *testing.T) {
 	})
 	_ = testCtx
 
-	output, err := runAgentTokenCommand(testCtx, t, agentTokenRevokeCmd, "tok_abc123")
+	output, err := runAgentTokenCommand(testCtx, t, freshCommandForTest(t, newAgentTokenCommand(), "revoke"), "tok_abc123")
 	require.NoError(err)
 
 	assert.Equal(http.MethodDelete, gotMethod)

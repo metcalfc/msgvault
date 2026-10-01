@@ -80,7 +80,6 @@ func newUninitializedPersonInferenceMigrationStore(t *testing.T) *store.Store {
 		t.Cleanup(func() { require.NoError(t, st.Close()) })
 		return st
 	}
-
 }
 
 func TestPersonInferenceConsentSchemaEnforcesAuditState(t *testing.T) {

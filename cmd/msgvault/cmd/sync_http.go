@@ -15,6 +15,7 @@ import (
 )
 
 func runSyncIncrementalHTTP(cmd *cobra.Command, args []string) error {
+	flags := readSyncCommandOptions(cmd)
 	force, skip, flagErr := manualSyncCacheFlags(cmd)
 	if flagErr != nil {
 		return usageErr(cmd, flagErr)
@@ -26,8 +27,8 @@ func runSyncIncrementalHTTP(cmd *cobra.Command, args []string) error {
 	req := daemonclient.CLISyncRequest{
 		BuildCache:   force,
 		NoBuildCache: skip,
-		Folders:      parseFolderFilter(syncFolders),
-		SkipFolders:  parseFolderFilter(syncSkipFolders),
+		Folders:      parseFolderFilter(flags.syncFolders),
+		SkipFolders:  parseFolderFilter(flags.syncSkipFolders),
 		SourceID:     selector.SourceID,
 		SourceIDSet:  selector.SourceIDSet,
 	}
@@ -38,6 +39,7 @@ func runSyncIncrementalHTTP(cmd *cobra.Command, args []string) error {
 }
 
 func runSyncFullHTTP(cmd *cobra.Command, args []string) error {
+	flags := readSyncCommandOptions(cmd)
 	force, skip, flagErr := manualSyncCacheFlags(cmd)
 	if flagErr != nil {
 		return usageErr(cmd, flagErr)
@@ -50,13 +52,13 @@ func runSyncFullHTTP(cmd *cobra.Command, args []string) error {
 		BuildCache:   force,
 		NoBuildCache: skip,
 		Full:         true,
-		Query:        syncQuery,
-		NoResume:     syncNoResume,
-		Before:       syncBefore,
-		After:        syncAfter,
-		Limit:        syncLimit,
-		Folders:      parseFolderFilter(syncFolders),
-		SkipFolders:  parseFolderFilter(syncSkipFolders),
+		Query:        flags.syncQuery,
+		NoResume:     flags.syncNoResume,
+		Before:       flags.syncBefore,
+		After:        flags.syncAfter,
+		Limit:        flags.syncLimit,
+		Folders:      parseFolderFilter(flags.syncFolders),
+		SkipFolders:  parseFolderFilter(flags.syncSkipFolders),
 		SourceID:     selector.SourceID,
 		SourceIDSet:  selector.SourceIDSet,
 	}

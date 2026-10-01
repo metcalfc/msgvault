@@ -18,17 +18,13 @@ import (
 	"go.kenn.io/msgvault/internal/tui"
 )
 
-var forceLocalTUI bool
-var deprecatedTUIForceSQL bool
-var deprecatedTUISkipCacheBuild bool
-var deprecatedTUINoSQLiteScanner bool
-
 var _ peoplebrowser.Backend = (*daemonclient.PeopleBrowser)(nil)
 
-var tuiCmd = &cobra.Command{
-	Use:   "tui",
-	Short: "Open the interactive terminal UI",
-	Long: `Open an interactive terminal UI for browsing email, text messages,
+func newTUICommand() *cobra.Command {
+	tuiCmd := &cobra.Command{
+		Use:   "tui",
+		Short: "Open the interactive terminal UI",
+		Long: `Open an interactive terminal UI for browsing email, text messages,
 meeting transcripts, and people.
 
 Email mode provides aggregate views by:
@@ -75,84 +71,87 @@ HTTP Mode:
   When [remote].url is configured, the TUI connects to that remote server.
   Otherwise it starts or reuses the local daemon. Use --local to force the local
   daemon when a remote is configured.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		state := invocationFromCommand(cmd)
-		if state == nil || state.cfg == nil {
-			return errors.New("configuration is unavailable")
-		}
-		currentCfg := state.cfg
-		currentLogResult := state.logResult
-		local, err := cmd.Flags().GetBool(localValue)
-		if err != nil {
-			return fmt.Errorf("read --local flag: %w", err)
-		}
-		backend, err := openTUIBackendWithLocal(withInvocation(cmd.Context(), state), local)
-		if err != nil {
-			return err
-		}
-		defer backend.cleanup()
-		if backend.info.Kind == HTTPStoreConfiguredRemote {
-			fmt.Printf("Connected to remote: %s\n", currentCfg.Remote.URL)
-		}
-
-		// The shipped daemon engine provides Texts directly. People uses the
-		// focused wrapper because Engine.Search has a different query contract.
-		var textEngine query.TextEngine = backend.engine
-		peopleBackend := tuiPeopleBackend(cmd.Context(), backend.client, backend.engine)
-
-		notice := analyticsCacheNotice(cmd.Context(), backend.client)
-		if notice != "" {
-			fmt.Println(notice)
-		}
-
-		// Create and run TUI
-		semanticSearch := tuiSemanticSearcher(cmd.Context(), backend.client, backend.engine)
-		collectionScopes := tuiCollectionScopes(cmd.Context(), backend.client, backend.engine)
-		model := tui.New(backend.engine, tui.Options{
-			Context:               cmd.Context(),
-			DataDir:               currentCfg.Data.DataDir,
-			ExportDir:             currentCfg.ExportDir(),
-			Version:               Version,
-			TextEngine:            textEngine,
-			PeopleBackend:         peopleBackend,
-			ManifestSaver:         backend.client,
-			AttachmentReader:      tuiAttachmentOpener{client: backend.client},
-			SemanticSearch:        semanticSearch,
-			AnalyticsNotice:       notice,
-			SettingsBackend:       backend.settings,
-			CollectionScopeLister: collectionScopes,
-		})
-		defer model.Close()
-		p := tea.NewProgram(model, tea.WithContext(cmd.Context()))
-		noticeCtx, stopNoticeRefresh := context.WithCancel(cmd.Context())
-		defer stopNoticeRefresh()
-		if notice != "" {
-			go refreshAnalyticsCacheNotice(
-				noticeCtx,
-				backend.client,
-				analyticsCacheNoticeRefreshInterval,
-				p.Send,
-			)
-		}
-
-		// Swap the slog default to a file-only logger for the
-		// duration of the TUI. Bubble Tea owns the terminal in
-		// alt-screen mode; any stderr write from slog corrupts
-		// the render. The daily log file still receives
-		// everything, so 'msgvault logs -f' in another pane
-		// continues to work for diagnostics.
-		if err := withTUIFileLogger(currentLogResult, func() error {
-			_, err := p.Run()
-			if err != nil {
-				return fmt.Errorf("run tui: %w", err)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			state := invocationFromCommand(cmd)
+			if state == nil || state.cfg == nil {
+				return errors.New("configuration is unavailable")
 			}
-			return nil
-		}); err != nil {
-			return err
-		}
+			currentCfg := state.cfg
+			currentLogResult := state.logResult
+			local, err := cmd.Flags().GetBool(localValue)
+			if err != nil {
+				return fmt.Errorf("read --local flag: %w", err)
+			}
+			backend, err := openTUIBackendWithLocal(withInvocation(cmd.Context(), state), local)
+			if err != nil {
+				return err
+			}
+			defer backend.cleanup()
+			if backend.info.Kind == HTTPStoreConfiguredRemote {
+				fmt.Printf("Connected to remote: %s\n", currentCfg.Remote.URL)
+			}
 
-		return nil
-	},
+			// The shipped daemon engine provides Texts directly. People uses the
+			// focused wrapper because Engine.Search has a different query contract.
+			var textEngine query.TextEngine = backend.engine
+			peopleBackend := tuiPeopleBackend(cmd.Context(), backend.client, backend.engine)
+
+			notice := analyticsCacheNotice(cmd.Context(), backend.client)
+			if notice != "" {
+				fmt.Println(notice)
+			}
+
+			// Create and run TUI
+			semanticSearch := tuiSemanticSearcher(cmd.Context(), backend.client, backend.engine)
+			collectionScopes := tuiCollectionScopes(cmd.Context(), backend.client, backend.engine)
+			model := tui.New(backend.engine, tui.Options{
+				Context:               cmd.Context(),
+				DataDir:               currentCfg.Data.DataDir,
+				ExportDir:             currentCfg.ExportDir(),
+				Version:               Version,
+				TextEngine:            textEngine,
+				PeopleBackend:         peopleBackend,
+				ManifestSaver:         backend.client,
+				AttachmentReader:      tuiAttachmentOpener{client: backend.client},
+				SemanticSearch:        semanticSearch,
+				AnalyticsNotice:       notice,
+				SettingsBackend:       backend.settings,
+				CollectionScopeLister: collectionScopes,
+			})
+			defer model.Close()
+			p := tea.NewProgram(model, tea.WithContext(cmd.Context()))
+			noticeCtx, stopNoticeRefresh := context.WithCancel(cmd.Context())
+			defer stopNoticeRefresh()
+			if notice != "" {
+				go refreshAnalyticsCacheNotice(
+					noticeCtx,
+					backend.client,
+					analyticsCacheNoticeRefreshInterval,
+					p.Send,
+				)
+			}
+
+			// Swap the slog default to a file-only logger for the
+			// duration of the TUI. Bubble Tea owns the terminal in
+			// alt-screen mode; any stderr write from slog corrupts
+			// the render. The daily log file still receives
+			// everything, so 'msgvault logs -f' in another pane
+			// continues to work for diagnostics.
+			if err := withTUIFileLogger(currentLogResult, func() error {
+				_, err := p.Run()
+				if err != nil {
+					return fmt.Errorf("run tui: %w", err)
+				}
+				return nil
+			}); err != nil {
+				return err
+			}
+
+			return nil
+		},
+	}
+	configureTUICommand(tuiCmd)
+	return tuiCmd
 }
 
 func withTUIFileLogger(result *logging.Result, run func() error) error {
@@ -315,14 +314,6 @@ func refreshAnalyticsCacheNotice(
 	}
 }
 
-func openTUIBackend(ctx context.Context) (*tuiBackend, error) {
-	state := invocationFromContext(ctx)
-	if state == nil {
-		return nil, errors.New("configuration is unavailable")
-	}
-	return openTUIBackendWithLocal(ctx, forceLocalTUI)
-}
-
 func openTUIBackendWithLocal(ctx context.Context, forceLocal bool) (*tuiBackend, error) {
 	if forceLocal {
 		inv := invocationFromContext(ctx)
@@ -349,11 +340,14 @@ func openTUIBackendWithLocal(ctx context.Context, forceLocal bool) (*tuiBackend,
 }
 
 func init() {
-	rootCmd.AddCommand(tuiCmd)
-	tuiCmd.Flags().BoolVar(&forceLocalTUI, localValue, false, "Use the local daemon instead of the configured remote server")
-	tuiCmd.Flags().BoolVar(&deprecatedTUIForceSQL, "force-sql", false, "Deprecated in 0.17.0: set [analytics].engine = \"sql\" in config.toml")
-	tuiCmd.Flags().BoolVar(&deprecatedTUISkipCacheBuild, "no-cache-build", false, "Deprecated in 0.17.0: set [analytics].auto_build_cache = false in config.toml")
-	tuiCmd.Flags().BoolVar(&deprecatedTUINoSQLiteScanner, "no-sqlite-scanner", false, "Deprecated in 0.17.0: cache engine selection is daemon-managed")
+	registerCommandFactory(newTUICommand)
+}
+
+func configureTUICommand(tuiCmd *cobra.Command) {
+	tuiCmd.Flags().Bool(localValue, false, "Use the local daemon instead of the configured remote server")
+	tuiCmd.Flags().Bool("force-sql", false, "Deprecated in 0.17.0: set [analytics].engine = \"sql\" in config.toml")
+	tuiCmd.Flags().Bool("no-cache-build", false, "Deprecated in 0.17.0: set [analytics].auto_build_cache = false in config.toml")
+	tuiCmd.Flags().Bool("no-sqlite-scanner", false, "Deprecated in 0.17.0: cache engine selection is daemon-managed")
 	_ = tuiCmd.Flags().MarkDeprecated("force-sql", "deprecated in 0.17.0; set [analytics].engine = \"sql\" in config.toml")
 	_ = tuiCmd.Flags().MarkDeprecated("no-cache-build", "deprecated in 0.17.0; set [analytics].auto_build_cache = false in config.toml")
 	_ = tuiCmd.Flags().MarkDeprecated("no-sqlite-scanner", "deprecated in 0.17.0; cache engine selection is daemon-managed; use [analytics].engine = \"sql\" for live SQL")

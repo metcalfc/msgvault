@@ -118,7 +118,7 @@ type Config struct {
 	KPerSignal          int
 	SubjectBoost        float64
 	// Rebind transforms the participant/label lookup queries run by
-	// BuildFilter against mainDB. Nil or SQLiteDialect.Rebind preserves
+	// BuildFilter against mainDB. A nil function preserves
 	// SQLite's native ? placeholders.
 	Rebind     func(string) string
 	BuildScope vector.BuildScope

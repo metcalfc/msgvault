@@ -273,6 +273,7 @@ func TestBudgetConcurrentHalfOpenReservesAdmitOneProbe(t *testing.T) {
 	clock.Unlock()
 
 	var admitted, refused atomic.Int32
+	reserveErrors := make(chan error, 64)
 	var probes sync.Map
 	var group sync.WaitGroup
 	start := make(chan struct{})
@@ -281,7 +282,7 @@ func TestBudgetConcurrentHalfOpenReservesAdmitOneProbe(t *testing.T) {
 			<-start
 			r, reserveErr := budget.reserve()
 			if reserveErr != nil {
-				assert.ErrorIs(reserveErr, ErrBreakerOpen)
+				reserveErrors <- reserveErr
 				refused.Add(1)
 				return
 			}
@@ -291,6 +292,10 @@ func TestBudgetConcurrentHalfOpenReservesAdmitOneProbe(t *testing.T) {
 	}
 	close(start)
 	group.Wait()
+	close(reserveErrors)
+	for err := range reserveErrors {
+		require.ErrorIs(err, ErrBreakerOpen)
+	}
 	assert.Equal(int32(1), admitted.Load(), "exactly one probe is admitted")
 	assert.Equal(int32(63), refused.Load())
 	assert.Equal(1, budget.State().InFlight)
@@ -309,6 +314,7 @@ func TestBudgetConcurrentHalfOpenReservesAdmitOneProbe(t *testing.T) {
 // flight.
 type blockingLedger struct {
 	fakeLedger
+
 	blockedFeature string
 	entered        chan struct{}
 	proceed        chan struct{}
@@ -932,15 +938,15 @@ func TestBudgetStaleSuccessDoesNotResetFailuresOfANewerOpening(t *testing.T) {
 	require.Equal(1, budget.State().ConsecutiveFailures)
 }
 
-// slowReserveLedger holds every day reservation for a while, so a request
-// deadline can pass between reserving and sending.
+// slowReserveLedger lets a test advance time between reserving and sending.
 type slowReserveLedger struct {
 	fakeLedger
-	delay time.Duration
+
+	beforeReserve func()
 }
 
 func (l *slowReserveLedger) ReserveJevDayRequest(ctx context.Context, reservation DayReservation) error {
-	time.Sleep(l.delay)
+	l.beforeReserve()
 	return l.fakeLedger.ReserveJevDayRequest(ctx, reservation)
 }
 
@@ -979,8 +985,6 @@ func TestClientExpiredDeadlineReservesNothing(t *testing.T) {
 // deadline passes after both reservations but before the real transport dials,
 // so no byte leaves the process and both reservations are returned.
 func TestClientDeadlineThatPassesBeforeDialReleasesBothReservations(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
 	var received atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		received.Add(1)
@@ -988,24 +992,28 @@ func TestClientDeadlineThatPassesBeforeDialReleasesBothReservations(t *testing.T
 		_, _ = io.WriteString(w, measuredResponse)
 	}))
 	t.Cleanup(server.Close)
-	ledger := &slowReserveLedger{delay: 100 * time.Millisecond}
-	budget := &Budget{MaxRequests: 10, FailureThreshold: 1}
-	client, err := NewClient(Options{
-		APIKey: "k", Budget: budget, Ledger: ledger, Endpoint: server.URL,
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		ledger := &slowReserveLedger{beforeReserve: func() { time.Sleep(100 * time.Millisecond) }}
+		budget := &Budget{MaxRequests: 10, FailureThreshold: 1}
+		client, err := NewClient(Options{
+			APIKey: "k", Budget: budget, Ledger: ledger, Endpoint: server.URL,
+		})
+		require.NoError(err)
+		request := noulRequest("matches")
+		request.Feature = "enrichment_identity"
+		request.Deadline = time.Now().Add(20 * time.Millisecond)
+		_, err = client.Ask(context.Background(), request)
+		require.ErrorIs(err, context.DeadlineExceeded)
+		assert.Zero(received.Load(), "the provider saw nothing")
+		ledger.mu.Lock()
+		defer ledger.mu.Unlock()
+		assert.Len(ledger.reservations, 1)
+		assert.Len(ledger.released, 1, "the day reservation is returned")
+		assert.Empty(ledger.usage)
+		assert.Zero(budget.State().Attempts, "the in-process attempt is returned")
+		assert.Zero(budget.State().ConsecutiveFailures)
+		assert.Zero(budget.State().InFlight)
 	})
-	require.NoError(err)
-	request := noulRequest("matches")
-	request.Feature = "enrichment_identity"
-	request.Deadline = time.Now().Add(20 * time.Millisecond)
-	_, err = client.Ask(context.Background(), request)
-	require.ErrorIs(err, context.DeadlineExceeded)
-	assert.Zero(received.Load(), "the provider saw nothing")
-	ledger.mu.Lock()
-	defer ledger.mu.Unlock()
-	assert.Len(ledger.reservations, 1)
-	assert.Len(ledger.released, 1, "the day reservation is returned")
-	assert.Empty(ledger.usage)
-	assert.Zero(budget.State().Attempts, "the in-process attempt is returned")
-	assert.Zero(budget.State().ConsecutiveFailures)
-	assert.Zero(budget.State().InFlight)
 }

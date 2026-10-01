@@ -177,7 +177,6 @@ func OpenContext(ctx context.Context, dbPath string) (*Store, error) {
 // Not for production use — a process crash mid-test can leave a corrupt
 // database, which is fine because tests recreate it from scratch.
 func OpenForTest(dbPath string) (*Store, error) {
-
 	return openSQLite(dbPath, testSQLiteParams)
 }
 
@@ -227,17 +226,13 @@ func openSQLiteContext(ctx context.Context, dbPath, params string) (*Store, erro
 	}
 
 	dialect := &SQLiteDialect{}
-	if err := dialect.InitConn(db); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("init connection: %w", err)
-	}
 	if err := ctx.Err(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
 
 	s := &Store{
-		db:                   newLoggedDB(db, dialect.Rebind),
+		db:                   newLoggedDB(db, identityRebind),
 		dbPath:               dbPath,
 		sqliteFilesystemPath: filesystemPath,
 		dialect:              dialect,
@@ -308,10 +303,8 @@ func OpenReadOnlyContext(ctx context.Context, dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("resolve SQLite database path: %w", err)
 	}
 	if _, err := os.Stat(filesystemPath); err != nil {
-		return nil, fmt.Errorf(
-			"database not found: %s "+
-				"(run 'msgvault init-db' first)", dbPath,
-		)
+		return nil, fmt.Errorf("database not found: %s "+
+			"(run 'msgvault init-db' first)", dbPath)
 	}
 
 	// Use _query_only instead of mode=ro. WAL-mode databases may need
@@ -332,13 +325,9 @@ func OpenReadOnlyContext(ctx context.Context, dbPath string) (*Store, error) {
 	db.SetMaxOpenConns(4)
 
 	dialect := &SQLiteDialect{}
-	if err := dialect.InitConn(db); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("init connection: %w", err)
-	}
 
 	s := &Store{
-		db:                   newLoggedDB(db, dialect.Rebind),
+		db:                   newLoggedDB(db, identityRebind),
 		dbPath:               dbPath,
 		sqliteFilesystemPath: filesystemPath,
 		dialect:              dialect,
@@ -545,7 +534,6 @@ func (s *Store) BackupDatabase(dst string) error {
 
 // BackupDatabaseContext is the request-aware form of BackupDatabase.
 func (s *Store) BackupDatabaseContext(ctx context.Context, dst string) (returnErr error) {
-
 	if _, err := os.Lstat(dst); err == nil {
 		return fmt.Errorf("backup target already exists: %s", dst)
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -637,8 +625,7 @@ func (s *Store) WithExclusiveLock(ctx context.Context, fn func() error) error {
 
 // withTx executes fn within a database transaction. If fn returns an error,
 // the transaction is rolled back; otherwise it is committed. The callback
-// receives *loggedTx so every statement inside the transaction goes through
-// the dialect's Rebind automatically.
+// receives *loggedTx so every statement inside the transaction is logged.
 func (s *Store) withTx(fn func(tx *loggedTx) error) error {
 	return s.withTxContext(context.Background(), fn)
 }
@@ -742,12 +729,6 @@ func (s *Store) runMaintenance(ctx context.Context, fn func(ctx context.Context,
 		}
 	}()
 
-	if reset := s.dialect.MaintenanceTimeoutResetSQL(); reset != "" {
-		if _, err := tx.ExecContext(ctx, reset); err != nil {
-			return fmt.Errorf("disable maintenance statement timeout: %w", err)
-		}
-	}
-
 	if err := fn(ctx, tx); err != nil {
 		return err
 	}
@@ -836,8 +817,7 @@ type chunkInsert struct {
 
 // insertInChunks executes a multi-value INSERT in chunks to stay within SQLite's
 // parameter limit (999). valueBuilder generates the VALUES placeholders and
-// args for each chunk of row indices. Rebinding to the dialect's placeholder
-// form happens inside tx.Exec (loggedTx wraps the dialect's Rebind).
+// args for each chunk of row indices.
 func insertInChunks(tx interface {
 	Exec(query string, args ...any) (sql.Result, error)
 }, c chunkInsert, valueBuilder func(start, end int) ([]string, []any)) error {
@@ -901,7 +881,7 @@ func execInChunksContext[T any](
 
 // Rebind returns the query with SQLite ? placeholders unchanged.
 func (s *Store) Rebind(query string) string {
-	return s.dialect.Rebind(query)
+	return query
 }
 
 // FTS5Available returns whether FTS5 full-text search is available.
@@ -1785,10 +1765,8 @@ func (s *Store) backfillContentChangedAt(ctx context.Context) error {
 	// The first batch has no lower bound at all rather than starting from some
 	// smallest-imaginable id: an id of 0, or a negative one, is legal, and
 	// there is no sentinel below math.MinInt64 to start a `>` comparison from.
-	firstBatchSQL := s.dialect.Rebind(
-		`SELECT id FROM messages WHERE content_changed_at IS NULL ORDER BY id LIMIT ?`)
-	nextBatchSQL := s.dialect.Rebind(
-		`SELECT id FROM messages WHERE content_changed_at IS NULL AND id > ? ORDER BY id LIMIT ?`)
+	firstBatchSQL := `SELECT id FROM messages WHERE content_changed_at IS NULL ORDER BY id LIMIT ?`
+	nextBatchSQL := `SELECT id FROM messages WHERE content_changed_at IS NULL AND id > ? ORDER BY id LIMIT ?`
 
 	// The outer COALESCE is load-bearing, not belt-and-braces. strftime
 	// returns NULL -- not an error -- for any input its parser rejects: a unix
@@ -1803,8 +1781,6 @@ func (s *Store) backfillContentChangedAt(ctx context.Context) error {
 	                     strftime('%Y-%m-%d %H:%M:%f', last_modified),
 	                     strftime('%Y-%m-%d %H:%M:%f', 'now'))
 	             WHERE content_changed_at IS NULL AND id >= ? AND id <= ?`
-
-	stampSQL = s.dialect.Rebind(stampSQL)
 
 	batchSize := s.contentChangedBackfillBatch()
 	started := time.Now()
@@ -2075,25 +2051,22 @@ func (s *Store) GetStatsForScopeContext(ctx context.Context, sourceIDs []int64) 
 				nil,
 				&stats.SourceDeletedCount,
 			},
-			{
-				"SELECT COUNT(*) FROM conversations WHERE EXISTS (" +
-					"SELECT 1 FROM messages m WHERE m.conversation_id = conversations.id AND " + LiveMessagesWhere("m", true) +
-					")",
-				nil,
+			{"SELECT COUNT(*) FROM conversations WHERE EXISTS (" +
+				"SELECT 1 FROM messages m WHERE m.conversation_id = conversations.id AND " +
+				LiveMessagesWhere("m", true) +
+				")", nil,
 				&stats.ThreadCount,
 			},
-			{
-				"SELECT COUNT(*) FROM attachments a WHERE EXISTS (" +
-					"SELECT 1 FROM messages m WHERE m.id = a.message_id AND " + LiveMessagesWhere("m", true) +
-					")",
-				nil,
+			{"SELECT COUNT(*) FROM attachments a WHERE EXISTS (" +
+				"SELECT 1 FROM messages m WHERE m.id = a.message_id AND " +
+				LiveMessagesWhere("m", true) +
+				")", nil,
 				&stats.AttachmentCount,
 			},
-			{
-				"SELECT COUNT(*) FROM labels l WHERE EXISTS (" +
-					"SELECT 1 FROM message_labels ml JOIN messages m ON m.id = ml.message_id WHERE ml.label_id = l.id AND " + LiveMessagesWhere("m", true) +
-					")",
-				nil,
+			{"SELECT COUNT(*) FROM labels l WHERE EXISTS (" +
+				"SELECT 1 FROM message_labels ml JOIN messages m ON m.id = ml.message_id WHERE ml.label_id = l.id AND " +
+				LiveMessagesWhere("m", true) +
+				")", nil,
 				&stats.LabelCount,
 			},
 			{
@@ -2140,18 +2113,16 @@ func (s *Store) GetStatsForScopeContext(ctx context.Context, sourceIDs []int64) 
 				cloneArgs(),
 				&stats.ThreadCount,
 			},
-			{
-				"SELECT COUNT(*) FROM attachments a WHERE EXISTS (" +
-					"SELECT 1 FROM messages m WHERE m.id = a.message_id AND " + LiveMessagesWhere("m", true) +
-					" AND m." + inClause + ")",
-				cloneArgs(),
+			{"SELECT COUNT(*) FROM attachments a WHERE EXISTS (" +
+				"SELECT 1 FROM messages m WHERE m.id = a.message_id AND " +
+				LiveMessagesWhere("m", true) +
+				" AND m." + inClause + ")", cloneArgs(),
 				&stats.AttachmentCount,
 			},
-			{
-				"SELECT COUNT(DISTINCT ml.label_id) FROM message_labels ml " +
-					"JOIN messages m ON m.id = ml.message_id WHERE " + LiveMessagesWhere("m", true) +
-					" AND m." + inClause,
-				cloneArgs(),
+			{"SELECT COUNT(DISTINCT ml.label_id) FROM message_labels ml " +
+				"JOIN messages m ON m.id = ml.message_id WHERE " +
+				LiveMessagesWhere("m", true) +
+				" AND m." + inClause, cloneArgs(),
 				&stats.LabelCount,
 			},
 		}

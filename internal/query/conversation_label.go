@@ -176,7 +176,7 @@ func (e *SQLiteEngine) fillConversationParticipantLabels(
 	}
 	query := sqlConversationLabelQuery(len(ids))
 	args := ids
-	result, err := e.db.QueryContext(ctx, e.dialect.Rebind(query), args...)
+	result, err := e.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("label untitled conversations: %w", err)
 	}

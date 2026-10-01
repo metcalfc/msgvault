@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -61,18 +60,6 @@ const gmailFullOnlyTokenJSON = `{
   "client_id": "test.apps.googleusercontent.com"
 }`
 
-// saveAddAccountFlags snapshots the package-level add-account flag globals so
-// a test can set them without leaking into the rest of the package.
-func saveAddAccountFlags(t *testing.T) {
-	t.Helper()
-	savedHeadless, savedForce, savedReadonly := headless, forceReauth, readonlyGrant
-	savedApp, savedName, savedNoDefault := oauthAppName, accountDisplayName, noDefaultIdentityAddAccount
-	t.Cleanup(func() {
-		headless, forceReauth, readonlyGrant = savedHeadless, savedForce, savedReadonly
-		oauthAppName, accountDisplayName, noDefaultIdentityAddAccount = savedApp, savedName, savedNoDefault
-	})
-}
-
 // runAddAccountForTest drives the real add-account command against the seeded
 // environment and returns everything it printed. os.Stdout is captured rather
 // than a cobra buffer because the command reports progress with fmt.Printf, so
@@ -90,12 +77,7 @@ func runAddAccountForTest(t *testing.T, args ...string) (string, error) {
 
 func runAddAccountForTestContext(ctx context.Context, t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	testCmd := &cobra.Command{
-		Use:  addAccountUse,
-		Args: cobra.ExactArgs(1),
-		RunE: runAddAccountLocal,
-	}
-	registerAddAccountFlags(testCmd)
+	testCmd := newAddAccountLocalCmd()
 
 	root := newTestRootCmd()
 	root.AddCommand(testCmd)
@@ -460,7 +442,6 @@ func TestAddAccount_ReadonlyRefusesWriteCapableAccount(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	saveAddAccountFlags(t)
 	tokenPath, restore := seedTokenEnv(t, gmailCalendarTokenJSON)
 	defer restore()
 
@@ -484,7 +465,6 @@ func TestAddAccount_ReadonlyRefusesMalformedStoredToken(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	saveAddAccountFlags(t)
 	tokenPath, restore := seedTokenEnv(t, gmailReadonlyTokenJSON)
 	defer restore()
 	require.NoError(os.WriteFile(tokenPath, []byte("{not valid json"), 0600))
@@ -498,7 +478,6 @@ func TestAddAccount_ReadonlyRefusesMalformedStoredToken(t *testing.T) {
 }
 
 func TestAddAccount_ReadonlyRemediationPreservesNamedOAuthApp(t *testing.T) {
-	saveAddAccountFlags(t)
 	_, restore := seedTokenEnv(t, gmailOnlyTokenJSON)
 	defer restore()
 	home := os.Getenv("MSGVAULT_HOME")
@@ -536,7 +515,6 @@ func TestAddAccount_ReadonlyForceIsStillRefused(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	saveAddAccountFlags(t)
 	tokenPath, restore := seedTokenEnv(t, gmailOnlyTokenJSON)
 	defer restore()
 
@@ -563,7 +541,6 @@ func TestAddAccount_ReadonlyForceIsStillRefused(t *testing.T) {
 // against gmail.modify alone would silently downgrade nothing here and report
 // success.
 func TestAddAccount_ReadonlyRefusesFullAccessAccount(t *testing.T) {
-	saveAddAccountFlags(t)
 	_, restore := seedTokenEnv(t, gmailFullOnlyTokenJSON)
 	defer restore()
 
@@ -586,7 +563,6 @@ func TestAddAccount_ReadonlyRefusesLegacyTokenWithoutScopeMetadata(t *testing.T)
 	assert := assert.New(t)
 	require := require.New(t)
 
-	saveAddAccountFlags(t)
 	tokenPath, restore := seedTokenEnv(t, legacyTokenJSON)
 	defer restore()
 
@@ -613,7 +589,6 @@ func TestAddAccount_LegacyTokenStillReusableWithoutReadonly(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	saveAddAccountFlags(t)
 	_, restore := seedTokenEnv(t, legacyTokenJSON)
 	defer restore()
 
@@ -628,7 +603,6 @@ func TestAddAccount_AuthenticatedPreflightRegistersWiderGrant(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	saveAddAccountFlags(t)
 	_, restore := seedTokenEnv(t, gmailOnlyTokenJSON)
 	defer restore()
 	t.Setenv(daemonCLISubprocessEnv, strconv.Itoa(os.Getppid()))
@@ -643,7 +617,6 @@ func TestAddAccount_AuthenticatedPreflightRegistersWiderGrant(t *testing.T) {
 }
 
 func TestAddAccount_AuthenticatedPreflightRejectsCalendarOnlyToken(t *testing.T) {
-	saveAddAccountFlags(t)
 	calendarOnlyToken := strings.Replace(
 		gmailReadonlyTokenJSON,
 		oauth.ScopeGmailReadonly,
@@ -666,7 +639,6 @@ func TestAddAccount_ImplicitDefaultRejectsKnownDifferentClient(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	saveAddAccountFlags(t)
 	otherClientToken := strings.Replace(
 		gmailReadonlyTokenJSON,
 		"test.apps.googleusercontent.com",
@@ -695,7 +667,6 @@ func TestAddAccount_HeadlessAppliesGrantDecision(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		saveAddAccountFlags(t)
 		_, restore := seedTokenEnv(t, gmailOnlyTokenJSON)
 		defer restore()
 
@@ -713,7 +684,6 @@ func TestAddAccount_HeadlessAppliesGrantDecision(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		saveAddAccountFlags(t)
 		_, restore := seedTokenEnv(t, gmailReadonlyTokenJSON)
 		defer restore()
 
@@ -728,7 +698,6 @@ func TestAddAccount_HeadlessAppliesGrantDecision(t *testing.T) {
 	t.Run("copies existing token before readonly reauthorization", func(t *testing.T) {
 		require := require.New(t)
 
-		saveAddAccountFlags(t)
 		_, restore := seedTokenEnv(t, gmailReadonlyCalendarTokenJSON)
 		defer restore()
 
@@ -748,7 +717,6 @@ func TestAddAccount_HeadlessAppliesGrantDecision(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		saveAddAccountFlags(t)
 		_, restore := seedTokenEnv(t, gmailReadonlyTokenJSON)
 		defer restore()
 
@@ -767,7 +735,7 @@ func TestAddAccount_HeadlessReadonlyRefusesStoredTokenWithoutOAuthCredentials(t 
 	t.Run("exact token", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
-		saveAddAccountFlags(t)
+
 		_, restore := seedTokenEnv(t, gmailOnlyTokenJSON)
 		defer restore()
 		require.NoError(os.Remove(filepath.Join(os.Getenv("MSGVAULT_HOME"), "client_secret.json")))
@@ -784,7 +752,6 @@ func TestAddAccount_HeadlessReadonlyRefusesStoredTokenWithoutOAuthCredentials(t 
 		assert := assert.New(t)
 		require := require.New(t)
 
-		saveAddAccountFlags(t)
 		_, restore := seedTokenEnv(t, gmailReadonlyTokenJSON)
 		defer restore()
 		tokensDir := filepath.Join(os.Getenv("MSGVAULT_HOME"), "tokens")
@@ -804,7 +771,7 @@ func TestAddAccount_HeadlessReadonlyRefusesStoredTokenWithoutOAuthCredentials(t 
 	t.Run("new account still prints instructions", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
-		saveAddAccountFlags(t)
+
 		_, restore := seedTokenEnv(t, gmailReadonlyTokenJSON)
 		defer restore()
 		require.NoError(os.Remove(filepath.Join(os.Getenv("MSGVAULT_HOME"), "client_secret.json")))
@@ -823,7 +790,6 @@ func TestAddAccount_ReadonlyReusesAlreadyNarrowToken(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	saveAddAccountFlags(t)
 	tokenPath, restore := seedTokenEnv(t, gmailReadonlyCalendarTokenJSON)
 	defer restore()
 
@@ -849,7 +815,6 @@ func TestAddAccount_WarnsBeforeRewideningNarrowGrant(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	saveAddAccountFlags(t)
 	_, restore := seedTokenEnv(t, gmailReadonlyTokenJSON)
 	defer restore()
 
@@ -924,7 +889,6 @@ func TestReadonlyGrantWarning(t *testing.T) {
 // TestAddAccount_NoWarningForBrandNewAccount is the negative half of
 // requirement 7: the most common case must stay quiet.
 func TestAddAccount_NoWarningForBrandNewAccount(t *testing.T) {
-	saveAddAccountFlags(t)
 	_, restore := seedTokenEnv(t, gmailReadonlyTokenJSON)
 	defer restore()
 
@@ -955,7 +919,6 @@ func TestAddAccount_ReadonlyRefusesAliasOfStoredToken(t *testing.T) {
 	}
 
 	t.Run("alias of a stored token points at the stored spelling", func(t *testing.T) {
-		saveAddAccountFlags(t)
 		_, restore := seedTokenEnv(t, gmailReadonlyTokenJSON)
 		defer restore()
 		seedAliasToken(t, gmailOnlyTokenJSON)
@@ -971,7 +934,6 @@ func TestAddAccount_ReadonlyRefusesAliasOfStoredToken(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 
-		saveAddAccountFlags(t)
 		_, restore := seedTokenEnv(t, gmailReadonlyTokenJSON)
 		defer restore()
 		seedAliasToken(t, gmailOnlyTokenJSON)
@@ -989,7 +951,6 @@ func TestAddAccount_ReadonlyRefusesAliasOfStoredToken(t *testing.T) {
 	})
 
 	t.Run("default run ignores alias spellings", func(t *testing.T) {
-		saveAddAccountFlags(t)
 		_, restore := seedTokenEnv(t, gmailReadonlyTokenJSON)
 		defer restore()
 		seedAliasToken(t, gmailOnlyTokenJSON)
@@ -1001,7 +962,6 @@ func TestAddAccount_ReadonlyRefusesAliasOfStoredToken(t *testing.T) {
 	})
 
 	t.Run("known different OAuth client is an independent grant", func(t *testing.T) {
-		saveAddAccountFlags(t)
 		_, restore := seedTokenEnv(t, gmailReadonlyTokenJSON)
 		defer restore()
 		differentClientToken := strings.Replace(
@@ -1020,7 +980,6 @@ func TestAddAccount_ReadonlyRefusesAliasOfStoredToken(t *testing.T) {
 	})
 
 	t.Run("unknown OAuth client remains conservative", func(t *testing.T) {
-		saveAddAccountFlags(t)
 		_, restore := seedTokenEnv(t, gmailReadonlyTokenJSON)
 		defer restore()
 		seedAliasToken(t, legacyTokenJSON)
@@ -1035,7 +994,7 @@ func TestAddAccount_ReadonlyRefusesAliasOfStoredToken(t *testing.T) {
 	t.Run("remediation preserves named OAuth app", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
-		saveAddAccountFlags(t)
+
 		_, restore := seedTokenEnv(t, gmailReadonlyTokenJSON)
 		defer restore()
 		seedAliasToken(t, gmailOnlyTokenJSON)

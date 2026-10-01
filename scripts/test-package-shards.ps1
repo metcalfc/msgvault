@@ -25,7 +25,7 @@ if ($PartIndex -gt $PartCount) {
 }
 
 # Go accepts compound durations, including fractional units and zero to disable the timeout.
-$units = @{ ns = 1e-9; us = 1e-6; 'µs' = 1e-6; ms = 1e-3; s = 1; m = 60; h = 3600 }
+$units = @{ ns = 1e-9; us = 1e-6; 'µs' = 1e-6; 'μs' = 1e-6; ms = 1e-3; s = 1; m = 60; h = 3600 }
 if ($Timeout -cnotmatch '^[+-]?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:ns|us|µs|μs|ms|s|m|h))+$|^[+-]?0$') {
     throw "Invalid Go test timeout: $Timeout"
 }
@@ -76,40 +76,15 @@ try {
         exit 0
     }
 
-    # Windows limits a process command line to 32,767 characters. Increase the
-    # shard count when the test-name patterns need more room, leaving space for
-    # the executable path and the other test flags.
-    $maxPatternCharacters = 24000
-    $patternCharacters = 3
-    foreach ($testName in $testNames) {
-        $patternCharacters += [regex]::Escape($testName).Length + 1
+    # Keep the caller's process budget. Long test-name patterns are split
+    # into sequential batches below, never additional concurrent shards.
+    $activeShards = [Math]::Min($ShardCount, $testNames.Count)
+    $shards = [object[]]::new($activeShards)
+    for ($i = 0; $i -lt $activeShards; $i++) {
+        $shards[$i] = [System.Collections.Generic.List[string]]::new()
     }
-    $requiredShards = [int][Math]::Ceiling($patternCharacters / $maxPatternCharacters)
-    $activeShards = [Math]::Min([Math]::Max($ShardCount, $requiredShards), $testNames.Count)
-    while ($true) {
-        $shards = [object[]]::new($activeShards)
-        for ($i = 0; $i -lt $activeShards; $i++) {
-            $shards[$i] = [System.Collections.Generic.List[string]]::new()
-        }
-        for ($i = 0; $i -lt $testNames.Count; $i++) {
-            $shards[$i % $activeShards].Add($testNames[$i])
-        }
-
-        $largestPatternCharacters = 0
-        foreach ($shard in $shards) {
-            $shardPatternCharacters = 3
-            foreach ($testName in $shard) {
-                $shardPatternCharacters += [regex]::Escape($testName).Length + 1
-            }
-            $largestPatternCharacters = [Math]::Max($largestPatternCharacters, $shardPatternCharacters)
-        }
-        if ($largestPatternCharacters -le $maxPatternCharacters) {
-            break
-        }
-        if ($activeShards -eq $testNames.Count) {
-            throw "A test name in $Package exceeds the $maxPatternCharacters-character shard limit"
-        }
-        $activeShards++
+    for ($i = 0; $i -lt $testNames.Count; $i++) {
+        $shards[$i % $activeShards].Add($testNames[$i])
     }
 
     Write-Host "Running $($testNames.Count) tests from $Package in $activeShards shards"

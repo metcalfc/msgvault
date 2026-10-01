@@ -355,8 +355,8 @@ func (s *Store) currentPersonAttributeValueTx(
 		FROM person_attribute_values v
 		JOIN attribute_definitions d ON d.id = v.definition_id
 		WHERE v.person_id = ? AND v.definition_id = ? AND v.ordinal = ?
-		  AND v.active_until IS NULL AND v.superseded_at IS NULL%s
-	`, personAttributeValueColumns, s.dialect.SelectForUpdate()),
+		  AND v.active_until IS NULL AND v.superseded_at IS NULL
+	`, personAttributeValueColumns),
 		personID, definitionID, ordinal))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil
@@ -421,7 +421,7 @@ func (s *Store) insertPersonAttributeValueTx(
 		    active_from, active_until, created_at, source, source_ref, confidence, actor
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, %s, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		RETURNING id
-	`, s.dialect.JSONBindExpr()),
+	`, "?"),
 		input.PersonID, definition.ID, ordinal,
 		input.Value.Text, input.Value.Integer, input.Value.Real, input.Value.Boolean,
 		input.Value.Date, input.Value.Timestamp, jsonValue,

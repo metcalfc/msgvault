@@ -46,8 +46,7 @@ func (s *Store) CorrespondentKindRevisionContext(ctx context.Context) (int64, er
 }
 
 func (s *Store) bumpCorrespondentKindRevisionTx(ctx context.Context, tx *loggedTx) error {
-	if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(
-		`INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '0')`),
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '0')`,
 		correspondentKindRevisionKey); err != nil {
 		return fmt.Errorf("seed correspondent kind revision: %w", err)
 	}
@@ -811,8 +810,8 @@ const (
 func (s *Store) messageRawHeaderContext(ctx context.Context, messageID int64) ([]byte, error) {
 	var prefix []byte
 	var compression sql.NullString
-	if err := s.db.QueryRowContext(ctx, s.Rebind(`
-		SELECT substr(raw_data, 1, ?), compression FROM message_raw WHERE message_id = ?`),
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT substr(raw_data, 1, ?), compression FROM message_raw WHERE message_id = ?`,
 		rawHeaderCompressedBytes, messageID).Scan(&prefix, &compression); err != nil {
 		return nil, err
 	}

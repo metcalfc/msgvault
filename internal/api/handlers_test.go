@@ -5961,7 +5961,7 @@ func TestDeepBodySearchRejectsUnsupportedFilterParams(t *testing.T) {
 func TestDaemonAdapterListIDScopeReachesServerQueryEngine(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
-	db := dbtest.NewTestDB(t, "../store/schema.sql")
+	db := dbtest.NewTestDBWithoutFTS(t)
 	db.SeedStandardDataSet()
 	_, err := db.DB.Exec(`UPDATE messages SET list_id = CASE id
 		WHEN 1 THEN '<dev@example.test>'
@@ -8801,7 +8801,7 @@ func TestHandleGmailIDsEchoesSourceIDs(t *testing.T) {
 func TestDaemonTextSearchScopesBeforePagination(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
-	db := dbtest.NewTestDB(t, "../store/schema.sql")
+	db := dbtest.NewTestDBWithoutFTS(t)
 	_, err := db.DB.Exec(`
 		INSERT INTO sources (id, source_type, identifier) VALUES
 			(1, 'imessage', 'first@example.com'), (2, 'imessage', 'second@example.com');
@@ -8873,7 +8873,7 @@ func TestTextConversationLabelsNameNotAPersonParticipantsByTheirOwnName(t *testi
 		t.Run(tc.name, func(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
-			db := dbtest.NewTestDB(t, "../store/schema.sql")
+			db := dbtest.NewTestDBWithoutFTS(t)
 			_, err := db.DB.Exec(`
 				INSERT INTO sources (id, source_type, identifier) VALUES (7, 'whatsapp', 'owner@example.test');
 				INSERT INTO participants (id, email_address, display_name) VALUES

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"go.kenn.io/msgvault/internal/correspondentkind"
@@ -124,16 +125,16 @@ func kindCounts(counts map[correspondentkind.Kind]int) string {
 		return "none"
 	}
 	slices.Sort(kinds)
-	text := ""
+	var text strings.Builder
 	for i, kind := range kinds {
 		if i > 0 {
-			text += ", "
+			text.WriteString(", ")
 		}
-		text += fmt.Sprintf("%d %s", counts[kind], kind)
+		_, _ = fmt.Fprintf(&text, "%d %s", counts[kind], kind)
 	}
-	return text
+	return text.String()
 }
 
 func init() {
-	rootCmd.AddCommand(newKindsCommand())
+	registerCommandFactory(newKindsCommand)
 }

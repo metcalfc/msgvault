@@ -8,10 +8,13 @@ import (
 	"go.kenn.io/msgvault/internal/query"
 )
 
-var listSendersCmd = &cobra.Command{
-	Use:   "list-senders",
-	Short: "List top senders by message count",
-	Long: `List email senders ranked by message count, size, or attachment size.
+func newListSendersCommand() *cobra.Command {
+	var options aggregateFlags
+	var senderKind string
+	command := &cobra.Command{
+		Use:   "list-senders",
+		Short: "List top senders by message count",
+		Long: `List email senders ranked by message count, size, or attachment size.
 
 Use this command to see who sends you the most email. Results can be filtered
 by date range and correspondent kind, and output as JSON for programmatic use.
@@ -25,28 +28,23 @@ Examples:
   msgvault list-senders --after 2024-01-01 --before 2024-06-01
   msgvault list-senders --kind automated
   msgvault list-senders --json`,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if listSendersKind != "" {
-			kind := correspondentkind.Kind(listSendersKind)
-			if !kind.Known() || kind == correspondentkind.Person {
-				return usageErr(cmd, fmt.Errorf(
-					"--kind must be organization, shared_mailbox, ignored, automated, mailing_list, or unclear, got %q",
-					listSendersKind))
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if senderKind != "" {
+				kind := correspondentkind.Kind(senderKind)
+				if !kind.Known() || kind == correspondentkind.Person {
+					return usageErr(cmd, fmt.Errorf(
+						"--kind must be organization, shared_mailbox, ignored, automated, mailing_list, or unclear, got %q",
+						senderKind))
+				}
 			}
-		}
-		return runAggregateListCommand(cmd, query.ViewSenders, "No senders found.", "Sender", "sender",
-			func(opts *query.AggregateOptions) { opts.SenderKind = listSendersKind })
-	},
+			return runAggregateListCommand(cmd, options, query.ViewSenders, "No senders found.", "Sender", "sender",
+				func(opts *query.AggregateOptions) { opts.SenderKind = senderKind })
+		},
+	}
+	addCommonAggregateFlags(command, &options)
+	command.Flags().StringVar(&senderKind, "kind", "", "Only senders of this correspondent kind (organization, shared_mailbox, ignored, automated, mailing_list, unclear)")
+	return command
 }
 
-// listSendersKind is the --kind filter; the daemon resolves it against the
-// archive's current classifications.
-var listSendersKind string
-
-func init() {
-	rootCmd.AddCommand(listSendersCmd)
-	addCommonAggregateFlags(listSendersCmd)
-	listSendersCmd.Flags().StringVar(&listSendersKind, "kind", "",
-		"Only senders of this correspondent kind (organization, shared_mailbox, ignored, automated, mailing_list, unclear)")
-}
+func init() { registerCommandFactory(newListSendersCommand) }

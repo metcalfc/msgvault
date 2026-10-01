@@ -395,5 +395,5 @@ func compactMessageExportSelectors(
 }
 
 func init() {
-	rootCmd.AddCommand(newExportMessagesCmd(defaultExportMessagesDeps()))
+	registerCommandFactory(func() *cobra.Command { return newExportMessagesCmd(defaultExportMessagesDeps()) })
 }

@@ -164,5 +164,5 @@ func resolveSlackdumpMediaPolicy(teamID string, overrideMB int64, cfg *config.Co
 }
 
 func init() {
-	rootCmd.AddCommand(newImportSlackdumpCmd())
+	registerCommandFactory(newImportSlackdumpCmd)
 }

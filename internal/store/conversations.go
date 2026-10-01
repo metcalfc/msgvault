@@ -44,9 +44,9 @@ func (s *Store) ConversationExists(conversationID int64) (bool, error) {
 // ConversationExistsContext is the context-aware existence check.
 func (s *Store) ConversationExistsContext(ctx context.Context, conversationID int64) (bool, error) {
 	var exists bool
-	err := s.db.QueryRowContext(ctx, s.dialect.Rebind(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?)
-	`), conversationID).Scan(&exists)
+	`, conversationID).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("check conversation: %w", err)
 	}
@@ -85,7 +85,7 @@ func (s *Store) anchorTimestampInRangeContext(
 	`, LiveMessagesWhere("m", false))
 
 	var ts nullableTimestamp
-	scanErr := s.db.QueryRowContext(ctx, s.dialect.Rebind(query), conversationID, anchorID).Scan(&ts)
+	scanErr := s.db.QueryRowContext(ctx, query, conversationID, anchorID).Scan(&ts)
 	if errors.Is(scanErr, sql.ErrNoRows) {
 		return false, false, nil
 	}
@@ -190,7 +190,7 @@ func (s *Store) GetConversationWindowContext(
 	args = append(args, rangeArgs...)
 	args = append(args, anchorID, before, after)
 
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(query), args...)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get conversation window: %w", err)
 	}
@@ -312,11 +312,11 @@ func (s *Store) batchPopulateBodies(ctx context.Context, messages []APIMessage, 
 	for i := range messages {
 		indexByID[messages[i].ID] = i
 	}
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(fmt.Sprintf(`
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT message_id, COALESCE(body_text, ''), COALESCE(body_html, '')
 		FROM message_bodies
 		WHERE message_id IN (%s)
-	`, strings.Join(placeholders, ","))), args...)
+	`, strings.Join(placeholders, ",")), args...)
 	if err != nil {
 		return fmt.Errorf("get conversation bodies: %w", err)
 	}
@@ -355,13 +355,13 @@ func (s *Store) batchPopulateAttachments(ctx context.Context, messages []APIMess
 		args[i] = id
 		indexByID[id] = i
 	}
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(fmt.Sprintf(`
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT message_id, id, COALESCE(filename, ''), COALESCE(mime_type, ''),
 			COALESCE(size, 0), COALESCE(content_hash, ''), COALESCE(storage_path, '')
 		FROM attachments
 		WHERE message_id IN (%s)
 		ORDER BY message_id, id
-	`, strings.Join(placeholders, ","))), args...)
+	`, strings.Join(placeholders, ",")), args...)
 	if err != nil {
 		return fmt.Errorf("get conversation attachments: %w", err)
 	}
@@ -393,7 +393,7 @@ func (s *Store) SetConversationMetadata(conversationID int64, metadata sql.NullS
 			UPDATE conversations
 			SET metadata = %s
 			WHERE id = ?
-		`, s.dialect.JSONBindExpr()), metadata, conversationID)
+		`, "?"), metadata, conversationID)
 		return err
 	})
 	if err != nil {

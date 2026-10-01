@@ -159,8 +159,7 @@ func (s *Store) lockCardDAVConflictResolutionBookTx(
 	err := tx.QueryRowContext(ctx, `SELECT id, account_id, canonical_url,
 		is_write_target, is_subscribed, is_lookup_source, sync_revision,
 		can_create, can_update, can_delete
-		FROM carddav_address_books WHERE id = ?`+
-		s.dialect.SelectForUpdate(), addressBookID).Scan(
+		FROM carddav_address_books WHERE id = ?`, addressBookID).Scan(
 		&book.ID, &book.AccountID, &book.CanonicalURL,
 		&book.IsWriteTarget, &book.IsSubscribed, &book.IsLookupSource, &book.SyncRevision,
 		&book.CanCreate, &book.CanUpdate, &book.CanDelete)
@@ -233,8 +232,7 @@ func (s *Store) PrepareCardDAVConflictLocalContext(
 		if !cardDAVConflictBookAllowsMutation(book, operation) {
 			return ErrCardDAVNoWriteTarget
 		}
-		publication, publicationErr := getCardDAVPublicationFrom(ctx, tx, *mapping.PersonID,
-			s.dialect.SelectForUpdate())
+		publication, publicationErr := getCardDAVPublicationFrom(ctx, tx, *mapping.PersonID)
 		if publicationErr != nil && !errors.Is(publicationErr, ErrCardDAVPublicationNotFound) {
 			return publicationErr
 		}
@@ -315,7 +313,7 @@ func (s *Store) PrepareCardDAVConflictLocalContext(
 				return err
 			}
 		}
-		prepared, err = getCardDAVPublicationFrom(ctx, tx, *mapping.PersonID, "")
+		prepared, err = getCardDAVPublicationFrom(ctx, tx, *mapping.PersonID)
 		if err == nil {
 			prepared.ResolutionConflictID = conflict.ID
 		}
@@ -347,7 +345,7 @@ func (s *Store) PrepareCardDAVConflictLocalTombstoneContext(
 	err = s.withTxContext(ctx, func(tx *loggedTx) error {
 		var generation int64
 		if err := tx.QueryRowContext(ctx, `SELECT connection_generation FROM carddav_accounts
-			WHERE id = 1`+s.dialect.SelectForUpdate()).Scan(&generation); err != nil {
+			WHERE id = 1`).Scan(&generation); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrCardDAVNoWriteTarget
 			}
@@ -367,7 +365,7 @@ func (s *Store) PrepareCardDAVConflictLocalTombstoneContext(
 		if err != nil {
 			return err
 		}
-		conflict, err := getCardDAVConflictFrom(ctx, tx, conflictID, s.dialect.SelectForUpdate())
+		conflict, err := getCardDAVConflictFrom(ctx, tx, conflictID)
 		if errors.Is(err, ErrCardDAVConflictNotFound) {
 			return ErrCardDAVConflictStale
 		}
@@ -437,7 +435,7 @@ func (s *Store) RefreshCardDAVConflictMutationFenceContext(
 ) (*CardDAVPublication, error) {
 	var refreshed *CardDAVPublication
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
-		conflict, err := getCardDAVConflictFrom(ctx, tx, conflictID, s.dialect.SelectForUpdate())
+		conflict, err := getCardDAVConflictFrom(ctx, tx, conflictID)
 		if err != nil {
 			return err
 		}
@@ -489,7 +487,7 @@ func (s *Store) CommitCardDAVConflictLocalTombstoneContext(
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
 		var generation int64
 		if err := tx.QueryRowContext(ctx, `SELECT connection_generation FROM carddav_accounts
-			WHERE id = 1`+s.dialect.SelectForUpdate()).Scan(&generation); err != nil {
+			WHERE id = 1`).Scan(&generation); err != nil {
 			return err
 		}
 		book, err := s.lockCardDAVConflictResolutionBookTx(ctx, tx, identity.AddressBookID)
@@ -503,8 +501,7 @@ func (s *Store) CommitCardDAVConflictLocalTombstoneContext(
 		if err != nil {
 			return ErrCardDAVConflictStale
 		}
-		conflict, err := getCardDAVConflictFrom(ctx, tx, pending.ResolutionConflictID,
-			s.dialect.SelectForUpdate())
+		conflict, err := getCardDAVConflictFrom(ctx, tx, pending.ResolutionConflictID)
 		if err != nil {
 			return err
 		}
@@ -541,7 +538,7 @@ func (s *Store) ResetCardDAVConflictLocalTombstoneContext(
 	}
 	var reset *CardDAVConflict
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
-		conflict, err := getCardDAVConflictFrom(ctx, tx, conflictID, s.dialect.SelectForUpdate())
+		conflict, err := getCardDAVConflictFrom(ctx, tx, conflictID)
 		if err != nil {
 			return err
 		}
@@ -589,8 +586,7 @@ func (s *Store) RollbackCardDAVConflictMutationContext(
 		return ErrCardDAVInvalidPlan
 	}
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
-		conflict, err := getCardDAVConflictFrom(ctx, tx, pending.ResolutionConflictID,
-			s.dialect.SelectForUpdate())
+		conflict, err := getCardDAVConflictFrom(ctx, tx, pending.ResolutionConflictID)
 		if err != nil {
 			return err
 		}
@@ -657,8 +653,7 @@ func (s *Store) validateCardDAVConflictLocalTombstoneMappingTx(
 	if mapping.PersonID == nil {
 		return nil
 	}
-	publication, err := getCardDAVPublicationFrom(ctx, tx, *mapping.PersonID,
-		s.dialect.SelectForUpdate())
+	publication, err := getCardDAVPublicationFrom(ctx, tx, *mapping.PersonID)
 	if errors.Is(err, ErrCardDAVPublicationNotFound) {
 		return ErrCardDAVConflictStale
 	}
@@ -708,8 +703,8 @@ func (s *Store) completePendingCardDAVConflictTombstoneFromPullTx(
 ) (bool, error) {
 	conflict, err := scanCardDAVConflict(tx.QueryRowContext(ctx,
 		`SELECT `+cardDAVConflictColumns+` FROM carddav_conflicts
-		 WHERE address_book_id = ? AND href = ? AND status = 'unresolved'`+
-			s.dialect.SelectForUpdate(), book.ID, capture.Href))
+		 WHERE address_book_id = ? AND href = ? AND status = 'unresolved'`,
+		book.ID, capture.Href))
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -777,7 +772,7 @@ func (s *Store) recordCardDAVPublicationConflictContext(
 	}
 	var conflict *CardDAVConflict
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
-		current, err := getCardDAVPublicationFrom(ctx, tx, pending.PersonID, s.dialect.SelectForUpdate())
+		current, err := getCardDAVPublicationFrom(ctx, tx, pending.PersonID)
 		if err != nil {
 			return err
 		}
@@ -818,7 +813,7 @@ func (s *Store) rollbackOversizedCardDAVPublicationConflictContext(
 	ctx context.Context, pending CardDAVPublication, retainIntent bool,
 ) error {
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
-		current, err := getCardDAVPublicationFrom(ctx, tx, pending.PersonID, s.dialect.SelectForUpdate())
+		current, err := getCardDAVPublicationFrom(ctx, tx, pending.PersonID)
 		if err != nil {
 			return err
 		}
@@ -830,7 +825,7 @@ func (s *Store) rollbackOversizedCardDAVPublicationConflictContext(
 			return ErrCardDAVConflictStale
 		}
 		resource, err := findCardDAVResourceForPersonTx(ctx, tx, current.AddressBookID,
-			current.PersonID, s.dialect.SelectForUpdate())
+			current.PersonID)
 		if err != nil || resource.Href != current.Href || resource.MappingRevision != current.MappingRevision {
 			return ErrCardDAVConflictStale
 		}
@@ -972,8 +967,7 @@ func (s *Store) recordCardDAVConflictTx(
 	var mappingStatus CardDAVMappingStatus
 	if err := tx.QueryRowContext(ctx, `SELECT id, mapping_revision, local_hash,
 		remote_semantic_hash, remote_etag, person_id, mapping_status FROM carddav_resources
-		WHERE address_book_id = ? AND href = ?`+s.dialect.SelectForUpdate(),
-		capture.AddressBookID, capture.Href).Scan(&mappingID, &revision, &baseLocalHash,
+		WHERE address_book_id = ? AND href = ?`, capture.AddressBookID, capture.Href).Scan(&mappingID, &revision, &baseLocalHash,
 		&baseRemoteHash, &baseRemoteETag, &personID, &mappingStatus); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrCardDAVConflictStale
@@ -1253,7 +1247,7 @@ func (s *Store) ResolveCardDAVConflictRemoteContext(
 		if input.ExpectedPersonID != 0 && (mapping.PersonID == nil || *mapping.PersonID != input.ExpectedPersonID) {
 			return ErrCardDAVReviewStale
 		}
-		conflict, err := getCardDAVConflictFrom(ctx, tx, input.ConflictID, s.dialect.SelectForUpdate())
+		conflict, err := getCardDAVConflictFrom(ctx, tx, input.ConflictID)
 		if err != nil {
 			if errors.Is(err, ErrCardDAVConflictNotFound) {
 				return ErrCardDAVConflictStale
@@ -1359,7 +1353,7 @@ func (s *Store) ResolveCardDAVConflictLocalTombstoneContext(
 		if err != nil || mapping.MappingRevision != expectedMappingRevision {
 			return ErrCardDAVConflictStale
 		}
-		conflict, err := getCardDAVConflictFrom(ctx, tx, conflictID, s.dialect.SelectForUpdate())
+		conflict, err := getCardDAVConflictFrom(ctx, tx, conflictID)
 		if err != nil {
 			if errors.Is(err, ErrCardDAVConflictNotFound) {
 				return ErrCardDAVConflictStale
@@ -1425,10 +1419,10 @@ func (s *Store) SweepResolvedCardDAVConflictsContext(
 }
 
 func getCardDAVConflictFrom(
-	ctx context.Context, queryer contextRowQuerier, id int64, suffix string,
+	ctx context.Context, queryer contextRowQuerier, id int64,
 ) (*CardDAVConflict, error) {
 	conflict, err := scanCardDAVConflict(queryer.QueryRowContext(ctx,
-		`SELECT `+cardDAVConflictColumns+` FROM carddav_conflicts WHERE id = ?`+suffix, id))
+		`SELECT `+cardDAVConflictColumns+` FROM carddav_conflicts WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrCardDAVConflictNotFound
 	}

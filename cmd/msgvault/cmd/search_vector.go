@@ -18,6 +18,11 @@ import (
 // remote server or local daemon. It preserves the historical CLI renderer while
 // keeping vector backend ownership inside the daemon.
 func runHybridSearch(cmd *cobra.Command, queryStr, mode string, explain bool) error {
+	searchLimit, _ := cmd.Flags().GetInt("limit")
+	searchJSON, _ := cmd.Flags().GetBool(flagJSON)
+	searchAccount, _ := cmd.Flags().GetString("account")
+	searchCollection, _ := cmd.Flags().GetString("collection")
+	searchMessageTypes, _ := cmd.Flags().GetStringSlice("message-type")
 	state := invocationFromCommand(cmd)
 	if state == nil || state.logger == nil {
 		return errors.New("invocation state is unavailable")

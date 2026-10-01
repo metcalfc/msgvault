@@ -121,8 +121,6 @@ func newDaemonCommand() *cobra.Command {
 	return cmd
 }
 
-var daemonCmd = newDaemonCommand()
-
 func runServeStatusWithAPIKey(cmd *cobra.Command, dataDir string, apiKey string) error {
 	out := cmd.OutOrStdout()
 	if rt := findDaemonRuntime(dataDir); rt != nil {

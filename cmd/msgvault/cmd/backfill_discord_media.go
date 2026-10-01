@@ -266,5 +266,7 @@ func writeDiscordMediaWarnings(out io.Writer, warnings map[discordMediaWarningKi
 }
 
 func init() {
-	rootCmd.AddCommand(newBackfillDiscordMediaCmd(defaultDiscordCommandDeps()))
+	registerCommandFactory(func() *cobra.Command {
+		return newBackfillDiscordMediaCmd(defaultDiscordCommandDeps())
+	})
 }

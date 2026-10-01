@@ -115,7 +115,7 @@ func TestPersonAttributesSetCoercesScalarAndForwardsMetadata(t *testing.T) {
 	})
 	_ = testCtx
 
-	output, err := runAttributeCommand(testCtx, t, personAttributesSetCmd,
+	output, err := runAttributeCommand(testCtx, t, freshCommandForTest(t, newPersonAttributesCommand(), "set"),
 		"7", "primary_channel", "--value", "chat",
 		"--source", "extraction", "--source-ref", "message:1234",
 		"--confidence", "0.62", "--actor", "extractor",
@@ -150,7 +150,7 @@ func TestPersonAttributesSetRejectsExplicitNonPositiveExpectedValueID(t *testing
 
 	for _, expectedID := range []string{"0", "-1"} {
 		t.Run(expectedID, func(t *testing.T) {
-			_, err := runAttributeCommand(testCtx, t, personAttributesSetCmd,
+			_, err := runAttributeCommand(testCtx, t, freshCommandForTest(t, newPersonAttributesCommand(), "set"),
 				"7", "primary_channel", "--value", "chat",
 				"--expected-value-id", expectedID)
 			require.Error(err)
@@ -186,7 +186,7 @@ func TestPersonAttributesClearForwardsOrdinalAndExpectedValueID(t *testing.T) {
 	})
 	_ = testCtx
 
-	output, err := runAttributeCommand(testCtx, t, personAttributesClearCmd,
+	output, err := runAttributeCommand(testCtx, t, freshCommandForTest(t, newPersonAttributesCommand(), "clear"),
 		"7", "ask_me_about", "--ordinal", "1", "--expected-value-id", "11")
 	require.NoError(err)
 	assert.Contains(query, "ordinal=1")

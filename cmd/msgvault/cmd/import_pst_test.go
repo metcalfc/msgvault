@@ -6,28 +6,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/importer"
 	"go.kenn.io/msgvault/internal/store"
 )
-
-func saveImportPstState(t *testing.T) func() {
-	t.Helper()
-	prevSourceType := importPstSourceType
-	prevSkipFolders := importPstSkipFolders
-	prevNoResume := importPstNoResume
-	prevCheckpointInterval := importPstCheckpointInterval
-	prevNoAttachments := importPstNoAttachments
-	return func() {
-		importPstSourceType = prevSourceType
-		importPstSkipFolders = prevSkipFolders
-		importPstNoResume = prevNoResume
-		importPstCheckpointInterval = prevCheckpointInterval
-		importPstNoAttachments = prevNoAttachments
-	}
-}
 
 func TestImportPstRunsPostSourceMigrationForEligibleSourceTypes(t *testing.T) {
 	assert := assert.New(t)
@@ -37,7 +20,6 @@ func TestImportPstRunsPostSourceMigrationForEligibleSourceTypes(t *testing.T) {
 	markDaemonCLISubprocessForTest(t)
 
 	tmp := t.TempDir()
-	t.Cleanup(saveImportPstState(t))
 	testCfg := lifecycleTestConfig(tmp)
 	testCfg.Identity.Addresses = []string{"legacy@example.com"}
 	testCtx := withStoreResolverConfig(t, testCfg)
@@ -60,19 +42,16 @@ func TestImportPstRunsPostSourceMigrationForEligibleSourceTypes(t *testing.T) {
 	require.NoError(
 		err, "pst fixture path")
 
-	importPstSourceType = "pst"
-	importPstNoResume = true
-	importPstCheckpointInterval = 200
-	importPstNoAttachments = true
-
 	var stdout bytes.Buffer
-	cmd := &cobra.Command{Use: "import-pst"}
+	cmd := newImportPstCommand()
+	require.NoError(cmd.Flags().Set("no-resume", "true"))
+	require.NoError(cmd.Flags().Set("no-attachments", "true"))
 	cmd.SetContext(testCtx)
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(io.Discard)
 
-	err = importPstCmd.RunE(cmd, []string{"archive@example.com", pstPath})
+	err = cmd.RunE(cmd, []string{"archive@example.com", pstPath})
 	require.NoError(
 		err, "import-pst")
 

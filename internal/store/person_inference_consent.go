@@ -284,7 +284,7 @@ func (s *Store) EnsurePersonInferenceProfile(
 	result, err := s.db.ExecContext(ctx, `
 		INSERT INTO person_inference_profiles
 			(`+personInferenceProfileInsertColumns()+`)
-		VALUES (`+personInferenceProfileInsertValues(s.dialect.JSONBindExpr())+`)
+		VALUES (`+personInferenceProfileInsertValues("?")+`)
 		ON CONFLICT (fingerprint) DO NOTHING`, projection.insertValues()...)
 	if err != nil {
 		return false, fmt.Errorf("insert people inference profile: %w", err)
@@ -472,7 +472,7 @@ func (s *Store) hasActivePersonInferenceConsentTx(
 	err := tx.QueryRowContext(ctx, `
 		SELECT id FROM person_inference_consents
 		WHERE profile_fingerprint = ? AND revoked_at IS NULL
-		ORDER BY id DESC LIMIT 1`+s.dialect.SelectForUpdate(), fingerprint).Scan(&id)
+		ORDER BY id DESC LIMIT 1`, fingerprint).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}

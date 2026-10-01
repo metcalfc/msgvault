@@ -448,5 +448,5 @@ func runJevRevoke(command *cobra.Command, deps jevCommandDeps, args []string, al
 }
 
 func init() {
-	rootCmd.AddCommand(newJevCommand(defaultJevCommandDeps()))
+	registerCommandFactory(func() *cobra.Command { return newJevCommand(defaultJevCommandDeps()) })
 }

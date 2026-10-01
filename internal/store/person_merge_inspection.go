@@ -339,8 +339,7 @@ func (s *Store) decidePersonMergeCandidateOnce(
 			return err
 		}
 		var revision int64
-		err := tx.QueryRowContext(ctx, `SELECT revision FROM persons WHERE id = ?`+
-			s.dialect.SelectForUpdate(), request.PersonID).Scan(&revision)
+		err := tx.QueryRowContext(ctx, "SELECT revision FROM persons WHERE id = ?", request.PersonID).Scan(&revision)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrPersonNotFound
 		}
@@ -348,7 +347,7 @@ func (s *Store) decidePersonMergeCandidateOnce(
 			return fmt.Errorf("lock merge candidate person: %w", err)
 		}
 		candidate, err := getPersonMergeReviewCandidateTx(
-			ctx, tx, request.CandidateID, s.dialect.SelectForUpdate())
+			ctx, tx, request.CandidateID, "")
 		if err != nil {
 			return err
 		}

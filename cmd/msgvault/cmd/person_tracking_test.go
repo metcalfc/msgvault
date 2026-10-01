@@ -19,11 +19,11 @@ func runPersonTrackingCommand(
 	ctx context.Context, t *testing.T, template *cobra.Command, jsonOutput bool, args ...string,
 ) (string, error) {
 	t.Helper()
-	savedJSON := personJSON
-	personJSON = jsonOutput
-	t.Cleanup(func() { personJSON = savedJSON })
 	var output bytes.Buffer
-	command := &cobra.Command{Use: template.Use, Args: template.Args, RunE: template.RunE}
+	command := template
+	if jsonOutput {
+		require.NoError(t, command.Flags().Set(flagJSON, "true"))
+	}
 	command.SetOut(&output)
 	command.SetErr(&output)
 	command.SetArgs(args)
@@ -58,11 +58,11 @@ func TestPersonTrackAndUntrackReplaceState(t *testing.T) {
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
-	output, err := runPersonTrackingCommand(testCtx, t, personTrackCmd, false, "7")
+	output, err := runPersonTrackingCommand(testCtx, t, freshCommandForTest(t, newPersonCommand(), "track"), false, "7")
 	require.NoError(err)
 	assert.Equal("Person 7: tracked\n", output)
 
-	output, err = runPersonTrackingCommand(testCtx, t, personUntrackCmd, false, "7")
+	output, err = runPersonTrackingCommand(testCtx, t, freshCommandForTest(t, newPersonCommand(), "untrack"), false, "7")
 	require.NoError(err)
 	assert.Equal("Person 7: untracked\n", output)
 	assert.Equal(int32(2), requests.Load())
@@ -77,7 +77,7 @@ func TestPersonUntrackJSONIncludesNullTrackedAt(t *testing.T) {
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
-	output, err := runPersonTrackingCommand(testCtx, t, personUntrackCmd, true, "7")
+	output, err := runPersonTrackingCommand(testCtx, t, freshCommandForTest(t, newPersonCommand(), "untrack"), true, "7")
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"person_id":7,"tracked":false,"tracked_at":null}`, output)
 }
@@ -91,7 +91,7 @@ func TestPersonTrackRejectsInvalidIDBeforeNetwork(t *testing.T) {
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
-	_, err := runPersonTrackingCommand(testCtx, t, personTrackCmd, false, "0")
+	_, err := runPersonTrackingCommand(testCtx, t, freshCommandForTest(t, newPersonCommand(), "track"), false, "0")
 	require.Error(t, err)
 	require.ErrorContains(t, err, "positive integer")
 	assert.Zero(t, requests.Load())
@@ -107,7 +107,7 @@ func TestPersonTrackReturnsStructuredAPIError(t *testing.T) {
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
-	_, err := runPersonTrackingCommand(testCtx, t, personTrackCmd, false, "7")
+	_, err := runPersonTrackingCommand(testCtx, t, freshCommandForTest(t, newPersonCommand(), "track"), false, "7")
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "Person profile not found")
 }

@@ -210,9 +210,9 @@ func (s *Store) SetEmbedGenGroupIfUnchanged(
 			query += ` AND conversation_id = ?`
 			args = append(args, metadataVersion.ConversationID)
 		}
-		query += s.dialect.SelectForUpdate()
+		query += ""
 		var id int64
-		err := conn.QueryRowContext(ctx, s.dialect.Rebind(query), args...).Scan(&id)
+		err := conn.QueryRowContext(ctx, query, args...).Scan(&id)
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
@@ -232,8 +232,7 @@ func (s *Store) SetEmbedGenGroupIfUnchanged(
 	}
 
 	for _, version := range orderedVersions {
-		res, err := conn.ExecContext(ctx, s.dialect.Rebind(
-			`UPDATE messages SET embed_gen = ? WHERE id = ? AND last_modified = ?`),
+		res, err := conn.ExecContext(ctx, `UPDATE messages SET embed_gen = ? WHERE id = ? AND last_modified = ?`,
 			target, version.ID, version.LastModified)
 		if err != nil {
 			return false, fmt.Errorf("stamp embed_gen group member %d: %w", version.ID, err)
@@ -245,8 +244,7 @@ func (s *Store) SetEmbedGenGroupIfUnchanged(
 		if matched != 1 {
 			return false, nil
 		}
-		restored, err := conn.ExecContext(ctx, s.dialect.Rebind(
-			`UPDATE messages SET last_modified = ? WHERE id = ? AND embed_gen = ?`),
+		restored, err := conn.ExecContext(ctx, `UPDATE messages SET last_modified = ? WHERE id = ? AND embed_gen = ?`,
 			version.LastModified, version.ID, target)
 		if err != nil {
 			return false, fmt.Errorf("restore embed_gen group member %d revision token: %w", version.ID, err)
@@ -278,9 +276,7 @@ func (s *Store) embedGenMetadataDigest(
 ) (string, bool, error) {
 	var id int64
 	var title string
-	err := conn.QueryRowContext(ctx, s.dialect.Rebind(
-		`SELECT id, COALESCE(title, '') FROM conversations WHERE id = ?`+
-			s.dialect.SelectForUpdate()), conversationID).Scan(&id, &title)
+	err := conn.QueryRowContext(ctx, "SELECT id, COALESCE(title, '') FROM conversations WHERE id = ?", conversationID).Scan(&id, &title)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
@@ -288,9 +284,8 @@ func (s *Store) embedGenMetadataDigest(
 		return "", false, fmt.Errorf("lock embedding conversation %d: %w", conversationID, err)
 	}
 
-	lockClause := s.dialect.SelectForUpdate()
 	participantRevision := ParticipantRevisionSQLite
-	rows, err := conn.QueryContext(ctx, s.dialect.Rebind(fmt.Sprintf(`
+	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
 		SELECT cp.participant_id, COALESCE(cp.role, ''),
 		       COALESCE(NULLIF(TRIM(p.display_name), ''),
 		                NULLIF(p.email_address, ''), NULLIF(p.phone_number, ''), ''),
@@ -298,7 +293,7 @@ func (s *Store) embedGenMetadataDigest(
 		FROM conversation_participants cp
 		JOIN participants p ON p.id = cp.participant_id
 		WHERE cp.conversation_id = ?
-		ORDER BY cp.participant_id`+lockClause, participantRevision)), conversationID)
+		ORDER BY cp.participant_id`, participantRevision), conversationID)
 	if err != nil {
 		return "", false, fmt.Errorf("lock embedding conversation participants %d: %w", conversationID, err)
 	}
@@ -500,7 +495,7 @@ func (s *Store) ContextualConvergenceCounts(ctx context.Context, activeGen int64
 		                       AND ? <> 0 AND embed_gen = ? THEN 1 ELSE 0 END), 0)
 		FROM messages WHERE ` + liveWhere
 	var counts EmbeddingConvergenceCounts
-	err := s.db.QueryRowContext(ctx, s.dialect.Rebind(query),
+	err := s.db.QueryRowContext(ctx, query,
 		activeGen, activeGen, activeGen, activeGen).Scan(
 		&counts.Live, &counts.Stamped,
 		&counts.ContextualLive, &counts.ContextualStamped,

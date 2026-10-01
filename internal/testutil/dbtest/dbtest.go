@@ -7,11 +7,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/msgvault/internal/sqliteutil"
+	"go.kenn.io/msgvault/internal/testutil/sqlitetest"
 )
 
 // TestDB wraps a *sql.DB with auto-increment counters and builder helpers
@@ -25,31 +24,21 @@ type TestDB struct {
 	nextConversationSeq int64
 }
 
-// NewTestDB creates an in-memory SQLite database with the production schema loaded.
-// schemaPath is the path to schema.sql (e.g. "../store/schema.sql" from the caller's package).
-// The FTS table is dropped so tests start without it by default.
-func NewTestDB(tb testing.TB, schemaPath string) *TestDB {
+// NewTestDB clones an archive initialized through the production Store path.
+func NewTestDB(tb testing.TB) *TestDB {
 	tb.Helper()
+	st := sqlitetest.New(tb)
+	return &TestDB{DB: st.DB(), T: tb, nextParticipantID: 100, nextMessageID: 100}
+}
 
-	db, err := sql.Open(sqliteutil.DriverName(), ":memory:")
-	require.NoError(tb, err, "open db")
-	tb.Cleanup(func() { _ = db.Close() })
-
-	schema, err := os.ReadFile(schemaPath)
-	require.NoError(tb, err, "read schema.sql")
-
-	_, err = db.Exec(string(schema))
-	require.NoError(tb, err, "create schema")
-
-	// Drop FTS table so non-FTS tests start clean.
-	_, _ = db.Exec(`DROP TABLE IF EXISTS messages_fts`)
-
-	return &TestDB{
-		DB:                db,
-		T:                 tb,
-		nextParticipantID: 100,
-		nextMessageID:     100,
-	}
+// NewTestDBWithoutFTS models a build without full-text search while preserving
+// all other production schema, migration, and connection invariants.
+func NewTestDBWithoutFTS(tb testing.TB) *TestDB {
+	tb.Helper()
+	fixture := NewTestDB(tb)
+	_, err := fixture.DB.Exec(`DROP TABLE messages_fts`)
+	require.NoError(tb, err, "disable FTS for fallback fixture")
+	return fixture
 }
 
 // SeedStandardDataSet inserts the standard test data set: 1 source (test@gmail.com),

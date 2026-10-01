@@ -199,5 +199,5 @@ func purgeGCMessages(
 }
 
 func init() {
-	rootCmd.AddCommand(newGCCmd())
+	registerCommandFactory(newGCCmd)
 }

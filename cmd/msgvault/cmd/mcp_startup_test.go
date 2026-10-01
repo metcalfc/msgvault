@@ -180,6 +180,7 @@ func runMCPStartupChild(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	ctx = testInvocationContext(ctx, cfg, invocationOptions{})
+	mcpCmd := newMCPCommand()
 	mcpCmd.SetContext(ctx)
 	err = mcpCmd.RunE(mcpCmd, nil)
 	if err != nil && !errors.Is(err, context.Canceled) {

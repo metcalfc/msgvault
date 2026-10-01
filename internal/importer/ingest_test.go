@@ -381,3 +381,29 @@ func TestIngestRawMessageStripsEmojiFromHeaderDisplayNames(t *testing.T) {
 	require.NoError(db.QueryRow(`SELECT subject FROM messages`).Scan(&subject))
 	assert.Equal("Launch 🚀 party", subject)
 }
+
+func TestIngestRawMessageThreadsReplyHeaderLists(t *testing.T) {
+	for _, header := range []string{"<parent@example.test> <other@example.test>", "(comment) <parent@example.test>"} {
+		t.Run(header, func(t *testing.T) {
+			st := newIngestThreadStore(t)
+			source, err := st.GetOrCreateSource("mbox", "owner@example.test")
+			require.NoError(t, err)
+			for _, message := range []struct{ id, reply string }{{"parent@example.test", ""}, {"child@example.test", header}} {
+				raw := email.NewMessage().From("sender@example.test").To("owner@example.test").Subject("thread").Header("Message-ID", "<"+message.id+">").Header("In-Reply-To", message.reply).Body("message").Bytes()
+				require.NoError(t, IngestRawMessage(t.Context(), st, source.ID, "owner@example.test", "", nil, message.id, message.id, raw, time.Time{}, slog.Default()))
+			}
+			var conversations int
+			require.NoError(t, st.DB().QueryRow("SELECT COUNT(DISTINCT conversation_id) FROM messages").Scan(&conversations))
+			assert.Equal(t, 1, conversations)
+		})
+	}
+}
+
+func newIngestThreadStore(t *testing.T) *store.Store {
+	t.Helper()
+	st, err := store.OpenForTest(filepath.Join(t.TempDir(), "archive.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, st.Close()) })
+	require.NoError(t, st.InitSchema())
+	return st
+}

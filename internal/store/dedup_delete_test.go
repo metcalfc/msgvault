@@ -68,7 +68,6 @@ func TestDeleteDedupedBatch_UnknownBatch(t *testing.T) {
 }
 
 func TestDeleteDedupedBatchesContext_CancellationRollsBackEveryBatch(t *testing.T) {
-
 	require := require.New(t)
 	f := storetest.New(t)
 	f.Store.DB().SetMaxOpenConns(1)

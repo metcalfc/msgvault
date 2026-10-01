@@ -32,7 +32,7 @@ func (s *Store) SetBeeperAttachmentClassifications(
 			      OR attachment_role != ?
 			      OR role_source != ?
 			  )
-		`, s.dialect.JSONBindExpr(), s.dialect.JSONIsDistinctExpr("attachment_metadata"))
+		`, "?", s.dialect.JSONIsDistinctExpr("attachment_metadata"))
 		resetArgs := []any{
 			nullIfEmpty(""), string(AttachmentRoleUnknown), string(AttachmentRoleSourceUnknown),
 			messageID, nullIfEmpty(""), string(AttachmentRoleUnknown), string(AttachmentRoleSourceUnknown),
@@ -74,7 +74,7 @@ func (s *Store) SetBeeperAttachmentClassifications(
 				      OR attachment_role != ?
 				      OR role_source != ?
 				  )
-			`, s.dialect.JSONBindExpr(), s.dialect.JSONIsDistinctExpr("attachment_metadata")),
+			`, "?", s.dialect.JSONIsDistinctExpr("attachment_metadata")),
 				nullIfEmpty(classification.Metadata), string(role), string(roleSource),
 				messageID, sourceAttachmentID, nullIfEmpty(classification.Metadata), string(role), string(roleSource))
 			if err != nil {

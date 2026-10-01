@@ -175,7 +175,7 @@ func (s *Store) materializeLockedPersonFactOrganizationTx(
 			return organization, OrganizationReused, nil
 		}
 		organization, loadErr := getOrganizationForUpdateTx(
-			ctx, tx, s.dialect, prepared.CandidateIDs[0])
+			ctx, tx, prepared.CandidateIDs[0])
 		if loadErr != nil {
 			return nil, "", loadErr
 		}
@@ -201,7 +201,7 @@ func (s *Store) materializeLockedPersonFactOrganizationTx(
 			// scope. A row found only now was created earlier by this transaction.
 			organization, loadErr = getOrganizationTx(ctx, tx, candidateIDs[0])
 		} else {
-			organization, loadErr = getOrganizationForUpdateTx(ctx, tx, s.dialect, candidateIDs[0])
+			organization, loadErr = getOrganizationForUpdateTx(ctx, tx, candidateIDs[0])
 		}
 		if loadErr != nil {
 			return nil, "", loadErr
@@ -309,7 +309,6 @@ func (s *Store) lockPersonFactOrganizationTableTx(
 	{
 		return nil
 	}
-
 }
 
 func (s *Store) lockPersonFactOrganizationChainsTx(
@@ -359,7 +358,7 @@ func (s *Store) lockPersonFactOrganizationChainsTx(
 	slices.Sort(lockIDs)
 	locked := make(map[int64]*Organization, len(lockIDs))
 	for _, id := range lockIDs {
-		organization, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, id)
+		organization, err := getOrganizationForUpdateTx(ctx, tx, id)
 		if errors.Is(err, ErrOrganizationNotFound) {
 			continue
 		}

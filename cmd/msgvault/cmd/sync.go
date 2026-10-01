@@ -19,41 +19,8 @@ import (
 	"golang.org/x/oauth2"
 )
 
-var syncIncrementalCmd = &cobra.Command{
-	Use:     "sync [email]",
-	Aliases: []string{"sync-incremental"},
-	Short:   "Sync new and changed messages from configured accounts",
-	Long: `Perform an incremental synchronization using the Gmail History API.
-
-This is faster than a full sync as it only fetches changes since the last sync.
-Requires a prior full sync to establish the history ID baseline.
-
-IMAP accounts use folder-based sync. Unchanged folders are skipped when
-UIDVALIDITY/UIDNEXT high water marks are available.
-
-Microsoft Graph mail accounts (add-o365 --graph) use one delta cursor per
-folder. The first sync downloads every folder; later syncs fetch only the
-changes, including moves and deletes.
-
-If no email is specified, syncs all accounts that have credentials configured.
-Accounts without tokens or history IDs are skipped.
-
-If history is too old (Gmail returns 404), automatically reconciles the complete
-mailbox, preserving archived content while repairing source-deletion metadata.
-
-Examples:
-  msgvault sync                 # Sync all accounts
-  msgvault sync you@gmail.com   # Sync specific account`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if isDaemonCLISubprocess() {
-			return runSyncIncrementalLocal(cmd, args)
-		}
-		return runSyncIncrementalHTTP(cmd, args)
-	},
-}
-
 func runSyncIncrementalLocal(cmd *cobra.Command, args []string) error {
+	flags := readSyncCommandOptions(cmd)
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil || state.logger == nil {
 		return errors.New("configuration is unavailable")
@@ -197,7 +164,7 @@ func runSyncIncrementalLocal(cmd *cobra.Command, args []string) error {
 			break
 		}
 		fmt.Printf("Note: IMAP account %s uses folder-based sync. Unchanged folders are skipped when high water marks are available.\n\n", src.Identifier)
-		if err := runFullSync(ctx, s, getOAuthMgr, src, state); err != nil {
+		if err := runFullSync(ctx, s, getOAuthMgr, src, state, flags); err != nil {
 			syncErrors = append(syncErrors, fmt.Sprintf("%s: %v", src.Identifier, err))
 		}
 	}
@@ -350,8 +317,45 @@ func runIncrementalSync(ctx context.Context, s *store.Store, getOAuthMgr func(st
 }
 
 func init() {
+	registerCommandFactory(newSyncIncrementalCommand)
+}
+
+func newSyncIncrementalCommand() *cobra.Command {
+	syncIncrementalCmd := &cobra.Command{
+		Use:     "sync [email]",
+		Aliases: []string{"sync-incremental"},
+		Short:   "Sync new and changed messages from configured accounts",
+		Long: `Perform an incremental synchronization using the Gmail History API.
+
+This is faster than a full sync as it only fetches changes since the last sync.
+Requires a prior full sync to establish the history ID baseline.
+
+IMAP accounts use folder-based sync. Unchanged folders are skipped when
+UIDVALIDITY/UIDNEXT high water marks are available.
+
+Microsoft Graph mail accounts (add-o365 --graph) use one delta cursor per
+folder. The first sync downloads every folder; later syncs fetch only the
+changes, including moves and deletes.
+
+If no email is specified, syncs all accounts that have credentials configured.
+Accounts without tokens or history IDs are skipped.
+
+If history is too old (Gmail returns 404), automatically reconciles the complete
+mailbox, preserving archived content while repairing source-deletion metadata.
+
+Examples:
+  msgvault sync                 # Sync all accounts
+  msgvault sync you@gmail.com   # Sync specific account`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if isDaemonCLISubprocess() {
+				return runSyncIncrementalLocal(cmd, args)
+			}
+			return runSyncIncrementalHTTP(cmd, args)
+		},
+	}
 	syncIncrementalCmd.Flags().Int64("source-id", 0, "Exact source ID to sync")
-	syncIncrementalCmd.Flags().StringArrayVar(&syncFolders, "folder", []string{}, "IMAP folder to scan (repeatable)")
-	syncIncrementalCmd.Flags().StringArrayVar(&syncSkipFolders, "skip-folder", []string{}, "IMAP folder to skip (repeatable)")
-	rootCmd.AddCommand(addManualSyncCacheFlags(syncIncrementalCmd))
+	syncIncrementalCmd.Flags().StringArray("folder", []string{}, "IMAP folder to scan (repeatable)")
+	syncIncrementalCmd.Flags().StringArray("skip-folder", []string{}, "IMAP folder to skip (repeatable)")
+	return addManualSyncCacheFlags(syncIncrementalCmd)
 }

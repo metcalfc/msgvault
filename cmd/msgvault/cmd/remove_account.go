@@ -661,5 +661,5 @@ func removeAccountSelector(cmd *cobra.Command, args []string) (sourceops.Selecto
 }
 
 func init() {
-	rootCmd.AddCommand(newRemoveAccountCmd())
+	registerCommandFactory(newRemoveAccountCmd)
 }

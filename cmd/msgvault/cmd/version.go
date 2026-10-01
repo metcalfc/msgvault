@@ -14,19 +14,21 @@ var (
 	BuildDate = "unknown"
 )
 
-var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Print version information",
-	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("msgvault %s\n", Version)
-		fmt.Printf("  commit:  %s\n", Commit)
-		fmt.Printf("  built:   %s\n", BuildDate)
-		fmt.Printf("  go:      %s\n", runtime.Version())
-		fmt.Printf("  os/arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
-	},
+func newVersionCommand() *cobra.Command {
+	command := &cobra.Command{
+		Use:   "version",
+		Short: "Print version information",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("msgvault %s\n", Version)
+			fmt.Printf("  commit:  %s\n", Commit)
+			fmt.Printf("  built:   %s\n", BuildDate)
+			fmt.Printf("  go:      %s\n", runtime.Version())
+			fmt.Printf("  os/arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+		},
+	}
+
+	return command
 }
 
-func init() {
-	rootCmd.AddCommand(versionCmd)
-}
+func init() { registerCommandFactory(newVersionCommand) }

@@ -7,8 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const schemaPath = "../../store/schema.sql"
-
 // fakeT implements testing.TB and captures fatal/error calls instead of aborting.
 // It records the last Errorf or Fatalf message and panics on FailNow so callers
 // can detect that a fatal path was reached. This supports both stdlib t.Fatalf
@@ -35,7 +33,7 @@ func (f *fakeT) FailNow() {
 func (f *fakeT) Helper() {}
 
 func TestAddMessage_SourceIDMatchesConversation(t *testing.T) {
-	tdb := NewTestDB(t, schemaPath)
+	tdb := NewTestDB(t)
 	tdb.SeedStandardDataSet()
 
 	// Happy path: SourceID 1 matches conversation 1's source_id.
@@ -49,7 +47,7 @@ func TestAddMessage_SourceIDMatchesConversation(t *testing.T) {
 }
 
 func TestAddMessage_MismatchedSourceID(t *testing.T) {
-	tdb := NewTestDB(t, schemaPath)
+	tdb := NewTestDB(t)
 	tdb.SeedStandardDataSet()
 
 	src2 := tdb.AddSource(SourceOpts{Identifier: "other@gmail.com"})
@@ -82,7 +80,7 @@ func TestAddMessage_MismatchedSourceID(t *testing.T) {
 }
 
 func TestAddMessage_DBErrorFailsTest(t *testing.T) {
-	tdb := NewTestDB(t, schemaPath)
+	tdb := NewTestDB(t)
 	tdb.SeedStandardDataSet()
 
 	ft := &fakeT{TB: t}
@@ -109,7 +107,7 @@ func TestAddMessage_DBErrorFailsTest(t *testing.T) {
 }
 
 func TestAddMessage_MissingConversation(t *testing.T) {
-	tdb := NewTestDB(t, schemaPath)
+	tdb := NewTestDB(t)
 	tdb.SeedStandardDataSet()
 
 	ft := &fakeT{TB: t}
@@ -137,4 +135,27 @@ func TestAddMessage_MissingConversation(t *testing.T) {
 	require.True(t, caught, "expected fatal for missing conversation")
 	require.NotEmpty(t, ft.fatalMsg, "expected fatal for missing conversation")
 	t.Logf("got expected fatal: %s", ft.fatalMsg)
+}
+
+func TestNewTestDBProductionInvariants(t *testing.T) {
+	fixture := NewTestDB(t)
+	var foreignKeys int
+	require.NoError(t, fixture.DB.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys))
+	require.Equal(t, 1, foreignKeys)
+	var archiveID string
+	require.NoError(t, fixture.DB.QueryRow("SELECT value FROM archive_metadata WHERE key = 'archive_uid'").Scan(&archiveID))
+	require.NotEmpty(t, archiveID)
+	var ftsRows int
+	require.NoError(t, fixture.DB.QueryRow("SELECT COUNT(*) FROM messages_fts").Scan(&ftsRows))
+	_, err := fixture.DB.Exec("INSERT INTO message_labels (message_id, label_id) VALUES (999, 999)")
+	require.Error(t, err, "production foreign keys reject nonexistent message and label")
+}
+
+func TestNewTestDBWithoutFTSRetainsProductionInvariants(t *testing.T) {
+	fixture := NewTestDBWithoutFTS(t)
+	_, err := fixture.DB.Exec("SELECT rowid FROM messages_fts")
+	require.Error(t, err)
+	var foreignKeys int
+	require.NoError(t, fixture.DB.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys))
+	require.Equal(t, 1, foreignKeys)
 }

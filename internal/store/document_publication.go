@@ -298,7 +298,7 @@ func (s *Store) FailDocumentExtraction(ctx context.Context, failure DocumentExtr
 	}
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
 		q := boundQuerier{ctx: ctx, q: tx}
-		if err := persistDocumentExtractionConversion(q, s.dialect, failure.Claim.ExtractionID, failure.Claim.CanonicalBlobHash, failure.Claim.LocalBytes, failure.Claim.OccurrenceMIMEType, failure.Conversion); err != nil {
+		if err := persistDocumentExtractionConversion(q, failure.Claim.ExtractionID, failure.Claim.CanonicalBlobHash, failure.Claim.LocalBytes, failure.Claim.OccurrenceMIMEType, failure.Conversion); err != nil {
 			return err
 		}
 		state := "tombstoned"
@@ -496,8 +496,7 @@ func (s *Store) PublishDocumentExtraction(
 				INSERT INTO document_units
 					(extraction_id, unit_index, unit_kind, text, header_text,
 					 footer_text, width, height, dpi, checksum, char_count, truncated, heading_marks)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, `+s.dialect.JSONBindExpr()+`)`,
-				publication.ExtractionID, unit.Index, unit.Kind, unit.Text,
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, publication.ExtractionID, unit.Index, unit.Kind, unit.Text,
 				nullIfEmpty(unit.Header), nullIfEmpty(unit.Footer), nullIfZero(int64(unit.Width)),
 				nullIfZero(int64(unit.Height)), nullIfZero(int64(unit.DPI)), unit.Checksum,
 				unit.CharCount, unit.Truncated, string(headingMarks),
@@ -515,8 +514,7 @@ func (s *Store) PublishDocumentExtraction(
 					(extraction_id, chunk_key, ordinal, text, heading_path,
 					 first_unit_index, last_unit_index, synthetic_prefix_len,
 					 checksum, char_count, table_chunk, code_chunk, truncated)
-				VALUES (?, ?, ?, ?, `+s.dialect.JSONBindExpr()+`, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				publication.ExtractionID, chunk.Key, chunk.Ordinal, chunk.Text,
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, publication.ExtractionID, chunk.Key, chunk.Ordinal, chunk.Text,
 				string(headingPath), chunk.FirstUnitIndex, chunk.LastUnitIndex,
 				chunk.SyntheticPrefixLen, chunk.Checksum, chunk.CharCount,
 				chunk.TableChunk, chunk.CodeChunk, chunk.Truncated,
@@ -536,7 +534,7 @@ func (s *Store) PublishDocumentExtraction(
 				}
 			}
 		}
-		if err := persistDocumentExtractionConversion(q, s.dialect, publication.ExtractionID, publication.CanonicalBlobHash, publication.SourceBytes, publication.OccurrenceMIMEType, publication.Conversion); err != nil {
+		if err := persistDocumentExtractionConversion(q, publication.ExtractionID, publication.CanonicalBlobHash, publication.SourceBytes, publication.OccurrenceMIMEType, publication.Conversion); err != nil {
 			return err
 		}
 		providerBytes := any(nil)
@@ -733,7 +731,7 @@ func validateDocumentExtractionConversion(sourceHash, sourceMIME string, sourceB
 }
 
 func persistDocumentExtractionConversion(
-	q boundQuerier, dialect Dialect, extractionID, sourceHash string, sourceBytes int64, sourceMIME string,
+	q boundQuerier, extractionID, sourceHash string, sourceBytes int64, sourceMIME string,
 	conversion *DocumentExtractionConversion,
 ) error {
 	if conversion == nil {
@@ -750,9 +748,8 @@ func persistDocumentExtractionConversion(
 		INSERT INTO document_extraction_conversions
 			(extraction_id, provider_media_type, pdf_sha256, pdf_bytes, pages,
 			 policy_fingerprint, converter_version, spans)
-		VALUES (?, ?, ?, ?, ?, ?, ?, `+dialect.JSONBindExpr()+`)
-		ON CONFLICT (extraction_id) DO NOTHING`,
-		extractionID, conversion.ProviderMediaType, conversion.PDFSHA256, conversion.PDFBytes,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (extraction_id) DO NOTHING`, extractionID, conversion.ProviderMediaType, conversion.PDFSHA256, conversion.PDFBytes,
 		conversion.Pages, conversion.PolicyFingerprint, conversion.ConverterVersion, string(spans),
 	)
 	if err != nil {

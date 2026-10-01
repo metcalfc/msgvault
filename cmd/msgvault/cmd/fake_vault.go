@@ -13,7 +13,6 @@ import (
 // fakeVaultCmd is a hidden developer tool: benchmark harnesses and tests
 // need multi-gigabyte msgvault archives that cannot be checked into any
 // repository, so they generate them on demand instead.
-var fakeVaultCmd = newFakeVaultCommand()
 
 type fakeVaultCommandOptions struct {
 	output           string
@@ -75,7 +74,7 @@ how msgvault (backup, search, sync machinery) behaves at scale.`,
 }
 
 func init() {
-	rootCmd.AddCommand(fakeVaultCmd)
+	registerCommandFactory(newFakeVaultCommand)
 }
 
 func runFakeVault(cmd *cobra.Command, opts fakeVaultCommandOptions) error {

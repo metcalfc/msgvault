@@ -130,7 +130,7 @@ type VisualSearchOccurrence struct {
 func (s *Store) ResolveVisualSearchOccurrence(ctx context.Context, generationID int64, token string) (VisualSearchOccurrence, error) {
 	var occurrence VisualSearchOccurrence
 	var sentAt sql.NullTime
-	err := s.db.QueryRowContext(ctx, s.dialect.Rebind(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT vp.current_vector_token, vp.generation_id, a.id, m.id,
 		       COALESCE(m.conversation_id, 0), m.source_id,
 		       COALESCE(m.source_message_id, ''), vp.blob_hash,
@@ -143,7 +143,7 @@ func (s *Store) ResolveVisualSearchOccurrence(ctx context.Context, generationID 
 		WHERE vp.generation_id = ? AND vp.current_vector_token = ?
 		  AND vp.state = 'current' AND `+LiveMessagesWhere("m", true)+`
 		  AND a.message_id = vp.message_id AND a.attachment_role = 'standalone'
-	`), generationID, token).Scan(&occurrence.VectorToken, &occurrence.GenerationID,
+	`, generationID, token).Scan(&occurrence.VectorToken, &occurrence.GenerationID,
 		&occurrence.AttachmentID, &occurrence.MessageID, &occurrence.ConversationID,
 		&occurrence.SourceID, &occurrence.SourceMessageID, &occurrence.BlobHash,
 		&occurrence.Filename, &occurrence.MIMEType, &occurrence.Size, &sentAt)
@@ -170,12 +170,12 @@ func (s *Store) ListStaleVisualMessageIDs(ctx context.Context, generationID int6
 	// updated_at and moves behind the queue, so a cluster of permanently
 	// unavailable blobs cannot monopolize the bounded page and starve
 	// later stale owners.
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT message_id FROM visual_publications
 		WHERE generation_id = ? AND state = 'stale'
 		  AND (outcome_kind IS NULL OR outcome_kind = 'retryable')
 		GROUP BY message_id
-		ORDER BY MIN(updated_at), message_id LIMIT ?`), generationID, limit)
+		ORDER BY MIN(updated_at), message_id LIMIT ?`, generationID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list stale visual messages: %w", err)
 	}
@@ -187,14 +187,14 @@ func (s *Store) ListObsoleteVisualTokens(ctx context.Context, generationID int64
 	if limit < 1 || limit > 1000 {
 		return nil, errors.New("obsolete visual token limit must be between 1 and 1000")
 	}
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT current_vector_token FROM visual_publications
 		WHERE generation_id = ? AND state <> 'current' AND current_vector_token IS NOT NULL
 		  AND (state = 'tombstoned' OR outcome_kind IS NOT NULL)
 		UNION
 		SELECT vector_token FROM visual_obsolete_tokens
 		WHERE generation_id = ?
-		ORDER BY 1 LIMIT ?`), generationID, generationID, limit)
+		ORDER BY 1 LIMIT ?`, generationID, generationID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list obsolete visual tokens: %w", err)
 	}
@@ -211,13 +211,13 @@ func (s *Store) ListObsoleteVisualTokens(ctx context.Context, generationID int64
 }
 
 func (s *Store) ListVisualGenerationTokens(ctx context.Context, generationID int64) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT current_vector_token FROM visual_publications
 		WHERE generation_id = ? AND current_vector_token IS NOT NULL
 		UNION SELECT pending_vector_token FROM visual_publications
 		WHERE generation_id = ? AND pending_vector_token IS NOT NULL
 		UNION SELECT vector_token FROM visual_obsolete_tokens
-		WHERE generation_id = ?`), generationID, generationID, generationID)
+		WHERE generation_id = ?`, generationID, generationID, generationID)
 	if err != nil {
 		return nil, err
 	}
@@ -234,14 +234,14 @@ func (s *Store) ListVisualGenerationTokens(ctx context.Context, generationID int
 }
 
 func (s *Store) ClearObsoleteVisualToken(ctx context.Context, generationID int64, token string) error {
-	if _, err := s.db.ExecContext(ctx, s.dialect.Rebind(`
+	if _, err := s.db.ExecContext(ctx, `
 		UPDATE visual_publications SET current_vector_token = NULL, updated_at = `+s.dialect.Now()+`
-		WHERE generation_id = ? AND state <> 'current' AND current_vector_token = ?`), generationID, token); err != nil {
+		WHERE generation_id = ? AND state <> 'current' AND current_vector_token = ?`, generationID, token); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, s.dialect.Rebind(`
+	_, err := s.db.ExecContext(ctx, `
 		DELETE FROM visual_obsolete_tokens
-		WHERE generation_id = ? AND vector_token = ?`), generationID, token)
+		WHERE generation_id = ? AND vector_token = ?`, generationID, token)
 	return err
 }
 
@@ -250,11 +250,11 @@ func (s *Store) ClearObsoleteVisualToken(ctx context.Context, generationID int64
 // matching terminal outcome as converged, which would otherwise make the
 // retry a silent no-op.
 func (s *Store) ClearVisualOutcome(ctx context.Context, generationID int64, owner VisualOwner) error {
-	_, err := s.db.ExecContext(ctx, s.dialect.Rebind(`
+	_, err := s.db.ExecContext(ctx, `
 		UPDATE visual_publications
 		SET outcome_kind = NULL, outcome_reason = NULL, updated_at = `+s.dialect.Now()+`
 		WHERE generation_id = ? AND message_id = ? AND blob_hash = ?
-		  AND media_input_key = ? AND outcome_kind IS NOT NULL`),
+		  AND media_input_key = ? AND outcome_kind IS NOT NULL`,
 		generationID, owner.MessageID, owner.BlobHash, owner.MediaInputKey)
 	if err != nil {
 		return fmt.Errorf("clear visual outcome: %w", err)
@@ -275,10 +275,10 @@ func (s *Store) ParkObsoleteVisualToken(
 	if strings.TrimSpace(token) == "" {
 		return errors.New("visual token to park is required")
 	}
-	_, err := s.db.ExecContext(ctx, s.dialect.Rebind(`
+	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO visual_obsolete_tokens (generation_id, vector_token)
 		VALUES (?, ?)
-		ON CONFLICT (generation_id, vector_token) DO NOTHING`), generationID, token)
+		ON CONFLICT (generation_id, vector_token) DO NOTHING`, generationID, token)
 	if err != nil {
 		return fmt.Errorf("park obsolete visual token: %w", err)
 	}
@@ -376,10 +376,10 @@ func (s *Store) ConsentVisualGeneration(ctx context.Context, generationID int64,
 	if policyFingerprint == "" {
 		return errors.New("visual consent requires the policy fingerprint of a validated capability manifest")
 	}
-	result, err := s.db.ExecContext(ctx, s.dialect.Rebind(`
+	result, err := s.db.ExecContext(ctx, `
 		UPDATE visual_generations
 		SET consented_at = `+s.dialect.Now()+`, consent_policy_fingerprint = ?
-		WHERE id = ? AND state IN ('building', 'active')`), policyFingerprint, generationID)
+		WHERE id = ? AND state IN ('building', 'active')`, policyFingerprint, generationID)
 	if err != nil {
 		return fmt.Errorf("consent visual generation: %w", err)
 	}

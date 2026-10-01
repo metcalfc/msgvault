@@ -11,9 +11,9 @@ import (
 // previous value. Markers record durable operator-visible conditions, such as
 // a source that must be re-anchored before it syncs again.
 func (s *Store) SetArchiveMarker(ctx context.Context, key, value string) error {
-	if _, err := s.db.ExecContext(ctx, s.Rebind(`
+	if _, err := s.db.ExecContext(ctx, `
 		INSERT INTO archive_metadata (key, value) VALUES (?, ?)
-		ON CONFLICT (key) DO UPDATE SET value = excluded.value`), key, value); err != nil {
+		ON CONFLICT (key) DO UPDATE SET value = excluded.value`, key, value); err != nil {
 		return fmt.Errorf("set archive marker %s: %w", key, err)
 	}
 	return nil
@@ -22,7 +22,7 @@ func (s *Store) SetArchiveMarker(ctx context.Context, key, value string) error {
 // GetArchiveMarker returns the value stored under key and whether it exists.
 func (s *Store) GetArchiveMarker(ctx context.Context, key string) (string, bool, error) {
 	var value string
-	err := s.db.QueryRowContext(ctx, s.Rebind(`SELECT value FROM archive_metadata WHERE key = ?`), key).Scan(&value)
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM archive_metadata WHERE key = ?`, key).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
@@ -34,7 +34,7 @@ func (s *Store) GetArchiveMarker(ctx context.Context, key string) (string, bool,
 
 // DeleteArchiveMarker removes key. Removing a missing marker is a no-op.
 func (s *Store) DeleteArchiveMarker(ctx context.Context, key string) error {
-	if _, err := s.db.ExecContext(ctx, s.Rebind(`DELETE FROM archive_metadata WHERE key = ?`), key); err != nil {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM archive_metadata WHERE key = ?`, key); err != nil {
 		return fmt.Errorf("delete archive marker %s: %w", key, err)
 	}
 	return nil

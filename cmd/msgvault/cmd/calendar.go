@@ -28,12 +28,15 @@ import (
 
 const calScopeEscalationConfirmedFlag = "scope-escalation-confirmed"
 
-var (
-	calAddOAuthApp   string
-	calAddHeadless   bool
-	calAddAll        bool
-	calAddMinRole    string
-	calAddCalendars  []string
+type calendarAddOptions struct {
+	calAddOAuthApp  string
+	calAddHeadless  bool
+	calAddAll       bool
+	calAddMinRole   string
+	calAddCalendars []string
+}
+
+type calendarSyncOptions struct {
 	calSyncOAuthApp  string
 	calSyncFull      bool
 	calSyncLimit     int
@@ -43,11 +46,11 @@ var (
 	calSyncAll       bool
 	calSyncMinRole   string
 	calSyncCalendars []string
-)
+}
 
 func init() {
-	rootCmd.AddCommand(newAddCalendarCmd())
-	rootCmd.AddCommand(addManualSyncCacheFlags(newSyncCalendarCmd()))
+	registerCommandFactory(newAddCalendarCmd)
+	registerCommandFactory(func() *cobra.Command { return addManualSyncCacheFlags(newSyncCalendarCmd()) })
 }
 
 func interactiveStdin() bool {
@@ -55,11 +58,12 @@ func interactiveStdin() bool {
 }
 
 func newAddCalendarCmd() *cobra.Command {
-	cmd := newAddCalendarLocalCmd()
+	options := &calendarAddOptions{}
+	cmd := newAddCalendarLocalCommand(options)
 	runLocal := cmd.RunE
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if !isDaemonCLISubprocess() {
-			return runAddCalendarHTTP(cmd, args)
+			return runAddCalendarHTTP(cmd, args, options)
 		}
 		return runLocal(cmd, args)
 	}
@@ -67,6 +71,10 @@ func newAddCalendarCmd() *cobra.Command {
 }
 
 func newAddCalendarLocalCmd() *cobra.Command {
+	return newAddCalendarLocalCommand(&calendarAddOptions{})
+}
+
+func newAddCalendarLocalCommand(options *calendarAddOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add-calendar <email>",
 		Short: "Authorize Google Calendar access and register calendars for an account",
@@ -87,7 +95,7 @@ func newAddCalendarLocalCmd() *cobra.Command {
 			if email == "" {
 				return usageErr(cmd, errors.New("account email is required"))
 			}
-			if err := calsync.ValidateMinAccessRole(calAddMinRole); err != nil {
+			if err := calsync.ValidateMinAccessRole(options.calAddMinRole); err != nil {
 				return usageErr(cmd, err)
 			}
 
@@ -97,7 +105,7 @@ func newAddCalendarLocalCmd() *cobra.Command {
 			}
 			defer cleanup()
 
-			appDecision, err := calendarAddOAuthAppDecision(st, email, calAddOAuthApp, oauthAppExplicit)
+			appDecision, err := calendarAddOAuthAppDecision(st, email, options.calAddOAuthApp, oauthAppExplicit)
 			if err != nil {
 				return err
 			}
@@ -116,7 +124,7 @@ func newAddCalendarLocalCmd() *cobra.Command {
 				}
 				defer func() { _ = client.Close() }()
 				return registerCalendarsAndReport(ctx, cmd.OutOrStdout(), st, client, email, oauthApp,
-					oauthAppExplicit || appDecision.BindingChanged)
+					oauthAppExplicit || appDecision.BindingChanged, options)
 			}
 
 			secretsPath, err := cfg.OAuth.ClientSecretsFor(oauthApp)
@@ -147,7 +155,7 @@ func newAddCalendarLocalCmd() *cobra.Command {
 			// browser or touching the existing Gmail token. Once the dual-scope
 			// token is copied in, re-running add-calendar --headless skips this
 			// and registers the calendars (an API call that needs no browser).
-			if calAddHeadless && (!hasToken || !hasCalendarScope || !tokenReusable || tokenExpiredOrRevoked) {
+			if options.calAddHeadless && (!hasToken || !hasCalendarScope || !tokenReusable || tokenExpiredOrRevoked) {
 				oauth.PrintCalendarHeadlessInstructions(email, cfg.TokensDir(), oauthApp)
 				return nil
 			}
@@ -198,14 +206,14 @@ func newAddCalendarLocalCmd() *cobra.Command {
 			}
 			defer func() { _ = client.Close() }()
 			return registerCalendarsAndReport(ctx, cmd.OutOrStdout(), st, client, email, oauthApp,
-				oauthAppExplicit || appDecision.BindingChanged)
+				oauthAppExplicit || appDecision.BindingChanged, options)
 		},
 	}
-	cmd.Flags().StringVar(&calAddOAuthApp, "oauth-app", "", "named OAuth app to use")
-	cmd.Flags().BoolVar(&calAddHeadless, "headless", false, "headless host: print token-copy instructions instead of opening a browser")
-	cmd.Flags().BoolVar(&calAddAll, "all-calendars", false, "include reader/freeBusyReader calendars (default: owner+writer)")
-	cmd.Flags().StringVar(&calAddMinRole, "min-access-role", "", "minimum access role: owner|writer|reader")
-	cmd.Flags().StringSliceVar(&calAddCalendars, "calendars", nil, "comma-separated calendar IDs to register (default: by access role)")
+	cmd.Flags().StringVar(&options.calAddOAuthApp, "oauth-app", "", "named OAuth app to use")
+	cmd.Flags().BoolVar(&options.calAddHeadless, "headless", false, "headless host: print token-copy instructions instead of opening a browser")
+	cmd.Flags().BoolVar(&options.calAddAll, "all-calendars", false, "include reader/freeBusyReader calendars (default: owner+writer)")
+	cmd.Flags().StringVar(&options.calAddMinRole, "min-access-role", "", "minimum access role: owner|writer|reader")
+	cmd.Flags().StringSliceVar(&options.calAddCalendars, "calendars", nil, "comma-separated calendar IDs to register (default: by access role)")
 	cmd.Flags().Bool(calScopeEscalationConfirmedFlag, false, "Internal: Calendar scope escalation was already accepted by the frontend CLI")
 	if err := cmd.Flags().MarkHidden(calScopeEscalationConfirmedFlag); err != nil {
 		panic(err)
@@ -217,7 +225,7 @@ func newAddCalendarLocalCmd() *cobra.Command {
 // (a live check that Calendar access was actually granted), creates the source
 // rows, and reports what was registered plus the follow-up sync command. It is
 // shared by add-calendar's user-consent and service-account paths.
-func registerCalendarsAndReport(ctx context.Context, out io.Writer, st *store.Store, client gcal.API, email, oauthApp string, oauthAppSet bool) error {
+func registerCalendarsAndReport(ctx context.Context, out io.Writer, st *store.Store, client gcal.API, email, oauthApp string, oauthAppSet bool, options *calendarAddOptions) error {
 	state := invocationFromContext(ctx)
 	var logger *slog.Logger
 	if state != nil {
@@ -227,9 +235,9 @@ func registerCalendarsAndReport(ctx context.Context, out io.Writer, st *store.St
 		AccountEmail:  email,
 		OAuthApp:      oauthApp,
 		OAuthAppSet:   oauthAppSet,
-		Calendars:     calAddCalendars,
-		AllCalendars:  calAddAll,
-		MinAccessRole: calAddMinRole,
+		Calendars:     options.calAddCalendars,
+		AllCalendars:  options.calAddAll,
+		MinAccessRole: options.calAddMinRole,
 	})
 	if logger != nil {
 		syncer = syncer.WithLogger(logger)
@@ -248,19 +256,19 @@ func registerCalendarsAndReport(ctx context.Context, out io.Writer, st *store.St
 		_, _ = fmt.Fprintf(out, "  - %s (%s)\n", calendarLabel(c), c.AccessRole)
 	}
 	_, _ = fmt.Fprintf(out, "\nNext: %s\n", calendarSyncNextCommand(email, oauthApp, calendarSyncNextOptions{
-		AllCalendars:  calAddAll,
-		MinAccessRole: calAddMinRole,
-		Calendars:     calAddCalendars,
+		AllCalendars:  options.calAddAll,
+		MinAccessRole: options.calAddMinRole,
+		Calendars:     options.calAddCalendars,
 	}))
 	return nil
 }
 
-func runAddCalendarHTTP(cmd *cobra.Command, args []string) error {
+func runAddCalendarHTTP(cmd *cobra.Command, args []string, options *calendarAddOptions) error {
 	email := normalizeCalendarAccountEmail(args[0])
 	if email == "" {
 		return usageErr(cmd, errors.New("account email is required"))
 	}
-	if err := calsync.ValidateMinAccessRole(calAddMinRole); err != nil {
+	if err := calsync.ValidateMinAccessRole(options.calAddMinRole); err != nil {
 		return usageErr(cmd, err)
 	}
 
@@ -272,9 +280,9 @@ func runAddCalendarHTTP(cmd *cobra.Command, args []string) error {
 
 	plan, err := st.PlanCLIAddCalendar(cmd.Context(), daemonclient.CLIAddCalendarPlanRequest{
 		Email:            email,
-		OAuthApp:         calAddOAuthApp,
+		OAuthApp:         options.calAddOAuthApp,
 		OAuthAppExplicit: cmd.Flags().Changed("oauth-app"),
-		Headless:         calAddHeadless,
+		Headless:         options.calAddHeadless,
 	})
 	if err != nil {
 		return err
@@ -294,7 +302,7 @@ func runAddCalendarHTTP(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if err := preflightAddCalendarAuthorize(cmd.Context(), email, plan, escalationConfirmed,
-		calAddOAuthApp, cmd.Flags().Changed("oauth-app")); err != nil {
+		options.calAddOAuthApp, cmd.Flags().Changed("oauth-app"), options.calAddHeadless); err != nil {
 		return err
 	}
 	return runDaemonCLICommandHTTPFromCobra(cmd, args)
@@ -334,9 +342,10 @@ func preflightAddCalendarAuthorize(
 	escalationConfirmed bool,
 	requestedApp string,
 	requestedExplicit bool,
+	headless bool,
 ) error {
 	state := invocationFromContext(ctx)
-	if IsRemoteMode(state) || calAddHeadless || plan == nil {
+	if IsRemoteMode(state) || headless || plan == nil {
 		return nil
 	}
 	if state == nil || state.cfg == nil {
@@ -417,6 +426,7 @@ func newSyncCalendarCmd() *cobra.Command {
 }
 
 func newSyncCalendarLocalCmd() *cobra.Command {
+	options := &calendarSyncOptions{}
 	cmd := &cobra.Command{
 		Use:     "sync-calendar <name|email>",
 		Aliases: []string{"sync-calendar-incremental"},
@@ -440,9 +450,9 @@ func newSyncCalendarLocalCmd() *cobra.Command {
 			oauthAppProvided := oauthAppExplicit
 			oauthApp := ""
 			if oauthAppProvided {
-				oauthApp = calSyncOAuthApp
+				oauthApp = options.calSyncOAuthApp
 			}
-			calendars := calSyncCalendars
+			calendars := options.calSyncCalendars
 			if src := cfg.GetGCalSource(args[0]); src != nil {
 				email = normalizeCalendarAccountEmail(src.Email)
 				if !oauthAppProvided && src.OAuthApp != "" {
@@ -457,15 +467,15 @@ func newSyncCalendarLocalCmd() *cobra.Command {
 				return usageErr(cmd, errors.New("could not resolve an account email (pass an email or a configured [[gcal]] name)"))
 			}
 
-			timeMin, timeMax, err := calendarDateBounds(cmd, calSyncAfter, calSyncBefore)
+			timeMin, timeMax, err := calendarDateBounds(cmd, options.calSyncAfter, options.calSyncBefore)
 			if err != nil {
 				return err
 			}
-			if calSyncLimit < 0 {
+			if options.calSyncLimit < 0 {
 				return usageErr(cmd, errors.New("--limit must be a non-negative number"))
 			}
-			hasFullOnlyOptions := calendarSyncHasFullOnlyOptions(timeMin, timeMax, calSyncLimit)
-			if err := calsync.ValidateMinAccessRole(calSyncMinRole); err != nil {
+			hasFullOnlyOptions := calendarSyncHasFullOnlyOptions(timeMin, timeMax, options.calSyncLimit)
+			if err := calsync.ValidateMinAccessRole(options.calSyncMinRole); err != nil {
 				return usageErr(cmd, err)
 			}
 
@@ -496,19 +506,19 @@ func newSyncCalendarLocalCmd() *cobra.Command {
 				OAuthApp:      oauthApp,
 				OAuthAppSet:   appDecision.OAuthAppSet,
 				Calendars:     calendars,
-				AllCalendars:  calSyncAll,
-				MinAccessRole: calSyncMinRole,
+				AllCalendars:  options.calSyncAll,
+				MinAccessRole: options.calSyncMinRole,
 				TimeMin:       timeMin,
 				TimeMax:       timeMax,
-				Limit:         calSyncLimit,
-				NoResume:      calSyncNoResume,
+				Limit:         options.calSyncLimit,
+				NoResume:      options.calSyncNoResume,
 			})
 			if logger != nil {
 				syncer = syncer.WithLogger(logger)
 			}
 
 			var res calsync.Result
-			if calendarSyncShouldRunFullForSources(existing, calSyncFull, calSyncAll, calSyncMinRole, calendars, hasFullOnlyOptions) {
+			if calendarSyncShouldRunFullForSources(existing, options.calSyncFull, options.calSyncAll, options.calSyncMinRole, calendars, hasFullOnlyOptions) {
 				res, err = syncer.Full(ctx)
 			} else {
 				res, err = syncer.Incremental(ctx)
@@ -521,15 +531,15 @@ func newSyncCalendarLocalCmd() *cobra.Command {
 			return rebuildCacheAfterManualSync(cfg.DatabaseDSN(), state)
 		},
 	}
-	cmd.Flags().StringVar(&calSyncOAuthApp, "oauth-app", "", "named OAuth app to use")
-	cmd.Flags().BoolVar(&calSyncFull, "full", false, "force a full sync (ignore stored sync tokens)")
-	cmd.Flags().IntVar(&calSyncLimit, "limit", 0, "max events per calendar (0 = unlimited)")
-	cmd.Flags().StringVar(&calSyncAfter, "after", "", "full-sync only: earliest event date (YYYY-MM-DD)")
-	cmd.Flags().StringVar(&calSyncBefore, "before", "", "full-sync only: latest event date (YYYY-MM-DD)")
-	cmd.Flags().BoolVar(&calSyncNoResume, "noresume", false, "do not resume an interrupted full sync")
-	cmd.Flags().BoolVar(&calSyncAll, "all-calendars", false, "include reader/freeBusyReader calendars")
-	cmd.Flags().StringVar(&calSyncMinRole, "min-access-role", "", "minimum access role: owner|writer|reader")
-	cmd.Flags().StringSliceVar(&calSyncCalendars, "calendar", nil, "restrict to specific calendar IDs")
+	cmd.Flags().StringVar(&options.calSyncOAuthApp, "oauth-app", "", "named OAuth app to use")
+	cmd.Flags().BoolVar(&options.calSyncFull, "full", false, "force a full sync (ignore stored sync tokens)")
+	cmd.Flags().IntVar(&options.calSyncLimit, "limit", 0, "max events per calendar (0 = unlimited)")
+	cmd.Flags().StringVar(&options.calSyncAfter, "after", "", "full-sync only: earliest event date (YYYY-MM-DD)")
+	cmd.Flags().StringVar(&options.calSyncBefore, "before", "", "full-sync only: latest event date (YYYY-MM-DD)")
+	cmd.Flags().BoolVar(&options.calSyncNoResume, "noresume", false, "do not resume an interrupted full sync")
+	cmd.Flags().BoolVar(&options.calSyncAll, "all-calendars", false, "include reader/freeBusyReader calendars")
+	cmd.Flags().StringVar(&options.calSyncMinRole, "min-access-role", "", "minimum access role: owner|writer|reader")
+	cmd.Flags().StringSliceVar(&options.calSyncCalendars, "calendar", nil, "restrict to specific calendar IDs")
 	return cmd
 }
 

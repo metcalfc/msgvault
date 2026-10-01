@@ -74,7 +74,7 @@ func (s *Store) GetDocumentVectorTargetProfileID(ctx context.Context) (string, e
 		return "", err
 	}
 	var incompatible bool
-	if err := s.db.QueryRowContext(ctx, s.Rebind(`
+	if err := s.db.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1
 			FROM document_extraction_heads h
@@ -87,7 +87,7 @@ func (s *Store) GetDocumentVectorTargetProfileID(ctx context.Context) (string, e
 			       OR e.document_family IS NULL OR TRIM(e.document_family) = ''
 			       OR e.unit_kind IS NULL OR TRIM(e.unit_kind) = '')
 			  AND `+documentVectorLiveAuthoritySQL()+`
-		)`), target.String, currentVersion).Scan(&incompatible); err != nil {
+		)`, target.String, currentVersion).Scan(&incompatible); err != nil {
 		return "", fmt.Errorf("check document vector target normalized identity: %w", err)
 	}
 	if incompatible {
@@ -116,10 +116,10 @@ func (s *Store) RecordDocumentVectorConsent(ctx context.Context, spec DocumentVe
 	var consent DocumentVectorConsent
 	var created bool
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
-		result, err := tx.ExecContext(ctx, s.Rebind(`
+		result, err := tx.ExecContext(ctx, `
 			INSERT INTO document_vector_consents
 				(egress_fingerprint, purpose, generation_fingerprint, target_extraction_profile_id, embedding_profile, model, dimension, consented_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (egress_fingerprint) DO NOTHING`),
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (egress_fingerprint) DO NOTHING`,
 			spec.EgressFingerprint, spec.Purpose, spec.Fingerprint, spec.TargetExtractionProfileID, spec.EmbeddingProfile, spec.Model,
 			spec.Dimension, s.dialect.TimestampParam(now))
 		if err != nil {
@@ -130,9 +130,9 @@ func (s *Store) RecordDocumentVectorConsent(ctx context.Context, spec DocumentVe
 			return fmt.Errorf("read document vector consent result: %w", err)
 		}
 		created = rows == 1
-		return tx.QueryRowContext(ctx, s.Rebind(`
+		return tx.QueryRowContext(ctx, `
 			SELECT egress_fingerprint, purpose, generation_fingerprint, target_extraction_profile_id, embedding_profile, model, dimension, consented_at
-			FROM document_vector_consents WHERE egress_fingerprint = ?`), spec.EgressFingerprint).Scan(
+			FROM document_vector_consents WHERE egress_fingerprint = ?`, spec.EgressFingerprint).Scan(
 			&consent.EgressFingerprint, &consent.Purpose, &consent.Fingerprint, &consent.TargetExtractionProfileID, &consent.EmbeddingProfile,
 			&consent.Model, &consent.Dimension, &consent.ConsentedAt)
 	})
@@ -151,9 +151,9 @@ func (s *Store) GetDocumentVectorConsent(ctx context.Context, egressFingerprint 
 		return nil, errors.New("document vector consent egress fingerprint is invalid")
 	}
 	var consent DocumentVectorConsent
-	err := s.db.QueryRowContext(ctx, s.Rebind(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT egress_fingerprint, purpose, generation_fingerprint, target_extraction_profile_id, embedding_profile, model, dimension, consented_at
-		FROM document_vector_consents WHERE egress_fingerprint = ?`), egressFingerprint).Scan(
+		FROM document_vector_consents WHERE egress_fingerprint = ?`, egressFingerprint).Scan(
 		&consent.EgressFingerprint, &consent.Purpose, &consent.Fingerprint, &consent.TargetExtractionProfileID, &consent.EmbeddingProfile,
 		&consent.Model, &consent.Dimension, &consent.ConsentedAt)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -258,7 +258,7 @@ func (s *Store) GetDocumentVectorBuildCursor(ctx context.Context, generationID i
 		return 0, errors.New("document vector generation id must be positive")
 	}
 	var after int64
-	err := s.db.QueryRowContext(ctx, s.Rebind(`SELECT after_chunk_id FROM document_vector_build_progress WHERE generation_id = ?`), generationID).Scan(&after)
+	err := s.db.QueryRowContext(ctx, `SELECT after_chunk_id FROM document_vector_build_progress WHERE generation_id = ?`, generationID).Scan(&after)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}
@@ -273,9 +273,9 @@ func (s *Store) GetDocumentVectorProviderUsage(ctx context.Context, fingerprint 
 		return DocumentVectorProviderUsage{}, errors.New("document vector usage fingerprint is invalid")
 	}
 	usage := DocumentVectorProviderUsage{Fingerprint: fingerprint}
-	err := s.db.QueryRowContext(ctx, s.Rebind(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT provider_calls, provider_documents, provider_chunks, provider_input_chars, updated_at
-		FROM document_vector_provider_usage WHERE fingerprint = ?`), fingerprint).Scan(
+		FROM document_vector_provider_usage WHERE fingerprint = ?`, fingerprint).Scan(
 		&usage.ProviderCalls, &usage.ProviderDocuments, &usage.ProviderChunks, &usage.ProviderInputChars, &usage.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return usage, nil
@@ -354,10 +354,10 @@ func (s *Store) GetDocumentVectorOperationsStatus(ctx context.Context, configure
 // GetOldestRetiredDocumentVectorGeneration returns the next durable cleanup
 // ledger. Scheduled convergence handles at most one bounded page per tick.
 func (s *Store) GetOldestRetiredDocumentVectorGeneration(ctx context.Context) (*DocumentVectorGeneration, error) {
-	generation, found, err := scanDocumentVectorGeneration(s.db.QueryRowContext(ctx, s.Rebind(`
+	generation, found, err := scanDocumentVectorGeneration(s.db.QueryRowContext(ctx, `
 		SELECT id, fingerprint, target_extraction_profile_id, embedding_profile, model, dimension,
 		       state, created_at, activated_at, retired_at
-		FROM document_vector_generations WHERE state = ? ORDER BY id LIMIT 1`), string(DocumentVectorGenerationRetired)))
+		FROM document_vector_generations WHERE state = ? ORDER BY id LIMIT 1`, string(DocumentVectorGenerationRetired)))
 	if err != nil {
 		return nil, err
 	}
@@ -404,9 +404,9 @@ func (s *Store) StartDocumentVectorRebuild(ctx context.Context, activeGeneration
 		if building != 0 {
 			return errors.New("a document vector generation is already building")
 		}
-		rows, err := tx.QueryContext(ctx, s.Rebind(`
+		rows, err := tx.QueryContext(ctx, `
 			SELECT target_extraction_profile_id, embedding_profile, model, dimension
-			FROM document_vector_generations WHERE fingerprint = ?`), desired.Fingerprint)
+			FROM document_vector_generations WHERE fingerprint = ?`, desired.Fingerprint)
 		if err != nil {
 			return fmt.Errorf("check document vector rebuild fingerprint: %w", err)
 		}

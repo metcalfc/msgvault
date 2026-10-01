@@ -35,3 +35,23 @@ func ParseMessageIDs(raw []byte) (messageID, inReplyTo string) {
 	return NormalizeMessageID(firstHeader(headers, "message-id")),
 		NormalizeMessageID(firstHeader(headers, "in-reply-to"))
 }
+
+// MessageIDList extracts angle-bracketed IDs in header order. Bare tokens and
+// surrounding comments are ignored, matching the live-sync threading contract.
+func MessageIDList(header string) []string {
+	var ids []string
+	for {
+		open := strings.IndexByte(header, '<')
+		if open < 0 {
+			return ids
+		}
+		end := strings.IndexByte(header[open+1:], '>')
+		if end < 0 {
+			return ids
+		}
+		if id := header[open+1 : open+1+end]; id != "" {
+			ids = append(ids, id)
+		}
+		header = header[open+end+2:]
+	}
+}

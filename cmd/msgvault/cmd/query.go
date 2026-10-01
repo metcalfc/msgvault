@@ -17,14 +17,17 @@ import (
 	"go.kenn.io/msgvault/internal/query"
 )
 
-var queryFormat string
-var queryFresh bool
-var queryStream bool
+type queryFlags struct {
+	format        string
+	fresh, stream bool
+}
 
-var queryCmd = &cobra.Command{
-	Use:   "query [sql]",
-	Short: "Run a SQL query against the analytics cache",
-	Long: `Run arbitrary SQL against the Parquet analytics cache.
+func newQueryCommand() *cobra.Command {
+	var options queryFlags
+	command := &cobra.Command{
+		Use:   "query [sql]",
+		Short: "Run a SQL query against the analytics cache",
+		Long: `Run arbitrary SQL against the Parquet analytics cache.
 
 The following views are available:
   messages, participants, message_recipients, labels,
@@ -49,15 +52,20 @@ Examples:
   msgvault query "SELECT from_email, COUNT(*) AS n FROM v_messages GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
 	msgvault query --stream --format csv "SELECT * FROM v_senders ORDER BY message_count DESC"
 	msgvault query --format table "SELECT name, message_count FROM v_labels"`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runHTTPQuery(cmd, args[0])
-	},
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runHTTPQuery(cmd, args[0], options)
+		},
+	}
+	command.Flags().BoolVar(&options.stream, "stream", false, "Stream a complete JSON or CSV export without interactive result limits; discard partial output on errors")
+	command.Flags().BoolVar(&options.fresh, "fresh", false, "Wait for analytics to include writes committed before this request, then return rows")
+	command.Flags().StringVar(&options.format, "format", outputFormatJSON, "Output format: json, csv, or table")
+	return command
 }
 
-func runHTTPQuery(cmd *cobra.Command, sqlStr string) error {
-	format := strings.ToLower(strings.TrimSpace(queryFormat))
-	if queryStream && format != outputFormatJSON && format != "csv" {
+func runHTTPQuery(cmd *cobra.Command, sqlStr string, options queryFlags) error {
+	format := strings.ToLower(strings.TrimSpace(options.format))
+	if options.stream && format != outputFormatJSON && format != "csv" {
 		return errors.New("--stream requires --format json or csv")
 	}
 	st, _, err := OpenHTTPStore(cmd.Context())
@@ -66,8 +74,8 @@ func runHTTPQuery(cmd *cobra.Command, sqlStr string) error {
 	}
 	defer func() { _ = st.Close() }()
 
-	if queryStream {
-		fresh := queryFresh
+	if options.stream {
+		fresh := options.fresh
 		for {
 			accepted, err := streamSQLQueryAs(cmd.Context(), st, sqlStr, fresh, format, cmd.OutOrStdout())
 			if err != nil {
@@ -85,7 +93,7 @@ func runHTTPQuery(cmd *cobra.Command, sqlStr string) error {
 			fresh = false
 		}
 	}
-	result, accepted, err := st.RunSQLQueryWithFresh(cmd.Context(), sqlStr, queryFresh)
+	result, accepted, err := st.RunSQLQueryWithFresh(cmd.Context(), sqlStr, options.fresh)
 	if err != nil {
 		return fmt.Errorf("query: %w", err)
 	}
@@ -103,7 +111,7 @@ func runHTTPQuery(cmd *cobra.Command, sqlStr string) error {
 			return fmt.Errorf("query: %w", err)
 		}
 	}
-	if strings.ToLower(strings.TrimSpace(queryFormat)) != outputFormatJSON && result.Cache != nil {
+	if strings.ToLower(strings.TrimSpace(options.format)) != outputFormatJSON && result.Cache != nil {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Analytics cache published %s; generation %s",
 			result.Cache.PublishedAt.Format(time.RFC3339), result.Cache.Generation)
 		if result.Cache.StaleReason != "" {
@@ -111,7 +119,7 @@ func runHTTPQuery(cmd *cobra.Command, sqlStr string) error {
 		}
 		_, _ = fmt.Fprintln(cmd.ErrOrStderr())
 	}
-	return writeQueryResult(cmd.OutOrStdout(), result, queryFormat)
+	return writeQueryResult(cmd.OutOrStdout(), result, options.format)
 }
 
 // streamSQLQueryAs writes a streamed export in the requested format. CSV is
@@ -338,12 +346,4 @@ func writeTable(
 	return nil
 }
 
-func init() {
-	rootCmd.AddCommand(queryCmd)
-	queryCmd.Flags().BoolVar(&queryStream, "stream", false, "Stream a complete JSON or CSV export without interactive result limits; discard partial output on errors")
-	queryCmd.Flags().BoolVar(&queryFresh, "fresh", false, "Wait for analytics to include writes committed before this request, then return rows")
-	queryCmd.Flags().StringVar(
-		&queryFormat, "format", outputFormatJSON,
-		"Output format: json, csv, or table",
-	)
-}
+func init() { registerCommandFactory(newQueryCommand) }

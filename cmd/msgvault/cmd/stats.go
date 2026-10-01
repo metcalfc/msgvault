@@ -9,23 +9,26 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-var (
-	statsAccount    string
-	statsCollection string
-)
-
-var statsCmd = &cobra.Command{
-	Use:   "stats",
-	Short: "Show database statistics",
-	Long: `Show statistics about the archive.
+func newStatsCommand() *cobra.Command {
+	statsCmd := &cobra.Command{
+		Use:   "stats",
+		Short: "Show database statistics",
+		Long: `Show statistics about the archive.
 
 Uses configured remote server or the local daemon by default.
 Use --local to use the local daemon even when a remote is configured.`,
-	Args: cobra.NoArgs,
-	RunE: runStats,
+		Args: cobra.NoArgs,
+		RunE: runStats,
+	}
+	statsCmd.Flags().String("account", "", "Show stats for a specific account")
+	statsCmd.Flags().String("collection", "", "Show stats for all member accounts of one collection")
+	statsCmd.MarkFlagsMutuallyExclusive("account", "collection")
+	return statsCmd
 }
 
 func runStats(cmd *cobra.Command, _ []string) error {
+	statsAccount, _ := cmd.Flags().GetString("account")
+	statsCollection, _ := cmd.Flags().GetString("collection")
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil || state.logger == nil {
 		return errors.New("configuration is unavailable")
@@ -116,9 +119,5 @@ func printStats(w io.Writer, s *store.Stats) {
 }
 
 func init() {
-	rootCmd.AddCommand(statsCmd)
-	statsCmd.Flags().StringVar(&statsAccount, "account", "", "Show stats for a specific account")
-	statsCmd.Flags().StringVar(&statsCollection, "collection", "",
-		"Show stats for all member accounts of one collection")
-	statsCmd.MarkFlagsMutuallyExclusive("account", "collection")
+	registerCommandFactory(newStatsCommand)
 }

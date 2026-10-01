@@ -33,9 +33,6 @@ type SQLiteDialect struct {
 
 func (d *SQLiteDialect) DriverName() string { return sqliteutil.DriverName() }
 
-// Rebind is a no-op for SQLite — it uses ? placeholders natively.
-func (d *SQLiteDialect) Rebind(query string) string { return query }
-
 func (d *SQLiteDialect) UnicodeLowerExpression(expr string) string {
 	return sqliteutil.UnicodeLowerFunction + "(" + expr + ")"
 }
@@ -307,9 +304,6 @@ func (d *SQLiteDialect) readClock(ctx context.Context, conn *sql.Conn) (time.Tim
 	return stamp.Time.UTC(), nil
 }
 
-// InsertOrIgnore is a no-op for SQLite — the syntax is native.
-func (d *SQLiteDialect) InsertOrIgnore(sql string) string { return sql }
-
 // BoolTrueExpr returns "col = 1" — SQLite stores booleans as 0/1 INTEGER.
 func (d *SQLiteDialect) BoolTrueExpr(col string) string { return col + " = 1" }
 
@@ -340,9 +334,6 @@ func (d *SQLiteDialect) RFC822CanonicalIDIndexDefinition() string {
 		d.RFC822CanonicalIDExpr("rfc822_message_id"),
 	)
 }
-
-// JSONBindExpr is "?" on SQLite — JSON columns are plain TEXT.
-func (d *SQLiteDialect) JSONBindExpr() string { return "?" }
 
 func (d *SQLiteDialect) JSONIsDistinctExpr(col string) string { return col + " IS NOT ?" }
 
@@ -385,12 +376,6 @@ func hasFTSToken(s string) bool {
 	}
 	return false
 }
-
-// InsertOrIgnorePrefix is a no-op for SQLite — OR IGNORE stays in the prefix.
-func (d *SQLiteDialect) InsertOrIgnorePrefix(sql string) string { return sql }
-
-// InsertOrIgnoreSuffix returns "" for SQLite — OR IGNORE is in the statement prefix.
-func (d *SQLiteDialect) InsertOrIgnoreSuffix() string { return "" }
 
 // FTSUpsert inserts or replaces an FTS5 row. FTS5 requires rowid to be
 // specified explicitly so the virtual table's rowid matches messages.id;
@@ -2076,9 +2061,6 @@ func (d *SQLiteDialect) DatabaseSize(
 	return pageCount * pageSize, nil
 }
 
-// InitConn is a no-op for SQLite — PRAGMAs are set via DSN parameters.
-func (d *SQLiteDialect) InitConn(db *sql.DB) error { return nil }
-
 // SchemaFiles returns the schema files to execute during InitSchema.
 func (d *SQLiteDialect) SchemaFiles() []string {
 	return []string{"schema.sql"}
@@ -2207,20 +2189,11 @@ func (d *SQLiteDialect) BeginExclusive(ctx context.Context, conn *sql.Conn) erro
 // that lets two deferred transactions both read the pre-update value.
 func (d *SQLiteDialect) BeginWriteSQL() string { return "BEGIN IMMEDIATE" }
 
-// SelectForUpdate returns "" — SQLite has no FOR UPDATE; serialization
-// comes from BEGIN IMMEDIATE.
-func (d *SQLiteDialect) SelectForUpdate() string { return "" }
-
 // RowWriterLockSQL returns a self-assign UPDATE on the row, which is how a
 // deferred SQLite transaction reserves the writer lock before it reads.
 func (d *SQLiteDialect) RowWriterLockSQL(table, column string) string {
 	return "UPDATE " + table + " SET " + column + " = " + column + " WHERE id = ?"
 }
-
-// MaintenanceTimeoutResetSQL returns "" — SQLite has no statement_timeout,
-// so Store.runMaintenance issues no reset statement and SQLite's
-// transactional behavior is unchanged.
-func (d *SQLiteDialect) MaintenanceTimeoutResetSQL() string { return "" }
 
 // IsBusyError returns true for SQLITE_BUSY and SQLITE_LOCKED. Matching on
 // the result code is more robust than substring matching: BUSY surfaces as
@@ -2239,7 +2212,3 @@ func (d *SQLiteDialect) IsBusyError(err error) bool {
 	}
 	return false
 }
-
-// IsSerializationFailureError always returns false for SQLite. Snapshot upgrade
-// conflicts are reported as busy errors and recognized by IsBusyError.
-func (d *SQLiteDialect) IsSerializationFailureError(err error) bool { return false }

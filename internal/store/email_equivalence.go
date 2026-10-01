@@ -13,7 +13,6 @@ import (
 
 	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/emailaddr"
-	"go.kenn.io/msgvault/internal/peoplesweep"
 )
 
 // Email address equivalence links participants whose addresses deliver to
@@ -883,8 +882,7 @@ func (s *Store) applyEmailEquivalenceBatchContext(
 		if len(linkedPeople) == 0 {
 			return nil
 		}
-		return s.publishPersonIdentityScopeChangesTx(ctx, tx, sortedPersonSet(linkedPeople),
-			peoplesweep.EvidenceEffectIdentityReassigned)
+		return s.publishPersonIdentityScopeChangesTx(ctx, tx, sortedPersonSet(linkedPeople))
 	})
 	if err != nil {
 		return fmt.Errorf("apply email address equivalence: %w", err)

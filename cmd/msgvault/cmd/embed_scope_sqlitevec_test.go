@@ -99,6 +99,7 @@ func embedGenByID(t *testing.T, dataDir string) map[int64]sql.NullInt64 {
 // activates, and a follow-up run scoped differently is refused by the
 // fingerprint mismatch with the scope visible in the error.
 func TestRunEmbed_AccountScopedBuildActivatesScopedGeneration(t *testing.T) {
+	flags := embeddingCommandOptions{}
 	cfg := testConfigValue()
 
 	require := require.New(t)
@@ -121,17 +122,11 @@ func TestRunEmbed_AccountScopedBuildActivatesScopedGeneration(t *testing.T) {
 	cfg = c
 	testCtx := testInvocationContext(t.Context(), c, invocationOptions{})
 
-	oldRebuild, oldYes := embedFullRebuild, embedYes
-	oldAccounts, oldCollections := embedAccounts, embedCollections
-	oldBackstop := embedBackstop
 	t.Cleanup(func() {
 		cfg = oldCfg
-		embedFullRebuild, embedYes = oldRebuild, oldYes
-		embedAccounts, embedCollections = oldAccounts, oldCollections
-		embedBackstop = oldBackstop
 	})
-	embedYes = true
-	embedBackstop = false
+	flags.embedYes = true
+	flags.embedBackstop = false
 
 	newCmd := func() (*cobra.Command, *bytes.Buffer, *bytes.Buffer) {
 		cmd := &cobra.Command{}
@@ -143,10 +138,10 @@ func TestRunEmbed_AccountScopedBuildActivatesScopedGeneration(t *testing.T) {
 	}
 
 	// Run 1: full rebuild scoped to account A.
-	embedFullRebuild = true
-	embedAccounts = []string{"a@example.com"}
+	flags.embedFullRebuild = true
+	flags.embedAccounts = []string{"a@example.com"}
 	cmd, out, errOut := newCmd()
-	require.NoError(runEmbeddingsBuildLocal(cmd), "scoped full rebuild")
+	require.NoError(runEmbeddingsBuildLocalWithOptions(cmd, flags), "scoped full rebuild")
 	assert.Contains(errOut.String(), "Embedding scope: src-1", "scope printed to stderr")
 	assert.Contains(errOut.String(), "add equivalent accounts to [vector.embed.scope]", "one-off scope warns how to persist its generation")
 	assert.Contains(out.String(), "Generation 1 activated.", "scoped generation activates")
@@ -159,10 +154,10 @@ func TestRunEmbed_AccountScopedBuildActivatesScopedGeneration(t *testing.T) {
 
 	// Run 2: same archive, scoped to account B instead — the fingerprint
 	// difference must refuse to top up the src-1 generation.
-	embedFullRebuild = false
-	embedAccounts = []string{"b@example.com"}
+	flags.embedFullRebuild = false
+	flags.embedAccounts = []string{"b@example.com"}
 	cmd, _, _ = newCmd()
-	err := runEmbeddingsBuildLocal(cmd)
+	err := runEmbeddingsBuildLocalWithOptions(cmd, flags)
 	require.Error(err, "a different account scope must not resume the src-1 generation")
 	assert.Contains(err.Error(), "src-", "stored vs configured scope is visible in the error")
 	assert.Contains(err.Error(), "full-rebuild", "error points at --full-rebuild")
@@ -173,6 +168,7 @@ func TestRunEmbed_AccountScopedBuildActivatesScopedGeneration(t *testing.T) {
 // request must prevent every later person request without rolling back message
 // progress or stranding activation of the completed message generation.
 func TestRunEmbedLivePersonGateStopsLaterBatchesAfterConfigDeletion(t *testing.T) {
+	flags := embeddingCommandOptions{}
 	assert := assert.New(t)
 	require := require.New(t)
 	var messageRequests atomic.Int32
@@ -256,20 +252,11 @@ func TestRunEmbedLivePersonGateStopsLaterBatchesAfterConfigDeletion(t *testing.T
 		require.NoError(err)
 	}
 	require.NoError(mainStore.Close())
-
-	oldRebuild, oldYes := embedFullRebuild, embedYes
-	oldAccounts, oldCollections := embedAccounts, embedCollections
-	oldBackstop := embedBackstop
-	t.Cleanup(func() {
-		embedFullRebuild, embedYes = oldRebuild, oldYes
-		embedAccounts, embedCollections = oldAccounts, oldCollections
-		embedBackstop = oldBackstop
-	})
-	embedFullRebuild = true
-	embedYes = true
-	embedBackstop = false
-	embedAccounts = nil
-	embedCollections = nil
+	flags.embedFullRebuild = true
+	flags.embedYes = true
+	flags.embedBackstop = false
+	flags.embedAccounts = nil
+	flags.embedCollections = nil
 	command := &cobra.Command{}
 	command.SetContext(testCtx)
 	command.SetContext(testCtx)
@@ -277,7 +264,7 @@ func TestRunEmbedLivePersonGateStopsLaterBatchesAfterConfigDeletion(t *testing.T
 	command.SetOut(stdout)
 	command.SetErr(stderr)
 
-	err = runEmbeddingsBuildLocal(command)
+	err = runEmbeddingsBuildLocalWithOptions(command, flags)
 
 	require.NoError(err, stderr.String())
 	require.True(configRemoved.Load(), "precondition: first curated-person request removed config")
@@ -297,13 +284,13 @@ func TestRunEmbedLivePersonGateStopsLaterBatchesAfterConfigDeletion(t *testing.T
 		VALUES (3, 'post-removal body');`)
 	require.NoError(err)
 	require.NoError(mainStore.Close())
-	embedFullRebuild = false
+	flags.embedFullRebuild = false
 	resume := &cobra.Command{}
 	resume.SetContext(testCtx)
 	resumeOut, resumeErr := &bytes.Buffer{}, &bytes.Buffer{}
 	resume.SetOut(resumeOut)
 	resume.SetErr(resumeErr)
-	require.NoError(runEmbeddingsBuildLocal(resume), resumeErr.String())
+	require.NoError(runEmbeddingsBuildLocalWithOptions(resume, flags), resumeErr.String())
 
 	assert.Equal(int32(3), messageRequests.Load(),
 		"message batches must continue through the separate ungated client after config removal")
@@ -317,6 +304,7 @@ func TestRunEmbedLivePersonGateStopsLaterBatchesAfterConfigDeletion(t *testing.T
 // remaining == 0 and activate an empty generation, retiring the working
 // index. The run must fail instead of activating.
 func TestRunEmbed_AccountScopedRebuildRefusesEmptyScope(t *testing.T) {
+	flags := embeddingCommandOptions{}
 	cfg := testConfigValue()
 
 	require := require.New(t)
@@ -344,19 +332,13 @@ func TestRunEmbed_AccountScopedRebuildRefusesEmptyScope(t *testing.T) {
 	cfg = c
 	testCtx := testInvocationContext(t.Context(), c, invocationOptions{})
 
-	oldRebuild, oldYes := embedFullRebuild, embedYes
-	oldAccounts, oldCollections := embedAccounts, embedCollections
-	oldBackstop := embedBackstop
 	t.Cleanup(func() {
 		cfg = oldCfg
-		embedFullRebuild, embedYes = oldRebuild, oldYes
-		embedAccounts, embedCollections = oldAccounts, oldCollections
-		embedBackstop = oldBackstop
 	})
-	embedYes = true
-	embedBackstop = false
-	embedFullRebuild = true
-	embedAccounts = []string{"c@example.com"}
+	flags.embedYes = true
+	flags.embedBackstop = false
+	flags.embedFullRebuild = true
+	flags.embedAccounts = []string{"c@example.com"}
 
 	cmd := &cobra.Command{}
 	cmd.SetContext(testCtx)
@@ -364,7 +346,7 @@ func TestRunEmbed_AccountScopedRebuildRefusesEmptyScope(t *testing.T) {
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
 
-	err = runEmbeddingsBuildLocal(cmd)
+	err = runEmbeddingsBuildLocalWithOptions(cmd, flags)
 	require.Error(err, "an empty account scope must not activate")
 	assert.Contains(err.Error(), "0 live messages")
 	assert.NotContains(out.String(), "activated", "no generation may activate")

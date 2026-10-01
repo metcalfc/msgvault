@@ -11,11 +11,6 @@ import (
 )
 
 func TestDeletionManifestCommandsUseDaemonRunner(t *testing.T) {
-	savedCancelAll := cancelAll
-	t.Cleanup(func() {
-		cancelAll = savedCancelAll
-	})
-
 	tests := []struct {
 		name   string
 		cmd    func() *cobra.Command
@@ -83,7 +78,6 @@ func TestDeletionManifestCommandsUseDaemonRunner(t *testing.T) {
 func TestDeleteStagedTrashPromptsBeforeDaemonRunner(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	resetDeleteStagedRoutingGlobals(t)
 	t.Setenv(remoteDeleteEnvVar, "1")
 
 	server, runRequests, planRequests := newDaemonCLIDeleteStagedTestServer(t, func(req daemonCLIDeleteStagedPlanTestRequest) {
@@ -136,7 +130,6 @@ func TestDeleteStagedConfigConsentReachesRemotePlanAndExecution(t *testing.T) {
 
 	require := require.New(t)
 	assert := assert.New(t)
-	resetDeleteStagedRoutingGlobals(t)
 	t.Setenv(remoteDeleteEnvVar, "")
 
 	server, runRequests, planRequests := newDaemonCLIDeleteStagedTestServer(t, func(req daemonCLIDeleteStagedPlanTestRequest) {
@@ -169,7 +162,6 @@ func TestDeleteStagedDisabledConfigBlocksBeforeRemoteExecution(t *testing.T) {
 
 	require := require.New(t)
 	assert := assert.New(t)
-	resetDeleteStagedRoutingGlobals(t)
 	t.Setenv(remoteDeleteEnvVar, "")
 
 	blocked := "remote deletion is gated; set [deletion] remote_enabled = true in the invoking CLI's config.toml for durable consent; one-command alternative: " +
@@ -202,7 +194,6 @@ func TestDeleteStagedDisabledConfigBlocksBeforeRemoteExecution(t *testing.T) {
 func TestDeleteStagedDisplayNamePlanPinsSourceIDForDaemonRunner(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	resetDeleteStagedRoutingGlobals(t)
 	t.Setenv(remoteDeleteEnvVar, "1")
 
 	server, runRequests, planRequests := newDaemonCLIDeleteStagedTestServer(t, func(req daemonCLIDeleteStagedPlanTestRequest) {
@@ -243,7 +234,6 @@ func TestDeleteStagedDisplayNamePlanPinsSourceIDForDaemonRunner(t *testing.T) {
 func TestDeleteStagedPermanentPromptsBeforeDaemonRunner(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	resetDeleteStagedRoutingGlobals(t)
 	t.Setenv(remoteDeleteEnvVar, "1")
 
 	server, runRequests, planRequests := newDaemonCLIDeleteStagedTestServer(t, func(req daemonCLIDeleteStagedPlanTestRequest) {
@@ -291,7 +281,6 @@ func TestDeleteStagedPermanentPromptsBeforeDaemonRunner(t *testing.T) {
 func TestDeleteStagedWithoutBatchPinsPlannedBatchesForDaemonRunner(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	resetDeleteStagedRoutingGlobals(t)
 	t.Setenv(remoteDeleteEnvVar, "1")
 
 	server, runRequests, planRequests := newDaemonCLIDeleteStagedTestServer(t, func(req daemonCLIDeleteStagedPlanTestRequest) {
@@ -336,7 +325,6 @@ func TestDeleteStagedWithoutBatchPinsPlannedBatchesForDaemonRunner(t *testing.T)
 func TestDeleteStagedScopeEscalationPromptsBeforeDaemonRunner(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	resetDeleteStagedRoutingGlobals(t)
 	t.Setenv(remoteDeleteEnvVar, "1")
 
 	server, runRequests, planRequests := newDaemonCLIDeleteStagedTestServer(t, func(req daemonCLIDeleteStagedPlanTestRequest) {
@@ -386,7 +374,6 @@ func TestDeleteStagedScopeEscalationPromptsBeforeDaemonRunner(t *testing.T) {
 func TestDeleteStagedConfirmationAndScopePromptsShareInput(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	resetDeleteStagedRoutingGlobals(t)
 	t.Setenv(remoteDeleteEnvVar, "1")
 
 	server, runRequests, planRequests := newDaemonCLIDeleteStagedTestServer(t, nil, map[string]any{
@@ -433,10 +420,6 @@ func TestDeleteStagedConfirmationAndScopePromptsShareInput(t *testing.T) {
 func TestCancelDeletionUsageErrorBeforeDaemonRunner(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	savedCancelAll := cancelAll
-	t.Cleanup(func() {
-		cancelAll = savedCancelAll
-	})
 
 	server, requests := newDaemonCLIRunnerTestServer(t, nil, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
@@ -453,67 +436,10 @@ func TestCancelDeletionUsageErrorBeforeDaemonRunner(t *testing.T) {
 	assert.Equal(0, int(requests.Load()), "runner endpoint calls")
 }
 
-func resetDeleteStagedRoutingGlobals(t *testing.T) {
-	t.Helper()
-	savedPermanent := deletePermanent
-	savedYes := deleteYes
-	savedDryRun := deleteDryRun
-	savedList := deleteList
-	savedAccount := deleteAccount
-	savedSourceID := deleteSourceID
-	savedPlannedBatchIDs := deletePlannedBatchIDs
-	deletePermanent = false
-	deleteYes = false
-	deleteDryRun = false
-	deleteList = false
-	deleteAccount = ""
-	deleteSourceID = 0
-	deletePlannedBatchIDs = nil
-	t.Cleanup(func() {
-		deletePermanent = savedPermanent
-		deleteYes = savedYes
-		deleteDryRun = savedDryRun
-		deleteList = savedList
-		deleteAccount = savedAccount
-		deleteSourceID = savedSourceID
-		deletePlannedBatchIDs = savedPlannedBatchIDs
-	})
-}
-
 func newDeleteStagedRoutingTestCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:  "delete-staged [batch-id]",
-		Args: cobra.MaximumNArgs(1),
-		RunE: deleteStagedCmd.RunE,
-	}
-	cmd.Flags().BoolVar(&deletePermanent, "permanent", false, "Permanent")
-	cmd.Flags().BoolVarP(&deleteYes, "yes", "y", false, "Skip confirmation")
-	cmd.Flags().BoolVar(&deleteDryRun, "dry-run", false, "Dry run")
-	cmd.Flags().BoolVarP(&deleteList, "list", "l", false, "List")
-	cmd.Flags().StringVar(&deleteAccount, "account", "", "Account")
-	cmd.Flags().Int64Var(&deleteSourceID, "source-id", 0, "Exact source ID")
-	cmd.Flags().Bool("confirmed", false, "Internal confirmation marker")
-	cmd.Flags().Bool("skip-prelude", false, "Internal prelude marker")
-	cmd.Flags().StringArrayVar(&deletePlannedBatchIDs, "planned-batch", nil, "Internal planned batch marker")
-	cmd.Flags().String("plan-fingerprint", "", "Internal plan fingerprint marker")
-	cmd.Flags().Bool("scope-escalation-confirmed", false, "Internal scope escalation marker")
-	_ = cmd.Flags().MarkHidden("confirmed")
-	_ = cmd.Flags().MarkHidden("skip-prelude")
-	_ = cmd.Flags().MarkHidden("planned-batch")
-	_ = cmd.Flags().MarkHidden("plan-fingerprint")
-	_ = cmd.Flags().MarkHidden("scope-escalation-confirmed")
-	cmd.MarkFlagsMutuallyExclusive("permanent", "yes")
-	cmd.MarkFlagsMutuallyExclusive("account", "source-id")
-	return cmd
+	return newDeleteStagedCommand()
 }
 
 func newCancelDeletionRoutingTestCommand() *cobra.Command {
-	cancelAll = false
-	cmd := &cobra.Command{
-		Use:  "cancel-deletion [batch-id]",
-		Args: cobra.MaximumNArgs(1),
-		RunE: runCancelDeletion,
-	}
-	cmd.Flags().BoolVar(&cancelAll, "all", false, "Cancel all")
-	return cmd
+	return newCancelDeletionCommand()
 }

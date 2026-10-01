@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/config"
@@ -46,14 +45,7 @@ func runAttributeCommand(
 ) (string, error) {
 	t.Helper()
 	var output bytes.Buffer
-	command := &cobra.Command{Use: template.Use, Args: template.Args, RunE: template.RunE}
-	command.Flags().AddFlagSet(template.Flags())
-	command.Flags().VisitAll(func(flag *pflag.Flag) {
-		// Reset the bound package variable too: a previous test's flag value
-		// (e.g. --dry-run) must not leak into this run's request.
-		require.NoError(t, flag.Value.Set(flag.DefValue))
-		flag.Changed = false
-	})
+	command := template
 	command.SetOut(&output)
 	command.SetErr(&output)
 	command.SetArgs(args)
@@ -80,7 +72,7 @@ func TestAttributeDefinitionListPrintsRegistryAndForwardsFilter(t *testing.T) {
 	})
 	_ = testCtx
 
-	output, err := runAttributeCommand(testCtx, t, attributeDefinitionListCmd,
+	output, err := runAttributeCommand(testCtx, t, freshCommandForTest(t, newAttributeDefinitionCommand(), "list"),
 		"--object-type", "person")
 	require.NoError(err)
 	assert.Contains(query, "object_type=person")
@@ -103,7 +95,7 @@ func TestAttributeDefinitionCreateDryRunValidatesLocally(t *testing.T) {
 	})
 	_ = testCtx
 
-	output, err := runAttributeCommand(testCtx, t, attributeDefinitionCreateCmd,
+	output, err := runAttributeCommand(testCtx, t, freshCommandForTest(t, newAttributeDefinitionCommand(), "create"),
 		"--definition", `{"object_type":"person","slug":"scratch_note",
 			"label":"Scratch note","value_type":"text","field_type":"text",
 			"is_sensitive":true}`,
@@ -116,7 +108,7 @@ func TestAttributeDefinitionCreateDryRunValidatesLocally(t *testing.T) {
 }
 
 func TestAttributeDefinitionCreateDryRunAllowsOmittedSlug(t *testing.T) {
-	output, err := runAttributeCommand(t.Context(), t, attributeDefinitionCreateCmd,
+	output, err := runAttributeCommand(t.Context(), t, freshCommandForTest(t, newAttributeDefinitionCommand(), "create"),
 		"--definition", `{"object_type":"person","label":"Favorite color",
 			"value_type":"text","field_type":"text","cardinality":"single"}`,
 		"--dry-run")
@@ -153,7 +145,7 @@ func TestAttributeDefinitionCreateDryRunAppliesServerValidationLocally(t *testin
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := runAttributeCommand(t.Context(), t, attributeDefinitionCreateCmd,
+			_, err := runAttributeCommand(t.Context(), t, freshCommandForTest(t, newAttributeDefinitionCommand(), "create"),
 				"--definition", test.document, "--dry-run")
 			require.Error(t, err, "dry run must reject what the server would reject")
 			assert.Contains(t, err.Error(), test.wantErr)
@@ -162,7 +154,7 @@ func TestAttributeDefinitionCreateDryRunAppliesServerValidationLocally(t *testin
 }
 
 func TestAttributeDefinitionCreateRejectsUnsupportedUniqueness(t *testing.T) {
-	_, err := runAttributeCommand(t.Context(), t, attributeDefinitionCreateCmd,
+	_, err := runAttributeCommand(t.Context(), t, freshCommandForTest(t, newAttributeDefinitionCommand(), "create"),
 		"--definition", `{"object_type":"person","slug":"employee_number",
 			"label":"Employee number","value_type":"text","field_type":"text",
 			"is_unique":true}`,
@@ -192,7 +184,7 @@ func TestAttributeDefinitionRenameUsesFreshRevisionETag(t *testing.T) {
 	})
 	_ = testCtx
 
-	_, err := runAttributeCommand(testCtx, t, attributeDefinitionRenameCmd,
+	_, err := runAttributeCommand(testCtx, t, freshCommandForTest(t, newAttributeDefinitionCommand(), "rename"),
 		"3", "--label", "Conversation starters")
 	require.NoError(err)
 	assert.Equal(`"attribute-definition-3-r7"`, patchIfMatch)
@@ -218,7 +210,7 @@ func TestAttributeDefinitionClearDescriptionSendsEmptyString(t *testing.T) {
 	})
 	_ = testCtx
 
-	_, err := runAttributeCommand(testCtx, t, attributeDefinitionRenameCmd,
+	_, err := runAttributeCommand(testCtx, t, freshCommandForTest(t, newAttributeDefinitionCommand(), "rename"),
 		"3", "--clear-description")
 	require.NoError(err)
 	assert.Equal(`""`, string(description))

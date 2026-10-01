@@ -17,170 +17,7 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-var (
-	importEmlxSourceType         string
-	importEmlxNoResume           bool
-	importEmlxCheckpointInterval int
-	importEmlxNoAttachments      bool
-	importEmlxAccountsDB         string
-	importEmlxAccounts           []string
-	importEmlxIdentifier         string
-	noDefaultIdentityImportEmlx  bool
-)
-
-var importEmlxCmd = &cobra.Command{
-	Use:   "import-emlx [mail-dir]",
-	Short: "Import Apple Mail .emlx files into msgvault",
-	Long: `Import Apple Mail .emlx files into msgvault.
-
-By default, auto-discovers accounts from Apple Mail's V10 directory layout
-by reading ~/Library/Accounts/Accounts4.sqlite to map account GUIDs to
-email addresses.
-
-If mail-dir is omitted, defaults to ~/Library/Mail.
-
-Labels are derived from directory names. Messages that appear in
-multiple mailboxes are deduplicated and given labels from each.
-
-Examples:
-  # Auto-discover accounts from default Apple Mail location
-  msgvault import-emlx
-
-  # Auto-discover accounts from explicit mail directory
-  msgvault import-emlx ~/Library/Mail
-
-  # Import only specific account(s)
-  msgvault import-emlx --account me@gmail.com
-  msgvault import-emlx --account me@gmail.com --account work@company.com
-
-  # Manual fallback: import a single directory with explicit identifier
-  msgvault import-emlx ~/Library/Mail/V10/SOME-GUID --identifier me@gmail.com
-  msgvault import-emlx ~/Mail/INBOX.mbox/ --identifier me@gmail.com
-
-  # Legacy two-arg form (deprecated, still works)
-  msgvault import-emlx me@gmail.com ~/Library/Mail/V10/SOME-GUID
-	`,
-	Args: cobra.MaximumNArgs(2),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		state := invocationFromCommand(cmd)
-		if state == nil || state.cfg == nil {
-			return errors.New("configuration is unavailable")
-		}
-		cfg := state.cfg
-		if !isDaemonCLISubprocess() {
-			return runDaemonCLICommandHTTPFromCobra(cmd, args)
-		}
-
-		// Use a local copy so we don't mutate the package-global
-		// flag variable (which persists across Execute() calls).
-		identifier := importEmlxIdentifier
-
-		// Legacy two-arg form: import-emlx <identifier> <mail-dir>
-		if len(args) == 2 {
-			if identifier != "" {
-				return errors.New("cannot use --identifier with two positional arguments")
-			}
-			identifier = args[0]
-			args = args[1:]
-		}
-
-		// --identifier requires an explicit mail-dir to avoid
-		// accidentally importing the entire ~/Library/Mail tree
-		// under one identifier.
-		if identifier != "" && len(args) == 0 {
-			return errors.New("--identifier requires a positional mail-dir argument")
-		}
-
-		// Determine mail directory.
-		var mailDir string
-		if len(args) > 0 {
-			mailDir = args[0]
-		} else {
-			home, err := os.UserHomeDir()
-			if err != nil {
-				return fmt.Errorf("determine home directory: %w", err)
-			}
-			mailDir = filepath.Join(home, "Library", "Mail")
-		}
-
-		// Expand ~ if present.
-		if strings.HasPrefix(mailDir, "~/") {
-			home, _ := os.UserHomeDir()
-			mailDir = filepath.Join(home, mailDir[2:])
-		}
-
-		ctx, cancel := context.WithCancel(cmd.Context())
-		defer cancel()
-		sigChan := make(chan os.Signal, 2)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-		done := make(chan struct{})
-		defer func() {
-			close(done)
-			signal.Stop(sigChan)
-			for {
-				select {
-				case <-sigChan:
-				default:
-					return
-				}
-			}
-		}()
-		go func() {
-			signals := 0
-			for {
-				select {
-				case <-done:
-					return
-				case <-sigChan:
-					select {
-					case <-done:
-						return
-					default:
-					}
-					signals++
-					if signals == 1 {
-						_, _ = fmt.Fprintln(
-							cmd.ErrOrStderr(),
-							"\nInterrupted. Saving checkpoint...",
-						)
-						cancel()
-						continue
-					}
-					_, _ = fmt.Fprintln(
-						cmd.ErrOrStderr(),
-						"Interrupted again. Exiting immediately.",
-					)
-					os.Exit(130)
-				}
-			}
-		}()
-
-		st, cleanup, err := openWritableStoreAndInitForIngestInvocation(state)
-		if err != nil {
-			return err
-		}
-		defer cleanup()
-		dbPath := cfg.DatabaseDSN()
-
-		attachmentsDir := cfg.AttachmentsDir()
-		if importEmlxNoAttachments {
-			attachmentsDir = ""
-		}
-
-		var importErr error
-		if identifier != "" {
-			// Manual fallback: single import with explicit identifier.
-			importErr = importSingleAccount(ctx, cmd, st, mailDir, identifier, attachmentsDir)
-		} else {
-			// Auto mode: discover accounts from V10 layout + Accounts4.sqlite.
-			importErr = importAutoAccounts(ctx, cmd, st, mailDir, attachmentsDir)
-		}
-
-		return errors.Join(importErr, rebuildCacheAfterWrite(dbPath, state))
-	},
-}
-
-func importSingleAccount(
+func (flags emlxCommandOptions) importSingleAccount(
 	ctx context.Context,
 	cmd *cobra.Command,
 	st *store.Store,
@@ -194,10 +31,10 @@ func importSingleAccount(
 	logger := state.logger
 	summary, err := importer.ImportEmlxDir(
 		ctx, st, mailDir, importer.EmlxImportOptions{
-			SourceType:         importEmlxSourceType,
+			SourceType:         flags.importEmlxSourceType,
 			Identifier:         identifier,
-			NoResume:           importEmlxNoResume,
-			CheckpointInterval: importEmlxCheckpointInterval,
+			NoResume:           flags.importEmlxNoResume,
+			CheckpointInterval: flags.importEmlxCheckpointInterval,
 			AttachmentsDir:     attachmentsDir,
 			RemoteImages:       configuredRemoteImageFetcher(cfg),
 			Logger:             logger,
@@ -209,7 +46,7 @@ func importSingleAccount(
 
 	// Auto-default-identity must run BEFORE the legacy migration
 	// retry — see comment in account_identity.go.
-	if ctx.Err() == nil && !summary.HardErrors && !noDefaultIdentityImportEmlx {
+	if ctx.Err() == nil && !summary.HardErrors && !flags.noDefaultIdentityImportEmlx {
 		if summary.SourceID != 0 {
 			confirmDefaultIdentity(cmd.OutOrStdout(), st, summary.SourceID, identifier, identifier, "account-identifier", state.logger)
 		} else {
@@ -236,7 +73,7 @@ func importSingleAccount(
 	return importResultError(ctx, *summary)
 }
 
-func importAutoAccounts(
+func (flags emlxCommandOptions) importAutoAccounts(
 	ctx context.Context,
 	cmd *cobra.Command,
 	st *store.Store,
@@ -248,7 +85,7 @@ func importAutoAccounts(
 	}
 	cfg := state.cfg
 	logger := state.logger
-	accountsDBPath := importEmlxAccountsDB
+	accountsDBPath := flags.importEmlxAccountsDB
 	if strings.HasPrefix(accountsDBPath, "~/") {
 		home, _ := os.UserHomeDir()
 		accountsDBPath = filepath.Join(home, accountsDBPath[2:])
@@ -272,9 +109,9 @@ func importAutoAccounts(
 	}
 
 	// Filter by --account flags if set.
-	if len(importEmlxAccounts) > 0 {
+	if len(flags.importEmlxAccounts) > 0 {
 		filter := make(map[string]bool)
-		for _, a := range importEmlxAccounts {
+		for _, a := range flags.importEmlxAccounts {
 			filter[strings.ToLower(a)] = true
 		}
 
@@ -334,10 +171,10 @@ func importAutoAccounts(
 
 		summary, err := importer.ImportEmlxDir(
 			ctx, st, accountDir, importer.EmlxImportOptions{
-				SourceType:         importEmlxSourceType,
+				SourceType:         flags.importEmlxSourceType,
 				Identifier:         identifier,
-				NoResume:           importEmlxNoResume,
-				CheckpointInterval: importEmlxCheckpointInterval,
+				NoResume:           flags.importEmlxNoResume,
+				CheckpointInterval: flags.importEmlxCheckpointInterval,
 				AttachmentsDir:     attachmentsDir,
 				RemoteImages:       configuredRemoteImageFetcher(cfg),
 				Logger:             logger,
@@ -355,7 +192,7 @@ func importAutoAccounts(
 
 		// Auto-default-identity must run BEFORE the legacy migration
 		// retry — see comment in account_identity.go.
-		if ctx.Err() == nil && !summary.HardErrors && !noDefaultIdentityImportEmlx {
+		if ctx.Err() == nil && !summary.HardErrors && !flags.noDefaultIdentityImportEmlx {
 			accountDisplay := account.Identifier()
 			if account.Email != "" {
 				accountDisplay = account.Email
@@ -479,38 +316,203 @@ func printImportStats(out io.Writer, summary importer.EmlxImportSummary) {
 }
 
 func init() {
-	rootCmd.AddCommand(importEmlxCmd)
+	registerCommandFactory(newImportEmlxCommand)
+}
 
+func newImportEmlxCommand() *cobra.Command {
+	var flags emlxCommandOptions
+	importEmlxCmd := &cobra.Command{
+		Use:   "import-emlx [mail-dir]",
+		Short: "Import Apple Mail .emlx files into msgvault",
+		Long: `Import Apple Mail .emlx files into msgvault.
+
+By default, auto-discovers accounts from Apple Mail's V10 directory layout
+by reading ~/Library/Accounts/Accounts4.sqlite to map account GUIDs to
+email addresses.
+
+If mail-dir is omitted, defaults to ~/Library/Mail.
+
+Labels are derived from directory names. Messages that appear in
+multiple mailboxes are deduplicated and given labels from each.
+
+Examples:
+  # Auto-discover accounts from default Apple Mail location
+  msgvault import-emlx
+
+  # Auto-discover accounts from explicit mail directory
+  msgvault import-emlx ~/Library/Mail
+
+  # Import only specific account(s)
+  msgvault import-emlx --account me@gmail.com
+  msgvault import-emlx --account me@gmail.com --account work@company.com
+
+  # Manual fallback: import a single directory with explicit identifier
+  msgvault import-emlx ~/Library/Mail/V10/SOME-GUID --identifier me@gmail.com
+  msgvault import-emlx ~/Mail/INBOX.mbox/ --identifier me@gmail.com
+
+  # Legacy two-arg form (deprecated, still works)
+  msgvault import-emlx me@gmail.com ~/Library/Mail/V10/SOME-GUID
+	`,
+		Args: cobra.MaximumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			state := invocationFromCommand(cmd)
+			if state == nil || state.cfg == nil {
+				return errors.New("configuration is unavailable")
+			}
+			cfg := state.cfg
+			if !isDaemonCLISubprocess() {
+				return runDaemonCLICommandHTTPFromCobra(cmd, args)
+			}
+
+			// Keep the parsed option unchanged while resolving legacy arguments.
+			identifier := flags.importEmlxIdentifier
+
+			// Legacy two-arg form: import-emlx <identifier> <mail-dir>
+			if len(args) == 2 {
+				if identifier != "" {
+					return errors.New("cannot use --identifier with two positional arguments")
+				}
+				identifier = args[0]
+				args = args[1:]
+			}
+
+			// --identifier requires an explicit mail-dir to avoid
+			// accidentally importing the entire ~/Library/Mail tree
+			// under one identifier.
+			if identifier != "" && len(args) == 0 {
+				return errors.New("--identifier requires a positional mail-dir argument")
+			}
+
+			// Determine mail directory.
+			var mailDir string
+			if len(args) > 0 {
+				mailDir = args[0]
+			} else {
+				home, err := os.UserHomeDir()
+				if err != nil {
+					return fmt.Errorf("determine home directory: %w", err)
+				}
+				mailDir = filepath.Join(home, "Library", "Mail")
+			}
+
+			// Expand ~ if present.
+			if strings.HasPrefix(mailDir, "~/") {
+				home, _ := os.UserHomeDir()
+				mailDir = filepath.Join(home, mailDir[2:])
+			}
+
+			ctx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
+			sigChan := make(chan os.Signal, 2)
+			signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+			done := make(chan struct{})
+			defer func() {
+				close(done)
+				signal.Stop(sigChan)
+				for {
+					select {
+					case <-sigChan:
+					default:
+						return
+					}
+				}
+			}()
+			go func() {
+				signals := 0
+				for {
+					select {
+					case <-done:
+						return
+					case <-sigChan:
+						select {
+						case <-done:
+							return
+						default:
+						}
+						signals++
+						if signals == 1 {
+							_, _ = fmt.Fprintln(
+								cmd.ErrOrStderr(),
+								"\nInterrupted. Saving checkpoint...",
+							)
+							cancel()
+							continue
+						}
+						_, _ = fmt.Fprintln(
+							cmd.ErrOrStderr(),
+							"Interrupted again. Exiting immediately.",
+						)
+						os.Exit(130)
+					}
+				}
+			}()
+
+			st, cleanup, err := openWritableStoreAndInitForIngestInvocation(state)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+			dbPath := cfg.DatabaseDSN()
+
+			attachmentsDir := cfg.AttachmentsDir()
+			if flags.importEmlxNoAttachments {
+				attachmentsDir = ""
+			}
+
+			var importErr error
+			if identifier != "" {
+				// Manual fallback: single import with explicit identifier.
+				importErr = flags.importSingleAccount(ctx, cmd, st, mailDir, identifier, attachmentsDir)
+			} else {
+				// Auto mode: discover accounts from V10 layout + Accounts4.sqlite.
+				importErr = flags.importAutoAccounts(ctx, cmd, st, mailDir, attachmentsDir)
+			}
+
+			return errors.Join(importErr, rebuildCacheAfterWrite(dbPath, state))
+		},
+	}
 	importEmlxCmd.Flags().StringVar(
-		&importEmlxSourceType, "source-type", "apple-mail",
+		&flags.importEmlxSourceType, "source-type", "apple-mail",
 		"Source type to record in the database",
 	)
 	importEmlxCmd.Flags().BoolVar(
-		&importEmlxNoResume, "no-resume", false,
+		&flags.importEmlxNoResume, "no-resume", false,
 		"Do not resume from an interrupted import",
 	)
 	importEmlxCmd.Flags().IntVar(
-		&importEmlxCheckpointInterval, "checkpoint-interval", 200,
+		&flags.importEmlxCheckpointInterval, "checkpoint-interval", 200,
 		"Save progress every N messages",
 	)
 	importEmlxCmd.Flags().BoolVar(
-		&importEmlxNoAttachments, "no-attachments", false,
+		&flags.importEmlxNoAttachments, "no-attachments", false,
 		"Do not store attachments on disk",
 	)
 	importEmlxCmd.Flags().StringVar(
-		&importEmlxAccountsDB, "accounts-db", applemail.DefaultAccountsDBPath(),
+		&flags.importEmlxAccountsDB, "accounts-db", applemail.DefaultAccountsDBPath(),
 		"Path to Apple's Accounts4.sqlite database",
 	)
 	importEmlxCmd.Flags().StringSliceVar(
-		&importEmlxAccounts, "account", nil,
+		&flags.importEmlxAccounts, "account", nil,
 		"Filter to specific account email(s) (repeatable)",
 	)
 	importEmlxCmd.Flags().StringVar(
-		&importEmlxIdentifier, "identifier", "",
+		&flags.importEmlxIdentifier, "identifier", "",
 		"Explicit email/identifier for single-directory import (manual fallback)",
 	)
 	importEmlxCmd.Flags().BoolVar(
-		&noDefaultIdentityImportEmlx, "no-default-identity", false,
+		&flags.noDefaultIdentityImportEmlx, "no-default-identity", false,
 		noDefaultIdentityHelp,
 	)
+	return importEmlxCmd
+}
+
+type emlxCommandOptions struct {
+	importEmlxSourceType         string
+	importEmlxNoResume           bool
+	importEmlxCheckpointInterval int
+	importEmlxNoAttachments      bool
+	importEmlxAccountsDB         string
+	importEmlxAccounts           []string
+	importEmlxIdentifier         string
+	noDefaultIdentityImportEmlx  bool
 }

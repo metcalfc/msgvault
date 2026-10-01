@@ -19,11 +19,6 @@ const (
 	maximumPersonSearchLimit = 100
 )
 
-var (
-	personSearchLimit = defaultPersonSearchLimit
-	personSearchJSON  bool
-)
-
 type personSearchCLIResult struct {
 	ID          int64   `json:"id"`
 	DisplayName *string `json:"display_name"`
@@ -34,63 +29,68 @@ type personSearchCLIResponse struct {
 	Results []personSearchCLIResult `json:"results"`
 }
 
-var personSearchCmd = &cobra.Command{
-	Use:   "search <free-text>",
-	Short: "Search durable person profiles semantically",
-	Args:  cobra.MinimumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		query := strings.TrimSpace(strings.Join(args, " "))
-		if query == "" {
-			return usageErr(cmd, errors.New("query must contain non-whitespace text"))
-		}
-		if personSearchLimit < 1 || personSearchLimit > maximumPersonSearchLimit {
-			return usageErr(cmd, fmt.Errorf("--limit must be between 1 and 100, got %d", personSearchLimit))
-		}
+func newPersonSearchCommand() *cobra.Command {
+	var personSearchCmd = &cobra.Command{
+		Use:   "search <free-text>",
+		Short: "Search durable person profiles semantically",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			personSearchJSON, _ := cmd.Flags().GetBool(flagJSON)
+			personSearchLimit, _ := cmd.Flags().GetInt("limit")
 
-		client, _, err := OpenHTTPStore(cmd.Context())
-		if err != nil {
-			return err
-		}
-		defer func() { _ = client.Close() }()
-
-		limit := int64(personSearchLimit)
-		body := generated.SearchPeopleBody{Query: query, Limit: &limit}
-		response, err := daemonclient.APIResponse(cmd.Context(), client,
-			func(api *apiclient.Client) (*generated.SearchPeopleResp, error) {
-				return api.SearchPeopleWithResponse(cmd.Context(), &generated.SearchPeopleRequestOptions{
-					Body: &body,
-				})
-			})
-		if err != nil {
-			return err
-		}
-		if response.JSON200 == nil {
-			return errors.New("person search response was empty")
-		}
-
-		output := personSearchCLIResponse{Results: make([]personSearchCLIResult, len(response.JSON200.Results))}
-		for i, result := range response.JSON200.Results {
-			output.Results[i] = personSearchCLIResult{
-				ID: result.Person.ID, DisplayName: result.Person.DisplayName, Score: result.Score,
+			query := strings.TrimSpace(strings.Join(args, " "))
+			if query == "" {
+				return usageErr(cmd, errors.New("query must contain non-whitespace text"))
 			}
-		}
-		if personSearchJSON {
-			return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), output, json.Deterministic(true))
-		}
+			if personSearchLimit < 1 || personSearchLimit > maximumPersonSearchLimit {
+				return usageErr(cmd, fmt.Errorf("--limit must be between 1 and 100, got %d", personSearchLimit))
+			}
 
-		writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		_, _ = fmt.Fprintln(writer, "ID\tDISPLAY NAME\tSCORE")
-		for _, result := range output.Results {
-			_, _ = fmt.Fprintf(writer, "%d\t%s\t%.6f\n",
-				result.ID, personDisplayName(result.DisplayName), result.Score)
-		}
-		return writer.Flush()
-	},
-}
+			client, _, err := OpenHTTPStore(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer func() { _ = client.Close() }()
 
-func init() {
-	personSearchCmd.Flags().IntVar(
-		&personSearchLimit, "limit", defaultPersonSearchLimit, "Maximum number of results",
+			limit := int64(personSearchLimit)
+			body := generated.SearchPeopleBody{Query: query, Limit: &limit}
+			response, err := daemonclient.APIResponse(cmd.Context(), client,
+				func(api *apiclient.Client) (*generated.SearchPeopleResp, error) {
+					return api.SearchPeopleWithResponse(cmd.Context(), &generated.SearchPeopleRequestOptions{
+						Body: &body,
+					})
+				})
+			if err != nil {
+				return err
+			}
+			if response.JSON200 == nil {
+				return errors.New("person search response was empty")
+			}
+
+			output := personSearchCLIResponse{Results: make([]personSearchCLIResult, len(response.JSON200.Results))}
+			for i, result := range response.JSON200.Results {
+				output.Results[i] = personSearchCLIResult{
+					ID: result.Person.ID, DisplayName: result.Person.DisplayName, Score: result.Score,
+				}
+			}
+			if personSearchJSON {
+				return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), output, json.Deterministic(true))
+			}
+
+			writer := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+			_, _ = fmt.Fprintln(writer, "ID\tDISPLAY NAME\tSCORE")
+			for _, result := range output.Results {
+				_, _ = fmt.Fprintf(writer, "%d\t%s\t%.6f\n",
+					result.ID, personDisplayName(result.DisplayName), result.Score)
+			}
+			return writer.Flush()
+		},
+	}
+
+	personSearchCmd.Flags().Int(
+		"limit", defaultPersonSearchLimit, "Maximum number of results",
 	)
-	personSearchCmd.Flags().BoolVar(&personSearchJSON, flagJSON, false, "Output as JSON")
+	personSearchCmd.Flags().Bool(flagJSON, false, "Output as JSON")
+
+	return personSearchCmd
 }

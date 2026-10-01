@@ -421,6 +421,8 @@ func synctechImportOptions(src config.SynctechSMSSource, cfg *config.Config) syn
 }
 
 func init() {
-	rootCmd.AddCommand(newAddSynctechSMSDriveCmd())
-	rootCmd.AddCommand(addManualSyncCacheFlags(newSyncSynctechSMSCmd()))
+	registerCommandFactory(newAddSynctechSMSDriveCmd)
+	registerCommandFactory(func() *cobra.Command {
+		return addManualSyncCacheFlags(newSyncSynctechSMSCmd())
+	})
 }

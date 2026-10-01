@@ -30,8 +30,8 @@ import (
 // derive from the query string (e.g. a SourceID coming from an HTTP
 // account parameter) — just set them on the returned Filter.
 //
-// rebind transforms the participant/label lookup queries. Pass nil or
-// SQLiteDialect.Rebind to preserve their native ? placeholders.
+// rebind transforms the participant/label lookup queries. Pass nil
+// to preserve their native ? placeholders.
 func BuildFilter(ctx context.Context, db *sql.DB, rebind func(string) string, q *search.Query) (vector.Filter, error) {
 	var f vector.Filter
 	if q == nil {

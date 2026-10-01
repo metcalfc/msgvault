@@ -383,7 +383,7 @@ func (s *Store) backfillLegacyIdentityMatchSourceSupport(
 	if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(`
+	if _, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO identity_match_candidate_sources
 			(candidate_id, source_id, is_conservative)
 		SELECT candidate.id, source.id, TRUE
@@ -397,10 +397,10 @@ func (s *Store) backfillLegacyIdentityMatchSourceSupport(
 			HAVING COUNT(support.source_id) = 0
 		) candidate
 		CROSS JOIN sources source
-	`)); err != nil {
+	`); err != nil {
 		return fmt.Errorf("backfill legacy identity match candidate support: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(`
+	if _, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO identity_match_evidence_sources
 			(evidence_id, source_id, is_conservative)
 		SELECT evidence.id, source.id, TRUE
@@ -414,7 +414,7 @@ func (s *Store) backfillLegacyIdentityMatchSourceSupport(
 			HAVING COUNT(support.source_id) = 0
 		) evidence
 		CROSS JOIN sources source
-	`)); err != nil {
+	`); err != nil {
 		return fmt.Errorf("backfill legacy identity match evidence support: %w", err)
 	}
 	return nil

@@ -455,11 +455,11 @@ func (s *Store) lockPersonEnrichmentReviewTx(
 	if err != nil {
 		return reviewAttempt{}, err
 	}
-	if _, err := lockPersonEnrichmentPersonTx(ctx, tx, s.dialect, unlocked.PersonID); err != nil {
+	if _, err := lockPersonEnrichmentPersonTx(ctx, tx, unlocked.PersonID); err != nil {
 		return reviewAttempt{}, err
 	}
 	if err := lockEnrichmentWorkRowForOrderingTx(
-		ctx, tx, s.dialect, unlocked.PersonID, unlocked.ProfileFingerprint); err != nil {
+		ctx, tx, unlocked.PersonID, unlocked.ProfileFingerprint); err != nil {
 		return reviewAttempt{}, err
 	}
 	attempt, err := s.loadPersonEnrichmentCommitAttempt(ctx, tx, attemptID, true)
@@ -529,8 +529,7 @@ func (s *Store) recordPersonEnrichmentReviewTx(
 // attempt state, so neither can leave stale counts behind.
 func (s *Store) refreshPersonEnrichmentRunCountsTx(ctx context.Context, tx *loggedTx, runID int64) error {
 	var state string
-	if err := tx.QueryRowContext(ctx, `SELECT state FROM person_enrichment_runs WHERE id = ?`+
-		s.dialect.SelectForUpdate(), runID).Scan(&state); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT state FROM person_enrichment_runs WHERE id = ?", runID).Scan(&state); err != nil {
 		return fmt.Errorf("lock person enrichment run: %w", err)
 	}
 	outcome, err := derivePersonEnrichmentRunOutcomeTx(ctx, tx, runID)

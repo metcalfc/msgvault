@@ -64,11 +64,11 @@ type failingLinkMutationStore struct {
 	err error
 }
 
-func (s *failingLinkMutationStore) LinkParticipants(_, _ int64) (int64, error) {
+func (s *failingLinkMutationStore) LinkParticipantsContext(_ context.Context, _, _ int64) (int64, error) {
 	return 0, s.err
 }
 
-func (s *failingLinkMutationStore) UnlinkParticipants(_, _ int64) (int64, error) {
+func (s *failingLinkMutationStore) UnlinkParticipantsContext(_ context.Context, _, _ int64) (int64, error) {
 	return 0, s.err
 }
 

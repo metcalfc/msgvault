@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -271,14 +270,14 @@ func TestRunEval_StopsOnJudgedCrossSourceIDCollisions(t *testing.T) {
 
 	dir := t.TempDir()
 	seedTwoSourceArchiveIn(t, dir, true)
-	testCtx := configureEvalRun(t, dir,
+	testCtx, options := configureEvalRun(t, dir,
 		"q1 0 <shared@example.com> 1\n",
 		"q1\trenewal\n")
 
-	cmd := &cobra.Command{}
+	cmd := newEvalCommand()
 	cmd.SetContext(testCtx)
 
-	err := runEval(cmd, nil)
+	err := runEval(cmd, nil, options)
 	require.Error(err, "the run must stop rather than print a number it cannot justify")
 	assert.Contains(err.Error(), "more than one connected source")
 	assert.Contains(err.Error(), "--doc-key=message")
@@ -353,13 +352,13 @@ func TestRunEval_ScoresPastUnjudgedSharedIDs(t *testing.T) {
 			require.Equal("<judged@example.com>", found[2].SourceMessageID,
 				"precondition: both event copies outrank the judged message")
 
-			testCtx := configureEvalRun(t, dir, "q1 0 "+tc.judged+" 1\n", "q1\trenewal\n")
-			evalDocKey = tc.docKey
-			cmd := &cobra.Command{}
+			testCtx, options := configureEvalRun(t, dir, "q1 0 "+tc.judged+" 1\n", "q1\trenewal\n")
+			options.evalDocKey = tc.docKey
+			cmd := newEvalCommand()
 			cmd.SetContext(testCtx)
 
 			done := captureStdout(t)
-			err = runEval(cmd, nil)
+			err = runEval(cmd, nil, options)
 			out := done()
 			require.NoError(err, "an unjudged shared id must not stop the run")
 

@@ -265,7 +265,6 @@ func (s *Store) sourceOperationPositionCondition(
 // operationTimestampParam renders a run position timestamp the way the
 // source and CardDAV run tables store started_at on each backend.
 func (s *Store) operationTimestampParam(value time.Time) any {
-
 	return value.UTC().Format(operationSQLiteTimestampLayout)
 }
 
@@ -536,7 +535,6 @@ func personSweepOperationStatusRun(
 }
 
 func (s *Store) bytewiseTextCollation() string {
-
 	return ` COLLATE BINARY`
 }
 

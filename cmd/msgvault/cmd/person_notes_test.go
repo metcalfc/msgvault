@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/config"
@@ -55,24 +54,7 @@ func executePersonNotesCommand(
 ) (string, error) {
 	t.Helper()
 	root := &cobra.Command{Use: "person"}
-	notes := &cobra.Command{
-		Use: personNotesCmd.Use, Short: personNotesCmd.Short, Long: personNotesCmd.Long,
-	}
-	root.AddCommand(notes)
-	for _, template := range []*cobra.Command{
-		personNotesGetCmd, personNotesSetCmd, personNotesAppendCmd,
-	} {
-		leaf := &cobra.Command{
-			Use: template.Use, Short: template.Short, Long: template.Long,
-			Args: template.Args, RunE: template.RunE,
-		}
-		leaf.Flags().AddFlagSet(template.Flags())
-		leaf.Flags().VisitAll(func(flag *pflag.Flag) {
-			require.NoError(t, flag.Value.Set(flag.DefValue))
-			flag.Changed = false
-		})
-		notes.AddCommand(leaf)
-	}
+	root.AddCommand(newPersonNotesCommand())
 	var output bytes.Buffer
 	root.SetIn(strings.NewReader(input))
 	root.SetOut(&output)

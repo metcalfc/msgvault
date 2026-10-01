@@ -101,20 +101,8 @@ func runWhatsAppIdentityCommand(
 	cfg := testConfigValue()
 
 	oldCfg := cfg
-	oldNoDefaultIdentity := noDefaultIdentityImportWhatsApp
-	oldImportPhone := importPhone
-	oldImportMediaDir := importMediaDir
-	oldImportContacts := importContacts
-	oldImportLimit := importLimit
-	oldImportDisplayName := importDisplayName
 	t.Cleanup(func() {
 		cfg = oldCfg
-		noDefaultIdentityImportWhatsApp = oldNoDefaultIdentity
-		importPhone = oldImportPhone
-		importMediaDir = oldImportMediaDir
-		importContacts = oldImportContacts
-		importLimit = oldImportLimit
-		importDisplayName = oldImportDisplayName
 	})
 
 	testCtx := withStoreResolverConfig(t, &config.Config{
@@ -127,12 +115,6 @@ func runWhatsAppIdentityCommand(
 			AutoBuildCache: true,
 		},
 	})
-	noDefaultIdentityImportWhatsApp = noDefaultIdentity
-	importPhone = whatsappIdentityTestPhone
-	importMediaDir = ""
-	importContacts = ""
-	importLimit = 0
-	importDisplayName = ""
 
 	var output strings.Builder
 	cmd := &cobra.Command{}
@@ -149,7 +131,7 @@ func runWhatsAppIdentityCommand(
 		_ = stdoutWriter.Close()
 		_ = stdoutReader.Close()
 	}()
-	runErr := runWhatsAppImport(cmd, fixture)
+	runErr := (whatsappImportOptions{importPhone: whatsappIdentityTestPhone, noDefaultIdentityImportWhatsApp: noDefaultIdentity}).runWhatsAppImport(cmd, fixture)
 	require.NoError(t, stdoutWriter.Close())
 	os.Stdout = oldStdout
 	var printed bytes.Buffer

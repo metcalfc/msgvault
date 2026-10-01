@@ -116,7 +116,7 @@ func gatedMeetingProjectionStore(t *testing.T, base *Store, gate *meetingProject
 	}
 	db := sql.OpenDB(&meetingProjectionConnector{Connector: connector, gate: gate})
 	db.SetMaxOpenConns(2)
-	st := &Store{db: newLoggedDB(db, base.dialect.Rebind), dbPath: base.dbPath, dialect: base.dialect, fts5Available: base.fts5Available, directoryProjectionReady: base.directoryProjectionReady}
+	st := &Store{db: newLoggedDB(db, identityRebind), dbPath: base.dbPath, dialect: base.dialect, fts5Available: base.fts5Available, directoryProjectionReady: base.directoryProjectionReady}
 	t.Cleanup(func() { _ = st.Close() })
 	return st
 }

@@ -60,12 +60,12 @@ var discordExportURLPattern = regexp.MustCompile(`https?://[^\s"'<>()]+`)
 func (s *Store) DiscordExport(
 	ctx context.Context, sourceID int64, start, end time.Time,
 ) ([]DiscordExportContainer, error) {
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT source_conversation_id, COALESCE(title, ''), COALESCE(metadata, '{}')
 		FROM conversations
 		WHERE source_id = ?
 		ORDER BY source_conversation_id
-	`), sourceID)
+	`, sourceID)
 	if err != nil {
 		return nil, fmt.Errorf("query Discord export containers: %w", err)
 	}
@@ -118,7 +118,7 @@ func (s *Store) DiscordExport(
 			)
 		}
 		args = append(args, messageExportPageSize)
-		messageRows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
+		messageRows, err := s.db.QueryContext(ctx, `
 			SELECT m.id,
 			       c.source_conversation_id,
 			       m.source_message_id,
@@ -137,7 +137,7 @@ func (s *Store) DiscordExport(
 			         m.source_message_id,
 			         m.id
 			LIMIT ?
-		`), args...)
+		`, args...)
 		if err != nil {
 			return nil, fmt.Errorf("query Discord export messages: %w", err)
 		}
@@ -177,7 +177,7 @@ func (s *Store) DiscordExport(
 			var content sql.NullString
 			if err := s.db.QueryRowContext(
 				ctx,
-				s.dialect.Rebind(`SELECT body_text FROM message_bodies WHERE message_id = ?`),
+				`SELECT body_text FROM message_bodies WHERE message_id = ?`,
 				message.id,
 			).Scan(&content); err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return nil, fmt.Errorf("load Discord export message body: %w", err)

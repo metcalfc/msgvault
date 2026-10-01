@@ -11,10 +11,11 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-var createSubsetCmd = &cobra.Command{
-	Use:   "create-subset",
-	Short: "Create a smaller database from the archive",
-	Long: `Create a new msgvault database containing a subset of the
+func newCreateSubsetCmd() *cobra.Command {
+	createSubsetCmd := &cobra.Command{
+		Use:   "create-subset",
+		Short: "Create a smaller database from the archive",
+		Long: `Create a new msgvault database containing a subset of the
 most recent messages. Useful for testing, demos, or sharing.
 
 The destination directory will contain a complete msgvault.db with
@@ -22,51 +23,47 @@ all referenced data (conversations, participants, labels, etc.)
 and can be used directly:
 
   MSGVAULT_HOME=/path/to/subset msgvault tui`,
-	RunE: runCreateSubset,
-}
+		RunE: runCreateSubset,
+	}
 
-var (
-	subsetOutput                string
-	subsetRows                  int
-	subsetIncludeIdentity       bool
-	subsetIncludeAttributes     bool
-	subsetIncludeProfiles       bool
-	subsetIncludeVCardResources bool
-)
-
-func init() {
-	createSubsetCmd.Flags().StringVarP(
-		&subsetOutput, "output", "o", "",
+	createSubsetCmd.Flags().StringP("output", "o", "",
 		"destination directory (msgvault.db created inside)",
 	)
-	createSubsetCmd.Flags().IntVar(
-		&subsetRows, "rows", 0,
+	createSubsetCmd.Flags().Int("rows", 0,
 		"number of most recent messages to copy",
 	)
-	createSubsetCmd.Flags().BoolVar(
-		&subsetIncludeIdentity, "include-identity", false,
+	createSubsetCmd.Flags().Bool("include-identity", false,
 		"copy full identity clusters for included participants; exposes "+
 			"identifiers (emails, phone numbers) of "+
 			"linked identities that have no messages in the subset",
 	)
-	createSubsetCmd.Flags().BoolVar(
-		&subsetIncludeAttributes, "include-attributes", false,
+	createSubsetCmd.Flags().Bool("include-attributes", false,
 		"copy person and organization attribute definitions and all current/history values; may expose sensitive values and provenance metadata",
 	)
-	createSubsetCmd.Flags().BoolVar(
-		&subsetIncludeProfiles, "include-profiles", false,
+	createSubsetCmd.Flags().Bool("include-profiles", false,
 		"copy structured profile values, history, media, contact observations, relationships, employment history with referenced organizations (their profiles, contacts, and media), and provenance; may expose sensitive personal data",
 	)
-	createSubsetCmd.Flags().BoolVar(
-		&subsetIncludeVCardResources, "include-vcard-resources", false,
+	createSubsetCmd.Flags().Bool("include-vcard-resources", false,
 		"copy included people's complete native vCard bodies and retired-UID aliases; requires --include-profiles; a body is opaque and may carry custom properties and RELATED entries naming people outside the subset",
 	)
 	_ = createSubsetCmd.MarkFlagRequired("output")
 	_ = createSubsetCmd.MarkFlagRequired("rows")
-	rootCmd.AddCommand(createSubsetCmd)
+
+	return createSubsetCmd
+}
+
+func init() {
+	registerCommandFactory(newCreateSubsetCmd)
 }
 
 func runCreateSubset(cmd *cobra.Command, args []string) error {
+	subsetOutput, _ := cmd.Flags().GetString("output")
+	subsetRows, _ := cmd.Flags().GetInt("rows")
+	subsetIncludeIdentity, _ := cmd.Flags().GetBool("include-identity")
+	subsetIncludeAttributes, _ := cmd.Flags().GetBool("include-attributes")
+	subsetIncludeProfiles, _ := cmd.Flags().GetBool("include-profiles")
+	subsetIncludeVCardResources, _ := cmd.Flags().GetBool("include-vcard-resources")
+
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")

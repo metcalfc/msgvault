@@ -186,7 +186,6 @@ func TestEngine_ScanRejectsRecoveredMalformedRFC822Group(t *testing.T) {
 }
 
 func TestEngine_ScanMergesEmbeddedNULMessageIDForms(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)

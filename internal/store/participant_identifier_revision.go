@@ -47,8 +47,7 @@ func (s *Store) ParticipantIdentifierRevisionContext(ctx context.Context) (int64
 // following bumpAccountIdentityRevision's approach.
 func (s *Store) bumpParticipantIdentifierRevision(tx *loggedTx) error {
 	ctx := context.Background()
-	if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(
-		`INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '0')`),
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '0')`,
 		participantIdentifierRevisionKey); err != nil {
 		return fmt.Errorf("seed participant identifier revision: %w", err)
 	}

@@ -276,5 +276,7 @@ func discordDiagnostic(err error) string {
 }
 
 func init() {
-	rootCmd.AddCommand(newAddDiscordCmd(defaultDiscordCommandDeps()))
+	registerCommandFactory(func() *cobra.Command {
+		return newAddDiscordCmd(defaultDiscordCommandDeps())
+	})
 }

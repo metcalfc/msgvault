@@ -311,8 +311,7 @@ func (s *Store) applyAcceptedIdentityMatchCandidateContext(
 			return nil, 0, false, err
 		}
 	case errors.Is(err, ErrPersonDetachmentJoin):
-		var joinErr *PersonDetachmentJoinError
-		if errors.As(err, &joinErr) {
+		if joinErr, ok := errors.AsType[*PersonDetachmentJoinError](err); ok {
 			if rejectErr := s.rejectCandidateBlockedByDetachmentContext(
 				ctx, joinErr.DetachmentID, current.ID,
 			); rejectErr != nil {

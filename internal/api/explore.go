@@ -1383,16 +1383,7 @@ func (s *Server) resolveExploreSearch(ctx context.Context, w http.ResponseWriter
 			break
 		}
 		pageLimit := min(exploreMaxLimit, remainingCapacity)
-		var (
-			messages []APIMessage
-			total    int64
-			err      error
-		)
-		if searcher, ok := s.store.(ctxMessageSearcher); ok {
-			messages, total, err = searcher.SearchMessagesQueryContext(ctx, parsed, offset, pageLimit)
-		} else {
-			messages, total, err = s.store.SearchMessagesQuery(parsed, offset, pageLimit)
-		}
+		messages, total, err := s.store.SearchMessagesQueryContext(ctx, parsed, offset, pageLimit)
 		if err != nil {
 			if s.writeIfContextError(w, err) {
 				return query.SearchSpec{}, "", false
@@ -1660,7 +1651,7 @@ func (s *Server) resolveExploreVectorSearch(ctx context.Context, w http.Response
 		}
 		snapshotHits[i] = exploreCandidateHit{MessageID: hit.MessageID, Score: score}
 	}
-	summaries, err := s.getMessagesSummariesByIDs(ctx, ids)
+	summaries, err := s.store.GetMessagesSummariesByIDsContext(ctx, ids)
 	if err == nil {
 		byID := make(map[int64]string, len(summaries))
 		for _, summary := range summaries {

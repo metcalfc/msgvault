@@ -47,9 +47,6 @@ type Dialect interface {
 	// DriverName returns the database/sql driver name.
 	DriverName() string
 
-	// Rebind returns the query with SQLite ? placeholders unchanged.
-	Rebind(query string) string
-
 	// UnicodeLowerExpression returns a Unicode-aware lowercasing SQL expression
 	// using the deterministic scalar registered on every connection.
 	UnicodeLowerExpression(expr string) string
@@ -80,19 +77,6 @@ type Dialect interface {
 	// pooled handle, outside any transaction held by the caller.
 	ReadWatermarkBounds(ctx context.Context, db *sql.DB) (WatermarkBounds, error)
 
-	// InsertOrIgnore accepts a complete INSERT OR IGNORE statement. For chunked
-	// inserts whose VALUES list is built incrementally, use InsertOrIgnorePrefix
-	// and InsertOrIgnoreSuffix.
-	InsertOrIgnore(sql string) string
-
-	// InsertOrIgnorePrefix returns the prefix of a chunked INSERT OR IGNORE
-	// unchanged. The input ends in "VALUES "; pair it with InsertOrIgnoreSuffix.
-	InsertOrIgnorePrefix(sql string) string
-
-	// InsertOrIgnoreSuffix returns an empty suffix for chunked INSERT OR IGNORE
-	// statements because conflict handling is already in the prefix.
-	InsertOrIgnoreSuffix() string
-
 	// Full-text search
 
 	// FTSUpsert inserts or updates one message in the FTS5 index, keeping the
@@ -101,8 +85,8 @@ type Dialect interface {
 
 	// FTSSearchClause returns the join, predicate, and ordering fragments for
 	// full-text search with ? placeholders. orderArgCount is zero for FTS5
-	// because rank is an implicit column. Callers compose the fragments and
-	// run Rebind on the final query.
+	// because rank is an implicit column. Callers compose the fragments into
+	// the final query.
 	FTSSearchClause() (join, where, orderBy string, orderArgCount int)
 
 	// FTSDeleteSQL returns the SQL to remove FTS entries for messages belonging to
@@ -180,10 +164,6 @@ type Dialect interface {
 
 	// Connection lifecycle
 
-	// InitConn is a no-op because SQLite connection PRAGMAs are set through
-	// DSN parameters, which apply to every pooled connection.
-	InitConn(db *sql.DB) error
-
 	// SchemaFiles returns the filenames of embedded schema files to execute during InitSchema.
 	SchemaFiles() []string
 
@@ -224,10 +204,6 @@ type Dialect interface {
 	// commands that need exclusive access.
 	IsBusyError(err error) bool
 
-	// IsSerializationFailureError always returns false for SQLite, which
-	// serializes writers. Contention is reported through IsBusyError.
-	IsSerializationFailureError(err error) bool
-
 	// BoolTrueExpr returns a predicate for SQLite boolean values stored as
 	// 0/1 integers.
 	BoolTrueExpr(col string) string
@@ -249,9 +225,6 @@ type Dialect interface {
 	// substitute a FALSE predicate instead of sending an invalid empty MATCH.
 	BuildFTSArg(terms []string) string
 
-	// JSONBindExpr returns a bare ? placeholder: SQLite stores JSON as TEXT.
-	JSONBindExpr() string
-
 	// JSONIsDistinctExpr returns a null-safe comparison between stored JSON
 	// text and one bound JSON value.
 	JSONIsDistinctExpr(col string) string
@@ -264,17 +237,9 @@ type Dialect interface {
 	// a read-modify-write transaction takes its first snapshot.
 	BeginWriteSQL() string
 
-	// SelectForUpdate returns an empty clause because BEGIN IMMEDIATE already
-	// serializes SQLite writers.
-	SelectForUpdate() string
-
 	// RowWriterLockSQL returns a self-assign UPDATE keyed by one ? parameter
 	// that obtains the writer slot before a deferred transaction's first read.
 	// Reading first and locking later can lose SQLITE_BUSY_SNAPSHOT to another
 	// writer without consulting the busy handler. No stored value changes.
 	RowWriterLockSQL(table, column string) string
-
-	// MaintenanceTimeoutResetSQL returns an empty statement for SQLite, which
-	// has no per-statement execution timeout. Store.runMaintenance skips it.
-	MaintenanceTimeoutResetSQL() string
 }

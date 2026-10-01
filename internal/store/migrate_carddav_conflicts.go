@@ -17,7 +17,6 @@ const cardDAVConflictPendingInvariant = `pending_operation IS NULL OR
 // constraint in place, so an old table is rebuilt in one transaction with all
 // rows and the two public indexes restored before commit.
 func (s *Store) ensureCardDAVConflictPendingInvariant(ctx context.Context) error {
-
 	var tableSQL sql.NullString
 	if err := s.db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master
 		WHERE type = 'table' AND name = 'carddav_conflicts'`).Scan(&tableSQL); err != nil {

@@ -57,5 +57,5 @@ SMS Backup & Restore by SyncTech Pty Ltd.`,
 }
 
 func init() {
-	rootCmd.AddCommand(newImportSynctechSMSCmd())
+	registerCommandFactory(newImportSynctechSMSCmd)
 }

@@ -241,7 +241,6 @@ func testPersonEnrichmentMissingPersonRevocationBackends(t *testing.T, manual bo
 	t.Run("sqlite", func(t *testing.T) {
 		testPersonEnrichmentMissingPersonRevocation(t, testutil.NewSQLiteTestStore(t), manual)
 	})
-
 }
 
 func testPersonEnrichmentMissingPersonRevocation(t *testing.T, st *store.Store, manual bool) {
@@ -368,7 +367,6 @@ func testPersonEnrichmentManualAuthorizationRaceBackends(t *testing.T, removal s
 	t.Run("sqlite", func(t *testing.T) {
 		testPersonEnrichmentManualAuthorizationRace(t, testutil.NewSQLiteTestStore(t), removal)
 	})
-
 }
 
 func testPersonEnrichmentManualAuthorizationRace(t *testing.T, st *store.Store, removal string) {

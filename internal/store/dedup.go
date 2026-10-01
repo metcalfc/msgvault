@@ -476,12 +476,12 @@ func (s *Store) MergeDuplicates(
 	}
 
 	result := &MergeResult{}
-	unionLabelsSQL := s.dialect.InsertOrIgnore(`INSERT OR IGNORE INTO message_labels (message_id, label_id)
-			SELECT ?, label_id FROM message_labels WHERE message_id = ?`)
-	backfillRawSQL := s.dialect.InsertOrIgnore(`INSERT OR IGNORE INTO message_raw
+	unionLabelsSQL := `INSERT OR IGNORE INTO message_labels (message_id, label_id)
+			SELECT ?, label_id FROM message_labels WHERE message_id = ?`
+	backfillRawSQL := `INSERT OR IGNORE INTO message_raw
 			  (message_id, raw_data, raw_format, compression)
 			SELECT ?, raw_data, raw_format, compression
-			FROM message_raw WHERE message_id = ?`)
+			FROM message_raw WHERE message_id = ?`
 	softDeleteSQL := fmt.Sprintf(`UPDATE messages
 			SET deleted_at = %s, delete_batch_id = ?
 			WHERE id = ?`, s.dialect.Now())
@@ -750,7 +750,7 @@ func (s *Store) CountDedupedBatchesContext(
 		}
 		var count int64
 		err := s.db.QueryRowContext(ctx,
-			s.Rebind("SELECT COUNT(*) FROM messages WHERE delete_batch_id = ? AND deleted_at IS NOT NULL"),
+			"SELECT COUNT(*) FROM messages WHERE delete_batch_id = ? AND deleted_at IS NOT NULL",
 			id,
 		).Scan(&count)
 		if err != nil {
@@ -771,12 +771,12 @@ func (s *Store) CountAllDedupedContext(
 	ctx context.Context,
 ) (total int64, distinctBatches int64, err error) {
 	if err := s.db.QueryRowContext(ctx,
-		s.Rebind("SELECT COUNT(*) FROM messages WHERE deleted_at IS NOT NULL AND delete_batch_id IS NOT NULL"),
+		"SELECT COUNT(*) FROM messages WHERE deleted_at IS NOT NULL AND delete_batch_id IS NOT NULL",
 	).Scan(&total); err != nil {
 		return 0, 0, fmt.Errorf("count hidden messages: %w", err)
 	}
 	if err := s.db.QueryRowContext(ctx,
-		s.Rebind("SELECT COUNT(DISTINCT delete_batch_id) FROM messages WHERE deleted_at IS NOT NULL AND delete_batch_id IS NOT NULL"),
+		"SELECT COUNT(DISTINCT delete_batch_id) FROM messages WHERE deleted_at IS NOT NULL AND delete_batch_id IS NOT NULL",
 	).Scan(&distinctBatches); err != nil {
 		return 0, 0, fmt.Errorf("count distinct batches: %w", err)
 	}
@@ -917,11 +917,11 @@ func (s *Store) rfc822IDBackfillBatchQuery(
 		ORDER BY m.id
 		LIMIT ?`
 	if lockRows {
-		query += s.dialect.SelectForUpdate()
+		query += ""
 	}
 	args := append([]any{lastID}, scopeArgs...)
 	args = append(args, s.rfc822IDBackfillBatch())
-	return s.dialect.Rebind(query), args
+	return query, args
 }
 
 // readRFC822IDBackfillBatch derives at most one bounded plan or apply page and
@@ -1129,11 +1129,10 @@ func (s *Store) applyRFC822IDBackfillBatch(
 func (s *Store) updateRFC822IDBackfillItem(
 	ctx context.Context, conn *sql.Conn, item rfc822IDBackfillItem,
 ) error {
-	result, err := conn.ExecContext(ctx, s.dialect.Rebind(
-		`UPDATE messages SET rfc822_message_id = ?
+	result, err := conn.ExecContext(ctx, `UPDATE messages SET rfc822_message_id = ?
 		 WHERE id = ? AND source_id = ?
 		   AND (rfc822_message_id IS NULL OR rfc822_message_id = '')
-		   AND `+LiveMessagesWhere("", true)),
+		   AND `+LiveMessagesWhere("", true),
 		item.RFC822MessageID, item.MessageID, item.SourceID)
 	if err != nil {
 		return fmt.Errorf("update RFC822 ID backfill message %d: %w", item.MessageID, err)

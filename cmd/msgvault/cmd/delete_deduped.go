@@ -9,35 +9,12 @@ import (
 	"go.kenn.io/msgvault/internal/daemonclient"
 )
 
-var deleteDedupedCmd = &cobra.Command{
-	Use:   "delete-deduped",
-	Short: "Permanently delete dedup-hidden messages from the local archive",
-	Long: `Permanently delete dedup-hidden messages from the local archive. This is
-the third rung of the safety progression: scan -> hide -> local hard
-delete -> remote delete. Each rung is a separate, explicit user action.
-
-Use --batch <id> to delete rows hidden by a specific dedup batch.
-Use --all-hidden to delete every dedup-hidden row regardless of batch.
-
-Deleted rows cannot be recovered with --undo. Pending remote-deletion
-manifests still reference Gmail/IMAP message IDs and remain valid
-after a local delete.
-
-Parquet analytics and the vector index may contain stale entries for
-deleted rows until maintained separately. Run
-'msgvault build-cache --full-rebuild' for parquet analytics and
-'msgvault embeddings prune' for the vector index.`,
-	RunE: runDeleteDeduped,
-}
-
-var (
-	deleteDedupedBatchIDs  []string
-	deleteDedupedAllHidden bool
-	deleteDedupedNoBackup  bool
-	deleteDedupedYes       bool
-)
-
 func runDeleteDeduped(cmd *cobra.Command, _ []string) error {
+	deleteDedupedBatchIDs, _ := cmd.Flags().GetStringArray("batch")
+	deleteDedupedAllHidden, _ := cmd.Flags().GetBool("all-hidden")
+	deleteDedupedNoBackup, _ := cmd.Flags().GetBool("no-backup")
+	deleteDedupedYes, _ := cmd.Flags().GetBool("yes")
+
 	if len(deleteDedupedBatchIDs) == 0 && !deleteDedupedAllHidden {
 		return usageErr(cmd, errors.New("must specify --batch or --all-hidden"))
 	}
@@ -109,6 +86,9 @@ func runDeleteDeduped(cmd *cobra.Command, _ []string) error {
 }
 
 func printDeleteDedupedPlan(cmd *cobra.Command, plan *daemonclient.CLIDeleteDedupedPlan) {
+	deleteDedupedBatchIDs, _ := cmd.Flags().GetStringArray("batch")
+	deleteDedupedAllHidden, _ := cmd.Flags().GetBool("all-hidden")
+
 	if plan == nil {
 		plan = &daemonclient.CLIDeleteDedupedPlan{}
 	}
@@ -126,15 +106,39 @@ func printDeleteDedupedPlan(cmd *cobra.Command, plan *daemonclient.CLIDeleteDedu
 	}
 }
 
-func init() {
-	rootCmd.AddCommand(deleteDedupedCmd)
-	deleteDedupedCmd.Flags().StringArrayVar(&deleteDedupedBatchIDs, "batch", nil,
+func newDeleteDedupedCmd() *cobra.Command {
+	deleteDedupedCmd := &cobra.Command{
+		Use:   "delete-deduped",
+		Short: "Permanently delete dedup-hidden messages from the local archive",
+		Long: `Permanently delete dedup-hidden messages from the local archive. This is
+the third rung of the safety progression: scan -> hide -> local hard
+delete -> remote delete. Each rung is a separate, explicit user action.
+
+Use --batch <id> to delete rows hidden by a specific dedup batch.
+Use --all-hidden to delete every dedup-hidden row regardless of batch.
+
+Deleted rows cannot be recovered with --undo. Pending remote-deletion
+manifests still reference Gmail/IMAP message IDs and remain valid
+after a local delete.
+
+Parquet analytics and the vector index may contain stale entries for
+deleted rows until maintained separately. Run
+'msgvault build-cache --full-rebuild' for parquet analytics and
+'msgvault embeddings prune' for the vector index.`,
+		RunE: runDeleteDeduped,
+	}
+
+	deleteDedupedCmd.Flags().StringArray("batch", nil,
 		"Delete rows hidden by this batch ID (repeat for multiple batches)")
-	deleteDedupedCmd.Flags().BoolVar(&deleteDedupedAllHidden, "all-hidden", false,
+	deleteDedupedCmd.Flags().Bool("all-hidden", false,
 		"Delete every dedup-hidden row regardless of batch")
 	deleteDedupedCmd.MarkFlagsMutuallyExclusive("batch", "all-hidden")
-	deleteDedupedCmd.Flags().BoolVar(&deleteDedupedNoBackup, "no-backup", false,
+	deleteDedupedCmd.Flags().Bool("no-backup", false,
 		"Skip database backup before deleting")
-	deleteDedupedCmd.Flags().BoolVarP(&deleteDedupedYes, "yes", "y", false,
+	deleteDedupedCmd.Flags().BoolP("yes", "y", false,
 		"Skip confirmation prompt")
+
+	return deleteDedupedCmd
 }
+
+func init() { registerCommandFactory(newDeleteDedupedCmd) }

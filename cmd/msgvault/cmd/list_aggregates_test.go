@@ -6,7 +6,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/kit/daemon"
@@ -25,17 +24,9 @@ func TestListSendersUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 
 	savedCfg := cfg
 	savedUseLocal := useLocal
-	savedLimit := aggLimit
-	savedAfter := aggAfter
-	savedBefore := aggBefore
-	savedJSON := aggJSON
 	defer func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		aggLimit = savedLimit
-		aggAfter = savedAfter
-		aggBefore = savedBefore
-		aggJSON = savedJSON
 	}()
 
 	cfg = &config.Config{
@@ -47,13 +38,9 @@ func TestListSendersUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 	_ = testCtx
 	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
-	aggLimit = 50
-	aggAfter = ""
-	aggBefore = ""
-	aggJSON = false
 
 	done := captureStdout(t)
-	cmd := &cobra.Command{Use: "list-senders", RunE: listSendersCmd.RunE}
+	cmd := newListSendersCommand()
 	cmd.SetContext(testCtx)
 
 	err := cmd.Execute()

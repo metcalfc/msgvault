@@ -19,12 +19,6 @@ import (
 	"golang.org/x/oauth2"
 )
 
-var (
-	verifySampleSize  int
-	verifySkipDBCheck bool
-	verifyJSON        bool
-)
-
 // verifyResult is the machine-readable form of a verify run, emitted when
 // --json is set. Difference is gmailTotal-archived: a positive value means
 // Gmail reports more messages than the archive holds; a negative value means
@@ -75,33 +69,11 @@ func newVerifyResult(email string, archiveAccountFound bool, integrityOK *bool, 
 	}
 }
 
-var verifyCmd = &cobra.Command{
-	Use:   "verify <email>",
-	Short: "Verify archive integrity against Gmail",
-	Long: `Verify the local archive by comparing message counts with Gmail
-and sampling messages to ensure raw MIME data is intact.
-
-This command:
-1. Runs PRAGMA integrity_check on the database (unless --skip-db-check).
-2. Compares local message count with Gmail's reported total
-3. Checks how many messages have raw MIME data stored
-4. Samples random messages and verifies their MIME can be decompressed
-
-Examples:
-  msgvault verify you@gmail.com
-  msgvault verify you@gmail.com --sample 200
-  msgvault verify you@gmail.com --skip-db-check
-  msgvault verify you@gmail.com --json`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if isDaemonCLISubprocess() {
-			return runVerifyLocal(cmd, args)
-		}
-		return runVerifyHTTP(cmd, args[0])
-	},
-}
-
 func runVerifyLocal(cmd *cobra.Command, args []string) error {
+	verifySampleSize, _ := cmd.Flags().GetInt("sample")
+	verifySkipDBCheck, _ := cmd.Flags().GetBool("skip-db-check")
+	verifyJSON, _ := cmd.Flags().GetBool(flagJSON)
+
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil || state.logger == nil {
 		return errors.New("configuration is unavailable")
@@ -151,7 +123,6 @@ func runVerifyLocal(cmd *cobra.Command, args []string) error {
 	var dbCorrupt bool
 	var dbIntegrityOK *bool
 	if !verifySkipDBCheck {
-
 		{
 			emitln("Running database integrity check...")
 			integrityErrors, err := runIntegrityCheck(s)
@@ -410,7 +381,6 @@ func runVerifyLocal(cmd *cobra.Command, args []string) error {
 //
 // The check runs against the open SQLite archive.
 func runIntegrityCheck(s *store.Store) ([]string, error) {
-
 	rows, err := s.DB().Query("PRAGMA integrity_check(100)")
 	if err != nil {
 		return nil, err
@@ -473,9 +443,38 @@ func isFTSIntegrityError(msg string) bool {
 		strings.Contains(msg, "FTS5")
 }
 
-func init() {
-	verifyCmd.Flags().IntVar(&verifySampleSize, "sample", 100, "Number of messages to sample for MIME verification")
-	verifyCmd.Flags().BoolVar(&verifySkipDBCheck, "skip-db-check", false, "Skip SQLite integrity check")
-	verifyCmd.Flags().BoolVar(&verifyJSON, flagJSON, false, "Output as JSON")
-	rootCmd.AddCommand(verifyCmd)
+func newVerifyCmd() *cobra.Command {
+	verifyCmd := &cobra.Command{
+		Use:   "verify <email>",
+		Short: "Verify archive integrity against Gmail",
+		Long: `Verify the local archive by comparing message counts with Gmail
+and sampling messages to ensure raw MIME data is intact.
+
+This command:
+1. Runs PRAGMA integrity_check on the database (unless --skip-db-check).
+2. Compares local message count with Gmail's reported total
+3. Checks how many messages have raw MIME data stored
+4. Samples random messages and verifies their MIME can be decompressed
+
+Examples:
+  msgvault verify you@gmail.com
+  msgvault verify you@gmail.com --sample 200
+  msgvault verify you@gmail.com --skip-db-check
+  msgvault verify you@gmail.com --json`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if isDaemonCLISubprocess() {
+				return runVerifyLocal(cmd, args)
+			}
+			return runVerifyHTTP(cmd, args[0])
+		},
+	}
+
+	verifyCmd.Flags().Int("sample", 100, "Number of messages to sample for MIME verification")
+	verifyCmd.Flags().Bool("skip-db-check", false, "Skip SQLite integrity check")
+	verifyCmd.Flags().Bool(flagJSON, false, "Output as JSON")
+
+	return verifyCmd
 }
+
+func init() { registerCommandFactory(newVerifyCmd) }

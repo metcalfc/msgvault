@@ -506,9 +506,6 @@ func setupVectorFeatures(ctx context.Context, mainStore *store.Store, mainPath s
 	}
 	mainDB := mainStore.DB()
 
-	// Use SQLite SQL helpers for the main archive. Rebind leaves placeholders
-	// unchanged.
-	var dialect store.Dialect = &store.SQLiteDialect{}
 	// lastModifiedExpr reads the embed worker's last_modified CAS token as text.
 	// The CAST avoids go-sqlite3's DATETIME-to-time.Time coercion, preserving
 	// exact equality when the token is bound back into the update.
@@ -562,7 +559,7 @@ func setupVectorFeatures(ctx context.Context, mainStore *store.Store, mainPath s
 		)
 		runtime, err := newEmbeddingRuntime(vecCfg, embeddingRuntimeDeps{
 			Backend: backend, VectorsDB: vectorsDB, MainDB: mainDB, Store: mainStore,
-			Rebind: dialect.Rebind, LastModifiedExpr: lastModifiedExpr, Log: logger,
+			LastModifiedExpr: lastModifiedExpr, Log: logger,
 			PersonGate:   personGate,
 			DocumentGate: documentVectorRequestGate(mainStore, vecCfg, "document_embedding"),
 			QueryGate:    documentVectorRequestGate(mainStore, vecCfg, "query_embedding"),
@@ -582,10 +579,7 @@ func setupVectorFeatures(ctx context.Context, mainStore *store.Store, mainPath s
 			RRFK:                vecCfg.Search.RRFK,
 			KPerSignal:          vecCfg.Search.KPerSignal,
 			SubjectBoost:        vecCfg.Search.SubjectBoost,
-			// BuildFilter's participant/label lookups use ? placeholders
-			// against mainDB. SQLite's Rebind leaves them unchanged.
-			Rebind:     dialect.Rebind,
-			BuildScope: vecCfg.Embed.Scope.BuildScope(),
+			BuildScope:          vecCfg.Embed.Scope.BuildScope(),
 		})
 		if !readOnly {
 			// The rerank stage writes the feature's daily counters, so a

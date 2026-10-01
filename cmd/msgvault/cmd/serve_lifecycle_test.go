@@ -86,13 +86,13 @@ func TestDaemonAndServeLifecycleCommandSurfaces(t *testing.T) {
 	require := require.New(t)
 
 	daemonNames := map[string]bool{}
-	for _, sub := range daemonCmd.Commands() {
+	for _, sub := range newDaemonCommand().Commands() {
 		daemonNames[sub.Name()] = true
 		assert.False(sub.Hidden, "daemon %s must be visible", sub.Name())
 	}
 	for _, name := range []string{"start", "status", "stop", "restart"} {
 		assert.True(daemonNames[name], "daemon must expose %s", name)
-		compat, _, err := serveCmd.Find([]string{name})
+		compat, _, err := newServeCommand().Find([]string{name})
 		require.NoError(err)
 		assert.Equal(name, compat.Name())
 		assert.True(compat.Hidden, "serve %s must be hidden", name)
@@ -311,7 +311,7 @@ func TestServeStatusCommandUsesAuthenticatedHealthForOperationDetails(t *testing
 
 	cmd, stdout, stderr := lifecycleTestCommand()
 	cmd.SetContext(testInvocationContext(context.Background(), cfg, invocationOptions{}))
-	statusCmd, _, err := serveCmd.Find([]string{"status"})
+	statusCmd, _, err := newServeCommand().Find([]string{"status"})
 	require.NoError(err, "find serve status")
 	require.NoError(statusCmd.RunE(cmd, nil), "serve status")
 

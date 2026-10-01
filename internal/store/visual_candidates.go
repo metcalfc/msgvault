@@ -86,7 +86,7 @@ func (s *Store) ListVisualCandidates(
 		placeholders[i] = "?"
 		args[i] = id
 	}
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT a.id, a.message_id, COALESCE(a.filename, ''),
 		       COALESCE(a.mime_type, ''), COALESCE(a.size, 0),
 		       COALESCE(a.content_hash, ''), COALESCE(a.storage_path, ''),
@@ -97,7 +97,7 @@ func (s *Store) ListVisualCandidates(
 		JOIN messages m ON m.id = a.message_id
 		WHERE a.message_id IN (`+strings.Join(placeholders, ",")+`)
 		  AND `+LiveMessagesWhere("m", true)+`
-		ORDER BY a.message_id, a.id`), args...)
+		ORDER BY a.message_id, a.id`, args...)
 	if err != nil {
 		return VisualCandidatePage{}, fmt.Errorf("list visual candidate occurrences: %w", err)
 	}
@@ -191,8 +191,8 @@ func (s *Store) visualCandidateMessagePage(
 		}
 	}
 	args = append(args, limit+1)
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
-		SELECT m.id FROM messages m WHERE `+where+` ORDER BY m.id LIMIT ?`), args...)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT m.id FROM messages m WHERE `+where+` ORDER BY m.id LIMIT ?`, args...)
 	if err != nil {
 		return nil, false, fmt.Errorf("page visual candidate messages: %w", err)
 	}
@@ -239,8 +239,7 @@ func (s *Store) selectVisualCandidateMessageIDs(
 			args = append(args, sourceID)
 		}
 	}
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(
-		"SELECT m.id FROM messages m WHERE "+where+" ORDER BY m.id"), args...)
+	rows, err := s.db.QueryContext(ctx, "SELECT m.id FROM messages m WHERE "+where+" ORDER BY m.id", args...)
 	if err != nil {
 		return nil, false, fmt.Errorf("select visual candidate messages: %w", err)
 	}
@@ -267,16 +266,16 @@ func (s *Store) GetVisualMessageContext(ctx context.Context, messageID int64) (V
 	// The stamp is read in the same statement as the context columns it
 	// covers, so a claim recording this stamp makes any later edit —
 	// including one racing this read — fail the commit-time CAS.
-	err := s.db.QueryRowContext(ctx, s.dialect.Rebind(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(subject, ''), COALESCE(message_type, ''), `+visualContentStampExpr+`
-		FROM messages WHERE id = ? AND `+LiveMessagesWhere("", true)), messageID).
+		FROM messages WHERE id = ? AND `+LiveMessagesWhere("", true), messageID).
 		Scan(&result.Subject, &result.MessageType, &result.ContentStamp)
 	if err != nil {
 		return VisualMessageContext{}, fmt.Errorf("read visual message context: %w", err)
 	}
 	var bodyText, bodyHTML sql.NullString
-	err = s.db.QueryRowContext(ctx, s.dialect.Rebind(`
-		SELECT body_text, body_html FROM message_bodies WHERE message_id = ?`), messageID).
+	err = s.db.QueryRowContext(ctx, `
+		SELECT body_text, body_html FROM message_bodies WHERE message_id = ?`, messageID).
 		Scan(&bodyText, &bodyHTML)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return VisualMessageContext{}, fmt.Errorf("read visual message body: %w", err)

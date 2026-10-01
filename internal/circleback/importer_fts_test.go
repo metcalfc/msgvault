@@ -13,7 +13,6 @@ import (
 // TestImport_FTSIndexed verifies imported meetings are searchable, including
 // archived transcript text recovered while current notes are refreshed.
 func TestImport_FTSIndexed(t *testing.T) {
-
 	for _, archive := range archivedTranscriptFixtures {
 		for _, refresh := range transcriptRefreshFixtures {
 			t.Run(archive.name+"/"+refresh.name, func(t *testing.T) {

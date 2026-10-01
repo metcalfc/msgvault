@@ -16,11 +16,6 @@ import (
 	"go.kenn.io/msgvault/internal/textutil"
 )
 
-var (
-	addSlackTokenFile         string
-	noDefaultIdentityAddSlack bool
-)
-
 func newAddSlackCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add-slack",
@@ -53,6 +48,8 @@ Examples:
   MSGVAULT_SLACK_TOKEN="xoxp-..." msgvault add-slack`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := readAddSlackOptions(cmd)
+
 			state := invocationFromCommand(cmd)
 			if state == nil || state.cfg == nil {
 				return errors.New("configuration is unavailable")
@@ -102,7 +99,7 @@ Examples:
 			if err := s.UpdateSourceDisplayName(source.ID, displayName); err != nil {
 				return fmt.Errorf("set display name for %s: %w", identifier, err)
 			}
-			if !noDefaultIdentityAddSlack {
+			if !flags.noDefaultIdentityAddSlack {
 				confirmDefaultSlackIdentity(cmd.OutOrStdout(), s, source.ID, auth.TeamID, auth.UserID, state.logger)
 			}
 			if err := runPostSourceCreateMigrationsForInvocation(s, state); err != nil {
@@ -115,8 +112,8 @@ Examples:
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&addSlackTokenFile, "token-file", "", "read the Slack user token from this file")
-	cmd.Flags().BoolVar(&noDefaultIdentityAddSlack, "no-default-identity", false, noDefaultIdentityHelp)
+	cmd.Flags().String("token-file", "", "read the Slack user token from this file")
+	cmd.Flags().Bool("no-default-identity", false, noDefaultIdentityHelp)
 	return cmd
 }
 
@@ -133,20 +130,22 @@ func confirmDefaultSlackIdentity(out io.Writer, s *store.Store, sourceID int64, 
 // readAddSlackToken resolves the user token: env var, then --token-file,
 // then interactive masked prompt / piped stdin.
 func readAddSlackToken(cmd *cobra.Command) (string, error) {
+	flags := readAddSlackOptions(cmd)
+
 	if envToken := os.Getenv(clirun.EnvSlackToken); envToken != "" {
 		if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Using token from %s environment variable\n", clirun.EnvSlackToken); err != nil {
 			return "", fmt.Errorf("write token source notice: %w", err)
 		}
 		return envToken, nil
 	}
-	if addSlackTokenFile != "" {
-		data, err := os.ReadFile(addSlackTokenFile)
+	if flags.addSlackTokenFile != "" {
+		data, err := os.ReadFile(flags.addSlackTokenFile)
 		if err != nil {
 			return "", fmt.Errorf("read token file: %w", err)
 		}
 		token := strings.TrimSpace(string(data))
 		if token == "" {
-			return "", fmt.Errorf("token file %s is empty", addSlackTokenFile)
+			return "", fmt.Errorf("token file %s is empty", flags.addSlackTokenFile)
 		}
 		return token, nil
 	}
@@ -171,5 +170,17 @@ func readAddSlackToken(cmd *cobra.Command) (string, error) {
 }
 
 func init() {
-	rootCmd.AddCommand(newAddSlackCmd())
+	registerCommandFactory(newAddSlackCmd)
+}
+
+type addSlackOptions struct {
+	addSlackTokenFile         string
+	noDefaultIdentityAddSlack bool
+}
+
+func readAddSlackOptions(cmd *cobra.Command) addSlackOptions {
+	var flags addSlackOptions
+	flags.addSlackTokenFile, _ = cmd.Flags().GetString("token-file")
+	flags.noDefaultIdentityAddSlack, _ = cmd.Flags().GetBool("no-default-identity")
+	return flags
 }

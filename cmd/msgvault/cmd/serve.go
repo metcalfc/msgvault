@@ -51,10 +51,11 @@ import (
 	"golang.org/x/oauth2"
 )
 
-var serveCmd = &cobra.Command{
-	Use:   "serve",
-	Short: "Run msgvault as a daemon with scheduled sync",
-	Long: `Run msgvault as a long-running daemon that syncs email accounts on schedule.
+func newServeCommand() *cobra.Command {
+	command := &cobra.Command{
+		Use:   "serve",
+		Short: "Run msgvault as a daemon with scheduled sync",
+		Long: `Run msgvault as a long-running daemon that syncs email accounts on schedule.
 
 The daemon runs in the foreground and performs:
   - HTTP API server (auto-selects an open port unless [server] api_port is set)
@@ -75,7 +76,10 @@ Cron format: minute hour day-of-month month day-of-week
     0 8,18 * * *  = 8 AM and 6 PM daily
 
 Use Ctrl+C to stop the daemon gracefully.`,
-	RunE: runServe,
+		RunE: runServe,
+	}
+	addServeLifecycleCommands(command)
+	return command
 }
 
 const daemonIdleTimeoutEnv = "MSGVAULT_DAEMON_IDLE_TIMEOUT"
@@ -174,9 +178,8 @@ type serveRuntimeOperationGate interface {
 }
 
 func init() {
-	rootCmd.AddCommand(serveCmd)
-	rootCmd.AddCommand(daemonCmd)
-	addServeLifecycleCommands(serveCmd)
+	registerCommandFactory(newServeCommand)
+	registerCommandFactory(newDaemonCommand)
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
@@ -1560,7 +1563,6 @@ func (a *storeAPIAdapter) invocationContext(ctx context.Context) context.Context
 }
 
 var _ api.MessageStore = (*storeAPIAdapter)(nil)
-var _ api.CtxMessageStore = (*storeAPIAdapter)(nil)
 var _ api.MessageIdentityStore = (*storeAPIAdapter)(nil)
 var _ api.PersonFactStore = (*storeAPIAdapter)(nil)
 var _ api.PersonBriefStore = (*storeAPIAdapter)(nil)
@@ -2039,7 +2041,7 @@ func cliSyncSubprocessArgs(req api.CLISyncRequest) []string {
 		}
 		return args
 	}
-	args := []string{syncIncrementalCmd.Name()}
+	args := []string{"sync"}
 	if req.BuildCache {
 		args = append(args, "--build-cache")
 	}
@@ -2663,12 +2665,12 @@ func (a *storeAPIAdapter) MergeConfirmedAccountIdentitySignalsContext(
 	return a.store.MergeConfirmedAccountIdentitySignalsContext(ctx, sourceID, candidates)
 }
 
-func (a *storeAPIAdapter) LinkParticipants(participantA, participantB int64) (int64, error) {
-	return a.store.LinkParticipants(participantA, participantB)
+func (a *storeAPIAdapter) LinkParticipantsContext(ctx context.Context, participantA, participantB int64) (int64, error) {
+	return a.store.LinkParticipantsContext(ctx, participantA, participantB)
 }
 
-func (a *storeAPIAdapter) UnlinkParticipants(participantA, participantB int64) (int64, error) {
-	return a.store.UnlinkParticipants(participantA, participantB)
+func (a *storeAPIAdapter) UnlinkParticipantsContext(ctx context.Context, participantA, participantB int64) (int64, error) {
+	return a.store.UnlinkParticipantsContext(ctx, participantA, participantB)
 }
 
 func (a *storeAPIAdapter) IdentityRevision() (int64, error) {

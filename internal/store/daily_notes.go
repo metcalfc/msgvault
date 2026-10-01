@@ -111,9 +111,7 @@ func (s *Store) CreateDailyNoteEntryContext(
 
 			for _, personID := range targets {
 				var lockedID int64
-				err := tx.QueryRowContext(ctx,
-					`SELECT id FROM persons WHERE id = ?`+s.dialect.SelectForUpdate(),
-					personID).Scan(&lockedID)
+				err := tx.QueryRowContext(ctx, "SELECT id FROM persons WHERE id = ?", personID).Scan(&lockedID)
 				if errors.Is(err, sql.ErrNoRows) {
 					return ErrPersonNotFound
 				}
@@ -164,7 +162,6 @@ func dailyNoteRetryable(ctx context.Context, s *Store, err error) bool {
 	{
 		return s.dialect.IsBusyError(err)
 	}
-
 }
 
 func loadDailyNoteEntryTx(

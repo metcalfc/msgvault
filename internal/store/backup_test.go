@@ -14,7 +14,6 @@ import (
 )
 
 func TestBackupDatabaseContext_AtomicallyPublishesValidBackup(t *testing.T) {
-
 	assert := assert.New(t)
 	require := require.New(t)
 	f := storetest.New(t)
@@ -46,7 +45,6 @@ func TestBackupDatabaseContext_AtomicallyPublishesValidBackup(t *testing.T) {
 }
 
 func TestBackupDatabaseContext_PreservesTargetCreatedDuringBackup(t *testing.T) {
-
 	assert := assert.New(t)
 	require := require.New(t)
 	f := storetest.New(t)
@@ -89,7 +87,6 @@ func TestBackupDatabaseContext_PreservesTargetCreatedDuringBackup(t *testing.T) 
 }
 
 func TestBackupDatabaseContext_CancellationRemovesUnpublishedBackup(t *testing.T) {
-
 	assert := assert.New(t)
 	require := require.New(t)
 	f := storetest.New(t)

@@ -11,12 +11,12 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-var (
-	repairDerivedSourceTypes []string
-	repairDerivedIdentifiers []string
-)
-
 func newRepairDerivedCmd() *cobra.Command {
+	var (
+		repairDerivedSourceTypes []string
+		repairDerivedIdentifiers []string
+	)
+
 	cmd := &cobra.Command{
 		Use:   "repair-derived",
 		Short: "Re-derive stored message text and metadata from archived payloads",
@@ -57,7 +57,7 @@ Examples:
 			ctx, stop := withInterruptCancel(cmd, "\nInterrupted. Stopping...")
 			defer stop()
 
-			sources, err := repairDerivedTargets(s)
+			sources, err := repairDerivedTargets(s, repairDerivedSourceTypes, repairDerivedIdentifiers)
 			if err != nil {
 				return err
 			}
@@ -113,7 +113,7 @@ func formatRepairDerivedSummary(label string, sum *rederive.Summary) string {
 // type has a registered pass, narrowed by the --source-type and --identifier
 // flags. An unknown source type is an error rather than a silent no-op, so a
 // typo does not look like a clean run.
-func repairDerivedTargets(s *store.Store) ([]*store.Source, error) {
+func repairDerivedTargets(s *store.Store, repairDerivedSourceTypes, repairDerivedIdentifiers []string) ([]*store.Source, error) {
 	wantType := map[string]bool{}
 	for _, t := range repairDerivedSourceTypes {
 		if _, _, ok := rederive.Lookup(t); !ok {
@@ -148,5 +148,5 @@ func repairDerivedTargets(s *store.Store) ([]*store.Source, error) {
 }
 
 func init() {
-	rootCmd.AddCommand(newRepairDerivedCmd())
+	registerCommandFactory(newRepairDerivedCmd)
 }

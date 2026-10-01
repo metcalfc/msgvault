@@ -15,175 +15,6 @@ import (
 	"go.kenn.io/msgvault/pkg/client/generated"
 )
 
-var (
-	organizationJSON                                                                                   bool
-	organizationLimit, organizationOffset                                                              int64
-	organizationQuery, organizationName, organizationKind, organizationDomain, organizationDescription string
-	organizationShowHistory, organizationIncludeRetired, organizationIncludeSuperseded                 bool
-	organizationTextValue, organizationSource, organizationDefinitionSlugValue                         string
-	organizationExpectedValueID, organizationAttributeOrdinal                                          int64
-	organizationDryRun                                                                                 bool
-)
-
-var organizationCmd = &cobra.Command{Use: "organization", Aliases: []string{"org"}, Short: "Manage curated organizations and their employment records"}
-
-var organizationListCmd = &cobra.Command{Use: cmdUseList, Short: "List curated organizations", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-	client, _, err := OpenHTTPStore(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	query := &generated.ListOrganizationsQuery{}
-	if cmd.Flags().Changed("limit") {
-		query.Limit = &organizationLimit
-	}
-	if cmd.Flags().Changed("offset") {
-		query.Offset = &organizationOffset
-	}
-	if cmd.Flags().Changed("query") {
-		query.Q = &organizationQuery
-	}
-	if cmd.Flags().Changed("include-retired") {
-		query.IncludeRetired = &organizationIncludeRetired
-	}
-	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ListOrganizationsResp, error) {
-		return api.ListOrganizationsWithResponse(cmd.Context(), &generated.ListOrganizationsRequestOptions{Query: query})
-	})
-	if err != nil {
-		return err
-	}
-	if resp.JSON200 == nil {
-		return errors.New("organization list response was empty")
-	}
-	if organizationJSON {
-		return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), resp.JSON200, json.Deterministic(true))
-	}
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ID\tNAME\tKIND\tDOMAIN\tSTATUS\tREVISION")
-	for _, org := range resp.JSON200.Organizations {
-		status := "active"
-		if org.RetiredAt != nil {
-			status = "retired"
-		}
-		_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%d\n", org.ID, org.Name, org.Kind, cliString(org.PrimaryDomain), status, org.Revision)
-	}
-	return w.Flush()
-}}
-
-var organizationCreateCmd = &cobra.Command{Use: "create <name>", Short: "Create a curated organization", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-	name := strings.TrimSpace(args[0])
-	if name == "" {
-		return usageErr(cmd, errors.New("name must not be empty"))
-	}
-	client, _, err := OpenHTTPStore(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	body := generated.CreateOrganizationBody{Name: name}
-	if cmd.Flags().Changed("kind") {
-		kind := generated.OrganizationCreateBodyKind(organizationKind)
-		body.Kind = &kind
-	}
-	if cmd.Flags().Changed("domain") {
-		body.PrimaryDomain = &organizationDomain
-	}
-	if cmd.Flags().Changed("description") {
-		body.Description = &organizationDescription
-	}
-	resp, err := daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusCreated}, func(api *apiclient.Client) (*generated.CreateOrganizationResp, error) {
-		return api.CreateOrganizationWithResponse(cmd.Context(), &generated.CreateOrganizationRequestOptions{Body: &body})
-	})
-	if err != nil {
-		return err
-	}
-	return writeCLIOrganization(cmd, resp.JSON201)
-}}
-
-var organizationShowCmd = &cobra.Command{Use: "show <id>", Short: "Show an organization", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-	id, err := positivePersonCLIArg(cmd, args[0], "organization")
-	if err != nil {
-		return err
-	}
-	client, _, err := OpenHTTPStore(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	if organizationShowHistory {
-		resp, getErr := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.GetOrganizationHistoryResp, error) {
-			return api.GetOrganizationHistoryWithResponse(cmd.Context(), &generated.GetOrganizationHistoryRequestOptions{PathParams: &generated.GetOrganizationHistoryPath{ID: id}})
-		})
-		if getErr != nil {
-			return getErr
-		}
-		if resp.JSON200 == nil {
-			return errors.New("organization history response was empty")
-		}
-		return writeCLIOrganizationHistory(cmd, resp.JSON200)
-	}
-	resp, err := getCLIOrganization(cmd, client, id)
-	if err != nil {
-		return err
-	}
-	if resp.JSON200 == nil {
-		return errors.New("organization response was empty")
-	}
-	return writeCLIOrganizationProfile(cmd, resp.JSON200)
-}}
-
-var organizationSetCmd = &cobra.Command{Use: "set <id>", Short: "Replace an organization's mutable fields", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-	if !cmd.Flags().Changed("name") {
-		return usageErr(cmd, errors.New("--name is required"))
-	}
-	id, err := positivePersonCLIArg(cmd, args[0], "organization")
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(organizationName) == "" {
-		return usageErr(cmd, errors.New("name must not be empty"))
-	}
-	client, _, err := OpenHTTPStore(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	current, err := getCLIOrganization(cmd, client, id)
-	if err != nil {
-		return err
-	}
-	if current.JSON200 == nil {
-		return errors.New("organization response was empty")
-	}
-	body := generated.PatchOrganizationBody{Name: organizationName}
-	if cmd.Flags().Changed("kind") {
-		kind := generated.OrganizationBodyKind(organizationKind)
-		body.Kind = &kind
-	} else {
-		kind := generated.OrganizationBodyKind(current.JSON200.Organization.Kind)
-		body.Kind = &kind
-	}
-	if cmd.Flags().Changed("domain") {
-		body.PrimaryDomain = &organizationDomain
-	} else {
-		body.PrimaryDomain = current.JSON200.Organization.PrimaryDomain
-	}
-	if cmd.Flags().Changed("description") {
-		body.Description = &organizationDescription
-	} else {
-		body.Description = current.JSON200.Organization.Description
-	}
-	retired := current.JSON200.Organization.RetiredAt != nil
-	body.Retired = &retired
-	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.PatchOrganizationResp, error) {
-		return api.PatchOrganizationWithResponse(cmd.Context(), &generated.PatchOrganizationRequestOptions{PathParams: &generated.PatchOrganizationPath{ID: id}, Header: &generated.PatchOrganizationHeaders{IfMatch: organizationETag(id, current.JSON200.Organization.Revision)}, Body: &body})
-	})
-	if err != nil {
-		return err
-	}
-	return writeCLIOrganization(cmd, resp.JSON200)
-}}
-
 func runOrganizationRetired(retired bool) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		id, err := positivePersonCLIArg(cmd, args[0], "organization")
@@ -219,212 +50,6 @@ func runOrganizationRetired(retired bool) func(*cobra.Command, []string) error {
 	}
 }
 
-var organizationRetireCmd = &cobra.Command{Use: "retire <id>", Short: "Retire an organization", Args: cobra.ExactArgs(1), RunE: runOrganizationRetired(true)}
-var organizationUnretireCmd = &cobra.Command{Use: "unretire <id>", Short: "Unretire an organization", Args: cobra.ExactArgs(1), RunE: runOrganizationRetired(false)}
-
-var organizationDeleteCmd = &cobra.Command{Use: "delete <id>", Short: "Permanently delete an organization", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-	id, err := positivePersonCLIArg(cmd, args[0], "organization")
-	if err != nil {
-		return err
-	}
-	client, _, err := OpenHTTPStore(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	current, err := getCLIOrganization(cmd, client, id)
-	if err != nil {
-		return err
-	}
-	if current.JSON200 == nil {
-		return errors.New("organization response was empty")
-	}
-	_, err = daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusNoContent}, func(api *apiclient.Client) (*generated.DeleteOrganizationResp, error) {
-		return api.DeleteOrganizationWithResponse(cmd.Context(), &generated.DeleteOrganizationRequestOptions{PathParams: &generated.DeleteOrganizationPath{ID: id}, Header: &generated.DeleteOrganizationHeaders{IfMatch: organizationETag(id, current.JSON200.Organization.Revision)}})
-	})
-	if err != nil {
-		return err
-	}
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Deleted organization %d\n", id)
-	return nil
-}}
-
-var organizationMergeCmd = &cobra.Command{Use: "merge <survivor-id> <losing-id>", Short: "Merge a losing organization into a survivor", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
-	survivor, err := positivePersonCLIArg(cmd, args[0], "organization")
-	if err != nil {
-		return err
-	}
-	losing, err := positivePersonCLIArg(cmd, args[1], "organization")
-	if err != nil {
-		return err
-	}
-	if survivor == losing {
-		return usageErr(cmd, errors.New("survivor and losing organization must differ"))
-	}
-	client, _, err := OpenHTTPStore(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	current, err := getCLIOrganization(cmd, client, survivor)
-	if err != nil {
-		return err
-	}
-	loser, err := getCLIOrganization(cmd, client, losing)
-	if err != nil {
-		return err
-	}
-	if current.JSON200 == nil || loser.JSON200 == nil {
-		return errors.New("organization response was empty")
-	}
-	body := generated.MergeOrganizationBody{LosingOrganizationID: losing, LosingRevision: loser.JSON200.Organization.Revision}
-	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.MergeOrganizationResp, error) {
-		return api.MergeOrganizationWithResponse(cmd.Context(), &generated.MergeOrganizationRequestOptions{PathParams: &generated.MergeOrganizationPath{ID: survivor}, Header: &generated.MergeOrganizationHeaders{IfMatch: organizationETag(survivor, current.JSON200.Organization.Revision)}, Body: &body})
-	})
-	if err != nil {
-		return err
-	}
-	return writeCLIOrganization(cmd, resp.JSON200)
-}}
-
-var organizationAttributeCmd = &cobra.Command{Use: "attribute", Short: "Inspect and set organization attributes"}
-var organizationAttributeListCmd = &cobra.Command{Use: "list <id>", Short: "List organization attribute values", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-	id, err := positivePersonCLIArg(cmd, args[0], "organization")
-	if err != nil {
-		return err
-	}
-	client, _, err := OpenHTTPStore(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	query := &generated.ListOrganizationAttributesQuery{}
-	if cmd.Flags().Changed("include-superseded") {
-		query.IncludeSuperseded = &organizationIncludeSuperseded
-	}
-	if cmd.Flags().Changed("definition") {
-		query.DefinitionSlug = &organizationDefinitionSlugValue
-	}
-	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ListOrganizationAttributesResp, error) {
-		return api.ListOrganizationAttributesWithResponse(cmd.Context(), &generated.ListOrganizationAttributesRequestOptions{PathParams: &generated.ListOrganizationAttributesPath{ID: id}, Query: query})
-	})
-	if err != nil {
-		return err
-	}
-	if resp.JSON200 == nil {
-		return errors.New("organization attributes response was empty")
-	}
-	if organizationJSON {
-		return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), resp.JSON200, json.Deterministic(true))
-	}
-	values := make([]generated.AttributeValue, 0, len(resp.JSON200.Values))
-	for _, value := range resp.JSON200.Values {
-		values = append(values, value.Value)
-	}
-	labels := resolveCLIEntityLabels(cmd.Context(), client, attributeRecordLabelRequest(values...))
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "SLUG\tORDINAL\tVALUE\tSOURCE\tACTIVE FROM\tACTIVE UNTIL")
-	for _, value := range resp.JSON200.Values {
-		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\n", value.DefinitionSlug, value.Ordinal, formatCLIAttributeValue(value.Value, labels), value.Source, value.ActiveFrom.Format("2006-01-02T15:04:05Z07:00"), formatCLIOptionalTime(value.ActiveUntil))
-	}
-	return w.Flush()
-}}
-var organizationAttributeSetCmd = &cobra.Command{Use: "set <id>", Short: "Set a text organization attribute", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-	id, err := positivePersonCLIArg(cmd, args[0], "organization")
-	if err != nil {
-		return err
-	}
-	if !cmd.Flags().Changed("definition") {
-		return usageErr(cmd, errors.New("--definition is required"))
-	}
-	if !cmd.Flags().Changed("text") {
-		return usageErr(cmd, errors.New("--text is required"))
-	}
-	source := strings.TrimSpace(organizationSource)
-	if source == "" {
-		source = "user"
-	}
-	typedSource := generated.SetOrganizationAttributeBodySource(source)
-	value := generated.AttributeValue{Type: "text", Text: &organizationTextValue}
-	body := generated.SetOrganizationAttributeBody{DefinitionSlug: organizationDefinitionSlugValue, Source: typedSource, Value: value}
-	if cmd.Flags().Changed("ordinal") {
-		if organizationAttributeOrdinal < 0 {
-			return usageErr(cmd, errors.New("--ordinal must be a non-negative integer"))
-		}
-		body.Ordinal = &organizationAttributeOrdinal
-	}
-	if cmd.Flags().Changed("expected-value-id") {
-		if organizationExpectedValueID <= 0 {
-			return usageErr(cmd, errors.New("--expected-value-id must be a positive integer"))
-		}
-		body.ExpectedValueID = &organizationExpectedValueID
-	}
-	if organizationDryRun {
-		body.DryRun = &organizationDryRun
-	}
-	client, _, err := OpenHTTPStore(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	resp, err := daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusOK, http.StatusCreated}, func(api *apiclient.Client) (*generated.SetOrganizationAttributeResp, error) {
-		return api.SetOrganizationAttributeWithResponse(cmd.Context(), &generated.SetOrganizationAttributeRequestOptions{PathParams: &generated.SetOrganizationAttributePath{ID: id}, Body: &body})
-	})
-	if err != nil {
-		return err
-	}
-	write := resp.JSON200
-	if write == nil {
-		write = resp.JSON201
-	}
-	if organizationJSON {
-		return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), write, json.Deterministic(true))
-	}
-	return writeCLIOrganizationAttribute(cmd, client, write)
-}}
-
-var organizationAttributeClearCmd = &cobra.Command{Use: "clear <id> <slug>", Short: "Supersede an organization attribute value", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
-	id, err := positivePersonCLIArg(cmd, args[0], "organization")
-	if err != nil {
-		return err
-	}
-	slug := strings.TrimSpace(args[1])
-	if slug == "" {
-		return usageErr(cmd, errors.New("attribute slug must not be empty"))
-	}
-	if cmd.Flags().Changed("expected-value-id") && organizationExpectedValueID <= 0 {
-		return usageErr(cmd, errors.New("--expected-value-id must be a positive integer"))
-	}
-	client, _, err := OpenHTTPStore(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	query := &generated.ClearOrganizationAttributeQuery{}
-	if cmd.Flags().Changed("ordinal") {
-		if organizationAttributeOrdinal < 0 {
-			return usageErr(cmd, errors.New("--ordinal must be a non-negative integer"))
-		}
-		query.Ordinal = &organizationAttributeOrdinal
-	}
-	if cmd.Flags().Changed("expected-value-id") {
-		query.ExpectedValueID = &organizationExpectedValueID
-	}
-	if organizationDryRun {
-		dryRun := true
-		query.DryRun = &dryRun
-	}
-	resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ClearOrganizationAttributeResp, error) {
-		return api.ClearOrganizationAttributeWithResponse(cmd.Context(), &generated.ClearOrganizationAttributeRequestOptions{
-			PathParams: &generated.ClearOrganizationAttributePath{ID: id, Slug: slug}, Query: query,
-		})
-	})
-	if err != nil {
-		return err
-	}
-	return writeCLIOrganizationAttribute(cmd, client, resp.JSON200)
-}}
-
 func getCLIOrganization(cmd *cobra.Command, client *daemonclient.Client, id int64) (*generated.GetOrganizationResp, error) {
 	return daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.GetOrganizationResp, error) {
 		return api.GetOrganizationWithResponse(cmd.Context(), &generated.GetOrganizationRequestOptions{PathParams: &generated.GetOrganizationPath{ID: id}})
@@ -440,6 +65,8 @@ func cliString(v *string) string {
 	return *v
 }
 func writeCLIOrganization(cmd *cobra.Command, org *generated.Organization) error {
+	organizationJSON, _ := cmd.Flags().GetBool(flagJSON)
+
 	if org == nil {
 		return errors.New("organization response was empty")
 	}
@@ -454,6 +81,8 @@ func writeCLIOrganization(cmd *cobra.Command, org *generated.Organization) error
 	return nil
 }
 func writeCLIOrganizationProfile(cmd *cobra.Command, profile *generated.OrganizationProfile) error {
+	organizationJSON, _ := cmd.Flags().GetBool(flagJSON)
+
 	if profile == nil {
 		return errors.New("organization response was empty")
 	}
@@ -468,6 +97,8 @@ func writeCLIOrganizationProfile(cmd *cobra.Command, profile *generated.Organiza
 }
 
 func writeCLIOrganizationHistory(cmd *cobra.Command, profile *generated.OrganizationProfile) error {
+	organizationJSON, _ := cmd.Flags().GetBool(flagJSON)
+
 	if err := writeCLIOrganizationProfile(cmd, profile); err != nil || organizationJSON {
 		return err
 	}
@@ -533,39 +164,440 @@ func writeCLIOrganizationAttribute(
 	return nil
 }
 
-func init() {
-	rootCmd.AddCommand(organizationCmd)
+func newOrganizationCommand() *cobra.Command {
+	var organizationCmd = &cobra.Command{Use: "organization", Aliases: []string{"org"}, Short: "Manage curated organizations and their employment records"}
+
+	var organizationListCmd = &cobra.Command{Use: cmdUseList, Short: "List curated organizations", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		organizationJSON, _ := cmd.Flags().GetBool(flagJSON)
+		organizationLimit, _ := cmd.Flags().GetInt64("limit")
+		organizationOffset, _ := cmd.Flags().GetInt64("offset")
+		organizationQuery, _ := cmd.Flags().GetString("query")
+		organizationIncludeRetired, _ := cmd.Flags().GetBool("include-retired")
+
+		client, _, err := OpenHTTPStore(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		query := &generated.ListOrganizationsQuery{}
+		if cmd.Flags().Changed("limit") {
+			query.Limit = &organizationLimit
+		}
+		if cmd.Flags().Changed("offset") {
+			query.Offset = &organizationOffset
+		}
+		if cmd.Flags().Changed("query") {
+			query.Q = &organizationQuery
+		}
+		if cmd.Flags().Changed("include-retired") {
+			query.IncludeRetired = &organizationIncludeRetired
+		}
+		resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ListOrganizationsResp, error) {
+			return api.ListOrganizationsWithResponse(cmd.Context(), &generated.ListOrganizationsRequestOptions{Query: query})
+		})
+		if err != nil {
+			return err
+		}
+		if resp.JSON200 == nil {
+			return errors.New("organization list response was empty")
+		}
+		if organizationJSON {
+			return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), resp.JSON200, json.Deterministic(true))
+		}
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		_, _ = fmt.Fprintln(w, "ID\tNAME\tKIND\tDOMAIN\tSTATUS\tREVISION")
+		for _, org := range resp.JSON200.Organizations {
+			status := "active"
+			if org.RetiredAt != nil {
+				status = "retired"
+			}
+			_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%d\n", org.ID, org.Name, org.Kind, cliString(org.PrimaryDomain), status, org.Revision)
+		}
+		return w.Flush()
+	}}
+
+	var organizationCreateCmd = &cobra.Command{Use: "create <name>", Short: "Create a curated organization", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		organizationKind, _ := cmd.Flags().GetString("kind")
+		organizationDomain, _ := cmd.Flags().GetString("domain")
+		organizationDescription, _ := cmd.Flags().GetString("description")
+
+		name := strings.TrimSpace(args[0])
+		if name == "" {
+			return usageErr(cmd, errors.New("name must not be empty"))
+		}
+		client, _, err := OpenHTTPStore(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		body := generated.CreateOrganizationBody{Name: name}
+		if cmd.Flags().Changed("kind") {
+			kind := generated.OrganizationCreateBodyKind(organizationKind)
+			body.Kind = &kind
+		}
+		if cmd.Flags().Changed("domain") {
+			body.PrimaryDomain = &organizationDomain
+		}
+		if cmd.Flags().Changed("description") {
+			body.Description = &organizationDescription
+		}
+		resp, err := daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusCreated}, func(api *apiclient.Client) (*generated.CreateOrganizationResp, error) {
+			return api.CreateOrganizationWithResponse(cmd.Context(), &generated.CreateOrganizationRequestOptions{Body: &body})
+		})
+		if err != nil {
+			return err
+		}
+		return writeCLIOrganization(cmd, resp.JSON201)
+	}}
+
+	var organizationShowCmd = &cobra.Command{Use: "show <id>", Short: "Show an organization", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		organizationShowHistory, _ := cmd.Flags().GetBool("history")
+
+		id, err := positivePersonCLIArg(cmd, args[0], "organization")
+		if err != nil {
+			return err
+		}
+		client, _, err := OpenHTTPStore(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		if organizationShowHistory {
+			resp, getErr := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.GetOrganizationHistoryResp, error) {
+				return api.GetOrganizationHistoryWithResponse(cmd.Context(), &generated.GetOrganizationHistoryRequestOptions{PathParams: &generated.GetOrganizationHistoryPath{ID: id}})
+			})
+			if getErr != nil {
+				return getErr
+			}
+			if resp.JSON200 == nil {
+				return errors.New("organization history response was empty")
+			}
+			return writeCLIOrganizationHistory(cmd, resp.JSON200)
+		}
+		resp, err := getCLIOrganization(cmd, client, id)
+		if err != nil {
+			return err
+		}
+		if resp.JSON200 == nil {
+			return errors.New("organization response was empty")
+		}
+		return writeCLIOrganizationProfile(cmd, resp.JSON200)
+	}}
+
+	var organizationSetCmd = &cobra.Command{Use: "set <id>", Short: "Replace an organization's mutable fields", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		organizationKind, _ := cmd.Flags().GetString("kind")
+		organizationDomain, _ := cmd.Flags().GetString("domain")
+		organizationDescription, _ := cmd.Flags().GetString("description")
+		organizationName, _ := cmd.Flags().GetString("name")
+
+		if !cmd.Flags().Changed("name") {
+			return usageErr(cmd, errors.New("--name is required"))
+		}
+		id, err := positivePersonCLIArg(cmd, args[0], "organization")
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(organizationName) == "" {
+			return usageErr(cmd, errors.New("name must not be empty"))
+		}
+		client, _, err := OpenHTTPStore(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		current, err := getCLIOrganization(cmd, client, id)
+		if err != nil {
+			return err
+		}
+		if current.JSON200 == nil {
+			return errors.New("organization response was empty")
+		}
+		body := generated.PatchOrganizationBody{Name: organizationName}
+		if cmd.Flags().Changed("kind") {
+			kind := generated.OrganizationBodyKind(organizationKind)
+			body.Kind = &kind
+		} else {
+			kind := generated.OrganizationBodyKind(current.JSON200.Organization.Kind)
+			body.Kind = &kind
+		}
+		if cmd.Flags().Changed("domain") {
+			body.PrimaryDomain = &organizationDomain
+		} else {
+			body.PrimaryDomain = current.JSON200.Organization.PrimaryDomain
+		}
+		if cmd.Flags().Changed("description") {
+			body.Description = &organizationDescription
+		} else {
+			body.Description = current.JSON200.Organization.Description
+		}
+		retired := current.JSON200.Organization.RetiredAt != nil
+		body.Retired = &retired
+		resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.PatchOrganizationResp, error) {
+			return api.PatchOrganizationWithResponse(cmd.Context(), &generated.PatchOrganizationRequestOptions{PathParams: &generated.PatchOrganizationPath{ID: id}, Header: &generated.PatchOrganizationHeaders{IfMatch: organizationETag(id, current.JSON200.Organization.Revision)}, Body: &body})
+		})
+		if err != nil {
+			return err
+		}
+		return writeCLIOrganization(cmd, resp.JSON200)
+	}}
+
+	var organizationRetireCmd = &cobra.Command{Use: "retire <id>", Short: "Retire an organization", Args: cobra.ExactArgs(1), RunE: runOrganizationRetired(true)}
+
+	var organizationUnretireCmd = &cobra.Command{Use: "unretire <id>", Short: "Unretire an organization", Args: cobra.ExactArgs(1), RunE: runOrganizationRetired(false)}
+
+	var organizationDeleteCmd = &cobra.Command{Use: "delete <id>", Short: "Permanently delete an organization", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := positivePersonCLIArg(cmd, args[0], "organization")
+		if err != nil {
+			return err
+		}
+		client, _, err := OpenHTTPStore(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		current, err := getCLIOrganization(cmd, client, id)
+		if err != nil {
+			return err
+		}
+		if current.JSON200 == nil {
+			return errors.New("organization response was empty")
+		}
+		_, err = daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusNoContent}, func(api *apiclient.Client) (*generated.DeleteOrganizationResp, error) {
+			return api.DeleteOrganizationWithResponse(cmd.Context(), &generated.DeleteOrganizationRequestOptions{PathParams: &generated.DeleteOrganizationPath{ID: id}, Header: &generated.DeleteOrganizationHeaders{IfMatch: organizationETag(id, current.JSON200.Organization.Revision)}})
+		})
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Deleted organization %d\n", id)
+		return nil
+	}}
+
+	var organizationMergeCmd = &cobra.Command{Use: "merge <survivor-id> <losing-id>", Short: "Merge a losing organization into a survivor", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		survivor, err := positivePersonCLIArg(cmd, args[0], "organization")
+		if err != nil {
+			return err
+		}
+		losing, err := positivePersonCLIArg(cmd, args[1], "organization")
+		if err != nil {
+			return err
+		}
+		if survivor == losing {
+			return usageErr(cmd, errors.New("survivor and losing organization must differ"))
+		}
+		client, _, err := OpenHTTPStore(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		current, err := getCLIOrganization(cmd, client, survivor)
+		if err != nil {
+			return err
+		}
+		loser, err := getCLIOrganization(cmd, client, losing)
+		if err != nil {
+			return err
+		}
+		if current.JSON200 == nil || loser.JSON200 == nil {
+			return errors.New("organization response was empty")
+		}
+		body := generated.MergeOrganizationBody{LosingOrganizationID: losing, LosingRevision: loser.JSON200.Organization.Revision}
+		resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.MergeOrganizationResp, error) {
+			return api.MergeOrganizationWithResponse(cmd.Context(), &generated.MergeOrganizationRequestOptions{PathParams: &generated.MergeOrganizationPath{ID: survivor}, Header: &generated.MergeOrganizationHeaders{IfMatch: organizationETag(survivor, current.JSON200.Organization.Revision)}, Body: &body})
+		})
+		if err != nil {
+			return err
+		}
+		return writeCLIOrganization(cmd, resp.JSON200)
+	}}
+
+	var organizationAttributeCmd = &cobra.Command{Use: "attribute", Short: "Inspect and set organization attributes"}
+
+	var organizationAttributeListCmd = &cobra.Command{Use: "list <id>", Short: "List organization attribute values", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		organizationJSON, _ := cmd.Flags().GetBool(flagJSON)
+		organizationIncludeSuperseded, _ := cmd.Flags().GetBool("include-superseded")
+		organizationDefinitionSlugValue, _ := cmd.Flags().GetString("definition")
+
+		id, err := positivePersonCLIArg(cmd, args[0], "organization")
+		if err != nil {
+			return err
+		}
+		client, _, err := OpenHTTPStore(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		query := &generated.ListOrganizationAttributesQuery{}
+		if cmd.Flags().Changed("include-superseded") {
+			query.IncludeSuperseded = &organizationIncludeSuperseded
+		}
+		if cmd.Flags().Changed("definition") {
+			query.DefinitionSlug = &organizationDefinitionSlugValue
+		}
+		resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ListOrganizationAttributesResp, error) {
+			return api.ListOrganizationAttributesWithResponse(cmd.Context(), &generated.ListOrganizationAttributesRequestOptions{PathParams: &generated.ListOrganizationAttributesPath{ID: id}, Query: query})
+		})
+		if err != nil {
+			return err
+		}
+		if resp.JSON200 == nil {
+			return errors.New("organization attributes response was empty")
+		}
+		if organizationJSON {
+			return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), resp.JSON200, json.Deterministic(true))
+		}
+		values := make([]generated.AttributeValue, 0, len(resp.JSON200.Values))
+		for _, value := range resp.JSON200.Values {
+			values = append(values, value.Value)
+		}
+		labels := resolveCLIEntityLabels(cmd.Context(), client, attributeRecordLabelRequest(values...))
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		_, _ = fmt.Fprintln(w, "SLUG\tORDINAL\tVALUE\tSOURCE\tACTIVE FROM\tACTIVE UNTIL")
+		for _, value := range resp.JSON200.Values {
+			_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\n", value.DefinitionSlug, value.Ordinal, formatCLIAttributeValue(value.Value, labels), value.Source, value.ActiveFrom.Format("2006-01-02T15:04:05Z07:00"), formatCLIOptionalTime(value.ActiveUntil))
+		}
+		return w.Flush()
+	}}
+
+	var organizationAttributeSetCmd = &cobra.Command{Use: "set <id>", Short: "Set a text organization attribute", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		organizationJSON, _ := cmd.Flags().GetBool(flagJSON)
+		organizationDefinitionSlugValue, _ := cmd.Flags().GetString("definition")
+		organizationTextValue, _ := cmd.Flags().GetString("text")
+		organizationSource, _ := cmd.Flags().GetString("source")
+		organizationExpectedValueID, _ := cmd.Flags().GetInt64("expected-value-id")
+		organizationDryRun, _ := cmd.Flags().GetBool("dry-run")
+		organizationAttributeOrdinal, _ := cmd.Flags().GetInt64("ordinal")
+
+		id, err := positivePersonCLIArg(cmd, args[0], "organization")
+		if err != nil {
+			return err
+		}
+		if !cmd.Flags().Changed("definition") {
+			return usageErr(cmd, errors.New("--definition is required"))
+		}
+		if !cmd.Flags().Changed("text") {
+			return usageErr(cmd, errors.New("--text is required"))
+		}
+		source := strings.TrimSpace(organizationSource)
+		if source == "" {
+			source = "user"
+		}
+		typedSource := generated.SetOrganizationAttributeBodySource(source)
+		value := generated.AttributeValue{Type: "text", Text: &organizationTextValue}
+		body := generated.SetOrganizationAttributeBody{DefinitionSlug: organizationDefinitionSlugValue, Source: typedSource, Value: value}
+		if cmd.Flags().Changed("ordinal") {
+			if organizationAttributeOrdinal < 0 {
+				return usageErr(cmd, errors.New("--ordinal must be a non-negative integer"))
+			}
+			body.Ordinal = &organizationAttributeOrdinal
+		}
+		if cmd.Flags().Changed("expected-value-id") {
+			if organizationExpectedValueID <= 0 {
+				return usageErr(cmd, errors.New("--expected-value-id must be a positive integer"))
+			}
+			body.ExpectedValueID = &organizationExpectedValueID
+		}
+		if organizationDryRun {
+			body.DryRun = &organizationDryRun
+		}
+		client, _, err := OpenHTTPStore(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		resp, err := daemonclient.APIResponseWithStatuses(cmd.Context(), client, []int{http.StatusOK, http.StatusCreated}, func(api *apiclient.Client) (*generated.SetOrganizationAttributeResp, error) {
+			return api.SetOrganizationAttributeWithResponse(cmd.Context(), &generated.SetOrganizationAttributeRequestOptions{PathParams: &generated.SetOrganizationAttributePath{ID: id}, Body: &body})
+		})
+		if err != nil {
+			return err
+		}
+		write := resp.JSON200
+		if write == nil {
+			write = resp.JSON201
+		}
+		if organizationJSON {
+			return json.MarshalEncode(jsontext.NewEncoder(cmd.OutOrStdout()), write, json.Deterministic(true))
+		}
+		return writeCLIOrganizationAttribute(cmd, client, write)
+	}}
+
+	var organizationAttributeClearCmd = &cobra.Command{Use: "clear <id> <slug>", Short: "Supersede an organization attribute value", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		organizationExpectedValueID, _ := cmd.Flags().GetInt64("expected-value-id")
+		organizationDryRun, _ := cmd.Flags().GetBool("dry-run")
+		organizationAttributeOrdinal, _ := cmd.Flags().GetInt64("ordinal")
+
+		id, err := positivePersonCLIArg(cmd, args[0], "organization")
+		if err != nil {
+			return err
+		}
+		slug := strings.TrimSpace(args[1])
+		if slug == "" {
+			return usageErr(cmd, errors.New("attribute slug must not be empty"))
+		}
+		if cmd.Flags().Changed("expected-value-id") && organizationExpectedValueID <= 0 {
+			return usageErr(cmd, errors.New("--expected-value-id must be a positive integer"))
+		}
+		client, _, err := OpenHTTPStore(cmd.Context())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = client.Close() }()
+		query := &generated.ClearOrganizationAttributeQuery{}
+		if cmd.Flags().Changed("ordinal") {
+			if organizationAttributeOrdinal < 0 {
+				return usageErr(cmd, errors.New("--ordinal must be a non-negative integer"))
+			}
+			query.Ordinal = &organizationAttributeOrdinal
+		}
+		if cmd.Flags().Changed("expected-value-id") {
+			query.ExpectedValueID = &organizationExpectedValueID
+		}
+		if organizationDryRun {
+			dryRun := true
+			query.DryRun = &dryRun
+		}
+		resp, err := daemonclient.APIResponse(cmd.Context(), client, func(api *apiclient.Client) (*generated.ClearOrganizationAttributeResp, error) {
+			return api.ClearOrganizationAttributeWithResponse(cmd.Context(), &generated.ClearOrganizationAttributeRequestOptions{
+				PathParams: &generated.ClearOrganizationAttributePath{ID: id, Slug: slug}, Query: query,
+			})
+		})
+		if err != nil {
+			return err
+		}
+		return writeCLIOrganizationAttribute(cmd, client, resp.JSON200)
+	}}
+
 	organizationCmd.AddCommand(organizationListCmd, organizationCreateCmd, organizationShowCmd, organizationSetCmd, organizationRetireCmd, organizationUnretireCmd, organizationDeleteCmd, organizationMergeCmd, organizationAttributeCmd)
 	organizationAttributeCmd.AddCommand(organizationAttributeListCmd, organizationAttributeSetCmd, organizationAttributeClearCmd)
 	for _, command := range []*cobra.Command{organizationListCmd, organizationCreateCmd, organizationShowCmd, organizationSetCmd, organizationRetireCmd, organizationUnretireCmd, organizationMergeCmd, organizationAttributeListCmd, organizationAttributeSetCmd, organizationAttributeClearCmd} {
-		command.Flags().BoolVar(&organizationJSON, flagJSON, false, "Output as JSON")
+		command.Flags().Bool(flagJSON, false, "Output as JSON")
 	}
-	organizationListCmd.Flags().Int64Var(&organizationLimit, "limit", 0, "Maximum results")
-	organizationListCmd.Flags().Int64Var(&organizationOffset, "offset", 0, "Results to skip")
-	organizationListCmd.Flags().StringVar(&organizationQuery, "query", "", "Normalized-name search")
-	organizationListCmd.Flags().BoolVar(&organizationIncludeRetired, "include-retired", false, "Include retired organizations")
+	organizationListCmd.Flags().Int64("limit", 0, "Maximum results")
+	organizationListCmd.Flags().Int64("offset", 0, "Results to skip")
+	organizationListCmd.Flags().String("query", "", "Normalized-name search")
+	organizationListCmd.Flags().Bool("include-retired", false, "Include retired organizations")
 	for _, command := range []*cobra.Command{organizationCreateCmd, organizationSetCmd} {
-		command.Flags().StringVar(&organizationKind, "kind", "", "Organization kind")
-		command.Flags().StringVar(&organizationDomain, "domain", "", "Primary domain")
-		command.Flags().StringVar(&organizationDescription, "description", "", "Description")
+		command.Flags().String("kind", "", "Organization kind")
+		command.Flags().String("domain", "", "Primary domain")
+		command.Flags().String("description", "", "Description")
 	}
-	organizationSetCmd.Flags().StringVar(&organizationName, "name", "", "Organization name")
-	organizationShowCmd.Flags().BoolVar(&organizationShowHistory, "history", false, "Include superseded profile rows")
-	organizationAttributeListCmd.Flags().BoolVar(&organizationIncludeSuperseded, "include-superseded", false, "Include superseded values")
-	organizationAttributeListCmd.Flags().StringVar(&organizationDefinitionSlugValue, "definition", "", "Restrict to definition slug")
-	organizationAttributeSetCmd.Flags().StringVar(&organizationDefinitionSlugValue, "definition", "", "Definition slug")
-	organizationAttributeSetCmd.Flags().StringVar(&organizationTextValue, "text", "", "Text value")
-	organizationAttributeSetCmd.Flags().StringVar(&organizationSource, "source", "", "Value source")
-	organizationAttributeSetCmd.Flags().Int64Var(
-		&organizationExpectedValueID, "expected-value-id", 0,
+	organizationSetCmd.Flags().String("name", "", "Organization name")
+	organizationShowCmd.Flags().Bool("history", false, "Include superseded profile rows")
+	organizationAttributeListCmd.Flags().Bool("include-superseded", false, "Include superseded values")
+	organizationAttributeListCmd.Flags().String("definition", "", "Restrict to definition slug")
+	organizationAttributeSetCmd.Flags().String("definition", "", "Definition slug")
+	organizationAttributeSetCmd.Flags().String("text", "", "Text value")
+	organizationAttributeSetCmd.Flags().String("source", "", "Value source")
+	organizationAttributeSetCmd.Flags().Int64("expected-value-id", 0,
 		"Expected current value ID for compare-and-swap")
-	organizationAttributeSetCmd.Flags().BoolVar(&organizationDryRun, "dry-run", false, "Validate without writing")
-	organizationAttributeSetCmd.Flags().Int64Var(
-		&organizationAttributeOrdinal, "ordinal", 0,
+	organizationAttributeSetCmd.Flags().Bool("dry-run", false, "Validate without writing")
+	organizationAttributeSetCmd.Flags().Int64("ordinal", 0,
 		"Ordinal for a multi-valued definition")
-	organizationAttributeClearCmd.Flags().Int64Var(&organizationAttributeOrdinal, "ordinal", 0, "Ordinal for a multi-valued definition")
-	organizationAttributeClearCmd.Flags().Int64Var(
-		&organizationExpectedValueID, "expected-value-id", 0,
+	organizationAttributeClearCmd.Flags().Int64("ordinal", 0, "Ordinal for a multi-valued definition")
+	organizationAttributeClearCmd.Flags().Int64("expected-value-id", 0,
 		"Expected current value ID for compare-and-swap")
-	organizationAttributeClearCmd.Flags().BoolVar(&organizationDryRun, "dry-run", false, "Validate without writing")
+	organizationAttributeClearCmd.Flags().Bool("dry-run", false, "Validate without writing")
+
+	return organizationCmd
 }
+
+func init() { registerCommandFactory(newOrganizationCommand) }

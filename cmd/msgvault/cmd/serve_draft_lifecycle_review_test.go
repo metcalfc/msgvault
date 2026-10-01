@@ -91,7 +91,6 @@ func TestDraftLifecycleCancelledAfterClaimBeforeAppend(t *testing.T) {
 }
 
 func TestDraftLifecycleRejectedClaimPersistenceEvidence(t *testing.T) {
-
 	for _, fault := range []string{"record", "clear"} {
 		t.Run(fault, func(t *testing.T) {
 			requirements := require.New(t)
@@ -315,7 +314,6 @@ func TestEmitDraftLifecycleOutputJSONRoundTrip(t *testing.T) {
 }
 
 func TestDraftLifecycleAcceptedReadFailureEvidence(t *testing.T) {
-
 	for _, fault := range []string{"message", "reply_link"} {
 		for _, asJSON := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/json=%t", fault, asJSON), func(t *testing.T) {
@@ -448,7 +446,6 @@ func TestDraftLifecyclePublicationFailure(t *testing.T) {
 }
 
 func TestDraftLifecycleHumanAcknowledgedReceiptWhenRecordFails(t *testing.T) {
-
 	requirements := require.New(t)
 	assertions := assert.New(t)
 	fixture := newDraftReplyFixture(t)
@@ -859,7 +856,6 @@ func TestDraftLifecycleCleanupOutcomeEvidence(t *testing.T) {
 }
 
 func TestDraftLifecycleCleanup(t *testing.T) {
-
 	for _, operation := range []string{api.CLIRunDraftEditCommand, api.CLIRunDraftDeleteCommand} {
 		t.Run(operation, func(t *testing.T) {
 			requirements := require.New(t)
@@ -947,7 +943,6 @@ func TestDraftLifecycleCleanup(t *testing.T) {
 }
 
 func TestDraftLifecycleRemovedOutcomePersistenceFailure(t *testing.T) {
-
 	for _, operation := range []string{api.CLIRunDraftEditCommand, api.CLIRunDraftDeleteCommand} {
 		t.Run(operation, func(t *testing.T) {
 			requirements := require.New(t)

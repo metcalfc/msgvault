@@ -692,7 +692,6 @@ func TestImporterCancellationStopsBeforeSourceSetup(t *testing.T) {
 }
 
 func TestImporterCancellationDuringParticipantResolutionRollsBackParticipants(t *testing.T) {
-
 	assert := assert.New(t)
 	require := require.New(t)
 	st := testutil.NewTestStore(t)

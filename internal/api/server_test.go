@@ -519,7 +519,7 @@ func (m *mockStore) GetMessagesSummariesByIDs(ids []int64) ([]APIMessage, error)
 	return out, nil
 }
 
-// The Context variants make mockStore satisfy CtxMessageStore, so handler
+// The Context variants make mockStore satisfy MessageStore, so handler
 // tests exercise the same context-aware read path used in production.
 func (m *mockStore) GetStatsContext(ctx context.Context) (*StoreStats, error) {
 	if m.getStatsContextFunc != nil {

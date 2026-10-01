@@ -21,8 +21,7 @@ func (s *Store) DerivedDataRevisionContext(ctx context.Context) (int64, error) {
 }
 
 func (s *Store) bumpDerivedDataRevision(tx *loggedTx, relatedOnly ...bool) error {
-	if _, err := tx.Exec(s.dialect.InsertOrIgnore(
-		`INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '0')`),
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '0')`,
 		derivedDataRevisionKey); err != nil {
 		return fmt.Errorf("seed derived-data revision: %w", err)
 	}

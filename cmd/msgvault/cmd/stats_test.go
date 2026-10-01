@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +10,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/kit/daemon"
@@ -24,22 +22,15 @@ import (
 // TestStatsCommand_AccountAndCollectionMutuallyExclusive confirms that passing
 // both --account and --collection to the stats command is rejected by cobra.
 func TestStatsCommand_AccountAndCollectionMutuallyExclusive(t *testing.T) {
-	var a, b string
-	cmd := &cobra.Command{Use: "stats-test", SilenceErrors: true}
-	sub := &cobra.Command{Use: "stats", RunE: func(cmd *cobra.Command, args []string) error { return nil }}
-	sub.Flags().StringVar(&a, "account", "", "")
-	sub.Flags().StringVar(&b, "collection", "", "")
-	sub.MarkFlagsMutuallyExclusive("account", "collection")
-	cmd.AddCommand(sub)
-	cmd.SetArgs([]string{"stats", "--account", "foo@example.com", "--collection", "bar"})
+	cmd := newStatsCommand()
+	cmd.SilenceErrors = true
+	cmd.SetArgs([]string{"--account", "foo@example.com", "--collection", "bar"})
 
 	err := cmd.Execute()
 	require.Error(t, err, "expected error when both --account and --collection are set")
 	msg := err.Error()
 	assert.Contains(t, msg, "account", "error should mention account flag name")
 	assert.Contains(t, msg, "collection", "error should mention collection flag name")
-	_ = a
-	_ = b
 }
 
 // TestStatsCommand_EmptyCollectionRejected verifies that
@@ -50,66 +41,34 @@ func TestStatsCommand_AccountAndCollectionMutuallyExclusive(t *testing.T) {
 // SourceIDs() returned an empty slice, and GetStatsForScope treats
 // an empty slice as unscoped/global.
 func TestStatsCommand_EmptyCollectionRejected(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-	useLocal := false
-
-	require := require.New(t)
 	dataDir := t.TempDir()
 	st := testutil.NewTestStore(t)
 	src, err := st.GetOrCreateSource("gmail", "alice@example.com")
-	require.NoError(err, "create source")
+	require.NoError(t, err, "create source")
 	_, err = st.CreateCollection("empty", "test", []int64{src.ID})
-	require.NoError(err, "create collection")
-	require.NoError(st.RemoveSourcesFromCollection("empty", []int64{src.ID}), "remove source from collection")
+	require.NoError(t, err, "create collection")
+	require.NoError(t, st.RemoveSourcesFromCollection("empty", []int64{src.ID}), "remove source from collection")
 	startStoreAPIDaemon(t, dataDir, st, nil)
 
-	savedCfg := cfg
-	savedLogger := logger
-	savedUseLocal := useLocal
-	savedStatsAccount := statsAccount
-	savedStatsCollection := statsCollection
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-		useLocal = savedUseLocal
-		statsAccount = savedStatsAccount
-		statsCollection = savedStatsCollection
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
-	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
-	useLocal = true
-	invocationFromContext(testCtx).options.useLocal = true
-	statsCollection = "empty"
+	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{useLocal: true})
 
-	testCmd := &cobra.Command{Use: "stats", RunE: statsCmd.RunE}
-	testCmd.Flags().StringVar(&statsAccount, "account", "", "")
-	testCmd.Flags().StringVar(&statsCollection, "collection", "empty", "")
-
+	testCmd := newStatsCommand()
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
 	root.AddCommand(testCmd)
 	root.SetArgs([]string{"stats", "--collection", "empty"})
 
 	err = root.Execute()
-	require.Error(err, "expected error for empty collection")
+	require.Error(t, err, "expected error for empty collection")
 	assert.Contains(t, err.Error(), "no member accounts")
 }
 
 func TestStatsCommand_ScopedUsesLocalDaemonHTTPAndPreservesLocalOutput(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-	useLocal := false
-
-	require := require.New(t)
-	assertions := assert.New(t)
 	dataDir := t.TempDir()
 	testCfg := &config.Config{
 		HomeDir: dataDir,
@@ -118,39 +77,22 @@ func TestStatsCommand_ScopedUsesLocalDaemonHTTPAndPreservesLocalOutput(t *testin
 	server, statsRequests := statsHTTPDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedLogger := logger
-	savedUseLocal := useLocal
-	savedStatsAccount := statsAccount
-	savedStatsCollection := statsCollection
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-		useLocal = savedUseLocal
-		statsAccount = savedStatsAccount
-		statsCollection = savedStatsCollection
-	}()
-
-	cfg = testCfg
-	logger = slog.New(slog.DiscardHandler)
-	useLocal = true
 	testCtx := testInvocationContext(t.Context(), testCfg, invocationOptions{useLocal: true})
-	statsAccount = ""
-	statsCollection = "Important"
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{Use: "stats", RunE: runStats}
+	cmd := newStatsCommand()
+	cmd.SetArgs([]string{"--collection", "Important"})
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
 
 	err := cmd.Execute()
-	require.NoError(err, "stats command")
+	require.NoError(t, err, "stats command")
 
 	assert.Equal(t, int32(1), statsRequests.Load(), "exactly one CLI stats request")
-	assertions.Empty(stderr.String(), "stderr")
-	assertions.Equal(`Stats for collection "Important" (2 accounts):
+	assert.Empty(t, stderr.String(), "stderr")
+	assert.Equal(t, `Stats for collection "Important" (2 accounts):
   Messages:    8
   Threads:     6
   Attachments: 3
@@ -163,12 +105,6 @@ Note: Size is global (not scoped).
 }
 
 func TestStatsCommand_UnscopedUsesLocalDaemonHTTPAndPreservesLocalOutput(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-	useLocal := false
-
-	require := require.New(t)
-	assertions := assert.New(t)
 	dataDir := t.TempDir()
 	testCfg := &config.Config{
 		HomeDir: dataDir,
@@ -177,39 +113,22 @@ func TestStatsCommand_UnscopedUsesLocalDaemonHTTPAndPreservesLocalOutput(t *test
 	server, statsRequests := statsHTTPDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedLogger := logger
-	savedUseLocal := useLocal
-	savedStatsAccount := statsAccount
-	savedStatsCollection := statsCollection
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-		useLocal = savedUseLocal
-		statsAccount = savedStatsAccount
-		statsCollection = savedStatsCollection
-	}()
-
-	cfg = testCfg
-	logger = slog.New(slog.DiscardHandler)
-	useLocal = true
 	testCtx := testInvocationContext(t.Context(), testCfg, invocationOptions{useLocal: true})
-	statsAccount = ""
-	statsCollection = ""
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{Use: "stats", RunE: runStats}
+	cmd := newStatsCommand()
+	cmd.SetArgs([]string{})
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
 
 	err := cmd.Execute()
-	require.NoError(err, "stats command")
+	require.NoError(t, err, "stats command")
 
 	assert.Equal(t, int32(1), statsRequests.Load(), "exactly one CLI stats request")
-	assertions.Empty(stderr.String(), "stderr")
-	assertions.Equal("Database: "+testCfg.DatabaseDSN()+`
+	assert.Empty(t, stderr.String(), "stderr")
+	assert.Equal(t, "Database: "+testCfg.DatabaseDSN()+`
   Messages:    3
   Threads:     2
   Attachments: 5
@@ -309,7 +228,6 @@ func writeStatsHTTPDaemonRuntime(t *testing.T, dataDir string, server *httptest.
 // output uses the same thousands-grouping so Messages/Threads/Attachments/
 // Labels/Accounts are formatted consistently.
 func TestPrintStats_ThousandsGroupingUniform(t *testing.T) {
-	assert := assert.New(t)
 	var out bytes.Buffer
 	printStats(&out, &store.Stats{
 		MessageCount:    2470176,
@@ -320,11 +238,11 @@ func TestPrintStats_ThousandsGroupingUniform(t *testing.T) {
 		DatabaseSize:    1024 * 1024,
 	})
 	got := out.String()
-	assert.Contains(got, "Messages:    2,470,176", "messages grouped")
-	assert.Contains(got, "Threads:     561,070", "threads grouped")
-	assert.Contains(got, "Attachments: 202,662", "attachments grouped")
-	assert.Contains(got, "Labels:      1,183", "labels grouped")
-	assert.Contains(got, "Accounts:    12,345", "accounts grouped")
-	assert.NotContains(got, "561070", "no bare thread count")
-	assert.NotContains(got, "202662", "no bare attachment count")
+	assert.Contains(t, got, "Messages:    2,470,176", "messages grouped")
+	assert.Contains(t, got, "Threads:     561,070", "threads grouped")
+	assert.Contains(t, got, "Attachments: 202,662", "attachments grouped")
+	assert.Contains(t, got, "Labels:      1,183", "labels grouped")
+	assert.Contains(t, got, "Accounts:    12,345", "accounts grouped")
+	assert.NotContains(t, got, "561070", "no bare thread count")
+	assert.NotContains(t, got, "202662", "no bare attachment count")
 }

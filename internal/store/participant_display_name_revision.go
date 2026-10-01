@@ -19,7 +19,6 @@ func (s *Store) lockParticipantDirectoryMutationTxContext(
 	{
 		return nil
 	}
-
 }
 
 // ParticipantDisplayNameRepair is one validated display-name replacement used
@@ -72,8 +71,7 @@ func (s *Store) bumpParticipantDisplayNameRevisionContext(
 	ctx context.Context,
 	tx *loggedTx,
 ) error {
-	if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(
-		`INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '0')`),
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '0')`,
 		participantDisplayNameRevisionKey); err != nil {
 		return fmt.Errorf("seed participant display-name revision: %w", err)
 	}

@@ -30,11 +30,11 @@ func (s *Store) StartPersonSweepRun(
 	if err := validatePersonSweepStartRun(input); err != nil {
 		return peoplesweep.Run{}, err
 	}
-	_, err := s.db.ExecContext(ctx, s.Rebind(`
+	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO person_sweep_runs
 			(id, kind, mode, status, program_fingerprint, catalog_fingerprint,
 			 provider_fingerprint, started_at)
-		VALUES (?, ?, ?, 'running', ?, ?, ?, ?)`), input.ID, input.Kind, input.Mode,
+		VALUES (?, ?, ?, 'running', ?, ?, ?, ?)`, input.ID, input.Kind, input.Mode,
 		input.ProgramFingerprint, input.CatalogFingerprint, input.ProviderFingerprint,
 		s.dialect.TimestampParam(input.StartedAt))
 	if err != nil {
@@ -341,7 +341,6 @@ func (s *Store) lockPersonSweepBudgetRun(ctx context.Context, tx *loggedTx, runI
 		_, err := tx.ExecContext(ctx, `UPDATE person_sweep_runs SET id = id WHERE id = ?`, runID)
 		return err
 	}
-
 }
 
 func (s *Store) requirePersonSweepBudgetRunRunning(

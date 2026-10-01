@@ -593,7 +593,7 @@ func (s *Server) handleCLIStats(w http.ResponseWriter, r *http.Request) {
 	account := r.URL.Query().Get("account")
 	collection := r.URL.Query().Get("collection")
 	if account == "" && collection == "" {
-		stats, err := s.getStats(r.Context())
+		stats, err := s.store.GetStatsContext(r.Context())
 		if err != nil {
 			if s.writeIfContextError(w, err) {
 				return
@@ -682,7 +682,7 @@ func (s *Server) handleCLIInitDB(w http.ResponseWriter, r *http.Request) {
 			"sources", migration.SourceCount)
 	}
 
-	stats, err := s.getStats(r.Context())
+	stats, err := s.store.GetStatsContext(r.Context())
 	if err != nil {
 		if s.writeIfContextError(w, err) {
 			return

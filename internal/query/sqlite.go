@@ -90,14 +90,14 @@ func (e *SQLiteEngine) Close() error {
 	return nil
 }
 
-// queryContext runs QueryContext with dialect-aware placeholder rebinding.
+// queryContext runs a query using SQLite placeholders.
 func (e *SQLiteEngine) queryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	return e.db.QueryContext(ctx, e.dialect.Rebind(query), args...)
+	return e.db.QueryContext(ctx, query, args...)
 }
 
-// queryRowContext runs QueryRowContext with dialect-aware placeholder rebinding.
+// queryRowContext runs a single-row query using SQLite placeholders.
 func (e *SQLiteEngine) queryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	return e.db.QueryRowContext(ctx, e.dialect.Rebind(query), args...)
+	return e.db.QueryRowContext(ctx, query, args...)
 }
 
 // escapeSQLiteLike escapes LIKE wildcard characters (%, _, \) with \.
@@ -1045,7 +1045,7 @@ func (e *SQLiteEngine) ListMessages(ctx context.Context, filter MessageFilter) (
 
 	// Fetch labels for each message (batch would be more efficient but this is simpler)
 	if len(results) > 0 {
-		if err := fetchParticipantsForMessageList(ctx, e.db, e.dialect.Rebind, "", results); err != nil {
+		if err := fetchParticipantsForMessageList(ctx, e.db, noopRebind, "", results); err != nil {
 			return nil, fmt.Errorf("fetch participants: %w", err)
 		}
 		if err := e.fetchLabelsForMessages(ctx, results); err != nil {
@@ -1181,7 +1181,7 @@ func (e *SQLiteEngine) fetchMessageSummariesByIDsInto(
 }
 
 func (e *SQLiteEngine) fetchLabelsForMessages(ctx context.Context, messages []MessageSummary) error {
-	return fetchLabelsForMessageList(ctx, e.db, e.dialect.Rebind, "", messages)
+	return fetchLabelsForMessageList(ctx, e.db, noopRebind, "", messages)
 }
 
 // GetMessage retrieves a full message by internal ID.
@@ -1203,7 +1203,7 @@ func (e *SQLiteEngine) GetMessageBySourceID(ctx context.Context, sourceMessageID
 }
 
 func (e *SQLiteEngine) getMessageByQuery(ctx context.Context, whereClause string, args ...any) (*MessageDetail, error) {
-	return getMessageByQueryShared(ctx, e.db, e.dialect.Rebind, "", whereClause, args...)
+	return getMessageByQueryShared(ctx, e.db, noopRebind, "", whereClause, args...)
 }
 
 // GetAttachment retrieves attachment metadata by ID.
@@ -1267,7 +1267,7 @@ func (e *SQLiteEngine) GetAttachmentsByHash(ctx context.Context, contentHash str
 
 // GetMessageRaw returns the decompressed raw MIME data for a message.
 func (e *SQLiteEngine) GetMessageRaw(ctx context.Context, id int64) ([]byte, error) {
-	return getMessageRawShared(ctx, e.db, e.dialect.Rebind, "", id)
+	return getMessageRawShared(ctx, e.db, noopRebind, "", id)
 }
 
 // ListAccounts returns all source accounts.

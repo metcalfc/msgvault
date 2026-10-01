@@ -822,7 +822,7 @@ func TestUppercaseDWaitsForAggregateReloadAfterViewChange(t *testing.T) {
 }
 
 func TestUppercaseDAggregateStagesOnlyDisplayedSearchAndAttachmentMatches(t *testing.T) {
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	engine := query.NewSQLiteEngine(tdb.DB)
 	model := NewBuilder().

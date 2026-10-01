@@ -84,7 +84,7 @@ func (s *Server) taskMessage(r *http.Request) (tasklinks.MessageIdentity, *apiHT
 	if err != nil || id < 1 {
 		return tasklinks.MessageIdentity{}, newAPIHTTPError(http.StatusBadRequest, "invalid_message_id", "Message ID must be a positive integer")
 	}
-	message, err := s.getMessage(r.Context(), id)
+	message, err := s.store.GetMessageContext(r.Context(), id)
 	switch {
 	case errors.Is(err, store.ErrMessageNotFound):
 		return tasklinks.MessageIdentity{}, newAPIHTTPError(http.StatusNotFound, "not_found", "Message not found")

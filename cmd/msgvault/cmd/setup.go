@@ -20,10 +20,11 @@ import (
 	"go.kenn.io/msgvault/internal/oauth"
 )
 
-var setupCmd = &cobra.Command{
-	Use:   "setup",
-	Short: "Interactive setup wizard for first-run configuration",
-	Long: `Interactive setup wizard to configure msgvault for first use.
+func newSetupCommand() *cobra.Command {
+	setupCmd := &cobra.Command{
+		Use:   "setup",
+		Short: "Interactive setup wizard for first-run configuration",
+		Long: `Interactive setup wizard to configure msgvault for first use.
 
 This command helps you:
   1. Optionally configure Google OAuth credentials (Gmail and Google
@@ -34,16 +35,17 @@ This command helps you:
 Run this once after installing msgvault to get started quickly. Then run
 "msgvault setup providers" to turn on search, attachment, and people lanes
 from the API keys you have, and "msgvault setup status" to see what is on.`,
-	Args: cobra.NoArgs,
-	RunE: runSetup,
-}
-
-func init() {
+		Args: cobra.NoArgs,
+		RunE: runSetup,
+	}
 	setupCmd.AddCommand(
 		newSetupProvidersCommand(defaultSetupProvidersDeps()),
 		newSetupStatusCommand(defaultSetupStatusDeps()),
 	)
-	rootCmd.AddCommand(setupCmd)
+	return setupCmd
+}
+func init() {
+	registerCommandFactory(newSetupCommand)
 }
 
 func runSetup(cmd *cobra.Command, args []string) error {

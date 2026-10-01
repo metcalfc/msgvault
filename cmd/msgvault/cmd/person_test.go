@@ -24,9 +24,6 @@ func TestWriteCLIPersonSanitizesTerminalControls(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	malicious := "\x1b[31mAlice\x1b[0m \x1b]8;;https://attacker.test\x07Example\x1b]8;;\x07"
-	savedJSON := personJSON
-	personJSON = false
-	t.Cleanup(func() { personJSON = savedJSON })
 
 	var stdout bytes.Buffer
 	cmd := &cobra.Command{}
@@ -71,16 +68,8 @@ func TestPersonPromoteAcceptsCreatedResponse(t *testing.T) {
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
 
-	savedJSON := personJSON
-	personJSON = false
-	t.Cleanup(func() { personJSON = savedJSON })
-
 	var output bytes.Buffer
-	command := &cobra.Command{
-		Use:  personPromoteCmd.Use,
-		Args: personPromoteCmd.Args,
-		RunE: personPromoteCmd.RunE,
-	}
+	command := freshCommandForTest(t, newPersonCommand(), "promote")
 	command.SetContext(testCtx)
 	command.SetOut(&output)
 	command.SetArgs([]string{"42"})
@@ -128,20 +117,9 @@ func TestPersonSetDisplayNameClearSendsNull(t *testing.T) {
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
 
-	savedJSON, savedClear := personJSON, personClearDisplayName
-	personJSON, personClearDisplayName = false, false
-	t.Cleanup(func() {
-		personJSON, personClearDisplayName = savedJSON, savedClear
-	})
-
 	var output bytes.Buffer
-	command := &cobra.Command{
-		Use:  personSetDisplayNameCmd.Use,
-		Args: personSetDisplayNameCmd.Args,
-		RunE: personSetDisplayNameCmd.RunE,
-	}
+	command := freshCommandForTest(t, newPersonCommand(), "set-display-name")
 	command.SetContext(testCtx)
-	command.Flags().BoolVar(&personClearDisplayName, "clear", false, "")
 	command.SetOut(&output)
 	command.SetArgs([]string{"7", "--clear"})
 
@@ -149,7 +127,7 @@ func TestPersonSetDisplayNameClearSendsNull(t *testing.T) {
 	assert.Equal(int32(2), requests.Load())
 	assert.Contains(output.String(), "Display name: -")
 
-	err := personSetDisplayNameCmd.Args(command, []string{"7", "alice"})
+	err := freshCommandForTest(t, newPersonCommand(), "set-display-name").Args(command, []string{"7", "alice"})
 	assert.ErrorContains(err, "--clear cannot be used with a display name")
 }
 
@@ -182,11 +160,7 @@ func TestPersonDeleteSendsIfMatchFromLatestRead(t *testing.T) {
 	})
 
 	var output bytes.Buffer
-	command := &cobra.Command{
-		Use:  personDeleteCmd.Use,
-		Args: personDeleteCmd.Args,
-		RunE: personDeleteCmd.RunE,
-	}
+	command := freshCommandForTest(t, newPersonCommand(), "delete")
 	command.SetContext(testCtx)
 	command.SetOut(&output)
 	command.SetArgs([]string{"7"})

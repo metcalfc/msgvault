@@ -13,25 +13,6 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-var exportAttachmentsOutput string
-
-var exportAttachmentsCmd = &cobra.Command{
-	Use:   "export-attachments <message-id>",
-	Short: "Export all attachments from a message as individual files",
-	Long: `Export all attachments from a message to a directory with original filenames.
-
-Takes a message ID (internal numeric or Gmail ID) and writes each attachment
-as a separate file. Filenames are sanitized and deduplicated automatically.
-Files are never overwritten — a numeric suffix is appended on conflict.
-
-Examples:
-  msgvault export-attachments 45                  # all attachments → cwd
-  msgvault export-attachments 45 -o ~/Downloads   # all attachments → specific dir
-  msgvault export-attachments 18f0abc123def       # by Gmail ID`,
-	Args: cobra.ExactArgs(1),
-	RunE: runExportAttachments,
-}
-
 func runExportAttachments(cmd *cobra.Command, args []string) error {
 	idStr, err := resolveMessageIDArg(args[0])
 	if err != nil {
@@ -45,6 +26,8 @@ type cliAttachmentClient interface {
 }
 
 func runExportAttachmentsHTTP(cmd *cobra.Command, idStr string) error {
+	exportAttachmentsOutput, _ := cmd.Flags().GetString("output")
+
 	s, _, err := OpenHTTPStore(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
@@ -67,7 +50,7 @@ func runExportAttachmentsHTTP(cmd *cobra.Command, idStr string) error {
 		return nil
 	}
 
-	outputDir, err := resolveExportAttachmentsOutputDir()
+	outputDir, err := resolveExportAttachmentsOutputDir(exportAttachmentsOutput)
 	if err != nil {
 		return err
 	}
@@ -76,8 +59,7 @@ func runExportAttachmentsHTTP(cmd *cobra.Command, idStr string) error {
 	return printExportAttachmentsResult(result, len(msg.Attachments), outputDir)
 }
 
-func resolveExportAttachmentsOutputDir() (string, error) {
-	outputDir := exportAttachmentsOutput
+func resolveExportAttachmentsOutputDir(outputDir string) (string, error) {
 	if outputDir == "" {
 		var err error
 		outputDir, err = os.Getwd()
@@ -225,8 +207,28 @@ func printExportAttachmentsResult(result export.DirExportResult, attachmentCount
 	return nil
 }
 
-func init() {
-	rootCmd.AddCommand(exportAttachmentsCmd)
-	exportAttachmentsCmd.Flags().StringVarP(&exportAttachmentsOutput, "output", "o", "",
+func newExportAttachmentsCmd() *cobra.Command {
+	exportAttachmentsCmd := &cobra.Command{
+		Use:   "export-attachments <message-id>",
+		Short: "Export all attachments from a message as individual files",
+		Long: `Export all attachments from a message to a directory with original filenames.
+
+Takes a message ID (internal numeric or Gmail ID) and writes each attachment
+as a separate file. Filenames are sanitized and deduplicated automatically.
+Files are never overwritten — a numeric suffix is appended on conflict.
+
+Examples:
+  msgvault export-attachments 45                  # all attachments → cwd
+  msgvault export-attachments 45 -o ~/Downloads   # all attachments → specific dir
+  msgvault export-attachments 18f0abc123def       # by Gmail ID`,
+		Args: cobra.ExactArgs(1),
+		RunE: runExportAttachments,
+	}
+
+	exportAttachmentsCmd.Flags().StringP("output", "o", "",
 		"Output directory (default: current directory)")
+
+	return exportAttachmentsCmd
 }
+
+func init() { registerCommandFactory(newExportAttachmentsCmd) }

@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/cacheops"
@@ -88,7 +87,7 @@ func TestCacheStatsUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{Use: cacheStatsCmd.Use, RunE: cacheStatsCmd.RunE}
+	cmd := newCacheStatsCommand()
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)

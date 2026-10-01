@@ -423,14 +423,14 @@ func (s *Store) activityDirectLimitTransitionQueryContext(
 	queryer contextRowQuerier,
 ) (ActivityDirectLimitTransition, error) {
 	var completed, active, generationValue sql.NullString
-	err := queryer.QueryRowContext(ctx, s.dialect.Rebind(`
+	err := queryer.QueryRowContext(ctx, `
 		SELECT
 			MAX(CASE WHEN key = ? THEN value END),
 			MAX(CASE WHEN key = ? THEN value END),
 			MAX(CASE WHEN key = ? THEN value END)
 		FROM archive_metadata
 		WHERE key IN (?, ?, ?)
-	`),
+	`,
 		activityDirectLimitKey,
 		activityDirectLimitActiveKey,
 		activityDirectLimitGenKey,
@@ -590,14 +590,14 @@ func (s *Store) activityTimezoneTransitionQueryContext(
 ) (ActivityTimezoneTransition, error) {
 	var completed, active sql.NullString
 	var generationValue sql.NullString
-	err := queryer.QueryRowContext(ctx, s.dialect.Rebind(`
+	err := queryer.QueryRowContext(ctx, `
 		SELECT
 			MAX(CASE WHEN key = ? THEN value END),
 			MAX(CASE WHEN key = ? THEN value END),
 			MAX(CASE WHEN key = ? THEN value END)
 		FROM archive_metadata
 		WHERE key IN (?, ?, ?)
-	`),
+	`,
 		activityTimezoneKey,
 		activityTimezoneActiveKey,
 		activityTimezoneGenerationKey,
@@ -742,13 +742,13 @@ func (s *Store) ActivityReconciledRevisionsContext(
 	ctx context.Context,
 ) (ContactRevisions, bool, error) {
 	var identity, account sql.NullString
-	err := s.db.QueryRowContext(ctx, s.dialect.Rebind(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT
 			MAX(CASE WHEN key = ? THEN value END),
 			MAX(CASE WHEN key = ? THEN value END)
 		FROM archive_metadata
 		WHERE key IN (?, ?)
-	`),
+	`,
 		activityReconciledIdentityRevisionKey,
 		activityReconciledAccountRevisionKey,
 		activityReconciledIdentityRevisionKey,
@@ -1414,8 +1414,7 @@ func (s *Store) validateActivityMessageTx(
 	err := tx.QueryRowContext(ctx, `
 		SELECT source_id, conversation_id, COALESCE(message_type, ''), last_modified
 		FROM messages
-		WHERE id = ?`+s.dialect.SelectForUpdate(),
-		token.MessageID,
+		WHERE id = ?`, token.MessageID,
 	).Scan(&sourceID, &conversationID, &messageType, &lastModified)
 	if errors.Is(err, sql.ErrNoRows) {
 		return &ErrActivityProjectionStale{
@@ -1478,8 +1477,7 @@ func (s *Store) validateActivityQueueTx(
 	err := tx.QueryRowContext(ctx, `
 		SELECT revision, processed_revision
 		FROM activity_projection_queue
-		WHERE message_id = ?`+s.dialect.SelectForUpdate(),
-		token.MessageID,
+		WHERE message_id = ?`, token.MessageID,
 	).Scan(&revision, &processed)
 	if errors.Is(err, sql.ErrNoRows) {
 		if token.Queue.Exists {
@@ -1488,10 +1486,10 @@ func (s *Store) validateActivityQueueTx(
 				Reason:    "queue observation disappeared",
 			}
 		}
-		statement := s.dialect.InsertOrIgnore(`
+		statement := `
 			INSERT OR IGNORE INTO activity_projection_queue
 				(message_id, revision, processed_revision)
-			VALUES (?, 1, 0)`)
+			VALUES (?, 1, 0)`
 		result, err := tx.ExecContext(ctx, statement, token.MessageID)
 		if err != nil {
 			return false, fmt.Errorf(
@@ -1826,7 +1824,7 @@ func (s *Store) lockRowsTx(
 	for index, id := range ids {
 		args[index] = id
 	}
-	rows, err := tx.QueryContext(ctx, query+s.dialect.SelectForUpdate(), args...)
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("lock %s: %w", label, err)
 	}

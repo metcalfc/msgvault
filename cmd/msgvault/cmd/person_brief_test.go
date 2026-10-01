@@ -284,7 +284,7 @@ func TestPersonBriefRejectsInvalidPersonIDBeforeNetwork(t *testing.T) {
 
 func TestPersonBriefIsRegisteredUnderPerson(t *testing.T) {
 	var brief *cobra.Command
-	for _, command := range personCmd.Commands() {
+	for _, command := range newPersonCommand().Commands() {
 		if command.Name() == "brief" {
 			brief = command
 		}

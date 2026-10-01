@@ -92,7 +92,7 @@ func TestCollectionScopeSourceFieldsPreserveKindsAndCopies(t *testing.T) {
 }
 
 func TestEmptyCollectionReadsMatchNothing(t *testing.T) {
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Fail(t, "empty collection issued an HTTP request", "%s", r.URL.Path)
@@ -498,7 +498,7 @@ func TestStaleTextDetailCompletionRejectedAfterAccountChange(t *testing.T) {
 func TestTextAccountSelectionSurvivesBackNavigation(t *testing.T) {
 	assertions := assert.New(t)
 	requirements := require.New(t)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	_, err := tdb.DB.Exec(`
 		INSERT INTO sources (id, source_type, identifier) VALUES
 			(7, 'imessage', 'first@example.com'), (8, 'imessage', 'second@example.com');

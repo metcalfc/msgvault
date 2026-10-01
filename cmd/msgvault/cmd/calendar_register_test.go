@@ -27,7 +27,7 @@ func TestRegisterCalendarsAndReport_RegistersSourcesAndReports(t *testing.T) {
 
 	var out bytes.Buffer
 	err := registerCalendarsAndReport(context.Background(), &out, st, api,
-		"alice@example.com", "acme", true)
+		"alice@example.com", "acme", true, &calendarAddOptions{})
 	require := require.New(t)
 	assert := assert.New(t)
 	require.NoError(err)
@@ -51,7 +51,7 @@ func TestRegisterCalendarsAndReport_NoMatchIsNotAnError(t *testing.T) {
 
 	var out bytes.Buffer
 	require.NoError(t, registerCalendarsAndReport(context.Background(), &out, st, api,
-		"alice@example.com", "", false))
+		"alice@example.com", "", false, &calendarAddOptions{}))
 	assert.Contains(t, out.String(), "No calendars matched the filter")
 }
 

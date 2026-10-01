@@ -250,13 +250,6 @@ export function scheduleSummary(expression: string | null | undefined): string {
   return parsed.fields ? describeFields(parsed.fields, parsed.zone) : expression;
 }
 
-/** Plain-English summary of a parsed schedule, such as "At 03:00 every day". */
-export function describeCron(expression: string): string {
-  const parsed = parseCron(expression);
-  if (!parsed.fields) return parsed.error ?? '';
-  return describeFields(parsed.fields, parsed.zone);
-}
-
 /** Describes parsed fields; a zone adds ", Europe/Berlin time" at the end. */
 export function describeFields(fields: CronField[], zone?: string): string {
   const [minute, hour, day, month, weekday] = fields;

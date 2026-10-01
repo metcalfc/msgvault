@@ -113,7 +113,9 @@ make test-v
 
 All Go test runs need `-tags "fts5 sqlite_vec"`; the Make targets supply these
 automatically. Use `assert` and `require` from testify, with expected values
-first. See [AGENTS.md](https://github.com/kenn-io/msgvault/blob/main/AGENTS.md)
+first. Package calls such as `assert.Equal(t, want, got)` and local
+`assert.New(t)` / `require.New(t)` instances are both supported.
+See [AGENTS.md](https://github.com/kenn-io/msgvault/blob/main/AGENTS.md)
 for repository testing rules.
 
 ### Timing waits
@@ -126,7 +128,7 @@ Keep real budgets for SQLite locks, database clocks, network
 requests, subprocesses, DuckDB, and operating-system events. Name retained
 sub-second testify budgets so their event and owner are clear.
 
-The helper check rejects bare totals below one second in `Eventually`,
+`make test-polling-check` rejects bare totals below one second in `Eventually`,
 `Eventuallyf`, `EventuallyWithT`, `EventuallyWithTf`, `Never`, and `Neverf`.
 Named budgets and variables stay outside this rule. Virtual sleeps are valid
 inside a bubble. CI runs this check on Ubuntu, so Windows-only test files still
@@ -140,8 +142,10 @@ in tests outside a `synctest.Test` bubble. A kept real wait carries
 ### SQLite test archives
 
 Each test binary builds the schema once into a SQLite template, then copies it
-for individual tests (`internal/testutil/sqlite_template.go`). Every test gets
-its own database produced by the production `InitSchema()` path.
+for individual tests (`internal/testutil/sqlitetest/template.go`). Each standard fixture gets
+its own database produced by the production `InitSchema()` path. Query tests
+that exercise fallback search use `dbtest.NewTestDBWithoutFTS` to remove only
+the FTS table while retaining production migrations and connection settings.
 
 ### Local test scheduling
 

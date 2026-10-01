@@ -1563,7 +1563,7 @@ func TestDuckDBEngine_SearchFastRecipientOperatorParity(t *testing.T) {
 	requirements := require.New(t)
 	ctx := t.Context()
 
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	_, err := tdb.DB.Exec(`
 		INSERT INTO participants (id, email_address, display_name, domain)
@@ -2566,7 +2566,7 @@ func TestDuckDBEngine_GetDeletionTargetsByAggregateSearch(t *testing.T) {
 	builder.messages[1].ListID = &listID
 	analyticsDir, cleanup := builder.Build()
 	t.Cleanup(cleanup)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	_, err := tdb.DB.Exec(`UPDATE messages SET list_id = ? WHERE id IN (1, 2)`, listID)
 	requirements.NoError(err)
@@ -2601,7 +2601,7 @@ func TestDuckDBEngine_AggregateSearchAndDeletionShareBodyScope(t *testing.T) {
 	builder := buildStandardTestData(t)
 	analyticsDir, cleanup := builder.Build()
 	t.Cleanup(cleanup)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	_, err := tdb.DB.Exec(`UPDATE message_bodies SET body_text = 'aggregatebodyneedle' WHERE message_id = 1`)
 	requirements.NoError(err)
@@ -2633,7 +2633,7 @@ func TestDuckDBEngine_GetDeletionTargetsUseAuthoritativeSQLiteScope(t *testing.T
 	builder := buildStandardTestData(t)
 	analyticsDir, cleanup := builder.Build()
 	t.Cleanup(cleanup)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	engine, err := NewDuckDBEngine(analyticsDir, "", tdb.DB)
 	requirements.NoError(err)

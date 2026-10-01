@@ -481,7 +481,7 @@ func (s *Store) reconcileSeededDefinitionWith(
 		    options = %s, vcard_property = ?,
 		    revision = revision + 1, updated_at = %s
 		WHERE universal_id = ?
-	`, s.dialect.JSONBindExpr(), s.dialect.Now())
+	`, "?", s.dialect.Now())
 	result, err := execer.ExecContext(ctx, query,
 		string(validated.ValueType), string(validated.FieldType), validated.RecordTarget,
 		string(validated.Cardinality), validated.IsRequired,

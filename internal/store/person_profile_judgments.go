@@ -403,8 +403,7 @@ func (s *Store) recordDisplayNameSeedTx(
 	if len(names) < 2 {
 		return nil
 	}
-	if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(
-		`INSERT OR IGNORE INTO person_display_name_seeds (person_id, seeded_name) VALUES (?, ?)`),
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO person_display_name_seeds (person_id, seeded_name) VALUES (?, ?)`,
 		personID, *seeded); err != nil {
 		return fmt.Errorf("record display name seed: %w", err)
 	}
@@ -717,8 +716,8 @@ func (s *Store) ApplyMergeConflictJudgmentContext(ctx context.Context, judgment 
 		}
 	}
 	err := retryBusyWriteErr(ctx, s, "record merge conflict judgment", func() error {
-		_, err := s.db.ExecContext(ctx, s.dialect.InsertOrIgnore(`INSERT OR IGNORE INTO person_merge_conflict_judgments
-			(candidate_id, probability, model, resolved) VALUES (?, ?, ?, ?)`),
+		_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO person_merge_conflict_judgments
+			(candidate_id, probability, model, resolved) VALUES (?, ?, ?, ?)`,
 			judgment.CandidateID, judgment.Probability, judgment.Model, resolved)
 		return err
 	})

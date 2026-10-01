@@ -14,18 +14,6 @@ import (
 	"go.kenn.io/msgvault/internal/testutil/dbtest"
 )
 
-type rebindRecordingDialect struct {
-	Dialect
-
-	queries []string
-}
-
-func (d *rebindRecordingDialect) Rebind(query string) string {
-	rebound := d.Dialect.Rebind(query)
-	d.queries = append(d.queries, rebound)
-	return rebound
-}
-
 // emptyTargets creates an EmptyValueTargets map for testing with the given ViewType(s).
 func emptyTargets(views ...ViewType) map[ViewType]bool {
 	m := make(map[ViewType]bool)
@@ -316,7 +304,7 @@ func TestGetAttachmentClearsURLBackedContentHash(t *testing.T) {
 	assert.Equal("https://sp/recording.mp4", att.URL)
 }
 
-func TestGetAttachmentsByHashUsesDialectRebind(t *testing.T) {
+func TestGetAttachmentsByHashReturnsMatchingContent(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	env := newTestEnv(t)
@@ -328,13 +316,12 @@ func TestGetAttachmentsByHashUsesDialectRebind(t *testing.T) {
 	`, hash)
 	require.NoError(err, "insert attachment")
 
-	dialect := &rebindRecordingDialect{Dialect: SQLiteQueryDialect{}}
-	engine := NewEngineWithDialect(env.DB, dialect)
+	engine := NewEngine(env.DB)
 	attachments, err := engine.GetAttachmentsByHash(env.Ctx, hash)
 	require.NoError(err, "GetAttachmentsByHash")
 	require.Len(attachments, 1, "attachments")
-	require.NotEmpty(dialect.queries, "dialect Rebind calls")
-	assert.Contains(dialect.queries[len(dialect.queries)-1], "content_hash = ?", "rebound query")
+	assert.Equal(hash, attachments[0].ContentHash)
+	assert.Equal("report.pdf", attachments[0].Filename)
 }
 
 func TestDuplicateCASAliasRetainsHashAcrossAttachmentQueries(t *testing.T) {

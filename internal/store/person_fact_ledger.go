@@ -58,10 +58,9 @@ func (s *Store) insertPersonFactGenerationTx(
 			(person_id, generation_key, source_cursors_json, program_id, program_version,
 			 program_fingerprint, catalog_fingerprint, provider, provider_version,
 			 model, model_version, provider_policy_fingerprint, resolved_at)
-		VALUES (?, ?, `+s.dialect.JSONBindExpr()+`, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT DO NOTHING
-		RETURNING id`,
-		input.PersonID, prepared.GenerationKey(), string(cursorsJSON), input.ProgramID,
+		RETURNING id`, input.PersonID, prepared.GenerationKey(), string(cursorsJSON), input.ProgramID,
 		input.ProgramVersion, input.ProgramFingerprint, input.CatalogFingerprint,
 		input.Provider, input.ProviderVersion, input.Model, input.ModelVersion,
 		input.Policy.ProviderPolicyFingerprint, input.ResolvedAt,
@@ -155,10 +154,9 @@ func (s *Store) insertPersonFactClaimWithKeyTx(
 				 relation, submitted_value_json, normalized_value_json, value_fingerprint,
 				 valid_from, valid_until, origin, confidence_json,
 				 rejection_action, rejection_reason, rejection_detail)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, `+s.dialect.JSONBindExpr()+`, ?, ?, ?, ?, `+s.dialect.JSONBindExpr()+`, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT DO NOTHING
-		RETURNING id`,
-		generation.PersonID, generation.ID, claimKey, prepared.Target.Kind, prepared.Target.Key,
+		RETURNING id`, generation.PersonID, generation.ID, claimKey, prepared.Target.Kind, prepared.Target.Key,
 		prepared.Target.Revision, prepared.Relation, string(prepared.SubmittedValue), normalizedJSON,
 		valueFingerprint, personFactOptionalTime(prepared.ValidFrom), personFactOptionalTime(prepared.ValidUntil),
 		prepared.Origin, string(confidenceJSON), rejectionAction, rejectionReason, rejectionDetail,
@@ -422,10 +420,9 @@ func (s *Store) insertPersonFactDecisionTx(
 		INSERT INTO person_fact_decisions
 			(person_id, resolution_id, claim_id, decision_key, action, reason, score_json,
 			 competing_claim_id, projection_kind, projection_row_id, resolved_organization_id)
-		VALUES (?, ?, ?, ?, ?, ?, `+s.dialect.JSONBindExpr()+`, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT DO NOTHING
-		RETURNING id`,
-		personID, resolutionID, claimID, decisionKey, decision.Action, decision.Reason,
+		RETURNING id`, personID, resolutionID, claimID, decisionKey, decision.Action, decision.Reason,
 		string(scoreJSON), competingClaimID, projectionKind, projectionRowID,
 		resolvedOrganizationID,
 	).Scan(&insertedID)

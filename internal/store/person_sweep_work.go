@@ -232,7 +232,7 @@ func (s *Store) RenewPersonSweep(
 		renewed   peoplesweep.Lease
 		expiresAt requiredTimestamp
 	)
-	err := s.db.QueryRowContext(ctx, s.Rebind(query), leaseDurationArg,
+	err := s.db.QueryRowContext(ctx, query, leaseDurationArg,
 		lease.PersonID, lease.WorkerID, lease.Fence).Scan(
 		&renewed.PersonID, &renewed.WorkerID, &renewed.Fence, &expiresAt, &renewed.AttemptCount)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -277,13 +277,13 @@ func (s *Store) FailPersonSweepWork(
 	if failure.RetryAt.IsZero() {
 		return errors.New("fail person sweep work: retry time is required")
 	}
-	result, err := s.db.ExecContext(ctx, s.Rebind(fmt.Sprintf(`
+	result, err := s.db.ExecContext(ctx, fmt.Sprintf(`
 		UPDATE person_sweep_work
 		SET available_at = ?, attempt_count = attempt_count + 1,
 		    last_failure_class = ?, lease_owner = '', lease_until = NULL,
 		    updated_at = %s
 		WHERE person_id = ? AND lease_owner = ? AND lease_fence = ?
-		  AND lease_until > %s`, s.dialect.Now(), s.dialect.Now())),
+		  AND lease_until > %s`, s.dialect.Now(), s.dialect.Now()),
 		s.dialect.TimestampParam(failure.RetryAt), failure.Class,
 		failure.Lease.PersonID, failure.Lease.WorkerID, failure.Lease.Fence)
 	if err != nil {
@@ -346,14 +346,14 @@ func (s *Store) ensurePersonSweepCursorsTx(
 		if err != nil {
 			return nil, nil, err
 		}
-		result, err := tx.ExecContext(ctx, s.Rebind(fmt.Sprintf(`
+		result, err := tx.ExecContext(ctx, fmt.Sprintf(`
 			INSERT INTO person_sweep_cursors
 				(person_id, source_lane, program_fingerprint, catalog_fingerprint,
 				 optimistic_sequence, reconcile_upper_key, reconcile_after_key,
 				 reconciliation_complete, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, '', ?, %s, %s)
 			ON CONFLICT (person_id, source_lane, program_fingerprint, catalog_fingerprint)
-			DO NOTHING`, s.dialect.Now(), s.dialect.Now())),
+			DO NOTHING`, s.dialect.Now(), s.dialect.Now()),
 			key.PersonID, key.SourceLane, key.ProgramFingerprint,
 			key.CatalogFingerprint, highWater, upper, upper == "")
 		if err != nil {
@@ -364,12 +364,12 @@ func (s *Store) ensurePersonSweepCursorsTx(
 			return nil, nil, fmt.Errorf("person sweep cursor rows affected: %w", err)
 		}
 		created[key] = inserted == 1
-		if _, err := tx.ExecContext(ctx, s.Rebind(fmt.Sprintf(`
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
 			UPDATE person_sweep_cursors
 			SET reconciliation_complete = TRUE, updated_at = %s
 			WHERE person_id = ? AND source_lane = ? AND program_fingerprint = ?
 			  AND catalog_fingerprint = ? AND reconciliation_complete = FALSE
-			  AND reconcile_after_key = reconcile_upper_key`, s.dialect.Now())),
+			  AND reconcile_after_key = reconcile_upper_key`, s.dialect.Now()),
 			key.PersonID, key.SourceLane, key.ProgramFingerprint,
 			key.CatalogFingerprint); err != nil {
 			return nil, nil, fmt.Errorf("complete empty person sweep cursor: %w", err)
@@ -434,14 +434,14 @@ func (s *Store) loadPersonSweepCursorTx(
 ) (peoplesweep.Cursor, error) {
 	cursor := peoplesweep.Cursor{Key: key}
 	var lastBackstop nullableTimestamp
-	err := tx.QueryRowContext(ctx, s.Rebind(`
+	err := tx.QueryRowContext(ctx, `
 		SELECT optimistic_sequence, optimistic_document_key,
 		       reconcile_upper_key, reconcile_after_key, reconcile_document_key,
 		       reconciliation_complete, backstop_upper_key, backstop_after_key, backstop_document_key,
 		       last_backstop_at
 		FROM person_sweep_cursors
 		WHERE person_id = ? AND source_lane = ? AND program_fingerprint = ?
-		  AND catalog_fingerprint = ?`), key.PersonID, key.SourceLane,
+		  AND catalog_fingerprint = ?`, key.PersonID, key.SourceLane,
 		key.ProgramFingerprint, key.CatalogFingerprint).Scan(
 		&cursor.OptimisticSequence, &cursor.OptimisticDocumentKey, &cursor.ReconcileUpperKey,
 		&cursor.ReconcileAfterKey, &cursor.ReconcileDocumentKey, &cursor.ReconciliationComplete,
@@ -511,7 +511,7 @@ func (s *Store) AdvancePersonSweepReconciliation(
 		args = append(args, cursor.ReconcileFromKey, cursor.DocumentFromKey, cursor.ReconcileToKey)
 	}
 	args = append(args, lease.WorkerID, lease.Fence)
-	result, err := s.db.ExecContext(ctx, s.Rebind(query), args...)
+	result, err := s.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("advance person sweep cursor: %w", err)
 	}
@@ -543,12 +543,12 @@ func (s *Store) personSweepLeaseCurrent(
 	ctx context.Context, lease peoplesweep.Lease,
 ) (bool, error) {
 	var current bool
-	err := s.db.QueryRowContext(ctx, s.Rebind(fmt.Sprintf(`
+	err := s.db.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT EXISTS (
 			SELECT 1 FROM person_sweep_work
 			WHERE person_id = ? AND lease_owner = ? AND lease_fence = ?
 			  AND lease_until > %s
-		)`, s.dialect.Now())), lease.PersonID, lease.WorkerID, lease.Fence).Scan(&current)
+		)`, s.dialect.Now()), lease.PersonID, lease.WorkerID, lease.Fence).Scan(&current)
 	if err != nil {
 		return false, fmt.Errorf("validate person sweep lease: %w", err)
 	}
@@ -583,7 +583,7 @@ func (s *Store) ReconcilePersonSweepWorkContext(
 
 	var result peoplesweep.GapResult
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
-		people, err := scanTrackedPersonIDs(ctx, tx, s, request.AfterPersonID, request.Limit)
+		people, err := scanTrackedPersonIDs(ctx, tx, request.AfterPersonID, request.Limit)
 		if err != nil {
 			return err
 		}
@@ -649,11 +649,11 @@ func (s *Store) ReconcilePersonSweepWorkContext(
 }
 
 func scanTrackedPersonIDs(
-	ctx context.Context, tx *loggedTx, s *Store, after int64, limit int,
+	ctx context.Context, tx *loggedTx, after int64, limit int,
 ) ([]int64, error) {
-	rows, err := tx.QueryContext(ctx, s.Rebind(`
+	rows, err := tx.QueryContext(ctx, `
 		SELECT person_id FROM person_tracking
-		WHERE person_id > ? ORDER BY person_id LIMIT ?`), after, limit)
+		WHERE person_id > ? ORDER BY person_id LIMIT ?`, after, limit)
 	if err != nil {
 		return nil, fmt.Errorf("scan tracked people for sweep: %w", err)
 	}
@@ -679,9 +679,9 @@ func (s *Store) personSweepJournalGapTx(
 	gap := false
 	for _, cursor := range cursors {
 		var laneHighWater int64
-		err := tx.QueryRowContext(ctx, s.Rebind(`
+		err := tx.QueryRowContext(ctx, `
 			SELECT COALESCE(MAX(sequence), 0) FROM person_sweep_changes
-			WHERE person_id = ? AND source_lane = ?`), personID, cursor.Key.SourceLane).Scan(&laneHighWater)
+			WHERE person_id = ? AND source_lane = ?`, personID, cursor.Key.SourceLane).Scan(&laneHighWater)
 		if err != nil {
 			return 0, false, fmt.Errorf("read person sweep lane high water: %w", err)
 		}
@@ -699,12 +699,12 @@ func (s *Store) personSweepRetryDueTx(
 	ctx context.Context, tx *loggedTx, personID int64,
 ) (bool, error) {
 	var due bool
-	err := tx.QueryRowContext(ctx, s.Rebind(fmt.Sprintf(`
+	err := tx.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT EXISTS (
 			SELECT 1 FROM person_sweep_work
 			WHERE person_id = ? AND available_at <= %s
 			  AND (lease_until IS NULL OR lease_until <= %s)
-		)`, s.dialect.Now(), s.dialect.Now())), personID).Scan(&due)
+		)`, s.dialect.Now(), s.dialect.Now()), personID).Scan(&due)
 	if err != nil {
 		return false, fmt.Errorf("read person sweep retry availability: %w", err)
 	}
@@ -730,8 +730,8 @@ func (s *Store) upsertPersonSweepWorkTxMode(
 	lockSuffix := ""
 
 	var trackedPersonID int64
-	err := tx.QueryRowContext(ctx, s.Rebind(`
-		SELECT person_id FROM person_tracking WHERE person_id = ?`+lockSuffix),
+	err := tx.QueryRowContext(ctx, `
+		SELECT person_id FROM person_tracking WHERE person_id = ?`+lockSuffix,
 		personID).Scan(&trackedPersonID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
@@ -744,7 +744,7 @@ func (s *Store) upsertPersonSweepWorkTxMode(
 	// New activity advances the high water, but must not cancel an active
 	// failure delay. Only an explicit force bypasses retry backoff.
 	now := s.dialect.Now()
-	_, err = tx.ExecContext(ctx, s.Rebind(fmt.Sprintf(`
+	_, err = tx.ExecContext(ctx, fmt.Sprintf(`
 		INSERT INTO person_sweep_work
 			(person_id, dirty_through_sequence, available_at, attempt_count,
 			 last_failure_class, lease_owner, lease_until, lease_fence,
@@ -758,7 +758,7 @@ func (s *Store) upsertPersonSweepWorkTxMode(
 				THEN person_sweep_work.available_at
 				WHEN excluded.dirty_through_sequence > person_sweep_work.dirty_through_sequence
 				THEN %s ELSE person_sweep_work.available_at END,
-			updated_at = %s`, now, now, now, maxExpr, now, now, now, now)), personID, dirtyThrough, forceAvailable)
+			updated_at = %s`, now, now, now, maxExpr, now, now, now, now), personID, dirtyThrough, forceAvailable)
 	if err != nil {
 		return fmt.Errorf("upsert person sweep work: %w", err)
 	}
@@ -781,8 +781,8 @@ func (s *Store) EnsurePersonSweepWork(ctx context.Context, personID int64, force
 	published := false
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
 		var dirtyThrough int64
-		if err := tx.QueryRowContext(ctx, s.Rebind(`
-			SELECT COALESCE(MAX(sequence), 0) FROM person_sweep_changes WHERE person_id = ?`),
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COALESCE(MAX(sequence), 0) FROM person_sweep_changes WHERE person_id = ?`,
 			personID).Scan(&dirtyThrough); err != nil {
 			return fmt.Errorf("read person sweep high water: %w", err)
 		}
@@ -791,8 +791,7 @@ func (s *Store) EnsurePersonSweepWork(ctx context.Context, personID int64, force
 		if err := s.upsertPersonSweepWorkTxMode(ctx, tx, personID, dirtyThrough, forceAvailable); err != nil {
 			return err
 		}
-		return tx.QueryRowContext(ctx, s.Rebind(
-			`SELECT EXISTS (SELECT 1 FROM person_sweep_work WHERE person_id = ?)`),
+		return tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM person_sweep_work WHERE person_id = ?)`,
 			personID).Scan(&published)
 	})
 	if err != nil {

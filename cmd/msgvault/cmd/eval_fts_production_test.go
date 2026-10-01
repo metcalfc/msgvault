@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -214,30 +213,23 @@ func TestRunEval_EndToEnd_RanksByRelevanceAndSkipsAMalformedTopic(t *testing.T) 
 	_ = testCtx
 	cfg.Data.DataDir = dir
 
-	savedFlags := [...]any{evalQrels, evalTopics, evalModes, evalDocKey, evalLimit, evalJSON}
-	t.Cleanup(func() {
-		evalQrels, _ = savedFlags[0].(string)
-		evalTopics, _ = savedFlags[1].(string)
-		evalModes, _ = savedFlags[2].(string)
-		evalDocKey, _ = savedFlags[3].(string)
-		evalLimit, _ = savedFlags[4].(int)
-		evalJSON, _ = savedFlags[5].(bool)
-	})
-	evalQrels = writeEvalFile(t, dir, "qrels.txt",
-		"q1 0 <m1@example.com> 1\nq2 0 <m1@example.com> 1\n")
-	evalTopics = writeEvalFile(t, dir, "topics.tsv",
-		"q1\trenewal\nq2\tbefore:invalid renewal\n")
-	evalModes = "fts"
-	evalDocKey = "message"
-	evalLimit = 10
-	evalJSON = true
+	options := &evalCommandOptions{}
 
-	cmd := &cobra.Command{}
+	options.evalQrels = writeEvalFile(t, dir, "qrels.txt",
+		"q1 0 <m1@example.com> 1\nq2 0 <m1@example.com> 1\n")
+	options.evalTopics = writeEvalFile(t, dir, "topics.tsv",
+		"q1\trenewal\nq2\tbefore:invalid renewal\n")
+	options.evalModes = "fts"
+	options.evalDocKey = "message"
+	options.evalLimit = 10
+	options.evalJSON = true
+
+	cmd := newEvalCommand()
 	cmd.SetContext(testCtx)
 	cmd.SetContext(testCtx)
 
 	done := captureStdout(t)
-	err := runEval(cmd, nil)
+	err := runEval(cmd, nil, options)
 	out := done()
 	require.NoError(t, err, "eval run")
 

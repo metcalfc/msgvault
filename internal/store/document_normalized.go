@@ -48,10 +48,10 @@ func (s *Store) LoadNormalizedDocument(ctx context.Context, extractionID string)
 	var normalized document.NormalizedDocument
 	var normalizationVersion sql.NullInt64
 	var documentFamily, unitKind sql.NullString
-	err := s.db.QueryRowContext(ctx, s.Rebind(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT normalization_version, document_family, unit_kind,
 		       manifest_checksum, normalized_truncated
-		FROM document_extractions WHERE id = ? AND state = 'ready'`), extractionID).Scan(
+		FROM document_extractions WHERE id = ? AND state = 'ready'`, extractionID).Scan(
 		&normalizationVersion, &documentFamily, &unitKind,
 		&normalized.Checksum, &normalized.Truncated,
 	)
@@ -74,11 +74,11 @@ func (s *Store) LoadNormalizedDocument(ctx context.Context, extractionID string)
 			fmt.Sprintf("document extraction %q", extractionID), err,
 		)
 	}
-	unitRows, err := s.db.QueryContext(ctx, s.Rebind(`
+	unitRows, err := s.db.QueryContext(ctx, `
 		SELECT unit_index, unit_kind, text, COALESCE(header_text, ''), COALESCE(footer_text, ''),
 		       COALESCE(width, 0), COALESCE(height, 0), COALESCE(dpi, 0), checksum,
 		       char_count, truncated, CAST(heading_marks AS TEXT)
-		FROM document_units WHERE extraction_id = ? ORDER BY unit_index`), extractionID)
+		FROM document_units WHERE extraction_id = ? ORDER BY unit_index`, extractionID)
 	if err != nil {
 		return document.NormalizedDocument{}, fmt.Errorf("read normalized document units: %w", err)
 	}
@@ -104,10 +104,10 @@ func (s *Store) LoadNormalizedDocument(ctx context.Context, extractionID string)
 		return document.NormalizedDocument{}, fmt.Errorf("close normalized document units: %w", err)
 	}
 
-	chunkRows, err := s.db.QueryContext(ctx, s.Rebind(`
+	chunkRows, err := s.db.QueryContext(ctx, `
 		SELECT chunk_key, ordinal, text, CAST(heading_path AS TEXT), checksum,
 		       char_count, truncated
-		FROM document_chunks WHERE extraction_id = ? ORDER BY ordinal`), extractionID)
+		FROM document_chunks WHERE extraction_id = ? ORDER BY ordinal`, extractionID)
 	if err != nil {
 		return document.NormalizedDocument{}, fmt.Errorf("read normalized document chunks: %w", err)
 	}
@@ -134,10 +134,10 @@ func (s *Store) LoadNormalizedDocument(ctx context.Context, extractionID string)
 	for index := range normalized.Chunks {
 		chunkIndexes[normalized.Chunks[index].Key] = index
 	}
-	spanRows, err := s.db.QueryContext(ctx, s.Rebind(`
+	spanRows, err := s.db.QueryContext(ctx, `
 		SELECT chunk_key, unit_index, start_char, end_char
 		FROM document_chunk_spans
-		WHERE extraction_id = ? ORDER BY chunk_key, span_ordinal`), extractionID)
+		WHERE extraction_id = ? ORDER BY chunk_key, span_ordinal`, extractionID)
 	if err != nil {
 		return document.NormalizedDocument{}, fmt.Errorf("read normalized document chunk spans: %w", err)
 	}

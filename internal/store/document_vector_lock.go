@@ -16,5 +16,4 @@ func (s *Store) WithDocumentVectorOperationLock(ctx context.Context, operation f
 		defer s.documentVectorOperationMu.Unlock()
 		return operation()
 	}
-
 }

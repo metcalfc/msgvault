@@ -515,7 +515,7 @@ func (s *Store) reconcileCurrentObservationIdentityMatchesTxContext(
 func (s *Store) deleteUnsupportedObservationIdentityConflictsContext(
 	ctx context.Context, execer contextQuerier,
 ) error {
-	if _, err := execer.ExecContext(ctx, s.dialect.Rebind(`
+	if _, err := execer.ExecContext(ctx, `
 		WITH stale_conflicts AS (
 			SELECT c.id
 			FROM identity_match_candidates c
@@ -543,10 +543,10 @@ func (s *Store) deleteUnsupportedObservationIdentityConflictsContext(
 		SET state = COALESCE(pre_conflict_state, 'candidate'),
 		    observation_conflict_origin = NULL, pre_conflict_state = NULL,
 		    updated_at = `+s.dialect.Now()+`
-		WHERE id IN (SELECT id FROM stale_conflicts)`)); err != nil {
+		WHERE id IN (SELECT id FROM stale_conflicts)`); err != nil {
 		return fmt.Errorf("demote unsupported observation conflicts: %w", err)
 	}
-	if _, err := execer.ExecContext(ctx, s.dialect.Rebind(`
+	if _, err := execer.ExecContext(ctx, `
 		WITH stale_conflicts AS (
 			SELECT c.id
 			FROM identity_match_candidates c
@@ -571,7 +571,7 @@ func (s *Store) deleteUnsupportedObservationIdentityConflictsContext(
 			  )
 		)
 		DELETE FROM identity_match_candidates
-		WHERE id IN (SELECT id FROM stale_conflicts)`)); err != nil {
+		WHERE id IN (SELECT id FROM stale_conflicts)`); err != nil {
 		return fmt.Errorf("delete unsupported observation conflicts: %w", err)
 	}
 	return nil

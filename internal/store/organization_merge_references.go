@@ -46,13 +46,13 @@ func (s *Store) retargetOrganizationReferencesTx(
 			return fmt.Errorf("repoint correspondent kinds to the surviving organization: %w", err)
 		}
 	}
-	if err := retargetOrganizationMatchReviewsTx(ctx, tx, s.dialect, survivorID, losingID); err != nil {
+	if err := retargetOrganizationMatchReviewsTx(ctx, tx, survivorID, losingID); err != nil {
 		return err
 	}
-	if err := carryResolutionAliasesTx(ctx, tx, s.dialect, survivorID, losingID); err != nil {
+	if err := carryResolutionAliasesTx(ctx, tx, survivorID, losingID); err != nil {
 		return err
 	}
-	return retargetOrganizationTitleAliasesTx(ctx, tx, s.dialect, survivorID, losingID)
+	return retargetOrganizationTitleAliasesTx(ctx, tx, survivorID, losingID)
 }
 
 // tableExistsTx is tableExists inside a transaction.
@@ -80,13 +80,12 @@ type organizationMatchReviewMergeRow struct {
 // reviews, so a decision cannot commit between the read and the merge's
 // rewrite of them (SQLite already holds the writer lock).
 func loadOrganizationMatchReviewMergeRowsTx(
-	ctx context.Context, tx *loggedTx, dialect Dialect, organizationID int64,
+	ctx context.Context, tx *loggedTx, organizationID int64,
 ) ([]organizationMatchReviewMergeRow, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, proposed_name_normalized, proposed_domain, status, probability, model,
 		       decided_by, decided_at
-		FROM organization_match_reviews WHERE organization_id = ? ORDER BY id`+dialect.SelectForUpdate(),
-		organizationID)
+		FROM organization_match_reviews WHERE organization_id = ? ORDER BY id`, organizationID)
 	if err != nil {
 		return nil, fmt.Errorf("load organization match reviews for merge: %w", err)
 	}
@@ -142,9 +141,9 @@ func mergedOrganizationMatchReview(
 }
 
 func retargetOrganizationMatchReviewsTx(
-	ctx context.Context, tx *loggedTx, dialect Dialect, survivorID, losingID int64,
+	ctx context.Context, tx *loggedTx, survivorID, losingID int64,
 ) error {
-	survivorRows, err := loadOrganizationMatchReviewMergeRowsTx(ctx, tx, dialect, survivorID)
+	survivorRows, err := loadOrganizationMatchReviewMergeRowsTx(ctx, tx, survivorID)
 	if err != nil {
 		return err
 	}
@@ -152,7 +151,7 @@ func retargetOrganizationMatchReviewsTx(
 	for _, row := range survivorRows {
 		survivorByKey[row.key] = row
 	}
-	losingRows, err := loadOrganizationMatchReviewMergeRowsTx(ctx, tx, dialect, losingID)
+	losingRows, err := loadOrganizationMatchReviewMergeRowsTx(ctx, tx, losingID)
 	if err != nil {
 		return err
 	}
@@ -200,11 +199,11 @@ func retargetOrganizationMatchReviewsTx(
 // to the survivor before the merge supersedes the losing organization's
 // names, so a name that resolved before the merge still resolves after it.
 func carryResolutionAliasesTx(
-	ctx context.Context, tx *loggedTx, dialect Dialect, survivorID, losingID int64,
+	ctx context.Context, tx *loggedTx, survivorID, losingID int64,
 ) error {
 	const resolutionSource = `(source_ref LIKE 'jev:organization_resolution:%' OR
 		source_ref LIKE 'organization-match-review:%')`
-	if _, err := tx.ExecContext(ctx, dialect.InsertOrIgnore(`
+	if _, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO organization_names (
 			organization_id, name_kind, formatted, original_value, name_normalized,
 			source, source_ref, confidence
@@ -219,11 +218,11 @@ func carryResolutionAliasesTx(
 			  AND kept.active_until IS NULL AND kept.superseded_at IS NULL)
 		  AND NOT EXISTS (
 			SELECT 1 FROM organizations survivor
-			WHERE survivor.id = ? AND survivor.name_normalized = losing.name_normalized)`),
+			WHERE survivor.id = ? AND survivor.name_normalized = losing.name_normalized)`,
 		survivorID, losingID, survivorID, survivorID); err != nil {
 		return fmt.Errorf("carry resolution alias names to the survivor: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, dialect.InsertOrIgnore(`
+	if _, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO organization_identifiers (
 			organization_id, identifier_kind, identifier_value, normalized_value,
 			source, source_ref, confidence
@@ -239,7 +238,7 @@ func carryResolutionAliasesTx(
 			  AND kept.active_until IS NULL AND kept.superseded_at IS NULL)
 		  AND NOT EXISTS (
 			SELECT 1 FROM organizations survivor
-			WHERE survivor.id = ? AND survivor.primary_domain = losing.normalized_value)`),
+			WHERE survivor.id = ? AND survivor.primary_domain = losing.normalized_value)`,
 		survivorID, losingID, survivorID, survivorID); err != nil {
 		return fmt.Errorf("carry resolution alias domains to the survivor: %w", err)
 	}
@@ -286,7 +285,7 @@ func loadTitleAliasMergeRowsTx(
 // several), or the losing side's when the survivor had none, and every other
 // title in the class maps straight to it. No equivalence is dropped.
 func retargetOrganizationTitleAliasesTx(
-	ctx context.Context, tx *loggedTx, dialect Dialect, survivorID, losingID int64,
+	ctx context.Context, tx *loggedTx, survivorID, losingID int64,
 ) error {
 	survivorRows, err := loadTitleAliasMergeRowsTx(ctx, tx, survivorID, true)
 	if err != nil {
@@ -353,11 +352,11 @@ func retargetOrganizationTitleAliasesTx(
 			continue
 		}
 		origin := provenance[node]
-		if _, err := tx.ExecContext(ctx, dialect.InsertOrIgnore(`
+		if _, err := tx.ExecContext(ctx, `
 			INSERT OR IGNORE INTO organization_title_aliases (
 				organization_id, title_normalized, canonical_title,
 				canonical_title_normalized, source, source_ref, confidence
-			) VALUES (?, ?, ?, ?, ?, ?, ?)`),
+			) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			survivorID, node, canonical.canonicalDisplay, canonical.canonical,
 			origin.source, origin.sourceRef, origin.confidence); err != nil {
 			return fmt.Errorf("write merged title alias: %w", err)

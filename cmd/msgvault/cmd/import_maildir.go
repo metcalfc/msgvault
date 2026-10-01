@@ -9,4 +9,6 @@ func newImportMaildirCommand() *cobra.Command {
 	return newImportRawDirectoryCommand("maildir", importer.ImportMaildir)
 }
 
-func init() { rootCmd.AddCommand(newImportMaildirCommand()) }
+func init() {
+	registerCommandFactory(newImportMaildirCommand)
+}

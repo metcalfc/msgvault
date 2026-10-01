@@ -260,10 +260,10 @@ func (s *Store) GetBeeperMediaCandidate(ctx context.Context, attachmentID int64)
 func (s *Store) queryBeeperMediaCandidates(
 	ctx context.Context, idFilter string, id int64, limit int,
 ) ([]BeeperMediaCandidate, error) {
-	rows, err := s.db.QueryContext(ctx, s.Rebind(beeperMediaCandidateColumns+`
+	rows, err := s.db.QueryContext(ctx, beeperMediaCandidateColumns+`
 		WHERE `+idFilter+` AND `+beeperMediaEligible+` AND `+LiveMessagesWhere("m", true)+`
 		ORDER BY a.id
-		LIMIT ?`), id, limit)
+		LIMIT ?`, id, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list beeper media candidates: %w", err)
 	}
@@ -501,7 +501,7 @@ func (s *Store) ListLiveBeeperMediaMappings(
 		args = append(args, processingKey)
 	}
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, s.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+beeperMediaOccurrenceColumns("o")+`,
 		       COALESCE(d.phase, ''), COALESCE(d.processing_operation_id, ''),
 		       COALESCE(d.donor_occurrence_id, ''), COALESCE(d.supplied_input_id, ''),
@@ -512,7 +512,7 @@ func (s *Store) ListLiveBeeperMediaMappings(
 		  ON d.destination_key = o.destination_key AND d.processing_key = o.processing_key
 		WHERE o.destination_key = ? AND o.retention_state = 'retained'`+processingFilter+`
 		ORDER BY o.occurrence_ref, o.revision
-		LIMIT ?`), args...)
+		LIMIT ?`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list live beeper media mappings: %w", err)
 	}
@@ -561,10 +561,10 @@ func (s *Store) ListLiveBeeperMediaMappings(
 // live message and attachment. Unrelated raw-message changes do not revoke it.
 func (s *Store) currentBeeperMediaMessage(ctx context.Context, mapping BeeperMediaMapping) (bool, error) {
 	var messageID int64
-	err := s.db.QueryRowContext(ctx, s.Rebind(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT m.id FROM beeper_media_occurrences o`+beeperMediaCurrentJoin+`
 		  AND o.destination_key = ? AND o.occurrence_ref = ? AND o.revision = ?
-		LIMIT 1`), mapping.DestinationKey, mapping.OccurrenceRef, mapping.Revision).Scan(&messageID)
+		LIMIT 1`, mapping.DestinationKey, mapping.OccurrenceRef, mapping.Revision).Scan(&messageID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -652,7 +652,7 @@ func (s *Store) NextBeeperMediaOperation(
 	}
 	var retain BeeperMediaOperation
 	var retainNext sql.NullTime
-	retainErr := s.db.QueryRowContext(ctx, s.Rebind(`
+	retainErr := s.db.QueryRowContext(ctx, `
 		SELECT retention_operation_id, destination_key, occurrence_ref, revision,
 		       source_sha256, byte_length, request_filename, request_mime_type,
 		       transcript_sha256, language, message_id, attachment_id, occurrence_json,
@@ -661,7 +661,7 @@ func (s *Store) NextBeeperMediaOperation(
 		WHERE destination_key = ? AND retention_state IN ('pending', 'source_unavailable')
 		  AND retention_operation_id <> '' AND next_action_at IS NOT NULL AND next_action_at <= ?
 		ORDER BY next_action_at, occurrence_ref, revision
-		LIMIT 1`), destination, s.dialect.TimestampParam(now)).Scan(
+		LIMIT 1`, destination, s.dialect.TimestampParam(now)).Scan(
 		&retain.OperationID, &retain.DestinationKey, &retain.OccurrenceRef, &retain.Revision,
 		&retain.SourceSHA256, &retain.ByteLength, &retain.Filename, &retain.MIMEType,
 		&retain.TranscriptSHA256, &retain.Language, &retain.MessageID, &retain.AttachmentID,
@@ -676,7 +676,7 @@ func (s *Store) NextBeeperMediaOperation(
 	var phase, pendingID, processingID, frozen, provider, profile string
 	var preparedReplay int
 	var deliveryNext sql.NullTime
-	deliveryErr := s.db.QueryRowContext(ctx, s.Rebind(`
+	deliveryErr := s.db.QueryRowContext(ctx, `
 		SELECT d.phase,
 		       CASE WHEN d.phase = 'pending-process' AND COALESCE(d.pending_operation_id, '') <> ''
 		              AND COALESCE(d.frozen_request_json, '') <> '' AND NOT EXISTS (
@@ -728,7 +728,7 @@ func (s *Store) NextBeeperMediaOperation(
 				  AND o.vault_uid <> ''))
 		  )
 		ORDER BY d.next_action_at, d.processing_key
-		LIMIT 1`), destination, s.dialect.TimestampParam(now)).Scan(
+		LIMIT 1`, destination, s.dialect.TimestampParam(now)).Scan(
 		&phase, &preparedReplay, &delivery.DestinationKey, &delivery.ProcessingKey, &pendingID, &processingID,
 		&delivery.SourceSHA256, &delivery.ByteLength, &delivery.TranscriptSHA256, &delivery.Language,
 		&delivery.DocbankSourceID, &delivery.SourceVersionID, &delivery.ContentVersionID,
@@ -1055,7 +1055,7 @@ func (s *Store) LoadBeeperMediaScan(ctx context.Context, destination string) (Be
 		return BeeperMediaScan{}, errors.New("beeper media destination is required")
 	}
 	var encoded string
-	err := s.db.QueryRowContext(ctx, s.Rebind(`SELECT value FROM archive_metadata WHERE key = ?`),
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM archive_metadata WHERE key = ?`,
 		beeperMediaScanKey(destination)).Scan(&encoded)
 	if errors.Is(err, sql.ErrNoRows) {
 		return BeeperMediaScan{DestinationKey: destination}, nil

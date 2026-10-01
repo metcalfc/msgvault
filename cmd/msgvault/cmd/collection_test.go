@@ -93,11 +93,7 @@ func TestCollectionShowUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{
-		Use:  "show <name>",
-		Args: collectionShowCmd.Args,
-		RunE: runCollectionShow,
-	}
+	cmd := freshCommandForTest(t, newCollectionCommand(), "show")
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -129,11 +125,9 @@ func TestCollectionCreateUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 
 	savedCfg := cfg
 	savedUseLocal := useLocal
-	savedAccounts := collectionCreateAccounts
 	t.Cleanup(func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		collectionCreateAccounts = savedAccounts
 	})
 
 	cfg = &config.Config{
@@ -145,15 +139,11 @@ func TestCollectionCreateUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 	_ = testCtx
 	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
-	collectionCreateAccounts = "alice@example.com,bob@example.com"
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{
-		Use:  "create <name>",
-		Args: collectionCreateCmd.Args,
-		RunE: runCollectionCreate,
-	}
+	cmd := freshCommandForTest(t, newCollectionCommand(), "create")
+	require.NoError(cmd.Flags().Set("accounts", "alice@example.com,bob@example.com"))
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -179,11 +169,9 @@ func TestCollectionAddUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 
 	savedCfg := cfg
 	savedUseLocal := useLocal
-	savedAccounts := collectionAddAccounts
 	t.Cleanup(func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		collectionAddAccounts = savedAccounts
 	})
 
 	cfg = &config.Config{
@@ -195,15 +183,11 @@ func TestCollectionAddUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 	_ = testCtx
 	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
-	collectionAddAccounts = "alice@example.com,bob@example.com"
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{
-		Use:  "add <name>",
-		Args: collectionAddCmd.Args,
-		RunE: runCollectionAdd,
-	}
+	cmd := freshCommandForTest(t, newCollectionCommand(), "add")
+	require.NoError(cmd.Flags().Set("accounts", "alice@example.com,bob@example.com"))
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -229,11 +213,9 @@ func TestCollectionRemoveUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 
 	savedCfg := cfg
 	savedUseLocal := useLocal
-	savedAccounts := collectionRemoveAccounts
 	t.Cleanup(func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		collectionRemoveAccounts = savedAccounts
 	})
 
 	cfg = &config.Config{
@@ -245,15 +227,11 @@ func TestCollectionRemoveUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 	_ = testCtx
 	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
-	collectionRemoveAccounts = "alice@example.com,bob@example.com"
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{
-		Use:  "remove <name>",
-		Args: collectionRemoveCmd.Args,
-		RunE: runCollectionRemove,
-	}
+	cmd := freshCommandForTest(t, newCollectionCommand(), "remove")
+	require.NoError(cmd.Flags().Set("accounts", "alice@example.com,bob@example.com"))
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -296,11 +274,7 @@ func TestCollectionDeleteUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{
-		Use:  "delete <name>",
-		Args: collectionDeleteCmd.Args,
-		RunE: runCollectionDelete,
-	}
+	cmd := freshCommandForTest(t, newCollectionCommand(), "delete")
 	cmd.SetContext(testCtx)
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)

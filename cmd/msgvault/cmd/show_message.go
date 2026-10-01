@@ -16,14 +16,11 @@ import (
 	"go.kenn.io/msgvault/internal/textutil"
 )
 
-var (
-	showMessageJSON bool
-)
-
-var showMessageCmd = &cobra.Command{
-	Use:   "show-message <id>",
-	Short: "Show full message details",
-	Long: `Show the complete details of a message by its internal ID or Gmail ID.
+func newShowMessageCommand() *cobra.Command {
+	showMessageCmd := &cobra.Command{
+		Use:   "show-message <id>",
+		Short: "Show full message details",
+		Long: `Show the complete details of a message by its internal ID or Gmail ID.
 
 Uses configured remote server or the local daemon by default.
 Use --local to use the local daemon even when a remote is configured.
@@ -35,14 +32,17 @@ a web_url that opens the message in the selected daemon browser UI.
 Examples:
   msgvault show-message 12345
 	msgvault show-message 18f0abc123def --json`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := resolveMessageIDArg(args[0])
-		if err != nil {
-			return err
-		}
-		return showHTTPMessage(cmd, id)
-	},
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := resolveMessageIDArg(args[0])
+			if err != nil {
+				return err
+			}
+			return showHTTPMessage(cmd, id)
+		},
+	}
+	showMessageCmd.Flags().Bool(flagJSON, false, "Output as JSON")
+	return showMessageCmd
 }
 
 // resolveMessageIDArg validates a positional message-reference argument for
@@ -65,6 +65,7 @@ func resolveMessageIDArg(raw string) (string, error) {
 }
 
 func showHTTPMessage(cmd *cobra.Command, idStr string) error {
+	showMessageJSON, _ := cmd.Flags().GetBool(flagJSON)
 	s, _, err := OpenHTTPStore(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
@@ -241,7 +242,4 @@ func formatAddresses(addrs []query.Address) string {
 	return strings.Join(parts, ", ")
 }
 
-func init() {
-	rootCmd.AddCommand(showMessageCmd)
-	showMessageCmd.Flags().BoolVar(&showMessageJSON, flagJSON, false, "Output as JSON")
-}
+func init() { registerCommandFactory(newShowMessageCommand) }

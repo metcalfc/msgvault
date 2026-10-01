@@ -6,7 +6,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/kit/daemon"
@@ -56,12 +55,7 @@ func TestRebuildFTSUsesLocalDaemonHTTPAndPreservesStderr(t *testing.T) {
 	doneErr := captureStderr(t)
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(&cobra.Command{
-		Use:   rebuildFTSCmd.Use,
-		Short: rebuildFTSCmd.Short,
-		Long:  rebuildFTSCmd.Long,
-		RunE:  rebuildFTSCmd.RunE,
-	})
+	root.AddCommand(newRebuildFTSCmd())
 	root.SetArgs([]string{"rebuild-fts"})
 
 	err := root.Execute()

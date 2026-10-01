@@ -13,52 +13,7 @@ import (
 	"go.kenn.io/msgvault/internal/fbmessenger"
 )
 
-var (
-	importMessengerMe              string
-	importMessengerFormat          string
-	importMessengerLimit           int
-	importMessengerNoResume        bool
-	importMessengerCheckpointEvery int
-)
-
-var importMessengerCmd = &cobra.Command{
-	Use:   "import-messenger <dyi-export-dir>",
-	Short: "Import Facebook Messenger from a Download Your Information export",
-	Long: `Import Facebook Messenger conversations from a DYI export (JSON or HTML).
-
-Both JSON and HTML DYI formats are supported. When a thread contains both, the
-JSON form wins because it preserves timestamps at millisecond precision and
-reactions with relational fidelity. Use --format both to import both copies
-into a single conversation with disambiguated source_message_id values.
-
-Participants are synthesized as <slug>@facebook.messenger addresses. Two
-participants whose display names produce the same slug are merged with a
-warning — DYI exports do not expose stable user IDs, so this is the best we
-can do without false-splitting one person into two phantom participants.
-
-Your own identifier is required via --me and must itself be a
-<slug>@facebook.messenger address; this value becomes the source identifier
-and drives is_from_me on outbound messages.
-
-HTML exports do not expose timezone information; timestamps are stored as
-UTC. JSON exports have millisecond-precision timestamps that are preserved
-verbatim.
-
-Examples:
-  msgvault import-messenger --me test.user@facebook.messenger ~/downloads/facebook-export
-  msgvault import-messenger --me test.user@facebook.messenger --format both ./dyi
-  msgvault import-messenger --me test.user@facebook.messenger --limit 100 ./dyi
-	`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if !isDaemonCLISubprocess() {
-			return runDaemonCLICommandHTTPFromCobra(cmd, args)
-		}
-		return runImportMessenger(cmd, args[0])
-	},
-}
-
-func runImportMessenger(cmd *cobra.Command, rootDir string) error {
+func (flags messengerCommandOptions) runImportMessenger(cmd *cobra.Command, rootDir string) error {
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -94,18 +49,18 @@ func runImportMessenger(cmd *cobra.Command, rootDir string) error {
 	}()
 
 	opts := fbmessenger.ImportOptions{
-		Me:              importMessengerMe,
+		Me:              flags.importMessengerMe,
 		RootDir:         rootDir,
-		Format:          importMessengerFormat,
+		Format:          flags.importMessengerFormat,
 		AttachmentsDir:  cfg.AttachmentsDir(),
-		Limit:           importMessengerLimit,
-		NoResume:        importMessengerNoResume,
-		CheckpointEvery: importMessengerCheckpointEvery,
+		Limit:           flags.importMessengerLimit,
+		NoResume:        flags.importMessengerNoResume,
+		CheckpointEvery: flags.importMessengerCheckpointEvery,
 		Logger:          logger,
 	}
 
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Importing Facebook Messenger DYI from %s\n", rootDir)
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Me: %s\n", importMessengerMe)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Me: %s\n", flags.importMessengerMe)
 	_, _ = fmt.Fprintln(cmd.OutOrStdout())
 
 	summary, err := fbmessenger.ImportDYI(ctx, s, opts)
@@ -142,18 +97,67 @@ func runImportMessenger(cmd *cobra.Command, rootDir string) error {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 			"\n  Warning: no messages matched --me %q (slug: %q).\n"+
 				"  The --me value must match the slug of your display name in the export.\n",
-			importMessengerMe, fbmessenger.Slug(fbmessenger.StripDomain(importMessengerMe)))
+			flags.importMessengerMe, fbmessenger.Slug(fbmessenger.StripDomain(flags.importMessengerMe)))
 	}
 
 	return rebuildCacheAfterWrite(dbPath, state)
 }
 
 func init() {
-	importMessengerCmd.Flags().StringVar(&importMessengerMe, "me", "", "your <slug>@facebook.messenger identifier (required)")
-	importMessengerCmd.Flags().StringVar(&importMessengerFormat, "format", "auto", "format to import: auto|json|html|both")
-	importMessengerCmd.Flags().IntVar(&importMessengerLimit, "limit", 0, "limit number of messages (for testing)")
-	importMessengerCmd.Flags().BoolVar(&importMessengerNoResume, "no-resume", false, "ignore any existing checkpoint and start fresh")
-	importMessengerCmd.Flags().IntVar(&importMessengerCheckpointEvery, "checkpoint-interval", 200, "checkpoint every N messages")
+	registerCommandFactory(newImportMessengerCommand)
+}
+
+func newImportMessengerCommand() *cobra.Command {
+	var flags messengerCommandOptions
+	importMessengerCmd := &cobra.Command{
+		Use:   "import-messenger <dyi-export-dir>",
+		Short: "Import Facebook Messenger from a Download Your Information export",
+		Long: `Import Facebook Messenger conversations from a DYI export (JSON or HTML).
+
+Both JSON and HTML DYI formats are supported. When a thread contains both, the
+JSON form wins because it preserves timestamps at millisecond precision and
+reactions with relational fidelity. Use --format both to import both copies
+into a single conversation with disambiguated source_message_id values.
+
+Participants are synthesized as <slug>@facebook.messenger addresses. Two
+participants whose display names produce the same slug are merged with a
+warning — DYI exports do not expose stable user IDs, so this is the best we
+can do without false-splitting one person into two phantom participants.
+
+Your own identifier is required via --me and must itself be a
+<slug>@facebook.messenger address; this value becomes the source identifier
+and drives is_from_me on outbound messages.
+
+HTML exports do not expose timezone information; timestamps are stored as
+UTC. JSON exports have millisecond-precision timestamps that are preserved
+verbatim.
+
+Examples:
+  msgvault import-messenger --me test.user@facebook.messenger ~/downloads/facebook-export
+  msgvault import-messenger --me test.user@facebook.messenger --format both ./dyi
+  msgvault import-messenger --me test.user@facebook.messenger --limit 100 ./dyi
+	`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !isDaemonCLISubprocess() {
+				return runDaemonCLICommandHTTPFromCobra(cmd, args)
+			}
+			return flags.runImportMessenger(cmd, args[0])
+		},
+	}
+	importMessengerCmd.Flags().StringVar(&flags.importMessengerMe, "me", "", "your <slug>@facebook.messenger identifier (required)")
+	importMessengerCmd.Flags().StringVar(&flags.importMessengerFormat, "format", "auto", "format to import: auto|json|html|both")
+	importMessengerCmd.Flags().IntVar(&flags.importMessengerLimit, "limit", 0, "limit number of messages (for testing)")
+	importMessengerCmd.Flags().BoolVar(&flags.importMessengerNoResume, "no-resume", false, "ignore any existing checkpoint and start fresh")
+	importMessengerCmd.Flags().IntVar(&flags.importMessengerCheckpointEvery, "checkpoint-interval", 200, "checkpoint every N messages")
 	_ = importMessengerCmd.MarkFlagRequired("me")
-	rootCmd.AddCommand(importMessengerCmd)
+	return importMessengerCmd
+}
+
+type messengerCommandOptions struct {
+	importMessengerMe              string
+	importMessengerFormat          string
+	importMessengerLimit           int
+	importMessengerNoResume        bool
+	importMessengerCheckpointEvery int
 }

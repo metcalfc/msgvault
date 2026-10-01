@@ -11,17 +11,14 @@ import (
 	"go.kenn.io/msgvault/pkg/client/generated"
 )
 
-var (
-	personTrackCmd   = newPersonTrackingCommand("track", true)
-	personUntrackCmd = newPersonTrackingCommand("untrack", false)
-)
-
 func newPersonTrackingCommand(action string, tracked bool) *cobra.Command {
 	return &cobra.Command{
 		Use:   action + " <person-id>",
 		Short: action + " a durable person for future profile maintenance",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			personJSON, _ := cmd.Flags().GetBool(flagJSON)
+
 			personID, err := positivePersonCLIArg(cmd, args[0], personValue)
 			if err != nil {
 				return err

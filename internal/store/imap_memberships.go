@@ -316,7 +316,7 @@ func (s *Store) applyIMAPMailboxDeltas(
 						message_id = excluded.message_id,
 						flags = excluded.flags,
 						updated_at = %s
-				`, s.dialect.JSONBindExpr(), s.dialect.Now(), s.dialect.Now()),
+				`, "?", s.dialect.Now(), s.dialect.Now()),
 					sourceID, observation.Mailbox, observation.UIDValidity,
 					observation.UID, messageID, string(flagsJSON),
 				); err != nil {

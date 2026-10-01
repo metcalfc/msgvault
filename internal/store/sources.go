@@ -247,7 +247,7 @@ func (s *Store) RemoveSourceSerialized(
 
 	var count int
 	if err := conn.QueryRowContext(ctx,
-		s.dialect.Rebind(`SELECT COUNT(*) FROM sync_runs WHERE status = 'running'`),
+		`SELECT COUNT(*) FROM sync_runs WHERE status = 'running'`,
 	).Scan(&count); err != nil {
 		return false, 0, fmt.Errorf("check active syncs: %w", err)
 	}
@@ -261,7 +261,7 @@ func (s *Store) RemoveSourceSerialized(
 
 	uniquePackedHashes, err := func() ([]string, error) {
 		rows, err := conn.QueryContext(ctx,
-			s.dialect.Rebind(packedBlobHashesUniqueToSourceSQL),
+			packedBlobHashesUniqueToSourceSQL,
 			sourceID, sourceID, sourceID,
 		)
 		if err != nil {
@@ -299,7 +299,7 @@ func (s *Store) RemoveSourceSerialized(
 	}
 
 	res, err := conn.ExecContext(
-		ctx, s.dialect.Rebind(`DELETE FROM sources WHERE id = ?`), sourceID,
+		ctx, `DELETE FROM sources WHERE id = ?`, sourceID,
 	)
 	if err != nil {
 		return hadActiveSync, 0, fmt.Errorf("delete source: %w", err)
@@ -327,8 +327,7 @@ func (s *Store) RemoveSourceSerialized(
 		for i, hash := range chunk {
 			args[i] = hash
 		}
-		res, err := conn.ExecContext(ctx, s.dialect.Rebind(
-			`DELETE FROM attachment_pack_index WHERE blob_hash IN (`+placeholders+`)`), args...)
+		res, err := conn.ExecContext(ctx, `DELETE FROM attachment_pack_index WHERE blob_hash IN (`+placeholders+`)`, args...)
 		if err != nil {
 			return hadActiveSync, 0, fmt.Errorf("delete unique packed blob mappings: %w", err)
 		}
@@ -500,10 +499,10 @@ func (s *Store) recomputeUnsupportedGeneratedIdentityMatchesConnContext(
 		ctx,
 		func(ctx context.Context, query string, args ...any) (rowsScanner, error) {
 			//nolint:rowserrcheck // Ownership transfers to the shared iterator, which checks Err after iteration.
-			return conn.QueryContext(ctx, s.dialect.Rebind(query), args...)
+			return conn.QueryContext(ctx, query, args...)
 		},
 		func(ctx context.Context, query string, args ...any) (sql.Result, error) {
-			return conn.ExecContext(ctx, s.dialect.Rebind(query), args...)
+			return conn.ExecContext(ctx, query, args...)
 		},
 		true,
 	)
@@ -776,9 +775,7 @@ func (s *Store) recomputeUnsupportedGeneratedIdentityMatchesContext(
 	if !identityChanged {
 		return nil
 	}
-	if _, err := exec(ctx, s.dialect.InsertOrIgnore(
-		`INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '0')`,
-	), identityRevisionKey); err != nil {
+	if _, err := exec(ctx, `INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '0')`, identityRevisionKey); err != nil {
 		return fmt.Errorf("seed identity revision after source cleanup: %w", err)
 	}
 	if _, err := exec(ctx, `UPDATE archive_metadata
@@ -868,7 +865,7 @@ func (s *Store) deleteSourceObservationIdentityCandidatesContext(
 	// observations while the source rows still exist: remove a conflict only
 	// when the deleted source participates in it and no genuinely conflicting
 	// current observation pair remains outside that source.
-	if _, err := execer.ExecContext(ctx, s.dialect.Rebind(`
+	if _, err := execer.ExecContext(ctx, `
 		WITH stale_conflicts AS (
 			SELECT c.id
 			FROM identity_match_candidates c
@@ -901,17 +898,17 @@ func (s *Store) deleteSourceObservationIdentityCandidatesContext(
 			  )
 		)
 		DELETE FROM identity_match_candidates
-		WHERE id IN (SELECT id FROM stale_conflicts)`),
+		WHERE id IN (SELECT id FROM stale_conflicts)`,
 		sourceID, sourceID, sourceID); err != nil {
 		return fmt.Errorf("delete stale source observation conflicts: %w", err)
 	}
-	if _, err := execer.ExecContext(ctx, s.dialect.Rebind(`
+	if _, err := execer.ExecContext(ctx, `
 		DELETE FROM identity_match_candidates
 		WHERE (left_kind = 'observation' AND left_id IN (
 			SELECT id FROM participant_contact_observations WHERE source_id = ?
 		)) OR (right_kind = 'observation' AND right_id IN (
 			SELECT id FROM participant_contact_observations WHERE source_id = ?
-		))`), sourceID, sourceID); err != nil {
+		))`, sourceID, sourceID); err != nil {
 		return fmt.Errorf("delete source observation identity candidates: %w", err)
 	}
 	return nil

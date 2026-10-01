@@ -14,7 +14,7 @@ import (
 func TestEmailModeMixedTypeSQLiteResults(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	const term = "zzemailmodescope"
 	typedEmailID := tdb.AddMessage(dbtest.MessageOpts{Subject: term + " typed", MessageType: emailMessageType})

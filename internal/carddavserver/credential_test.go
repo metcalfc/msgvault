@@ -20,7 +20,7 @@ func TestSaveLoadVerifyAndClearCredential(t *testing.T) {
 	saved, err := SaveCredential(dir, "device", "correct-horse-battery-staple")
 	require.NoError(err)
 	assert.Equal("device", saved.Username)
-	assert.True(len(saved.PasswordHash) > 40)
+	assert.Greater(len(saved.PasswordHash), 40)
 	assert.NotContains(saved.PasswordHash, "correct-horse")
 
 	info, err := os.Stat(filepath.Join(dir, CredentialFilename))
@@ -46,11 +46,11 @@ func TestSaveLoadVerifyAndClearCredential(t *testing.T) {
 func TestSaveCredentialRejectsWeakInput(t *testing.T) {
 	dir := t.TempDir()
 	_, err := SaveCredential(dir, "", "correct-horse-battery-staple")
-	assert.Error(t, err)
+	require.Error(t, err)
 	_, err = SaveCredential(dir, "a:b", "correct-horse-battery-staple")
-	assert.Error(t, err)
+	require.Error(t, err)
 	_, err = SaveCredential(dir, "device", "short")
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestGeneratePasswordIsLongAndVaries(t *testing.T) {

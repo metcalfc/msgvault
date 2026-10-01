@@ -49,15 +49,6 @@ func choosePasswordStrategy(
 	}
 }
 
-var (
-	imapHost                 string
-	imapPort                 int
-	imapUsername             string
-	imapNoTLS                bool
-	imapSTARTTLS             bool
-	noDefaultIdentityAddImap bool
-)
-
 func newAddIMAPCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add-imap",
@@ -83,19 +74,21 @@ Examples:
   msgvault add-imap --host mail.example.com --username user@example.com --starttls
   msgvault add-imap --host mail.example.com --username user@example.com --no-tls`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := readAddIMAPOptions(cmd)
+
 			state := invocationFromCommand(cmd)
 			if state == nil || state.cfg == nil {
 				return errors.New("configuration is unavailable")
 			}
 			cfg := state.cfg
 			logger := state.logger
-			if imapHost == "" {
+			if flags.imapHost == "" {
 				return usageErr(cmd, errors.New("--host is required"))
 			}
-			if imapUsername == "" {
+			if flags.imapUsername == "" {
 				return usageErr(cmd, errors.New("--username is required"))
 			}
-			if imapNoTLS && imapSTARTTLS {
+			if flags.imapNoTLS && flags.imapSTARTTLS {
 				return usageErr(cmd, errors.New("--no-tls and --starttls are mutually exclusive"))
 			}
 			if !isDaemonCLISubprocess() {
@@ -110,11 +103,11 @@ Examples:
 
 			// Build IMAP config
 			imapCfg := &imapclient.Config{
-				Host:     imapHost,
-				Port:     imapPort,
-				TLS:      !imapNoTLS && !imapSTARTTLS,
-				STARTTLS: imapSTARTTLS,
-				Username: imapUsername,
+				Host:     flags.imapHost,
+				Port:     flags.imapPort,
+				TLS:      !flags.imapNoTLS && !flags.imapSTARTTLS,
+				STARTTLS: flags.imapSTARTTLS,
+				Username: flags.imapUsername,
 			}
 
 			password, err := readAddIMAPPassword(cmd, false)
@@ -161,14 +154,14 @@ Examples:
 			}
 
 			// Set display name from username
-			if err := s.UpdateSourceDisplayName(source.ID, imapUsername); err != nil {
+			if err := s.UpdateSourceDisplayName(source.ID, flags.imapUsername); err != nil {
 				return fmt.Errorf("set display name: %w", err)
 			}
 
 			// Auto-default-identity must run BEFORE the legacy migration
 			// retry — see comment in account_identity.go.
-			if !noDefaultIdentityAddImap {
-				confirmDefaultIdentity(cmd.OutOrStdout(), s, source.ID, imapUsername, imapUsername, "account-identifier", state.logger)
+			if !flags.noDefaultIdentityAddImap {
+				confirmDefaultIdentity(cmd.OutOrStdout(), s, source.ID, flags.imapUsername, flags.imapUsername, "account-identifier", state.logger)
 			}
 			if err := runPostSourceCreateMigrationsForInvocation(s, state); err != nil {
 				return fmt.Errorf("post-source-create migrations: %w", err)
@@ -184,16 +177,18 @@ Examples:
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&imapHost, "host", "", "IMAP server hostname (required)")
-	cmd.Flags().IntVar(&imapPort, "port", 0, "IMAP server port (default: 993 for TLS, 143 otherwise; matches defaults in internal/microsoft/imap package)")
-	cmd.Flags().StringVar(&imapUsername, "username", "", "IMAP username / email address (required)")
-	cmd.Flags().BoolVar(&imapNoTLS, "no-tls", false, "Disable TLS (plain connection, not recommended)")
-	cmd.Flags().BoolVar(&imapSTARTTLS, "starttls", false, "Use STARTTLS instead of implicit TLS")
-	cmd.Flags().BoolVar(&noDefaultIdentityAddImap, "no-default-identity", false, noDefaultIdentityHelp)
+	cmd.Flags().String("host", "", "IMAP server hostname (required)")
+	cmd.Flags().Int("port", 0, "IMAP server port (default: 993 for TLS, 143 otherwise; matches defaults in internal/microsoft/imap package)")
+	cmd.Flags().String("username", "", "IMAP username / email address (required)")
+	cmd.Flags().Bool("no-tls", false, "Disable TLS (plain connection, not recommended)")
+	cmd.Flags().Bool("starttls", false, "Use STARTTLS instead of implicit TLS")
+	cmd.Flags().Bool("no-default-identity", false, noDefaultIdentityHelp)
 	return cmd
 }
 
 func readAddIMAPPassword(cmd *cobra.Command, announceEnv bool) (string, error) {
+	flags := readAddIMAPOptions(cmd)
+
 	if envPass := os.Getenv(clirun.EnvIMAPPassword); envPass != "" {
 		if announceEnv {
 			if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Using password from %s environment variable\n", clirun.EnvIMAPPassword); err != nil {
@@ -203,7 +198,7 @@ func readAddIMAPPassword(cmd *cobra.Command, announceEnv bool) (string, error) {
 		return envPass, nil
 	}
 
-	prompt := fmt.Sprintf("Password for %s@%s:", imapUsername, imapHost)
+	prompt := fmt.Sprintf("Password for %s@%s:", flags.imapUsername, flags.imapHost)
 	method, promptOut := choosePasswordStrategy(
 		isatty.IsTerminal(os.Stdin.Fd()),
 		isatty.IsCygwinTerminal(os.Stdin.Fd()),
@@ -261,5 +256,25 @@ func readPasswordInteractive(prompt string, output io.Writer) (string, error) {
 }
 
 func init() {
-	rootCmd.AddCommand(newAddIMAPCmd())
+	registerCommandFactory(newAddIMAPCmd)
+}
+
+type addIMAPOptions struct {
+	imapHost                 string
+	imapNoTLS                bool
+	imapPort                 int
+	imapSTARTTLS             bool
+	imapUsername             string
+	noDefaultIdentityAddImap bool
+}
+
+func readAddIMAPOptions(cmd *cobra.Command) addIMAPOptions {
+	var flags addIMAPOptions
+	flags.imapHost, _ = cmd.Flags().GetString("host")
+	flags.imapNoTLS, _ = cmd.Flags().GetBool("no-tls")
+	flags.imapPort, _ = cmd.Flags().GetInt("port")
+	flags.imapSTARTTLS, _ = cmd.Flags().GetBool("starttls")
+	flags.imapUsername, _ = cmd.Flags().GetString("username")
+	flags.noDefaultIdentityAddImap, _ = cmd.Flags().GetBool("no-default-identity")
+	return flags
 }

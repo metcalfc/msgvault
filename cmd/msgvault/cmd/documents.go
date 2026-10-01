@@ -1535,5 +1535,5 @@ func configuredDocumentClient(
 }
 
 func init() {
-	rootCmd.AddCommand(newDocumentsCmd(defaultDocumentsCommandDeps()))
+	registerCommandFactory(func() *cobra.Command { return newDocumentsCmd(defaultDocumentsCommandDeps()) })
 }

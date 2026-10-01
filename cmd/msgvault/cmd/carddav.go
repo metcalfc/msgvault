@@ -299,6 +299,7 @@ func newPersonCardDAVCommand(action string, publish bool) *cobra.Command {
 }
 
 func init() {
-	rootCmd.AddCommand(newAddCardDAVCmd(), newSyncCardDAVCmd(), newCardDAVCmd())
-	personCmd.AddCommand(newPersonCardDAVCommand("publish", true), newPersonCardDAVCommand("unpublish", false))
+	registerCommandFactory(newAddCardDAVCmd)
+	registerCommandFactory(newSyncCardDAVCmd)
+	registerCommandFactory(newCardDAVCmd)
 }

@@ -188,7 +188,7 @@ func clusterBestDisplayNameTx(
 	ctx context.Context, tx *loggedTx, members []int64,
 ) (*string, error) {
 	if len(members) == 0 {
-		return nil, nil
+		return nil, nil //nolint:nilnil // An unnamed cluster has no seed; this is a successful optional lookup.
 	}
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(members)), ",")
 	args := make([]any, 0, len(members))
@@ -200,7 +200,7 @@ func clusterBestDisplayNameTx(
 		WHERE id IN (`+placeholders+`) AND TRIM(COALESCE(display_name, '')) <> ''
 		ORDER BY id LIMIT 1`, args...).Scan(&name)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // An unnamed cluster has no seed; this is a successful optional lookup.
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read cluster display name: %w", err)
@@ -214,9 +214,7 @@ func clusterBestDisplayNameTx(
 func (s *Store) bindPersonParticipantsTx(
 	ctx context.Context, tx *loggedTx, personID int64, members []int64,
 ) (bool, error) {
-	insert := s.dialect.InsertOrIgnore(
-		`INSERT OR IGNORE INTO person_participants (person_id, participant_id) VALUES (?, ?)`,
-	)
+	insert := `INSERT OR IGNORE INTO person_participants (person_id, participant_id) VALUES (?, ?)`
 	bindingsChanged := false
 	for _, memberID := range members {
 		result, err := tx.ExecContext(ctx, insert, personID, memberID)
@@ -325,9 +323,7 @@ func (s *Store) deletePersonOnce(ctx context.Context, input DeletePersonEnrichme
 			return err
 		}
 		var revision int64
-		err := tx.QueryRowContext(ctx,
-			`SELECT revision FROM persons WHERE id = ?`+s.dialect.SelectForUpdate(),
-			id).Scan(&revision)
+		err := tx.QueryRowContext(ctx, "SELECT revision FROM persons WHERE id = ?", id).Scan(&revision)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrPersonNotFound
 		}

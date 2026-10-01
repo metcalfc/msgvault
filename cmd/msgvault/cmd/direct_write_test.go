@@ -309,7 +309,7 @@ func TestInitDBFailsFastWhenArchiveOwned(t *testing.T) {
 
 	cmd := &cobra.Command{Use: "init-db"}
 	cmd.SetContext(testCtx)
-	err = initDBCmd.RunE(cmd, nil)
+	err = newInitDBCommand().RunE(cmd, nil)
 	require.Error(err, "init-db must fail while the archive is owned")
 	assert.Contains(err.Error(), "write operation", "explains the active writer")
 	assert.Contains(err.Error(), "wait", "points at the remedy")
@@ -332,7 +332,7 @@ func TestVerifyDaemonAutostartFailsFastWhenArchiveOwned(t *testing.T) {
 
 	cmd := &cobra.Command{Use: "verify"}
 	cmd.SetContext(testCtx)
-	err = verifyCmd.RunE(cmd, []string{"alice@example.com"})
+	err = newVerifyCmd().RunE(cmd, []string{"alice@example.com"})
 	require.Error(err, "verify must not autostart a daemon while the archive is owned")
 	assert.Contains(err.Error(), "write operation is in progress", "actionable ownership error")
 	assert.Contains(err.Error(), "cannot start", "daemon start is refused")
@@ -366,7 +366,7 @@ func TestBuildCacheFailsFastWhenArchiveOwned(t *testing.T) {
 
 	cmd := &cobra.Command{Use: "build-cache"}
 	cmd.SetContext(testCtx)
-	err = buildCacheCmd.RunE(cmd, nil)
+	err = newBuildCacheCommand().RunE(cmd, nil)
 	require.Error(err, "build-cache must fail while a local writer owns the archive")
 	assert.Contains(err.Error(), "write operation is in progress", "actionable ownership error")
 	assert.Contains(err.Error(), "cannot start", "daemon start is refused")
@@ -420,14 +420,7 @@ func TestCreateSubsetFailsFastWhenArchiveOwned(t *testing.T) {
 	require.NoError(
 		st.Close(), "close test archive")
 
-	oldRows := subsetRows
-	oldOutput := subsetOutput
-	t.Cleanup(func() {
-		subsetRows = oldRows
-		subsetOutput = oldOutput
-	})
-	subsetRows = 1
-	subsetOutput = t.TempDir()
+	subsetOutput := t.TempDir()
 
 	owner, err := tryAcquireWriteOwnerLock(dataDir)
 	require.NoError(
@@ -435,7 +428,7 @@ func TestCreateSubsetFailsFastWhenArchiveOwned(t *testing.T) {
 
 	t.Cleanup(func() { _ = owner.Close() })
 
-	cmd := &cobra.Command{Use: "create-subset"}
+	cmd := newCreateSubsetTestCommand(t, subsetOutput, false, false)
 	cmd.SetContext(testCtx)
 	err = runCreateSubset(cmd, nil)
 	require.Error(err, "create-subset must not autostart a daemon while the archive is owned")

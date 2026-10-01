@@ -72,7 +72,7 @@ func TestDuckDBTextSnapshotRevisionTracksHybridSQLiteTimeline(t *testing.T) {
 	analyticsDir, cleanup := b.Build()
 	t.Cleanup(cleanup)
 
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	_, err := tdb.DB.Exec(`
 		INSERT INTO sources (id, source_type, identifier) VALUES (7, 'whatsapp', 'owner@chat.test');
 		INSERT INTO participants (id, phone_number, display_name) VALUES (11, '+15550000011', 'Alice');

@@ -134,8 +134,6 @@ func TestEmbeddingsPruneUsesDaemonRunner(t *testing.T) {
 func TestEmbeddingsBuildPromptsBeforeDaemonRunner(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	oldFull, oldYes, oldBackstop := embedFullRebuild, embedYes, embedBackstop
-	t.Cleanup(func() { embedFullRebuild, embedYes, embedBackstop = oldFull, oldYes, oldBackstop })
 
 	server, requests := newDaemonCLIRunnerTestServer(t, func(req daemonCLIRunTestRequest) {
 		assert.Equal([]string{
@@ -168,10 +166,9 @@ func TestEmbeddingsBuildPromptsBeforeDaemonRunner(t *testing.T) {
 }
 
 func TestEmbeddingsResumeUsesDaemonRunner(t *testing.T) {
+	flags := embeddingCommandOptions{}
 	require := require.New(t)
 	assert := assert.New(t)
-	oldFull, oldYes, oldBackstop := embedFullRebuild, embedYes, embedBackstop
-	t.Cleanup(func() { embedFullRebuild, embedYes, embedBackstop = oldFull, oldYes, oldBackstop })
 
 	server, requests := newDaemonCLIRunnerTestServer(t, func(req daemonCLIRunTestRequest) {
 		assert.Equal([]string{embeddingsCommandName, "resume", "--backstop"}, req.Args, "args")
@@ -186,7 +183,7 @@ func TestEmbeddingsResumeUsesDaemonRunner(t *testing.T) {
 		Use:  "resume",
 		RunE: runEmbeddingsResume,
 	}
-	resume.Flags().BoolVar(&embedBackstop, "backstop", false,
+	resume.Flags().BoolVar(&flags.embedBackstop, "backstop", false,
 		"Full-scan pass that ignores the per-generation watermark")
 	embeddings.AddCommand(resume)
 	root.AddCommand(embeddings)
@@ -201,12 +198,9 @@ func TestEmbeddingsResumeUsesDaemonRunner(t *testing.T) {
 }
 
 func TestEmbeddingsRetirePromptsBeforeDaemonRunner(t *testing.T) {
+	flags := embeddingCommandOptions{}
 	require := require.New(t)
 	assert := assert.New(t)
-	oldYes, oldForce := embeddingsRetireYes, embeddingsRetireForceActive
-	t.Cleanup(func() {
-		embeddingsRetireYes, embeddingsRetireForceActive = oldYes, oldForce
-	})
 
 	server, runRequests, planRequests := newDaemonCLIEmbeddingsTestServer(t, func(req daemonCLIEmbeddingsPlanTestRequest) {
 		assert.Equal(cliEmbeddingsOperationRetire, req.Operation, "operation")
@@ -229,8 +223,8 @@ func TestEmbeddingsRetirePromptsBeforeDaemonRunner(t *testing.T) {
 		Args: cobra.ExactArgs(1),
 		RunE: runEmbeddingsRetireCommand,
 	}
-	retire.Flags().BoolVar(&embeddingsRetireYes, "yes", false, "Skip confirmation prompt")
-	retire.Flags().BoolVar(&embeddingsRetireForceActive, "force-active", false, "Allow retiring the active generation")
+	retire.Flags().BoolVar(&flags.embeddingsRetireYes, "yes", false, "Skip confirmation prompt")
+	retire.Flags().BoolVar(&flags.embeddingsRetireForceActive, "force-active", false, "Allow retiring the active generation")
 	embeddings.AddCommand(retire)
 	root.AddCommand(embeddings)
 
@@ -248,12 +242,9 @@ func TestEmbeddingsRetirePromptsBeforeDaemonRunner(t *testing.T) {
 }
 
 func TestEmbeddingsActivatePromptsBeforeDaemonRunner(t *testing.T) {
+	flags := embeddingCommandOptions{}
 	require := require.New(t)
 	assert := assert.New(t)
-	oldYes, oldForce := embeddingsActivateYes, embeddingsActivateForce
-	t.Cleanup(func() {
-		embeddingsActivateYes, embeddingsActivateForce = oldYes, oldForce
-	})
 
 	server, runRequests, planRequests := newDaemonCLIEmbeddingsTestServer(t, func(req daemonCLIEmbeddingsPlanTestRequest) {
 		assert.Equal(cliEmbeddingsOperationActivate, req.Operation, "operation")
@@ -276,8 +267,8 @@ func TestEmbeddingsActivatePromptsBeforeDaemonRunner(t *testing.T) {
 		Args: cobra.ExactArgs(1),
 		RunE: runEmbeddingsActivateCommand,
 	}
-	activate.Flags().BoolVar(&embeddingsActivateYes, "yes", false, "Skip confirmation prompt")
-	activate.Flags().BoolVar(&embeddingsActivateForce, "force", false, "Allow activation while messages still need embedding")
+	activate.Flags().BoolVar(&flags.embeddingsActivateYes, "yes", false, "Skip confirmation prompt")
+	activate.Flags().BoolVar(&flags.embeddingsActivateForce, "force", false, "Allow activation while messages still need embedding")
 	embeddings.AddCommand(activate)
 	root.AddCommand(embeddings)
 
@@ -295,24 +286,24 @@ func TestEmbeddingsActivatePromptsBeforeDaemonRunner(t *testing.T) {
 }
 
 // TestRunEmbeddingsResume_PreservesBackstopFlag pins the resume behavior:
-// resume forces incremental mode (saves/restores embedFullRebuild + embedYes) but
-// must leave embedBackstop exactly as the operator set it, so
+// resume forces incremental mode (saves/restores flags.embedFullRebuild + flags.embedYes) but
+// must leave flags.embedBackstop exactly as the operator set it, so
 // `embeddings resume --backstop` actually runs a backstop pass.
 func TestRunEmbeddingsResume_PreservesBackstopFlag(t *testing.T) {
+	embeddingsResumeCmd := newEmbeddingTestCommand(t, "resume")
+	flags := embeddingCommandOptions{}
 	cfg := testConfigValue()
 
 	assert := assert.New(t)
 
 	// Save and restore all three globals so the test is hermetic.
-	oldFull, oldYes, oldBackstop := embedFullRebuild, embedYes, embedBackstop
-	t.Cleanup(func() { embedFullRebuild, embedYes, embedBackstop = oldFull, oldYes, oldBackstop })
 
 	// Operator state: full-rebuild on (resume must clear it), backstop on
 	// (resume must NOT touch it). Point at an empty config so the run errors
 	// out early (vector disabled) without needing a real backend.
-	embedFullRebuild = true
-	embedYes = false
-	embedBackstop = true
+	flags.embedFullRebuild = true
+	flags.embedYes = false
+	flags.embedBackstop = true
 	oldCfg := cfg
 	cfg = &config.Config{}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
@@ -329,9 +320,9 @@ func TestRunEmbeddingsResume_PreservesBackstopFlag(t *testing.T) {
 	// flag-preservation contract of runEmbeddingsResume.
 	_ = runEmbeddingsResume(cmd, nil)
 
-	assert.True(embedBackstop, "resume must NOT clobber embedBackstop")
-	assert.True(embedFullRebuild, "resume must restore embedFullRebuild to its prior value")
-	assert.False(embedYes, "resume must restore embedYes to its prior value")
+	assert.True(flags.embedBackstop, "resume must NOT clobber flags.embedBackstop")
+	assert.True(flags.embedFullRebuild, "resume must restore flags.embedFullRebuild to its prior value")
+	assert.False(flags.embedYes, "resume must restore flags.embedYes to its prior value")
 }
 
 func TestListEmbeddingGenerationsIncludesActiveAndBuilding(t *testing.T) {
@@ -342,7 +333,7 @@ func TestListEmbeddingGenerationsIncludesActiveAndBuilding(t *testing.T) {
 	// listEmbeddingGenerations reads only the generation metadata now;
 	// Coverage is filled separately for the display path, so it is not
 	// asserted here.
-	rows, err := listEmbeddingGenerations(t.Context(), db, sqliteRebind)
+	rows, err := listEmbeddingGenerations(t.Context(), db)
 	require.NoError(err)
 	require.Len(rows, 2)
 
@@ -359,6 +350,8 @@ func TestListEmbeddingGenerationsIncludesActiveAndBuilding(t *testing.T) {
 // has live messages needing embedding (embed_gen <> gen in the main DB)
 // must fail without --force.
 func TestRunEmbeddingsActivateRefusesMissingWithoutForce(t *testing.T) {
+	embeddingsActivateCmd := newEmbeddingTestCommand(t, "activate")
+	flags := embeddingCommandOptions{}
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
@@ -368,14 +361,12 @@ func TestRunEmbeddingsActivateRefusesMissingWithoutForce(t *testing.T) {
 	seedMainDBWithLiveMessage(t, dataDir)
 	testCtx, _ := withEmbeddingCommandConfigDataDir(t, dbPath, dataDir)
 
-	oldYes := embeddingsActivateYes
-	embeddingsActivateYes = true
-	t.Cleanup(func() { embeddingsActivateYes = oldYes })
+	flags.embeddingsActivateYes = true
 	cmd := embeddingsActivateCmd
 	oldCtx := cmd.Context()
 	cmd.SetContext(testCtx)
 	t.Cleanup(func() { cmd.SetContext(oldCtx) })
-	err := runEmbeddingsActivate(cmd, []string{"2"})
+	err := runEmbeddingsActivateWithOptions(cmd, []string{"2"}, flags)
 
 	require.Error(err)
 	assert.Contains(err.Error(), "needing embedding")
@@ -390,26 +381,22 @@ func TestRunEmbeddingsActivateRefusesMissingWithoutForce(t *testing.T) {
 // TestRunEmbeddingsRetire_ForceActive so this untagged test stays buildable
 // without a vector backend tag.
 func TestRetireEmbeddingGenerationRefusesActiveWithoutForce_PreCheck(t *testing.T) {
+	embeddingsRetireCmd := newEmbeddingTestCommand(t, "retire")
+	flags := embeddingCommandOptions{}
 	require := require.New(t)
 	assert := assert.New(t)
 	dbPath := newEmbeddingMetadataTestDBFile(t)
 	testCtx := withEmbeddingCommandConfig(t, dbPath)
 
-	oldYes := embeddingsRetireYes
-	oldForce := embeddingsRetireForceActive
-	embeddingsRetireYes = true
-	embeddingsRetireForceActive = false
-	t.Cleanup(func() {
-		embeddingsRetireYes = oldYes
-		embeddingsRetireForceActive = oldForce
-	})
+	flags.embeddingsRetireYes = true
+	flags.embeddingsRetireForceActive = false
 
 	cmd := embeddingsRetireCmd
 	oldCtx := cmd.Context()
 	cmd.SetContext(testCtx)
 	t.Cleanup(func() { cmd.SetContext(oldCtx) })
 
-	err := runEmbeddingsRetire(cmd, []string{"1"})
+	err := runEmbeddingsRetireWithOptions(cmd, []string{"1"}, flags)
 	require.Error(err)
 	assert.Contains(err.Error(), "active")
 }
@@ -530,13 +517,9 @@ func newTestConfigForFingerprint(vecPath string) *config.Config {
 	}
 }
 
-// sqliteRebind is the identity rebind function used by tests that operate
-// directly against SQLite. It mirrors (&store.SQLiteDialect{}).Rebind.
-var sqliteRebind = (&store.SQLiteDialect{}).Rebind
-
 func mustGetEmbeddingGeneration(ctx context.Context, t *testing.T, db *sql.DB, gen vector.GenerationID) embeddingGenerationRow {
 	t.Helper()
-	row, err := getEmbeddingGeneration(ctx, db, sqliteRebind, gen)
+	row, err := getEmbeddingGeneration(ctx, db, gen)
 	require.NoError(t, err)
 	return row
 }
@@ -546,8 +529,6 @@ func TestEmbeddingsBuildForwardsAPIKeyEnvToDaemonRunner(t *testing.T) {
 
 	require := require.New(t)
 	assert := assert.New(t)
-	oldFull, oldYes := embedFullRebuild, embedYes
-	t.Cleanup(func() { embedFullRebuild, embedYes = oldFull, oldYes })
 
 	const keyEnv = "MSGVAULT_TEST_EMBED_KEY"
 	t.Setenv(keyEnv, "secret-token")
@@ -588,4 +569,15 @@ func TestEmbeddingsForwardEnvSkipsUnsetKey(t *testing.T) {
 
 	cfg.Vector.Embeddings.APIKeyEnv = "MSGVAULT_TEST_EMBED_KEY_UNSET"
 	assert.Nil(embeddingsForwardEnv(invocationFromContext(testCtx)), "configured env var not set in caller environment")
+}
+
+func newEmbeddingTestCommand(t *testing.T, name string) *cobra.Command {
+	t.Helper()
+	group := newEmbeddingsCommand()
+	root := &cobra.Command{Use: daemonService}
+	root.AddCommand(group)
+	cmd, _, err := group.Find([]string{name})
+	require.NoError(t, err)
+	require.NotSame(t, group, cmd)
+	return cmd
 }

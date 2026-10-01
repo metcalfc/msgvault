@@ -12,7 +12,7 @@ import (
 func TestSQLiteTextSnapshotRevisionConversationsTracksScopedMetadata(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	_, err := tdb.DB.Exec(`
 		INSERT INTO sources (id, source_type, identifier) VALUES
 			(7, 'imessage', 'owner@chat.test'),
@@ -88,7 +88,7 @@ func TestSQLiteTextSnapshotRevisionConversationsTracksScopedMetadata(t *testing.
 func TestSQLiteTextSnapshotRevisionMessagesTracksMembershipWithoutBodies(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	_, err := tdb.DB.Exec(`
 		INSERT INTO sources (id, source_type, identifier) VALUES (7, 'whatsapp', 'owner@chat.test');
 		INSERT INTO participants (id, phone_number, display_name) VALUES (11, '+15550000011', 'Alice');
@@ -162,7 +162,7 @@ func TestSQLiteTextSnapshotRevisionMessagesTracksMembershipWithoutBodies(t *test
 func TestSQLiteTextSnapshotReadsReturnPageAndFullRevisionTogether(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	_, err := tdb.DB.Exec(`
 		INSERT INTO sources (id, source_type, identifier) VALUES (7, 'imessage', 'owner@chat.test');
 		INSERT INTO participants (id, phone_number, display_name) VALUES (11, '+15550000011', 'Alice');
@@ -229,7 +229,7 @@ func TestSQLiteTextSnapshotReadsReturnPageAndFullRevisionTogether(t *testing.T) 
 func TestSQLiteListConversationsParticipantMembership(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	_, err := tdb.DB.Exec(`
 		INSERT INTO sources (id, source_type, identifier, display_name) VALUES
 			(7, 'imessage', 'owner@chat.test', 'Owner Chat'),
@@ -290,7 +290,7 @@ func TestSQLiteListConversationsParticipantMembership(t *testing.T) {
 func TestSQLiteListConversationMessagesWithoutBodies(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	_, err := tdb.DB.Exec(`
 		INSERT INTO sources (id, source_type, identifier) VALUES (7, 'whatsapp', 'chat');
 		INSERT INTO participants (id, display_name) VALUES (11, 'Alice');
@@ -312,7 +312,7 @@ func TestSQLiteListConversationMessagesWithoutBodies(t *testing.T) {
 func TestSQLiteListConversationMessagesSearchesFullBodyWithinConversation(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	_, err := tdb.DB.Exec(`
 		CREATE VIRTUAL TABLE messages_fts USING fts5(
 			message_id UNINDEXED, subject, body, from_addr, to_addr, cc_addr
@@ -344,7 +344,7 @@ func TestSQLiteListConversationMessagesSearchesFullBodyWithinConversation(t *tes
 }
 
 func TestSQLiteListConversationMessagesUsesIDTiebreakerForEqualTimestamps(t *testing.T) {
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	_, err := tdb.DB.Exec(`
 		INSERT INTO sources (id, source_type, identifier) VALUES (7, 'whatsapp', 'chat');
 		INSERT INTO participants (id, display_name) VALUES (11, 'Alice');

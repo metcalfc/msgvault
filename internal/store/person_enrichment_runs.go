@@ -123,8 +123,7 @@ func (s *Store) StartManualPersonEnrichmentRunContext(
 		existing, err := scanDurableRun(tx.QueryRowContext(ctx, `
 			SELECT id, kind, requested_by, state, requested_at
 			FROM person_enrichment_runs
-			WHERE kind = 'manual' AND requested_by = ?`+s.dialect.SelectForUpdate(),
-			idempotencyKey))
+			WHERE kind = 'manual' AND requested_by = ?`, idempotencyKey))
 		if err == nil {
 			if err := s.bindManualPersonEnrichmentRunTargetTx(
 				ctx, tx, existing.ID, personID, profileFingerprint, false); err != nil {
@@ -136,7 +135,7 @@ func (s *Store) StartManualPersonEnrichmentRunContext(
 		if !errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("read existing manual person enrichment run: %w", err)
 		}
-		if _, err := lockPersonEnrichmentPersonTx(ctx, tx, s.dialect, personID); err != nil {
+		if _, err := lockPersonEnrichmentPersonTx(ctx, tx, personID); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrPersonNotFound
 			}
@@ -174,8 +173,7 @@ func (s *Store) StartManualPersonEnrichmentRunContext(
 		var existingRun sql.NullInt64
 		var leaseOwner sql.NullString
 		err = tx.QueryRowContext(ctx, `SELECT run_id, lease_owner
-			FROM person_enrichment_work WHERE person_id = ? AND profile_fingerprint = ?`+
-			s.dialect.SelectForUpdate(), personID, profileFingerprint).Scan(&existingRun, &leaseOwner)
+			FROM person_enrichment_work WHERE person_id = ? AND profile_fingerprint = ?`, personID, profileFingerprint).Scan(&existingRun, &leaseOwner)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			mask, maskErr := personEnrichmentTriggerMask(personenrichment.TriggerManual)
@@ -237,8 +235,7 @@ func (s *Store) bindManualPersonEnrichmentRunTargetTx(
 	var boundPersonID int64
 	var boundFingerprint string
 	err := tx.QueryRowContext(ctx, `SELECT person_id, profile_fingerprint
-		FROM person_enrichment_manual_run_targets WHERE run_id = ?`+
-		s.dialect.SelectForUpdate(), runID).Scan(&boundPersonID, &boundFingerprint)
+		FROM person_enrichment_manual_run_targets WHERE run_id = ?`, runID).Scan(&boundPersonID, &boundFingerprint)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrManualRunIdempotencyConflict
 	}
@@ -487,7 +484,7 @@ func (s *Store) RecoverPersonEnrichmentRunsContext(ctx context.Context, recovere
 				return fmt.Errorf("close invalid person enrichment attempt costs: %w", err)
 			}
 			for _, attemptID := range attemptIDs {
-				if _, err := reconcilePersonEnrichmentCostTx(ctx, tx, s.dialect, attemptID,
+				if _, err := reconcilePersonEnrichmentCostTx(ctx, tx, attemptID,
 					personenrichment.Cost{}, true, recoveredAt); err != nil {
 					return fmt.Errorf("reconcile invalid person enrichment attempt cost: %w", err)
 				}
@@ -599,8 +596,7 @@ func (s *Store) CompleteRun(
 			s.personEnrichmentRunBarrier("complete_before_run_lock")
 		}
 		var state string
-		if err := tx.QueryRowContext(ctx, `SELECT state FROM person_enrichment_runs WHERE id = ?`+
-			s.dialect.SelectForUpdate(), runID).Scan(&state); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT state FROM person_enrichment_runs WHERE id = ?", runID).Scan(&state); err != nil {
 			return fmt.Errorf("lock person enrichment run: %w", err)
 		}
 		if state != personEnrichmentStateRunning {

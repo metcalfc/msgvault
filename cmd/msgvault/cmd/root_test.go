@@ -208,16 +208,8 @@ func TestExecute_UsesBackgroundContext(t *testing.T) {
 	}
 }
 
-// TestExecuteContext_PropagatesContext verifies ExecuteContext passes context to command handlers.
-//
-// NOTE: This test modifies the package-level rootCmd variable and must NOT use t.Parallel().
-// Running this test in parallel with other tests that access rootCmd would cause data races.
-func TestExecuteContext_PropagatesContext(t *testing.T) {
-	// Save and restore global rootCmd to avoid state leakage between tests.
-	// This pattern requires sequential test execution - do not add t.Parallel().
-	savedRootCmd := rootCmd
-	defer func() { rootCmd = savedRootCmd }()
-
+// TestExecuteRootContext_PropagatesContext verifies ExecuteContext passes context to command handlers.
+func TestExecuteRootContext_PropagatesContext(t *testing.T) {
 	// Create a test root command
 	testRoot := newTestRootCmd()
 
@@ -234,16 +226,13 @@ func TestExecuteContext_PropagatesContext(t *testing.T) {
 	}
 	testRoot.AddCommand(testCmd)
 
-	// Replace global rootCmd for this test
-	rootCmd = testRoot
-
 	// Create a context with a custom value
 	testKey := ctxKey("test-key")
 	testValue := "test-value"
 	ctx := context.WithValue(context.Background(), testKey, testValue)
 
 	testRoot.SetArgs([]string{"test-ctx"})
-	err := ExecuteContext(ctx)
+	err := executeRootContext(ctx, testRoot)
 	require.NoError(t, err, "ExecuteContext")
 
 	// Verify the context was propagated
@@ -251,18 +240,10 @@ func TestExecuteContext_PropagatesContext(t *testing.T) {
 	assert.Equal(t, testValue, receivedCtx.Value(testKey), "context value")
 }
 
-// TestExecute_UsesBackgroundContextInHandler verifies Execute provides background context to handlers.
-//
-// NOTE: This test modifies the package-level rootCmd variable and must NOT use t.Parallel().
-// Running this test in parallel with other tests that access rootCmd would cause data races.
-func TestExecute_UsesBackgroundContextInHandler(t *testing.T) {
+// TestExecuteRootContext_UsesBackgroundContextInHandler verifies Execute provides background context to handlers.
+func TestExecuteRootContext_UsesBackgroundContextInHandler(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	// Save and restore global rootCmd to avoid state leakage between tests.
-	// This pattern requires sequential test execution - do not add t.Parallel().
-	savedRootCmd := rootCmd
-	defer func() { rootCmd = savedRootCmd }()
-
 	// Create a test root command
 	testRoot := newTestRootCmd()
 
@@ -278,11 +259,8 @@ func TestExecute_UsesBackgroundContextInHandler(t *testing.T) {
 	}
 	testRoot.AddCommand(testCmd)
 
-	// Replace global rootCmd for this test
-	rootCmd = testRoot
-
 	testRoot.SetArgs([]string{"test-bg-ctx"})
-	err := Execute()
+	err := executeRootContext(context.Background(), testRoot)
 	require.NoError(err, "Execute")
 
 	// Verify the command received a non-nil context (should be background context)

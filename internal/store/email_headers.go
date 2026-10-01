@@ -33,8 +33,7 @@ func (s *Store) RecordEmailHeadersContext(ctx context.Context, sourceID, message
 		}
 		var storedID, metadata sql.NullString
 		if err := tx.QueryRowContext(ctx, `SELECT rfc822_message_id, metadata FROM messages
-   WHERE id = ? AND source_id = ? AND message_type = 'email'`+s.dialect.SelectForUpdate(),
-			messageID, sourceID).Scan(&storedID, &metadata); err != nil {
+   WHERE id = ? AND source_id = ? AND message_type = 'email'`, messageID, sourceID).Scan(&storedID, &metadata); err != nil {
 			return fmt.Errorf("read email header target: %w", err)
 		}
 		fillID := storedID.String == "" && rfcID != ""
@@ -58,7 +57,7 @@ func (s *Store) RecordEmailHeadersContext(ctx context.Context, sourceID, message
 				if err != nil {
 					return err
 				}
-				if _, err := tx.ExecContext(ctx, fmt.Sprintf(`UPDATE messages SET metadata = %s WHERE id = ?`, s.dialect.JSONBindExpr()), string(encoded), messageID); err != nil {
+				if _, err := tx.ExecContext(ctx, fmt.Sprintf(`UPDATE messages SET metadata = %s WHERE id = ?`, "?"), string(encoded), messageID); err != nil {
 					return err
 				}
 			}
@@ -142,7 +141,7 @@ func (s *Store) resolveEmailReply(ctx context.Context, sourceID, childID int64) 
 		var metadata sql.NullString
 		var reply sql.NullInt64
 		err := tx.QueryRowContext(ctx, `SELECT metadata, reply_to_message_id FROM messages
-   WHERE id = ? AND source_id = ? AND message_type = 'email' AND deleted_at IS NULL`+s.dialect.SelectForUpdate(), childID, sourceID).Scan(&metadata, &reply)
+   WHERE id = ? AND source_id = ? AND message_type = 'email' AND deleted_at IS NULL`, childID, sourceID).Scan(&metadata, &reply)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}

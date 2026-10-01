@@ -218,7 +218,6 @@ func TestManagedIMAPDraftConstraints(t *testing.T) {
 }
 
 func TestManagedIMAPDraftRetention(t *testing.T) {
-
 	requirements := require.New(t)
 	assertions := assert.New(t)
 	st, source, draft, conversationID := newReviewManagedDraft(t, "retention", 41, "managed")

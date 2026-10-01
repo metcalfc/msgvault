@@ -8,13 +8,6 @@ import (
 	"go.kenn.io/msgvault/internal/daemonclient"
 )
 
-var (
-	updateDisplayName     string
-	updateAccountSourceID int64
-)
-
-var updateAccountCmd = newUpdateAccountCmd()
-
 func newUpdateAccountCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update-account [account]",
@@ -29,13 +22,15 @@ Examples:
 		Args: cobra.MaximumNArgs(1),
 		RunE: runUpdateAccount,
 	}
-	cmd.Flags().StringVar(&updateDisplayName, "display-name", "", "Set the display name for the account")
-	cmd.Flags().Int64Var(&updateAccountSourceID, "source-id", 0, "Exact source ID to update")
+	cmd.Flags().String("display-name", "", "Set the display name for the account")
+	cmd.Flags().Int64("source-id", 0, "Exact source ID to update")
 	return cmd
 }
 
 func runUpdateAccount(cmd *cobra.Command, args []string) error {
-	if updateDisplayName == "" {
+	flags := readUpdateAccountOptions(cmd)
+
+	if flags.updateDisplayName == "" {
 		return usageErr(cmd, errors.New("nothing to update: use --display-name to set a display name"))
 	}
 	account := ""
@@ -44,7 +39,7 @@ func runUpdateAccount(cmd *cobra.Command, args []string) error {
 	}
 	sourceIDSet := cmd.Flags().Changed("source-id")
 	switch {
-	case sourceIDSet && updateAccountSourceID <= 0:
+	case sourceIDSet && flags.updateAccountSourceID <= 0:
 		return usageErr(cmd, errors.New("source ID must be positive"))
 	case sourceIDSet && account != "":
 		return usageErr(cmd, errors.New("account and source ID are mutually exclusive"))
@@ -60,9 +55,9 @@ func runUpdateAccount(cmd *cobra.Command, args []string) error {
 
 	result, err := st.UpdateCLIAccount(cmd.Context(), daemonclient.CLIAccountUpdateRequest{
 		Email:       account,
-		SourceID:    updateAccountSourceID,
+		SourceID:    flags.updateAccountSourceID,
 		SourceIDSet: sourceIDSet,
-		DisplayName: updateDisplayName,
+		DisplayName: flags.updateDisplayName,
 	})
 	if err != nil {
 		return err
@@ -74,5 +69,17 @@ func runUpdateAccount(cmd *cobra.Command, args []string) error {
 }
 
 func init() {
-	rootCmd.AddCommand(updateAccountCmd)
+	registerCommandFactory(newUpdateAccountCmd)
+}
+
+type updateAccountOptions struct {
+	updateAccountSourceID int64
+	updateDisplayName     string
+}
+
+func readUpdateAccountOptions(cmd *cobra.Command) updateAccountOptions {
+	var flags updateAccountOptions
+	flags.updateAccountSourceID, _ = cmd.Flags().GetInt64("source-id")
+	flags.updateDisplayName, _ = cmd.Flags().GetString("display-name")
+	return flags
 }

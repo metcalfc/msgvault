@@ -10,8 +10,6 @@ import (
 	"go.kenn.io/msgvault/internal/beeper"
 )
 
-var backfillBeeperMediaAccounts []string
-
 func newBackfillBeeperMediaCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "backfill-beeper-media",
@@ -29,6 +27,8 @@ Examples:
   msgvault backfill-beeper-media --account signal`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := readBackfillBeeperMediaOptions(cmd)
+
 			state := invocationFromCommand(cmd)
 			if state == nil || state.cfg == nil {
 				return errors.New("configuration is unavailable")
@@ -37,7 +37,7 @@ Examples:
 				return runDaemonCLICommandHTTPFromCobra(cmd, args)
 			}
 
-			imp, accountIDs, dbPath, cleanup, err := openBeeperImporter(backfillBeeperMediaAccounts, state)
+			imp, accountIDs, dbPath, cleanup, err := openBeeperImporter(flags.backfillBeeperMediaAccounts, state)
 			if err != nil {
 				return err
 			}
@@ -68,7 +68,7 @@ Examples:
 			return rebuildCacheAfterWrite(dbPath, state)
 		},
 	}
-	cmd.Flags().StringArrayVar(&backfillBeeperMediaAccounts, "account", nil, "Beeper accountID to backfill (repeatable; default: all registered accounts)")
+	cmd.Flags().StringArray("account", nil, "Beeper accountID to backfill (repeatable; default: all registered accounts)")
 	return cmd
 }
 
@@ -81,5 +81,15 @@ func writeBeeperMediaBackfillSummary(out io.Writer, accountID string, sum *beepe
 }
 
 func init() {
-	rootCmd.AddCommand(newBackfillBeeperMediaCmd())
+	registerCommandFactory(newBackfillBeeperMediaCmd)
+}
+
+type backfillBeeperMediaOptions struct {
+	backfillBeeperMediaAccounts []string
+}
+
+func readBackfillBeeperMediaOptions(cmd *cobra.Command) backfillBeeperMediaOptions {
+	var flags backfillBeeperMediaOptions
+	flags.backfillBeeperMediaAccounts, _ = cmd.Flags().GetStringArray("account")
+	return flags
 }

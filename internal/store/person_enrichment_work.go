@@ -238,7 +238,7 @@ func (s *Store) CancelPersonEnrichmentWorkOutsideProfilesContext(
 		if err := s.lockPersonEnrichmentAuthorityMutationTx(ctx, tx); err != nil {
 			return err
 		}
-		rows, err := tx.QueryContext(ctx, query+s.dialect.SelectForUpdate(), arguments...)
+		rows, err := tx.QueryContext(ctx, query, arguments...)
 		if err != nil {
 			return fmt.Errorf("list unavailable person enrichment work: %w", err)
 		}
@@ -266,8 +266,7 @@ func (s *Store) CancelPersonEnrichmentWorkOutsideProfilesContext(
 					ctx, tx, item.personID, item.fingerprint); err != nil {
 					return err
 				}
-				if _, err := reconcilePersonEnrichmentCostTx(ctx, tx, s.dialect,
-					item.activeAttempt.Int64, personenrichment.Cost{}, true, completedAt); err != nil {
+				if _, err := reconcilePersonEnrichmentCostTx(ctx, tx, item.activeAttempt.Int64, personenrichment.Cost{}, true, completedAt); err != nil {
 					return err
 				}
 				result, err := tx.ExecContext(ctx, `UPDATE person_enrichment_attempts
@@ -334,8 +333,7 @@ func (s *Store) claimWorkOnce(
 	var lease *personenrichment.WorkLease
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
 		var runState string
-		if err := tx.QueryRowContext(ctx, `SELECT state FROM person_enrichment_runs WHERE id = ?`+
-			s.dialect.SelectForUpdate(), options.RunID).Scan(&runState); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT state FROM person_enrichment_runs WHERE id = ?", options.RunID).Scan(&runState); err != nil {
 			return fmt.Errorf("lock person enrichment run for claim: %w", err)
 		}
 		if s.personEnrichmentRunBarrier != nil {
@@ -500,7 +498,7 @@ func (s *Store) ReleaseWork(
 		return fmt.Errorf("invalid person enrichment work release outcome %q", release.Outcome)
 	}
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
-		if err := verifyEnrichmentLeaseTx(ctx, tx, s.dialect, token); err != nil {
+		if err := verifyEnrichmentLeaseTx(ctx, tx, token); err != nil {
 			return err
 		}
 		switch release.Outcome {
@@ -654,14 +652,14 @@ func (s *Store) BeginAttempt(
 		if s.personEnrichmentTxBarrier != nil {
 			s.personEnrichmentTxBarrier("begin_before_person_lock")
 		}
-		currentRevision, err := lockPersonEnrichmentPersonTx(ctx, tx, s.dialect, start.PersonID)
+		currentRevision, err := lockPersonEnrichmentPersonTx(ctx, tx, start.PersonID)
 		if err != nil {
 			return err
 		}
 		if s.personEnrichmentTxBarrier != nil {
 			s.personEnrichmentTxBarrier("begin_person_locked")
 		}
-		work, err := lockEnrichmentWorkStateTx(ctx, tx, s.dialect, token)
+		work, err := lockEnrichmentWorkStateTx(ctx, tx, token)
 		if err != nil {
 			return err
 		}
@@ -689,7 +687,7 @@ func (s *Store) BeginAttempt(
 					}
 				}
 				if _, err := reconcilePersonEnrichmentCostTx(
-					ctx, tx, s.dialect, existing.ID,
+					ctx, tx, existing.ID,
 					personenrichment.Cost{Currency: "USD"}, false, s.personEnrichmentTime(),
 				); err != nil {
 					return err
@@ -918,7 +916,7 @@ func (s *Store) reservePersonEnrichmentBudgetTx(
 	}
 
 	runCounter, personCounter, dayCounter, err := lockPersonEnrichmentCountersTx(
-		ctx, tx, s.dialect, start.RunID, start.PersonID, start.ProfileFingerprint, utcDay)
+		ctx, tx, start.RunID, start.PersonID, start.ProfileFingerprint, utcDay)
 	if err != nil {
 		return err
 	}
@@ -1009,7 +1007,7 @@ func (s *Store) RecordProviderStarted(
 		return errors.New("only generated asynchronous provider starts may carry durable targets")
 	}
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
-		if err := verifyEnrichmentLeaseTx(ctx, tx, s.dialect, token); err != nil {
+		if err := verifyEnrichmentLeaseTx(ctx, tx, token); err != nil {
 			return err
 		}
 		result, err := tx.ExecContext(ctx, `UPDATE person_enrichment_attempts
@@ -1041,11 +1039,11 @@ func (s *Store) AuthorizeAttemptPoll(
 			return err
 		}
 		currentRevision, err := lockPersonEnrichmentPersonTx(
-			ctx, tx, s.dialect, token.WorkPersonID)
+			ctx, tx, token.WorkPersonID)
 		if err != nil {
 			return err
 		}
-		if err := verifyEnrichmentLeaseTx(ctx, tx, s.dialect, token); err != nil {
+		if err := verifyEnrichmentLeaseTx(ctx, tx, token); err != nil {
 			return err
 		}
 		var active bool
@@ -1116,10 +1114,10 @@ func (s *Store) ReserveProviderRetry(
 		if err := s.lockPersonEnrichmentAuthorityMutationTx(ctx, tx); err != nil {
 			return err
 		}
-		if _, err := lockPersonEnrichmentPersonTx(ctx, tx, s.dialect, token.WorkPersonID); err != nil {
+		if _, err := lockPersonEnrichmentPersonTx(ctx, tx, token.WorkPersonID); err != nil {
 			return err
 		}
-		if err := verifyEnrichmentLeaseTx(ctx, tx, s.dialect, token); err != nil {
+		if err := verifyEnrichmentLeaseTx(ctx, tx, token); err != nil {
 			return err
 		}
 		var state string
@@ -1166,11 +1164,11 @@ func (s *Store) AuthorizeAttemptDispatch(
 			return err
 		}
 		currentRevision, err := lockPersonEnrichmentPersonTx(
-			ctx, tx, s.dialect, token.WorkPersonID)
+			ctx, tx, token.WorkPersonID)
 		if err != nil {
 			return err
 		}
-		if err := verifyEnrichmentLeaseTx(ctx, tx, s.dialect, token); err != nil {
+		if err := verifyEnrichmentLeaseTx(ctx, tx, token); err != nil {
 			return err
 		}
 		var active bool
@@ -1207,8 +1205,7 @@ func (s *Store) AuthorizeAttemptDispatch(
 			}); err != nil {
 				return err
 			}
-			if _, err := reconcilePersonEnrichmentCostTx(ctx, tx, s.dialect,
-				token.AttemptID, personenrichment.Cost{Currency: "USD"}, false, now); err != nil {
+			if _, err := reconcilePersonEnrichmentCostTx(ctx, tx, token.AttemptID, personenrichment.Cost{Currency: "USD"}, false, now); err != nil {
 				return err
 			}
 			result, err := tx.ExecContext(ctx, `UPDATE person_enrichment_attempts
@@ -1282,7 +1279,7 @@ func (s *Store) schedulePersonEnrichmentAction(
 	failure *personenrichment.SafeFailure, pending *personenrichment.Result, next time.Time,
 ) error {
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
-		if err := verifyEnrichmentLeaseTx(ctx, tx, s.dialect, token); err != nil {
+		if err := verifyEnrichmentLeaseTx(ctx, tx, token); err != nil {
 			return err
 		}
 		if pending != nil {
@@ -1290,8 +1287,7 @@ func (s *Store) schedulePersonEnrichmentAction(
 			var generated bool
 			if err := tx.QueryRowContext(ctx, `SELECT provider_request_id, provider_job_id,
 				adapter_version, schema_version, generated_schema, generated_schema_hash
-				FROM person_enrichment_attempts WHERE id = ? AND run_id = ?`+s.dialect.SelectForUpdate(),
-				token.AttemptID, token.RunID).Scan(&requestID, &jobID, &adapter, &schema,
+				FROM person_enrichment_attempts WHERE id = ? AND run_id = ?`, token.AttemptID, token.RunID).Scan(&requestID, &jobID, &adapter, &schema,
 				&generated, &generatedHash); err != nil {
 				return fmt.Errorf("load person enrichment poll binding: %w", err)
 			}
@@ -1302,7 +1298,7 @@ func (s *Store) schedulePersonEnrichmentAction(
 			}
 		}
 		if failure != nil {
-			if err := chargePersonEnrichmentRetryCostTx(ctx, tx, s.dialect, token.AttemptID, failure.Cost); err != nil {
+			if err := chargePersonEnrichmentRetryCostTx(ctx, tx, token.AttemptID, failure.Cost); err != nil {
 				return err
 			}
 		}
@@ -1337,7 +1333,7 @@ func (s *Store) MarkUncertainStart(
 		return err
 	}
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
-		if err := verifyEnrichmentLeaseTx(ctx, tx, s.dialect, token); err != nil {
+		if err := verifyEnrichmentLeaseTx(ctx, tx, token); err != nil {
 			return err
 		}
 		// An ambiguous start is terminal for scheduling but keeps its distinct
@@ -1345,7 +1341,7 @@ func (s *Store) MarkUncertainStart(
 		// provider may have accepted the request, plus any charge an earlier
 		// call on this attempt reported, then detach the work without
 		// replaying it.
-		if err := reconcileUncertainPersonEnrichmentCostTx(ctx, tx, s.dialect, token.AttemptID,
+		if err := reconcileUncertainPersonEnrichmentCostTx(ctx, tx, token.AttemptID,
 			failure.Cost, s.personEnrichmentTime()); err != nil {
 			return err
 		}
@@ -1389,14 +1385,14 @@ func (s *Store) MarkTerminal(
 			return err
 		}
 		currentRevision, err := lockPersonEnrichmentPersonTx(
-			ctx, tx, s.dialect, token.WorkPersonID)
+			ctx, tx, token.WorkPersonID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrStaleLease
 		}
 		if err != nil {
 			return err
 		}
-		if err := verifyEnrichmentLeaseTx(ctx, tx, s.dialect, token); err != nil {
+		if err := verifyEnrichmentLeaseTx(ctx, tx, token); err != nil {
 			return err
 		}
 		var attemptRevision int64
@@ -1414,7 +1410,7 @@ func (s *Store) MarkTerminal(
 		// empty lookup plus a failed retry charge the counters like any
 		// other outcome, including an estimated charge on a profile without
 		// a hard cap. An unobserved cost stays missing.
-		if _, err := reconcilePersonEnrichmentCostTx(ctx, tx, s.dialect, token.AttemptID,
+		if _, err := reconcilePersonEnrichmentCostTx(ctx, tx, token.AttemptID,
 			failure.Cost, failure.Cost == (personenrichment.Cost{}), s.personEnrichmentTime()); err != nil {
 			return err
 		}
@@ -1484,13 +1480,13 @@ func (s *Store) completePersonEnrichmentAttemptTx(
 			return false, errors.New("person enrichment refresh completion is invalid")
 		}
 	}
-	if err := verifyEnrichmentLeaseTx(ctx, tx, s.dialect, token); err != nil {
+	if err := verifyEnrichmentLeaseTx(ctx, tx, token); err != nil {
 		return false, err
 	}
 	costViolation := false
 	if !completion.CostReconciled {
 		var err error
-		costViolation, err = reconcilePersonEnrichmentCostTx(ctx, tx, s.dialect, token.AttemptID,
+		costViolation, err = reconcilePersonEnrichmentCostTx(ctx, tx, token.AttemptID,
 			completion.ActualCost, completion.ActualCostMissing, completionTime)
 		if err != nil {
 			return false, err
@@ -1761,9 +1757,9 @@ func nullableProviderStartedAt(attempt personenrichment.Attempt) any {
 }
 
 func lockEnrichmentWorkTx(
-	ctx context.Context, tx *loggedTx, dialect Dialect, token personenrichment.LeaseToken,
+	ctx context.Context, tx *loggedTx, token personenrichment.LeaseToken,
 ) (sql.NullInt64, error) {
-	work, err := lockEnrichmentWorkStateTx(ctx, tx, dialect, token)
+	work, err := lockEnrichmentWorkStateTx(ctx, tx, token)
 	return work.ActiveID, err
 }
 
@@ -1773,14 +1769,13 @@ type lockedPersonEnrichmentWork struct {
 }
 
 func lockEnrichmentWorkStateTx(
-	ctx context.Context, tx *loggedTx, dialect Dialect, token personenrichment.LeaseToken,
+	ctx context.Context, tx *loggedTx, token personenrichment.LeaseToken,
 ) (lockedPersonEnrichmentWork, error) {
 	var work lockedPersonEnrichmentWork
 	err := tx.QueryRowContext(ctx, `SELECT active_attempt_id, has_fresh_trigger
 		FROM person_enrichment_work
 		WHERE person_id = ? AND profile_fingerprint = ? AND run_id = ?
-		  AND lease_owner = ? AND lease_fence = ?`+dialect.SelectForUpdate(),
-		token.WorkPersonID, token.ProfileFingerprint, token.RunID, token.Owner, token.Fence).Scan(
+		  AND lease_owner = ? AND lease_fence = ?`, token.WorkPersonID, token.ProfileFingerprint, token.RunID, token.Owner, token.Fence).Scan(
 		&work.ActiveID, &work.HasFreshTrigger)
 	if errors.Is(err, sql.ErrNoRows) {
 		return work, ErrStaleLease
@@ -1801,12 +1796,11 @@ func lockEnrichmentWorkStateTx(
 // is about to read the attempt and decide from that what the missing work row
 // means.
 func lockEnrichmentWorkRowForOrderingTx(
-	ctx context.Context, tx *loggedTx, dialect Dialect, personID int64, fingerprint string,
+	ctx context.Context, tx *loggedTx, personID int64, fingerprint string,
 ) error {
 	var one int
 	err := tx.QueryRowContext(ctx, `SELECT 1 FROM person_enrichment_work
-		WHERE person_id = ? AND profile_fingerprint = ?`+dialect.SelectForUpdate(),
-		personID, fingerprint).Scan(&one)
+		WHERE person_id = ? AND profile_fingerprint = ?`, personID, fingerprint).Scan(&one)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("lock person enrichment work for ordering: %w", err)
 	}
@@ -1814,40 +1808,30 @@ func lockEnrichmentWorkRowForOrderingTx(
 }
 
 func lockPersonEnrichmentPersonTx(
-	ctx context.Context, tx *loggedTx, dialect Dialect, personID int64,
+	ctx context.Context, tx *loggedTx, personID int64,
 ) (int64, error) {
-	lockClause := dialect.SelectForUpdate()
-	// SQLite has no SELECT FOR UPDATE. Make the person gate the transaction's
-	// first write so its database-wide writer lock provides the same ordering
-	// before this transaction reads work or attempts.
-	if lockClause == "" {
-		result, err := tx.ExecContext(ctx,
-			`UPDATE persons SET revision = revision WHERE id = ?`, personID)
-		if err != nil {
-			return 0, fmt.Errorf("lock person enrichment person: %w", err)
-		}
-		if rows, err := result.RowsAffected(); err != nil {
-			return 0, fmt.Errorf("count locked person enrichment person: %w", err)
-		} else if rows != 1 {
-			return 0, sql.ErrNoRows
-		}
-	} else {
-		// Legacy nonempty-dialect branch; SQLite's SelectForUpdate returns an
-		// empty string and reserves the writer slot above.
-		lockClause = " FOR NO KEY UPDATE"
+	// Reserve SQLite's writer slot before reading the person's work or attempts.
+	result, err := tx.ExecContext(ctx,
+		`UPDATE persons SET revision = revision WHERE id = ?`, personID)
+	if err != nil {
+		return 0, fmt.Errorf("lock person enrichment person: %w", err)
+	}
+	if rows, err := result.RowsAffected(); err != nil {
+		return 0, fmt.Errorf("count locked person enrichment person: %w", err)
+	} else if rows != 1 {
+		return 0, sql.ErrNoRows
 	}
 	var revision int64
-	if err := tx.QueryRowContext(ctx, `SELECT revision FROM persons WHERE id = ?`+
-		lockClause, personID).Scan(&revision); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT revision FROM persons WHERE id = ?`, personID).Scan(&revision); err != nil {
 		return 0, fmt.Errorf("lock person enrichment person: %w", err)
 	}
 	return revision, nil
 }
 
 func verifyEnrichmentLeaseTx(
-	ctx context.Context, tx *loggedTx, dialect Dialect, token personenrichment.LeaseToken,
+	ctx context.Context, tx *loggedTx, token personenrichment.LeaseToken,
 ) error {
-	activeID, err := lockEnrichmentWorkTx(ctx, tx, dialect, token)
+	activeID, err := lockEnrichmentWorkTx(ctx, tx, token)
 	if err != nil {
 		return err
 	}
@@ -2048,11 +2032,11 @@ func loadPersonEnrichmentBudgetPolicyTx(
 }
 
 func lockPersonEnrichmentCountersTx(
-	ctx context.Context, tx *loggedTx, dialect Dialect, runID, personID int64,
+	ctx context.Context, tx *loggedTx, runID, personID int64,
 	fingerprint, day string,
 ) (PersonEnrichmentRunCounters, PersonEnrichmentRunCounters, PersonEnrichmentRunCounters, error) {
 	var run, person, daily PersonEnrichmentRunCounters
-	lock := dialect.SelectForUpdate()
+	lock := ""
 	if err := tx.QueryRowContext(ctx, `SELECT requests_started, cost_reserved_usd_micros,
 		cost_charged_usd_micros FROM person_enrichment_run_counters WHERE run_id = ?`+lock,
 		runID).Scan(&run.RequestsStarted, &run.CostReservedUSDMicros, &run.CostChargedUSDMicros); err != nil {
@@ -2087,7 +2071,7 @@ func lockPersonEnrichmentCountersTx(
 //     the charged counters and recorded on the attempt so run and day totals
 //     reflect what the provider billed. A missing charge adds nothing.
 func reconcilePersonEnrichmentCostTx(
-	ctx context.Context, tx *loggedTx, dialect Dialect, attemptID int64,
+	ctx context.Context, tx *loggedTx, attemptID int64,
 	actual personenrichment.Cost, missing bool, now time.Time,
 ) (bool, error) {
 	var runID, personID, reserved int64
@@ -2096,7 +2080,7 @@ func reconcilePersonEnrichmentCostTx(
 	var created nullableTimestamp
 	err := tx.QueryRowContext(ctx, `SELECT run_id, person_id, profile_fingerprint,
 		created_at, hard_cost_cap_enforced, reserved_cost_usd_micros
-		FROM person_enrichment_attempts WHERE id = ?`+dialect.SelectForUpdate(), attemptID).Scan(
+		FROM person_enrichment_attempts WHERE id = ?`, attemptID).Scan(
 		&runID, &personID, &fingerprint, &created, &hard, &reserved)
 	if err != nil {
 		return false, fmt.Errorf("lock person enrichment attempt cost: %w", err)
@@ -2137,7 +2121,7 @@ func reconcilePersonEnrichmentCostTx(
 		actualValue = actual.AmountMicros
 	}
 	day := created.Time.UTC().Format("2006-01-02")
-	if _, _, _, err := lockPersonEnrichmentCountersTx(ctx, tx, dialect, runID, personID, fingerprint, day); err != nil {
+	if _, _, _, err := lockPersonEnrichmentCountersTx(ctx, tx, runID, personID, fingerprint, day); err != nil {
 		return false, err
 	}
 	updates := []struct {
@@ -2186,13 +2170,13 @@ func reconcilePersonEnrichmentCostTx(
 // reconcile reports. A profile without a hard cap reserved nothing and
 // charges what the provider reported for the attempt's calls.
 func reconcileUncertainPersonEnrichmentCostTx(
-	ctx context.Context, tx *loggedTx, dialect Dialect, attemptID int64,
+	ctx context.Context, tx *loggedTx, attemptID int64,
 	observed personenrichment.Cost, now time.Time,
 ) error {
 	var hard bool
 	var reserved int64
 	if err := tx.QueryRowContext(ctx, `SELECT hard_cost_cap_enforced, reserved_cost_usd_micros
-		FROM person_enrichment_attempts WHERE id = ?`+dialect.SelectForUpdate(), attemptID).
+		FROM person_enrichment_attempts WHERE id = ?`, attemptID).
 		Scan(&hard, &reserved); err != nil {
 		return fmt.Errorf("lock uncertain person enrichment attempt cost: %w", err)
 	}
@@ -2200,7 +2184,7 @@ func reconcileUncertainPersonEnrichmentCostTx(
 	if hard && (missing || observed.Estimated || observed.AmountMicros <= reserved) {
 		missing = true
 	}
-	_, err := reconcilePersonEnrichmentCostTx(ctx, tx, dialect, attemptID, observed, missing, now)
+	_, err := reconcilePersonEnrichmentCostTx(ctx, tx, attemptID, observed, missing, now)
 	return err
 }
 
@@ -2210,10 +2194,10 @@ func reconcileUncertainPersonEnrichmentCostTx(
 // hard-cap attempt's guaranteed maximum was reserved at BeginAttempt and is
 // settled once when the attempt ends. A zero or invalid charge adds nothing.
 func chargePersonEnrichmentRetryCostTx(
-	ctx context.Context, tx *loggedTx, dialect Dialect, attemptID int64, cost personenrichment.Cost,
+	ctx context.Context, tx *loggedTx, attemptID int64, cost personenrichment.Cost,
 ) error {
 	if cost.AmountMicros == 0 || cost.Currency != "USD" || cost.Validate() != nil {
-		return nil
+		return nil //nolint:nilerr // Invalid provider charges are intentionally ignored; only valid USD charges update counters.
 	}
 	var runID, personID int64
 	var fingerprint string
@@ -2221,7 +2205,7 @@ func chargePersonEnrichmentRetryCostTx(
 	var created nullableTimestamp
 	if err := tx.QueryRowContext(ctx, `SELECT run_id, person_id, profile_fingerprint,
 		created_at, hard_cost_cap_enforced
-		FROM person_enrichment_attempts WHERE id = ?`+dialect.SelectForUpdate(), attemptID).Scan(
+		FROM person_enrichment_attempts WHERE id = ?`, attemptID).Scan(
 		&runID, &personID, &fingerprint, &created, &hard); err != nil {
 		return fmt.Errorf("lock retried person enrichment attempt cost: %w", err)
 	}
@@ -2232,7 +2216,7 @@ func chargePersonEnrichmentRetryCostTx(
 		return errors.New("person enrichment attempt has invalid creation day")
 	}
 	day := created.Time.UTC().Format("2006-01-02")
-	if _, _, _, err := lockPersonEnrichmentCountersTx(ctx, tx, dialect, runID, personID, fingerprint, day); err != nil {
+	if _, _, _, err := lockPersonEnrichmentCountersTx(ctx, tx, runID, personID, fingerprint, day); err != nil {
 		return err
 	}
 	for _, update := range []struct {
@@ -2450,10 +2434,10 @@ func (s *Store) LoadProviderPersonIDs(
 	if !ok || !validPersonEnrichmentProviderNamespace(providerNamespace, kind) {
 		return nil, errors.New("provider identity namespace is invalid")
 	}
-	rows, err := s.db.QueryContext(ctx, s.Rebind(`SELECT provider_person_id, confidence
+	rows, err := s.db.QueryContext(ctx, `SELECT provider_person_id, confidence
 		FROM person_enrichment_provider_identities
 		WHERE person_id = ? AND provider_namespace = ?
-		ORDER BY provider_person_id`), personID, providerNamespace)
+		ORDER BY provider_person_id`, personID, providerNamespace)
 	if err != nil {
 		return nil, fmt.Errorf("load provider person identities: %w", err)
 	}

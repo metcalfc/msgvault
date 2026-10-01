@@ -159,5 +159,5 @@ func listFolders(ctx context.Context, src *store.Source, cfg *config.Config, log
 }
 
 func init() {
-	rootCmd.AddCommand(newListFoldersCmd())
+	registerCommandFactory(newListFoldersCmd)
 }

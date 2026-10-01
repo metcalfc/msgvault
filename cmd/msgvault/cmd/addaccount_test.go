@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/config"
@@ -91,8 +90,8 @@ func TestAddAccount_InheritedBindingValidatesToken(t *testing.T) {
 			secretsPath := filepath.Join(tmpDir, "secret.json")
 			require.NoError(os.WriteFile(secretsPath, []byte(fakeClientSecrets), 0600), "write secrets")
 
-			savedCfg, savedLogger, savedOAuthApp := cfg, logger, oauthAppName
-			defer func() { cfg, logger, oauthAppName = savedCfg, savedLogger, savedOAuthApp }()
+			savedCfg, savedLogger := cfg, logger
+			defer func() { cfg, logger = savedCfg, savedLogger }()
 
 			cfg = &config.Config{
 				HomeDir: tmpDir,
@@ -108,15 +107,7 @@ func TestAddAccount_InheritedBindingValidatesToken(t *testing.T) {
 			ctx := gmailProfileContext(t, "user@acme.com")
 			ctx = testInvocationContext(ctx, cfg, invocationOptions{})
 
-			testCmd := &cobra.Command{
-				Use: "add-account <email>", Args: cobra.ExactArgs(1),
-				RunE: addAccountCmd.RunE,
-			}
-			testCmd.Flags().StringVar(&oauthAppName, "oauth-app", "", "")
-			testCmd.Flags().BoolVar(&headless, "headless", false, "")
-			testCmd.Flags().BoolVar(&forceReauth, "force", false, "")
-			testCmd.Flags().StringVar(&accountDisplayName, "display-name", "", "")
-			testCmd.Flags().BoolVar(&noDefaultIdentityAddAccount, "no-default-identity", false, "")
+			testCmd := newAddAccountLocalCmd()
 
 			root := newTestRootCmd()
 			root.AddCommand(testCmd)
@@ -155,8 +146,8 @@ func TestAddAccount_CalendarOnlyTokenRequiresGmailReauth(t *testing.T) {
 	secretsPath := filepath.Join(tmpDir, "secret.json")
 	require.NoError(os.WriteFile(secretsPath, []byte(fakeClientSecrets), 0600), "write secrets")
 
-	savedCfg, savedLogger, savedOAuthApp := cfg, logger, oauthAppName
-	defer func() { cfg, logger, oauthAppName = savedCfg, savedLogger, savedOAuthApp }()
+	savedCfg, savedLogger := cfg, logger
+	defer func() { cfg, logger = savedCfg, savedLogger }()
 
 	cfg = &config.Config{
 		HomeDir: tmpDir,
@@ -170,15 +161,7 @@ func TestAddAccount_CalendarOnlyTokenRequiresGmailReauth(t *testing.T) {
 	ctx, cancel := context.WithCancel(testCtx)
 	cancel()
 
-	testCmd := &cobra.Command{
-		Use: "add-account <email>", Args: cobra.ExactArgs(1),
-		RunE: addAccountCmd.RunE,
-	}
-	testCmd.Flags().StringVar(&oauthAppName, "oauth-app", "", "")
-	testCmd.Flags().BoolVar(&headless, "headless", false, "")
-	testCmd.Flags().BoolVar(&forceReauth, "force", false, "")
-	testCmd.Flags().StringVar(&accountDisplayName, "display-name", "", "")
-	testCmd.Flags().BoolVar(&noDefaultIdentityAddAccount, "no-default-identity", false, "")
+	testCmd := newAddAccountLocalCmd()
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -220,17 +203,10 @@ func TestAddAccount_FullGmailScopeTokenCanBeReused(t *testing.T) {
 	secretsPath := filepath.Join(tmpDir, "secret.json")
 	require.NoError(os.WriteFile(secretsPath, []byte(fakeClientSecrets), 0600), "write secrets")
 
-	savedCfg, savedLogger, savedOAuthApp := cfg, logger, oauthAppName
-	savedHeadless, savedForceReauth := headless, forceReauth
-	savedDisplayName, savedNoDefault := accountDisplayName, noDefaultIdentityAddAccount
+	savedCfg, savedLogger := cfg, logger
 	defer func() {
 		cfg = savedCfg
 		logger = savedLogger
-		oauthAppName = savedOAuthApp
-		headless = savedHeadless
-		forceReauth = savedForceReauth
-		accountDisplayName = savedDisplayName
-		noDefaultIdentityAddAccount = savedNoDefault
 	}()
 
 	cfg = &config.Config{
@@ -245,15 +221,7 @@ func TestAddAccount_FullGmailScopeTokenCanBeReused(t *testing.T) {
 	ctx := gmailProfileContext(t, "user@example.com")
 	ctx = testInvocationContext(ctx, cfg, invocationOptions{})
 
-	testCmd := &cobra.Command{
-		Use: "add-account <email>", Args: cobra.ExactArgs(1),
-		RunE: addAccountCmd.RunE,
-	}
-	testCmd.Flags().StringVar(&oauthAppName, "oauth-app", "", "")
-	testCmd.Flags().BoolVar(&headless, "headless", false, "")
-	testCmd.Flags().BoolVar(&forceReauth, "force", false, "")
-	testCmd.Flags().StringVar(&accountDisplayName, "display-name", "", "")
-	testCmd.Flags().BoolVar(&noDefaultIdentityAddAccount, "no-default-identity", false, "")
+	testCmd := newAddAccountLocalCmd()
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -327,11 +295,9 @@ func TestAddAccount_RebindWithExistingToken(t *testing.T) {
 
 	savedCfg := cfg
 	savedLogger := logger
-	savedOAuthApp := oauthAppName
 	defer func() {
 		cfg = savedCfg
 		logger = savedLogger
-		oauthAppName = savedOAuthApp
 	}()
 
 	cfg = &config.Config{
@@ -348,16 +314,7 @@ func TestAddAccount_RebindWithExistingToken(t *testing.T) {
 	_ = testCtx
 	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	testCmd := &cobra.Command{
-		Use:  "add-account <email>",
-		Args: cobra.ExactArgs(1),
-		RunE: addAccountCmd.RunE,
-	}
-	testCmd.Flags().StringVar(&oauthAppName, "oauth-app", "", "")
-	testCmd.Flags().BoolVar(&headless, "headless", false, "")
-	testCmd.Flags().BoolVar(&forceReauth, "force", false, "")
-	testCmd.Flags().StringVar(&accountDisplayName, "display-name", "", "")
-	testCmd.Flags().BoolVar(&noDefaultIdentityAddAccount, "no-default-identity", false, "")
+	testCmd := newAddAccountLocalCmd()
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -420,11 +377,9 @@ func TestAddAccount_NewRegistrationRejectsMismatchedToken(t *testing.T) {
 
 	savedCfg := cfg
 	savedLogger := logger
-	savedOAuthApp := oauthAppName
 	defer func() {
 		cfg = savedCfg
 		logger = savedLogger
-		oauthAppName = savedOAuthApp
 	}()
 
 	cfg = &config.Config{
@@ -444,16 +399,7 @@ func TestAddAccount_NewRegistrationRejectsMismatchedToken(t *testing.T) {
 	ctx, cancel := context.WithCancel(testCtx)
 	cancel()
 
-	testCmd := &cobra.Command{
-		Use:  "add-account <email>",
-		Args: cobra.ExactArgs(1),
-		RunE: addAccountCmd.RunE,
-	}
-	testCmd.Flags().StringVar(&oauthAppName, "oauth-app", "", "")
-	testCmd.Flags().BoolVar(&headless, "headless", false, "")
-	testCmd.Flags().BoolVar(&forceReauth, "force", false, "")
-	testCmd.Flags().StringVar(&accountDisplayName, "display-name", "", "")
-	testCmd.Flags().BoolVar(&noDefaultIdentityAddAccount, "no-default-identity", false, "")
+	testCmd := newAddAccountLocalCmd()
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -498,11 +444,9 @@ func TestAddAccount_ExplicitDefaultRejectsMismatchedToken(t *testing.T) {
 
 	savedCfg := cfg
 	savedLogger := logger
-	savedOAuthApp := oauthAppName
 	defer func() {
 		cfg = savedCfg
 		logger = savedLogger
-		oauthAppName = savedOAuthApp
 	}()
 
 	cfg = &config.Config{
@@ -517,16 +461,7 @@ func TestAddAccount_ExplicitDefaultRejectsMismatchedToken(t *testing.T) {
 	ctx, cancel := context.WithCancel(testCtx)
 	cancel()
 
-	testCmd := &cobra.Command{
-		Use:  "add-account <email>",
-		Args: cobra.ExactArgs(1),
-		RunE: addAccountCmd.RunE,
-	}
-	testCmd.Flags().StringVar(&oauthAppName, "oauth-app", "", "")
-	testCmd.Flags().BoolVar(&headless, "headless", false, "")
-	testCmd.Flags().BoolVar(&forceReauth, "force", false, "")
-	testCmd.Flags().StringVar(&accountDisplayName, "display-name", "", "")
-	testCmd.Flags().BoolVar(&noDefaultIdentityAddAccount, "no-default-identity", false, "")
+	testCmd := newAddAccountLocalCmd()
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -570,11 +505,9 @@ func TestAddAccount_ExplicitDefaultAcceptsMatchingToken(t *testing.T) {
 
 	savedCfg := cfg
 	savedLogger := logger
-	savedOAuthApp := oauthAppName
 	defer func() {
 		cfg = savedCfg
 		logger = savedLogger
-		oauthAppName = savedOAuthApp
 	}()
 
 	cfg = &config.Config{
@@ -586,16 +519,7 @@ func TestAddAccount_ExplicitDefaultAcceptsMatchingToken(t *testing.T) {
 	_ = testCtx
 	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	testCmd := &cobra.Command{
-		Use:  "add-account <email>",
-		Args: cobra.ExactArgs(1),
-		RunE: addAccountCmd.RunE,
-	}
-	testCmd.Flags().StringVar(&oauthAppName, "oauth-app", "", "")
-	testCmd.Flags().BoolVar(&headless, "headless", false, "")
-	testCmd.Flags().BoolVar(&forceReauth, "force", false, "")
-	testCmd.Flags().StringVar(&accountDisplayName, "display-name", "", "")
-	testCmd.Flags().BoolVar(&noDefaultIdentityAddAccount, "no-default-identity", false, "")
+	testCmd := newAddAccountLocalCmd()
 
 	// Verify the cached token against a synthetic Gmail profile.
 	ctx := gmailProfileContext(t, "user@example.com")
@@ -638,13 +562,9 @@ func TestAddAccount_ForceRebindPreservesBindingOnFailure(t *testing.T) {
 
 	savedCfg := cfg
 	savedLogger := logger
-	savedOAuthApp := oauthAppName
-	savedForce := forceReauth
 	defer func() {
 		cfg = savedCfg
 		logger = savedLogger
-		oauthAppName = savedOAuthApp
-		forceReauth = savedForce
 	}()
 
 	cfg = &config.Config{
@@ -665,16 +585,7 @@ func TestAddAccount_ForceRebindPreservesBindingOnFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(testCtx)
 	cancel()
 
-	testCmd := &cobra.Command{
-		Use:  "add-account <email>",
-		Args: cobra.ExactArgs(1),
-		RunE: addAccountCmd.RunE,
-	}
-	testCmd.Flags().StringVar(&oauthAppName, "oauth-app", "", "")
-	testCmd.Flags().BoolVar(&headless, "headless", false, "")
-	testCmd.Flags().BoolVar(&forceReauth, "force", false, "")
-	testCmd.Flags().StringVar(&accountDisplayName, "display-name", "", "")
-	testCmd.Flags().BoolVar(&noDefaultIdentityAddAccount, "no-default-identity", false, "")
+	testCmd := newAddAccountLocalCmd()
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -723,15 +634,9 @@ func TestAddAccount_HeadlessExplicitEmptyOAuthApp(t *testing.T) {
 	// Save/restore globals
 	savedCfg := cfg
 	savedLogger := logger
-	savedHeadless := headless
-	savedOAuthApp := oauthAppName
-	savedForce := forceReauth
 	defer func() {
 		cfg = savedCfg
 		logger = savedLogger
-		headless = savedHeadless
-		oauthAppName = savedOAuthApp
-		forceReauth = savedForce
 	}()
 
 	cfg = &config.Config{
@@ -746,16 +651,7 @@ func TestAddAccount_HeadlessExplicitEmptyOAuthApp(t *testing.T) {
 	// cmd.Flags().Changed() to detect explicit --oauth-app.
 	// We need to register the flags on the test command so
 	// Changed() works, and bind them to the package-level vars.
-	testCmd := &cobra.Command{
-		Use:  "add-account <email>",
-		Args: cobra.ExactArgs(1),
-		RunE: addAccountCmd.RunE,
-	}
-	testCmd.Flags().StringVar(&oauthAppName, "oauth-app", "", "")
-	testCmd.Flags().BoolVar(&headless, "headless", false, "")
-	testCmd.Flags().BoolVar(&forceReauth, "force", false, "")
-	testCmd.Flags().StringVar(&accountDisplayName, "display-name", "", "")
-	testCmd.Flags().BoolVar(&noDefaultIdentityAddAccount, "no-default-identity", false, "")
+	testCmd := newAddAccountLocalCmd()
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -804,13 +700,9 @@ func TestAddAccount_AutoDefaultIdentityFires(t *testing.T) {
 
 	savedCfg := cfg
 	savedLogger := logger
-	savedOAuthApp := oauthAppName
-	savedNoDefault := noDefaultIdentityAddAccount
 	defer func() {
 		cfg = savedCfg
 		logger = savedLogger
-		oauthAppName = savedOAuthApp
-		noDefaultIdentityAddAccount = savedNoDefault
 	}()
 
 	cfg = &config.Config{
@@ -822,16 +714,7 @@ func TestAddAccount_AutoDefaultIdentityFires(t *testing.T) {
 	_ = testCtx
 	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	testCmd := &cobra.Command{
-		Use:  "add-account <email>",
-		Args: cobra.ExactArgs(1),
-		RunE: addAccountCmd.RunE,
-	}
-	testCmd.Flags().StringVar(&oauthAppName, "oauth-app", "", "")
-	testCmd.Flags().BoolVar(&headless, "headless", false, "")
-	testCmd.Flags().BoolVar(&forceReauth, "force", false, "")
-	testCmd.Flags().StringVar(&accountDisplayName, "display-name", "", "")
-	testCmd.Flags().BoolVar(&noDefaultIdentityAddAccount, "no-default-identity", false, "")
+	testCmd := newAddAccountLocalCmd()
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -884,13 +767,9 @@ func TestAddAccount_NoDefaultIdentitySuppresses(t *testing.T) {
 
 	savedCfg := cfg
 	savedLogger := logger
-	savedOAuthApp := oauthAppName
-	savedNoDefault := noDefaultIdentityAddAccount
 	defer func() {
 		cfg = savedCfg
 		logger = savedLogger
-		oauthAppName = savedOAuthApp
-		noDefaultIdentityAddAccount = savedNoDefault
 	}()
 
 	cfg = &config.Config{
@@ -902,16 +781,7 @@ func TestAddAccount_NoDefaultIdentitySuppresses(t *testing.T) {
 	_ = testCtx
 	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	testCmd := &cobra.Command{
-		Use:  "add-account <email>",
-		Args: cobra.ExactArgs(1),
-		RunE: addAccountCmd.RunE,
-	}
-	testCmd.Flags().StringVar(&oauthAppName, "oauth-app", "", "")
-	testCmd.Flags().BoolVar(&headless, "headless", false, "")
-	testCmd.Flags().BoolVar(&forceReauth, "force", false, "")
-	testCmd.Flags().StringVar(&accountDisplayName, "display-name", "", "")
-	testCmd.Flags().BoolVar(&noDefaultIdentityAddAccount, "no-default-identity", false, "")
+	testCmd := newAddAccountLocalCmd()
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -965,13 +835,9 @@ func TestAddAccount_DeferredLegacyIdentityMigrationFires(t *testing.T) {
 
 	savedCfg := cfg
 	savedLogger := logger
-	savedOAuthApp := oauthAppName
-	savedNoDefault := noDefaultIdentityAddAccount
 	defer func() {
 		cfg = savedCfg
 		logger = savedLogger
-		oauthAppName = savedOAuthApp
-		noDefaultIdentityAddAccount = savedNoDefault
 	}()
 
 	cfg = &config.Config{
@@ -987,16 +853,7 @@ func TestAddAccount_DeferredLegacyIdentityMigrationFires(t *testing.T) {
 	logger = slog.New(slog.NewTextHandler(&logBuf, nil))
 	invocationFromContext(testCtx).logger = logger
 
-	testCmd := &cobra.Command{
-		Use:  "add-account <email>",
-		Args: cobra.ExactArgs(1),
-		RunE: addAccountCmd.RunE,
-	}
-	testCmd.Flags().StringVar(&oauthAppName, "oauth-app", "", "")
-	testCmd.Flags().BoolVar(&headless, "headless", false, "")
-	testCmd.Flags().BoolVar(&forceReauth, "force", false, "")
-	testCmd.Flags().StringVar(&accountDisplayName, "display-name", "", "")
-	testCmd.Flags().BoolVar(&noDefaultIdentityAddAccount, "no-default-identity", false, "")
+	testCmd := newAddAccountLocalCmd()
 	testCmd.SetContext(testCtx)
 
 	root := newTestRootCmd()
@@ -1075,13 +932,9 @@ func TestAddAccount_LegacyMigrationDoesNotSuppressDefaultIdentity(t *testing.T) 
 
 	savedCfg := cfg
 	savedLogger := logger
-	savedOAuthApp := oauthAppName
-	savedNoDefault := noDefaultIdentityAddAccount
 	defer func() {
 		cfg = savedCfg
 		logger = savedLogger
-		oauthAppName = savedOAuthApp
-		noDefaultIdentityAddAccount = savedNoDefault
 	}()
 
 	cfg = &config.Config{
@@ -1099,16 +952,7 @@ func TestAddAccount_LegacyMigrationDoesNotSuppressDefaultIdentity(t *testing.T) 
 	_ = testCtx
 	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	testCmd := &cobra.Command{
-		Use:  "add-account <email>",
-		Args: cobra.ExactArgs(1),
-		RunE: addAccountCmd.RunE,
-	}
-	testCmd.Flags().StringVar(&oauthAppName, "oauth-app", "", "")
-	testCmd.Flags().BoolVar(&headless, "headless", false, "")
-	testCmd.Flags().BoolVar(&forceReauth, "force", false, "")
-	testCmd.Flags().StringVar(&accountDisplayName, "display-name", "", "")
-	testCmd.Flags().BoolVar(&noDefaultIdentityAddAccount, "no-default-identity", false, "")
+	testCmd := newAddAccountLocalCmd()
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -1148,15 +992,9 @@ func TestAddAccount_HeadlessServiceAccountReturnsActionableError(t *testing.T) {
 
 	savedCfg := cfg
 	savedLogger := logger
-	savedHeadless := headless
-	savedOAuthApp := oauthAppName
-	savedForce := forceReauth
 	defer func() {
 		cfg = savedCfg
 		logger = savedLogger
-		headless = savedHeadless
-		oauthAppName = savedOAuthApp
-		forceReauth = savedForce
 	}()
 
 	cfg = &config.Config{
@@ -1172,15 +1010,7 @@ func TestAddAccount_HeadlessServiceAccountReturnsActionableError(t *testing.T) {
 	_ = testCtx
 	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	testCmd := &cobra.Command{
-		Use:  "add-account <email>",
-		Args: cobra.ExactArgs(1),
-		RunE: addAccountCmd.RunE,
-	}
-	testCmd.Flags().StringVar(&oauthAppName, "oauth-app", "", "")
-	testCmd.Flags().BoolVar(&headless, "headless", false, "")
-	testCmd.Flags().BoolVar(&forceReauth, "force", false, "")
-	testCmd.Flags().StringVar(&accountDisplayName, "display-name", "", "")
+	testCmd := newAddAccountLocalCmd()
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -1208,15 +1038,9 @@ func TestAddAccount_ForceServiceAccountReturnsActionableError(t *testing.T) {
 
 	savedCfg := cfg
 	savedLogger := logger
-	savedHeadless := headless
-	savedOAuthApp := oauthAppName
-	savedForce := forceReauth
 	defer func() {
 		cfg = savedCfg
 		logger = savedLogger
-		headless = savedHeadless
-		oauthAppName = savedOAuthApp
-		forceReauth = savedForce
 	}()
 
 	cfg = &config.Config{
@@ -1232,15 +1056,7 @@ func TestAddAccount_ForceServiceAccountReturnsActionableError(t *testing.T) {
 	_ = testCtx
 	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	testCmd := &cobra.Command{
-		Use:  "add-account <email>",
-		Args: cobra.ExactArgs(1),
-		RunE: addAccountCmd.RunE,
-	}
-	testCmd.Flags().StringVar(&oauthAppName, "oauth-app", "", "")
-	testCmd.Flags().BoolVar(&headless, "headless", false, "")
-	testCmd.Flags().BoolVar(&forceReauth, "force", false, "")
-	testCmd.Flags().StringVar(&accountDisplayName, "display-name", "", "")
+	testCmd := newAddAccountLocalCmd()
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)

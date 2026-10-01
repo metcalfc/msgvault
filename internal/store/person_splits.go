@@ -101,8 +101,7 @@ func (s *Store) splitPersonMergeOnce(
 
 		var sourceRevision int64
 		var sourceUID string
-		err = tx.QueryRowContext(ctx, `SELECT revision, vcard_uid FROM persons WHERE id = ?`+
-			s.dialect.SelectForUpdate(), request.SourcePersonID).Scan(&sourceRevision, &sourceUID)
+		err = tx.QueryRowContext(ctx, "SELECT revision, vcard_uid FROM persons WHERE id = ?", request.SourcePersonID).Scan(&sourceRevision, &sourceUID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrPersonNotFound
 		}
@@ -466,7 +465,7 @@ func (s *Store) loadPersonSplitMergeTx(
 	var blob []byte
 	var hash string
 	if err := tx.QueryRowContext(ctx, `SELECT snapshot_blob, snapshot_sha256
-		FROM person_merges WHERE id = ?`+s.dialect.SelectForUpdate(), mergeID).Scan(&blob, &hash); err != nil {
+		FROM person_merges WHERE id = ?`, mergeID).Scan(&blob, &hash); err != nil {
 		return nil, personMergeSnapshot{}, fmt.Errorf("load person merge snapshot: %w", err)
 	}
 	snapshot, err := decodePersonMergeSnapshot(blob, hash)
@@ -480,8 +479,7 @@ func (s *Store) loadPersonSplitLineageTx(
 	ctx context.Context, tx *loggedTx, mergeID int64,
 ) ([]personSplitLineage, error) {
 	locked, err := tx.QueryContext(ctx, `SELECT participant_id
-		FROM person_merge_participants WHERE merge_id = ? ORDER BY participant_id`+
-		s.dialect.SelectForUpdate(), mergeID)
+		FROM person_merge_participants WHERE merge_id = ? ORDER BY participant_id`, mergeID)
 	if err != nil {
 		return nil, fmt.Errorf("lock person split lineage: %w", err)
 	}

@@ -132,7 +132,7 @@ func TestSearchCmd_VectorModeUsesLocalDaemonHTTPAndPreservesJSONOutput(t *testin
 	done := captureStdout(t)
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{
 		"search", "--mode", "vector", "--json",
 		"--account", "alice@example.com",
@@ -178,7 +178,7 @@ func TestSearchCmd_VectorModeCollectionUsesLocalDaemonHTTPAndPreservesBanner(t *
 	doneErr := captureStderr(t)
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{
 		"search", "--mode", "vector",
 		"--explain",
@@ -216,7 +216,7 @@ func TestSearchCmd_VectorModeUnknownAccountUsesDaemonError(t *testing.T) {
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{
 		"search", "--mode", "vector",
 		"--account", "nobody@nowhere.invalid",
@@ -244,7 +244,7 @@ func TestSearchCmd_HybridModeUsesConfiguredRemoteHTTP(t *testing.T) {
 	done := captureStdout(t)
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{"search", "--mode", "hybrid", "--explain", "--json", "lunch"})
 
 	err := root.Execute()
@@ -293,11 +293,10 @@ func configureVectorSearchHTTPTest(t *testing.T, dataDir string, local bool, rem
 		cfg.Remote.URL = "http://configured-daemonclient.invalid"
 	}
 	useLocal = local
-	resetSearchFlags()
+
 	return testCtx, func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		resetSearchFlags()
 	}
 }
 

@@ -381,11 +381,8 @@ func TestSyncFullCmd_OAuthSkipDoesNotBlockIMAP(t *testing.T) {
 	_ = testCtx
 	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	testCmd := &cobra.Command{
-		Use:  "sync-full [email]",
-		Args: cobra.MaximumNArgs(1),
-		RunE: runSyncFullLocalForTest,
-	}
+	testCmd := newSyncFullCommand()
+	testCmd.RunE = runSyncFullLocalForTest
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -553,11 +550,9 @@ func TestSyncFullCmd_MalformedDateRejectsBeforeSync(t *testing.T) {
 
 	savedCfg := cfg
 	savedLogger := logger
-	savedAfter := syncAfter
 	defer func() {
 		cfg = savedCfg
 		logger = savedLogger
-		syncAfter = savedAfter
 	}()
 
 	cfg = &config.Config{
@@ -569,18 +564,13 @@ func TestSyncFullCmd_MalformedDateRejectsBeforeSync(t *testing.T) {
 	_ = testCtx
 	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	syncAfter = "not-a-date"
-
-	testCmd := &cobra.Command{
-		Use:  "sync-full [email]",
-		Args: cobra.MaximumNArgs(1),
-		RunE: runSyncFullLocalForTest,
-	}
+	testCmd := newSyncFullCommand()
+	testCmd.RunE = runSyncFullLocalForTest
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
 	root.AddCommand(testCmd)
-	root.SetArgs([]string{"sync-full"})
+	root.SetArgs([]string{"sync-full", "--after", "not-a-date"})
 
 	getOutput := captureStdout(t)
 	err = root.Execute()
@@ -617,13 +607,9 @@ func TestSyncFullCmd_MalformedIMAPDateFlagErrors(t *testing.T) {
 
 	savedCfg := cfg
 	savedLogger := logger
-	savedAfter := syncAfter
-	savedBefore := syncBefore
 	defer func() {
 		cfg = savedCfg
 		logger = savedLogger
-		syncAfter = savedAfter
-		syncBefore = savedBefore
 	}()
 
 	cfg = &config.Config{
@@ -645,20 +631,14 @@ func TestSyncFullCmd_MalformedIMAPDateFlagErrors(t *testing.T) {
 		{"bad both", "Jan 1", "tomorrow", "--after"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			syncAfter = tc.after
-			syncBefore = tc.before
-
-			testCmd := &cobra.Command{
-				Use:  "sync-full [email]",
-				Args: cobra.MaximumNArgs(1),
-				RunE: runSyncFullLocalForTest,
-			}
+			testCmd := newSyncFullCommand()
+			testCmd.RunE = runSyncFullLocalForTest
 
 			root := newTestRootCmd()
 			root.SetContext(testCtx)
 			root.AddCommand(testCmd)
 			root.SetArgs([]string{
-				"sync-full", "i@example.com",
+				"sync-full", "i@example.com", "--after", tc.after, "--before", tc.before,
 			})
 
 			err := root.Execute()
@@ -805,6 +785,10 @@ func TestTrimFolderFilter(t *testing.T) {
 }
 
 func TestSyncCommandRegistersFolderFlags(t *testing.T) {
+	syncFullCmd := newSyncFullCommand()
+
+	syncIncrementalCmd := newSyncIncrementalCommand()
+
 	require := require.New(t)
 
 	require.NotNil(syncIncrementalCmd.Flags().Lookup("folder"))
@@ -822,12 +806,6 @@ func TestTrimFolderFilter_DoesNotBlockOnErrorInSyncFull(t *testing.T) {
 	// malformed or whitespace-only.
 	require := require.New(t)
 	assert := assert.New(t)
-	savedFolders := syncFolders
-	savedSkip := syncSkipFolders
-	defer func() {
-		syncFolders = savedFolders
-		syncSkipFolders = savedSkip
-	}()
 
 	// parseFolderFilter is called unconditionally; it must never
 	// return nil on every path where it's called with real user input.

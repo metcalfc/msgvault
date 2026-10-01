@@ -20,28 +20,6 @@ import (
 
 const dateRepairSampleLimit = 10
 
-var repairDatesApply bool
-
-var repairDatesCmd = &cobra.Command{
-	Use:   "repair-dates",
-	Short: "Repair missing or implausible email sent dates",
-	Long: `Scan email messages whose stored sent_at is missing, before 1990, or
-more than 30 days in the future. For each candidate, resolve a canonical sent
-time from the Date header, the oldest plausible Received timestamp, or stored
-source metadata.
-
-The default is a read-only report. Pass --apply to update the archive, write an
-audit ledger under the data directory, and rebuild the analytics cache for
-SQLite archives. Original source files and remote servers are never modified.`,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if !isDaemonCLISubprocess() {
-			return runDaemonCLICommandHTTPFromCobra(cmd, args)
-		}
-		return runRepairDatesLocal(cmd, repairDatesApply, time.Now().UTC())
-	},
-}
-
 type plannedDateRepair struct {
 	store.MessageDateRepair
 
@@ -510,12 +488,35 @@ func writeDateRepairLedger(path string, ledger *dateRepairLedger) error {
 	return nil
 }
 
-func init() {
-	repairDatesCmd.Flags().BoolVar(
-		&repairDatesApply,
+func newRepairDatesCmd() *cobra.Command {
+	repairDatesCmd := &cobra.Command{
+		Use:   "repair-dates",
+		Short: "Repair missing or implausible email sent dates",
+		Long: `Scan email messages whose stored sent_at is missing, before 1990, or
+more than 30 days in the future. For each candidate, resolve a canonical sent
+time from the Date header, the oldest plausible Received timestamp, or stored
+source metadata.
+
+The default is a read-only report. Pass --apply to update the archive, write an
+audit ledger under the data directory, and rebuild the analytics cache for
+SQLite archives. Original source files and remote servers are never modified.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			repairDatesApply, _ := cmd.Flags().GetBool("apply")
+			if !isDaemonCLISubprocess() {
+				return runDaemonCLICommandHTTPFromCobra(cmd, args)
+			}
+			return runRepairDatesLocal(cmd, repairDatesApply, time.Now().UTC())
+		},
+	}
+
+	repairDatesCmd.Flags().Bool(
 		"apply",
 		false,
 		"write repaired dates to the archive",
 	)
-	rootCmd.AddCommand(repairDatesCmd)
+
+	return repairDatesCmd
 }
+
+func init() { registerCommandFactory(newRepairDatesCmd) }

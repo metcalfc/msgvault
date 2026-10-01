@@ -11,7 +11,7 @@ import (
 
 func textAccountScopeModel(t *testing.T) Model {
 	t.Helper()
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	_, err := tdb.DB.Exec(`
 		INSERT INTO sources (id, source_type, identifier) VALUES
 			(7, 'imessage', 'first@example.com'), (8, 'imessage', 'second@example.com');

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatBytes } from '../../util/bytes';
   import { Button, EmptyState, virtualSlice } from '@kenn-io/kit-ui';
   import { onDestroy, onMount, tick, untrack } from 'svelte';
 
@@ -342,11 +343,7 @@
       : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
   }
 
-  function formatBytes(value: number): string {
-    if (value < 1024) return `${value} B`;
-    if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
-    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-  }
+
 
   function scrollActiveIntoView(index: number): void {
     const height = rowHeight;

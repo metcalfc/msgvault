@@ -71,7 +71,7 @@ func (s *Store) GetFileMetadataBatch(ctx context.Context, ids []int64) (map[int6
 		placeholders[i] = "?"
 		args[i] = id
 	}
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT a.id, a.message_id, m.conversation_id,
 			m.source_id, COALESCE(m.source_message_id, ''),
 			COALESCE(m.message_type, ''), COALESCE(c.conversation_type, ''),
@@ -84,7 +84,7 @@ func (s *Store) GetFileMetadataBatch(ctx context.Context, ids []int64) (map[int6
 		JOIN conversations c ON c.id = m.conversation_id
 		WHERE a.id IN (`+strings.Join(placeholders, ",")+`)
 		  AND `+LiveMessagesWhere("m", false)+`
-		ORDER BY a.id`), args...)
+		ORDER BY a.id`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get file metadata batch: %w", err)
 	}

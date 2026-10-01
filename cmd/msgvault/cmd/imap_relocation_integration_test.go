@@ -1862,7 +1862,6 @@ func (*immediateLabelScriptedIMAP) DefersAuthoritativeLabelReconciliation() bool
 // keep the old composite key and the guarded row untouched: rekey and labels
 // commit in one guarded transaction, leaving the failed target retryable.
 func TestIMAPRelocationUntrustedAdoptionKeepsOldKeyOnLabelFailure(t *testing.T) {
-
 	assert := assert.New(t)
 	require := require.New(t)
 	draft := newScriptedRFC7162Message(1, "atomic-forced@example.test", imapapi.FlagSeen)

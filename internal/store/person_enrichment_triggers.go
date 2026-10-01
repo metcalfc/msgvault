@@ -368,7 +368,7 @@ func (s *Store) cancelPersonEnrichmentTx(
 	}
 	for _, attemptID := range attemptIDs {
 		if _, err := reconcilePersonEnrichmentCostTx(
-			ctx, tx, s.dialect, attemptID, personenrichment.Cost{}, true,
+			ctx, tx, attemptID, personenrichment.Cost{}, true,
 			now); err != nil {
 			return fmt.Errorf("reconcile canceled person enrichment attempt: %w", err)
 		}
@@ -487,7 +487,7 @@ func (s *Store) forceInvalidatePersonEnrichmentTx(
 	now := s.personEnrichmentTime()
 	workRows, err := tx.QueryContext(ctx, `SELECT profile_fingerprint
 		FROM person_enrichment_work WHERE person_id = ?
-		ORDER BY profile_fingerprint`+s.dialect.SelectForUpdate(), personID)
+		ORDER BY profile_fingerprint`, personID)
 	if err != nil {
 		return fmt.Errorf("lock force-invalidated person enrichment work: %w", err)
 	}
@@ -508,7 +508,7 @@ func (s *Store) forceInvalidatePersonEnrichmentTx(
 	rows, err := tx.QueryContext(ctx, `SELECT id FROM person_enrichment_attempts
 		WHERE person_id = ?
 		  AND state IN ('queued','starting','pending','retry_wait','uncertain_start')
-		ORDER BY id`+s.dialect.SelectForUpdate(), personID)
+		ORDER BY id`, personID)
 	if err != nil {
 		return fmt.Errorf("list force-invalidated person enrichment attempts: %w", err)
 	}
@@ -530,7 +530,7 @@ func (s *Store) forceInvalidatePersonEnrichmentTx(
 	}
 	for _, attemptID := range attemptIDs {
 		if _, err := reconcilePersonEnrichmentCostTx(
-			ctx, tx, s.dialect, attemptID, personenrichment.Cost{}, true, now,
+			ctx, tx, attemptID, personenrichment.Cost{}, true, now,
 		); err != nil {
 			return fmt.Errorf("reconcile force-invalidated person enrichment attempt: %w", err)
 		}

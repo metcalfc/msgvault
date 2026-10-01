@@ -14,12 +14,10 @@ import (
 )
 
 func TestDocumentVectorChunkLifecycleSQLiteContract(t *testing.T) {
-
 	runDocumentVectorChunkLifecycleContract(t)
 }
 
 func TestDocumentVectorGenerationLifecycleSQLiteContract(t *testing.T) {
-
 	runDocumentVectorGenerationLifecycleContract(t)
 }
 

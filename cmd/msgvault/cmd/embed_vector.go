@@ -22,7 +22,7 @@ import (
 	"go.kenn.io/msgvault/internal/vector/sqlitevec"
 )
 
-func runEmbed(cmd *cobra.Command) error {
+func runEmbed(cmd *cobra.Command, flags embeddingCommandOptions) error {
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -57,7 +57,7 @@ func runEmbed(cmd *cobra.Command) error {
 	// --account/--collection flags (or [vector.embed.scope] accounts)
 	// become source IDs here, and unknown identifiers fail the run loudly
 	// rather than silently widening the embedded corpus.
-	if err := resolveEmbedScopeSourceIDs(s, state); err != nil {
+	if err := resolveEmbedScopeSourceIDs(s, state, flags); err != nil {
 		return err
 	}
 
@@ -65,7 +65,6 @@ func runEmbed(cmd *cobra.Command) error {
 		backend   vector.Backend
 		vectorsDB *sql.DB
 		closeFn   func() error
-		rebind    func(string) string
 		// lastModifiedExpr reads the embed worker's last_modified CAS token
 		// as text, avoiding go-sqlite3's DATETIME-to-time.Time coercion so
 		// the value preserves exact equality when bound back into the update.
@@ -100,12 +99,12 @@ func runEmbed(cmd *cobra.Command) error {
 	defer func() { _ = closeFn() }()
 
 	gen, rebuildInProgress, err := pickEmbedGeneration(ctx, backend, embedGenerationOpts{
-		FullRebuild: embedFullRebuild,
+		FullRebuild: flags.embedFullRebuild,
 		Model:       cfg.Vector.Embeddings.Model,
 		Dimension:   cfg.Vector.Embeddings.Dimension,
 		Fingerprint: cfg.Vector.GenerationFingerprint(),
 		Confirm: func() bool {
-			return embedYes ||
+			return flags.embedYes ||
 				confirmEmbed(cmd, "Start a full rebuild? This builds a new generation and atomically swaps it in when complete. ")
 		},
 		Stderr: errOut,
@@ -154,17 +153,17 @@ func runEmbed(cmd *cobra.Command) error {
 
 	runtime, err := newEmbeddingRuntime(cfg.Vector, embeddingRuntimeDeps{
 		Backend: backend, VectorsDB: vectorsDB, MainDB: s.DB(), Store: s,
-		Rebind: rebind, LastModifiedExpr: lastModifiedExpr,
-		TotalPending: totalPending,
-		Progress:     newProgressPrinter(errOut, totalPending, cfg.Vector.Embeddings.ETAWindow),
-		PersonGate:   personGate,
-		APIKey:       embeddingAPIKey,
+		LastModifiedExpr: lastModifiedExpr,
+		TotalPending:     totalPending,
+		Progress:         newProgressPrinter(errOut, totalPending, cfg.Vector.Embeddings.ETAWindow),
+		PersonGate:       personGate,
+		APIKey:           embeddingAPIKey,
 	})
 	if err != nil {
 		return fmt.Errorf("configure embedding runtime: %w", err)
 	}
 
-	res, err := runEmbeddingPasses(ctx, runtime.Runner, gen, embedBackstop,
+	res, err := runEmbeddingPasses(ctx, runtime.Runner, gen, flags.embedBackstop,
 		cfg.Vector.Embeddings.EffectiveAPIFormat(), errOut)
 	if err != nil {
 		return fmt.Errorf("embed run: %w", err)
@@ -182,7 +181,7 @@ func runEmbed(cmd *cobra.Command) error {
 		if err != nil {
 			return err
 		}
-		if activated && (len(embedAccounts) > 0 || len(embedCollections) > 0) {
+		if activated && (len(flags.embedAccounts) > 0 || len(flags.embedCollections) > 0) {
 			_, _ = fmt.Fprintln(errOut, "This active generation was scoped with --account/--collection. To keep it usable after a daemon restart, add equivalent accounts to [vector.embed.scope] in config.toml and restart the daemon; otherwise vector search reports index_stale.")
 		}
 	}

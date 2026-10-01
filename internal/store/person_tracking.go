@@ -29,11 +29,11 @@ func (s *Store) ListTrackedPeopleContext(
 	if limit < 1 || limit > maxTrackedPeopleList {
 		return nil, fmt.Errorf("list tracked people: limit must be between 1 and %d", maxTrackedPeopleList)
 	}
-	rows, err := s.db.QueryContext(ctx, s.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT person_id FROM person_tracking
 		WHERE person_id > ?
 		ORDER BY person_id
-		LIMIT ?`), afterID, limit)
+		LIMIT ?`, afterID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list tracked people: %w", err)
 	}
@@ -100,7 +100,7 @@ func (s *Store) setPersonTrackingTx(
 		ctx, tx, "person-fact-generation", personID); err != nil {
 		return nil, err
 	}
-	_, err := lockPersonEnrichmentPersonTx(ctx, tx, s.dialect, personID)
+	_, err := lockPersonEnrichmentPersonTx(ctx, tx, personID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("track person %d: %w", personID, ErrPersonNotFound)
 	}

@@ -14,11 +14,6 @@ import (
 	"go.kenn.io/msgvault/internal/config"
 )
 
-var (
-	addBeeperTokenFile         string
-	noDefaultIdentityAddBeeper bool
-)
-
 func newAddBeeperCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add-beeper",
@@ -48,6 +43,8 @@ Examples:
   MSGVAULT_BEEPER_TOKEN="..." msgvault add-beeper`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			flags := readAddBeeperOptions(cmd)
+
 			state := invocationFromCommand(cmd)
 			if state == nil || state.cfg == nil {
 				return errors.New("configuration is unavailable")
@@ -110,7 +107,7 @@ Examples:
 				if err := s.UpdateSourceDisplayName(source.ID, beeperSourceDisplayName(acct)); err != nil {
 					return fmt.Errorf("set display name for %s: %w", acct.AccountID, err)
 				}
-				if !noDefaultIdentityAddBeeper {
+				if !flags.noDefaultIdentityAddBeeper {
 					confirmDefaultIdentity(cmd.OutOrStdout(), s, source.ID,
 						acct.AccountID, beeperSelfIdentity(acct), "account-identifier", state.logger)
 				}
@@ -128,8 +125,8 @@ Examples:
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&addBeeperTokenFile, "token-file", "", "read the Beeper Desktop access token from this file")
-	cmd.Flags().BoolVar(&noDefaultIdentityAddBeeper, "no-default-identity", false, noDefaultIdentityHelp)
+	cmd.Flags().String("token-file", "", "read the Beeper Desktop access token from this file")
+	cmd.Flags().Bool("no-default-identity", false, noDefaultIdentityHelp)
 	return cmd
 }
 
@@ -176,20 +173,22 @@ func beeperSelfIdentity(acct beeper.Account) string {
 // readAddBeeperToken resolves the access token: env var, then --token-file,
 // then interactive masked prompt / piped stdin.
 func readAddBeeperToken(cmd *cobra.Command) (string, error) {
+	flags := readAddBeeperOptions(cmd)
+
 	if envToken := os.Getenv(clirun.EnvBeeperToken); envToken != "" {
 		if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Using token from %s environment variable\n", clirun.EnvBeeperToken); err != nil {
 			return "", fmt.Errorf("write token source notice: %w", err)
 		}
 		return envToken, nil
 	}
-	if addBeeperTokenFile != "" {
-		data, err := os.ReadFile(addBeeperTokenFile)
+	if flags.addBeeperTokenFile != "" {
+		data, err := os.ReadFile(flags.addBeeperTokenFile)
 		if err != nil {
 			return "", fmt.Errorf("read token file: %w", err)
 		}
 		token := strings.TrimSpace(string(data))
 		if token == "" {
-			return "", fmt.Errorf("token file %s is empty", addBeeperTokenFile)
+			return "", fmt.Errorf("token file %s is empty", flags.addBeeperTokenFile)
 		}
 		return token, nil
 	}
@@ -214,5 +213,17 @@ func readAddBeeperToken(cmd *cobra.Command) (string, error) {
 }
 
 func init() {
-	rootCmd.AddCommand(newAddBeeperCmd())
+	registerCommandFactory(newAddBeeperCmd)
+}
+
+type addBeeperOptions struct {
+	addBeeperTokenFile         string
+	noDefaultIdentityAddBeeper bool
+}
+
+func readAddBeeperOptions(cmd *cobra.Command) addBeeperOptions {
+	var flags addBeeperOptions
+	flags.addBeeperTokenFile, _ = cmd.Flags().GetString("token-file")
+	flags.noDefaultIdentityAddBeeper, _ = cmd.Flags().GetBool("no-default-identity")
+	return flags
 }

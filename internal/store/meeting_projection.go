@@ -25,7 +25,6 @@ func (s *Store) lockMeetingEvidenceWith(ctx context.Context, tx *loggedTx) error
 		_, err := q.Exec(`UPDATE embedding_change_clock SET sequence = sequence WHERE singleton = 1`)
 		return err
 	}
-
 }
 
 // refreshMeetingProjectionWith reads the persisted snapshot under the caller's

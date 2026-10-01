@@ -331,7 +331,7 @@ func (s *Store) commitPreparedPersonEnrichmentResult(
 		}
 		result := prepared.Commit.Result()
 		costViolation, err = reconcilePersonEnrichmentCostTx(
-			ctx, tx, s.dialect, prepared.Commit.AttemptID, result.Cost,
+			ctx, tx, prepared.Commit.AttemptID, result.Cost,
 			result.Cost == (personenrichment.Cost{}), prepared.CompletionTime)
 		if err != nil {
 			return err
@@ -397,7 +397,7 @@ func (s *Store) recheckPersonEnrichmentCommitTx(
 	if s.personEnrichmentTxBarrier != nil {
 		s.personEnrichmentTxBarrier("result_before_person_lock")
 	}
-	currentRevision, err := lockPersonEnrichmentPersonTx(ctx, tx, s.dialect, commit.PersonID)
+	currentRevision, err := lockPersonEnrichmentPersonTx(ctx, tx, commit.PersonID)
 	if err != nil {
 		return enrichmentCommitDisposition{}, err
 	}
@@ -413,7 +413,7 @@ func (s *Store) recheckPersonEnrichmentCommitTx(
 	// whose work row has already been settled must still reach the replay
 	// disposition below, and the lease itself is verified afterwards.
 	if err := lockEnrichmentWorkRowForOrderingTx(
-		ctx, tx, s.dialect, commit.PersonID, commit.ProfileFingerprint); err != nil {
+		ctx, tx, commit.PersonID, commit.ProfileFingerprint); err != nil {
 		return enrichmentCommitDisposition{}, err
 	}
 	attempt, err := s.loadPersonEnrichmentCommitAttempt(ctx, tx, commit.AttemptID, true)
@@ -493,7 +493,7 @@ func (s *Store) recheckPersonEnrichmentCommitTx(
 		}
 	}
 	token := enrichmentCommitLeaseToken(commit, attempt.LeaseOwner.String)
-	if err := verifyEnrichmentLeaseTx(ctx, tx, s.dialect, token); err != nil {
+	if err := verifyEnrichmentLeaseTx(ctx, tx, token); err != nil {
 		return enrichmentCommitDisposition{}, err
 	}
 	if attempt.State != "pending" && attempt.State != "starting" {
@@ -530,8 +530,7 @@ func (s *Store) recheckPersonEnrichmentCommitTx(
 	}
 	var consentID int64
 	err = tx.QueryRowContext(ctx, `SELECT id FROM person_enrichment_consents
-		WHERE profile_fingerprint = ? AND revoked_at IS NULL ORDER BY id DESC LIMIT 1`+
-		s.dialect.SelectForUpdate(), profile.Fingerprint).Scan(&consentID)
+		WHERE profile_fingerprint = ? AND revoked_at IS NULL ORDER BY id DESC LIMIT 1`, profile.Fingerprint).Scan(&consentID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return enrichmentCommitDisposition{Status: personenrichment.ClaimPolicyRejected}, nil
 	}
@@ -777,12 +776,12 @@ func (s *Store) completePersonEnrichmentRejectedAttemptTx(
 		return fmt.Errorf("load rejected enrichment completion owner: %w", err)
 	}
 	token := enrichmentCommitLeaseToken(commit, owner)
-	if err := verifyEnrichmentLeaseTx(ctx, tx, s.dialect, token); err != nil {
+	if err := verifyEnrichmentLeaseTx(ctx, tx, token); err != nil {
 		return err
 	}
 	if !costReconciled {
 		result := commit.Result()
-		if _, err := reconcilePersonEnrichmentCostTx(ctx, tx, s.dialect, commit.AttemptID,
+		if _, err := reconcilePersonEnrichmentCostTx(ctx, tx, commit.AttemptID,
 			result.Cost, result.Cost == (personenrichment.Cost{}), completionTime); err != nil {
 			return err
 		}
@@ -811,7 +810,7 @@ func (s *Store) terminatePersonEnrichmentCostViolationTx(
 		return fmt.Errorf("load cost-violating enrichment completion owner: %w", err)
 	}
 	token := enrichmentCommitLeaseToken(commit, owner)
-	if err := verifyEnrichmentLeaseTx(ctx, tx, s.dialect, token); err != nil {
+	if err := verifyEnrichmentLeaseTx(ctx, tx, token); err != nil {
 		return err
 	}
 	updated, err := tx.ExecContext(ctx, `UPDATE person_enrichment_attempts
@@ -845,8 +844,7 @@ func (s *Store) lockPersonEnrichmentProviderIdentityOwnershipTx(
 	}
 	var owner int64
 	err := tx.QueryRowContext(ctx, `SELECT person_id FROM person_enrichment_provider_identities
-		WHERE provider_namespace = ? AND provider_person_id = ?`+
-		s.dialect.SelectForUpdate(), namespace, providerPersonID).Scan(&owner)
+		WHERE provider_namespace = ? AND provider_person_id = ?`, namespace, providerPersonID).Scan(&owner)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil
 	}
@@ -925,7 +923,7 @@ func (s *Store) loadPersonEnrichmentCommitAttempt(
 	var attempt personEnrichmentCommitAttempt
 	query := personEnrichmentCommitAttemptSelect
 	if lock {
-		query += s.dialect.SelectForUpdate()
+		query += ""
 	}
 	err := queryer.QueryRowContext(ctx, query, attemptID).Scan(
 		&attempt.ID, &attempt.RunID, &attempt.PersonID, &attempt.ProfileFingerprint,
@@ -972,7 +970,7 @@ func (s *Store) loadPersonEnrichmentProfile(
 		endpoint, api_key_env, CAST(policy_json AS TEXT)
 		FROM person_enrichment_profiles WHERE fingerprint = ?`
 	if lock {
-		query += s.dialect.SelectForUpdate()
+		query += ""
 	}
 	if err := queryer.QueryRowContext(ctx, query, fingerprint).Scan(
 		&storedFingerprint, &name, &kind, &namespace, &endpoint, &apiKeyEnv, &policyJSON); err != nil {

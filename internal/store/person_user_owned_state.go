@@ -15,8 +15,7 @@ func (s *Store) personHasUserOwnedStateTx(
 	ctx context.Context, tx *loggedTx, personID, baselineRevision int64,
 ) (bool, error) {
 	var revision int64
-	err := tx.QueryRowContext(ctx, `SELECT revision FROM persons WHERE id = ?`+
-		s.dialect.SelectForUpdate(), personID).Scan(&revision)
+	err := tx.QueryRowContext(ctx, "SELECT revision FROM persons WHERE id = ?", personID).Scan(&revision)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}

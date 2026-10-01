@@ -26,8 +26,7 @@ func (s *Store) MeetingWeightRevisionContext(ctx context.Context) (int64, error)
 }
 
 func (s *Store) bumpMeetingWeightRevisionTx(ctx context.Context, tx *loggedTx) error {
-	if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(
-		`INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '0')`),
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '0')`,
 		meetingWeightRevisionKey); err != nil {
 		return fmt.Errorf("seed meeting weight revision: %w", err)
 	}

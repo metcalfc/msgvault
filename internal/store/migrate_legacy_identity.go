@@ -193,7 +193,7 @@ func (s *Store) MigrateLegacyIdentityConfigContext(
 		}
 
 		_, txErr := tx.ExecContext(ctx,
-			s.dialect.InsertOrIgnore(`INSERT OR IGNORE INTO applied_migrations (name) VALUES (?)`),
+			`INSERT OR IGNORE INTO applied_migrations (name) VALUES (?)`,
 			migrationLegacyIdentity,
 		)
 		return txErr
@@ -260,18 +260,14 @@ func (s *Store) RunStartupMigrationsContext(
 	}
 	switch {
 	case deferred:
-		res.Notice = fmt.Sprintf(
-			"Notice: legacy [identity] config has %d address(es) but no accounts exist yet.\n"+
-				"The migration will run on the next command after you add an account\n"+
-				"(e.g. 'msgvault add-account ...').",
-			addrs,
+		res.Notice = fmt.Sprintf("Notice: legacy [identity] config has %d address(es) but no accounts exist yet.\n"+
+			"The migration will run on the next command after you add an account\n"+
+			"(e.g. 'msgvault add-account ...').", addrs,
 		)
 	case applied:
-		res.Notice = fmt.Sprintf(
-			"Migrated legacy [identity] config to per-account identities (%d addresses across %d accounts).\n"+
-				"Run 'msgvault identity list' to review per-account identities;\n"+
-				"the [identity] block in config.toml is no longer used.",
-			addrs, sources,
+		res.Notice = fmt.Sprintf("Migrated legacy [identity] config to per-account identities (%d addresses across %d accounts).\n"+
+			"Run 'msgvault identity list' to review per-account identities;\n"+
+			"the [identity] block in config.toml is no longer used.", addrs, sources,
 		)
 	}
 	return res, nil

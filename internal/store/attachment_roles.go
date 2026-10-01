@@ -368,7 +368,7 @@ func (s *Store) upsertAttachmentRecordWithPolicy(
 				SELECT 1 FROM attachments keyed
 				WHERE keyed.message_id = ? AND keyed.source_part_key = ?
 			  )
-		`, s.dialect.JSONBindExpr(), legacyOwnershipPredicate),
+		`, "?", legacyOwnershipPredicate),
 			write.Filename, write.MIMEType, write.StoragePath, write.ContentHash, write.Size,
 			nullIfEmpty(write.SourceAttachmentID), nullIfEmpty(write.MediaType),
 			nullIfZero(write.Width), nullIfZero(write.Height), nullIfZero(write.DurationMS),
@@ -410,7 +410,7 @@ func (s *Store) upsertAttachmentRecordWithPolicy(
 		attachment_metadata, attachment_role, role_source, source_part_key,
 		content_id, attachment_state, attachment_skip_reason, created_at)`
 	values := fmt.Sprintf(`VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, %s, ?, ?, ?, ?, ?, ?, %s)`,
-		s.dialect.JSONBindExpr(), s.dialect.Now())
+		"?", s.dialect.Now())
 
 	if write.SourcePartKey != "" {
 		result, err := q.Exec(`

@@ -73,6 +73,8 @@ func TestProbeCircleback_OfficialArgumentsAndSchemas(t *testing.T) {
 }
 
 func TestCirclebackLimitHelpExplainsMaintenanceItems(t *testing.T) {
+	syncCirclebackCmd := newSyncCirclebackCommand()
+
 	assert := assert.New(t)
 	require := require.New(t)
 	limit := syncCirclebackCmd.Flags().Lookup("limit")

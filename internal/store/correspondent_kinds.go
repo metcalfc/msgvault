@@ -1005,7 +1005,7 @@ var organizationReferenceQueries = []string{
 func (s *Store) deleteUnreferencedOrganizationTx(
 	ctx context.Context, tx *loggedTx, organizationID int64,
 ) (bool, error) {
-	organization, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, organizationID)
+	organization, err := getOrganizationForUpdateTx(ctx, tx, organizationID)
 	if errors.Is(err, ErrOrganizationNotFound) {
 		return false, nil
 	}
@@ -1041,12 +1041,12 @@ func (s *Store) resolveCorrespondentOrganizationTx(
 	ctx context.Context, tx *loggedTx, input SetCorrespondentKindInput, members []int64,
 ) (*Organization, bool, error) {
 	if input.OrganizationID != nil {
-		organization, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, *input.OrganizationID)
+		organization, err := getOrganizationForUpdateTx(ctx, tx, *input.OrganizationID)
 		if err != nil {
 			return nil, false, err
 		}
 		for hops := 0; organization.MergedIntoID != nil && hops < 64; hops++ {
-			organization, err = getOrganizationForUpdateTx(ctx, tx, s.dialect, *organization.MergedIntoID)
+			organization, err = getOrganizationForUpdateTx(ctx, tx, *organization.MergedIntoID)
 			if err != nil {
 				return nil, false, err
 			}
@@ -1106,7 +1106,7 @@ func (s *Store) resolveCorrespondentOrganizationTx(
 	}
 	switch len(ids) {
 	case 1:
-		organization, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, ids[0])
+		organization, err := getOrganizationForUpdateTx(ctx, tx, ids[0])
 		return organization, false, err
 	case 0:
 	default:

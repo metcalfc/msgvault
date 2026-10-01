@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/config"
@@ -38,7 +37,7 @@ func TestOrganizationCreateSendsNormalizedBodyAndPrintsResult(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	testCtx := withStoreResolverConfig(t, &config.Config{Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true}})
-	output := runOrganizationCommand(testCtx, t, organizationCreateCmd, []string{"Example Org", "--kind", "company", "--domain", "Example.com"})
+	output := runOrganizationCommand(testCtx, t, freshCommandForTest(t, newOrganizationCommand(), "create"), []string{"Example Org", "--kind", "company", "--domain", "Example.com"})
 	require.NoError(decodeErr)
 	assert.Equal("Example Org", received.Name)
 	assert.Equal("company", received.Kind)
@@ -76,7 +75,7 @@ func TestOrganizationSetReadsCurrentRevisionAndSendsIfMatch(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	testCtx := withStoreResolverConfig(t, &config.Config{Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true}})
-	output := runOrganizationCommand(testCtx, t, organizationSetCmd, []string{"4", "--name", "Example Group"})
+	output := runOrganizationCommand(testCtx, t, freshCommandForTest(t, newOrganizationCommand(), "set"), []string{"4", "--name", "Example Group"})
 	require.NoError(decodeErr)
 	assert.Equal(int32(2), requests.Load())
 	assert.Equal(`"organization-4-r3"`, ifMatch)
@@ -95,9 +94,9 @@ func TestOrganizationLifecycleCommandsPreserveRootFields(t *testing.T) {
 		retiredAt string
 		want      bool
 	}{
-		{name: "retire", command: organizationRetireCmd, want: true},
+		{name: "retire", command: freshCommandForTest(t, newOrganizationCommand(), "retire"), want: true},
 		{
-			name: "unretire", command: organizationUnretireCmd,
+			name: "unretire", command: freshCommandForTest(t, newOrganizationCommand(), "unretire"),
 			retiredAt: `,"retired_at":"2026-07-29T12:00:00Z"`, want: false,
 		},
 	} {
@@ -152,7 +151,7 @@ func TestOrganizationDeleteReportsEmploymentConflict(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	testCtx := withStoreResolverConfig(t, &config.Config{Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true}})
-	command := cloneOrganizationCommand(organizationDeleteCmd)
+	command := freshCommandForTest(t, newOrganizationCommand(), "delete")
 	command.SetContext(testCtx)
 	var output bytes.Buffer
 	command.SetOut(&output)
@@ -176,7 +175,7 @@ func TestOrganizationListSendsQueryParametersAndRendersTable(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	testCtx := withStoreResolverConfig(t, &config.Config{Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true}})
-	output := runOrganizationCommand(testCtx, t, organizationListCmd, []string{"--limit", "25", "--query", "example", "--include-retired"})
+	output := runOrganizationCommand(testCtx, t, freshCommandForTest(t, newOrganizationCommand(), "list"), []string{"--limit", "25", "--query", "example", "--include-retired"})
 	assert.Contains(rawQuery, "limit=25")
 	assert.Contains(rawQuery, "q=example")
 	assert.Contains(rawQuery, "include_retired=true")
@@ -196,7 +195,7 @@ func TestOrganizationShowHistoryPrintsSupersededRows(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	testCtx := withStoreResolverConfig(t, &config.Config{Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true}})
-	output := runOrganizationCommand(testCtx, t, organizationShowCmd, []string{"4", "--history"})
+	output := runOrganizationCommand(testCtx, t, freshCommandForTest(t, newOrganizationCommand(), "show"), []string{"4", "--history"})
 	assert.Contains(output, "Earlier Org")
 	assert.Contains(output, "active until 2026-07-30T12:01:00Z")
 }
@@ -221,7 +220,7 @@ func TestOrganizationAttributeSetTransmitsOptionalExpectedValueID(t *testing.T) 
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
-	output := runOrganizationCommand(testCtx, t, organizationAttributeSetCmd, []string{
+	output := runOrganizationCommand(testCtx, t, freshCommandForTest(t, newOrganizationCommand(), "attribute", "set"), []string{
 		"4", "--definition", "industry_focus", "--text", "information retrieval",
 		"--expected-value-id", "7", "--ordinal", "2",
 	})
@@ -256,28 +255,16 @@ func TestOrganizationAttributeClearForwardsOrdinalExpectedValueIDAndDryRun(t *te
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
-	output := runOrganizationCommand(testCtx, t, organizationAttributeClearCmd, []string{
+	output := runOrganizationCommand(testCtx, t, freshCommandForTest(t, newOrganizationCommand(), "attribute", "clear"), []string{
 		"4", "industry_focus", "--ordinal", "2", "--expected-value-id", "8", "--dry-run",
 	})
 	require.NotEmpty(output)
 	assert.Contains(output, "Dry run: Superseded industry_focus ordinal 2")
 }
 
-func cloneOrganizationCommand(template *cobra.Command) *cobra.Command {
-	command := &cobra.Command{Use: template.Use, Args: template.Args, RunE: template.RunE}
-	command.Flags().AddFlagSet(template.Flags())
-	command.Flags().VisitAll(func(flag *pflag.Flag) {
-		_ = flag.Value.Set(flag.DefValue)
-		flag.Changed = false
-	})
-	return command
-}
 func runOrganizationCommand(ctx context.Context, t *testing.T, template *cobra.Command, args []string) string {
 	t.Helper()
-	saved := organizationJSON
-	organizationJSON = false
-	t.Cleanup(func() { organizationJSON = saved })
-	command := cloneOrganizationCommand(template)
+	command := template
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)

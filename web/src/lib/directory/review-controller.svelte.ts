@@ -1,3 +1,4 @@
+import { failureMessage } from '../api/failure-message';
 import {
   acceptIdentityMatchCandidate as generatedAcceptIdentityMatchCandidate,
   listIdentityMatchCandidates as generatedListIdentityMatchCandidates,
@@ -526,11 +527,4 @@ function replaceByID(rows: IdentityMatchCandidate[], replacement: IdentityMatchC
   return rows.some((row) => row.id === replacement.id)
     ? rows.map((row) => (row.id === replacement.id ? replacement : row))
     : [...rows, replacement];
-}
-function failureMessage(error: unknown, status: number): string {
-  if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') {
-    return error.message;
-  }
-  if (error instanceof Error && error.message) return error.message;
-  return status > 0 ? `Request failed (${status}).` : 'Request failed.';
 }

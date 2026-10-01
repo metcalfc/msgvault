@@ -44,7 +44,7 @@ func (s *Store) ListMissingMIMESendersPageContext(
 	if limit <= 0 {
 		return nil, errors.New("list missing MIME senders: limit must be positive")
 	}
-	rows, err := s.db.QueryContext(ctx, s.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT m.id, m.source_id, s.source_type, mr.raw_data, mr.compression
 		FROM messages m
 		JOIN sources s ON s.id = m.source_id
@@ -59,7 +59,7 @@ func (s *Store) ListMissingMIMESendersPageContext(
 		  AND m.id > ?
 		ORDER BY m.id
 		LIMIT ?
-	`), afterMessageID, limit)
+	`, afterMessageID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query missing MIME senders: %w", err)
 	}
@@ -252,7 +252,7 @@ func (s *Store) ApplySenderRepairContext(
 			SELECT raw_data, compression
 			FROM message_raw
 			WHERE message_id = ? AND raw_format = 'mime'
-		`+s.dialect.SelectForUpdate(), messageID).Scan(&encodedRaw, &compression)
+		`, messageID).Scan(&encodedRaw, &compression)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return fmt.Errorf("message %d changed after sender repair planning", messageID)

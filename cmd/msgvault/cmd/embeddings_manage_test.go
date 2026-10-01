@@ -222,6 +222,8 @@ func TestConvergenceResultRefusesEachIncompleteDimension(t *testing.T) {
 }
 
 func TestRunEmbeddingsActivate_ContextualRequiresConvergenceUnlessForced(t *testing.T) {
+	embeddingsActivateCmd := newEmbeddingTestCommand(t, "activate")
+	flags := embeddingCommandOptions{}
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
@@ -255,10 +257,8 @@ func TestRunEmbeddingsActivate_ContextualRequiresConvergenceUnlessForced(t *test
 	require.NoError(backend.Close())
 	require.NoError(mainStore.Close())
 
-	oldYes, oldForce := embeddingsActivateYes, embeddingsActivateForce
-	t.Cleanup(func() { embeddingsActivateYes, embeddingsActivateForce = oldYes, oldForce })
-	embeddingsActivateYes = true
-	embeddingsActivateForce = false
+	flags.embeddingsActivateYes = true
+	flags.embeddingsActivateForce = false
 	cmd := embeddingsActivateCmd
 	previousContext := cmd.Context()
 	cmd.SetContext(testCtx)
@@ -268,12 +268,12 @@ func TestRunEmbeddingsActivate_ContextualRequiresConvergenceUnlessForced(t *test
 	t.Cleanup(func() { cmd.SetOut(nil) })
 	genArg := strconv.FormatInt(int64(gen), 10)
 
-	err = runEmbeddingsActivate(cmd, []string{genArg})
+	err = runEmbeddingsActivateWithOptions(cmd, []string{genArg}, flags)
 	require.Error(err)
 	assert.Contains(err.Error(), "journal=1/2")
 
-	embeddingsActivateForce = true
-	require.NoError(runEmbeddingsActivate(cmd, []string{genArg}))
+	flags.embeddingsActivateForce = true
+	require.NoError(runEmbeddingsActivateWithOptions(cmd, []string{genArg}, flags))
 	assert.Contains(output.String(), "Generation "+genArg+" activated")
 }
 
@@ -281,6 +281,8 @@ func TestRunEmbeddingsActivate_ContextualRequiresConvergenceUnlessForced(t *test
 // standalone activation command bypassing exact curated-person convergence
 // for an otherwise message-complete OpenAI-format generation.
 func TestRunEmbeddingsActivateOpenAIBlocksMissingPersonCoverage(t *testing.T) {
+	embeddingsActivateCmd := newEmbeddingTestCommand(t, "activate")
+	flags := embeddingCommandOptions{}
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
@@ -325,16 +327,14 @@ func TestRunEmbeddingsActivateOpenAIBlocksMissingPersonCoverage(t *testing.T) {
 	require.NoError(backend.Close())
 	require.NoError(mainStore.Close())
 
-	oldYes, oldForce := embeddingsActivateYes, embeddingsActivateForce
-	t.Cleanup(func() { embeddingsActivateYes, embeddingsActivateForce = oldYes, oldForce })
-	embeddingsActivateYes = true
-	embeddingsActivateForce = false
+	flags.embeddingsActivateYes = true
+	flags.embeddingsActivateForce = false
 	previousContext := embeddingsActivateCmd.Context()
 	embeddingsActivateCmd.SetContext(testCtx)
 	t.Cleanup(func() { embeddingsActivateCmd.SetContext(previousContext) })
 
-	err = runEmbeddingsActivate(embeddingsActivateCmd,
-		[]string{strconv.FormatInt(int64(gen), 10)})
+	err = runEmbeddingsActivateWithOptions(embeddingsActivateCmd,
+		[]string{strconv.FormatInt(int64(gen), 10)}, flags)
 	require.Error(err)
 	assert.Contains(err.Error(), "person_coverage_complete=false")
 	assert.NotContains(err.Error(), "needing embedding",
@@ -342,11 +342,12 @@ func TestRunEmbeddingsActivateOpenAIBlocksMissingPersonCoverage(t *testing.T) {
 	assert.Contains(err.Error(), "msgvault embeddings resume --backstop")
 	assert.Contains(err.Error(), "--force")
 	assert.NotContains(err.Error(), "activate automatically")
-	assertManualGenerationState(t, gen, vector.GenerationBuilding)
+	assertManualGenerationState(embeddingsActivateCmd.Context(), t, gen, vector.GenerationBuilding)
 }
 
-func setupManualContextualGeneration(t *testing.T, fingerprint string, retire bool) vector.GenerationID {
+func setupManualContextualGeneration(t *testing.T, fingerprint string, retire bool) (vector.GenerationID, *cobra.Command) {
 	t.Helper()
+	embeddingsActivateCmd := newEmbeddingTestCommand(t, "activate")
 	dir := t.TempDir()
 	mainPath := filepath.Join(dir, "msgvault.db")
 	vectorPath := filepath.Join(dir, "vectors.db")
@@ -380,43 +381,37 @@ func setupManualContextualGeneration(t *testing.T, fingerprint string, retire bo
 	require.NoError(t, backend.Close())
 	require.NoError(t, mainStore.Close())
 
-	oldYes, oldForce := embeddingsActivateYes, embeddingsActivateForce
-	t.Cleanup(func() { embeddingsActivateYes, embeddingsActivateForce = oldYes, oldForce })
-	embeddingsActivateYes = true
-	embeddingsActivateForce = false
-	previousContext := embeddingsActivateCmd.Context()
+	require.NoError(t, embeddingsActivateCmd.Flags().Set("yes", "true"))
 	embeddingsActivateCmd.SetContext(testCtx)
-	t.Cleanup(func() { embeddingsActivateCmd.SetContext(previousContext) })
-	return gen
+	return gen, embeddingsActivateCmd
 }
 
-func assertManualGenerationState(t *testing.T, gen vector.GenerationID, want vector.GenerationState) {
+func assertManualGenerationState(ctx context.Context, t *testing.T, gen vector.GenerationID, want vector.GenerationState) {
 	t.Helper()
-	ctx := embeddingsActivateCmd.Context()
-	db, rebind, closeDB, err := openEmbeddingsMetadataDB(ctx)
+	db, closeDB, err := openEmbeddingsMetadataDB(ctx)
 	require.NoError(t, err)
 	defer closeDB()
-	row, err := getEmbeddingGeneration(ctx, db, rebind, gen)
+	row, err := getEmbeddingGeneration(ctx, db, gen)
 	require.NoError(t, err)
 	assert.Equal(t, want, row.State)
 }
 
 func TestRunEmbeddingsActivate_ContextualLifecycleRefusalsStayNonActivating(t *testing.T) {
 	t.Run("wrong generation fingerprint", func(t *testing.T) {
-		gen := setupManualContextualGeneration(t,
+		gen, embeddingsActivateCmd := setupManualContextualGeneration(t,
 			"voyage-context-4:4:p1-111111:c32768:e1:avoyage-contextual:v0", false)
 		err := runEmbeddingsActivate(embeddingsActivateCmd,
 			[]string{strconv.FormatInt(int64(gen), 10)})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "does not match config")
-		assertManualGenerationState(t, gen, vector.GenerationBuilding)
+		assertManualGenerationState(embeddingsActivateCmd.Context(), t, gen, vector.GenerationBuilding)
 	})
 	t.Run("retired generation", func(t *testing.T) {
-		gen := setupManualContextualGeneration(t, "", true)
+		gen, embeddingsActivateCmd := setupManualContextualGeneration(t, "", true)
 		err := runEmbeddingsActivate(embeddingsActivateCmd,
 			[]string{strconv.FormatInt(int64(gen), 10)})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), `is "retired", not "building"`)
-		assertManualGenerationState(t, gen, vector.GenerationRetired)
+		assertManualGenerationState(embeddingsActivateCmd.Context(), t, gen, vector.GenerationRetired)
 	})
 }

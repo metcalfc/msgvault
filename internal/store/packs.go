@@ -255,9 +255,9 @@ func (s *Store) recordPackedBlobs(
 		aliasesByEntry[i] = aliases
 	}
 	return s.withTx(func(tx *loggedTx) error {
-		if _, err := tx.Exec(s.dialect.InsertOrIgnore(`
+		if _, err := tx.Exec(`
 			INSERT OR IGNORE INTO attachment_packs (pack_id, entry_count, stored_bytes, created_at)
-			VALUES (?, ?, ?, ?)`),
+			VALUES (?, ?, ?, ?)`,
 			rec.PackID, rec.EntryCount, rec.StoredBytes,
 			rec.CreatedAt.UTC().Format(time.RFC3339)); err != nil {
 			return fmt.Errorf("insert attachment_packs row for %s: %w", rec.PackID, err)
@@ -269,10 +269,10 @@ func (s *Store) recordPackedBlobs(
 					return fmt.Errorf("replace pack index row for %s: %w", e.BlobHash, err)
 				}
 			}
-			if _, err := tx.Exec(s.dialect.InsertOrIgnore(`
+			if _, err := tx.Exec(`
 				INSERT OR IGNORE INTO attachment_pack_index
 				    (blob_hash, pack_id, pack_offset, stored_len, raw_len, flags, crc32c)
-				VALUES (?, ?, ?, ?, ?, ?, ?)`),
+				VALUES (?, ?, ?, ?, ?, ?, ?)`,
 				e.BlobHash, e.PackID, e.Offset, e.StoredLen, e.RawLen,
 				int64(e.Flags), int64(e.CRC32C)); err != nil {
 				return fmt.Errorf("insert pack index row for %s: %w", e.BlobHash, err)
@@ -498,8 +498,8 @@ func (s *Store) ResolveAttachmentBlob(blobHash string) (AttachmentBlobLocation, 
 	}
 	if canonicalHash != blobHash {
 		var legacyIndexRows int
-		err = s.db.QueryRow(s.dialect.Rebind(`
-			SELECT COUNT(*) FROM attachment_pack_index WHERE blob_hash = ?`), blobHash).
+		err = s.db.QueryRow(`
+			SELECT COUNT(*) FROM attachment_pack_index WHERE blob_hash = ?`, blobHash).
 			Scan(&legacyIndexRows)
 		if err != nil {
 			return AttachmentBlobLocation{}, fmt.Errorf(
@@ -514,7 +514,7 @@ func (s *Store) ResolveAttachmentBlob(blobHash string) (AttachmentBlobLocation, 
 	var referenced int
 	var hash, packID sql.NullString
 	var offset, storedLen, rawLen, flags, crc sql.NullInt64
-	err = s.db.QueryRow(s.dialect.Rebind(resolveAttachmentBlobSQL),
+	err = s.db.QueryRow(resolveAttachmentBlobSQL,
 		canonicalHash, canonicalHash, canonicalHash).
 		Scan(&referenced, &hash, &packID, &offset, &storedLen, &rawLen, &flags, &crc)
 	if err != nil {

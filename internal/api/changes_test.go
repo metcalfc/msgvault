@@ -168,7 +168,6 @@ func setChangesMessageTimestamp(t *testing.T, st *store.Store, id int64, col str
 // the cursor parameter is encoded at that same resolution). The fraction is
 // non-zero, which is what the RFC3339Nano serialisation has to preserve.
 func subSecondWatermark(st *store.Store) string {
-
 	return "2026-07-26 10:00:00.731"
 }
 

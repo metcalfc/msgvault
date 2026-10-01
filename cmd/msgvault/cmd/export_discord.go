@@ -196,5 +196,5 @@ func validateDiscordExport(
 }
 
 func init() {
-	rootCmd.AddCommand(newExportDiscordCmd(defaultDiscordCommandDeps()))
+	registerCommandFactory(func() *cobra.Command { return newExportDiscordCmd(defaultDiscordCommandDeps()) })
 }

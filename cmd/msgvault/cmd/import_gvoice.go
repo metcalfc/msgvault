@@ -15,17 +15,19 @@ import (
 	"go.kenn.io/msgvault/internal/gvoice"
 )
 
-var (
+type gvoiceImportOptions struct {
 	importGvoiceBefore            string
 	importGvoiceAfter             string
 	importGvoiceLimit             int
 	noDefaultIdentityImportGVoice bool
-)
+}
 
-var importGvoiceCmd = &cobra.Command{
-	Use:   "import-gvoice <takeout-voice-dir>",
-	Short: "Import Google Voice history from Takeout export",
-	Long: `Import Google Voice texts, calls, and voicemails from a
+func newImportGvoiceCommand() *cobra.Command {
+	options := &gvoiceImportOptions{}
+	command := &cobra.Command{
+		Use:   "import-gvoice <takeout-voice-dir>",
+		Short: "Import Google Voice history from Takeout export",
+		Long: `Import Google Voice texts, calls, and voicemails from a
 Google Takeout export.
 
 The directory should be the "Voice" folder inside the Takeout archive,
@@ -35,11 +37,31 @@ Examples:
   msgvault import-gvoice /path/to/Takeout/Voice
   msgvault import-gvoice /path/to/Takeout/Voice --after 2020-01-01
   msgvault import-gvoice /path/to/Takeout/Voice --limit 100`,
-	Args: cobra.ExactArgs(1),
-	RunE: runImportGvoice,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error { return runImportGvoice(cmd, args, options) },
+	}
+
+	command.Flags().StringVar(
+		&options.importGvoiceBefore, "before", "",
+		"only messages before this date (YYYY-MM-DD)",
+	)
+	command.Flags().StringVar(
+		&options.importGvoiceAfter, "after", "",
+		"only messages after this date (YYYY-MM-DD)",
+	)
+	command.Flags().IntVar(
+		&options.importGvoiceLimit, "limit", 0,
+		"limit number of messages (for testing)",
+	)
+	command.Flags().BoolVar(
+		&options.noDefaultIdentityImportGVoice, "no-default-identity", false,
+		noDefaultIdentityHelp,
+	)
+
+	return command
 }
 
-func runImportGvoice(cmd *cobra.Command, args []string) error {
+func runImportGvoice(cmd *cobra.Command, args []string, options *gvoiceImportOptions) error {
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -57,7 +79,7 @@ func runImportGvoice(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
-	clientOpts, err := buildGvoiceOpts(state.logger)
+	clientOpts, err := options.buildGvoiceOpts(state.logger)
 	if err != nil {
 		return err
 	}
@@ -93,9 +115,9 @@ func runImportGvoice(cmd *cobra.Command, args []string) error {
 	fmt.Printf(
 		"Importing Google Voice from %s\n", takeoutDir,
 	)
-	printGvoiceDateFilter()
-	if importGvoiceLimit > 0 {
-		fmt.Printf("Limit: %d messages\n", importGvoiceLimit)
+	options.printGvoiceDateFilter()
+	if options.importGvoiceLimit > 0 {
+		fmt.Printf("Limit: %d messages\n", options.importGvoiceLimit)
 	}
 	fmt.Println()
 
@@ -112,7 +134,7 @@ func runImportGvoice(cmd *cobra.Command, args []string) error {
 	phone := client.Identifier()
 	// Auto-default-identity must run BEFORE the legacy migration
 	// retry — see comment in account_identity.go.
-	if !noDefaultIdentityImportGVoice && strings.HasPrefix(phone, "+") {
+	if !options.noDefaultIdentityImportGVoice && strings.HasPrefix(phone, "+") {
 		confirmDefaultIdentity(cmd.OutOrStdout(), s, src.ID, phone, phone, "phone-e164", state.logger)
 	}
 	if err := runPostSourceCreateMigrationsForInvocation(s, state); err != nil {
@@ -123,13 +145,13 @@ func runImportGvoice(cmd *cobra.Command, args []string) error {
 	return rebuildCacheAfterWrite(cfg.DatabaseDSN(), state)
 }
 
-func buildGvoiceOpts(logger *slog.Logger) ([]gvoice.ClientOption, error) {
+func (options *gvoiceImportOptions) buildGvoiceOpts(logger *slog.Logger) ([]gvoice.ClientOption, error) {
 	var opts []gvoice.ClientOption
 	opts = append(opts, gvoice.WithLogger(logger))
 
-	if importGvoiceAfter != "" {
+	if options.importGvoiceAfter != "" {
 		t, err := time.ParseInLocation(
-			"2006-01-02", importGvoiceAfter, time.Local,
+			"2006-01-02", options.importGvoiceAfter, time.Local,
 		)
 		if err != nil {
 			return nil, fmt.Errorf(
@@ -140,9 +162,9 @@ func buildGvoiceOpts(logger *slog.Logger) ([]gvoice.ClientOption, error) {
 		opts = append(opts, gvoice.WithAfterDate(t))
 	}
 
-	if importGvoiceBefore != "" {
+	if options.importGvoiceBefore != "" {
 		t, err := time.ParseInLocation(
-			"2006-01-02", importGvoiceBefore, time.Local,
+			"2006-01-02", options.importGvoiceBefore, time.Local,
 		)
 		if err != nil {
 			return nil, fmt.Errorf(
@@ -153,23 +175,23 @@ func buildGvoiceOpts(logger *slog.Logger) ([]gvoice.ClientOption, error) {
 		opts = append(opts, gvoice.WithBeforeDate(t))
 	}
 
-	if importGvoiceLimit > 0 {
-		opts = append(opts, gvoice.WithLimit(importGvoiceLimit))
+	if options.importGvoiceLimit > 0 {
+		opts = append(opts, gvoice.WithLimit(options.importGvoiceLimit))
 	}
 
 	return opts, nil
 }
 
-func printGvoiceDateFilter() {
-	if importGvoiceAfter == "" && importGvoiceBefore == "" {
+func (options *gvoiceImportOptions) printGvoiceDateFilter() {
+	if options.importGvoiceAfter == "" && options.importGvoiceBefore == "" {
 		return
 	}
 	parts := []string{}
-	if importGvoiceAfter != "" {
-		parts = append(parts, "after "+importGvoiceAfter)
+	if options.importGvoiceAfter != "" {
+		parts = append(parts, "after "+options.importGvoiceAfter)
 	}
-	if importGvoiceBefore != "" {
-		parts = append(parts, "before "+importGvoiceBefore)
+	if options.importGvoiceBefore != "" {
+		parts = append(parts, "before "+options.importGvoiceBefore)
 	}
 	fmt.Printf("Date filter: %s\n", strings.Join(parts, ", "))
 }
@@ -206,22 +228,4 @@ func printGvoiceSummary(
 	}
 }
 
-func init() {
-	importGvoiceCmd.Flags().StringVar(
-		&importGvoiceBefore, "before", "",
-		"only messages before this date (YYYY-MM-DD)",
-	)
-	importGvoiceCmd.Flags().StringVar(
-		&importGvoiceAfter, "after", "",
-		"only messages after this date (YYYY-MM-DD)",
-	)
-	importGvoiceCmd.Flags().IntVar(
-		&importGvoiceLimit, "limit", 0,
-		"limit number of messages (for testing)",
-	)
-	importGvoiceCmd.Flags().BoolVar(
-		&noDefaultIdentityImportGVoice, "no-default-identity", false,
-		noDefaultIdentityHelp,
-	)
-	rootCmd.AddCommand(importGvoiceCmd)
-}
+func init() { registerCommandFactory(newImportGvoiceCommand) }

@@ -19,18 +19,13 @@ import (
 	"go.kenn.io/msgvault/pkg/client/generated"
 )
 
-var mcpForceSQL bool
-var mcpNoSQLiteScanner bool
-var mcpHTTPAddr string
-var mcpHTTPAllowInsecure bool
-var mcpHTTPAllowWrites bool
-var mcpAllowProfileWrites bool
 var serveMCPHTTPWithOptions = mcpserver.ServeHTTPWithOptions
 
-var mcpCmd = &cobra.Command{
-	Use:   "mcp",
-	Short: "Run MCP server for Claude Desktop integration",
-	Long: `Start an MCP (Model Context Protocol) server over stdio.
+func newMCPCommand() *cobra.Command {
+	mcpCmd := &cobra.Command{
+		Use:   "mcp",
+		Short: "Run MCP server for Claude Desktop integration",
+		Long: `Start an MCP (Model Context Protocol) server over stdio.
 
 This allows Claude Desktop (or any MCP client) to query your archive
 using tools like search_metadata, search_message_bodies, search_document_attachments, semantic_search_messages, get_message, list_messages, get_stats,
@@ -45,47 +40,54 @@ Add to Claude Desktop config:
       }
 	    }
 	  }`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		state := invocationFromCommand(cmd)
-		if state == nil || state.cfg == nil {
-			return errors.New("configuration is unavailable")
-		}
-		cfg := state.cfg
-		st, info, err := OpenHTTPStore(cmd.Context())
-		if err != nil {
-			return fmt.Errorf("open daemon: %w", err)
-		}
-		defer func() { _ = st.Close() }()
-
-		// Derive from cmd.Context() so signal handling installed by
-		// the cobra root command (SIGINT/SIGTERM → ctx.Done()) reaches
-		// the MCP transport and can trigger ServeHTTPWithOptions's
-		// graceful shutdown.
-		ctx, cancel := context.WithCancel(cmd.Context())
-		defer cancel()
-
-		opts := daemonMCPServeOptions(ctx, st, state)
-		opts.AllowProfileWrites = mcpAllowProfileWrites
-
-		if mcpHTTPAddr != "" {
-			normalized, err := normalizeMCPHTTPAddr(
-				mcpHTTPAddr,
-				mcpHTTPAllowInsecure,
-				cfg.Server.APIKey != "",
-			)
-			if err != nil {
-				return usageErr(cmd, err)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			mcpHTTPAddr, _ := cmd.Flags().GetString("http")
+			mcpHTTPAllowInsecure, _ := cmd.Flags().GetBool("http-allow-insecure")
+			mcpHTTPAllowWrites, _ := cmd.Flags().GetBool("http-allow-writes")
+			mcpAllowProfileWrites, _ := cmd.Flags().GetBool("allow-profile-writes")
+			state := invocationFromCommand(cmd)
+			if state == nil || state.cfg == nil {
+				return errors.New("configuration is unavailable")
 			}
-			return serveMCPHTTPWithOptions(ctx, opts, mcpserver.HTTPOptions{
-				Addr:               normalized,
-				DiscoveryDirectory: filepath.Join(cfg.HomeDir, "mcp"),
-				BackendURL:         info.URL,
-				APIKey:             cfg.Server.APIKey,
-				AllowWrites:        mcpHTTPAllowWrites,
-			})
-		}
-		return mcpserver.ServeWithOptions(ctx, opts)
-	},
+			cfg := state.cfg
+			st, info, err := OpenHTTPStore(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("open daemon: %w", err)
+			}
+			defer func() { _ = st.Close() }()
+
+			// Derive from cmd.Context() so signal handling installed by
+			// the cobra root command (SIGINT/SIGTERM → ctx.Done()) reaches
+			// the MCP transport and can trigger ServeHTTPWithOptions's
+			// graceful shutdown.
+			ctx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
+
+			opts := daemonMCPServeOptions(ctx, st, state)
+			opts.AllowProfileWrites = mcpAllowProfileWrites
+
+			if mcpHTTPAddr != "" {
+				normalized, err := normalizeMCPHTTPAddr(
+					mcpHTTPAddr,
+					mcpHTTPAllowInsecure,
+					cfg.Server.APIKey != "",
+				)
+				if err != nil {
+					return usageErr(cmd, err)
+				}
+				return serveMCPHTTPWithOptions(ctx, opts, mcpserver.HTTPOptions{
+					Addr:               normalized,
+					DiscoveryDirectory: filepath.Join(cfg.HomeDir, "mcp"),
+					BackendURL:         info.URL,
+					APIKey:             cfg.Server.APIKey,
+					AllowWrites:        mcpHTTPAllowWrites,
+				})
+			}
+			return mcpserver.ServeWithOptions(ctx, opts)
+		},
+	}
+	configureMCPCommand(mcpCmd)
+	return mcpCmd
 }
 
 // savedViewsMinAPISchemaVersion is the first daemon API schema that runs Saved
@@ -328,25 +330,28 @@ func (s daemonMCPSimilarSearcher) FindSimilar(
 }
 
 func init() {
+	registerCommandFactory(newMCPCommand)
+}
+
+func configureMCPCommand(mcpCmd *cobra.Command) {
 	mcpCmd.AddCommand(newMCPStatusCommand())
-	rootCmd.AddCommand(mcpCmd)
-	mcpCmd.Flags().BoolVar(&mcpForceSQL, "force-sql", false, "Deprecated in 0.17.0: set [analytics].engine = \"sql\" in config.toml")
-	mcpCmd.Flags().BoolVar(&mcpNoSQLiteScanner, "no-sqlite-scanner", false, "Deprecated in 0.17.0: cache engine selection is daemon-managed")
-	mcpCmd.Flags().StringVar(&mcpHTTPAddr, "http", "",
+	mcpCmd.Flags().Bool("force-sql", false, "Deprecated in 0.17.0: set [analytics].engine = \"sql\" in config.toml")
+	mcpCmd.Flags().Bool("no-sqlite-scanner", false, "Deprecated in 0.17.0: cache engine selection is daemon-managed")
+	mcpCmd.Flags().String("http", "",
 		"Serve over StreamableHTTP on this address (e.g. 127.0.0.1:8080) "+
 			"instead of stdio. Bare port forms (':8080', '8080') bind to "+
 			"loopback only; non-loopback hosts require [server].api_key or "+
 			"--http-allow-insecure.")
-	mcpCmd.Flags().BoolVar(&mcpHTTPAllowInsecure, "http-allow-insecure", false,
+	mcpCmd.Flags().Bool("http-allow-insecure", false,
 		"Allow --http to bind a non-loopback address without [server].api_key. "+
 			"Any configured key still requires bearer authentication. Without a "+
 			"key, any reachable client can read your archive; only set this behind "+
 			"a trusted network boundary or authenticating reverse proxy.")
-	mcpCmd.Flags().BoolVar(&mcpHTTPAllowWrites, "http-allow-writes", false,
+	mcpCmd.Flags().Bool("http-allow-writes", false,
 		"Expose write-class MCP tools over HTTP. This permits attachment exports, "+
 			"deletion manifests, Saved View management, and profile writes separately enabled with "+
 			"--allow-profile-writes; enable it only for trusted, authenticated clients.")
-	mcpCmd.Flags().BoolVar(&mcpAllowProfileWrites, "allow-profile-writes", false,
+	mcpCmd.Flags().Bool("allow-profile-writes", false,
 		"Expose person promotion and private Notes writes. Model tool calls "+
 			"can persist profile data, so enable this only for sessions where the user "+
 			"has explicitly authorized profile writes.")

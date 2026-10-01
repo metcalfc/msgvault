@@ -109,7 +109,7 @@ func defaultRepairMessageCommandDepsForContext(ctx context.Context) repairMessag
 }
 
 func init() {
-	rootCmd.AddCommand(newRepairMessageCmd(defaultRepairMessageCommandDeps()))
+	registerCommandFactory(func() *cobra.Command { return newRepairMessageCmd(defaultRepairMessageCommandDeps()) })
 }
 
 func newRepairMessageCmd(deps repairMessageCommandDeps) *cobra.Command {

@@ -26,28 +26,16 @@ func TestImportMboxCmd_GoogleGroupsTakeout(t *testing.T) {
 	tmp := t.TempDir()
 
 	// Save/restore global state for cmd package.
-	prevNoDefault := noDefaultIdentityImportMbox
 	prevCfg := cfg
 	prevLogger := logger
-	prevSourceType := importMboxSourceType
-	prevLabel := importMboxLabels
-	prevNoResume := importMboxNoResume
-	prevCheckpointInterval := importMboxCheckpointInterval
-	prevNoAttachments := importMboxNoAttachments
 	prevCfgFile := cfgFile
 	prevHomeDir := homeDir
 	prevVerbose := verbose
 	prevOut := rootCmd.OutOrStdout()
 	prevErr := rootCmd.ErrOrStderr()
 	t.Cleanup(func() {
-		noDefaultIdentityImportMbox = prevNoDefault
 		cfg = prevCfg
 		logger = prevLogger
-		importMboxSourceType = prevSourceType
-		importMboxLabels = prevLabel
-		importMboxNoResume = prevNoResume
-		importMboxCheckpointInterval = prevCheckpointInterval
-		importMboxNoAttachments = prevNoAttachments
 		cfgFile = prevCfgFile
 		homeDir = prevHomeDir
 		verbose = prevVerbose

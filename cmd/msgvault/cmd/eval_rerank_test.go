@@ -77,25 +77,9 @@ func (r *recordingReranker) Rerank(ctx context.Context, request rerank.Request) 
 	}}, nil
 }
 
-func preserveEvalRerankGlobals(t *testing.T) {
-	t.Helper()
-	oldQrels, oldTopics, oldModes, oldDocKey := evalQrels, evalTopics, evalModes, evalDocKey
-	oldLimit, oldJSON := evalLimit, evalJSON
-	oldJev, oldTop, oldMaxRequests := evalRerankJev, evalRerankTop, evalRerankMaxRequests
-	oldCost, oldInput, oldOutput := evalRerankCostStopUSD, evalRerankInputUSDPerM, evalRerankOutputUSDPerM
-	t.Cleanup(func() {
-		evalQrels, evalTopics, evalModes, evalDocKey = oldQrels, oldTopics, oldModes, oldDocKey
-		evalLimit, evalJSON = oldLimit, oldJSON
-		evalRerankJev, evalRerankTop, evalRerankMaxRequests = oldJev, oldTop, oldMaxRequests
-		evalRerankCostStopUSD, evalRerankInputUSDPerM, evalRerankOutputUSDPerM = oldCost, oldInput, oldOutput
-	})
-}
-
 func newEvalRerankTestCommand(t *testing.T, out *bytes.Buffer, inputPrice, outputPrice bool) *cobra.Command {
 	t.Helper()
-	cmd := &cobra.Command{}
-	cmd.Flags().Float64("rerank-input-usd-per-million", 0, "")
-	cmd.Flags().Float64("rerank-output-usd-per-million", 0, "")
+	cmd := newEvalCommand()
 	if inputPrice {
 		require.NoError(t, cmd.Flags().Set("rerank-input-usd-per-million", "1"))
 	}
@@ -108,16 +92,16 @@ func newEvalRerankTestCommand(t *testing.T, out *bytes.Buffer, inputPrice, outpu
 	return cmd
 }
 
-func prepareEvalRerankRun(t *testing.T, shapes string, topicCount int) (*cobra.Command, *bytes.Buffer) {
+func prepareEvalRerankRun(t *testing.T, shapes string, topicCount int) (*cobra.Command, *bytes.Buffer, *evalCommandOptions) {
 	t.Helper()
-	preserveEvalRerankGlobals(t)
+	options := &evalCommandOptions{}
 	dir := t.TempDir()
 	seedRankingDivergenceArchiveIn(t, dir)
 	cfg := config.NewDefaultConfig()
 	cfg.Data.DataDir = dir
-	evalModes, evalDocKey, evalLimit, evalJSON = "fts", "message", 10, true
-	evalRerankJev, evalRerankTop, evalRerankMaxRequests = shapes, 2, 1000
-	evalRerankCostStopUSD, evalRerankInputUSDPerM, evalRerankOutputUSDPerM = 5, 1, 1
+	options.evalModes, options.evalDocKey, options.evalLimit, options.evalJSON = "fts", "message", 10, true
+	options.evalRerankJev, options.evalRerankTop, options.evalRerankMaxRequests = shapes, 2, 1000
+	options.evalRerankCostStopUSD, options.evalRerankInputUSDPerM, options.evalRerankOutputUSDPerM = 5, 1, 1
 	t.Setenv("TYPESAFE_API_KEY", "test-key")
 	var topics, qrels strings.Builder
 	for i := range topicCount {
@@ -125,19 +109,19 @@ func prepareEvalRerankRun(t *testing.T, shapes string, topicCount int) (*cobra.C
 		fmt.Fprintf(&topics, "%s\trenewal\n", qid)
 		fmt.Fprintf(&qrels, "%s 0 <m1@example.com> 1\n", qid)
 	}
-	evalQrels = writeEvalFile(t, dir, "qrels.txt", qrels.String())
-	evalTopics = writeEvalFile(t, dir, "topics.tsv", topics.String())
+	options.evalQrels = writeEvalFile(t, dir, "qrels.txt", qrels.String())
+	options.evalTopics = writeEvalFile(t, dir, "topics.tsv", topics.String())
 	out := &bytes.Buffer{}
 	cmd := newEvalRerankTestCommand(t, out, true, true)
 	cmd.SetContext(testInvocationContext(cmd.Context(), cfg, invocationOptions{}))
-	return cmd, out
+	return cmd, out, options
 }
 
 func TestRunEvalReranksFTSCandidates(t *testing.T) {
 	assert := assert.New(t)
-	cmd, out := prepareEvalRerankRun(t, "batched,per-candidate", 2)
+	cmd, out, options := prepareEvalRerankRun(t, "batched,per-candidate", 2)
 	recorder := &evalRerankRecorder{}
-	require.NoError(t, runEvalWithRerankerFactory(cmd, nil, recorder.makeReranker))
+	require.NoError(t, runEvalWithRerankerFactory(cmd, nil, options, recorder.makeReranker))
 	for _, shape := range []string{"batched", "per-candidate"} {
 		require.Len(t, recorder.requests[shape], 2)
 		for _, request := range recorder.requests[shape] {
@@ -193,10 +177,10 @@ func TestRunEvalReranksFTSCandidates(t *testing.T) {
 }
 
 func TestRunEvalJevSlowRequestWaves(t *testing.T) {
-	cmd, out := prepareEvalRerankRun(t, "per-candidate", 2)
+	cmd, out, options := prepareEvalRerankRun(t, "per-candidate", 2)
 	state := invocationFromContext(cmd.Context())
 	cfg := state.cfg
-	evalLimit, evalRerankTop = 30, 30
+	options.evalLimit, options.evalRerankTop = 30, 30
 	s, err := store.Open(cfg.DatabaseDSN())
 	require.NoError(t, err)
 	for i := 4; i <= 31; i++ {
@@ -221,7 +205,7 @@ func TestRunEvalJevSlowRequestWaves(t *testing.T) {
 	}
 	synctest.Test(t, func(t *testing.T) {
 		cmd.SetContext(withInvocation(t.Context(), state))
-		require.NoError(t, runEvalWithRerankerFactory(cmd, nil, factory))
+		require.NoError(t, runEvalWithRerankerFactory(cmd, nil, options, factory))
 	})
 	var report struct {
 		Rerank struct {
@@ -269,13 +253,13 @@ func TestEvalRerankShortlist(t *testing.T) {
 }
 
 func TestRunEvalRerankFailureKeepsCompleteBaseline(t *testing.T) {
-	cmd, out := prepareEvalRerankRun(t, "batched,per-candidate", 3)
+	cmd, out, options := prepareEvalRerankRun(t, "batched,per-candidate", 3)
 	input, output := int64(5), int64(2)
 	recorder := &evalRerankRecorder{
 		failAt:    map[string]int{"batched": 2},
 		failUsage: rerank.Usage{Requests: 1, InputTokens: &input, OutputTokens: &output},
 	}
-	err := runEvalWithRerankerFactory(cmd, nil, recorder.makeReranker)
+	err := runEvalWithRerankerFactory(cmd, nil, options, recorder.makeReranker)
 	require.ErrorContains(t, err, "provider request failed")
 	require.Len(t, recorder.requests["batched"], 2, "provider work stops after the failed request")
 	require.Len(t, recorder.requests["per-candidate"], 1)
@@ -321,11 +305,11 @@ func TestRunEvalRerankFailureKeepsCompleteBaseline(t *testing.T) {
 }
 
 func TestRunEvalRerankQualityMetricsFollowProviderScoresAcrossModes(t *testing.T) {
-	cmd, out := prepareEvalRerankRun(t, "batched", 1)
+	cmd, out, options := prepareEvalRerankRun(t, "batched", 1)
 	cfg := invocationFromContext(cmd.Context()).cfg
 	dataDir := cfg.Data.DataDir
-	evalQrels = writeEvalFile(t, dataDir, "quality-qrels.txt", "q1 0 <m2@example.com> 1\n")
-	evalModes = "fts,vector,hybrid"
+	options.evalQrels = writeEvalFile(t, dataDir, "quality-qrels.txt", "q1 0 <m2@example.com> 1\n")
+	options.evalModes = "fts,vector,hybrid"
 	c := evalVectorConfig(t, vector.APIFormatOpenAI, "test-model")
 	c.Data.DataDir = dataDir
 	c.Vector.Embeddings.Dimension = 3
@@ -354,7 +338,7 @@ func TestRunEvalRerankQualityMetricsFollowProviderScoresAcrossModes(t *testing.T
 	}))
 
 	recorder := &evalRerankRecorder{promoteText: "weekly digest"}
-	require.NoError(t, runEvalWithRerankerFactory(cmd, nil, recorder.makeReranker))
+	require.NoError(t, runEvalWithRerankerFactory(cmd, nil, options, recorder.makeReranker))
 	var report struct {
 		Results      map[string]json.RawMessage `json:"results"`
 		RerankResult struct {
@@ -387,13 +371,13 @@ func TestValidateJevRequestEstimate(t *testing.T) {
 }
 
 func TestRunEvalPreflightsJevRequestEstimateBeforeOpeningArchive(t *testing.T) {
-	preserveEvalRerankGlobals(t)
+	options := &evalCommandOptions{}
 	dir := t.TempDir()
 	cfg := config.NewDefaultConfig()
 	cfg.Data.DataDir = dir
-	evalModes, evalDocKey, evalLimit, evalJSON = "fts,vector,hybrid", "message", 100, true
-	evalRerankJev, evalRerankTop, evalRerankMaxRequests = "per-candidate,batched", 30, 1000
-	evalRerankCostStopUSD, evalRerankInputUSDPerM, evalRerankOutputUSDPerM = 5, 1, 1
+	options.evalModes, options.evalDocKey, options.evalLimit, options.evalJSON = "fts,vector,hybrid", "message", 100, true
+	options.evalRerankJev, options.evalRerankTop, options.evalRerankMaxRequests = "per-candidate,batched", 30, 1000
+	options.evalRerankCostStopUSD, options.evalRerankInputUSDPerM, options.evalRerankOutputUSDPerM = 5, 1, 1
 	t.Setenv("TYPESAFE_API_KEY", "test-key")
 	var topics, qrels strings.Builder
 	for i := range 11 {
@@ -401,12 +385,12 @@ func TestRunEvalPreflightsJevRequestEstimateBeforeOpeningArchive(t *testing.T) {
 		fmt.Fprintf(&topics, "%s\trenewal\n", qid)
 		fmt.Fprintf(&qrels, "%s 0 <m1@example.com> 1\n", qid)
 	}
-	evalQrels = writeEvalFile(t, dir, "qrels.txt", qrels.String())
-	evalTopics = writeEvalFile(t, dir, "topics.tsv", topics.String())
+	options.evalQrels = writeEvalFile(t, dir, "qrels.txt", qrels.String())
+	options.evalTopics = writeEvalFile(t, dir, "topics.tsv", topics.String())
 	cmd := newEvalRerankTestCommand(t, &bytes.Buffer{}, true, true)
 	cmd.SetContext(testInvocationContext(cmd.Context(), cfg, invocationOptions{}))
 	recorder := &evalRerankRecorder{}
-	err := runEvalWithRerankerFactory(cmd, nil, recorder.makeReranker)
+	err := runEvalWithRerankerFactory(cmd, nil, options, recorder.makeReranker)
 	require.ErrorContains(t, err, "conservative request estimate")
 	assert.Zero(t, recorder.factoryCalls)
 	_, statErr := os.Stat(filepath.Join(dir, "msgvault.db"))
@@ -492,11 +476,11 @@ func TestEvalRerankGateThresholds(t *testing.T) {
 // an external contract no test can reach, and the fake proves the harness
 // sends production candidate text and reports the gate.
 func TestRunEvalJevHarnessThroughFakeProvider(t *testing.T) {
-	cmd, out := prepareEvalRerankRun(t, "batched", 1)
+	cmd, out, options := prepareEvalRerankRun(t, "batched", 1)
 	cfg := invocationFromContext(cmd.Context()).cfg
 	dataDir := cfg.Data.DataDir
-	evalQrels = writeEvalFile(t, dataDir, "gate-qrels.txt", "q1 0 <m2@example.com> 1\n")
-	evalModes = "hybrid"
+	options.evalQrels = writeEvalFile(t, dataDir, "gate-qrels.txt", "q1 0 <m2@example.com> 1\n")
+	options.evalModes = "hybrid"
 	c := evalVectorConfig(t, vector.APIFormatOpenAI, "test-model")
 	c.Data.DataDir = dataDir
 	c.Vector.Embeddings.Dimension = 3
@@ -553,7 +537,7 @@ func TestRunEvalJevHarnessThroughFakeProvider(t *testing.T) {
 				Body: io.NopCloser(bytes.NewReader(encoded))}, nil
 		}))
 	}
-	require.NoError(t, runEvalWithRerankerFactory(cmd, nil, factory))
+	require.NoError(t, runEvalWithRerankerFactory(cmd, nil, options, factory))
 
 	require.Len(t, bodies, 1)
 	candidates := bodies[0].State.Candidates
@@ -574,10 +558,7 @@ func TestRunEvalJevHarnessThroughFakeProvider(t *testing.T) {
 
 func TestEvalRerankOptIn(t *testing.T) {
 	assert := assert.New(t)
-	old := evalRerankJev
-	t.Cleanup(func() { evalRerankJev = old })
-	evalRerankJev = ""
-	options, err := readEvalRerankOptions(nil)
+	options, err := readEvalRerankOptions(nil, &evalCommandOptions{})
 	require.NoError(t, err)
 	assert.Empty(options.Shapes)
 }
@@ -589,36 +570,36 @@ func TestReadEvalRerankOptionsRejectsInvalidInputs(t *testing.T) {
 		outputPrice bool
 		key         string
 		wantError   string
-		mutate      func()
+		mutate      func(*evalCommandOptions)
 	}{
-		{name: "conversation key", inputPrice: true, outputPrice: true, key: "test-key", wantError: "--rerank-jev requires --doc-key=message", mutate: func() { evalDocKey = "conversation" }},
-		{name: "top outside provider bound", inputPrice: true, outputPrice: true, key: "test-key", wantError: "--rerank-top must be between", mutate: func() { evalRerankTop = rerank.MaxCandidates + 1 }},
-		{name: "top cannot rerank", inputPrice: true, outputPrice: true, key: "test-key", wantError: "--rerank-top must be between", mutate: func() { evalRerankTop = 1 }},
-		{name: "top exceeds retrieval depth", inputPrice: true, outputPrice: true, key: "test-key", wantError: "cannot exceed --limit", mutate: func() { evalRerankTop = evalLimit + 1 }},
-		{name: "nonpositive request limit", inputPrice: true, outputPrice: true, key: "test-key", wantError: "--rerank-max-requests must be positive", mutate: func() { evalRerankMaxRequests = 0 }},
-		{name: "invalid cost stop", inputPrice: true, outputPrice: true, key: "test-key", wantError: "must be a positive finite number", mutate: func() { evalRerankCostStopUSD = math.NaN() }},
+		{name: "conversation key", inputPrice: true, outputPrice: true, key: "test-key", wantError: "--rerank-jev requires --doc-key=message", mutate: func(options *evalCommandOptions) { options.evalDocKey = "conversation" }},
+		{name: "top outside provider bound", inputPrice: true, outputPrice: true, key: "test-key", wantError: "--rerank-top must be between", mutate: func(options *evalCommandOptions) { options.evalRerankTop = rerank.MaxCandidates + 1 }},
+		{name: "top cannot rerank", inputPrice: true, outputPrice: true, key: "test-key", wantError: "--rerank-top must be between", mutate: func(options *evalCommandOptions) { options.evalRerankTop = 1 }},
+		{name: "top exceeds retrieval depth", inputPrice: true, outputPrice: true, key: "test-key", wantError: "cannot exceed --limit", mutate: func(options *evalCommandOptions) { options.evalRerankTop = options.evalLimit + 1 }},
+		{name: "nonpositive request limit", inputPrice: true, outputPrice: true, key: "test-key", wantError: "--rerank-max-requests must be positive", mutate: func(options *evalCommandOptions) { options.evalRerankMaxRequests = 0 }},
+		{name: "invalid cost stop", inputPrice: true, outputPrice: true, key: "test-key", wantError: "must be a positive finite number", mutate: func(options *evalCommandOptions) { options.evalRerankCostStopUSD = math.NaN() }},
 		{name: "missing input price", outputPrice: true, key: "test-key", wantError: "--rerank-input-usd-per-million is required"},
 		{name: "missing output price", inputPrice: true, key: "test-key", wantError: "--rerank-output-usd-per-million is required"},
-		{name: "negative input price", inputPrice: true, outputPrice: true, key: "test-key", wantError: "must be a finite nonnegative number", mutate: func() { evalRerankInputUSDPerM = -1 }},
-		{name: "nonfinite output price", inputPrice: true, outputPrice: true, key: "test-key", wantError: "must be a finite nonnegative number", mutate: func() { evalRerankOutputUSDPerM = math.Inf(1) }},
-		{name: "unknown shape", inputPrice: true, outputPrice: true, key: "test-key", wantError: "invalid --rerank-jev value", mutate: func() { evalRerankJev = "unknown" }},
-		{name: "empty shapes", inputPrice: true, outputPrice: true, key: "test-key", wantError: "must name per-candidate or batched", mutate: func() { evalRerankJev = ",," }},
+		{name: "negative input price", inputPrice: true, outputPrice: true, key: "test-key", wantError: "must be a finite nonnegative number", mutate: func(options *evalCommandOptions) { options.evalRerankInputUSDPerM = -1 }},
+		{name: "nonfinite output price", inputPrice: true, outputPrice: true, key: "test-key", wantError: "must be a finite nonnegative number", mutate: func(options *evalCommandOptions) { options.evalRerankOutputUSDPerM = math.Inf(1) }},
+		{name: "unknown shape", inputPrice: true, outputPrice: true, key: "test-key", wantError: "invalid --rerank-jev value", mutate: func(options *evalCommandOptions) { options.evalRerankJev = "unknown" }},
+		{name: "empty shapes", inputPrice: true, outputPrice: true, key: "test-key", wantError: "must name per-candidate or batched", mutate: func(options *evalCommandOptions) { options.evalRerankJev = ",," }},
 		{name: "missing API key", inputPrice: true, outputPrice: true, key: " ", wantError: "TYPESAFE_API_KEY is required"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			preserveEvalRerankGlobals(t)
+			options := &evalCommandOptions{}
 			cfg := config.NewDefaultConfig()
-			evalDocKey, evalLimit = "message", 10
-			evalRerankJev, evalRerankTop, evalRerankMaxRequests = "batched", 2, 100
-			evalRerankCostStopUSD, evalRerankInputUSDPerM, evalRerankOutputUSDPerM = 1, 1, 1
+			options.evalDocKey, options.evalLimit = "message", 10
+			options.evalRerankJev, options.evalRerankTop, options.evalRerankMaxRequests = "batched", 2, 100
+			options.evalRerankCostStopUSD, options.evalRerankInputUSDPerM, options.evalRerankOutputUSDPerM = 1, 1, 1
 			t.Setenv("TYPESAFE_API_KEY", tc.key)
 			cmd := newEvalRerankTestCommand(t, &bytes.Buffer{}, tc.inputPrice, tc.outputPrice)
 			cmd.SetContext(testInvocationContext(cmd.Context(), cfg, invocationOptions{}))
 			if tc.mutate != nil {
-				tc.mutate()
+				tc.mutate(options)
 			}
-			_, err := readEvalRerankOptions(cmd)
+			_, err := readEvalRerankOptions(cmd, options)
 			require.ErrorContains(t, err, tc.wantError)
 		})
 	}

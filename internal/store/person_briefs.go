@@ -216,11 +216,11 @@ func (s *Store) ListPersonBriefEnrollmentsContext(
 			"list person brief enrollments: limit must be between 1 and %d",
 			maxPersonBriefEnrollmentList)
 	}
-	rows, err := s.db.QueryContext(ctx, s.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT person_id, enabled_at, actor FROM person_brief_enrollments
 		WHERE person_id > ?
 		ORDER BY person_id
-		LIMIT ?`), afterID, limit)
+		LIMIT ?`, afterID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list person brief enrollments: %w", err)
 	}
@@ -253,7 +253,7 @@ func (s *Store) ListBriefEligiblePeopleContext(
 			"list brief eligible people: limit must be between 1 and %d",
 			maxPersonBriefEnrollmentList)
 	}
-	rows, err := s.db.QueryContext(ctx, s.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT enrollment.person_id, enrollment.enabled_at,
 		       latest.version, latest.status, latest.generated_at, latest.boundary_json
 		FROM person_brief_enrollments enrollment
@@ -267,7 +267,7 @@ func (s *Store) ListBriefEligiblePeopleContext(
 			SELECT 1 FROM person_tracking tracking
 			WHERE tracking.person_id = enrollment.person_id)
 		ORDER BY enrollment.person_id
-		LIMIT ?`), afterID, limit)
+		LIMIT ?`, afterID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list brief eligible people: %w", err)
 	}
@@ -320,8 +320,8 @@ func (s *Store) GetPersonBriefContext(
 	if version > 0 {
 		predicate, arg = `version = ?`, any(version)
 	}
-	row := s.db.QueryRowContext(ctx, s.Rebind(`SELECT `+personBriefColumns+`
-		FROM person_briefs WHERE person_id = ? AND `+predicate), personID, arg)
+	row := s.db.QueryRowContext(ctx, `SELECT `+personBriefColumns+`
+		FROM person_briefs WHERE person_id = ? AND `+predicate, personID, arg)
 	brief, err := scanPersonBrief(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("person %d brief: %w", personID, ErrPersonBriefNotFound)
@@ -340,10 +340,10 @@ func (s *Store) ListPersonBriefVersionsContext(
 		return nil, fmt.Errorf("list person brief versions: limit must be between 1 and %d",
 			maxPersonBriefVersionList)
 	}
-	rows, err := s.db.QueryContext(ctx, s.Rebind(`SELECT `+personBriefColumns+`
+	rows, err := s.db.QueryContext(ctx, `SELECT `+personBriefColumns+`
 		FROM person_briefs WHERE person_id = ?
 		ORDER BY version DESC
-		LIMIT ?`), personID, limit)
+		LIMIT ?`, personID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list person brief versions: %w", err)
 	}
@@ -367,7 +367,7 @@ func (s *Store) ListPersonBriefVersionsContext(
 func (s *Store) ListPersonBriefEvidenceContext(
 	ctx context.Context, briefID int64,
 ) ([]PersonBriefEvidencePointer, error) {
-	rows, err := s.db.QueryContext(ctx, s.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT pointer.ordinal, evidence.id, evidence.evidence_key, evidence.source_ref,
 		       evidence.source_url, evidence.directness, evidence.event_time,
 		       (SELECT event.supported
@@ -381,7 +381,7 @@ func (s *Store) ListPersonBriefEvidenceContext(
 		FROM person_brief_evidence pointer
 		JOIN person_fact_evidence evidence ON evidence.id = pointer.evidence_id
 		WHERE pointer.brief_id = ?
-		ORDER BY pointer.ordinal`), briefID)
+		ORDER BY pointer.ordinal`, briefID)
 	if err != nil {
 		return nil, fmt.Errorf("list person brief evidence: %w", err)
 	}
@@ -519,10 +519,8 @@ func (s *Store) insertPersonBriefTx(
 			 program_fingerprint, provider, provider_version, model, model_version,
 			 provider_policy_fingerprint, boundary_json, structured_json, rendered_text,
 			 renderer_policy, dropped_item_count, generated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, `+
-		s.dialect.JSONBindExpr()+`, `+s.dialect.JSONBindExpr()+`, ?, ?, ?, ?)
-		RETURNING id`,
-		input.PersonID, nextVersion, input.GenerationID, PersonBriefStatusCurrent,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		RETURNING id`, input.PersonID, nextVersion, input.GenerationID, PersonBriefStatusCurrent,
 		input.ProgramID, input.ProgramVersion, input.ProgramFingerprint, input.Provider,
 		input.ProviderVersion, input.Model, input.ModelVersion,
 		input.ProviderPolicyFingerprint, string(input.Boundary), string(input.Structured),

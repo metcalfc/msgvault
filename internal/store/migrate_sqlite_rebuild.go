@@ -103,17 +103,17 @@ func (s *Store) rebuildSQLiteTable(ctx context.Context, rebuild sqliteTableRebui
 // purpose: an archive may already hold an unrelated dangling reference, and
 // that must not block an upgrade that never touched it.
 func countSQLiteTableForeignKeyViolations(ctx context.Context, tx *sql.Tx, table string) (int, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT m.name FROM sqlite_master AS m,
-		pragma_foreign_key_list(m.name) AS f
-		WHERE m.type = 'table' AND f."table" = ? AND m.name <> ?`, table, table)
+	rows, err := tx.QueryContext(ctx, `SELECT m.name FROM sqlite_master AS m
+		WHERE m.type = 'table' AND m.name <> ?
+		AND EXISTS (SELECT 1 FROM pragma_foreign_key_list(m.name) AS f WHERE f."table" = ?)`, table, table)
 	if err != nil {
 		return 0, fmt.Errorf("list tables referencing %s: %w", table, err)
 	}
+	defer func() { _ = rows.Close() }()
 	var referencing []string
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			_ = rows.Close()
 			return 0, fmt.Errorf("list tables referencing %s: %w", table, err)
 		}
 		referencing = append(referencing, name)

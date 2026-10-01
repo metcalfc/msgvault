@@ -22,7 +22,7 @@ type testEnv struct {
 // newTestEnv creates a test environment with an in-memory SQLite database and test data.
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	tdb.SeedStandardDataSet()
 	return &testEnv{
 		TestDB: tdb,

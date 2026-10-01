@@ -25,9 +25,6 @@ const (
 
 // Dialect groups SQL generation and search behavior for the query engine.
 type Dialect interface {
-	// Rebind converts ? placeholders to the driver's native form.
-	// SQLite keeps the placeholders unchanged.
-	Rebind(query string) string
 
 	// TimeTruncExpression returns SQL to truncate a timestamp column to a
 	// given granularity ("year", "month", "day"). Used in GROUP BY for
@@ -106,8 +103,6 @@ type Dialect interface {
 
 // SQLiteQueryDialect implements Dialect for SQLite.
 type SQLiteQueryDialect struct{}
-
-func (SQLiteQueryDialect) Rebind(query string) string { return query }
 
 func (SQLiteQueryDialect) BoolTrueExpr(col string) string { return col + " = 1" }
 

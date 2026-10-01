@@ -233,7 +233,6 @@ func TestPersonEnrichmentSchemaSQLiteForeignKeysAndIndexes(t *testing.T) {
 }
 
 func TestPersonEnrichmentSchemaWorkAttemptPointerAndIndexes(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewSQLiteTestStore(t)
@@ -267,7 +266,6 @@ func TestPersonEnrichmentSchemaWorkAttemptPointerAndIndexes(t *testing.T) {
 }
 
 func TestPersonEnrichmentSchemaManualRunTargetBinding(t *testing.T) {
-
 	st := testutil.NewSQLiteTestStore(t)
 	columns := pragmaTextColumn(t, st.DB(),
 		`PRAGMA table_info(person_enrichment_manual_run_targets)`, 1)
@@ -403,7 +401,6 @@ func TestInitSchemaAddsFreshTriggerMarkerToLegacySchema(t *testing.T) {
 }
 
 func TestPersonEnrichmentSchemaResultMetadataPrivacyIdentityAndCitationIndexes(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewSQLiteTestStore(t)

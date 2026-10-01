@@ -134,5 +134,5 @@ func registerActivityProjectionJob(
 }
 
 func init() {
-	rootCmd.AddCommand(newActivityCommand())
+	registerCommandFactory(newActivityCommand)
 }

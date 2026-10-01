@@ -128,7 +128,6 @@ func TestManagedIMAPDraftReplacementUIDReuse(t *testing.T) {
 }
 
 func TestManagedIMAPDraftRetainedByGCWhileCurrent(t *testing.T) {
-
 	requirements := require.New(t)
 	st := testutil.NewTestStore(t)
 	source, err := st.GetOrCreateSource("imap", "imap://gc@example.com:143")

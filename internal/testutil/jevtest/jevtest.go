@@ -5,7 +5,7 @@
 package jevtest
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"log/slog"
 	"net/http"
@@ -68,7 +68,7 @@ func NewServer(t *testing.T, answer Answerer) *Server {
 			answers[id] = fake.answer(id, questionMap, state)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		_ = json.MarshalWrite(w, map[string]any{
 			"model": jev.DefaultModel, "answers": answers,
 			"usage": map[string]any{"input_tokens": 500, "output_tokens": 20},
 		})

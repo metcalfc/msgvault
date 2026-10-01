@@ -76,7 +76,7 @@ func TestCreatePersonSeedsDisplayNameFromSmallestNamedMember(t *testing.T) {
 		names []string
 		want  *string
 	}{
-		{name: "smallest named member wins", names: []string{"", "  Dana Example  ", "Other Name"}, want: seededName("Dana Example")},
+		{name: "smallest named member wins", names: []string{"", "  Dana Example  ", "Other Name"}, want: new("Dana Example")},
 		{name: "unnamed cluster stays unnamed", names: []string{"", "   "}, want: nil},
 	}
 	for _, tt := range tests {
@@ -549,5 +549,3 @@ func participantCount(t *testing.T, st *store.Store, id int64) int64 {
 	).Scan(&count))
 	return count
 }
-
-func seededName(value string) *string { return &value }

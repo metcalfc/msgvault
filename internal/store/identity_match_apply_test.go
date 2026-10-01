@@ -136,7 +136,6 @@ func TestUserAcceptRecordsLegacyAcceptedDecision(t *testing.T) {
 }
 
 func TestAcceptStableProviderIDCandidateCancellationDoesNotCommitLink(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 	st := storetest.New(t).Store
@@ -200,7 +199,6 @@ func TestAcceptStableProviderIDCandidateCancellationDoesNotCommitLink(t *testing
 }
 
 func TestSQLiteSystemAcceptanceCannotOverwriteConcurrentRejection(t *testing.T) {
-
 	requirements := require.New(t)
 	assertions := assert.New(t)
 	st := storetest.New(t).Store
@@ -748,7 +746,6 @@ func TestUnlinkManualLinkLeavesUnrelatedCandidateAccepted(t *testing.T) {
 }
 
 func TestUnlinkOwnedIdentityMatchRollsBackSuppressionAndEdge(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 	st := storetest.New(t).Store

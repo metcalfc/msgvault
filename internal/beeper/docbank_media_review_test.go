@@ -283,7 +283,6 @@ func TestBeeperMediaDailyRescan(t *testing.T) {
 }
 
 func TestBeeperMediaDiscoveryReadsOutsideGate(t *testing.T) {
-
 	require, assert := require.New(t), assert.New(t)
 	world := importVoiceChat(t, voiceSpec{id: "voice1", asset: "mxc://beeper.local/voice1",
 		mime: "audio/wav", fileName: "voice.wav", transcript: "words", data: syntheticWAV(800, 25)})
@@ -411,7 +410,6 @@ func TestBeeperMediaOperationRawReadFailure(t *testing.T) {
 	})
 
 	t.Run("database-error-does-not-create-gap", func(t *testing.T) {
-
 		require, assert := require.New(t), assert.New(t)
 		world := importVoiceChat(t, voiceSpec{id: "voice1", asset: "mxc://beeper.local/query-failure",
 			mime: "audio/wav", fileName: "voice.wav", transcript: "query failure", data: syntheticWAV(800, 34)})
@@ -538,7 +536,6 @@ func TestBeeperMediaOperationRawReadFailure(t *testing.T) {
 	}
 
 	t.Run("artifact-final-read-error-preserves-prior-stale-revocation", func(t *testing.T) {
-
 		require, assert := require.New(t), assert.New(t)
 		world := importVoiceChat(t,
 			voiceSpec{id: "first", asset: "mxc://beeper.local/stale-first", mime: "audio/wav",

@@ -340,9 +340,9 @@ func (s *Store) IsCommunicationServiceDiscoveredContext(
 	ctx context.Context, serviceID int64, provider, discoveryKind string,
 ) (bool, error) {
 	var found int
-	err := s.db.QueryRowContext(ctx, s.Rebind(`SELECT 1
+	err := s.db.QueryRowContext(ctx, `SELECT 1
 		FROM communication_service_discoveries
-		WHERE service_id = ? AND provider = ? AND discovery_kind = ?`),
+		WHERE service_id = ? AND provider = ? AND discovery_kind = ?`,
 		serviceID, provider, discoveryKind,
 	).Scan(&found)
 	switch {
@@ -539,10 +539,10 @@ func (s *Store) applyCommunicationServiceSeed(
 		if applied > 0 {
 			return nil
 		}
-		insert := s.dialect.InsertOrIgnore(`INSERT OR IGNORE INTO communication_services (
+		insert := `INSERT OR IGNORE INTO communication_services (
 			slug, display_label, scope_policy, default_scope_kind, normalization,
 			normalization_version, uri_scheme, profile_url_template, is_system
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE)`)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE)`
 		for _, input := range services {
 			var aliased int
 			if err := tx.QueryRowContext(ctx,
@@ -568,7 +568,7 @@ func (s *Store) applyCommunicationServiceSeed(
 			}
 			for _, alias := range input.Aliases {
 				if _, err := tx.ExecContext(ctx,
-					s.dialect.InsertOrIgnore(`INSERT OR IGNORE INTO communication_service_aliases (alias, service_id) VALUES (?, ?)`),
+					`INSERT OR IGNORE INTO communication_service_aliases (alias, service_id) VALUES (?, ?)`,
 					strings.ToLower(alias), service.ID,
 				); err != nil {
 					return fmt.Errorf("seed communication service alias %q: %w", alias, err)
@@ -576,7 +576,7 @@ func (s *Store) applyCommunicationServiceSeed(
 			}
 		}
 		if _, err := tx.ExecContext(ctx,
-			s.dialect.InsertOrIgnore(`INSERT OR IGNORE INTO applied_migrations (name) VALUES (?)`),
+			`INSERT OR IGNORE INTO applied_migrations (name) VALUES (?)`,
 			name,
 		); err != nil {
 			return fmt.Errorf("record communication service seed: %w", err)

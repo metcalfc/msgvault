@@ -15,38 +15,7 @@ import (
 	"go.kenn.io/msgvault/internal/whatsapp"
 )
 
-var (
-	importPhone                     string
-	importMediaDir                  string
-	importContacts                  string
-	importLimit                     int
-	importDisplayName               string
-	noDefaultIdentityImportWhatsApp bool
-)
-
-var importWhatsappCmd = &cobra.Command{
-	Use:   "import-whatsapp <database>",
-	Short: "Import WhatsApp messages from an Android or Apple database",
-	Long: `Import messages from a decrypted Android msgstore.db backup or an
-Apple ChatStorage.sqlite database. Apple databases currently import text
-messages from direct and group chats. Reading the native macOS WhatsApp store
-may require Full Disk Access in System Settings > Privacy & Security.
-
-Examples:
-  msgvault import-whatsapp --phone "+447700900000" /path/to/msgstore.db
-  msgvault import-whatsapp --phone "+447700900000" "$HOME/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite"
-  msgvault import-whatsapp --phone "+447700900000" --contacts ~/contacts.vcf /path/to/msgstore.db
-  msgvault import-whatsapp --phone "+447700900000" --media-dir /path/to/Media /path/to/msgstore.db`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if !isDaemonCLISubprocess() {
-			return runDaemonCLICommandHTTPFromCobra(cmd, args)
-		}
-		return runWhatsAppImport(cmd, args[0])
-	},
-}
-
-func runWhatsAppImport(cmd *cobra.Command, sourcePath string) error {
+func (flags whatsappImportOptions) runWhatsAppImport(cmd *cobra.Command, sourcePath string) error {
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -58,17 +27,17 @@ func runWhatsAppImport(cmd *cobra.Command, sourcePath string) error {
 	}
 
 	// Validate phone number.
-	if importPhone == "" {
+	if flags.importPhone == "" {
 		return usageErr(cmd, errors.New("--phone is required for WhatsApp import (E.164 format, e.g., +447700900000)"))
 	}
-	if !strings.HasPrefix(importPhone, "+") {
-		return usageErr(cmd, fmt.Errorf("phone number must be in E.164 format (starting with +), got %q", importPhone))
+	if !strings.HasPrefix(flags.importPhone, "+") {
+		return usageErr(cmd, fmt.Errorf("phone number must be in E.164 format (starting with +), got %q", flags.importPhone))
 	}
 
 	// Validate media dir if provided.
-	if importMediaDir != "" {
-		if info, err := os.Stat(importMediaDir); err != nil || !info.IsDir() {
-			return fmt.Errorf("media directory not found or not a directory: %s", importMediaDir)
+	if flags.importMediaDir != "" {
+		if info, err := os.Stat(flags.importMediaDir); err != nil || !info.IsDir() {
+			return fmt.Errorf("media directory not found or not a directory: %s", flags.importMediaDir)
 		}
 	}
 
@@ -94,23 +63,23 @@ func runWhatsAppImport(cmd *cobra.Command, sourcePath string) error {
 
 	// Build import options.
 	opts := whatsapp.DefaultOptions()
-	opts.Phone = importPhone
-	opts.DisplayName = importDisplayName
-	opts.MediaDir = importMediaDir
+	opts.Phone = flags.importPhone
+	opts.DisplayName = flags.importDisplayName
+	opts.MediaDir = flags.importMediaDir
 	opts.AttachmentsDir = cfg.AttachmentsDir()
-	opts.Limit = importLimit
+	opts.Limit = flags.importLimit
 
 	// Create importer with CLI progress.
 	progress := &ImportCLIProgress{}
 	importer := whatsapp.NewImporter(s, progress)
 
 	fmt.Printf("Importing WhatsApp messages from %s\n", sourcePath)
-	fmt.Printf("Phone: %s\n", importPhone)
-	if importMediaDir != "" {
-		fmt.Printf("Media: %s\n", importMediaDir)
+	fmt.Printf("Phone: %s\n", flags.importPhone)
+	if flags.importMediaDir != "" {
+		fmt.Printf("Media: %s\n", flags.importMediaDir)
 	}
-	if importLimit > 0 {
-		fmt.Printf("Limit: %d messages\n", importLimit)
+	if flags.importLimit > 0 {
+		fmt.Printf("Limit: %d messages\n", flags.importLimit)
 	}
 	fmt.Println()
 
@@ -125,8 +94,8 @@ func runWhatsAppImport(cmd *cobra.Command, sourcePath string) error {
 
 	// Auto-default-identity must run BEFORE the legacy migration
 	// retry — see comment in account_identity.go.
-	if !noDefaultIdentityImportWhatsApp && summary.SourceID != 0 {
-		confirmDefaultIdentity(cmd.OutOrStdout(), s, summary.SourceID, importPhone, importPhone, "phone-e164", state.logger)
+	if !flags.noDefaultIdentityImportWhatsApp && summary.SourceID != 0 {
+		confirmDefaultIdentity(cmd.OutOrStdout(), s, summary.SourceID, flags.importPhone, flags.importPhone, "phone-e164", state.logger)
 	}
 
 	if summary.SourceID != 0 {
@@ -136,9 +105,9 @@ func runWhatsAppImport(cmd *cobra.Command, sourcePath string) error {
 	}
 
 	// Import contacts if provided.
-	if importContacts != "" {
-		fmt.Printf("\nImporting contacts from %s...\n", importContacts)
-		matched, total, err := whatsapp.ImportContacts(s, importContacts)
+	if flags.importContacts != "" {
+		fmt.Printf("\nImporting contacts from %s...\n", flags.importContacts)
+		matched, total, err := whatsapp.ImportContacts(s, flags.importContacts)
 		if err != nil {
 			return fmt.Errorf("contact import: %w", err)
 		}
@@ -231,48 +200,89 @@ func (p *ImportCLIProgress) OnError(err error) {
 
 // Deprecated: "import --type whatsapp" forwards to "import-whatsapp".
 // Remove after one release cycle.
-var importType string
-
-var importCmd = &cobra.Command{
-	Use:        "import [path]",
-	Short:      "Import messages (deprecated: use import-whatsapp)",
-	Deprecated: "use import-whatsapp instead",
-	Hidden:     true,
-	Args:       cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if !isDaemonCLISubprocess() {
-			return runDaemonCLICommandHTTPFromCobra(cmd, args)
-		}
-		if strings.ToLower(importType) != "whatsapp" {
-			return fmt.Errorf(
-				"unsupported import type %q; use import-whatsapp",
-				importType,
-			)
-		}
-		fmt.Fprintln(os.Stderr,
-			"Warning: 'import --type whatsapp' is deprecated."+
-				" Use 'import-whatsapp' instead.")
-		return runWhatsAppImport(cmd, args[0])
-	},
-}
 
 func init() {
 	// import-whatsapp (canonical)
-	importWhatsappCmd.Flags().StringVar(&importPhone, "phone", "", "your phone number in E.164 format (required)")
-	importWhatsappCmd.Flags().StringVar(&importMediaDir, "media-dir", "", "path to decrypted Media folder (optional)")
-	importWhatsappCmd.Flags().StringVar(&importContacts, "contacts", "", "path to contacts .vcf file for name resolution (optional)")
-	importWhatsappCmd.Flags().IntVar(&importLimit, "limit", 0, "limit number of messages (for testing)")
-	importWhatsappCmd.Flags().StringVar(&importDisplayName, "display-name", "", "display name for the phone owner")
-	importWhatsappCmd.Flags().BoolVar(&noDefaultIdentityImportWhatsApp, "no-default-identity", false, noDefaultIdentityHelp)
-	_ = importWhatsappCmd.MarkFlagRequired("phone")
-	rootCmd.AddCommand(importWhatsappCmd)
+
+	registerCommandFactory(newImportWhatsappCommand)
 
 	// Deprecated "import --type whatsapp" alias
+
+	registerCommandFactory(newImportCommand)
+}
+
+func newImportWhatsappCommand() *cobra.Command {
+	var flags whatsappImportOptions
+	importWhatsappCmd := &cobra.Command{
+		Use:   "import-whatsapp <database>",
+		Short: "Import WhatsApp messages from an Android or Apple database",
+		Long: `Import messages from a decrypted Android msgstore.db backup or an
+Apple ChatStorage.sqlite database. Apple databases currently import text
+messages from direct and group chats. Reading the native macOS WhatsApp store
+may require Full Disk Access in System Settings > Privacy & Security.
+
+Examples:
+  msgvault import-whatsapp --phone "+447700900000" /path/to/msgstore.db
+  msgvault import-whatsapp --phone "+447700900000" "$HOME/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite"
+  msgvault import-whatsapp --phone "+447700900000" --contacts ~/contacts.vcf /path/to/msgstore.db
+  msgvault import-whatsapp --phone "+447700900000" --media-dir /path/to/Media /path/to/msgstore.db`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !isDaemonCLISubprocess() {
+				return runDaemonCLICommandHTTPFromCobra(cmd, args)
+			}
+			return flags.runWhatsAppImport(cmd, args[0])
+		},
+	}
+	importWhatsappCmd.Flags().StringVar(&flags.importPhone, "phone", "", "your phone number in E.164 format (required)")
+	importWhatsappCmd.Flags().StringVar(&flags.importMediaDir, "media-dir", "", "path to decrypted Media folder (optional)")
+	importWhatsappCmd.Flags().StringVar(&flags.importContacts, "contacts", "", "path to contacts .vcf file for name resolution (optional)")
+	importWhatsappCmd.Flags().IntVar(&flags.importLimit, "limit", 0, "limit number of messages (for testing)")
+	importWhatsappCmd.Flags().StringVar(&flags.importDisplayName, "display-name", "", "display name for the phone owner")
+	importWhatsappCmd.Flags().BoolVar(&flags.noDefaultIdentityImportWhatsApp, "no-default-identity", false, noDefaultIdentityHelp)
+	_ = importWhatsappCmd.MarkFlagRequired("phone")
+	return importWhatsappCmd
+}
+
+func newImportCommand() *cobra.Command {
+	var flags whatsappImportOptions
+	var importType string
+	importCmd := &cobra.Command{
+		Use:        "import [path]",
+		Short:      "Import messages (deprecated: use import-whatsapp)",
+		Deprecated: "use import-whatsapp instead",
+		Hidden:     true,
+		Args:       cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !isDaemonCLISubprocess() {
+				return runDaemonCLICommandHTTPFromCobra(cmd, args)
+			}
+			if strings.ToLower(importType) != "whatsapp" {
+				return fmt.Errorf(
+					"unsupported import type %q; use import-whatsapp",
+					importType,
+				)
+			}
+			fmt.Fprintln(os.Stderr,
+				"Warning: 'import --type whatsapp' is deprecated."+
+					" Use 'import-whatsapp' instead.")
+			return flags.runWhatsAppImport(cmd, args[0])
+		},
+	}
 	importCmd.Flags().StringVar(&importType, "type", "", "import source type")
-	importCmd.Flags().StringVar(&importPhone, "phone", "", "your phone number in E.164 format")
-	importCmd.Flags().StringVar(&importMediaDir, "media-dir", "", "path to decrypted Media folder")
-	importCmd.Flags().StringVar(&importContacts, "contacts", "", "path to contacts .vcf file")
-	importCmd.Flags().IntVar(&importLimit, "limit", 0, "limit number of messages")
-	importCmd.Flags().StringVar(&importDisplayName, "display-name", "", "display name for the phone owner")
-	rootCmd.AddCommand(importCmd)
+	importCmd.Flags().StringVar(&flags.importPhone, "phone", "", "your phone number in E.164 format")
+	importCmd.Flags().StringVar(&flags.importMediaDir, "media-dir", "", "path to decrypted Media folder")
+	importCmd.Flags().StringVar(&flags.importContacts, "contacts", "", "path to contacts .vcf file")
+	importCmd.Flags().IntVar(&flags.importLimit, "limit", 0, "limit number of messages")
+	importCmd.Flags().StringVar(&flags.importDisplayName, "display-name", "", "display name for the phone owner")
+	return importCmd
+}
+
+type whatsappImportOptions struct {
+	importPhone                     string
+	importMediaDir                  string
+	importContacts                  string
+	importLimit                     int
+	importDisplayName               string
+	noDefaultIdentityImportWhatsApp bool
 }

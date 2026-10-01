@@ -32,9 +32,8 @@ var (
 	ErrAttributeDefinitionHasValues = errors.New(
 		"attribute definition still has stored values")
 	// ErrAttributeUniquenessUnsupported rejects decorative uniqueness metadata.
-	ErrAttributeUniquenessUnsupported = errors.New(
-		"attribute definition uniqueness is not supported: " +
-			"a uniqueness claim must be backed by a portable database index")
+	ErrAttributeUniquenessUnsupported = errors.New("attribute definition uniqueness is not supported: " +
+		"a uniqueness claim must be backed by a portable database index")
 )
 
 // AttributeObjectType identifies the kind of record a definition describes.
@@ -627,7 +626,7 @@ func (s *Store) createAttributeDefinitionTx(
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, %s, ?)
 			ON CONFLICT DO NOTHING
 			RETURNING %s
-		`, s.dialect.JSONBindExpr(), attributeDefinitionColumns)
+		`, "?", attributeDefinitionColumns)
 	row := tx.QueryRowContext(ctx, query,
 		input.UniversalID, string(input.ObjectType), input.Slug,
 		input.Label, input.Description, string(input.ValueType),
@@ -701,8 +700,8 @@ func (s *Store) getAttributeDefinitionBySlugTx(
 	ctx context.Context, tx *loggedTx, objectType AttributeObjectType, slug string,
 ) (*AttributeDefinition, error) {
 	definition, err := scanAttributeDefinition(tx.QueryRowContext(ctx, fmt.Sprintf(`
-		SELECT %s FROM attribute_definitions WHERE object_type = ? AND slug = ?%s
-	`, attributeDefinitionColumns, s.dialect.SelectForUpdate()),
+		SELECT %s FROM attribute_definitions WHERE object_type = ? AND slug = ?
+	`, attributeDefinitionColumns),
 		string(objectType), slug))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAttributeDefinitionNotFound
@@ -720,8 +719,8 @@ func (s *Store) getAttributeDefinitionByUniversalIDTx(
 	ctx context.Context, tx *loggedTx, universalID string,
 ) (*AttributeDefinition, error) {
 	definition, err := scanAttributeDefinition(tx.QueryRowContext(ctx, fmt.Sprintf(`
-		SELECT %s FROM attribute_definitions WHERE universal_id = ?%s
-	`, attributeDefinitionColumns, s.dialect.SelectForUpdate()), universalID))
+		SELECT %s FROM attribute_definitions WHERE universal_id = ?
+	`, attributeDefinitionColumns), universalID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAttributeDefinitionNotFound
 	}
@@ -847,8 +846,7 @@ func (s *Store) updateAttributeDefinitionOnce(
 				revision  int64
 			)
 			err := tx.QueryRowContext(ctx, `
-				SELECT ownership, revision FROM attribute_definitions WHERE id = ?`+
-				s.dialect.SelectForUpdate(), id).Scan(&ownership, &revision)
+				SELECT ownership, revision FROM attribute_definitions WHERE id = ?`, id).Scan(&ownership, &revision)
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrAttributeDefinitionNotFound
 			}
@@ -900,8 +898,8 @@ func (s *Store) DeleteAttributeDefinitionContext(
 ) error {
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
 		definition, err := scanAttributeDefinition(tx.QueryRowContext(ctx, fmt.Sprintf(`
-			SELECT %s FROM attribute_definitions WHERE id = ?%s
-		`, attributeDefinitionColumns, s.dialect.SelectForUpdate()), id))
+			SELECT %s FROM attribute_definitions WHERE id = ?
+		`, attributeDefinitionColumns), id))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrAttributeDefinitionNotFound
 		}
@@ -1025,5 +1023,4 @@ func (s *Store) lockAttributeDefinitionCatalogTx(ctx context.Context, tx *logged
 	{
 		return nil
 	}
-
 }

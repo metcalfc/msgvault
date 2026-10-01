@@ -2045,7 +2045,6 @@ func TestImport_ArchivedTranscriptRecovery(t *testing.T) {
 }
 
 func TestIngestMeeting_RawFailureRollsBackCanonicalRefresh(t *testing.T) {
-
 	assert := assert.New(t)
 	require := require.New(t)
 	f := &fakeSource{
@@ -2087,7 +2086,6 @@ func TestIngestMeeting_RawFailureRollsBackCanonicalRefresh(t *testing.T) {
 }
 
 func TestImport_MessageLookupFailureMarksSyncFailed(t *testing.T) {
-
 	assert := assert.New(t)
 	require := require.New(t)
 	f := &fakeSource{
@@ -2111,7 +2109,6 @@ func TestImport_MessageLookupFailureMarksSyncFailed(t *testing.T) {
 }
 
 func TestImport_CheckpointFailureJoinsHardError(t *testing.T) {
-
 	assert := assert.New(t)
 	require := require.New(t)
 	f := &fakeSource{

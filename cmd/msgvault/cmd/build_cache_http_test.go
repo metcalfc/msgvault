@@ -169,15 +169,10 @@ func TestBuildCacheUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
 	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	t.Cleanup(func() { logger = oldLogger })
 
-	oldFullRebuild := fullRebuild
-	fullRebuild = false
-	t.Cleanup(func() { fullRebuild = oldFullRebuild })
-
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := &cobra.Command{Use: buildCacheCmd.Use, RunE: buildCacheCmd.RunE}
+	cmd := newBuildCacheCommand()
 	cmd.SetContext(testCtx)
-	cmd.Flags().BoolVar(&fullRebuild, "full-rebuild", false, "Rebuild all cache files from scratch")
 	cmd.SetArgs([]string{"--full-rebuild"})
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)

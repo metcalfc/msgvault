@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/kit/daemon"
@@ -158,26 +157,9 @@ func captureStderr(t *testing.T) func() string {
 	}
 }
 
-func resetSearchFlags() {
-	searchAccount = ""
-	searchCollection = ""
-	searchLimit = 50
-	searchOffset = 0
-	searchJSON = false
-	searchMode = "fts"
-	searchExplain = false
-	searchDeletionScope = "active"
-	searchMessageTypes = nil
-	// Cobra remembers per-flag `Changed` state on the global searchCmd
-	// across test invocations. Without clearing it, mutually-exclusive
-	// pairs (--account / --collection) trip when a subsequent test only
-	// passes one of them.
-	searchCmd.Flags().VisitAll(func(f *pflag.Flag) { f.Changed = false })
-}
-
 func TestSearchCmd_HelpMentionsMeetingTranscripts(t *testing.T) {
-	assert.Contains(t, searchCmd.Long, "meeting_transcript", "operator help")
-	messageTypeFlag := searchCmd.Flags().Lookup("message-type")
+	assert.Contains(t, newSearchCommand().Long, "meeting_transcript", "operator help")
+	messageTypeFlag := newSearchCommand().Flags().Lookup("message-type")
 	require.NotNil(t, messageTypeFlag)
 	assert.Contains(t, messageTypeFlag.Usage, "meeting_transcript", "flag help")
 }
@@ -224,7 +206,6 @@ func TestSearchCmd_AccountFlagForwardsToRemoteHTTP(t *testing.T) {
 	defer func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		resetSearchFlags()
 	}()
 
 	requests := &atomic.Int32{}
@@ -247,7 +228,7 @@ func TestSearchCmd_AccountFlagForwardsToRemoteHTTP(t *testing.T) {
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{"search", "--account", "alice@example.com", "hello"})
 
 	err := root.Execute()
@@ -264,7 +245,6 @@ func TestSearchCmd_MessageTypeFlagForwardsToRemoteMode(t *testing.T) {
 	defer func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		resetSearchFlags()
 	}()
 
 	var gotQuery string
@@ -289,7 +269,7 @@ func TestSearchCmd_MessageTypeFlagForwardsToRemoteMode(t *testing.T) {
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{"search", "--message-type", "sms", "lunch"})
 
 	err := root.Execute()
@@ -306,7 +286,6 @@ func TestSearchCmd_DeletionScopeForwardsToRemoteFTS(t *testing.T) {
 	defer func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		resetSearchFlags()
 	}()
 
 	searchRequests := &atomic.Int32{}
@@ -332,7 +311,7 @@ func TestSearchCmd_DeletionScopeForwardsToRemoteFTS(t *testing.T) {
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{"search", "--deletion-scope", "deleted", "statement"})
 
 	err := root.Execute()
@@ -341,10 +320,8 @@ func TestSearchCmd_DeletionScopeForwardsToRemoteFTS(t *testing.T) {
 }
 
 func TestSearchCmd_DeletionScopeRejectsInvalidValue(t *testing.T) {
-	defer resetSearchFlags()
-
 	root := newTestRootCmd()
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{"search", "--deletion-scope", "trash", "statement"})
 
 	err := root.Execute()
@@ -355,10 +332,8 @@ func TestSearchCmd_DeletionScopeRejectsInvalidValue(t *testing.T) {
 func TestSearchCmd_DeletionScopeRejectsVectorAndHybrid(t *testing.T) {
 	for _, mode := range []string{"vector", "hybrid"} {
 		t.Run(mode, func(t *testing.T) {
-			defer resetSearchFlags()
-
 			root := newTestRootCmd()
-			root.AddCommand(searchCmd)
+			root.AddCommand(newSearchCommand())
 			root.SetArgs([]string{
 				"search", "--mode", mode,
 				"--deletion-scope", "any", "statement",
@@ -387,7 +362,6 @@ func TestSearchCmd_FTSUsesLocalDaemonHTTPAndPreservesJSONOutput(t *testing.T) {
 	defer func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		resetSearchFlags()
 	}()
 
 	cfg = &config.Config{
@@ -401,7 +375,7 @@ func TestSearchCmd_FTSUsesLocalDaemonHTTPAndPreservesJSONOutput(t *testing.T) {
 	done := captureStdout(t)
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{"search", "--json", "lunch"})
 
 	err := root.Execute()
@@ -428,7 +402,6 @@ func TestSearchCmd_FTSCollectionSearchUsesDaemonHTTPAndPreservesBanner(t *testin
 	defer func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		resetSearchFlags()
 	}()
 
 	cfg = &config.Config{
@@ -445,7 +418,7 @@ func TestSearchCmd_FTSCollectionSearchUsesDaemonHTTPAndPreservesBanner(t *testin
 	doneErr := captureStderr(t)
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{"search", "--collection", "Important", "--json"})
 
 	err := root.Execute()
@@ -578,7 +551,6 @@ func TestSearchCmd_PrintsBackgroundIndexNote(t *testing.T) {
 			defer func() {
 				cfg = savedCfg
 				useLocal = savedUseLocal
-				resetSearchFlags()
 			}()
 
 			cfg = &config.Config{
@@ -593,7 +565,7 @@ func TestSearchCmd_PrintsBackgroundIndexNote(t *testing.T) {
 			doneErr := captureStderr(t)
 			root := newTestRootCmd()
 			root.SetContext(testCtx)
-			root.AddCommand(searchCmd)
+			root.AddCommand(newSearchCommand())
 			root.SetArgs([]string{"search", "lunch"})
 
 			err := root.Execute()
@@ -655,7 +627,6 @@ func TestSearchCmd_AccountFlagWithoutQuery(t *testing.T) {
 	defer func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		resetSearchFlags()
 	}()
 
 	cfg = &config.Config{
@@ -673,7 +644,7 @@ func TestSearchCmd_AccountFlagWithoutQuery(t *testing.T) {
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{
 		"search", "--account", "alice@example.com", "--json",
 	})
@@ -726,7 +697,6 @@ func TestSearchCmd_MessageTypeFlagScopesResults(t *testing.T) {
 	defer func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		resetSearchFlags()
 	}()
 
 	cfg = &config.Config{
@@ -742,7 +712,7 @@ func TestSearchCmd_MessageTypeFlagScopesResults(t *testing.T) {
 	done := captureStdout(t)
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{
 		"search", "--message-type", "calendar_event", "--json",
 	})
@@ -757,7 +727,7 @@ func TestSearchCmd_InvalidQueryFailsFastWithoutDB(t *testing.T) {
 	cfg := testConfigValue()
 
 	savedCfg := cfg
-	defer func() { cfg = savedCfg; resetSearchFlags() }()
+	defer func() { cfg = savedCfg }()
 
 	// Point at a non-existent directory so store.Open would fail
 	// if the code reaches it.
@@ -770,7 +740,7 @@ func TestSearchCmd_InvalidQueryFailsFastWithoutDB(t *testing.T) {
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{"search", "before:not-a-date"})
 
 	err := root.Execute()
@@ -817,7 +787,6 @@ func TestSearchCmd_AccountFlagDoesNotLeakAcrossInvocations(t *testing.T) {
 	defer func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		resetSearchFlags()
 	}()
 
 	cfg = &config.Config{
@@ -834,7 +803,7 @@ func TestSearchCmd_AccountFlagDoesNotLeakAcrossInvocations(t *testing.T) {
 	done := captureStdout(t)
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{
 		"search", "--account", "alice@example.com", "--json",
 	})
@@ -844,12 +813,12 @@ func TestSearchCmd_AccountFlagDoesNotLeakAcrossInvocations(t *testing.T) {
 
 	// Second invocation: search WITHOUT --account.
 	// Must not carry over the previous account filter.
-	resetSearchFlags()
+
 	done = captureStdout(t)
 	testCtx2 := testInvocationContext(t.Context(), cfg, invocationOptions{useLocal: true})
 	root2 := newTestRootCmd()
 	root2.SetContext(testCtx2)
-	root2.AddCommand(searchCmd)
+	root2.AddCommand(newSearchCommand())
 	root2.SetArgs([]string{
 		"search", "--account", "", "--json", "test msg",
 	})
@@ -864,7 +833,7 @@ func TestSearchCmd_NoQueryNoAccount(t *testing.T) {
 	cfg := testConfigValue()
 
 	savedCfg := cfg
-	defer func() { cfg = savedCfg; resetSearchFlags() }()
+	defer func() { cfg = savedCfg }()
 
 	cfg = &config.Config{}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
@@ -872,7 +841,7 @@ func TestSearchCmd_NoQueryNoAccount(t *testing.T) {
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{"search"})
 
 	err := root.Execute()
@@ -927,7 +896,6 @@ func TestSearchCmd_CollectionFlagScopesResults(t *testing.T) {
 	defer func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		resetSearchFlags()
 	}()
 
 	cfg = &config.Config{
@@ -943,7 +911,7 @@ func TestSearchCmd_CollectionFlagScopesResults(t *testing.T) {
 	done := captureStdout(t)
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{
 		"search", "--collection", "alice-only", "--json",
 	})
@@ -974,7 +942,6 @@ func TestSearchCmd_CollectionFlagUnknown(t *testing.T) {
 	defer func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		resetSearchFlags()
 	}()
 	cfg = &config.Config{
 		HomeDir: tmpDir,
@@ -988,7 +955,7 @@ func TestSearchCmd_CollectionFlagUnknown(t *testing.T) {
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{
 		"search", "--collection", "does-not-exist", "anything",
 	})
@@ -1007,12 +974,12 @@ func TestSearchCmd_VectorOrHybridRequireQueryText(t *testing.T) {
 	for _, mode := range []string{"vector", "hybrid"} {
 		t.Run(mode, func(t *testing.T) {
 			savedCfg := cfg
-			defer func() { cfg = savedCfg; resetSearchFlags() }()
+			defer func() { cfg = savedCfg }()
 
 			cfg = &config.Config{}
 
 			root := newTestRootCmd()
-			root.AddCommand(searchCmd)
+			root.AddCommand(newSearchCommand())
 			root.SetArgs([]string{
 				"search", "--mode", mode,
 				"--account", "alice@example.com",
@@ -1035,12 +1002,12 @@ func TestSearchCmd_VectorOrHybridRejectFilterOnlyQuery(t *testing.T) {
 	for _, mode := range []string{"vector", "hybrid"} {
 		t.Run(mode, func(t *testing.T) {
 			savedCfg := cfg
-			defer func() { cfg = savedCfg; resetSearchFlags() }()
+			defer func() { cfg = savedCfg }()
 
 			cfg = &config.Config{}
 
 			root := newTestRootCmd()
-			root.AddCommand(searchCmd)
+			root.AddCommand(newSearchCommand())
 			root.SetArgs([]string{
 				"search", "--mode", mode, "from:alice",
 			})
@@ -1101,7 +1068,6 @@ func TestSearchCmd_JSONEmptyResultsEmitEmptyArray(t *testing.T) {
 	defer func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		resetSearchFlags()
 	}()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1119,7 +1085,7 @@ func TestSearchCmd_JSONEmptyResultsEmitEmptyArray(t *testing.T) {
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
-	root.AddCommand(searchCmd)
+	root.AddCommand(newSearchCommand())
 	root.SetArgs([]string{"search", "--json", "nothing-matches"})
 
 	done := captureStdout(t)

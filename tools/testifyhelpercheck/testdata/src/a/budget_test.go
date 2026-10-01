@@ -18,8 +18,8 @@ func TestPollingBudgets(t *testing.T) {
 	aliasedRequire.Eventually(t, func() bool { return true }, time.Second, time.Millisecond)
 	aliasedAssert.Eventually(t, func() bool { return true }, namedBudget, time.Millisecond)
 	aliasedRequire.Eventually(t, func() bool { return true }, variableBudget(), time.Millisecond)
-	aliasedAssert.Eventually(t, func() bool { return true }, time.Second, time.Millisecond)                    // want "test has 9 direct testify package calls"
-	aliasedRequire.EventuallyWithTf(t, func(*aliasedRequire.CollectT) {}, time.Second, time.Millisecond, "ok") // want "test has 9 direct testify package calls"
+	aliasedAssert.Eventually(t, func() bool { return true }, time.Second, time.Millisecond)
+	aliasedRequire.EventuallyWithTf(t, func(*aliasedRequire.CollectT) {}, time.Second, time.Millisecond, "ok")
 
 	assertions := aliasedAssert.New(t)
 	assertions.Eventuallyf(func() bool { return true }, 999*time.Millisecond, time.Millisecond, "poll") // want "assert.Eventuallyf budget 999ms"

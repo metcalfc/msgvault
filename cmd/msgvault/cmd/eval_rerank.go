@@ -24,15 +24,6 @@ import (
 
 const typesafeRunTimeout = 30 * time.Minute
 
-var (
-	evalRerankJev           string
-	evalRerankTop           int
-	evalRerankMaxRequests   int
-	evalRerankCostStopUSD   float64
-	evalRerankInputUSDPerM  float64
-	evalRerankOutputUSDPerM float64
-)
-
 type evalRerankOptions struct {
 	Shapes        []string
 	Top           int
@@ -290,24 +281,24 @@ func nullableString(value string) any {
 	return value
 }
 
-func readEvalRerankOptions(cmd *cobra.Command) (evalRerankOptions, error) {
-	opts := evalRerankOptions{Top: evalRerankTop, MaxRequests: evalRerankMaxRequests}
-	if strings.TrimSpace(evalRerankJev) == "" {
+func readEvalRerankOptions(cmd *cobra.Command, options *evalCommandOptions) (evalRerankOptions, error) {
+	opts := evalRerankOptions{Top: options.evalRerankTop, MaxRequests: options.evalRerankMaxRequests}
+	if strings.TrimSpace(options.evalRerankJev) == "" {
 		return opts, nil
 	}
-	if evalDocKey != "message" {
+	if options.evalDocKey != "message" {
 		return opts, errors.New("--rerank-jev requires --doc-key=message")
 	}
 	if opts.Top < 2 || opts.Top > rerank.MaxCandidates {
 		return opts, fmt.Errorf("--rerank-top must be between 2 and %d", rerank.MaxCandidates)
 	}
-	if opts.Top > evalLimit {
-		return opts, fmt.Errorf("--rerank-top (%d) cannot exceed --limit (%d)", opts.Top, evalLimit)
+	if opts.Top > options.evalLimit {
+		return opts, fmt.Errorf("--rerank-top (%d) cannot exceed --limit (%d)", opts.Top, options.evalLimit)
 	}
 	if opts.MaxRequests <= 0 {
 		return opts, errors.New("--rerank-max-requests must be positive")
 	}
-	if math.IsNaN(evalRerankCostStopUSD) || math.IsInf(evalRerankCostStopUSD, 0) || evalRerankCostStopUSD <= 0 {
+	if math.IsNaN(options.evalRerankCostStopUSD) || math.IsInf(options.evalRerankCostStopUSD, 0) || options.evalRerankCostStopUSD <= 0 {
 		return opts, errors.New("--rerank-cost-stop-usd must be a positive finite number")
 	}
 	if cmd != nil && !cmd.Flags().Changed("rerank-input-usd-per-million") {
@@ -316,17 +307,17 @@ func readEvalRerankOptions(cmd *cobra.Command) (evalRerankOptions, error) {
 	if cmd != nil && !cmd.Flags().Changed("rerank-output-usd-per-million") {
 		return opts, errors.New("--rerank-output-usd-per-million is required when --rerank-jev is enabled")
 	}
-	if err := validatePrice("--rerank-input-usd-per-million", evalRerankInputUSDPerM); err != nil {
+	if err := validatePrice("--rerank-input-usd-per-million", options.evalRerankInputUSDPerM); err != nil {
 		return opts, err
 	}
-	if err := validatePrice("--rerank-output-usd-per-million", evalRerankOutputUSDPerM); err != nil {
+	if err := validatePrice("--rerank-output-usd-per-million", options.evalRerankOutputUSDPerM); err != nil {
 		return opts, err
 	}
-	opts.CostStopUSD = evalRerankCostStopUSD
-	opts.InputUSDPerM = evalRerankInputUSDPerM
-	opts.OutputUSDPerM = evalRerankOutputUSDPerM
+	opts.CostStopUSD = options.evalRerankCostStopUSD
+	opts.InputUSDPerM = options.evalRerankInputUSDPerM
+	opts.OutputUSDPerM = options.evalRerankOutputUSDPerM
 	seen := make(map[string]struct{}, 2)
-	for raw := range strings.SplitSeq(evalRerankJev, ",") {
+	for raw := range strings.SplitSeq(options.evalRerankJev, ",") {
 		shape := strings.TrimSpace(raw)
 		if shape == "" {
 			continue

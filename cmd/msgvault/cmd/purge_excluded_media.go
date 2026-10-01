@@ -372,5 +372,5 @@ func isLowerHex(value string, length int) bool {
 }
 
 func init() {
-	rootCmd.AddCommand(newPurgeExcludedMediaCmd())
+	registerCommandFactory(newPurgeExcludedMediaCmd)
 }

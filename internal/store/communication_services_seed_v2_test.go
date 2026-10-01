@@ -14,7 +14,6 @@ import (
 // under the same name or claiming a name that is already another
 // service's alias.
 func TestCommunicationServiceSeedV2UpgradesWithoutOverridingUserServices(t *testing.T) {
-
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := context.Background()

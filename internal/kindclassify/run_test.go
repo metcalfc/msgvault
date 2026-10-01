@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -192,6 +191,7 @@ func TestCappedRunsReachEveryClusterAboveTheFloor(t *testing.T) {
 // tests can change the archive between reading a cluster and sending it.
 type recordingStore struct {
 	*store.Store
+
 	visited       []int64
 	afterEvidence func(members []int64)
 }
@@ -250,11 +250,18 @@ type fakeJev struct {
 }
 
 func (j *fakeJev) server(t *testing.T) *httptest.Server {
+	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
+		if !assert.NoError(t, err) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		var body map[string]any
-		require.NoError(t, json.Unmarshal(raw, &body))
+		if !assert.NoError(t, json.Unmarshal(raw, &body)) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		j.mu.Lock()
 		j.bodies = append(j.bodies, body)
 		fail := j.fail
@@ -263,16 +270,30 @@ func (j *fakeJev) server(t *testing.T) *httptest.Server {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		identities := body["state"].(map[string]any)["identities"].([]any)
+		state, ok := body["state"].(map[string]any)
+		if !assert.True(t, ok, "request state must be an object") {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		identities, ok := state["identities"].([]any)
+		if !assert.True(t, ok, "identities must be an array") {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		answers := map[string]any{}
 		for i, identity := range identities {
-			choice, probabilities := j.answer(identity.(map[string]any))
+			object, ok := identity.(map[string]any)
+			if !assert.True(t, ok, "identity must be an object") {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			choice, probabilities := j.answer(object)
 			answers[kindclassify.QuestionID(i)] = map[string]any{
 				"type": "choice", "choice": choice, "probabilities": probabilities, "confidence": probabilities[choice],
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+		assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 			"model": jev.DefaultModel, "answers": answers,
 			"usage": map[string]any{"input_tokens": 900, "output_tokens": 40},
 		}))
@@ -312,11 +333,16 @@ func grantConsent(t *testing.T, st *store.Store, cfg jev.Config) {
 }
 
 func localPart(identity map[string]any) string {
-	addresses := identity["addresses"].([]any)
-	if len(addresses) == 0 {
+	addresses, ok := identity["addresses"].([]any)
+	if !ok || len(addresses) == 0 {
 		return ""
 	}
-	return addresses[0].(map[string]any)["local_part"].(string)
+	address, ok := addresses[0].(map[string]any)
+	if !ok {
+		return ""
+	}
+	local, _ := address["local_part"].(string)
+	return local
 }
 
 // The motivating case: a team alias the owner replied to once looks like a
@@ -371,16 +397,22 @@ func TestJevClassifiesTeamAliasAsMailingList(t *testing.T) {
 	require.Len(requests, 1)
 	policy, err := kindclassify.JevFeature().Policy(cfg)
 	require.NoError(err)
-	questions := requests[0]["questions"].(map[string]any)
+	questions, ok := requests[0]["questions"].(map[string]any)
+	require.True(ok)
 	assert.Len(questions, 2, "one question per identity in the batch")
 	for i := range 2 {
-		question := questions[kindclassify.QuestionID(i)].(map[string]any)
+		question, ok := questions[kindclassify.QuestionID(i)].(map[string]any)
+		require.True(ok)
 		assert.Equal("choice", question["type"])
 		assert.Equal(policy.Questions[i].Instructions, question["instructions"])
 	}
-	identities := requests[0]["state"].(map[string]any)["identities"].([]any)
+	state, ok := requests[0]["state"].(map[string]any)
+	require.True(ok)
+	identities, ok := state["identities"].([]any)
+	require.True(ok)
 	require.Len(identities, 2)
-	teamState := identities[0].(map[string]any)
+	teamState, ok := identities[0].(map[string]any)
+	require.True(ok)
 	assert.ElementsMatch([]string{"label", "addresses", "counts", "list_id_share", "category_shares",
 		"header_counts", "subjects_from_them", "subjects_from_owner"}, keys(teamState))
 	assert.Equal("Example Team", teamState["label"])
@@ -500,11 +532,15 @@ func TestJevBatchesTenIdentitiesAndStopsOnProviderFailure(t *testing.T) {
 	assert.Equal(12, report.Jev.Judged)
 	sizes := []int{}
 	for _, request := range fake.requests() {
-		sizes = append(sizes, len(request["state"].(map[string]any)["identities"].([]any)))
+		state, ok := request["state"].(map[string]any)
+		require.True(ok)
+		identities, ok := state["identities"].([]any)
+		require.True(ok)
+		sizes = append(sizes, len(identities))
 	}
 	assert.Equal([]int{kindclassify.BatchSize, 2}, sizes)
 	assert.Zero(report.Undecided)
 	for _, request := range fake.requests() {
-		assert.False(strings.Contains(fmt.Sprint(request), "Body text"))
+		assert.NotContains(fmt.Sprint(request), "Body text")
 	}
 }

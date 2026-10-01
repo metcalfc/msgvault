@@ -48,8 +48,7 @@ func (s *Store) bumpPersonDisplayNameRevisionContext(
 	ctx context.Context,
 	tx *loggedTx,
 ) error {
-	if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(
-		`INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '0')`),
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO archive_metadata (key, value) VALUES (?, '0')`,
 		personDisplayNameRevisionKey); err != nil {
 		return fmt.Errorf("seed person display-name revision: %w", err)
 	}

@@ -16,32 +16,6 @@ const (
 	emlFileMode    = 0o600
 )
 
-var (
-	exportEMLOutput string
-)
-
-var exportEMLCmd = &cobra.Command{
-	Use:   "export-eml <id>",
-	Short: "Export a message as .eml file",
-	Long: `Export a message from the archive as a standard .eml (MIME) file.
-
-This command retrieves the raw MIME data stored during sync and writes it
-to a file. The .eml format is compatible with most email clients.
-
-Examples:
-  msgvault export-eml 12345
-  msgvault export-eml 12345 --output message.eml
-  msgvault export-eml 18f0abc123def -o important.eml`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := resolveMessageIDArg(args[0])
-		if err != nil {
-			return err
-		}
-		return runExportEML(cmd, id, exportEMLOutput)
-	},
-}
-
 func sanitizeEMLFilename(sourceMessageID string) string {
 	safe := strings.Map(func(r rune) rune {
 		if r == '/' || r == '\\' || r == '\x00' {
@@ -102,7 +76,33 @@ func writeExportedEML(cmd *cobra.Command, sourceMessageID, outputPath string, ra
 	return nil
 }
 
-func init() {
-	rootCmd.AddCommand(exportEMLCmd)
-	exportEMLCmd.Flags().StringVarP(&exportEMLOutput, "output", "o", "", "Output file path (default: <source_message_id>.eml, use - for stdout)")
+func newExportEMLCmd() *cobra.Command {
+	exportEMLCmd := &cobra.Command{
+		Use:   "export-eml <id>",
+		Short: "Export a message as .eml file",
+		Long: `Export a message from the archive as a standard .eml (MIME) file.
+
+This command retrieves the raw MIME data stored during sync and writes it
+to a file. The .eml format is compatible with most email clients.
+
+Examples:
+  msgvault export-eml 12345
+  msgvault export-eml 12345 --output message.eml
+  msgvault export-eml 18f0abc123def -o important.eml`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			exportEMLOutput, _ := cmd.Flags().GetString("output")
+			id, err := resolveMessageIDArg(args[0])
+			if err != nil {
+				return err
+			}
+			return runExportEML(cmd, id, exportEMLOutput)
+		},
+	}
+
+	exportEMLCmd.Flags().StringP("output", "o", "", "Output file path (default: <source_message_id>.eml, use - for stdout)")
+
+	return exportEMLCmd
 }
+
+func init() { registerCommandFactory(newExportEMLCmd) }

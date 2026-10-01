@@ -1716,7 +1716,6 @@ func TestPersonFactEmploymentReplayIsByteIdentical(t *testing.T) {
 }
 
 func TestPersonFactEmploymentAutomaticLockPrecedesCurrentStateSQLite(t *testing.T) {
-
 	assert := assert.New(t)
 	require := require.New(t)
 	gate := newPersonFactEmploymentLockOrderGate(personFactEmploymentStagePerson)
@@ -1968,7 +1967,7 @@ func newPersonFactEmploymentSQLiteGateStore(
 	db.SetMaxIdleConns(4)
 	dialect := &SQLiteDialect{}
 	st := &Store{
-		db: newLoggedDB(db, dialect.Rebind), dbPath: base.dsn, dialect: dialect,
+		db: newLoggedDB(db, identityRebind), dbPath: base.dsn, dialect: dialect,
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	require.NoError(st.InitSchemaContext(t.Context()))

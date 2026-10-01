@@ -208,20 +208,6 @@ func TestWriteAddedSlackWorkspaceSanitizesTeamName(t *testing.T) {
 
 func resetSyncSlackRoutingGlobals(t *testing.T) {
 	t.Helper()
-	oldLimit := syncSlackLimit
-	oldFull := syncSlackFull
-	oldNoThreads := syncSlackNoThreads
-	oldNoMedia := syncSlackNoMedia
-	t.Cleanup(func() {
-		syncSlackLimit = oldLimit
-		syncSlackFull = oldFull
-		syncSlackNoThreads = oldNoThreads
-		syncSlackNoMedia = oldNoMedia
-	})
-	syncSlackLimit = 0
-	syncSlackFull = false
-	syncSlackNoThreads = false
-	syncSlackNoMedia = false
 }
 
 func TestSyncSlackCommandUsesDaemonRunner(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/msgvault/internal/export"
+	"go.kenn.io/msgvault/internal/emailingest"
 	"go.kenn.io/msgvault/internal/mime"
 	"go.kenn.io/msgvault/internal/remoteimage"
 	"go.kenn.io/msgvault/internal/store"
@@ -263,10 +263,10 @@ func threadKey(parsed *mime.Message, rawHash string) string {
 			return root
 		}
 	}
-	if irt := normalizeMessageID(parsed.InReplyTo); irt != "" {
+	if irt := importThreadMessageID(parsed.InReplyTo); irt != "" {
 		return irt
 	}
-	if mid := normalizeMessageID(parsed.MessageID); mid != "" {
+	if mid := importThreadMessageID(parsed.MessageID); mid != "" {
 		return mid
 	}
 	return rawHash
@@ -297,67 +297,27 @@ func joinEmails(addrs []mime.Address) string {
 // buildRecipientSet deduplicates addresses and returns a RecipientSet
 // ready for store.PersistMessage.
 func buildRecipientSet(recipientType string, addresses []mime.Address, participantMap map[string]int64) store.RecipientSet {
-	rs := store.RecipientSet{Type: recipientType}
-	if len(addresses) == 0 {
-		return rs
-	}
-
-	// The envelope email is pinned at first occurrence, matching
-	// display-name dedup.
-	idToName := make(map[int64]string)
-	idToEmail := make(map[int64]string)
-	var orderedIDs []int64
-
-	for _, addr := range addresses {
-		if addr.Email == "" {
-			continue
-		}
-		id, ok := participantMap[addr.Email]
-		if !ok {
-			continue
-		}
-		name := textutil.EnsureUTF8(addr.Name)
-		if _, seen := idToName[id]; !seen {
-			orderedIDs = append(orderedIDs, id)
-			idToName[id] = name
-			idToEmail[id] = addr.Email
-			continue
-		}
-		if idToName[id] == "" && name != "" {
-			idToName[id] = name
-		}
-	}
-
-	rs.ParticipantIDs = orderedIDs
-	rs.DisplayNames = make([]string, len(orderedIDs))
-	rs.EmailAddresses = make([]string, len(orderedIDs))
-	for i, id := range orderedIDs {
-		rs.DisplayNames[i] = idToName[id]
-		rs.EmailAddresses[i] = idToEmail[id]
-	}
-	return rs
+	return emailingest.Recipients(recipientType, addresses, participantMap)
 }
 
 func storeAttachment(
 	st *store.Store, attachmentsDir string,
 	messageID int64, att *mime.Attachment,
 ) error {
-	storagePath, err := export.StoreAttachmentFile(attachmentsDir, att)
-	if err != nil || storagePath == "" {
+	write, err := emailingest.PrepareAttachment(attachmentsDir, att)
+	if err != nil || write.StoragePath == "" {
 		return err
 	}
-	role, roleSource := store.AttachmentRoleFromMIME(
-		att.Disposition, att.IsInline, att.ContentID,
-	)
-	return st.UpsertAttachmentRecord(context.Background(), messageID, store.AttachmentWrite{
-		Filename:      att.Filename,
-		MIMEType:      att.ContentType,
-		StoragePath:   storagePath,
-		ContentHash:   att.ContentHash,
-		Size:          int64(len(att.Content)),
-		Role:          role,
-		RoleSource:    roleSource,
-		SourcePartKey: att.PartKey,
-		ContentID:     att.ContentID,
-	})
+	return st.UpsertAttachmentRecord(context.Background(), messageID, write)
+}
+
+// importThreadMessageID accepts a header list while preserving the importer's
+// historical fallback for malformed or bare IDs used by existing archives.
+func importThreadMessageID(header string) string {
+	for _, id := range mime.MessageIDList(header) {
+		if id = normalizeMessageID(id); id != "" {
+			return id
+		}
+	}
+	return normalizeMessageID(header)
 }

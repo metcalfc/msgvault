@@ -17,13 +17,15 @@ import (
 	"go.kenn.io/msgvault/internal/vector/sqlitevec"
 )
 
-var embeddingsOptimizeCmd = &cobra.Command{
-	Use:   "optimize [generation-id]",
-	Short: "Build or remove the SQLite search accelerator",
-	Long: "Build a restartable SQLite approximate-search index from embeddings already stored locally. " +
-		"No text or embedding-provider request is made. When omitted, generation-id defaults to the active generation.",
-	Args: cobra.MaximumNArgs(1),
-	RunE: runEmbeddingsOptimizeCommand,
+func newEmbeddingsOptimizeCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "optimize [generation-id]",
+		Short: "Build or remove the SQLite search accelerator",
+		Long: "Build a restartable SQLite approximate-search index from embeddings already stored locally. " +
+			"No text or embedding-provider request is made. When omitted, generation-id defaults to the active generation.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: runEmbeddingsOptimizeCommand,
+	}
 }
 
 type acceleratorWorkerRunner func(context.Context, string, string, vector.GenerationID, int, io.Writer) error

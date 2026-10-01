@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -203,9 +205,14 @@ func TestServedBookPicksUpCredentialChangesWithoutRestart(t *testing.T) {
 	f := newServedFixture(t, nil)
 	assert.Equal(http.StatusMultiStatus, f.do(t, servedRequest{basic: &[2]string{"device", f.password}}).Code)
 
-	time.Sleep(20 * time.Millisecond)
-	_, err := carddavserver.SaveCredential(f.tokenDir, "phone", "another-long-password")
+	credentialPath := filepath.Join(f.tokenDir, carddavserver.CredentialFilename)
+	info, err := os.Stat(credentialPath)
 	require.NoError(err)
+	_, err = carddavserver.SaveCredential(f.tokenDir, "phone", "another-long-password")
+	require.NoError(err)
+	// Advance the cache stamp explicitly, even on filesystems with coarse timestamps.
+	updated := info.ModTime().Add(time.Second)
+	require.NoError(os.Chtimes(credentialPath, updated, updated))
 	assert.Equal(http.StatusUnauthorized, f.do(t, servedRequest{basic: &[2]string{"device", f.password}}).Code)
 	assert.Equal(http.StatusMultiStatus, f.do(t, servedRequest{basic: &[2]string{"phone", "another-long-password"}}).Code)
 

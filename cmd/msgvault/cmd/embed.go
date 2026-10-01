@@ -9,65 +9,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	embedFullRebuild            bool
-	embedYes                    bool
-	embedBackstop               bool
-	embedAccounts               []string
-	embedCollections            []string
-	embeddingsRetireYes         bool
-	embeddingsRetireForceActive bool
-	embeddingsActivateForce     bool
-	embeddingsActivateYes       bool
-)
-
 const (
 	embeddingsCommandName        = "embeddings"
 	embeddingsOptimizeWorkerName = "__optimize-worker"
 )
-
-var embeddingsCmd = &cobra.Command{
-	Use:   embeddingsCommandName,
-	Short: "Manage vector embeddings",
-}
-
-var embeddingsBuildCmd = newEmbeddingsBuildCmd("build")
-var embeddingsResumeCmd = &cobra.Command{
-	Use:   cmdUseResume,
-	Short: "Resume or top up the current vector embedding generation",
-	Long: `Resume or top up the current vector embedding generation.
-If a matching generation is building, this embeds any messages still
-needing embedding for it and activates it when complete. Otherwise it
-embeds any messages still needing embedding for the active generation.
-Pass --backstop for a full-scan pass that ignores the per-generation
-watermark, catching any straggler messages the incremental scan skipped.`,
-	RunE: runEmbeddingsResume,
-}
-var embeddingsListCmd = &cobra.Command{
-	Use:   cmdUseList,
-	Short: "List vector embedding generations",
-	Args:  cobra.NoArgs,
-	RunE:  runEmbeddingsListCommand,
-}
-var embeddingsRetireCmd = &cobra.Command{
-	Use:   "retire <generation-id>",
-	Short: "Retire a vector embedding generation",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runEmbeddingsRetireCommand,
-}
-var embeddingsActivateCmd = &cobra.Command{
-	Use:   "activate <generation-id>",
-	Short: "Activate a completed vector embedding generation",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runEmbeddingsActivateCommand,
-}
-var embeddingsPruneCmd = &cobra.Command{
-	Use:   "prune",
-	Short: "Remove embeddings for hard-deleted messages",
-	Args:  cobra.NoArgs,
-	RunE:  runEmbeddingsPruneCommand,
-}
-var embedCmd = newEmbeddingsBuildCmd("build-embeddings")
 
 func newEmbeddingsBuildCmd(use string) *cobra.Command {
 	cmd := &cobra.Command{
@@ -84,13 +29,13 @@ Requires [vector] to be enabled in config.toml and [vector.embeddings]
 to point at a running OpenAI-compatible endpoint.`,
 		RunE: runEmbeddingsBuild,
 	}
-	cmd.Flags().BoolVar(&embedFullRebuild, "full-rebuild", false, "Create a new generation and rebuild from scratch")
-	cmd.Flags().BoolVar(&embedYes, "yes", false, "Skip confirmation prompts")
-	cmd.Flags().BoolVar(&embedBackstop, "backstop", false,
+	cmd.Flags().Bool("full-rebuild", false, "Create a new generation and rebuild from scratch")
+	cmd.Flags().Bool("yes", false, "Skip confirmation prompts")
+	cmd.Flags().Bool("backstop", false,
 		"Full-scan pass that ignores the per-generation watermark, catching any straggler messages the incremental scan skipped (idempotent)")
-	cmd.Flags().StringArrayVar(&embedAccounts, "account", nil,
+	cmd.Flags().StringArray("account", nil,
 		"Limit embedding to this account (repeatable); overrides [vector.embed.scope] accounts for this run")
-	cmd.Flags().StringArrayVar(&embedCollections, "collection", nil,
+	cmd.Flags().StringArray("collection", nil,
 		"Limit embedding to this collection's accounts (repeatable); overrides [vector.embed.scope] accounts for this run")
 	return cmd
 }
@@ -103,6 +48,10 @@ func runEmbeddingsBuild(cmd *cobra.Command, args []string) error {
 }
 
 func runEmbeddingsBuildLocal(cmd *cobra.Command) error {
+	return runEmbeddingsBuildLocalWithOptions(cmd, readEmbeddingCommandOptions(cmd))
+}
+
+func runEmbeddingsBuildLocalWithOptions(cmd *cobra.Command, flags embeddingCommandOptions) error {
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -114,11 +63,12 @@ func runEmbeddingsBuildLocal(cmd *cobra.Command) error {
 	if cfg.Vector.Embeddings.Endpoint == "" || cfg.Vector.Embeddings.Model == "" {
 		return errors.New("[vector.embeddings] endpoint and model are required")
 	}
-	return runEmbed(cmd)
+	return runEmbed(cmd, flags)
 }
 
 func runEmbeddingsBuildHTTP(cmd *cobra.Command, args []string) error {
-	if embedFullRebuild && !embedYes {
+	flags := readEmbeddingCommandOptions(cmd)
+	if flags.embedFullRebuild && !flags.embedYes {
 		if !confirmEmbed(cmd, "Start a full rebuild? This builds a new generation and atomically swaps it in when complete. ") {
 			return errors.New("aborted")
 		}
@@ -151,14 +101,6 @@ func embeddingsForwardEnv(state *invocation) map[string]string {
 }
 
 func runEmbeddingsResume(cmd *cobra.Command, args []string) error {
-	oldFullRebuild := embedFullRebuild
-	oldYes := embedYes
-	embedFullRebuild = false
-	embedYes = false
-	defer func() {
-		embedFullRebuild = oldFullRebuild
-		embedYes = oldYes
-	}()
 	return runEmbeddingsBuild(cmd, args)
 }
 
@@ -170,17 +112,69 @@ func runEmbeddingsListCommand(cmd *cobra.Command, args []string) error {
 }
 
 func init() {
-	embedCmd.Deprecated = "use 'msgvault embeddings build' instead"
-	embeddingsResumeCmd.Flags().BoolVar(&embedBackstop, "backstop", false,
+	registerCommandFactory(newEmbeddingsCommand)
+	registerCommandFactory(func() *cobra.Command {
+		cmd := newEmbeddingsBuildCmd("build-embeddings")
+		cmd.Deprecated = "use 'msgvault embeddings build' instead"
+		return cmd
+	})
+}
+
+func newEmbeddingsCommand() *cobra.Command {
+	embeddingsCmd := &cobra.Command{
+		Use:   embeddingsCommandName,
+		Short: "Manage vector embeddings",
+	}
+
+	embeddingsBuildCmd := newEmbeddingsBuildCmd("build")
+	embeddingsResumeCmd := &cobra.Command{
+		Use:   cmdUseResume,
+		Short: "Resume or top up the current vector embedding generation",
+		Long: `Resume or top up the current vector embedding generation.
+If a matching generation is building, this embeds any messages still
+needing embedding for it and activates it when complete. Otherwise it
+embeds any messages still needing embedding for the active generation.
+Pass --backstop for a full-scan pass that ignores the per-generation
+watermark, catching any straggler messages the incremental scan skipped.`,
+		RunE: runEmbeddingsResume,
+	}
+	embeddingsListCmd := &cobra.Command{
+		Use:   cmdUseList,
+		Short: "List vector embedding generations",
+		Args:  cobra.NoArgs,
+		RunE:  runEmbeddingsListCommand,
+	}
+	embeddingsRetireCmd := &cobra.Command{
+		Use:   "retire <generation-id>",
+		Short: "Retire a vector embedding generation",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runEmbeddingsRetireCommand,
+	}
+	embeddingsActivateCmd := &cobra.Command{
+		Use:   "activate <generation-id>",
+		Short: "Activate a completed vector embedding generation",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runEmbeddingsActivateCommand,
+	}
+	embeddingsPruneCmd := &cobra.Command{
+		Use:   "prune",
+		Short: "Remove embeddings for hard-deleted messages",
+		Args:  cobra.NoArgs,
+		RunE:  runEmbeddingsPruneCommand,
+	}
+	embeddingsOptimizeCmd := newEmbeddingsOptimizeCommand()
+	embeddingsOptimizeWorkerCmd := newEmbeddingsOptimizeWorkerCommand()
+
+	embeddingsResumeCmd.Flags().Bool("backstop", false,
 		"Full-scan pass that ignores the per-generation watermark, catching any straggler messages the incremental scan skipped (idempotent)")
-	embeddingsResumeCmd.Flags().StringArrayVar(&embedAccounts, "account", nil,
+	embeddingsResumeCmd.Flags().StringArray("account", nil,
 		"Limit embedding to this account (repeatable); overrides [vector.embed.scope] accounts for this run")
-	embeddingsResumeCmd.Flags().StringArrayVar(&embedCollections, "collection", nil,
+	embeddingsResumeCmd.Flags().StringArray("collection", nil,
 		"Limit embedding to this collection's accounts (repeatable); overrides [vector.embed.scope] accounts for this run")
-	embeddingsRetireCmd.Flags().BoolVar(&embeddingsRetireYes, "yes", false, "Skip confirmation prompt")
-	embeddingsRetireCmd.Flags().BoolVar(&embeddingsRetireForceActive, "force-active", false, "Allow retiring the active generation")
-	embeddingsActivateCmd.Flags().BoolVar(&embeddingsActivateYes, "yes", false, "Skip confirmation prompt")
-	embeddingsActivateCmd.Flags().BoolVar(&embeddingsActivateForce, "force", false, "Allow activation despite incomplete message or person coverage, or a fingerprint mismatch")
+	embeddingsRetireCmd.Flags().Bool("yes", false, "Skip confirmation prompt")
+	embeddingsRetireCmd.Flags().Bool("force-active", false, "Allow retiring the active generation")
+	embeddingsActivateCmd.Flags().Bool("yes", false, "Skip confirmation prompt")
+	embeddingsActivateCmd.Flags().Bool("force", false, "Allow activation despite incomplete message or person coverage, or a fingerprint mismatch")
 	embeddingsCmd.AddCommand(embeddingsBuildCmd)
 	embeddingsCmd.AddCommand(embeddingsResumeCmd)
 	embeddingsCmd.AddCommand(embeddingsListCmd)
@@ -190,6 +184,32 @@ func init() {
 	embeddingsOptimizeCmd.Flags().Bool("drop", false, "Remove the accelerator while keeping exact vectors")
 	embeddingsCmd.AddCommand(embeddingsOptimizeCmd)
 	embeddingsCmd.AddCommand(embeddingsOptimizeWorkerCmd)
-	rootCmd.AddCommand(embeddingsCmd)
-	rootCmd.AddCommand(embedCmd)
+
+	return embeddingsCmd
+}
+
+type embeddingCommandOptions struct {
+	embedFullRebuild            bool
+	embedYes                    bool
+	embedBackstop               bool
+	embedAccounts               []string
+	embedCollections            []string
+	embeddingsRetireYes         bool
+	embeddingsRetireForceActive bool
+	embeddingsActivateForce     bool
+	embeddingsActivateYes       bool
+}
+
+func readEmbeddingCommandOptions(cmd *cobra.Command) embeddingCommandOptions {
+	var flags embeddingCommandOptions
+	flags.embedFullRebuild, _ = cmd.Flags().GetBool("full-rebuild")
+	flags.embedYes, _ = cmd.Flags().GetBool("yes")
+	flags.embedBackstop, _ = cmd.Flags().GetBool("backstop")
+	flags.embedAccounts, _ = cmd.Flags().GetStringArray("account")
+	flags.embedCollections, _ = cmd.Flags().GetStringArray("collection")
+	flags.embeddingsRetireYes, _ = cmd.Flags().GetBool("yes")
+	flags.embeddingsRetireForceActive, _ = cmd.Flags().GetBool("force-active")
+	flags.embeddingsActivateForce, _ = cmd.Flags().GetBool("force")
+	flags.embeddingsActivateYes, _ = cmd.Flags().GetBool("yes")
+	return flags
 }

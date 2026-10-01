@@ -17,53 +17,14 @@ import (
 	"go.kenn.io/msgvault/internal/identityops"
 )
 
-var (
-	identityListAccount      string
-	identityListCollection   string
-	identityListSourceID     int64
-	identityListJSON         bool
-	identityShowSourceID     int64
-	identityShowJSON         bool
-	identityAddSourceID      int64
-	identityAddSignal        string
-	identityRemoveSourceID   int64
-	identityDiscoverSourceID int64
-	identityDiscoverApply    bool
-	identityDiscoverProvider bool
-	identityDiscoverConfirm  []string
-	identityDiscoverJSON     bool
-	identityImportSourceID   int64
-	identityImportFile       string
-	identityImportStdin      bool
-	identityImportSignal     string
-	identityImportApply      bool
-	identityImportJSON       bool
-)
-
 // identityCmdUse is the usage/name of the identity command.
 const identityCmdUse = "identity"
 
-var identityCmd = &cobra.Command{
-	Use:   identityCmdUse,
-	Short: "Manage the confirmed \"me\" identifiers for each account",
-	Long: `Each account has one identity: the set of identifiers (email
-addresses, phone numbers, chat handles, synthetic identifiers) that mean
-"me" inside that account. Dedup's sent-copy detection compares a message's
-From: against the identifiers confirmed for the message's account.
-
-Identifiers are stored verbatim; case is preserved so synthetic identifiers
-like Slack member IDs and Matrix MXIDs round-trip correctly. Email-address
-case-insensitivity is handled at compare time by consumers, not at the store.`,
-}
-
-var identityListCmd = &cobra.Command{
-	Use:   cmdUseList,
-	Short: "List confirmed identifiers across one or more accounts",
-	Args:  cobra.NoArgs,
-	RunE:  runIdentityList,
-}
-
 func runIdentityList(cmd *cobra.Command, _ []string) error {
+	identityListAccount, _ := cmd.Flags().GetString("account")
+	identityListCollection, _ := cmd.Flags().GetString("collection")
+	identityListSourceID, _ := cmd.Flags().GetInt64("source-id")
+
 	rows, err := fetchHTTPIdentityRows(
 		cmd,
 		daemonclient.CLIIdentitiesRequest{
@@ -76,10 +37,10 @@ func runIdentityList(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	return renderIdentityList(cmd.OutOrStdout(), rows)
+	return renderIdentityList(cmd.OutOrStdout(), rows, mustIdentityJSON(cmd))
 }
 
-func renderIdentityList(w io.Writer, rows []identityRow) error {
+func renderIdentityList(w io.Writer, rows []identityRow, identityListJSON bool) error {
 	if identityListJSON {
 		return writeIdentityJSON(w, rows)
 	}
@@ -162,14 +123,9 @@ func writeIdentityJSON(w io.Writer, rows []identityRow) error {
 	return json.MarshalEncode(enc, out, json.Deterministic(true))
 }
 
-var identityShowCmd = &cobra.Command{
-	Use:   "show [account]",
-	Short: "Show one account's identity in detail",
-	Args:  identityShowArgs,
-	RunE:  runIdentityShow,
-}
-
 func runIdentityShow(cmd *cobra.Command, args []string) error {
+	identityShowSourceID, _ := cmd.Flags().GetInt64("source-id")
+
 	account := ""
 	if len(args) == 1 {
 		account = args[0]
@@ -187,7 +143,7 @@ func runIdentityShow(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return renderIdentityShow(cmd.OutOrStdout(), rows, account)
+	return renderIdentityShow(cmd.OutOrStdout(), rows, account, mustIdentityJSON(cmd))
 }
 
 func fetchHTTPIdentityRows(
@@ -227,7 +183,7 @@ func identityRowsFromDaemon(rows []daemonclient.CLIIdentityRow) []identityRow {
 	return out
 }
 
-func renderIdentityShow(w io.Writer, rows []identityRow, hintAccount string) error {
+func renderIdentityShow(w io.Writer, rows []identityRow, hintAccount string, identityShowJSON bool) error {
 	if identityShowJSON {
 		return writeIdentityJSON(w, rows)
 	}
@@ -244,14 +200,10 @@ func renderIdentityShow(w io.Writer, rows []identityRow, hintAccount string) err
 	return nil
 }
 
-var identityAddCmd = &cobra.Command{
-	Use:   "add [account] <identifier>",
-	Short: "Add a confirmed identifier to an account's identity",
-	Args:  identityAddArgs,
-	RunE:  runIdentityAdd,
-}
-
 func runIdentityAdd(cmd *cobra.Command, args []string) error {
+	identityAddSourceID, _ := cmd.Flags().GetInt64("source-id")
+	identityAddSignal, _ := cmd.Flags().GetString("signal")
+
 	accountArg, identifierArg := identityMutationArguments(cmd, args)
 	identifier := strings.TrimSpace(identifierArg)
 	if identifier == "" {
@@ -268,6 +220,8 @@ func runIdentityAdd(cmd *cobra.Command, args []string) error {
 }
 
 func runHTTPIdentityAdd(cmd *cobra.Command, selector daemonclient.CLIIdentitySourceSelector, identifier string) error {
+	identityAddSignal, _ := cmd.Flags().GetString("signal")
+
 	s, _, err := OpenHTTPStore(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
@@ -300,32 +254,14 @@ func renderIdentityAddResult(w io.Writer, result daemonclient.CLIIdentityAddResu
 	}
 }
 
-var identityRemoveCmd = &cobra.Command{
-	Use:   "remove [account] <identifier>",
-	Short: "Remove a confirmed identifier from an account's identity",
-	Args:  identityRemoveArgs,
-	RunE:  runIdentityRemove,
-}
-
-var identityDiscoverCmd = &cobra.Command{
-	Use:   "discover [account]",
-	Short: "Preview or apply source-scoped identity evidence",
-	Long: `Scan one ingestion source's archived message metadata for identity
-evidence. The command is read-only unless --apply is present. Strong sent
-evidence is applied automatically with --apply; weak candidates require a
-repeatable --confirm address flag.`,
-	Args: identityDiscoverArgs,
-	RunE: runIdentityDiscover,
-}
-
-var identityImportCmd = &cobra.Command{
-	Use:   "import [account]",
-	Short: "Preview or apply source-scoped identities from text or JSON",
-	Args:  identityImportArgs,
-	RunE:  runIdentityImport,
-}
-
 func runIdentityImport(cmd *cobra.Command, args []string) error {
+	identityImportSourceID, _ := cmd.Flags().GetInt64("source-id")
+	identityImportFile, _ := cmd.Flags().GetString("file")
+	identityImportStdin, _ := cmd.Flags().GetBool("stdin")
+	identityImportSignal, _ := cmd.Flags().GetString("signal")
+	identityImportApply, _ := cmd.Flags().GetBool("apply")
+	identityImportJSON, _ := cmd.Flags().GetBool(flagJSON)
+
 	account := ""
 	if len(args) == 1 {
 		account = args[0]
@@ -415,6 +351,12 @@ func renderIdentityImport(w io.Writer, result identityops.ImportResult, jsonOutp
 }
 
 func runIdentityDiscover(cmd *cobra.Command, args []string) error {
+	identityDiscoverSourceID, _ := cmd.Flags().GetInt64("source-id")
+	identityDiscoverApply, _ := cmd.Flags().GetBool("apply")
+	identityDiscoverProvider, _ := cmd.Flags().GetBool("provider")
+	identityDiscoverConfirm, _ := cmd.Flags().GetStringArray("confirm")
+	identityDiscoverJSON, _ := cmd.Flags().GetBool(flagJSON)
+
 	account := ""
 	if len(args) == 1 {
 		account = args[0]
@@ -552,6 +494,8 @@ func renderIdentityDiscoverCandidateGroup(
 }
 
 func runIdentityRemove(cmd *cobra.Command, args []string) error {
+	identityRemoveSourceID, _ := cmd.Flags().GetInt64("source-id")
+
 	accountArg, identifierArg := identityMutationArguments(cmd, args)
 	identifier := strings.TrimSpace(identifierArg)
 	if identifier == "" {
@@ -618,6 +562,9 @@ func identityDiscoverArgs(cmd *cobra.Command, args []string) error {
 }
 
 func identityImportArgs(cmd *cobra.Command, args []string) error {
+	identityImportFile, _ := cmd.Flags().GetString("file")
+	identityImportStdin, _ := cmd.Flags().GetBool("stdin")
+
 	if err := identitySelectorArgs(cmd, args, 0, 1); err != nil {
 		return err
 	}
@@ -668,8 +615,71 @@ func identitySourceSelector(
 	return daemonclient.CLIIdentitySourceSelector{Account: account}, nil
 }
 
-func init() {
-	rootCmd.AddCommand(identityCmd)
+func mustIdentityJSON(cmd *cobra.Command) bool {
+	value, _ := cmd.Flags().GetBool(flagJSON)
+	return value
+}
+
+func newIdentityCommand() *cobra.Command {
+	var identityCmd = &cobra.Command{
+		Use:   identityCmdUse,
+		Short: "Manage the confirmed \"me\" identifiers for each account",
+		Long: `Each account has one identity: the set of identifiers (email
+addresses, phone numbers, chat handles, synthetic identifiers) that mean
+"me" inside that account. Dedup's sent-copy detection compares a message's
+From: against the identifiers confirmed for the message's account.
+
+Identifiers are stored verbatim; case is preserved so synthetic identifiers
+like Slack member IDs and Matrix MXIDs round-trip correctly. Email-address
+case-insensitivity is handled at compare time by consumers, not at the store.`,
+	}
+
+	var identityListCmd = &cobra.Command{
+		Use:   cmdUseList,
+		Short: "List confirmed identifiers across one or more accounts",
+		Args:  cobra.NoArgs,
+		RunE:  runIdentityList,
+	}
+
+	var identityShowCmd = &cobra.Command{
+		Use:   "show [account]",
+		Short: "Show one account's identity in detail",
+		Args:  identityShowArgs,
+		RunE:  runIdentityShow,
+	}
+
+	var identityAddCmd = &cobra.Command{
+		Use:   "add [account] <identifier>",
+		Short: "Add a confirmed identifier to an account's identity",
+		Args:  identityAddArgs,
+		RunE:  runIdentityAdd,
+	}
+
+	var identityRemoveCmd = &cobra.Command{
+		Use:   "remove [account] <identifier>",
+		Short: "Remove a confirmed identifier from an account's identity",
+		Args:  identityRemoveArgs,
+		RunE:  runIdentityRemove,
+	}
+
+	var identityDiscoverCmd = &cobra.Command{
+		Use:   "discover [account]",
+		Short: "Preview or apply source-scoped identity evidence",
+		Long: `Scan one ingestion source's archived message metadata for identity
+evidence. The command is read-only unless --apply is present. Strong sent
+evidence is applied automatically with --apply; weak candidates require a
+repeatable --confirm address flag.`,
+		Args: identityDiscoverArgs,
+		RunE: runIdentityDiscover,
+	}
+
+	var identityImportCmd = &cobra.Command{
+		Use:   "import [account]",
+		Short: "Preview or apply source-scoped identities from text or JSON",
+		Args:  identityImportArgs,
+		RunE:  runIdentityImport,
+	}
+
 	identityCmd.AddCommand(identityListCmd)
 	identityCmd.AddCommand(identityShowCmd)
 	identityCmd.AddCommand(identityAddCmd)
@@ -677,47 +687,31 @@ func init() {
 	identityCmd.AddCommand(identityDiscoverCmd)
 	identityCmd.AddCommand(identityImportCmd)
 
-	identityListCmd.Flags().StringVar(&identityListAccount,
-		"account", "", "Restrict to a single account")
-	identityListCmd.Flags().StringVar(&identityListCollection,
-		"collection", "", "Restrict to all member accounts of one collection")
-	identityListCmd.Flags().Int64Var(&identityListSourceID,
-		"source-id", 0, "Restrict to one source by numeric ID")
+	identityListCmd.Flags().String("account", "", "Restrict to a single account")
+	identityListCmd.Flags().String("collection", "", "Restrict to all member accounts of one collection")
+	identityListCmd.Flags().Int64("source-id", 0, "Restrict to one source by numeric ID")
 	identityListCmd.MarkFlagsMutuallyExclusive("account", "collection", "source-id")
-	identityListCmd.Flags().BoolVar(&identityListJSON,
-		flagJSON, false, "Output as JSON")
-	identityShowCmd.Flags().BoolVar(&identityShowJSON,
-		flagJSON, false, "Output as JSON")
-	identityShowCmd.Flags().Int64Var(&identityShowSourceID,
-		"source-id", 0, "Select one source by numeric ID")
-	identityAddCmd.Flags().Int64Var(&identityAddSourceID,
-		"source-id", 0, "Select one source by numeric ID")
-	identityAddCmd.Flags().StringVar(&identityAddSignal,
-		"signal", "manual",
+	identityListCmd.Flags().Bool(flagJSON, false, "Output as JSON")
+	identityShowCmd.Flags().Bool(flagJSON, false, "Output as JSON")
+	identityShowCmd.Flags().Int64("source-id", 0, "Select one source by numeric ID")
+	identityAddCmd.Flags().Int64("source-id", 0, "Select one source by numeric ID")
+	identityAddCmd.Flags().String("signal", "manual",
 		"Evidence signal name (e.g. manual, account-identifier, phone-e164). "+
 			"Cannot contain commas.")
-	identityRemoveCmd.Flags().Int64Var(&identityRemoveSourceID,
-		"source-id", 0, "Select one source by numeric ID")
-	identityDiscoverCmd.Flags().Int64Var(&identityDiscoverSourceID,
-		"source-id", 0, "Select one source by numeric ID")
-	identityDiscoverCmd.Flags().BoolVar(&identityDiscoverApply,
-		"apply", false, "Confirm strong identity evidence after the preview scan completes")
-	identityDiscoverCmd.Flags().BoolVar(&identityDiscoverProvider,
-		"provider", false, "Include configured provider alias inventory")
-	identityDiscoverCmd.Flags().StringArrayVar(&identityDiscoverConfirm,
-		"confirm", nil, "Explicitly confirm a weak candidate (repeatable; requires --apply)")
-	identityDiscoverCmd.Flags().BoolVar(&identityDiscoverJSON,
-		flagJSON, false, "Output the final result as JSON and suppress progress")
-	identityImportCmd.Flags().Int64Var(&identityImportSourceID,
-		"source-id", 0, "Select one source by numeric ID")
-	identityImportCmd.Flags().StringVar(&identityImportFile,
-		"file", "", "Read identities from a text or JSON file")
-	identityImportCmd.Flags().BoolVar(&identityImportStdin,
-		"stdin", false, "Read identities from standard input")
-	identityImportCmd.Flags().StringVar(&identityImportSignal,
-		"signal", "manual", "Evidence signal name (cannot contain commas)")
-	identityImportCmd.Flags().BoolVar(&identityImportApply,
-		"apply", false, "Confirm all validated imported identities")
-	identityImportCmd.Flags().BoolVar(&identityImportJSON,
-		flagJSON, false, "Output the result as JSON")
+	identityRemoveCmd.Flags().Int64("source-id", 0, "Select one source by numeric ID")
+	identityDiscoverCmd.Flags().Int64("source-id", 0, "Select one source by numeric ID")
+	identityDiscoverCmd.Flags().Bool("apply", false, "Confirm strong identity evidence after the preview scan completes")
+	identityDiscoverCmd.Flags().Bool("provider", false, "Include configured provider alias inventory")
+	identityDiscoverCmd.Flags().StringArray("confirm", nil, "Explicitly confirm a weak candidate (repeatable; requires --apply)")
+	identityDiscoverCmd.Flags().Bool(flagJSON, false, "Output the final result as JSON and suppress progress")
+	identityImportCmd.Flags().Int64("source-id", 0, "Select one source by numeric ID")
+	identityImportCmd.Flags().String("file", "", "Read identities from a text or JSON file")
+	identityImportCmd.Flags().Bool("stdin", false, "Read identities from standard input")
+	identityImportCmd.Flags().String("signal", "manual", "Evidence signal name (cannot contain commas)")
+	identityImportCmd.Flags().Bool("apply", false, "Confirm all validated imported identities")
+	identityImportCmd.Flags().Bool(flagJSON, false, "Output the result as JSON")
+
+	return identityCmd
 }
+
+func init() { registerCommandFactory(newIdentityCommand) }

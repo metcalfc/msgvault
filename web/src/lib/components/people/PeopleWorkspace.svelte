@@ -1,11 +1,10 @@
 <script lang="ts">
   import { Button, EmptyState, Notice, SearchInput, TextInput } from '@kenn-io/kit-ui';
-  import { onDestroy, untrack } from 'svelte';
+  import { untrack } from 'svelte';
 
   import type { CorrespondentKindRecord } from '../../api/generated/models';
   import { filterNotPeople, type PeopleFilters, type PeopleHub, type PeopleRow, type PeopleSavedFilter } from '../../people/hub.svelte';
   import { NOT_A_PERSON_CHOICES, assignmentLabel } from '../../people/correspondent-kind';
-  import { bufferedCallback } from '../../util/buffered-callback';
   import { humanizeDate } from '../../util/dates';
 
   interface Props {
@@ -30,7 +29,6 @@
     savedPageError = null, savedPageRecovery = null, onReloadSaved = undefined,
   }: Props = $props();
 
-  const TEXT_DEBOUNCE_MS = 250;
   type TextKey = 'query' | 'category' | 'organization';
   let text = $state<Record<TextKey, string>>(untrack(() => ({
     query: filters.query, category: filters.category, organization: filters.organization,
@@ -39,21 +37,17 @@
   $effect(() => {
     text = { query: filters.query, category: filters.category, organization: filters.organization };
   });
-  const debouncedText = bufferedCallback((patch: Record<TextKey, string>) => onFiltersChange(patch, 'replace'), TEXT_DEBOUNCE_MS);
-  onDestroy(() => debouncedText.flush());
 
   function editText(key: TextKey, value: string): void {
     text[key] = value;
-    debouncedText({ ...text });
+    onFiltersChange({ ...text }, 'replace');
   }
 
   function toggleSaved(value: Exclude<PeopleSavedFilter, ''>): void {
-    debouncedText.flush();
     onFiltersChange({ saved: filters.saved === value ? '' : value }, 'push');
   }
 
   function toggleHasName(): void {
-    debouncedText.flush();
     onFiltersChange({ hasName: !filters.hasName }, 'push');
   }
 

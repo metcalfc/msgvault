@@ -5,11 +5,7 @@
       ? value
       : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date);
   }
-  function formatBytes(value: number): string {
-    if (value < 1024) return `${value} B`;
-    if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
-    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-  }
+
   function people(row: FileSearchRow): string {
     const labels = row.participant_labels ?? [];
     const domains = row.participant_domains ?? [];
@@ -36,6 +32,7 @@
 </script>
 
 <script lang="ts">
+  import { formatBytes } from '../../util/bytes';
   import {
     searchDomainFiles as generatedSearchDomainFiles,
     searchFiles as generatedSearchFiles,

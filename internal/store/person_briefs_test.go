@@ -214,7 +214,7 @@ func TestPersonBriefKeepsOneCurrentVersionPerPerson(t *testing.T) {
 			 provider_policy_fingerprint, boundary_json, structured_json, rendered_text,
 			 renderer_policy, generated_at)
 		VALUES (?, 99, ?, 'current', 'p', 'v1', ?, 'provider', 'v1', 'model', 'v1',
-			'policy', `+f.store.dialect.JSONBindExpr()+`, `+f.store.dialect.JSONBindExpr()+`,
+			'policy', `+"?"+`, `+"?"+`,
 			'text', 'person-brief-render-v1', ?)`),
 		f.personID, f.generationID, strings.Repeat("b", 64), `{}`, `{}`, personBriefNow)
 	require.Error(err, "a second current version must violate the partial unique index")

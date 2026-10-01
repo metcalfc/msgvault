@@ -24,7 +24,7 @@ import (
 // non-email identifier) is still excluded.
 func conversationLabelFixture(t *testing.T) *sql.DB {
 	t.Helper()
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 	_, err := tdb.DB.Exec(`
 		INSERT INTO sources (id, source_type, identifier) VALUES (7, 'whatsapp', 'owner@example.com');
 		INSERT INTO participants (id, phone_number, email_address, display_name) VALUES

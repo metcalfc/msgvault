@@ -6,7 +6,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/kit/daemon"
@@ -25,11 +24,9 @@ func TestListAccountsUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 
 	savedCfg := cfg
 	savedUseLocal := useLocal
-	savedJSON := listAccountsJSON
 	defer func() {
 		cfg = savedCfg
 		useLocal = savedUseLocal
-		listAccountsJSON = savedJSON
 	}()
 
 	cfg = &config.Config{
@@ -40,10 +37,9 @@ func TestListAccountsUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 	_ = testCtx
 	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
-	listAccountsJSON = false
 
 	done := captureStdout(t)
-	cmd := &cobra.Command{Use: "list-accounts", RunE: listAccountsCmd.RunE}
+	cmd := newListAccountsCommand()
 	cmd.SetContext(testCtx)
 
 	err := cmd.Execute()

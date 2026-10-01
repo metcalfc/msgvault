@@ -765,7 +765,7 @@ func TestSQLiteEngine_Aggregate_InvalidViewType(t *testing.T) {
 // (e.g., two labels with equal counts), results are sorted deterministically by key ASC.
 // This prevents flaky tests and non-deterministic UI ordering.
 func TestAggregateDeterministicOrderOnTies(t *testing.T) {
-	tdb := dbtest.NewTestDB(t, "../store/schema.sql")
+	tdb := dbtest.NewTestDBWithoutFTS(t)
 
 	// Create minimal test data using helpers, explicitly threading IDs to avoid
 	// implicit coupling to helper defaults or auto-increment assumptions.

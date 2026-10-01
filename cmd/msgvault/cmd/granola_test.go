@@ -66,6 +66,8 @@ func installGranolaClientFactory(t *testing.T, baseURL string) {
 }
 
 func TestAddGranolaIdentityConfirmsPrimaryWhenAliasExists(t *testing.T) {
+	addGranolaCmd := newAddGranolaCommand()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewTestStore(t)
@@ -117,6 +119,8 @@ func TestConfiguredGranolaMissingRegisteredSourceStopsBeforeClient(t *testing.T)
 }
 
 func TestManualGranolaPartialImportRefreshesCacheBeforeReturningError(t *testing.T) {
+	syncGranolaCmd := newSyncGranolaCommand()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
@@ -145,12 +149,6 @@ func TestManualGranolaPartialImportRefreshesCacheBeforeReturningError(t *testing
 		return nil
 	}
 	t.Cleanup(func() { rebuildGranolaCacheAfterWrite = savedRefresh })
-
-	oldLimit, oldAfter, oldFull := syncGranolaLimit, syncGranolaAfter, syncGranolaFull
-	syncGranolaLimit, syncGranolaAfter, syncGranolaFull = 0, "", false
-	t.Cleanup(func() {
-		syncGranolaLimit, syncGranolaAfter, syncGranolaFull = oldLimit, oldAfter, oldFull
-	})
 	cmd := &cobra.Command{Use: "sync-granola"}
 	cmd.SetContext(testCtx)
 	cmd.SetContext(testCtx)
@@ -166,6 +164,8 @@ func TestManualGranolaPartialImportRefreshesCacheBeforeReturningError(t *testing
 }
 
 func TestManualGranolaCancellationReturnsError(t *testing.T) {
+	syncGranolaCmd := newSyncGranolaCommand()
+
 	require := require.New(t)
 	dataDir := t.TempDir()
 	server := newGranolaSyncTestServer(t, true, false)
@@ -258,6 +258,8 @@ func TestConfiguredGranolaPartialImportWithoutWritesSkipsCacheRefresh(t *testing
 }
 
 func TestManualGranolaLaterFailureRefreshesEarlierSourceWrites(t *testing.T) {
+	syncGranolaCmd := newSyncGranolaCommand()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
@@ -293,12 +295,6 @@ func TestManualGranolaLaterFailureRefreshesEarlierSourceWrites(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { rebuildGranolaCacheAfterWrite = savedRefresh })
-
-	oldLimit, oldAfter, oldFull := syncGranolaLimit, syncGranolaAfter, syncGranolaFull
-	syncGranolaLimit, syncGranolaAfter, syncGranolaFull = 0, "", false
-	t.Cleanup(func() {
-		syncGranolaLimit, syncGranolaAfter, syncGranolaFull = oldLimit, oldAfter, oldFull
-	})
 	cmd := &cobra.Command{Use: "sync-granola"}
 	cmd.SetContext(testCtx)
 	cmd.SetContext(testCtx)
@@ -314,6 +310,8 @@ func TestManualGranolaLaterFailureRefreshesEarlierSourceWrites(t *testing.T) {
 }
 
 func TestManualGranolaPrevalidatesAllSourcesBeforeImport(t *testing.T) {
+	syncGranolaCmd := newSyncGranolaCommand()
+
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()

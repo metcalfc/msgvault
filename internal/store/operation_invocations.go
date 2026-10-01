@@ -105,7 +105,7 @@ func (s *Store) CheckpointOperationInvocation(
 	return retryBusyWriteErr(ctx, s, "checkpoint operation invocation", func() error {
 		return s.withTxContext(ctx, func(tx *loggedTx) error {
 			run, readErr := scanOperationInvocation(id.Kind(), tx.QueryRowContext(ctx,
-				operationInvocationSelect(ledger)+" WHERE id = ?"+s.dialect.SelectForUpdate(), mustOperationInt64ID(id)))
+				operationInvocationSelect(ledger)+" WHERE id = ?", mustOperationInt64ID(id)))
 			if errors.Is(readErr, sql.ErrNoRows) {
 				return ErrOperationInvocationNotFound
 			}
@@ -172,7 +172,7 @@ func (s *Store) FinishOperationInvocation(
 	return retryBusyWriteErr(ctx, s, "finish operation invocation", func() error {
 		return s.withTxContext(ctx, func(tx *loggedTx) error {
 			run, readErr := scanOperationInvocation(id.Kind(), tx.QueryRowContext(ctx,
-				operationInvocationSelect(ledger)+" WHERE id = ?"+s.dialect.SelectForUpdate(), mustOperationInt64ID(id)))
+				operationInvocationSelect(ledger)+" WHERE id = ?", mustOperationInt64ID(id)))
 			if errors.Is(readErr, sql.ErrNoRows) {
 				return ErrOperationInvocationNotFound
 			}

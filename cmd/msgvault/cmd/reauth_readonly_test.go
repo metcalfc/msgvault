@@ -182,14 +182,14 @@ func TestReauthAliasMismatchUnchangedForWriteGrant(t *testing.T) {
 // rendering, which repeats the current run's grant mode rather than the
 // account's recorded one — no token exists yet at that point.
 func TestAddAccountGrantFlagSuffix(t *testing.T) {
-	saveAddAccountFlags(t)
-	oauthAppName = ""
+	options := &addAccountOptions{}
+	options.oauthAppName = ""
 
-	readonlyGrant = false
-	assert.Empty(t, addAccountGrantFlagSuffix())
+	options.readonlyGrant = false
+	assert.Empty(t, options.addAccountGrantFlagSuffix())
 
-	readonlyGrant = true
-	assert.Equal(t, " --readonly", addAccountGrantFlagSuffix())
+	options.readonlyGrant = true
+	assert.Equal(t, " --readonly", options.addAccountGrantFlagSuffix())
 }
 
 // TestAddAccountAuthorizeErrorRepeatsReadonly is the behavioural half: a
@@ -197,25 +197,25 @@ func TestAddAccountGrantFlagSuffix(t *testing.T) {
 // that would request write access.
 func TestAddAccountAuthorizeErrorRepeatsReadonly(t *testing.T) {
 	assert := assert.New(t)
-	saveAddAccountFlags(t)
-	oauthAppName = ""
+	options := &addAccountOptions{}
+	options.oauthAppName = ""
 
 	mismatch := &oauth.TokenMismatchError{
 		Expected: "alias@gmail.com",
 		Actual:   "primary@gmail.com",
 	}
 
-	readonlyGrant = true
-	err := addAccountAuthorizeError(mismatch, false)
+	options.readonlyGrant = true
+	err := options.addAccountAuthorizeError(mismatch, false)
 	assert.Contains(err.Error(), "msgvault add-account primary@gmail.com --readonly")
 
-	readonlyGrant = false
-	err = addAccountAuthorizeError(mismatch, false)
+	options.readonlyGrant = false
+	err = options.addAccountAuthorizeError(mismatch, false)
 	assert.Contains(err.Error(), "msgvault add-account primary@gmail.com")
 	assert.NotContains(err.Error(), "--readonly")
 
-	oauthAppName = "work"
-	readonlyGrant = true
-	err = addAccountAuthorizeError(mismatch, false)
+	options.oauthAppName = "work"
+	options.readonlyGrant = true
+	err = options.addAccountAuthorizeError(mismatch, false)
 	assert.Contains(err.Error(), "msgvault add-account primary@gmail.com --oauth-app 'work' --readonly")
 }

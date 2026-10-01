@@ -360,7 +360,6 @@ func TestAddCalendarHeadless_PrintsInstructionsAndPreservesToken(t *testing.T) {
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
 	addCmd.SetContext(testCtx)
 	addCmd.SetArgs([]string{"--headless", scopeEscalationAccount})
-	defer func() { calAddHeadless = false }()
 
 	getOutput := captureStdout(t)
 	execErr := addCmd.ExecuteContext(testCtx)

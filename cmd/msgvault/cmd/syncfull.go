@@ -24,67 +24,26 @@ import (
 	"golang.org/x/oauth2"
 )
 
-var (
-	syncQuery       string
-	syncNoResume    bool
-	syncBefore      string
-	syncAfter       string
-	syncLimit       int
-	syncOperationID string
-	syncFolders     []string // folder names to include (from --folder flag)
-	syncSkipFolders []string // folder names to exclude (from --skip-folder flag)
-)
-
-var syncFullCmd = &cobra.Command{
-	Use:   "sync-full [email]",
-	Short: "Perform a full sync of Gmail accounts",
-	Long: `Perform a full synchronization of a Gmail account.
-
-Downloads all messages matching the query (or all messages if no query).
-Supports resumption from interruption - just run again to continue.
-
-If no email is specified, syncs all configured accounts sequentially.
-
-Date filters:
-  --after 2024-01-01     Only messages on or after this date
-  --before 2024-12-31    Only messages before this date
-
-Examples:
-  msgvault sync-full                             # Sync all accounts
-  msgvault sync-full you@gmail.com
-  msgvault sync-full you@gmail.com --after 2024-01-01
-  msgvault sync-full you@gmail.com --query "from:someone@example.com"
-  msgvault sync-full you@gmail.com --noresume    # Force fresh sync`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := validateSyncFullFlags(cmd); err != nil {
-			return err
-		}
-		if isDaemonCLISubprocess() {
-			return runSyncFullLocal(cmd, args)
-		}
-		return runSyncFullHTTP(cmd, args)
-	},
-}
-
 func validateSyncFullFlags(cmd *cobra.Command) error {
-	if syncLimit < 0 {
+	flags := readSyncCommandOptions(cmd)
+	if flags.syncLimit < 0 {
 		return usageErr(cmd, errors.New("--limit must be a non-negative number"))
 	}
-	if syncAfter != "" {
-		if _, err := time.Parse("2006-01-02", syncAfter); err != nil {
-			return usageErr(cmd, fmt.Errorf("invalid --after date %q (expected YYYY-MM-DD): %w", syncAfter, err))
+	if flags.syncAfter != "" {
+		if _, err := time.Parse("2006-01-02", flags.syncAfter); err != nil {
+			return usageErr(cmd, fmt.Errorf("invalid --after date %q (expected YYYY-MM-DD): %w", flags.syncAfter, err))
 		}
 	}
-	if syncBefore != "" {
-		if _, err := time.Parse("2006-01-02", syncBefore); err != nil {
-			return usageErr(cmd, fmt.Errorf("invalid --before date %q (expected YYYY-MM-DD): %w", syncBefore, err))
+	if flags.syncBefore != "" {
+		if _, err := time.Parse("2006-01-02", flags.syncBefore); err != nil {
+			return usageErr(cmd, fmt.Errorf("invalid --before date %q (expected YYYY-MM-DD): %w", flags.syncBefore, err))
 		}
 	}
 	return nil
 }
 
 func runSyncFullLocal(cmd *cobra.Command, args []string) error {
+	flags := readSyncCommandOptions(cmd)
 	state := invocationFromCommand(cmd)
 	if state == nil || state.cfg == nil || state.logger == nil {
 		return errors.New("configuration is unavailable")
@@ -223,7 +182,7 @@ func runSyncFullLocal(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		if err := runFullSync(ctx, s, getOAuthMgr, src, state); err != nil {
+		if err := runFullSync(ctx, s, getOAuthMgr, src, state, flags); err != nil {
 			syncErrors = append(syncErrors, fmt.Sprintf("%s: %v", src.Identifier, err))
 			continue
 		}
@@ -309,25 +268,6 @@ func buildAPIClient(ctx context.Context, src *store.Source, getOAuthMgr func(str
 		var opts []imaplib.Option
 		opts = append(opts, imaplib.WithLogger(logger))
 		opts = append(opts, imapOpts...)
-
-		var since, before time.Time
-		if syncAfter != "" {
-			t, err := time.Parse("2006-01-02", syncAfter)
-			if err != nil {
-				return nil, fmt.Errorf("invalid --after date %q (expected YYYY-MM-DD): %w", syncAfter, err)
-			}
-			since = t
-		}
-		if syncBefore != "" {
-			t, err := time.Parse("2006-01-02", syncBefore)
-			if err != nil {
-				return nil, fmt.Errorf("invalid --before date %q (expected YYYY-MM-DD): %w", syncBefore, err)
-			}
-			before = t
-		}
-		if !since.IsZero() || !before.IsZero() {
-			opts = append(opts, imaplib.WithDateFilter(since, before))
-		}
 
 		switch imapCfg.EffectiveAuthMethod() {
 		case imaplib.AuthXOAuth2:
@@ -566,7 +506,7 @@ func saveIMAPFolderStates(
 	return nil
 }
 
-func runFullSync(ctx context.Context, s *store.Store, getOAuthMgr func(string) (*oauth.Manager, error), src *store.Source, state *invocation) error {
+func runFullSync(ctx context.Context, s *store.Store, getOAuthMgr func(string) (*oauth.Manager, error), src *store.Source, state *invocation, flags syncCommandOptions) error {
 	if state == nil {
 		state = invocationFromContext(ctx)
 	}
@@ -580,7 +520,7 @@ func runFullSync(ctx context.Context, s *store.Store, getOAuthMgr func(string) (
 	// --noresume promises a fresh sync, so it must also bypass the
 	// saved folder high water marks and re-enumerate every mailbox. A clean
 	// completed run still saves fresh high water marks afterwards.
-	imapOpts := imapFolderStateOptions(s, src, syncNoResume, cfg, logger)
+	imapOpts := imapFolderStateOptions(s, src, flags.syncNoResume, cfg, logger)
 
 	// Pass CLI folder filter strings to the IMAP client. The IMAP
 	// client selects the effective include list (CLI --folder when
@@ -591,8 +531,8 @@ func runFullSync(ctx context.Context, s *store.Store, getOAuthMgr func(string) (
 	// --folder.
 	imapOpts = append(imapOpts,
 		imaplib.WithFolderFilter(
-			parseFolderFilter(syncFolders),
-			parseFolderFilter(syncSkipFolders),
+			parseFolderFilter(flags.syncFolders),
+			parseFolderFilter(flags.syncSkipFolders),
 		))
 
 	if src.SourceType == sourceTypeIMAP {
@@ -600,6 +540,25 @@ func runFullSync(ctx context.Context, s *store.Store, getOAuthMgr func(string) (
 			imaplib.WithListProgress(progress.OnIMAPListProgress),
 		)
 	}
+	var since, before time.Time
+	if flags.syncAfter != "" {
+		t, err := time.Parse("2006-01-02", flags.syncAfter)
+		if err != nil {
+			return fmt.Errorf("invalid --after date %q (expected YYYY-MM-DD): %w", flags.syncAfter, err)
+		}
+		since = t
+	}
+	if flags.syncBefore != "" {
+		t, err := time.Parse("2006-01-02", flags.syncBefore)
+		if err != nil {
+			return fmt.Errorf("invalid --before date %q (expected YYYY-MM-DD): %w", flags.syncBefore, err)
+		}
+		before = t
+	}
+	if !since.IsZero() || !before.IsZero() {
+		imapOpts = append(imapOpts, imaplib.WithDateFilter(since, before))
+	}
+
 	apiClient, err := buildAPIClient(ctx, src, getOAuthMgr, nil, imapOpts...)
 	if err != nil {
 		return err
@@ -608,11 +567,11 @@ func runFullSync(ctx context.Context, s *store.Store, getOAuthMgr func(string) (
 
 	// Build query from flags (Gmail only; IMAP date filters are
 	// handled via WithDateFilter on the client).
-	query := buildSyncQuery()
+	query := buildSyncQuery(flags)
 	if query != "" && src.SourceType == sourceTypeIMAP {
 		// --after/--before are handled natively by IMAP SEARCH;
 		// only warn about --query which has no IMAP equivalent.
-		if syncQuery != "" {
+		if flags.syncQuery != "" {
 			fmt.Printf("Warning: --query is not supported for IMAP sources and will be ignored.\n\n")
 		}
 		query = ""
@@ -622,9 +581,9 @@ func runFullSync(ctx context.Context, s *store.Store, getOAuthMgr func(string) (
 	opts := sync.DefaultOptions()
 	opts.SourceType = src.SourceType
 	opts.Query = query
-	opts.NoResume = syncNoResume
-	opts.Limit = syncLimit
-	opts.OperationID = syncOperationID
+	opts.NoResume = flags.syncNoResume
+	opts.Limit = flags.syncLimit
+	opts.OperationID = flags.syncOperationID
 	opts.AttachmentsDir = cfg.AttachmentsDir()
 
 	// IMAP page tokens are numeric offsets into a message list
@@ -739,17 +698,17 @@ func parseFolderFilter(folders []string) []string {
 	}
 	return kept
 }
-func buildSyncQuery() string {
+func buildSyncQuery(flags syncCommandOptions) string {
 	parts := []string{}
 
-	if syncAfter != "" {
-		parts = append(parts, "after:"+syncAfter)
+	if flags.syncAfter != "" {
+		parts = append(parts, "after:"+flags.syncAfter)
 	}
-	if syncBefore != "" {
-		parts = append(parts, "before:"+syncBefore)
+	if flags.syncBefore != "" {
+		parts = append(parts, "before:"+flags.syncBefore)
 	}
-	if syncQuery != "" {
-		parts = append(parts, syncQuery)
+	if flags.syncQuery != "" {
+		parts = append(parts, flags.syncQuery)
 	}
 
 	result := ""
@@ -1003,15 +962,76 @@ func imapSkipReason(src *store.Source, cfg *config.Config, logger *slog.Logger) 
 }
 
 func init() {
+	registerCommandFactory(newSyncFullCommand)
+}
+
+func newSyncFullCommand() *cobra.Command {
+	syncFullCmd := &cobra.Command{
+		Use:   "sync-full [email]",
+		Short: "Perform a full sync of Gmail accounts",
+		Long: `Perform a full synchronization of a Gmail account.
+
+Downloads all messages matching the query (or all messages if no query).
+Supports resumption from interruption - just run again to continue.
+
+If no email is specified, syncs all configured accounts sequentially.
+
+Date filters:
+  --after 2024-01-01     Only messages on or after this date
+  --before 2024-12-31    Only messages before this date
+
+Examples:
+  msgvault sync-full                             # Sync all accounts
+  msgvault sync-full you@gmail.com
+  msgvault sync-full you@gmail.com --after 2024-01-01
+  msgvault sync-full you@gmail.com --query "from:someone@example.com"
+  msgvault sync-full you@gmail.com --noresume    # Force fresh sync`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateSyncFullFlags(cmd); err != nil {
+				return err
+			}
+			if isDaemonCLISubprocess() {
+				return runSyncFullLocal(cmd, args)
+			}
+			return runSyncFullHTTP(cmd, args)
+		},
+	}
 	syncFullCmd.Flags().Int64("source-id", 0, "Exact source ID to sync")
-	syncFullCmd.Flags().StringVar(&syncOperationID, "sync-operation-id", "", "Attribute runs to a daemon sync operation")
+	syncFullCmd.Flags().String("sync-operation-id", "", "Attribute runs to a daemon sync operation")
 	_ = syncFullCmd.Flags().MarkHidden("sync-operation-id")
-	syncFullCmd.Flags().StringVar(&syncQuery, "query", "", "Gmail search query")
-	syncFullCmd.Flags().BoolVar(&syncNoResume, "noresume", false, "Force fresh sync (don't resume; re-enumerates all IMAP folders)")
-	syncFullCmd.Flags().StringVar(&syncBefore, "before", "", "Only messages before this date (YYYY-MM-DD)")
-	syncFullCmd.Flags().StringVar(&syncAfter, "after", "", "Only messages after this date (YYYY-MM-DD)")
-	syncFullCmd.Flags().IntVar(&syncLimit, "limit", 0, "Limit number of messages (for testing)")
-	syncFullCmd.Flags().StringArrayVar(&syncFolders, "folder", []string{}, "IMAP folder to scan (repeatable)")
-	syncFullCmd.Flags().StringArrayVar(&syncSkipFolders, "skip-folder", []string{}, "IMAP folder to skip (repeatable)")
-	rootCmd.AddCommand(addManualSyncCacheFlags(syncFullCmd))
+	syncFullCmd.Flags().String("query", "", "Gmail search query")
+	syncFullCmd.Flags().Bool("noresume", false, "Force fresh sync (don't resume; re-enumerates all IMAP folders)")
+	syncFullCmd.Flags().String("before", "", "Only messages before this date (YYYY-MM-DD)")
+	syncFullCmd.Flags().String("after", "", "Only messages after this date (YYYY-MM-DD)")
+	syncFullCmd.Flags().Int("limit", 0, "Limit number of messages (for testing)")
+	syncFullCmd.Flags().StringArray("folder", []string{}, "IMAP folder to scan (repeatable)")
+	syncFullCmd.Flags().StringArray("skip-folder", []string{}, "IMAP folder to skip (repeatable)")
+	return addManualSyncCacheFlags(syncFullCmd)
+}
+
+type syncCommandOptions struct {
+	syncQuery       string
+	syncNoResume    bool
+	syncBefore      string
+	syncAfter       string
+	syncLimit       int
+	syncOperationID string
+	syncFolders     []string
+	syncSkipFolders []string
+}
+
+// readSyncCommandOptions reads this command's flags; incremental commands omit
+// full-sync-only options and use their zero values during first-sync fallback.
+func readSyncCommandOptions(cmd *cobra.Command) syncCommandOptions {
+	var flags syncCommandOptions
+	flags.syncQuery, _ = cmd.Flags().GetString("query")
+	flags.syncNoResume, _ = cmd.Flags().GetBool("noresume")
+	flags.syncBefore, _ = cmd.Flags().GetString("before")
+	flags.syncAfter, _ = cmd.Flags().GetString("after")
+	flags.syncLimit, _ = cmd.Flags().GetInt("limit")
+	flags.syncOperationID, _ = cmd.Flags().GetString("sync-operation-id")
+	flags.syncFolders, _ = cmd.Flags().GetStringArray("folder")
+	flags.syncSkipFolders, _ = cmd.Flags().GetStringArray("skip-folder")
+	return flags
 }

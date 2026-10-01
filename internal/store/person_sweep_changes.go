@@ -35,14 +35,14 @@ func (s *Store) ScanPersonSweepChanges(
 	if limit > maxPersonSweepChangeScan {
 		limit = maxPersonSweepChangeScan
 	}
-	rows, err := s.db.QueryContext(ctx, s.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT sequence, person_id, source_lane, change_kind, evidence_effect,
 		       COALESCE(source_id, 0), COALESCE(message_id, 0),
 		       COALESCE(attachment_id, 0), occurrence_key, recorded_at
 		FROM person_sweep_changes
 		WHERE person_id = ? AND sequence > ?
 		ORDER BY sequence
-		LIMIT ?`), personID, after, limit)
+		LIMIT ?`, personID, after, limit)
 	if err != nil {
 		return nil, fmt.Errorf("scan person sweep changes: %w", err)
 	}
@@ -85,7 +85,7 @@ func (s *Store) CoalescePersonSweepChangesContext(
 		args = append(args, *sourceID)
 	}
 	var count int64
-	if err := s.db.QueryRowContext(ctx, s.Rebind(query), args...).Scan(&count); err != nil {
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("coalesce person sweep changes: %w", err)
 	}
 	return count, nil
@@ -101,20 +101,20 @@ func (s *Store) coalescePersonSweepChangesTx(
 	// Archives upgraded while a sync was already running have no start cut.
 	// Capture completion as their lower bound so old journal history is not
 	// replayed; Task 10 recovers any skipped mutations as cursor gaps.
-	if _, err := tx.ExecContext(ctx, s.Rebind(`
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO person_sweep_sync_publications
 			(sync_run_id, source_id, lower_sequence)
 		SELECT ?, ?, sequence
 		FROM person_sweep_change_clock
 		WHERE singleton = TRUE
-		ON CONFLICT (sync_run_id) DO NOTHING`), syncRunID, sourceID); err != nil {
+		ON CONFLICT (sync_run_id) DO NOTHING`, syncRunID, sourceID); err != nil {
 		return fmt.Errorf("ensure sync person sweep lower bound: %w", err)
 	}
 	var lowerBound int64
-	if err := tx.QueryRowContext(ctx, s.Rebind(`
+	if err := tx.QueryRowContext(ctx, `
 		SELECT lower_sequence
 		FROM person_sweep_sync_publications
-		WHERE sync_run_id = ? AND source_id = ?`), syncRunID, sourceID).Scan(&lowerBound); err != nil {
+		WHERE sync_run_id = ? AND source_id = ?`, syncRunID, sourceID).Scan(&lowerBound); err != nil {
 		return fmt.Errorf("read sync person sweep lower bound: %w", err)
 	}
 	var completionHighWater int64
@@ -132,7 +132,7 @@ func (s *Store) coalescePersonSweepChangesTx(
 		WHERE c.source_id = ? AND c.sequence > ? AND c.sequence <= ?
 		GROUP BY c.person_id
 		ORDER BY c.person_id`
-	rows, err := tx.QueryContext(ctx, s.Rebind(query), sourceID, lowerBound,
+	rows, err := tx.QueryContext(ctx, query, sourceID, lowerBound,
 		completionHighWater)
 	if err != nil {
 		return fmt.Errorf("scan person sweep changes for publication: %w", err)
@@ -163,10 +163,10 @@ func (s *Store) coalescePersonSweepChangesTx(
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, s.Rebind(fmt.Sprintf(`
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
 		UPDATE person_sweep_sync_publications
 		SET upper_sequence = ?, published_at = %s
-		WHERE sync_run_id = ? AND source_id = ?`, s.dialect.Now())),
+		WHERE sync_run_id = ? AND source_id = ?`, s.dialect.Now()),
 		completionHighWater, syncRunID, sourceID); err != nil {
 		return fmt.Errorf("publish sync person sweep upper bound: %w", err)
 	}
@@ -181,11 +181,11 @@ func (s *Store) coalescePersonSweepPeopleTx(
 	personIDs = slices.Compact(personIDs)
 	for _, personID := range personIDs {
 		var sequence int64
-		err := tx.QueryRowContext(ctx, s.Rebind(`
+		err := tx.QueryRowContext(ctx, `
 			SELECT COALESCE(MAX(c.sequence), 0)
 			FROM person_sweep_changes c
 			WHERE c.person_id = ?
-			  AND EXISTS (SELECT 1 FROM person_tracking pt WHERE pt.person_id = c.person_id)`),
+			  AND EXISTS (SELECT 1 FROM person_tracking pt WHERE pt.person_id = c.person_id)`,
 			personID).Scan(&sequence)
 		if err != nil {
 			return fmt.Errorf("read person %d sweep high water: %w", personID, err)
@@ -215,11 +215,11 @@ func (s *Store) appendPersonSweepChangeTx(
 	if err != nil {
 		return fmt.Errorf("allocate person sweep change sequence: %w", err)
 	}
-	_, err = tx.ExecContext(ctx, s.Rebind(fmt.Sprintf(`
+	_, err = tx.ExecContext(ctx, fmt.Sprintf(`
 		INSERT INTO person_sweep_changes
 			(sequence, person_id, source_lane, change_kind, evidence_effect,
 			 source_id, message_id, attachment_id, occurrence_key, recorded_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, %s)`, s.dialect.Now())),
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, %s)`, s.dialect.Now()),
 		sequence, change.PersonID, change.SourceLane, change.Kind,
 		change.EvidenceEffect, nullIfZero(change.SourceID),
 		nullIfZero(change.MessageID), nullIfZero(change.AttachmentID),
@@ -298,7 +298,7 @@ func (s *Store) trackedPeopleForMessageTx(
 ) ([]int64, error) {
 	recipientRole := personSweepRecipientRolePredicate("mr.recipient_type")
 	roster := personSweepRosterPredicateSQL("pp.person_id")
-	rows, err := tx.QueryContext(ctx, s.Rebind(fmt.Sprintf(`
+	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`
 		SELECT pp.person_id
 		FROM messages m
 		JOIN person_participants pp ON pp.participant_id = m.sender_id
@@ -320,7 +320,7 @@ func (s *Store) trackedPeopleForMessageTx(
 		JOIN person_tracking pt ON pt.person_id = pp.person_id
 		WHERE m.id = ? AND %s AND %s
 		ORDER BY 1`, LiveMessagesWhere("m", true), recipientRole,
-		LiveMessagesWhere("m", true), roster, LiveMessagesWhere("m", true))),
+		LiveMessagesWhere("m", true), roster, LiveMessagesWhere("m", true)),
 		messageID, messageID, messageID)
 	if err != nil {
 		return nil, fmt.Errorf("read tracked people for message %d: %w", messageID, err)
@@ -344,7 +344,6 @@ func (s *Store) publishPersonIdentityScopeChangesTx(
 	ctx context.Context,
 	tx *loggedTx,
 	personIDs []int64,
-	effect peoplesweep.EvidenceChangeEffect,
 ) error {
 	personIDs = slices.Clone(personIDs)
 	slices.Sort(personIDs)
@@ -352,10 +351,10 @@ func (s *Store) publishPersonIdentityScopeChangesTx(
 	trackedPersonIDs := make([]int64, 0, len(personIDs))
 	for _, personID := range personIDs {
 		var tracked bool
-		if err := tx.QueryRowContext(ctx, s.Rebind(`
+		if err := tx.QueryRowContext(ctx, `
 			SELECT EXISTS (
 				SELECT 1 FROM person_tracking WHERE person_id = ?
-			)`), personID).Scan(&tracked); err != nil {
+			)`, personID).Scan(&tracked); err != nil {
 			return fmt.Errorf("check person %d tracking for identity sweep: %w", personID, err)
 		}
 		if tracked {
@@ -364,7 +363,7 @@ func (s *Store) publishPersonIdentityScopeChangesTx(
 	}
 	personIDs = trackedPersonIDs
 	for _, personID := range personIDs {
-		rows, err := tx.QueryContext(ctx, s.Rebind(fmt.Sprintf(`
+		rows, err := tx.QueryContext(ctx, fmt.Sprintf(`
 			WITH scoped_messages AS (
 				SELECT m.source_id, m.id, m.message_type
 				FROM messages m
@@ -392,7 +391,7 @@ func (s *Store) publishPersonIdentityScopeChangesTx(
 			JOIN document_occurrences occurrence ON occurrence.message_id = scoped.id
 			ORDER BY 2, 4, 5`, LiveMessagesWhere("m", true),
 			personSweepRecipientRolePredicate("mr.recipient_type"),
-			personSweepRosterPredicateSQL("pp.person_id"))),
+			personSweepRosterPredicateSQL("pp.person_id")),
 			personID, personID, personID)
 		if err != nil {
 			return fmt.Errorf("read person %d identity scope: %w", personID, err)
@@ -401,7 +400,7 @@ func (s *Store) publishPersonIdentityScopeChangesTx(
 		for rows.Next() {
 			change := peoplesweep.ArchiveChange{
 				PersonID: personID, Kind: peoplesweep.ChangeScope,
-				EvidenceEffect: effect,
+				EvidenceEffect: peoplesweep.EvidenceEffectIdentityReassigned,
 			}
 			if err := rows.Scan(&change.SourceID, &change.MessageID, &change.SourceLane,
 				&change.AttachmentID, &change.OccurrenceKey); err != nil {
@@ -431,14 +430,14 @@ func (s *Store) trackedPersonIDsForParticipantsTx(
 ) ([]int64, error) {
 	personSet := make(map[int64]struct{})
 	for _, participantID := range participantIDs {
-		rows, err := tx.QueryContext(ctx, s.Rebind(`
+		rows, err := tx.QueryContext(ctx, `
 			SELECT pt.person_id
 			FROM person_tracking pt
 			WHERE EXISTS (
 				SELECT 1 FROM person_participants pp
 				WHERE pp.person_id = pt.person_id AND pp.participant_id = ?
 			)
-			ORDER BY pt.person_id`), participantID)
+			ORDER BY pt.person_id`, participantID)
 		if err != nil {
 			return nil, fmt.Errorf("read tracked people for participant %d: %w", participantID, err)
 		}
@@ -472,7 +471,7 @@ func (s *Store) publishDocumentPersonSweepChangesTx(
 	canonicalBlobHash string,
 	effect peoplesweep.EvidenceChangeEffect,
 ) error {
-	rows, err := tx.QueryContext(ctx, s.Rebind(`
+	rows, err := tx.QueryContext(ctx, `
 		SELECT o.occurrence_key, o.attachment_id, o.message_id, m.source_id
 		FROM document_occurrences o
 		JOIN attachments a ON a.id = o.attachment_id
@@ -485,7 +484,7 @@ func (s *Store) publishDocumentPersonSweepChangesTx(
 		  AND (COALESCE(a.content_hash, '') = ? OR
 		       (COALESCE(a.content_hash, '') = '' AND a.storage_path = ?))
 		  AND `+LiveMessagesWhere("m", true)+`
-		ORDER BY o.occurrence_key`), canonicalBlobHash, canonicalBlobHash,
+		ORDER BY o.occurrence_key`, canonicalBlobHash, canonicalBlobHash,
 		canonicalCASPath(canonicalBlobHash))
 	if err != nil {
 		return fmt.Errorf("read document sweep occurrences: %w", err)
@@ -546,7 +545,7 @@ func (s *Store) publishLinkedDocumentOccurrencePersonSweepChangesTx(
 	occurrence DocumentOccurrence,
 ) error {
 	var hasEvidence bool
-	err := tx.QueryRowContext(ctx, s.Rebind(`
+	err := tx.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1
 			FROM document_extraction_heads h
@@ -558,7 +557,7 @@ func (s *Store) publishLinkedDocumentOccurrencePersonSweepChangesTx(
 			JOIN messages m ON m.id = o.message_id
 			CROSS JOIN document_index_state ds
 			WHERE o.occurrence_key = ? AND `+documentSearchValidityForConsent("consent")+`
-		)`), occurrence.OccurrenceKey).Scan(&hasEvidence)
+		)`, occurrence.OccurrenceKey).Scan(&hasEvidence)
 	if err != nil {
 		return fmt.Errorf("check linked document occurrence sweep evidence: %w", err)
 	}

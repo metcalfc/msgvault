@@ -140,11 +140,11 @@ func (s *Store) addOrganizationLookupAliasTx(
 		}
 	}
 	if !nameKnown {
-		if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(`
+		if _, err := tx.ExecContext(ctx, `
 			INSERT OR IGNORE INTO organization_names (
 				organization_id, name_kind, formatted, original_value, name_normalized,
 				source, source_ref, confidence
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			organizationID, OrganizationNameKindAlias, name, name, normalizedName,
 			source, sourceRef, confidence); err != nil {
 			return OrganizationAliasResult{}, fmt.Errorf("add organization alias name: %w", err)
@@ -163,11 +163,11 @@ func (s *Store) addOrganizationLookupAliasTx(
 			}
 		}
 		if !domainKnown {
-			if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(`
+			if _, err := tx.ExecContext(ctx, `
 				INSERT OR IGNORE INTO organization_identifiers (
 					organization_id, identifier_kind, identifier_value, normalized_value,
 					source, source_ref, confidence
-				) VALUES (?, 'domain', ?, ?, ?, ?, ?)`),
+				) VALUES (?, 'domain', ?, ?, ?, ?, ?)`,
 				organizationID, normalizedDomain, normalizedDomain,
 				source, sourceRef, confidence); err != nil {
 				return OrganizationAliasResult{}, fmt.Errorf("add organization alias domain: %w", err)
@@ -243,11 +243,11 @@ func (s *Store) RecordEmploymentTitleAliasContext(
 					canonicalDisplay, canonical, organizationID, title); err != nil {
 					return fmt.Errorf("repoint employment title aliases: %w", err)
 				}
-				if _, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(`
+				if _, err := tx.ExecContext(ctx, `
 					INSERT OR IGNORE INTO organization_title_aliases (
 						organization_id, title_normalized, canonical_title,
 						canonical_title_normalized, source, source_ref, confidence
-					) VALUES (?, ?, ?, ?, ?, ?, ?)`),
+					) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 					organizationID, title, canonicalDisplay, canonical,
 					ProvenanceSystem, OrganizationResolutionSourceRef(input.Model),
 					input.Confidence); err != nil {
@@ -477,11 +477,11 @@ func (s *Store) RecordOrganizationMatchReviewContext(
 				if err != nil {
 					return err
 				}
-				result, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(`
+				result, err := tx.ExecContext(ctx, `
 					INSERT OR IGNORE INTO organization_match_reviews (
 						organization_id, proposed_name, proposed_name_normalized, proposed_domain,
 						probability, model
-					) VALUES (?, ?, ?, ?, ?, ?)`),
+					) VALUES (?, ?, ?, ?, ?, ?)`,
 					organization.ID, name, normalizedName, domain, input.Probability, input.Model)
 				if err != nil {
 					return fmt.Errorf("record organization match review: %w", err)
@@ -645,11 +645,11 @@ func proposedOrganizationIDsTx(
 }
 
 func loadOrganizationMatchReviewTx(
-	ctx context.Context, tx *loggedTx, dialect Dialect, id int64,
+	ctx context.Context, tx *loggedTx, id int64,
 ) (organizationMatchReviewRow, error) {
 	review, err := scanOrganizationMatchReviewRow(tx.QueryRowContext(ctx,
-		`SELECT `+organizationMatchReviewColumns+` FROM organization_match_reviews WHERE id = ?`+
-			dialect.SelectForUpdate(), id))
+		`SELECT `+organizationMatchReviewColumns+` FROM organization_match_reviews WHERE id = ?`,
+		id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return organizationMatchReviewRow{}, ErrOrganizationMatchReviewNotFound
 	}
@@ -683,7 +683,7 @@ func (s *Store) AcceptOrganizationMatchReviewContext(
 						return fmt.Errorf("lock organization match review: %w", err)
 					}
 				}
-				review, err := loadOrganizationMatchReviewTx(ctx, tx, s.dialect, id)
+				review, err := loadOrganizationMatchReviewTx(ctx, tx, id)
 				if err != nil {
 					return err
 				}
@@ -742,7 +742,7 @@ func (s *Store) RejectOrganizationMatchReviewContext(
 						return fmt.Errorf("lock organization match review: %w", err)
 					}
 				}
-				review, err := loadOrganizationMatchReviewTx(ctx, tx, s.dialect, id)
+				review, err := loadOrganizationMatchReviewTx(ctx, tx, id)
 				if err != nil {
 					return err
 				}
@@ -893,7 +893,7 @@ func (s *Store) canonicalOrganizationForWriteTx(
 ) (*Organization, error) {
 	currentID := organizationID
 	for range maxPersonFactOrganizationRedirects {
-		organization, err := getOrganizationForUpdateTx(ctx, tx, s.dialect, currentID)
+		organization, err := getOrganizationForUpdateTx(ctx, tx, currentID)
 		if err != nil {
 			return nil, err
 		}
@@ -939,7 +939,7 @@ func (s *Store) checkOrganizationWriteFenceTx(
 		return fmt.Errorf("%w: unknown fence kind %q", ErrOrganizationWriteFenced, fence.Kind)
 	}
 	var personID int64
-	err := tx.QueryRowContext(ctx, query+s.dialect.SelectForUpdate(), args...).Scan(&personID)
+	err := tx.QueryRowContext(ctx, query, args...).Scan(&personID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrOrganizationWriteFenced
 	}

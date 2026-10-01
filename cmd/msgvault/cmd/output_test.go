@@ -25,33 +25,17 @@ func TestFormatShowingResults(t *testing.T) {
 }
 
 func TestParseCommonFlagsRejectsNonPositiveLimit(t *testing.T) {
-	saved := aggLimit
-	t.Cleanup(func() { aggLimit = saved })
-
 	for _, n := range []int{0, -1, -100} {
-		aggLimit = n
-		_, err := parseCommonFlags()
-		require.Error(t, err, "limit %d should be rejected", n)
-		assert.Contains(t, err.Error(), "limit must be a positive integer", "error text for %d", n)
+		_, err := parseCommonFlags(aggregateFlags{limit: n})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "limit must be a positive integer")
 	}
 }
 
 func TestParseCommonFlagsUsesFlagLimit(t *testing.T) {
-	savedLimit := aggLimit
-	savedAfter := aggAfter
-	savedBefore := aggBefore
-	t.Cleanup(func() {
-		aggLimit = savedLimit
-		aggAfter = savedAfter
-		aggBefore = savedBefore
-	})
-	aggLimit = 25
-	aggAfter = ""
-	aggBefore = ""
-
-	opts, err := parseCommonFlags()
-	require.NoError(t, err, "parseCommonFlags")
-	assert.Equal(t, 25, opts.Limit, "opts.Limit should track the flag")
+	opts, err := parseCommonFlags(aggregateFlags{limit: 25})
+	require.NoError(t, err)
+	assert.Equal(t, 25, opts.Limit)
 }
 
 // JSON mode must emit valid empty JSON ([]) for zero results, never
@@ -81,12 +65,8 @@ func TestOutputAggregateTableSanitizesTerminalControls(t *testing.T) {
 }
 
 func TestOutputAccountStats_JSONEmptyEmitsEmptyArray(t *testing.T) {
-	savedJSON := listAccountsJSON
-	listAccountsJSON = true
-	defer func() { listAccountsJSON = savedJSON }()
-
 	done := captureStdout(t)
-	require.NoError(t, outputAccountStats(nil))
+	require.NoError(t, outputAccountStats(nil, true))
 	out := done()
 
 	var entries []map[string]any

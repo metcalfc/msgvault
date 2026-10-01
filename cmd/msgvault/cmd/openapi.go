@@ -45,5 +45,5 @@ func renderOpenAPI(version, format string) ([]byte, error) {
 }
 
 func init() {
-	rootCmd.AddCommand(newOpenAPICmd())
+	registerCommandFactory(newOpenAPICmd)
 }

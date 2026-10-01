@@ -125,7 +125,7 @@ func (s *Store) PersistIMAPDraftContext(
 			INSERT INTO imap_message_memberships
 				(source_id, mailbox, uidvalidity, uid, message_id, flags, updated_at)
 			VALUES (?, ?, ?, ?, ?, %s, %s)
-		`, s.dialect.JSONBindExpr(), s.dialect.Now()), receipt.SourceID, receipt.Mailbox, receipt.UIDValidity, receipt.UID, id, imapDraftFlagsJSON); err != nil {
+		`, "?", s.dialect.Now()), receipt.SourceID, receipt.Mailbox, receipt.UIDValidity, receipt.UID, id, imapDraftFlagsJSON); err != nil {
 			return fmt.Errorf("persist IMAP draft membership: %w", err)
 		}
 		labelID, err := ensureIMAPMailboxLabel(ctx, tx, receipt.SourceID, receipt.Mailbox)

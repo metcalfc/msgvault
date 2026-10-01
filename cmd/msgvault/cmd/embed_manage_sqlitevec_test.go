@@ -20,26 +20,22 @@ import (
 // returns ErrNotBuilt under a no-sqlite_vec build. The untagged pre-check
 // refusal lives in TestRetireEmbeddingGenerationRefusesActiveWithoutForce_PreCheck.
 func TestRunEmbeddingsRetire_ForceActive(t *testing.T) {
+	embeddingsRetireCmd := newEmbeddingTestCommand(t, "retire")
+	flags := embeddingCommandOptions{}
 	require := require.New(t)
 	assert := assert.New(t)
 	dbPath := newEmbeddingMetadataTestDBFile(t)
 	testCtx := withEmbeddingCommandConfig(t, dbPath)
 
-	oldYes := embeddingsRetireYes
-	oldForce := embeddingsRetireForceActive
-	embeddingsRetireYes = true
-	embeddingsRetireForceActive = true
-	t.Cleanup(func() {
-		embeddingsRetireYes = oldYes
-		embeddingsRetireForceActive = oldForce
-	})
+	flags.embeddingsRetireYes = true
+	flags.embeddingsRetireForceActive = true
 
 	cmd := embeddingsRetireCmd
 	oldCtx := cmd.Context()
 	cmd.SetContext(testCtx)
 	t.Cleanup(func() { cmd.SetContext(oldCtx) })
 
-	require.NoError(runEmbeddingsRetire(cmd, []string{"1"}),
+	require.NoError(runEmbeddingsRetireWithOptions(cmd, []string{"1"}, flags),
 		"retire active generation with --force-active")
 
 	db, err := sql.Open("sqlite3", dbPath)

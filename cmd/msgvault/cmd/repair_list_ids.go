@@ -81,5 +81,5 @@ func runRepairListIDsLocal(cmd *cobra.Command, apply bool) error {
 }
 
 func init() {
-	rootCmd.AddCommand(newRepairListIDsCmd())
+	registerCommandFactory(newRepairListIDsCmd)
 }

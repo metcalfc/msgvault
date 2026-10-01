@@ -235,10 +235,10 @@ func (s *Store) WriteCalendarEventKindsContext(ctx context.Context, kinds []Cale
 			if err != nil {
 				return fmt.Errorf("check calendar kind conversation: %w", err)
 			}
-			result, err := tx.ExecContext(ctx, s.dialect.InsertOrIgnore(`
+			result, err := tx.ExecContext(ctx, `
 				INSERT OR IGNORE INTO calendar_event_kinds
 					(conversation_id, kind, source, confidence, probabilities_json, model)
-				VALUES (?, ?, ?, ?, ?, ?)`),
+				VALUES (?, ?, ?, ?, ?, ?)`,
 				kind.ConversationID, kind.Kind, kind.Source, kind.Confidence, string(encoded), kind.Model)
 			if err != nil {
 				return fmt.Errorf("write calendar event kind: %w", err)

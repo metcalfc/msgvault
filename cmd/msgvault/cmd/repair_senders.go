@@ -180,5 +180,5 @@ func printSenderRepairPlan(cmd *cobra.Command, plan *senderRepairPlan) error {
 }
 
 func init() {
-	rootCmd.AddCommand(newRepairSendersCmd())
+	registerCommandFactory(newRepairSendersCmd)
 }

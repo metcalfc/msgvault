@@ -105,7 +105,6 @@ func TestStoppedImportUpdatesTouchedConversationStats(t *testing.T) {
 }
 
 func TestImportStopDuringConversationStatsCompletesSync(t *testing.T) {
-
 	for _, budgetExpiry := range []bool{false, true} {
 		name := "yield"
 		if budgetExpiry {

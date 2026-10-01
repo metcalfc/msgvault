@@ -103,12 +103,13 @@ func runCardDAVServePasswordSet(cmd *cobra.Command, username string) error {
 		return err
 	}
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "Device credential saved to %s\n\n", cfg.TokensDir())
-	fmt.Fprintf(out, "  Username: %s\n", credential.Username)
-	fmt.Fprintf(out, "  Password: %s\n\n", password)
-	fmt.Fprintln(out, "The password is not stored and cannot be shown again. A running daemon uses it on the next request.")
+	if _, err := fmt.Fprintf(out, "Device credential saved to %s\n\n  Username: %s\n  Password: %s\n\nThe password is not stored and cannot be shown again. A running daemon uses it on the next request.\n", cfg.TokensDir(), credential.Username, password); err != nil {
+		return fmt.Errorf("write device credential: %w", err)
+	}
 	if !cfg.CardDAV.Serve.Enabled {
-		fmt.Fprintln(out, "The served address book is disabled; set [carddav.serve] enabled = true and restart the daemon.")
+		if _, err := fmt.Fprintln(out, "The served address book is disabled; set [carddav.serve] enabled = true and restart the daemon."); err != nil {
+			return fmt.Errorf("write served address book status: %w", err)
+		}
 	}
 	return nil
 }
@@ -121,6 +122,8 @@ func runCardDAVServePasswordClear(cmd *cobra.Command, _ []string) error {
 	if err := carddavserver.ClearCredential(cfg.TokensDir()); err != nil {
 		return err
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "Device credential removed; devices can no longer sign in.")
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Device credential removed; devices can no longer sign in."); err != nil {
+		return fmt.Errorf("write device credential removal: %w", err)
+	}
 	return nil
 }

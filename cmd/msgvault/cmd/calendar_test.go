@@ -212,10 +212,8 @@ func TestAddCalendarHeadlessNormalizesAccountEmail(t *testing.T) {
 	require.NoError(os.WriteFile(secretsPath, []byte(fakeClientSecrets), 0600))
 
 	savedCfg, savedLogger := cfg, logger
-	savedAddHeadless, savedAddOAuthApp := calAddHeadless, calAddOAuthApp
 	defer func() {
 		cfg, logger = savedCfg, savedLogger
-		calAddHeadless, calAddOAuthApp = savedAddHeadless, savedAddOAuthApp
 	}()
 	cfg = &config.Config{
 		HomeDir: tmpDir,

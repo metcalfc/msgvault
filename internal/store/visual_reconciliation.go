@@ -121,9 +121,8 @@ func (s *Store) ActivateVisualGeneration(ctx context.Context, generationID, sour
 		if storedFence < sourceFence {
 			return errors.New("visual generation has not reached the activation source fence")
 		}
-		generationRows, err := tx.QueryContext(ctx, s.dialect.Rebind(
-			`SELECT id, fingerprint, model, dimension FROM visual_generations
-			WHERE state = 'active' AND id <> ?`), generationID)
+		generationRows, err := tx.QueryContext(ctx, `SELECT id, fingerprint, model, dimension FROM visual_generations
+			WHERE state = 'active' AND id <> ?`, generationID)
 		if err != nil {
 			return err
 		}
@@ -346,10 +345,10 @@ type VisualPublicationTally struct {
 // loop requests status after every bounded pass, and per-pass row scans made
 // a full build quadratic in publication reads.
 func (s *Store) CountVisualPublications(ctx context.Context, generationID int64) ([]VisualPublicationTally, error) {
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT state, COALESCE(outcome_kind, ''), COUNT(*)
 		FROM visual_publications WHERE generation_id = ?
-		GROUP BY state, COALESCE(outcome_kind, '')`), generationID)
+		GROUP BY state, COALESCE(outcome_kind, '')`, generationID)
 	if err != nil {
 		return nil, fmt.Errorf("count visual publications: %w", err)
 	}
@@ -373,10 +372,10 @@ func (s *Store) CountVisualPublications(ctx context.Context, generationID int64)
 func (s *Store) VisualPublicationRevision(ctx context.Context, generationID int64) (string, error) {
 	var count int64
 	var latest sql.NullString
-	err := s.db.QueryRowContext(ctx, s.dialect.Rebind(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*), MAX(CAST(updated_at AS TEXT))
 		FROM visual_publications
-		WHERE generation_id = ? AND state = 'current'`), generationID).Scan(&count, &latest)
+		WHERE generation_id = ? AND state = 'current'`, generationID).Scan(&count, &latest)
 	if err != nil {
 		return "", fmt.Errorf("read visual publication revision: %w", err)
 	}
@@ -402,7 +401,7 @@ func (s *Store) ListVisualPublications(
 	for _, id := range messageIDs {
 		args = append(args, id)
 	}
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT generation_id, message_id, blob_hash, media_input_key,
 		       published_revision, prepared_revision, source_fence,
 		       representative_attachment_id, attachment_role, role_source,
@@ -410,7 +409,7 @@ func (s *Store) ListVisualPublications(
 		       outcome_kind, outcome_reason
 		FROM visual_publications
 		WHERE generation_id = ? AND message_id IN (`+sqlPlaceholders(len(messageIDs))+`)
-		ORDER BY message_id, blob_hash, media_input_key`), args...)
+		ORDER BY message_id, blob_hash, media_input_key`, args...)
 	if err != nil {
 		return VisualPublicationPage{}, fmt.Errorf("list visual publications: %w", err)
 	}
@@ -451,10 +450,10 @@ func (s *Store) visualPublicationMessagePage(
 		for _, id := range ids {
 			args = append(args, id)
 		}
-		rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
+		rows, err := s.db.QueryContext(ctx, `
 			SELECT DISTINCT message_id FROM visual_publications
 			WHERE generation_id = ? AND message_id IN (`+sqlPlaceholders(len(ids))+`)
-			ORDER BY message_id`), args...)
+			ORDER BY message_id`, args...)
 		if err != nil {
 			return nil, false, fmt.Errorf("select visual publication messages: %w", err)
 		}
@@ -469,10 +468,10 @@ func (s *Store) visualPublicationMessagePage(
 	if limit < 1 || limit > 1000 {
 		return nil, false, errors.New("visual publication message limit must be between 1 and 1000")
 	}
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT message_id FROM visual_publications
 		WHERE generation_id = ? AND message_id > ?
-		ORDER BY message_id LIMIT ?`), generationID, filter.AfterMessageID, limit+1)
+		ORDER BY message_id LIMIT ?`, generationID, filter.AfterMessageID, limit+1)
 	if err != nil {
 		return nil, false, fmt.Errorf("page visual publication messages: %w", err)
 	}

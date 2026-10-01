@@ -245,7 +245,7 @@ func loadGmailDraft(
 }
 
 func (s *Store) loadGmailDraftTx(ctx context.Context, tx *loggedTx, draftID string) (GmailDraft, error) {
-	return loadGmailDraft(ctx, tx, s.dialect.SelectForUpdate(), draftID)
+	return loadGmailDraft(ctx, tx, "", draftID)
 }
 
 func (s *Store) lockGmailDraftTx(ctx context.Context, tx *loggedTx, draftID string) error {

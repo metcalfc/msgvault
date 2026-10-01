@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -70,14 +69,6 @@ func TestCreateSubsetVCardResourcesRequireFlag(t *testing.T) {
 	require.NoError(err)
 	require.NoError(st.Close(), "close test archive")
 
-	oldRows, oldOutput := subsetRows, subsetOutput
-	oldProfiles, oldResources := subsetIncludeProfiles, subsetIncludeVCardResources
-	t.Cleanup(func() {
-		subsetRows, subsetOutput = oldRows, oldOutput
-		subsetIncludeProfiles, subsetIncludeVCardResources = oldProfiles, oldResources
-	})
-	subsetRows = 1
-
 	openSubset := func(dir string) *store.Store {
 		subset, err := store.Open(filepath.Join(dir, "msgvault.db"))
 		require.NoError(err, "open subset archive")
@@ -85,14 +76,14 @@ func TestCreateSubsetVCardResourcesRequireFlag(t *testing.T) {
 		return subset
 	}
 
-	flag := createSubsetCmd.Flags().Lookup("include-vcard-resources")
+	flag := newCreateSubsetCmd().Flags().Lookup("include-vcard-resources")
 	require.NotNil(flag, "the opt-in must be reachable from the CLI")
 	assert.Equal("false", flag.DefValue, "native vCard resources stay private by default")
 
-	subsetOutput = filepath.Join(t.TempDir(), "profiles")
-	subsetIncludeProfiles, subsetIncludeVCardResources = true, false
+	subsetOutput := filepath.Join(t.TempDir(), "profiles")
+	subsetIncludeProfiles, subsetIncludeVCardResources := true, false
 	profilesStderr := captureStderrDuring(t, func() {
-		cmd := &cobra.Command{Use: "create-subset"}
+		cmd := newCreateSubsetTestCommand(t, subsetOutput, subsetIncludeProfiles, subsetIncludeVCardResources)
 		cmd.SetContext(testCtx)
 		require.NoError(runCreateSubset(cmd, nil))
 	})
@@ -111,7 +102,7 @@ func TestCreateSubsetVCardResourcesRequireFlag(t *testing.T) {
 	subsetOutput = filepath.Join(t.TempDir(), "orphan-resources")
 	subsetIncludeProfiles, subsetIncludeVCardResources = false, true
 	orphanStderr := captureStderrDuring(t, func() {
-		cmd := &cobra.Command{Use: "create-subset"}
+		cmd := newCreateSubsetTestCommand(t, subsetOutput, subsetIncludeProfiles, subsetIncludeVCardResources)
 		cmd.SetContext(testCtx)
 		err := runCreateSubset(cmd, nil)
 		require.ErrorContains(err, "--include-vcard-resources requires --include-profiles")
@@ -124,7 +115,7 @@ func TestCreateSubsetVCardResourcesRequireFlag(t *testing.T) {
 	subsetOutput = filepath.Join(t.TempDir(), "resources")
 	subsetIncludeProfiles, subsetIncludeVCardResources = true, true
 	resourcesStderr := captureStderrDuring(t, func() {
-		cmd := &cobra.Command{Use: "create-subset"}
+		cmd := newCreateSubsetTestCommand(t, subsetOutput, subsetIncludeProfiles, subsetIncludeVCardResources)
 		cmd.SetContext(testCtx)
 		require.NoError(runCreateSubset(cmd, nil))
 	})

@@ -238,7 +238,7 @@ func (s *Store) setPrimaryEmploymentOnce(ctx context.Context, id, expectedRevisi
 		if err != nil {
 			return err
 		}
-		current, err := getEmploymentForUpdateTx(ctx, tx, s.dialect, id)
+		current, err := getEmploymentForUpdateTx(ctx, tx, id)
 		if err != nil {
 			return err
 		}
@@ -487,7 +487,7 @@ func (s *Store) reviseEmploymentTx(
 	if err := s.verifyEmploymentReferencesTx(ctx, tx, input); err != nil {
 		return nil, err
 	}
-	currentEmployment, err := getEmploymentForUpdateTx(ctx, tx, s.dialect, id)
+	currentEmployment, err := getEmploymentForUpdateTx(ctx, tx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -541,7 +541,7 @@ func (s *Store) endEmploymentTx(
 	if err := validateEmploymentDate(endDate, "end"); err != nil {
 		return nil, err
 	}
-	current, err := getEmploymentForUpdateTx(ctx, tx, s.dialect, id)
+	current, err := getEmploymentForUpdateTx(ctx, tx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -599,7 +599,7 @@ func (s *Store) endEmploymentLockedTx(
 func (s *Store) verifyEmploymentReferencesTx(ctx context.Context, tx *loggedTx, input EmploymentInput) error {
 	var exists bool
 	organization, err := getOrganizationForUpdateTx(
-		ctx, tx, s.dialect, input.OrganizationID)
+		ctx, tx, input.OrganizationID)
 	if err != nil {
 		return err
 	}
@@ -647,8 +647,6 @@ func (s *Store) claimEmploymentPeopleTx(
 func (s *Store) lockEmploymentPeopleTx(
 	ctx context.Context, tx *loggedTx, personIDs ...int64,
 ) error {
-	lockClause := s.dialect.SelectForUpdate()
-
 	ids := append([]int64(nil), personIDs...)
 	slices.Sort(ids)
 	var previous int64
@@ -657,9 +655,7 @@ func (s *Store) lockEmploymentPeopleTx(
 			continue
 		}
 		var lockedID int64
-		err := tx.QueryRowContext(ctx, fmt.Sprintf(`
-			SELECT id FROM persons WHERE id = ?%s
-		`, lockClause), personID).Scan(&lockedID)
+		err := tx.QueryRowContext(ctx, `SELECT id FROM persons WHERE id = ?`, personID).Scan(&lockedID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrPersonNotFound
 		}
@@ -827,11 +823,11 @@ func getEmploymentTx(ctx context.Context, tx *loggedTx, id int64) (*Employment, 
 }
 
 func getEmploymentForUpdateTx(
-	ctx context.Context, tx *loggedTx, dialect Dialect, id int64,
+	ctx context.Context, tx *loggedTx, id int64,
 ) (*Employment, error) {
 	employment, err := scanEmployment(tx.QueryRowContext(ctx, fmt.Sprintf(`
-		SELECT %s FROM employments WHERE id = ?%s
-	`, employmentColumns, dialect.SelectForUpdate()), id))
+		SELECT %s FROM employments WHERE id = ?
+	`, employmentColumns), id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrEmploymentNotFound
 	}

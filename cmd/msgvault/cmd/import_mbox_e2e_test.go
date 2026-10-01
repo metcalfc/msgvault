@@ -33,11 +33,6 @@ func TestImportMboxCmd_EndToEnd_MboxFile(t *testing.T) {
 	// Save/restore global state for cmd package.
 	prevCfg := cfg
 	prevLogger := logger
-	prevSourceType := importMboxSourceType
-	prevLabel := importMboxLabels
-	prevNoResume := importMboxNoResume
-	prevCheckpointInterval := importMboxCheckpointInterval
-	prevNoAttachments := importMboxNoAttachments
 	prevCfgFile := cfgFile
 	prevHomeDir := homeDir
 	prevVerbose := verbose
@@ -46,11 +41,6 @@ func TestImportMboxCmd_EndToEnd_MboxFile(t *testing.T) {
 	t.Cleanup(func() {
 		cfg = prevCfg
 		logger = prevLogger
-		importMboxSourceType = prevSourceType
-		importMboxLabels = prevLabel
-		importMboxNoResume = prevNoResume
-		importMboxCheckpointInterval = prevCheckpointInterval
-		importMboxNoAttachments = prevNoAttachments
 		cfgFile = prevCfgFile
 		homeDir = prevHomeDir
 		verbose = prevVerbose
@@ -145,11 +135,6 @@ func TestImportMboxCmd_AttachmentFailureIsBestEffort(t *testing.T) {
 	// Save/restore global state for cmd package.
 	prevCfg := cfg
 	prevLogger := logger
-	prevSourceType := importMboxSourceType
-	prevLabel := importMboxLabels
-	prevNoResume := importMboxNoResume
-	prevCheckpointInterval := importMboxCheckpointInterval
-	prevNoAttachments := importMboxNoAttachments
 	prevCfgFile := cfgFile
 	prevHomeDir := homeDir
 	prevVerbose := verbose
@@ -158,11 +143,6 @@ func TestImportMboxCmd_AttachmentFailureIsBestEffort(t *testing.T) {
 	t.Cleanup(func() {
 		cfg = prevCfg
 		logger = prevLogger
-		importMboxSourceType = prevSourceType
-		importMboxLabels = prevLabel
-		importMboxNoResume = prevNoResume
-		importMboxCheckpointInterval = prevCheckpointInterval
-		importMboxNoAttachments = prevNoAttachments
 		cfgFile = prevCfgFile
 		homeDir = prevHomeDir
 		verbose = prevVerbose
@@ -225,12 +205,6 @@ func TestImportMboxCmd_ReturnsCanceledWhenContextCanceled(t *testing.T) {
 	prevCfg := cfg
 	prevLogger := logger
 	prevRootCtx := rootCmd.Context()
-	prevSourceType := importMboxSourceType
-	prevLabel := importMboxLabels
-	prevNoResume := importMboxNoResume
-	prevCheckpointInterval := importMboxCheckpointInterval
-	prevNoAttachments := importMboxNoAttachments
-	prevImportCtx := importMboxCmd.Context()
 	prevCfgFile := cfgFile
 	prevHomeDir := homeDir
 	prevVerbose := verbose
@@ -240,12 +214,6 @@ func TestImportMboxCmd_ReturnsCanceledWhenContextCanceled(t *testing.T) {
 		cfg = prevCfg
 		logger = prevLogger
 		rootCmd.SetContext(prevRootCtx)
-		importMboxSourceType = prevSourceType
-		importMboxLabels = prevLabel
-		importMboxNoResume = prevNoResume
-		importMboxCheckpointInterval = prevCheckpointInterval
-		importMboxNoAttachments = prevNoAttachments
-		importMboxCmd.SetContext(prevImportCtx)
 		cfgFile = prevCfgFile
 		homeDir = prevHomeDir
 		verbose = prevVerbose
@@ -287,11 +255,6 @@ func TestImportMboxCmd_ReturnsCanceledWhenContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	// Set the import command's context to the canceled context directly,
-	// since Cobra child commands with their own context don't inherit
-	// from the root's ExecuteContext.
-	importMboxCmd.SetContext(ctx)
-
 	err := rootCmd.ExecuteContext(ctx)
 	require.Error(t, err, "expected error")
 	require.ErrorIs(t, err, context.Canceled, "expected context.Canceled")
@@ -312,11 +275,6 @@ func TestImportMboxCmd_EndToEnd_ZipResumeAcrossFiles(t *testing.T) {
 	// Save/restore global state for cmd package.
 	prevCfg := cfg
 	prevLogger := logger
-	prevSourceType := importMboxSourceType
-	prevLabel := importMboxLabels
-	prevNoResume := importMboxNoResume
-	prevCheckpointInterval := importMboxCheckpointInterval
-	prevNoAttachments := importMboxNoAttachments
 	prevCfgFile := cfgFile
 	prevHomeDir := homeDir
 	prevVerbose := verbose
@@ -325,11 +283,6 @@ func TestImportMboxCmd_EndToEnd_ZipResumeAcrossFiles(t *testing.T) {
 	t.Cleanup(func() {
 		cfg = prevCfg
 		logger = prevLogger
-		importMboxSourceType = prevSourceType
-		importMboxLabels = prevLabel
-		importMboxNoResume = prevNoResume
-		importMboxCheckpointInterval = prevCheckpointInterval
-		importMboxNoAttachments = prevNoAttachments
 		cfgFile = prevCfgFile
 		homeDir = prevHomeDir
 		verbose = prevVerbose

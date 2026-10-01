@@ -44,16 +44,7 @@ func issue769CommandArgs(t *testing.T, dryRun bool) []string {
 
 func newRegisteredStageDeleteTestRoot(t *testing.T, contexts ...context.Context) *cobra.Command {
 	t.Helper()
-	registered, _, err := rootCmd.Find([]string{"stage-delete"})
-	require.NoError(t, err, "find registered stage-delete command")
-	require.NotNil(t, registered, "registered stage-delete command")
-
-	stageDeleteDryRun = false
-	require.NoError(t, registered.Flags().Set("dry-run", "false"))
-	require.NoError(t, registered.Flags().Set("source-id", "0"))
-	registered.Flags().Lookup("source-id").Changed = false
-	require.NoError(t, registered.Flags().Set("ids", ""))
-	registered.Flags().Lookup("ids").Changed = false
+	registered := newStageDeleteCommand()
 	root := &cobra.Command{Use: "msgvault"}
 	if len(contexts) > 0 {
 		root.SetContext(contexts[0])

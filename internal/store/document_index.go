@@ -168,9 +168,8 @@ func (s *Store) EnsureDocumentExtractionProfile(
 				(id, fingerprint, provider, endpoint, region, model,
 				 retention_posture, training_posture, allowed_media_types,
 				 policy_json, enabled)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, `+s.dialect.JSONBindExpr()+`, `+s.dialect.JSONBindExpr()+`, FALSE)
-			ON CONFLICT (id) DO NOTHING`,
-			profile.ID, profile.Fingerprint, profile.Provider, profile.Endpoint,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE)
+			ON CONFLICT (id) DO NOTHING`, profile.ID, profile.Fingerprint, profile.Provider, profile.Endpoint,
 			profile.Region, profile.Model, profile.RetentionPosture,
 			profile.TrainingPosture, string(allowedJSON), string(policyJSON),
 		)
@@ -219,13 +218,13 @@ func (s *Store) GetCurrentDocumentIndexStatusScope(
 ) (string, []string, error) {
 	var profileID string
 	var allowedJSON string
-	err := s.db.QueryRowContext(ctx, s.dialect.Rebind(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT p.id, CAST(p.allowed_media_types AS TEXT)
 		FROM document_index_state state
 		JOIN document_extraction_profiles p ON p.id = state.target_profile_id
 		WHERE state.singleton = 1
 		  AND p.enabled = TRUE
-		  AND p.retired_at IS NULL`)).Scan(&profileID, &allowedJSON)
+		  AND p.retired_at IS NULL`).Scan(&profileID, &allowedJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil, ErrDocumentIndexStatusScopeUnavailable
 	}
@@ -492,7 +491,7 @@ func (s *Store) HasActiveDocumentProviderConsent(ctx context.Context) (bool, err
 // normalization, scope, or capability evidence.
 func (s *Store) HasMatchingDocumentProviderConsent(ctx context.Context, profile DocumentExtractionProfile) (bool, error) {
 	var consented bool
-	err := s.db.QueryRowContext(ctx, s.dialect.Rebind(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT EXISTS (
 			SELECT 1
 			FROM document_extraction_profiles p
@@ -502,7 +501,7 @@ func (s *Store) HasMatchingDocumentProviderConsent(ctx context.Context, profile 
 			  AND c.retention_posture = p.retention_posture
 			  AND c.training_posture = p.training_posture
 			  AND p.id = ? AND p.fingerprint = ?
-		)`), profile.ID, profile.Fingerprint).Scan(&consented)
+		)`, profile.ID, profile.Fingerprint).Scan(&consented)
 	if err != nil {
 		return false, fmt.Errorf("read matching document provider consent: %w", err)
 	}
@@ -514,7 +513,7 @@ func (s *Store) GetDocumentIndexStatus(ctx context.Context, profileID string) (D
 		return DocumentIndexStatus{}, errors.New("document index status requires a profile ID")
 	}
 	var status DocumentIndexStatus
-	err := s.db.QueryRowContext(ctx, s.dialect.Rebind(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT EXISTS (SELECT 1 FROM document_extraction_profiles WHERE id = ?),
 		       EXISTS (
 		           SELECT 1 FROM document_extraction_profiles
@@ -549,7 +548,7 @@ func (s *Store) GetDocumentIndexStatus(ctx context.Context, profileID string) (D
 		       (SELECT COALESCE(SUM(units_processed), 0) FROM document_extractions WHERE profile_id = ?),
 		       (SELECT COALESCE(SUM(provider_bytes), 0) FROM document_extractions WHERE profile_id = ?),
 		       (SELECT COUNT(*) FROM document_extractions
-		        WHERE profile_id = ? AND state = 'ready' AND provider_bytes IS NULL)`),
+		        WHERE profile_id = ? AND state = 'ready' AND provider_bytes IS NULL)`,
 		profileID, profileID, profileID, profileID, profileID, profileID, profileID,
 		profileID, profileID, profileID, profileID, profileID, profileID, profileID,
 		profileID, profileID, profileID,
@@ -596,7 +595,7 @@ func (s *Store) GetDocumentIndexStatusForScope(
 	for range 4 {
 		args = append(args, profileID, extractionInputKey)
 	}
-	err = s.db.QueryRowContext(ctx, s.dialect.Rebind(`
+	err = s.db.QueryRowContext(ctx, `
 		WITH eligible_occurrences AS (
 			SELECT o.canonical_blob_hash, o.occurrence_key, COALESCE(o.mime_type, '') AS mime_type,
 			       COALESCE(a.size, 0) AS owner_size
@@ -650,7 +649,7 @@ func (s *Store) GetDocumentIndexStatusForScope(
 		       COALESCE(SUM(CASE WHEN coverage_state = 'retry' THEN 1 ELSE 0 END), 0),
 		       COALESCE(SUM(CASE WHEN coverage_state = 'terminal' THEN 1 ELSE 0 END), 0),
 		       COALESCE(SUM(CASE WHEN coverage_state = 'missing' THEN 1 ELSE 0 END), 0)
-		FROM classified`), args...).Scan(
+		FROM classified`, args...).Scan(
 		&status.EligibleOccurrences, &status.EligibleOwners, &status.EligibleBytes,
 		&status.ReadyOwners, &status.StagingOwners, &status.RetryOwners,
 		&status.TerminalOwners, &status.MissingOwners,
@@ -664,12 +663,12 @@ func (s *Store) GetDocumentIndexStatusForScope(
 	if err != nil {
 		return DocumentIndexStatus{}, err
 	}
-	err = s.db.QueryRowContext(ctx, s.dialect.Rebind(`
+	err = s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(CASE WHEN a.attachment_role = 'unknown' THEN 1 ELSE 0 END), 0),
 		       COALESCE(SUM(CASE WHEN a.attachment_role NOT IN ('standalone', 'unknown') THEN 1 ELSE 0 END), 0)
 		FROM attachments a
 		JOIN messages m ON m.id = a.message_id
-		WHERE `+mediaScopeSQL), mediaScopeArgs...).Scan(
+		WHERE `+mediaScopeSQL, mediaScopeArgs...).Scan(
 		&status.UnknownRoleOccurrences, &status.IneligibleRoleOccurrences,
 	)
 	if err != nil {
@@ -774,11 +773,11 @@ func (s *Store) GetActiveDocumentExtractionRebuild(
 		return DocumentExtractionRebuild{}, errors.New("document extraction rebuild lookup is incomplete")
 	}
 	var rebuild DocumentExtractionRebuild
-	err := s.db.QueryRowContext(ctx, s.dialect.Rebind(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT r.id, r.profile_id, r.extraction_input_key, r.state, r.created_at,
 		       (SELECT COUNT(*) FROM document_extraction_rebuild_targets t WHERE t.rebuild_id = r.id)
 		FROM document_extraction_rebuilds r
-		WHERE r.profile_id = ? AND r.extraction_input_key = ? AND r.state = 'building'`),
+		WHERE r.profile_id = ? AND r.extraction_input_key = ? AND r.state = 'building'`,
 		profileID, extractionInputKey,
 	).Scan(&rebuild.ID, &rebuild.ProfileID, &rebuild.ExtractionInputKey,
 		&rebuild.State, &rebuild.CreatedAt, &rebuild.SnapshotOwners)
@@ -811,7 +810,7 @@ func (s *Store) CountIncompleteDocumentExtractionRebuild(
 	args = append(args, scopeArgs...)
 	args = append(args, rebuild.ID)
 	var incomplete int64
-	err = s.db.QueryRowContext(ctx, s.dialect.Rebind(`
+	err = s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM document_extraction_rebuild_targets t
 		WHERE t.rebuild_id = ?
@@ -824,7 +823,7 @@ func (s *Store) CountIncompleteDocumentExtractionRebuild(
 		      SELECT 1 FROM document_extractions e
 		      WHERE e.rebuild_id = ? AND e.canonical_blob_hash = t.canonical_blob_hash
 		        AND e.state = 'ready'
-		  )`), args...).Scan(&incomplete)
+		  )`, args...).Scan(&incomplete)
 	if err != nil {
 		return 0, fmt.Errorf("count incomplete document extraction rebuild owners: %w", err)
 	}
@@ -835,10 +834,10 @@ func (s *Store) CompleteDocumentExtractionRebuild(ctx context.Context, rebuildID
 	if rebuildID == "" {
 		return errors.New("document extraction rebuild completion requires an ID")
 	}
-	result, err := s.db.ExecContext(ctx, s.dialect.Rebind(`
+	result, err := s.db.ExecContext(ctx, `
 		UPDATE document_extraction_rebuilds
 		SET state = 'completed', completed_at = `+s.dialect.Now()+`
-		WHERE id = ? AND state = 'building'`), rebuildID)
+		WHERE id = ? AND state = 'building'`, rebuildID)
 	if err != nil {
 		return fmt.Errorf("complete document extraction rebuild: %w", err)
 	}
@@ -1091,8 +1090,8 @@ func (s *Store) ListDocumentAttachmentIDsAfter(
 	if afterID < 0 || limit <= 0 || limit > 10_000 {
 		return nil, errors.New("document attachment scan has invalid bounds")
 	}
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
-		SELECT id FROM attachments WHERE id > ? ORDER BY id LIMIT ?`), afterID, limit)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id FROM attachments WHERE id > ? ORDER BY id LIMIT ?`, afterID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list document attachment scan page: %w", err)
 	}
@@ -1233,7 +1232,7 @@ func (s *Store) ListDocumentExtractionCandidates(
 		args = append(args, rebuild.ID, rebuild.ID)
 	}
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, s.dialect.Rebind(`
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT o.attachment_id, o.canonical_blob_hash, COALESCE(o.mime_type, ''),
 		       COALESCE(a.size, 0), COALESCE(m.message_type, ''), o.source_sequence
 		FROM document_occurrences o
@@ -1254,7 +1253,7 @@ func (s *Store) ListDocumentExtractionCandidates(
 		  )
 		`+ownerStateFilter+`
 		ORDER BY o.occurrence_key
-		LIMIT ?`), args...)
+		LIMIT ?`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list pending document extractions: %w", err)
 	}

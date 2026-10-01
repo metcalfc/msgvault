@@ -275,7 +275,7 @@
       ...('category' in patch ? { directoryCategory: patch.category } : {}),
       ...('organization' in patch ? { directoryOrganization: patch.organization } : {}),
     };
-    if (history === 'replace') replaceCommittedDraft(statePatch);
+    if (history === 'replace') debouncedSearchPatch(statePatch);
     else commitNavigation(statePatch);
   }
   function announceOperation(message: string): void {

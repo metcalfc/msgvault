@@ -116,18 +116,14 @@ type Scheduler struct {
 	// queuedRuns counts runs blocked waiting for the work gate.
 	queuedRuns int
 
-	// Embed job state (optional). Set via SetEmbedJob; cron.EntryID 0
-	// may be valid, so embedEntrySet tracks whether an entry exists.
+	// Post-sync policies remain separate from cron registration. Cron and
+	// asynchronous hooks share the same reservation and completion machinery.
 	embedJob                   *EmbedJob
-	embedEntry                 cron.EntryID
-	embedEntrySet              bool
+	embedCron                  scheduledJob
 	runEmbedAfterSync          bool
-	visualPostSync             func(context.Context) error
-	visualPostRunning          bool
-	visualPostPending          bool
+	visualPostState            scheduledJob
 	documentVectorJob          func(context.Context) error
-	documentVectorEntry        cron.EntryID
-	documentVectorEntrySet     bool
+	documentVectorCron         scheduledJob
 	runDocumentVectorAfterSync bool
 
 	ctx     context.Context    // cancelled on Stop
@@ -141,7 +137,7 @@ type Scheduler struct {
 // bounded post-sync pass. Nil disables the hook.
 func (s *Scheduler) SetVisualPostSyncJob(run func(context.Context) error) {
 	s.mu.Lock()
-	s.visualPostSync = run
+	s.visualPostState.run = run
 	s.mu.Unlock()
 }
 
@@ -333,70 +329,29 @@ func (s *Scheduler) RemoveAccount(email string) {
 	}
 }
 
-// SetEmbedJob registers the embed job on a cron schedule. If schedule
-// is empty, no cron entry is created (the job can still fire via the
-// post-sync hook when runAfterSync is true). Replacing a previously-set
-// job removes the old cron entry. Passing nil clears any existing job.
-//
-// A schedule rejected by ValidateCronExpr is caught before any state
-// mutates, so the previous job and cron entry are preserved. An
-// internal AddFunc failure after that point is treated as an invariant
-// violation (ValidateCronExpr already accepted the expression) and
-// clears the embed job rather than restoring the prior one.
+// SetEmbedJob installs the message embedding cron and post-sync policy.
+// Invalid schedules leave the prior registration intact; nil disables it.
 func (s *Scheduler) SetEmbedJob(job *EmbedJob, schedule string, runAfterSync bool) error {
-	// Validate the cron expression before mutating any state so a bad
-	// schedule can't leave the scheduler with a half-removed previous
-	// job. ValidateCronExpr is cheap and pure.
 	if job != nil && schedule != "" {
 		if err := ValidateCronExpr(schedule); err != nil {
 			return fmt.Errorf("invalid embed cron expression %q: %w", schedule, err)
 		}
 	}
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	if s.embedEntrySet {
-		s.cron.Remove(s.embedEntry)
-		s.embedEntrySet = false
+	var run func(context.Context) error
+	if job != nil {
+		run = func(ctx context.Context) error { job.Run(ctx); return nil }
+	}
+	if err := s.replaceHookCronLocked(&s.embedCron, "embed", schedule, run); err != nil {
+		return err
 	}
 	s.embedJob = job
 	s.runEmbedAfterSync = runAfterSync && job != nil
-
-	if job == nil || schedule == "" {
-		return nil
-	}
-	entryID, err := s.cron.AddFunc(schedule, func() {
-		if s.isStopped() {
-			return
-		}
-		done, ok := s.beginWork()
-		if !ok {
-			return
-		}
-		defer done()
-		runCtx, endRun := s.jobContext("embed", false)
-		defer endRun()
-		job.Run(runCtx)
-	})
-	if err != nil {
-		// ValidateCronExpr above should have caught any parse error;
-		// if AddFunc still fails here it's an internal invariant
-		// violation, not caller input. Roll back the state we mutated.
-		s.embedJob = nil
-		s.runEmbedAfterSync = false
-		return fmt.Errorf("register embed cron: %w", err)
-	}
-	s.embedEntry = entryID
-	s.embedEntrySet = true
-	s.logger.Info("scheduled embed job",
-		"schedule", schedule,
-		"next_run", s.nextRun(entryID))
 	return nil
 }
 
-// SetDocumentVectorJob installs the bounded document-vector convergence job
-// on the same cron/post-sync policy used by message embeddings.
+// SetDocumentVectorJob installs the document-vector cron and post-sync policy.
 func (s *Scheduler) SetDocumentVectorJob(job func(context.Context) error, schedule string, runAfterSync bool) error {
 	if job != nil && schedule != "" {
 		if err := ValidateCronExpr(schedule); err != nil {
@@ -405,46 +360,50 @@ func (s *Scheduler) SetDocumentVectorJob(job func(context.Context) error, schedu
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.documentVectorEntrySet {
-		s.cron.Remove(s.documentVectorEntry)
-		s.documentVectorEntrySet = false
+	if err := s.replaceHookCronLocked(&s.documentVectorCron, "document-vector", schedule, job); err != nil {
+		return err
 	}
 	s.documentVectorJob = job
 	s.runDocumentVectorAfterSync = runAfterSync && job != nil
-	if job == nil || schedule == "" {
-		return nil
-	}
-	entry, err := s.cron.AddFunc(schedule, func() {
-		if s.isStopped() {
-			return
-		}
-		done, ok := s.beginWork()
-		if !ok {
-			return
-		}
-		defer done()
-		runCtx, endRun := s.jobContext("document-vector", false)
-		defer endRun()
-		if runErr := job(runCtx); runErr != nil {
-			s.logger.Error("scheduled document vector reconciliation failed", "error", runErr)
-		}
-	})
-	if err != nil {
-		s.documentVectorJob = nil
-		s.runDocumentVectorAfterSync = false
-		return fmt.Errorf("register document vector cron: %w", err)
-	}
-	s.documentVectorEntry = entry
-	s.documentVectorEntrySet = true
 	return nil
 }
 
-// isStopped reports s.stopped under a read lock. Used by cron
-// callbacks that only need to abort on shutdown.
-func (s *Scheduler) isStopped() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.stopped
+// replaceHookCronLocked registers before retiring the previous entry so a
+// failed replacement preserves the callable and cron schedule together.
+func (s *Scheduler) replaceHookCronLocked(state *scheduledJob, name, schedule string, run func(context.Context) error) error {
+	var entry cron.EntryID
+	registered := run != nil && schedule != ""
+	if registered {
+		var err error
+		entry, err = s.cron.AddFunc(schedule, func() { s.onHookTick(name, state) })
+		if err != nil {
+			return fmt.Errorf("register %s cron: %w", name, err)
+		}
+	}
+	if state.registered {
+		s.cron.Remove(state.entryID)
+	}
+	state.entryID, state.registered, state.schedule, state.run = entry, registered, schedule, run
+	if registered {
+		s.logger.Info("scheduled job", "job", name, "schedule", schedule, "next_run", s.nextRun(entry))
+	}
+	if run == nil {
+		state.pending = false
+	}
+	return nil
+}
+
+func (s *Scheduler) onHookTick(name string, state *scheduledJob) {
+	s.mu.Lock()
+	if s.stopped || !state.registered || state.run == nil || !s.reserveRunLocked(state, "job", name, true) {
+		s.mu.Unlock()
+		return
+	}
+	run := state.run
+	s.mu.Unlock()
+	if err := s.runJobState(name, state, run); err != nil {
+		s.logger.Error("scheduled job failed", "job", name, "error", err)
+	}
 }
 
 // Start begins executing scheduled jobs.
@@ -683,43 +642,22 @@ func (s *Scheduler) finishAccountRun(email string) {
 // latency must never extend or fail an otherwise successful archive sync.
 func (s *Scheduler) startVisualPostSync() {
 	s.mu.Lock()
-	if s.visualPostSync == nil || s.stopped {
+	state := &s.visualPostState
+	if state.run == nil || s.stopped {
 		s.mu.Unlock()
 		return
 	}
-	if s.visualPostRunning {
-		// A sync finished while a pass is in flight; remember it so the
-		// changes it committed are processed right after, instead of waiting
-		// for the next sync or cron tick.
-		s.visualPostPending = true
+	if state.running {
+		// Preserve post-sync notifications even while the visual pass is queued.
+		state.pending = true
 		s.mu.Unlock()
 		return
 	}
-	run := s.visualPostSync
-	s.visualPostRunning = true
-	s.wg.Add(1)
+	s.reserveRunLocked(state, "job", "post-sync multimodal", false)
+	run := state.run
 	s.mu.Unlock()
-
 	go func() {
-		defer s.wg.Done()
-		defer func() {
-			s.mu.Lock()
-			s.visualPostRunning = false
-			rerun := s.visualPostPending
-			s.visualPostPending = false
-			s.mu.Unlock()
-			if rerun {
-				s.startVisualPostSync()
-			}
-		}()
-		done, ok := s.beginWork()
-		if !ok {
-			return
-		}
-		defer done()
-		visualCtx, endVisual := s.jobContext("post-sync multimodal", false)
-		defer endVisual()
-		if err := run(visualCtx); err != nil {
+		if err := s.runJobState("post-sync multimodal", state, run); err != nil {
 			s.logger.Error("post-sync multimodal pass failed", "error", err)
 		}
 	}()
@@ -831,11 +769,18 @@ func (s *Scheduler) reserveGenericJob(name string, coalesce bool) (run func(cont
 // runJob executes an already-reserved generic job and records the result.
 // The caller must have reserved the job with reserveRunLocked.
 func (s *Scheduler) runJob(name string, run func(context.Context) error) error {
-	defer s.wg.Done()
-	defer s.finishGenericRun(name)
-
 	s.mu.RLock()
 	state := s.genericJobs[name]
+	s.mu.RUnlock()
+	return s.runJobState(name, state, run)
+}
+
+// runJobState owns the work gate and lifecycle for generic and hook jobs.
+// Post-sync callbacks that already hold the account gate stay synchronous.
+func (s *Scheduler) runJobState(name string, state *scheduledJob, run func(context.Context) error) error {
+	defer s.wg.Done()
+	defer s.finishJobState(name, state)
+	s.mu.RLock()
 	preemptible := state.preemptible
 	s.mu.RUnlock()
 	done, ok := s.beginJobWork(state)
@@ -878,16 +823,14 @@ func (s *Scheduler) runJob(name string, run func(context.Context) error) error {
 	return nil
 }
 
-// finishGenericRun releases a generic job run, or hands its reservation to
-// the single follow-up requested by a tick, yield, or bounded pass.
-func (s *Scheduler) finishGenericRun(name string) {
+// finishJobState releases the reservation or transfers it to the current
+// callback after a replacement, tick, yield, or bounded pass.
+func (s *Scheduler) finishJobState(name string, state *scheduledJob) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	state := s.genericJobs[name]
-	// Use the current registration after replacement; removal drops a rerun.
 	var rerun func()
 	if current := state.run; current != nil {
-		rerun = func() { _ = s.runJob(name, current) }
+		rerun = func() { _ = s.runJobState(name, state, current) }
 	}
 	s.finishRunLocked(state, rerun)
 }

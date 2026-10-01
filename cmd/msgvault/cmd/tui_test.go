@@ -37,7 +37,7 @@ func TestOpenTUIEngineUsesConfiguredRemoteHTTP(t *testing.T) {
 	cfg.Remote.URL = srv.URL
 	cfg.Remote.AllowInsecure = true
 
-	backend, err := openTUIBackend(ctx)
+	backend, err := openTUIBackendWithLocal(ctx, false)
 	require.NoError(
 		err, "openTUIBackend")
 
@@ -70,7 +70,6 @@ func TestOpenTUIEngineLocalFlagUsesLocalDaemonHTTP(t *testing.T) {
 	localCfg.Remote.AllowInsecure = true
 	localCfg.Server.APIKey = "local-daemon-secret"
 	ctx := withTUIConfig(t, localCfg)
-	forceLocalTUI = true
 
 	var requests atomic.Int32
 	srv := httptest.NewServer(tuiAccountsHandler(&requests, "local@example.com"))
@@ -101,7 +100,7 @@ func TestOpenTUIEngineLocalFlagUsesLocalDaemonHTTP(t *testing.T) {
 	require.NoError(
 		err, "write runtime")
 
-	backend, err := openTUIBackend(ctx)
+	backend, err := openTUIBackendWithLocal(ctx, true)
 	require.NoError(
 		err, "openTUIBackend")
 
@@ -125,11 +124,6 @@ func TestOpenTUIEngineLocalFlagUsesLocalDaemonHTTP(t *testing.T) {
 
 func withTUIConfig(t *testing.T, c *config.Config) context.Context {
 	t.Helper()
-	oldForceLocalTUI := forceLocalTUI
-	forceLocalTUI = false
-	t.Cleanup(func() {
-		forceLocalTUI = oldForceLocalTUI
-	})
 	return testInvocationContext(t.Context(), c, invocationOptions{})
 }
 

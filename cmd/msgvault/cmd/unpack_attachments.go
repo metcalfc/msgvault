@@ -9,27 +9,6 @@ import (
 	"go.kenn.io/kit/packstore"
 )
 
-var unpackAttachmentsCmd = &cobra.Command{
-	Use:   "unpack-attachments",
-	Short: "Restore packed attachments to loose files",
-	Long: `Restore every packed attachment blob to a loose file and remove the
-pack files.
-
-This is the downgrade escape hatch: older msgvault binaries cannot read
-pack files, so run this before downgrading. Each blob is hash-verified
-as it is written back.
-
-The daemon must be stopped first ('msgvault daemon stop'): a running
-daemon holds pack files open, so this command refuses to run while one
-is detected. Re-running 'msgvault pack-attachments' packs everything
-again. When a remote server is configured, run this command on the archive
-host or pass --local to select this machine's local archive intentionally.`,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runUnpackAttachmentsLocal(cmd)
-	},
-}
-
 // unpackAttachmentsAfterDaemonLock is a narrow command test barrier.
 // Production leaves it nil.
 var unpackAttachmentsAfterDaemonLock func()
@@ -102,6 +81,29 @@ func writeUnpackAttachmentsStats(out io.Writer, stats packstore.UnpackStats) {
 	}
 }
 
-func init() {
-	rootCmd.AddCommand(unpackAttachmentsCmd)
+func newUnpackAttachmentsCmd() *cobra.Command {
+	unpackAttachmentsCmd := &cobra.Command{
+		Use:   "unpack-attachments",
+		Short: "Restore packed attachments to loose files",
+		Long: `Restore every packed attachment blob to a loose file and remove the
+pack files.
+
+This is the downgrade escape hatch: older msgvault binaries cannot read
+pack files, so run this before downgrading. Each blob is hash-verified
+as it is written back.
+
+The daemon must be stopped first ('msgvault daemon stop'): a running
+daemon holds pack files open, so this command refuses to run while one
+is detected. Re-running 'msgvault pack-attachments' packs everything
+again. When a remote server is configured, run this command on the archive
+host or pass --local to select this machine's local archive intentionally.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runUnpackAttachmentsLocal(cmd)
+		},
+	}
+
+	return unpackAttachmentsCmd
 }
+
+func init() { registerCommandFactory(newUnpackAttachmentsCmd) }
