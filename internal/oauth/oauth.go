@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+	"go.kenn.io/msgvault/internal/emailaddr"
 	"go.kenn.io/msgvault/internal/fileutil"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -886,35 +887,12 @@ func sameGoogleAccount(expected, canonical string) bool {
 		return true
 	}
 
-	// Normalize gmail.com / googlemail.com addresses for comparison
-	expectedNorm := normalizeGmailAddress(expected)
-	canonicalNorm := normalizeGmailAddress(canonical)
+	// Gmail delivers alias spellings (dots, plus tags, googlemail.com) to
+	// one account; every other domain must match exactly.
+	expectedNorm := emailaddr.GmailAccount(expected)
+	canonicalNorm := emailaddr.GmailAccount(canonical)
 
 	return expectedNorm != "" && expectedNorm == canonicalNorm
-}
-
-// normalizeGmailAddress returns a canonical form of a gmail.com or
-// googlemail.com address by lowercasing, stripping +suffixes and dots
-// from the local part, and mapping googlemail.com → gmail.com.
-// Returns "" for non-Gmail addresses.
-func normalizeGmailAddress(email string) string {
-	at := strings.LastIndex(email, "@")
-	if at < 0 {
-		return ""
-	}
-	local := strings.ToLower(email[:at])
-	domain := strings.ToLower(email[at+1:])
-
-	if domain != "gmail.com" && domain != "googlemail.com" {
-		return ""
-	}
-
-	// Gmail ignores dots and +suffixes in the local part
-	if plus := strings.Index(local, "+"); plus >= 0 {
-		local = local[:plus]
-	}
-	local = strings.ReplaceAll(local, ".", "")
-	return local + "@gmail.com"
 }
 
 // tokenFile wraps an OAuth2 token with metadata about the scopes and
