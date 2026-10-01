@@ -1,16 +1,13 @@
 ---
-title: Search Ranking Across Backends
-description: Why SQLite and PostgreSQL can order the same matching messages differently.
+title: Search Ranking
+description: How full-text weights and vector distance order matching messages.
 ---
 
-`msgvault search`, the Web UI, the TUI, the HTTP API, and the MCP server can rank results
-with different database engines depending on your archive backend and search
-mode. Result sets usually match, but result order can differ because each
-backend uses a different scoring model.
+`msgvault search`, the Web UI, the TUI, the HTTP API, and the MCP server
+use the archive's full-text index or its optional vector index. The selected
+search mode determines which scoring model orders the results.
 
 ## Full-Text Ranking
-
-### SQLite
 
 SQLite uses FTS5 `bm25()` over the `messages_fts` virtual table. msgvault passes
 column weights so subject and sender hits outrank body and recipient hits:
@@ -34,88 +31,26 @@ BM25 also applies document length normalization. A query term in a short body
 can score better than the same term in a long quoted thread because the long
 document is penalized.
 
-### PostgreSQL
-
-PostgreSQL ranks the `search_fts` `tsvector` with `ts_rank()`. msgvault assigns
-weights with PostgreSQL `setweight` labels:
-
-| Field | Weight class |
-|---|---|
-| Subject | `A` |
-| From address | `B` |
-| To, Cc | `C` |
-| Body | `D` |
-
-msgvault passes rank weights of `A=1.0`, `B=0.4`, `C=0.1`, and `D=0.1`, which
-matches SQLite's 10:4:1 field priority while retaining distinct PostgreSQL
-weight classes for recipients and body text. Unlike BM25, `ts_rank()` without
-a normalization flag does not penalize long documents.
-
-## Where Ordering Can Diverge
-
-The field weights make ordinary searches feel consistent. A subject-only match
-usually outranks a body-only match on both backends.
-
-The clearest divergence is a long subject-hit message versus a short body-hit
-message:
-
-- Message A has the query in the subject, but its body contains thousands of
-  words of quoted history.
-- Message B has the query once in a short body, but not in the subject.
-
-PostgreSQL usually ranks Message A first because the subject field dominates.
-SQLite BM25 can rank Message B first because the long body attached to Message A
-reduces its BM25 score.
-
-This is expected. PostgreSQL prioritizes email field structure more strongly.
-SQLite BM25 blends field priority with document length, which is useful for web
-search but can be surprising when re-finding known emails.
-
 Use `subject:` when subject recall matters more than broad recall:
 
 ```bash
 msgvault search 'subject:"quarterly review"'
 ```
 
-## Query Grammar Differences
-
-Full-text query parsing also differs:
-
-| Path | Query grammar |
-|---|---|
-| SQLite FTS | FTS5 `MATCH` |
-| PostgreSQL FTS | `to_tsquery` with prefix matching |
-| PostgreSQL hybrid FTS signal | `to_tsquery` with prefix matching |
-
-PostgreSQL FTS and PostgreSQL hybrid mode use the same prefix-matching query
-grammar, so a prefix that matches in FTS mode should also contribute to the FTS
-signal in hybrid mode. The ranking function differs: plain PostgreSQL FTS orders
-by `ts_rank()`, while the hybrid PostgreSQL FTS signal uses cover-density
-`ts_rank_cd(..., 32)` before combining it with vector similarity through RRF.
-That can change ordering even when the matching FTS document set is the same.
-
 ## Vector Ranking
 
-Vector search has a separate ranking caveat:
+The sqlite-vec index uses L2 distance: smaller distances indicate closer
+vectors. The embedding model and its normalization determine how those
+distances correspond to semantic similarity.
 
-| Backend | Metric |
-|---|---|
-| SQLite sqlite-vec | L2 distance |
-| PostgreSQL pgvector | Cosine distance |
-
-For unit-normalized embeddings, L2 and cosine produce the same nearest-neighbor
-ordering. Most modern embedding endpoints return normalized vectors, so the two
-backends usually agree in practice.
-
-For non-normalized vectors, L2 and cosine can order neighbors differently. Full
-metric parity would require switching sqlite-vec tables to cosine distance and
-rebuilding existing vector tables. That migration is not implemented today.
+Hybrid search combines full-text and vector result ranks. Its order can differ
+from either signal used alone. Use `--explain` with vector or hybrid search to
+inspect the contributing scores.
 
 ## Practical Guidance
 
-- Expect the same matching messages for most normal queries.
-- Expect occasional order differences at the top when long quoted threads are
-  involved.
+- Long quoted threads affect full-text scores through document length
+  normalization.
 - Use field operators such as `subject:` and `from:` when you remember a
   specific message field.
 - Use `--explain` with vector or hybrid search to inspect per-signal scores.

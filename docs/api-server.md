@@ -113,7 +113,7 @@ and the 1.x/2.x transition.
 ### Archive and processing boundaries
 
 The API uses the same archive database and attachment store as other clients.
-SQLite is the default; PostgreSQL has [documented feature limits](architecture/postgresql.md).
+SQLite is the supported archive database.
 Keyword search and ordinary reads use stored data. Semantic and hybrid search
 also call the configured embedding endpoint. Profile, document, and enrichment
 operations have their own provider and consent contracts.
@@ -558,7 +558,7 @@ Health check endpoint. Does not require authentication.
 
 `analytics_engine` reports the active mode: `sql-fallback` while `engine =
 "auto"` is waiting for or cannot use a cache, `duckdb` after a successful cache
-build/open, `sql` for deliberate live SQL, `postgres` for PostgreSQL, and
+build/open, `sql` for deliberate live SQL, and
 `initializing` while required DuckDB analytics are being prepared. Health stays
 available during initialization; analytics routes return `503` until the
 required engine is ready.
@@ -817,15 +817,12 @@ Refresh those on your own schedule.
 > column to `messages`, runs a one-time full-table backfill of it, builds an
 > index on it, and installs the watermark triggers. Trigger installation is a
 > versioned migration, so it runs once for each trigger definition instead of
-> taking trigger locks on every open. On PostgreSQL the backfill bumps
-> `last_modified` on every row once, at upgrade.
+> taking trigger locks on every open.
 >
 > The backfill commits in batches and the watermark triggers are installed before
-> it starts, so a concurrent write is safe throughout and, on PostgreSQL,
-> unrelated rows can be written between batches. The index is the part that
-> stops writes: it is built with a plain `CREATE INDEX`, which on PostgreSQL
-> blocks every write to `messages` for as long as the build takes, and on SQLite
-> holds the database's single writer slot for the same stretch. The two
+> it starts, so a concurrent write is safe throughout. The index is the part
+> that stops writes: `CREATE INDEX` holds the database's single writer slot
+> for as long as the build takes. The two
 > directions both bite: an import already writing holds the startup waiting, and
 > an import that starts during the build waits for it. On a large archive treat
 > the first open as a planned write outage rather than a restart — for the length
@@ -852,8 +849,7 @@ Refresh those on your own schedule.
 > left **49%**. One consumer polling once a second is free. The endpoint limits
 > each client IP to two requests per second with a burst of four; honor a `429`
 > response's `Retry-After` header. Poll on an interval, and drain a backlog with
-> `has_more` or a larger `limit` rather than a tighter poll. PostgreSQL
-> establishes the same bound without taking a lock.
+> `has_more` or a larger `limit` rather than a tighter poll.
 
 **The cursor is opaque.** Store the `next_cursor` a response hands you and send
 it back unchanged; do not parse it, construct one, compare two of them, or order
@@ -1078,26 +1074,11 @@ single response: keep following `next_cursor` and nothing outside the exception
 list is lost; substitute `complete_through` for it and the rows between it and
 `next_cursor` are lost as well.
 
-**What it costs.** The feed cannot advance past the start of any open transaction
-that holds — or is queued for — a write lock on the message table. A batch
-import, a source-deletion run, or a client that wrote a message and then sat on
-its `BEGIN` freezes `complete_through` for as long as that lasts. Only
-transactions bearing on the message table count, and only for as long as they
-last: a long read, an idle connection, a batch writing some other table, and
-autovacuum's routine work do not hold the feed back, whichever database role
-they belong to.
-
-On PostgreSQL the test is the lock, not the write, and that is deliberate. A
-transaction still *waiting* to acquire a write lock on `messages` — behind
-someone else's `ALTER TABLE`, say — counts from the moment it queues, before it
-has written anything, and it holds the bound back to its own transaction start
-rather than to the moment it began waiting. Waiting to write is the state that
-immediately precedes writing, and the bound has to be below a write before it
-happens rather than after; counting a transaction that turns out never to write
-costs a visible gap, while missing one that does costs a silently skipped row.
-
-On SQLite, where there is no way to ask which transaction is open, any write
-transaction held longer than a moment has the same effect.
+**What it costs.** The feed cannot advance while a write transaction holds
+SQLite's single writer slot. SQLite cannot report when that transaction began,
+so the bound stays at the last observation of a free writer slot. A batch
+import, a source-deletion run, or a client holding a write transaction open can
+therefore freeze `complete_through`.
 
 During the freeze the feed keeps serving: a consumer with a backlog goes on
 draining every row committed below the frozen bound, page after page, exactly as
@@ -1121,16 +1102,10 @@ under the same once-a-minute throttle — carrying `lag: "unknown"`,
 seen the message table quiescent", which on a freshly started daemon usually
 means an import was already running when it came up.
 
-Read the gap as "how stale the bound is", not as "how long that transaction has
-been open" — the two are the same number only on PostgreSQL, where the bound is
-the open transaction's own start time. SQLite has no way to ask when another
-connection's transaction began; its bound is the last moment the server caught
-the database with the write lock free, so the gap measures the age of that
-observation instead. A writer is genuinely in flight whenever the gap is open,
-but on SQLite it may have started seconds ago and still show a gap of hours,
-because time in which nothing polled the endpoint is time in which no reading was
-taken. On SQLite the gap is an upper bound on the writer's age; on PostgreSQL it
-is a measurement of it.
+Read the gap as the age of the last free-writer observation. SQLite cannot
+report when another connection's transaction began, so the gap is an upper
+bound on the writer's age. A writer may have started seconds ago while the gap
+spans hours: time without polls is time without a new observation.
 
 **What is still best-effort.** This list is the canonical one: every exception to
 the guarantee above is here, and no other passage in this document or in the
@@ -1150,26 +1125,6 @@ promptly, and there are surfaces it cannot see at all:
   leaves nothing behind for the feed to report.
 * Changes to anything outside the tracked columns are not reported — see
   [What this feed does not report](#what-this-feed-does-not-report).
-* **PostgreSQL only:** PostgreSQL hides other roles' connections from a role that
-  is neither a superuser nor a member of `pg_read_all_stats`, and a writer the
-  server cannot see cannot hold the bound back. Rather than quietly resume losing
-  rows, the feed stops advancing while a hidden connection is *writing to the
-  message table*: `complete_through` freezes at the last reading taken while every
-  such writer was visible. So this shows up as a stalled feed, not as missing
-  changes. A hidden connection that is idle, reading, or writing something else
-  changes nothing. msgvault uses one role, so this arises only if something else
-  writes the same message table; if it does and the feed stalls, grant the
-  msgvault role `pg_read_all_stats`. Where there is nothing to fall back to — a
-  server that started while a hidden writer was already inside its transaction —
-  the endpoint returns `500` rather than a page and the server log names the
-  grant. It clears by itself when that transaction ends.
-* **PostgreSQL only:** a *prepared* transaction (two-phase commit) holds its locks
-  without an owning session, so the feed cannot see when it began, and one that
-  wrote to the message table and then committed could publish its change behind a
-  cursor that had already moved past it. It needs `max_prepared_transactions > 0`,
-  which is off by default, and msgvault never uses two-phase commit. If another
-  application runs prepared transactions against the same database, reconcile
-  independently rather than relying on the feed.
 * **A stamp at or above the current bound waits for the bound to reach it.** The
   feed orders by the watermark stored on the row, not by the instant the write
   committed, and a page stops strictly below `complete_through`. So a row stamped
@@ -1296,7 +1251,7 @@ own schedule; nothing in this feed will invalidate them.
 | 400 | `invalid_cursor`, `invalid_limit` | A parameter is present but could not be used. A cursor this API cannot use — damaged in transit, left over from an incompatible server version, or issued against a different archive — is rejected rather than read as the beginning of the archive; the message says which of those it was, and in each case the only repair is to restart the sync from the beginning. A hand-built cursor is *not* rejected on those grounds alone: the token is unauthenticated, so a well-formed one naming this archive is honoured (see [the cursor is opaque](#get-apiv1messageschanges)). An *empty* value (`?cursor=`) is read as absent, exactly like omitting the parameter, so `?cursor=&limit=10` starts from the beginning of the archive |
 | 401 | `unauthorized` | No API key, or one this server rejects. Every request to this endpoint is authenticated the same way the rest of the API is (see [Authentication](#authentication)) |
 | 429 | `rate_limit_exceeded` | The caller has outrun the [rate limit](#rate-limiting); `Retry-After` says how long to wait. Worth handling here more than anywhere else, because polling is what this endpoint is for. Polling faster does not make the feed advance sooner — `complete_through` moves with the database, not with your poll rate — and on SQLite it costs the importer write throughput |
-| 500 | `internal_error` | The watermark query failed. **PostgreSQL only:** this is also how the no-visibility-floor case above surfaces — a server that has never once read the bound while every writer of the message table was visible has no safe bound to report, so the endpoint refuses rather than returning a page that would step your cursor over an invisible writer's change. The server log names the `pg_read_all_stats` grant that fixes it; it also clears by itself when the foreign transaction ends |
+| 500 | `internal_error` | The watermark query failed. |
 | 503 | `feature_unavailable`, `query_timeout` | `feature_unavailable`: the configured store cannot answer the watermark query, or cannot say which archive it is, so it cannot issue a cursor you could safely resume from. `query_timeout`: the request outran the server's per-request time limit. Both are retryable from the same cursor. (A request the caller abandoned is answered `query_canceled` on the same status, which by definition nobody is left to read.) |
 
 ---

@@ -139,7 +139,7 @@ msgvault search --collection Work
 
 The two flags are mutually exclusive. Collection filters work in full-text, vector, and hybrid local search modes.
 
-SQLite FTS ranking is weighted to better match PostgreSQL-backed search behavior, so subject/body weighting should feel more consistent across local tools. The rankers are still different; see [Search Ranking Across Backends](/docs/architecture/search-ranking/).
+Full-text search weights subject and sender matches more heavily than body text. Message length also affects the score; see [Search Ranking](/docs/architecture/search-ranking/).
 
 ## Source-Deleted Messages
 

@@ -296,8 +296,7 @@ remaining message references. Active messages and messages hidden only by
 deduplication remain in the archive.
 
 `gc` does not contact providers or execute pending deletion batches. It has no
-account filter, date filter, or dry-run flag, and it is not available for
-PostgreSQL archives.
+account filter, date filter, or dry-run flag.
 
 1. If you need a recoverable copy, back up the archive database **and attachment
    storage** before purging. The automatic GC backup contains only SQLite data;

@@ -71,7 +71,6 @@ nav = [
   {"Architecture" = [
     {"Overview" = "architecture/overview.md"},
     {"Data Storage" = "architecture/storage.md"},
-    {"PostgreSQL Backend" = "architecture/postgresql.md"},
     {"Search Ranking" = "architecture/search-ranking.md"},
     {"Backup Repository Format" = "architecture/backup-format.md"},
   ]},

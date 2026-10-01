@@ -60,7 +60,7 @@ Every dedup-related command sits on one of five rungs (00 through 04). Rung 00 i
 
 | Rung | Action | Command | Reversibility |
 |---|---|---|---|
-| 00 | Backup (automatic, SQLite-only) | runs before rungs 02 and 03 | point-in-time backup; PostgreSQL uses `pg_dump` |
+| 00 | Backup (automatic, SQLite-only) | runs before rungs 02 and 03 | point-in-time backup |
 | 01 | Scan | `deduplicate --dry-run` | no data touched |
 | 02 | Hide | `deduplicate` | reversible with `--undo <batch-id>` |
 | 03 | Local hard delete | `delete-deduped --batch <batch-id>` | irreversible locally |
@@ -69,7 +69,7 @@ Every dedup-related command sits on one of five rungs (00 through 04). Rung 00 i
 !!! tip "Deletion is never required"
     You can run `deduplicate` as many times as you like and stay on rung 02 forever. Rungs 03 and 04 only ever run when you invoke a different command.
 
-- **Rung 00, backup.** Before `deduplicate` or `delete-deduped` modifies any row, msgvault writes a point-in-time copy of the database alongside the live file (for example `msgvault.db.dedup-backup-20260503-091500`) using SQLite `VACUUM INTO`. The copy is built under a private temporary path and moved to the advertised backup filename only after it succeeds, so cancellation cannot leave an incomplete file looking like a valid backup. Opt out with `--no-backup`. Scanning modifies nothing and triggers no backup. This automatic backup is SQLite-only; on a PostgreSQL archive `deduplicate` refuses the built-in backup (there is no `VACUUM INTO` equivalent), so snapshot the database out-of-band with `pg_dump` first, then rerun with `--no-backup`.
+- **Rung 00, backup.** Before `deduplicate` or `delete-deduped` modifies any row, msgvault writes a point-in-time copy of the database alongside the live file (for example `msgvault.db.dedup-backup-20260503-091500`) using SQLite `VACUUM INTO`. The copy is built under a private temporary path and moved to the advertised backup filename only after it succeeds, so cancellation cannot leave an incomplete file looking like a valid backup. Opt out with `--no-backup`. Scanning modifies nothing and triggers no backup.
 - **Rung 01, scan.** `deduplicate --dry-run` reports the duplicate groups it found, the proposed survivor for each, and why. Nothing is modified.
 - **Rung 02, hide.** `deduplicate` applies the scan. Pruned copies are hidden from normal reads but kept on disk, and the run prints a batch ID. `--undo <batch-id>` restores them.
 - **Rung 03, local hard delete.** `delete-deduped` permanently removes hidden rows from the local archive to reclaim disk. It acts on named batches via `--batch` and refuses to touch rows it did not hide; all selected batches commit as one transaction, so cancellation rolls the whole selection back. `--all-hidden` purges every hidden row and always prompts for confirmation. Undo cannot recover purged rows.

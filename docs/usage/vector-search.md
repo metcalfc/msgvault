@@ -12,8 +12,6 @@ capability on top of keyword search. An embedding is a numeric representation
 of text that lets msgvault rank related content. Msgvault sends text to an
 embedding endpoint you configure, then stores the vectors in your archive.
 SQLite archives store vectors in `vectors.db`.
-PostgreSQL archives store them in pgvector tables inside the same
-database as the message archive.
 
 When vector search is enabled, the `search` command and HTTP
 `/api/v1/search` endpoint accept `mode=vector` (pure semantic) and
@@ -63,9 +61,7 @@ the provider keys you have, start with
    via `make build` (or `go build -tags "fts5 sqlite_vec"` if you are
    invoking `go build` directly). The official Docker image also includes
    `sqlite_vec`, so SQLite-backed container deployments do not need a custom
-   image for vector search. PostgreSQL vector search additionally requires the
-   `pgvector` build tag, for example
-   `go build -tags "fts5 sqlite_vec pgvector" ./cmd/msgvault`.
+   image for vector search.
 
 !!! tip "Local embeddings on Apple Silicon"
     [`afm`](https://github.com/scouzi1966/maclocal-api)
@@ -195,32 +191,6 @@ OpenAI-compatible endpoint changes the index policy and requires a full
 rebuild. Results still refer to the original messages and matching text.
 The worker tracks edits, late-arriving messages, and deletions so affected
 conversation windows can be refreshed.
-
-### PostgreSQL and pgvector
-
-When `[data].database_url` is a PostgreSQL DSN, msgvault selects the
-pgvector backend at runtime. Use `backend = "pgvector"` as the config
-marker and build with the `pgvector` tag:
-
-```toml
-[data]
-database_url = "postgres://user:pass@host:5432/msgvault?sslmode=require"
-
-[vector]
-enabled = true
-backend = "pgvector"
-
-[vector.embeddings]
-endpoint = "http://localhost:11434/v1"
-model = "nomic-embed-text"
-dimension = 768
-document_prefix = "search_document: "
-query_prefix = "search_query: "
-```
-
-pgvector embeddings live in the PostgreSQL database. `db_path` and
-`vectors.db` apply only to the SQLite sqlite-vec backend. See
-[PostgreSQL Backend](/docs/architecture/postgresql/) for database setup.
 
 ### Model task prefixes
 
@@ -699,7 +669,7 @@ body keywords.
 
 | Error | Meaning | Recovery |
 |---|---|---|
-| `vector_not_enabled` | The server or MCP process did not wire a vector backend, usually because `[vector] enabled = false`. | Set `enabled = true`, configure `[vector.embeddings]`, and start with a build that includes the needed backend (`sqlite_vec` or `pgvector`). |
+| `vector_not_enabled` | The server or MCP process did not wire a vector backend, usually because `[vector] enabled = false`. | Set `enabled = true`, configure `[vector.embeddings]`, and start with a build that includes `sqlite_vec` support. |
 | `index_stale` | Active generation's fingerprint does not match the current embedding settings: model, dimension, task prefixes, preprocessing policy, `max_input_chars`, output policy, or scope. | For an existing account-scoped index built with CLI flags, set matching `[vector.embed.scope].accounts` and restart the daemon. Otherwise run `msgvault embeddings build --full-rebuild --yes`. |
 | `index_building` | No active generation yet; one is being built. | Finish running `msgvault embeddings build`, wait for the scheduler, or use the appropriate non-vector fallback. |
 | `missing_free_text` | `mode=vector` or `mode=hybrid` used with a filter-only query (no free text to embed). | Add free-text terms to `q`, or use the appropriate non-vector fallback. |
@@ -851,4 +821,4 @@ visual coverage and the build or resume actions the daemon currently allows.
 
 - [Web UI & API Server](/docs/api-server/): browser interface and HTTP API reference.
 - [Searching](/docs/usage/searching/): Full-text search syntax.
-- [Search Ranking Across Backends](/docs/architecture/search-ranking/): Ranking differences between SQLite, PostgreSQL, sqlite-vec, and pgvector.
+- [Search Ranking](/docs/architecture/search-ranking/): Full-text weights and vector distance.

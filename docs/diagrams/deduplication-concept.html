@@ -582,7 +582,7 @@
           <div class="rung-mini-hint">source-scoped · Trash by default · permanent is opt-in</div>
         </div>
       </div>
-      <div class="ladder-strip-note"><strong>Backup first, by default.</strong> Before this step modifies any row, msgvault writes a point-in-time database copy (<code>*.dedup-backup-&lt;ts&gt;</code>) on SQLite archives; on PostgreSQL, snapshot with <code>pg_dump</code> and use <code>--no-backup</code>. <strong>And deletion is never required:</strong> you can run <code>deduplicate</code> as many times as you want and stay on rung 02 forever. <code>delete-deduped</code> and <code>delete-staged</code> only run if you invoke them.</div>
+      <div class="ladder-strip-note"><strong>Backup first, by default.</strong> Before this step modifies any row, msgvault writes a point-in-time database copy (<code>*.dedup-backup-&lt;ts&gt;</code>) on SQLite archives. <strong>And deletion is never required:</strong> you can run <code>deduplicate</code> as many times as you want and stay on rung 02 forever. <code>delete-deduped</code> and <code>delete-staged</code> only run if you invoke them.</div>
     </div>
   </main>
 </body>

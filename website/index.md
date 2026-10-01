@@ -152,7 +152,6 @@ to Trash or permanently delete it.
 - **Restore:** back up SQLite archives with snapshots of the database and
   attachments. New snapshots leave earlier ones intact, and you can verify
   them before restoring. Restoring does not require the original providers.
-  PostgreSQL databases need separate backups.
 
 ## Keep a record beyond the provider.
 

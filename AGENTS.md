@@ -12,7 +12,7 @@ provide different ways to use the same archive.
 
 - [Architecture](docs/architecture/overview.md): responsibilities and data flow.
 - [Development](docs/development.md): build prerequisites, test scheduling,
-  PostgreSQL test setup, and documentation checks.
+  SQLite test setup, and documentation checks.
 - [CLI reference](docs/cli-reference.md) and [configuration](docs/configuration.md):
   commands, flags, defaults, and runtime paths.
 - [Documentation contributor guide](docs/README.md): page ownership and maintenance.
@@ -77,7 +77,6 @@ Use these as reasoning checkpoints, not a requirement to create a design doc.
 - Use `make build` for a worktree binary. `make install` changes the user's
   installed binary and needs intentional authorization.
 - All `go test` invocations need `-tags "fts5 sqlite_vec"`; prefer `make test`.
-  PostgreSQL tests use the targets documented in [Development](docs/development.md).
 - After Go changes, run `go fmt ./...` and `go vet ./...` before committing.
   Include resulting formatting changes. Use `make lint-ci` for lint checks.
 - All new or modified Go assertions must use testify: `require.X` for setup or
@@ -110,6 +109,8 @@ before publication. This exception does not permit reuse in ordinary tests.
 
 - Use Bubble Tea and lipgloss for the TUI; Svelte and the shared UI toolkit for
   the Web UI. See [Development](docs/development.md) for the dependency map.
+- SQLite is the only supported archive database. Reject PostgreSQL DSNs and
+  `pgvector` configuration; keep DuckDB for derived analytics.
 - Route database operations through `Store`. Use DuckDB for Parquet queries,
   `mattn/go-sqlite3` for SQLite, context cancellation for long operations, and
   wrapped errors with useful context. Prefer table-driven tests.

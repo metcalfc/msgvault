@@ -73,7 +73,7 @@ come from that check. Comments and sections you already have are preserved.
 ```toml
 [vector]
 enabled = true
-backend = "sqlite-vec"          # "pgvector" when [data].database_url is PostgreSQL
+backend = "sqlite-vec"
 
 [vector.embeddings]
 api_format = "voyage-contextual" # conversation windows and turn-aware meeting chunks

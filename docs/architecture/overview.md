@@ -9,7 +9,7 @@ operate. The daemon owns archive access and background work. The browser,
 terminal, CLI, HTTP clients, and MCP tools use that daemon to read and maintain
 the same data.
 
-SQLite is the default database. Attachments live beside it as files or packed
+SQLite is the archive database. Attachments live beside it as files or packed
 blobs. Search and analytics use indexes derived from the archive. Optional
 model processing adds semantic search, document extraction, and profile
 inference without making a model provider the system of record.
@@ -31,9 +31,6 @@ inference without making a model provider the system of record.
 
 - Source APIs and export formats determine which history and media can be
   captured. An archived message does not imply that every attachment downloaded.
-- PostgreSQL is opt-in for new archives. It has no built-in SQLite migration
-  command and does not serve every cache-backed analytical view. See
-  [PostgreSQL scope](postgresql.md#current-scope).
 - Optional processing may contact external services. Consent and configuration
   are specific to each feature; ordinary keyword search needs neither.
 - Profile briefs currently summarize supported chat and text inputs only.
@@ -65,7 +62,7 @@ to update or skip records according to that provider's rules.
 On SQLite, analytics exports message metadata to Parquet. DuckDB queries those
 files for grouping and drill-down without scanning message bodies. FTS5 indexes
 message text for keyword search. Semantic search stores vectors in a separate
-SQLite index; PostgreSQL uses its own full-text search and optional pgvector.
+SQLite index with sqlite-vec.
 See [storage](storage.md) and [search ranking](search-ranking.md).
 
 ## Responsibilities
@@ -134,8 +131,7 @@ confirmation and backup rules. See [deletion](../usage/deletion.md) and
 ## Read further
 
 - [Storage](storage.md): database tables, attachments, and rebuildable caches.
-- [Search ranking](search-ranking.md): search-mode and backend contracts.
-- [PostgreSQL](postgresql.md): setup and feature boundaries.
+- [Search ranking](search-ranking.md): full-text weights and vector distance.
 - [Backup repository format](backup-format.md): snapshot and restore contracts.
 - [Development](../development.md): build, test, and contributor workflows.
 

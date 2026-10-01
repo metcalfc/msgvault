@@ -64,7 +64,7 @@ msgvault add-imap --host imap.fastmail.com --username you@fastmail.com
 msgvault add-o365 you@outlook.com
 ```
 
-Gmail accounts open a browser for OAuth authorization. IMAP accounts prompt for a password and test the connection. All accounts share the same archive database (SQLite by default, or PostgreSQL) and attachment storage.
+Gmail accounts open a browser for OAuth authorization. IMAP accounts prompt for a password and test the connection. All accounts share the same archive database (SQLite) and attachment storage.
 
 Start by listing what msgvault already knows about. Every command in this guide takes the identifier from this list (typically the email address or source name):
 

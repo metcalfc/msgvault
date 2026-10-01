@@ -8,6 +8,10 @@ All notable changes to msgvault, grouped by release.
 
 ## Unreleased
 
+- Archive storage now supports SQLite only. PostgreSQL and pgvector runtime
+  support and their CI lanes have been removed. Existing PostgreSQL connection
+  settings are rejected; archives are not converted automatically.
+
 - Names and short profile labels drop emoji as msgvault imports them, so
   "🎉 Ana" and "Ana ✨" both read "Ana". This covers email and chat display
   names, calendar attendees, CardDAV contact names, and enrichment or sweep

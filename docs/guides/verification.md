@@ -29,7 +29,7 @@ reports four checks:
 
 | Check | Description |
 |---|---|
-| Database integrity | Runs SQLite `PRAGMA integrity_check` unless skipped. PostgreSQL archives must use `pg_amcheck` separately. |
+| Database integrity | Runs SQLite `PRAGMA integrity_check` unless skipped. |
 | Message counts | Reports Gmail's profile total, the archive account total, and their signed difference. Gmail's total and msgvault's archive policy can cover different sets. |
 | Raw MIME coverage | Counts archived messages that have stored raw MIME data and reports the percentage. |
 | MIME sample | Selects up to `--sample` archived raw messages and checks that each stored MIME value can be decompressed. |

@@ -122,7 +122,7 @@ Use `testing/synctest` bubbles for work owned by the test process, including
 goroutines, channels, timers, tickers, and fakes. Advance virtual time with
 `synctest.Sleep` and wait for durable state with `synctest.Wait`.
 
-Keep real budgets for PostgreSQL and SQLite locks, database clocks, network
+Keep real budgets for SQLite locks, database clocks, network
 requests, subprocesses, DuckDB, and operating-system events. Name retained
 sub-second testify budgets so their event and owner are clear.
 
@@ -137,41 +137,11 @@ need Windows validation.
 in tests outside a `synctest.Test` bubble. A kept real wait carries
 `//nolint:kennlint // <what it waits for>` on the sleep line.
 
-### PostgreSQL tests
+### SQLite test archives
 
-`MSGVAULT_TEST_DB=postgres://...` runs PostgreSQL-backed
-tests. pgvector tests require a PostgreSQL instance with the `vector`
-extension and the `pgvector` build tag.
-
-The PostgreSQL deadlock tests also require permission to set
-`deadlock_timeout`. They defer the blocker transaction's deadlock detector
-so the write under test is the deadlock victim. For a non-superuser test
-role, have the database administrator run:
-
-```sql
-GRANT SET ON PARAMETER deadlock_timeout TO test_role;
-```
-
-Replace `test_role` with the role in `MSGVAULT_TEST_DB`. This parameter grant
-is sufficient; the test role does not need superuser access.
-
-There are two PostgreSQL configurations to cover: the pgvector build
-(`make test-pg`) and the shipped build, which has no pgvector tag
-(`make test-pg-shipped`). Run `make test-pg-both` rather than both of those —
-the tag changes the test binary of only the packages listed in
-`PG_SHIPPED_ONLY_PKGS` in the Makefile, so the second full run would reprove
-the first. Each test binary builds the schema once into a template — a
-SQLite file copied per test, or a PostgreSQL template database cloned per
-test with `CREATE DATABASE ... TEMPLATE` (`internal/testutil/sqlite_template.go`,
-`internal/testutil/pg_template.go`) — instead of replaying `InitSchema()` for
-every fixture. Nothing runs in the background, so no fixture ever issues a
-schema statement while a test body is running. Each database is still private
-to its test, still produced by the same `InitSchema()` path, and still dropped
-on cleanup. A PostgreSQL template is owned through a session advisory lock the
-server releases when the binary exits, so the next binary reclaims whatever an
-earlier one left behind; a role without `CREATEDB` falls back to a private
-schema in the configured database.
-
+Each test binary builds the schema once into a SQLite template, then copies it
+for individual tests (`internal/testutil/sqlite_template.go`). Every test gets
+its own database produced by the production `InitSchema()` path.
 
 ### Local test scheduling
 
@@ -197,8 +167,6 @@ is a snapshot, not a reservation of resources against other workloads.
 
 Use `TEST_PROFILE=standard` to disable automatic scaling. Setting `TEST_SHARDS`
 explicitly also retains sequential package jobs with the requested shard count.
-The PostgreSQL targets keep their existing connection-oriented concurrency
-limits; setting `MSGVAULT_TEST_DB` disables automatic scaling in `make test` too.
 CI's explicit `test-unsharded` and package-shard jobs keep their existing layout.
 
 ## Lint & Format

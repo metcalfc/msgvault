@@ -96,8 +96,7 @@ available unless you separately purge it locally.
 Run msgvault on your laptop or your own server. One binary provides the browser
 interface, API, scheduled work, and tools for assistants. For SQLite archives,
 backup snapshots include the database and attachments and restore without
-contacting the original providers. PostgreSQL archives require separate
-database backups.
+contacting the original providers.
 
 [Backup and restore](/docs/usage/backup/)
 

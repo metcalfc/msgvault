@@ -66,8 +66,6 @@ Takes a snapshot. Flags:
 
 When the msgvault daemon is running, `backup create` coordinates with it automatically: the command is proxied through the daemon, which briefly pauses conflicting maintenance operations while the backup pins a consistent read of the database. The pause lasts only as long as it takes to checkpoint the WAL and open a read transaction — normal syncing and reads continue while pages are scanned. A watchdog on the daemon side guarantees a crashed backup can never leave the daemon wedged.
 
-`backup create` requires a SQLite archive; PostgreSQL-backed deployments are not supported.
-
 ### `backup list`
 
 Prints every snapshot with its ID, creation time, message count, bytes added, and tag. Read-only and lock-free.
@@ -177,7 +175,7 @@ This is the scenario `backup` exists for: a drive dies, or you're setting up msg
 
     Since nothing has touched `~/.msgvault` yet, the directory doesn't exist and restore creates it fresh — the path that guarantees the target ends up with exactly the snapshot's contents (see `--overwrite` above for what changes once the target already exists).
 5. **Check for a restored config.** If the snapshot was taken with `--include-config`, the restore just placed the *old machine's* `config.toml` into `~/.msgvault` — and settings in it can point msgvault away from the archive you just restored. Open it and remove or update anything machine-specific before running other commands:
-    - `[data] database_url` — takes precedence over `data_dir`; a restored absolute SQLite path or PostgreSQL DSN sends every command to the old machine's database, not the restored one.
+    - `[data] database_url` — takes precedence over `data_dir`; a restored absolute SQLite path sends every command to the old machine's database, not the restored one.
     - `[data] data_dir` — an absolute path from the old machine points at a directory that doesn't exist here.
     - `[remote] url` — sends `tui` to a remote server instead of the local archive.
 

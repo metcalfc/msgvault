@@ -63,7 +63,6 @@ REQUIRED_SITEMAP_URLS = [
     "https://msgvault.io/docs/",
     "https://msgvault.io/docs/api-server/",
     "https://msgvault.io/docs/architecture/overview/",
-    "https://msgvault.io/docs/architecture/postgresql/",
     "https://msgvault.io/docs/architecture/search-ranking/",
     "https://msgvault.io/docs/architecture/storage/",
     "https://msgvault.io/docs/changelog/",

@@ -309,7 +309,7 @@ listed in [Recommended Configuration](/docs/usage/recommended-configuration/).
 |---|---|---|
 | `data_dir` | `~/.msgvault` | Base directory for all data |
 | `export_dir` | `{data_dir}/exports` | Directory for attachment ZIPs, downloads, and files opened from the TUI |
-| `database_url` | `{data_dir}/msgvault.db` | SQLite database path or PostgreSQL DSN |
+| `database_url` | `{data_dir}/msgvault.db` | SQLite database path; PostgreSQL connection strings are rejected |
 | `loose_attachments` | `false` | Keep attachments as loose files and reject pack/repack commands instead of creating immutable packs |
 
 Attachments and OAuth tokens are stored in subdirectories of `data_dir` (`attachments/` and `tokens/` respectively). These paths are not independently configurable.
@@ -804,7 +804,7 @@ Cache build memory and temporary disk usage scale with archive size, so a
 minimum interval can prevent repeated archive-scale work when sources sync
 frequently. Changes under `[analytics]` take effect after the daemon restarts.
 
-This setting governs the aggregate views (Senders/Domains/Labels/Time) and is ignored entirely when `[data].database_url` points at PostgreSQL — a PostgreSQL backend always uses live SQL for those views, and `build-cache` refuses to run against it. It does not affect the Web UI's Explore, Files, or People/domains workspaces, which require the SQLite + DuckDB/Parquet cache regardless of this setting and are unavailable on PostgreSQL; see [PostgreSQL Backend](/docs/architecture/postgresql/) for the current scope.
+This setting governs the aggregate views (Senders/Domains/Labels/Time). It does not affect the Web UI's Explore, Files, or People/domains workspaces, which require the SQLite + DuckDB/Parquet cache regardless of this setting.
 
 ### `[backup]`
 
@@ -1131,14 +1131,13 @@ stored data.
 
 ### `[vector]`
 
-Top-level toggle and backend marker for semantic/hybrid search. SQLite vector search requires a build with `sqlite_vec` support (default via `make build`). PostgreSQL vector search requires a build with the `pgvector` tag and a PostgreSQL `[data].database_url`. See [Vector Search](/docs/usage/vector-search/) for prerequisites, initial embedding, and the full workflow.
+Top-level toggle and backend marker for semantic/hybrid search. SQLite vector search requires a build with `sqlite_vec` support (default via `make build`). See [Vector Search](/docs/usage/vector-search/) for prerequisites, initial embedding, and the full workflow.
 
 | Key | Default | Description |
 |---|---|---|
 | `enabled` | `false` | Turn on vector and hybrid search. When `false`, `mode=vector` and `mode=hybrid` return `vector_not_enabled`. |
-| `backend` | `sqlite-vec` | Backend marker. Supported values are `sqlite-vec` and `pgvector`; the concrete backend is selected from `[data].database_url`. |
-| `db_path` | `<data_dir>/vectors.db` | SQLite vector database path. Ignored by the PostgreSQL pgvector backend. |
-| `skip_extension_create` | `false` | PostgreSQL only. Skip `CREATE EXTENSION IF NOT EXISTS vector` when pgvector is already installed by an administrator. |
+| `backend` | `sqlite-vec` | Backend marker. The supported value is `sqlite-vec`. |
+| `db_path` | `<data_dir>/vectors.db` | SQLite vector database path. |
 
 #### `[vector.embeddings]`
 
@@ -1204,7 +1203,7 @@ Hybrid ranking parameters applied at query time.
 | `k_per_signal` | `100` | Candidate pool size drawn from each signal (BM25 or vector) before fusion. |
 | `subject_boost` | `2.0` | Multiplier applied when a query term matches a whole word of a message's subject line. Stopwords such as "the" and "for" never earn the boost. |
 | `max_page_size_hybrid` | `50` | Hard cap on `page_size` for vector/hybrid responses. Set to `0` to disable clamping. |
-| `sqlite_accelerator` | `auto` | Use a ready SQLite approximate index. Set to `exact` to keep exhaustive vector search. PostgreSQL ignores this setting. |
+| `sqlite_accelerator` | `auto` | Use a ready SQLite approximate index. Set to `exact` to keep exhaustive vector search. |
 | `ann_nprobe` | `8` | SQLite index partitions searched per query. Higher values trade latency for recall. |
 | `ann_oversample` | `8` | Approximate candidates requested per result before exact reranking. Range: 1–128. |
 | `ann_threads` | CPU count, max `128` | Native worker threads used by `msgvault embeddings optimize`. Range: 1–128. |
@@ -1498,7 +1497,7 @@ All data lives under the msgvault home directory (`~/.msgvault` on macOS/Linux, 
 | File | Description |
 |---|---|
 | `config.toml` | Configuration file |
-| `msgvault.db` | SQLite database (system of record when PostgreSQL is not configured) |
+| `msgvault.db` | SQLite database (system of record) |
 | `attachments/` | Content-addressed attachment files |
 | `tokens/` | OAuth tokens per account |
 | `logs/` | Structured log files (when [file logging](/docs/configuration/#log) is enabled) |
@@ -1516,7 +1515,7 @@ data_dir = "/path/to/msgvault/data"
 # User-requested exports (default: {data_dir}/exports)
 export_dir = "/path/to/msgvault/exports"
 
-# Database URL (default: {data_dir}/msgvault.db; PostgreSQL DSN supported)
+# SQLite database path (default: {data_dir}/msgvault.db)
 database_url = "/path/to/msgvault.db"
 
 # Keep attachment content as individual files instead of creating packs.
@@ -1619,7 +1618,6 @@ enabled = true
 # Semantic and hybrid search (opt-in)
 enabled = true
 backend = "sqlite-vec"
-# backend = "pgvector"  # with a PostgreSQL database_url and pgvector build
 
 [vector.embeddings]
 endpoint = "http://localhost:11434/v1"

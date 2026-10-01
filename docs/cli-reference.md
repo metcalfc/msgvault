@@ -2832,7 +2832,7 @@ Use this if `verify` reports FTS5 shadow-table corruption such as a malformed in
 
 ## embeddings
 
-Manage the vector embedding index used by `--mode vector` and `--mode hybrid` search. Requires a build with a vector backend (`sqlite_vec` for SQLite archives, `pgvector` for PostgreSQL archives) and a configured `[vector.embeddings]` endpoint. See [Vector Search](/docs/usage/vector-search/) for prerequisites, model rotation, and troubleshooting.
+Manage the vector embedding index used by `--mode vector` and `--mode hybrid` search. Requires a build with `sqlite_vec` support and a configured `[vector.embeddings]` endpoint. See [Vector Search](/docs/usage/vector-search/) for prerequisites, model rotation, and troubleshooting.
 
 ```bash
 msgvault embeddings <subcommand> [flags]
@@ -2908,7 +2908,6 @@ The command never calls the embedding provider. It is safe to interrupt and
 rerun; the accelerator is not used for search until verification and atomic
 publication complete. The daemon's operation gate pauses scheduled embedding
 and other gated writes until the command finishes. Searches remain available.
-PostgreSQL does not need this command.
 
 Use `--drop` to remove the accelerator and its build state, including for a
 retired generation. Exact vectors remain intact. Freed database pages become
@@ -3061,7 +3060,7 @@ instead of being merged into one entry.
 `eval` opens the archive selected by local configuration directly; it does not
 use `[remote]`. Vector and hybrid evaluation currently require a SQLite archive,
 an `sqlite_vec` build, enabled vector configuration, and a compatible active
-generation. On PostgreSQL, run `--modes fts`.
+generation.
 
 ### Optional Jev reranking
 
@@ -3727,7 +3726,7 @@ command for on-demand repair or retrying an interrupted pass.
 Permanently purge **all source-deleted messages** from a SQLite archive,
 compact the database, and remove loose attachment blobs no remaining message
 references. Active messages and messages hidden only by deduplication remain.
-This does not contact providers and does not run on PostgreSQL.
+This does not contact providers.
 
 ```bash
 msgvault gc
@@ -3795,7 +3794,7 @@ source metadata, in that order.
 
 The default is a read-only report. Pass `--apply` to update the archive and
 write a JSON audit ledger under the data directory. SQLite archives also
-rebuild the Parquet analytics cache; PostgreSQL archives do not use that cache.
+rebuild the Parquet analytics cache.
 Original source files and remote servers are never modified.
 
 ```bash

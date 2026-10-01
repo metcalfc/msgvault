@@ -13,8 +13,7 @@ back up the archive and attachments before relying on a rebuild or local purge.
 
 | Layer | Role | Location |
 |---|---|---|
-| SQLite | Default system of record | `~/.msgvault/msgvault.db` |
-| PostgreSQL | Optional system of record | `[data].database_url` |
+| SQLite | System of record | `~/.msgvault/msgvault.db` |
 | SQLite vector index | Optional, rebuildable semantic index | `[vector].db_path`, default `~/.msgvault/vectors.db` |
 | Parquet | Analytics cache | `~/.msgvault/analytics/` |
 | Attachments | Content-addressed loose files and sealed packs | `~/.msgvault/attachments/` |
@@ -24,7 +23,7 @@ back up the archive and attachments before relying on a rebuild or local purge.
 
 Message metadata, bodies, labels, participants, raw payloads, and curated
 profiles live in the configured archive database. Attachment bytes are stored
-separately. SQLite is the default and stores the archive at `~/.msgvault/msgvault.db`. PostgreSQL is opt-in through `[data].database_url` and is intended for new archives or fresh re-syncs.
+separately. SQLite stores the archive at `~/.msgvault/msgvault.db`. Set `[data].database_url` to use a different SQLite file path.
 
 ### Core Tables
 
@@ -169,9 +168,9 @@ not interchangeable with disposable analytics or semantic indexes.
 
 ### Full-Text Index
 
-SQLite uses an FTS5 virtual table named `messages_fts`. PostgreSQL uses a `search_fts` `tsvector` column on `messages` with a GIN index.
+SQLite uses an FTS5 virtual table named `messages_fts`.
 
-Both power `msgvault search`, but the rankers differ. See [Search Ranking Across Backends](/docs/architecture/search-ranking/).
+FTS5 powers full-text `msgvault search`. See [Search Ranking](/docs/architecture/search-ranking/) for field weights and document-length effects.
 
 ### Relationships
 
@@ -182,14 +181,6 @@ sources ─┬─< conversations ─< messages ─┬─< message_recipients ─
          │                               └─< attachments
          └─< labels
 ```
-
-## PostgreSQL Backend
-
-PostgreSQL uses native types such as `BIGINT GENERATED ALWAYS AS IDENTITY`, `TIMESTAMPTZ`, `BYTEA`, and `JSONB`. Message, source, participant, label, attachment, and sync tables map to the same logical model as SQLite.
-
-For semantic search, pgvector stores index generations, pending embedding work, and embedding vectors in the same PostgreSQL database. There is no separate `vectors.db` on PostgreSQL.
-
-There is currently no SQLite to PostgreSQL migration command. Use PostgreSQL for a new archive or re-sync/import into an empty PostgreSQL database. See [PostgreSQL Backend](/docs/architecture/postgresql/) for setup and operational notes.
 
 ## Parquet (Analytics Cache)
 
@@ -226,8 +217,7 @@ publication leaves the previous committed cache usable; interruption during
 publication leaves the cache explicitly unavailable for repair, never marked
 ready with mixed old and new datasets. Queries hold the lock shared, so a build
 cannot replace Parquet files underneath an active reader. `msgvault
-build-cache` builds or repairs the cache on demand. PostgreSQL archives use live
-SQL for aggregate views rather than this Parquet acceleration layer.
+build-cache` builds or repairs the cache on demand.
 
 The cache includes `relationship_activity`, `relationship_people`,
 `relationship_domains`, and `relationship_daily` datasets. These compact edges
