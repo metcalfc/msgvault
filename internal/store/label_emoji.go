@@ -26,9 +26,6 @@ func identifierParticipantLabel(name string) string {
 // printable ASCII. Every emoji is outside that range, so the cleanup reads
 // only rows that could change.
 func (s *Store) nonASCIIPredicate(column string) string {
-	if s.IsPostgreSQL() {
-		return column + ` ~ '[^ -~]'`
-	}
 	return column + ` GLOB '*[^ -~]*'`
 }
 
