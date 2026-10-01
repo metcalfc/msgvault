@@ -57,6 +57,11 @@ export interface ReachEntry {
   uri?: string;
   /** The service's profile URL template ("https://github.com/{username}"). */
   profileURLTemplate?: string;
+  /** Address-book contact point ids behind the row. Retiring the row
+   * supersedes every one of them; archive-only rows have none. */
+  contactPointIDs?: number[];
+  /** When the row's contact point was retired (former rows only). */
+  retiredAt?: string;
 }
 
 /** What `contactLink` needs to link a contact row, or undefined when the
@@ -167,7 +172,9 @@ export function reachEntriesFromContactPoints(points: readonly PersonContactPoin
       normalized: point.normalized_value || undefined,
       serviceSlug: point.service_slug || undefined,
       uri: point.uri || undefined,
-      profileURLTemplate: point.profile_url_template || undefined
+      profileURLTemplate: point.profile_url_template || undefined,
+      contactPointIDs: [point.envelope.id],
+      ...(point.envelope.superseded_at ? { retiredAt: point.envelope.superseded_at } : {})
     });
   }
   return entries;
@@ -284,9 +291,49 @@ export function mergeReachEntries(...lists: ReachEntry[][]): ReachEntry[] {
         uri: keep.uri ?? other.uri,
         profileURLTemplate: keep.profileURLTemplate ?? other.profileURLTemplate,
         participantIDs: [...new Set([...keep.participantIDs, ...other.participantIDs])],
+        ...mergedContactPointIDs(keep, other),
         observed: keep.observed && other.observed
       });
     }
   }
   return [...byKey.values()].sort((a, b) => REACH_KIND_ORDER.indexOf(a.kind) - REACH_KIND_ORDER.indexOf(b.kind));
+}
+
+function mergedContactPointIDs(keep: ReachEntry, other: ReachEntry): Pick<ReachEntry, 'contactPointIDs'> {
+  const ids = [...new Set([...(keep.contactPointIDs ?? []), ...(other.contactPointIDs ?? [])])];
+  return ids.length > 0 ? { contactPointIDs: ids } : {};
+}
+
+/** Splits the person's rows into current and former. Former rows are
+ * retired (superseded) contact points whose value is not current again,
+ * newest retirement first. An archive-only row whose value matches a
+ * retired contact point moves under Former with it, because the user
+ * retired that value; its participants stay on the former row. */
+export function splitFormerReach(
+  current: readonly ReachEntry[],
+  retired: readonly PersonContactPoint[] | undefined
+): { current: ReachEntry[]; former: ReachEntry[] } {
+  const newestFirst = [...(retired ?? [])]
+    .filter((point) => point.envelope.superseded_at)
+    .sort((a, b) => (b.envelope.superseded_at ?? '').localeCompare(a.envelope.superseded_at ?? ''));
+  const currentPointKeys = new Set(current.filter((entry) => entry.contactPointIDs?.length).map((entry) => entry.key));
+  const formerByKey = new Map<string, ReachEntry>();
+  for (const entry of reachEntriesFromContactPoints(newestFirst)) {
+    if (currentPointKeys.has(entry.key) || formerByKey.has(entry.key)) continue;
+    formerByKey.set(entry.key, entry);
+  }
+  const kept: ReachEntry[] = [];
+  for (const entry of current) {
+    const former = entry.contactPointIDs?.length ? undefined : formerByKey.get(entry.key);
+    if (!former) { kept.push(entry); continue; }
+    formerByKey.set(entry.key, {
+      ...former,
+      participantIDs: [...new Set([...former.participantIDs, ...entry.participantIDs])],
+      name: former.name ?? entry.name
+    });
+  }
+  return {
+    current: kept,
+    former: [...formerByKey.values()].sort((a, b) => REACH_KIND_ORDER.indexOf(a.kind) - REACH_KIND_ORDER.indexOf(b.kind))
+  };
 }

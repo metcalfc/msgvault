@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { PersonContactPoint, PersonIdentifier } from '../api/generated/models';
 import {
   mergeReachEntries, normalizeReachValue, reachEntriesFromContactPoints, reachEntriesFromIdentifiers,
-  reachEntriesFromMembers, reachKindForAddressKind, reachLinkInput, serviceKey, serviceLabelForSlug
+  reachEntriesFromMembers, reachKindForAddressKind, reachLinkInput, serviceKey, serviceLabelForSlug, splitFormerReach
 } from './reach';
 import { contactLink } from '../links/contact-links';
 
@@ -231,5 +231,37 @@ describe('reach entries', () => {
     expect(merged[0]?.observed).toBe(false);
     expect(merged[0]?.serviceSlug).toBe('github');
     expect(merged[0]?.profileURLTemplate).toBe('https://github.com/{username}');
+  });
+
+  it('keeps every contact point id behind a merged row so retire can supersede them all', () => {
+    const merged = mergeReachEntries(
+      reachEntriesFromContactPoints([
+        contactPoint({ envelope: { id: 4, ordinal: 0, source: 'user', created_at: when, updated_at: when, vcard: {} } }),
+        contactPoint({ original_value: 'PERSON@example.test', envelope: { id: 5, ordinal: 1, source: 'carddav_import', created_at: when, updated_at: when, vcard: {} } })
+      ]),
+      reachEntriesFromIdentifiers({ identifiers: [identifier({})] })
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.contactPointIDs).toEqual([4, 5]);
+    expect(merged[0]?.participantIDs).toEqual([12]);
+    const archiveOnly = mergeReachEntries(reachEntriesFromIdentifiers({ identifiers: [identifier({ value: 'other@example.test' })] }));
+    expect(archiveOnly[0]?.contactPointIDs).toBeUndefined();
+  });
+
+  it('moves retired values and their matching archive identities under Former', () => {
+    const retiredAt = '2026-03-01T00:00:00Z';
+    const current = mergeReachEntries(reachEntriesFromIdentifiers({ identifiers: [
+      identifier({ value: 'old@example.test', participant_id: 20 }),
+      identifier({ value: 'kept@example.test', participant_id: 21 })
+    ] }));
+    const { current: kept, former } = splitFormerReach(current, [
+      contactPoint({ original_value: 'old@example.test', normalized_value: 'old@example.test',
+        envelope: { id: 9, ordinal: 0, source: 'user', created_at: when, updated_at: when, vcard: {}, superseded_at: retiredAt } })
+    ]);
+    expect(kept.map((entry) => entry.value)).toEqual(['kept@example.test']);
+    expect(former).toHaveLength(1);
+    expect(former[0]?.value).toBe('old@example.test');
+    expect(former[0]?.retiredAt).toBe(retiredAt);
+    expect(former[0]?.participantIDs).toEqual([20]);
   });
 });

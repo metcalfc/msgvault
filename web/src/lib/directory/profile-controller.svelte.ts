@@ -2,16 +2,19 @@ import {
   clearPersonAttribute as generatedClearPersonAttribute,
   createAttributeDefinition as generatedCreateAttributeDefinition,
   deletePerson as generatedDeletePerson,
+  detachPersonParticipants as generatedDetachPersonParticipants,
   getPersonProfile as generatedGetPersonProfile,
   getPersonStructuredProfile as generatedGetPersonStructuredProfile,
   listAttributeDefinitions as generatedListAttributeDefinitions,
   listPersonAttributes as generatedListPersonAttributes,
   patchPerson as generatedPatchPerson,
   patchPersonStructuredProfile as generatedPatchPersonStructuredProfile,
+  reattachPersonParticipants as generatedReattachPersonParticipants,
   setPersonAttribute as generatedSetPersonAttribute,
 } from '../api/generated/api/api';
 import { entityNames, invalidatePeopleNames } from '../names/entity-names.svelte';
 import type { APIClient } from '../api/client';
+import type { PersonParticipantDetachResult } from '../api/generated/models';
 import type {
   AttributeDefinition,
   CreateAttributeDefinitionRequest,
@@ -26,6 +29,9 @@ import type {
   PersonProfilePatchRequest,
   SetPersonAttributeRequest,
 } from './models';
+export type DirectoryDetachmentOutcome =
+  | { ok: true; detachmentID: number }
+  | { ok: false; message: string };
 interface DirectoryProfileControllerOptions {
   invalidateRow?: (
     personID: number,
@@ -291,6 +297,66 @@ export class DirectoryProfileController {
       this.captureMutationFailure(cause, 0, draftGeneration);
     } finally {
       this.finishMutation(draftGeneration);
+    }
+  }
+  /** Removes archive identities from this person (POST
+   * /people/{id}/participants/detach). The detachment ID in the result is
+   * what `reattachParticipants` takes to undo it. */
+  async detachParticipants(participantIDs: number[]): Promise<DirectoryDetachmentOutcome> {
+    return this.writeDetachment((headers) =>
+      generatedDetachPersonParticipants({ id: this.personID }, { participant_ids: participantIDs }, {
+        ...this.client,
+        headers,
+      }),
+    );
+  }
+  /** Undoes one detachment (POST /people/{id}/participants/reattach). */
+  async reattachParticipants(detachmentID: number): Promise<DirectoryDetachmentOutcome> {
+    return this.writeDetachment((headers) =>
+      generatedReattachPersonParticipants({ id: this.personID }, { detachment_id: detachmentID }, {
+        ...this.client,
+        headers,
+      }),
+    );
+  }
+  private async writeDetachment(
+    send: (headers: Record<string, string>) => Promise<{
+      data?: PersonParticipantDetachResult;
+      error?: unknown;
+      response: Response;
+    }>,
+  ): Promise<DirectoryDetachmentOutcome> {
+    if (!this.canWritePerson || !this.personETag) {
+      return { ok: false, message: 'Wait for the current change to finish, then try again.' };
+    }
+    this.mutationPending = true;
+    try {
+      const response = await send({ 'If-Match': this.personETag });
+      if (!response.data) {
+        const details = errorDetails(response.error);
+        return {
+          ok: false,
+          message:
+            typeof details.message === 'string'
+              ? details.message
+              : failureMessage(response.error, response.response.status),
+        };
+      }
+      const result = response.data;
+      const etag = response.response.headers.get('ETag');
+      this.person = result.person;
+      this.personETag = etag;
+      this.structuredProfileETag = etag;
+      if (this.structuredProfile) this.structuredProfile = { ...this.structuredProfile, person: result.person };
+      this.publish();
+      // Bound participants lead with this person's name; detached ones no longer do.
+      invalidatePeopleNames(this.client);
+      await this.invalidateRow(undefined, true);
+      return { ok: true, detachmentID: result.detachment.id };
+    } catch (cause: unknown) {
+      return { ok: false, message: failureMessage(cause, 0) };
+    } finally {
+      this.mutationPending = false;
     }
   }
   async setAttribute(

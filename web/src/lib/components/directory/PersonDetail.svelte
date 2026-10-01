@@ -15,7 +15,7 @@
   import { mergeReachEntries, reachEntriesFromContactPoints, reachEntriesFromIdentifiers } from '../../people/reach';
   import { humanizeDate, shortDate } from '../../util/dates';
   import { channelLabel } from '../../util/labels';
-  import PersonReachBlock from '../people/PersonReachBlock.svelte';
+  import PersonContactList from './PersonContactList.svelte';
   import type { DirectoryReadBundle, DirectoryReadSection } from '../../directory/models';
   import type { DirectoryProfileController } from '../../directory/profile-controller.svelte';
   import type { DirectoryEntityController } from '../../directory/entity-controller.svelte';
@@ -493,7 +493,9 @@
         </section>
       </div>
     {:else}
-      <PersonReachBlock entries={reachEntries} {onAnnounce}>
+      <PersonContactList {client} {personID} {displayName} entries={reachEntries}
+        contactPoints={profile?.contact_points ?? []} revision={profile?.person?.revision ?? bundle.person?.revision}
+        {profileController} {onAnnounce}>
         {#snippet after()}
           {#if lastContact}
             <li class="last-contact" data-fact-row>
@@ -514,7 +516,7 @@
             </li>
           {/if}
         {/snippet}
-      </PersonReachBlock>
+      </PersonContactList>
       {#if bundle.person?.participant_ids?.length}
         <RecentActivity rows={recentRows} loading={recentLoading || (!participantResolution && !identitiesUnavailable)}
           error={identitiesUnavailable ? 'Recent activity is unavailable while identities fail to load.' : recentError}

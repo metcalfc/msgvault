@@ -112,7 +112,9 @@
 }
 
 :where([data-detail-row]:hover [data-detail-actions='hover']),
-:where([data-detail-row]:focus-within [data-detail-actions='hover']) {
+:where([data-detail-row]:focus-within [data-detail-actions='hover']),
+:where([data-fact-row]:hover [data-detail-actions='hover']),
+:where([data-fact-row]:focus-within [data-detail-actions='hover']) {
   opacity: 1;
 }
 
