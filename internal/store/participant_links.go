@@ -659,6 +659,9 @@ func (s *Store) UnlinkParticipants(a, b int64) (int64, error) {
 		); err != nil {
 			return err
 		}
+		if err := s.rememberSameMailboxSplitTx(context.Background(), tx, lo, hi); err != nil {
+			return err
+		}
 		revision, err = s.bumpIdentityRevision(tx)
 		if err != nil {
 			return err

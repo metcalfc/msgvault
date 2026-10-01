@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -92,6 +94,59 @@ type emailEquivalenceCandidateState struct {
 	id      int64
 	state   IdentityMatchState
 	pending bool
+	byUser  bool
+}
+
+// emailEquivalenceDecisions indexes the pass's candidates three ways: by exact
+// key, by participant pair for rejected email_equivalence rows (so a future
+// change to the mailbox key never revives an old rejection), and as the list
+// of pairs the user rejected, which no join may reconnect.
+type emailEquivalenceDecisions struct {
+	byKey        map[emailEquivalenceCandidateKey]emailEquivalenceCandidateState
+	rejectedPair map[linkEdge]struct{}
+	userRejected []linkEdge
+}
+
+func newEmailEquivalenceDecisions(
+	candidates map[emailEquivalenceCandidateKey]emailEquivalenceCandidateState,
+) emailEquivalenceDecisions {
+	decisions := emailEquivalenceDecisions{
+		byKey:        candidates,
+		rejectedPair: make(map[linkEdge]struct{}),
+	}
+	for key, state := range candidates {
+		if state.state != IdentityMatchStateRejected {
+			continue
+		}
+		pair := linkEdge{a: key.lo, b: key.hi}
+		if key.basis == IdentityMatchEmailEquivalence {
+			decisions.rejectedPair[pair] = struct{}{}
+		}
+		if state.byUser {
+			decisions.userRejected = append(decisions.userRejected, pair)
+		}
+	}
+	return decisions
+}
+
+// settled reports whether a pair already has an outcome the pass must not
+// revisit: a rejection under any key, a conflict, or an applied acceptance.
+func (d emailEquivalenceDecisions) settled(pair emailEquivalencePair) bool {
+	if pair.basis == IdentityMatchEmailEquivalence {
+		if _, rejected := d.rejectedPair[linkEdge{a: pair.lo, b: pair.hi}]; rejected {
+			return true
+		}
+	}
+	existing, found := d.byKey[emailEquivalenceCandidateKey(pair)]
+	if !found {
+		return false
+	}
+	if pair.basis == IdentityMatchEmailDotVariant {
+		return true
+	}
+	return existing.state == IdentityMatchStateRejected ||
+		existing.state == IdentityMatchStateConflict ||
+		(existing.state == IdentityMatchStateAccepted && !existing.pending)
 }
 
 // LinkEquivalentEmailAddressesContext applies the mailbox rule to the whole
@@ -120,7 +175,11 @@ func (s *Store) LinkEquivalentEmailAddressesContext(
 		}
 	}
 
-	pairs, scanned, err := s.planEmailEquivalencePairsContext(ctx)
+	ineligible, err := s.emailEquivalenceIneligibleAnchorsContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pairs, scanned, err := s.planEmailEquivalencePairsContext(ctx, ineligible)
 	if err != nil {
 		return nil, err
 	}
@@ -182,13 +241,60 @@ func (s *Store) emailEquivalenceWatermarkContext(ctx context.Context) (int64, er
 	return 0, nil
 }
 
+// emailEquivalenceIneligibleAnchorsContext returns participants that cannot
+// anchor their mailbox group: identities classified as not a person (by the
+// user, a rule, or Jev) and identities under an active detachment. Their own
+// pairs are still planned, so the batch records or skips them as before.
+func (s *Store) emailEquivalenceIneligibleAnchorsContext(
+	ctx context.Context,
+) (map[int64]struct{}, error) {
+	ineligible := make(map[int64]struct{})
+	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
+		classified, err := s.anyNotPersonClassificationTx(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if classified {
+			hidden, err := s.hiddenCorrespondentParticipantsTx(ctx, tx)
+			if err != nil {
+				return err
+			}
+			for id := range hidden {
+				ineligible[id] = struct{}{}
+			}
+		}
+		rows, err := tx.QueryContext(ctx, `SELECT member.participant_id
+			FROM person_participant_detachment_members member
+			WHERE EXISTS (SELECT 1 FROM person_participant_detachments detachment
+			              WHERE detachment.id = member.detachment_id
+			                AND detachment.reattached_at IS NULL)`)
+		if err != nil {
+			return fmt.Errorf("load detached participants: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				return fmt.Errorf("scan detached participant: %w", err)
+			}
+			ineligible[id] = struct{}{}
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return ineligible, nil
+}
+
 // planEmailEquivalencePairsContext scans every email participant once and
 // groups them by mailbox. Each automatic pair joins a member to its group's
-// lowest participant ID, so a group of n addresses needs n-1 pairs rather
-// than every pairing. Dot-variant suggestions join the lowest IDs of each
-// mailbox that shares a dot-insensitive key.
+// anchor, the lowest participant ID that is not in ineligible (or the lowest
+// ID when none is eligible), so a group of n addresses needs n-1 pairs and a
+// skipped low ID never strands the rest. Dot-variant suggestions join the
+// anchors of each mailbox that shares a dot-insensitive key.
 func (s *Store) planEmailEquivalencePairsContext(
-	ctx context.Context,
+	ctx context.Context, ineligible map[int64]struct{},
 ) ([]emailEquivalencePair, int, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id, email_address FROM participants
 		WHERE email_address IS NOT NULL AND email_address <> ''
@@ -229,12 +335,28 @@ func (s *Store) planEmailEquivalencePairsContext(
 		return nil, 0, fmt.Errorf("iterate email participants: %w", err)
 	}
 
-	pairs := make([]emailEquivalencePair, 0)
+	anchors := make(map[string]int64, len(mailboxOrder))
 	for _, mailbox := range mailboxOrder {
 		ids := mailboxes[mailbox]
-		for _, member := range ids[1:] {
+		anchor := ids[0]
+		for _, id := range ids {
+			if _, skip := ineligible[id]; !skip {
+				anchor = id
+				break
+			}
+		}
+		anchors[mailbox] = anchor
+	}
+	pairs := make([]emailEquivalencePair, 0)
+	for _, mailbox := range mailboxOrder {
+		anchor := anchors[mailbox]
+		for _, member := range mailboxes[mailbox] {
+			if member == anchor {
+				continue
+			}
+			lo, hi := normalizeEdge(anchor, member)
 			pairs = append(pairs, emailEquivalencePair{
-				basis: IdentityMatchEmailEquivalence, lo: ids[0], hi: member, key: mailbox,
+				basis: IdentityMatchEmailEquivalence, lo: lo, hi: hi, key: mailbox,
 			})
 		}
 	}
@@ -243,9 +365,9 @@ func (s *Store) planEmailEquivalencePairsContext(
 		if len(variants) < 2 {
 			continue
 		}
-		first := mailboxes[variants[0]][0]
+		first := anchors[variants[0]]
 		for _, variant := range variants[1:] {
-			lo, hi := normalizeEdge(first, mailboxes[variant][0])
+			lo, hi := normalizeEdge(first, anchors[variant])
 			pairs = append(pairs, emailEquivalencePair{
 				basis: IdentityMatchEmailDotVariant, lo: lo, hi: hi, key: key,
 			})
@@ -260,7 +382,8 @@ func loadEmailEquivalenceCandidates(
 	ctx context.Context, query func(context.Context, string, ...any) (rowsScanner, error),
 ) (map[emailEquivalenceCandidateKey]emailEquivalenceCandidateState, error) {
 	rows, err := query(ctx, `SELECT id, basis, left_id, right_id,
-		COALESCE(normalized_value, ''), state, application_pending
+		COALESCE(normalized_value, ''), state, application_pending,
+		COALESCE(decided_by, '') = 'user'
 		FROM identity_match_candidates
 		WHERE basis IN (?, ?) AND left_kind = ? AND right_kind = ?`,
 		IdentityMatchEmailEquivalence, IdentityMatchEmailDotVariant,
@@ -274,7 +397,7 @@ func loadEmailEquivalenceCandidates(
 		var key emailEquivalenceCandidateKey
 		var state emailEquivalenceCandidateState
 		if err := rows.Scan(&state.id, &key.basis, &key.lo, &key.hi, &key.key,
-			&state.state, &state.pending); err != nil {
+			&state.state, &state.pending, &state.byUser); err != nil {
 			return nil, fmt.Errorf("scan email equivalence candidate: %w", err)
 		}
 		candidates[key] = state
@@ -312,16 +435,13 @@ func (s *Store) pendingEmailEquivalencePairsContext(
 		}
 		return id
 	}
+	decisions := newEmailEquivalenceDecisions(candidates)
 	pending := make([]emailEquivalencePair, 0, len(pairs))
 	for _, pair := range pairs {
-		existing, found := candidates[emailEquivalenceCandidateKey(pair)]
-		if pair.basis == IdentityMatchEmailDotVariant {
-			if found || clusterOf(pair.lo) == clusterOf(pair.hi) {
-				continue
-			}
-		} else if found && (existing.state == IdentityMatchStateRejected ||
-			existing.state == IdentityMatchStateConflict ||
-			(existing.state == IdentityMatchStateAccepted && !existing.pending)) {
+		if decisions.settled(pair) {
+			continue
+		}
+		if pair.basis == IdentityMatchEmailDotVariant && clusterOf(pair.lo) == clusterOf(pair.hi) {
 			continue
 		}
 		pending = append(pending, pair)
@@ -441,13 +561,7 @@ func (s *Store) applyEmailEquivalenceBatchContext(
 		if err != nil {
 			return err
 		}
-		rejected := make(map[string][]linkEdge)
-		for key, state := range candidates {
-			if key.basis == IdentityMatchEmailEquivalence &&
-				state.state == IdentityMatchStateRejected {
-				rejected[key.key] = append(rejected[key.key], linkEdge{a: key.lo, b: key.hi})
-			}
-		}
+		decisions := newEmailEquivalenceDecisions(candidates)
 		// userHidden holds identities the user marked as not a person; their
 		// pairs are recorded rejected and restored when the mark is cleared.
 		// derivedHidden adds rule and Jev classifications (an automated
@@ -547,12 +661,11 @@ func (s *Store) applyEmailEquivalenceBatchContext(
 				continue
 			}
 
-			if found && (existing.state == IdentityMatchStateRejected ||
-				existing.state == IdentityMatchStateConflict ||
-				(existing.state == IdentityMatchStateAccepted && !existing.pending)) {
+			if decisions.settled(pair) {
 				continue
 			}
-			if rootLo != rootHi && emailEquivalenceSuppressed(forest, rootLo, rootHi, rejected[pair.key]) {
+			if rootLo != rootHi &&
+				emailEquivalenceSuppressed(forest, rootLo, rootHi, decisions.userRejected) {
 				batch.Suppressed++
 				continue
 			}
@@ -716,9 +829,10 @@ func sortedPersonSet(set map[int64]struct{}) []int64 {
 }
 
 // emailEquivalenceSuppressed reports whether linking the two identities would
-// reconnect a pair the user unlinked or rejected for the same mailbox. An
-// unlink rejects every accepted candidate that crossed the split, so this
-// keeps a later member of the mailbox from bridging the two sides again.
+// put both addresses of a pair the user rejected or unlinked into one
+// identity, whatever mailbox either pair belongs to. An unlink records such a
+// pair across its cut, so no later pair on any mailbox bridges the two sides
+// again.
 func emailEquivalenceSuppressed(
 	forest *linkForest, rootLo, rootHi int64, rejected []linkEdge,
 ) bool {
@@ -899,4 +1013,133 @@ func emailEquivalenceEvidence(pair emailEquivalencePair, addresses map[int64]str
 	}
 	return fmt.Sprintf("%s and %s deliver to the same mailbox, %s: anything after "+
 		"a plus sign is a tag.", lo, hi, pair.key)
+}
+
+// emailEquivalenceUnlinkNote is the decision note on the rejection an unlink
+// records for addresses of one mailbox.
+const emailEquivalenceUnlinkNote = "unlinked by the user"
+
+// rememberSameMailboxSplitTx records a user's unlink as a rejected
+// email_equivalence candidate when it separates two addresses of one
+// mailbox, so the equivalence pass never links them again. a and b are the
+// endpoints of the removed edge; the caller holds the identity mutation lock
+// and has already deleted the edge.
+//
+// One rejected pair across the cut is enough: the pass refuses any join that
+// would put both addresses of a user-rejected pair into one identity. The
+// endpoints are tried first; otherwise the first same-mailbox pair across
+// the two components, in participant ID order, is recorded. Unlinks made
+// before this record existed cannot be recovered.
+func (s *Store) rememberSameMailboxSplitTx(ctx context.Context, tx *loggedTx, a, b int64) error {
+	edges, err := s.loadLinkEdgesTxContext(ctx, tx)
+	if err != nil {
+		return err
+	}
+	adjacency := buildAdjacency(edges)
+	left := componentOfAdj(a, adjacency)
+	if _, connected := left[b]; connected {
+		return nil
+	}
+	right := componentOfAdj(b, adjacency)
+	ids := make([]int64, 0, len(left)+len(right))
+	for id := range left {
+		ids = append(ids, id)
+	}
+	for id := range right {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	addresses := make(map[int64]string, len(ids))
+	if err := queryInChunksContext(ctx, tx, ids, nil,
+		`SELECT id, email_address FROM participants
+		 WHERE email_address IS NOT NULL AND id IN (%s)`,
+		func(rows *loggedRows) error {
+			var id int64
+			var address string
+			if err := rows.Scan(&id, &address); err != nil {
+				return fmt.Errorf("scan unlinked address: %w", err)
+			}
+			addresses[id] = address
+			return nil
+		}); err != nil {
+		return fmt.Errorf("load unlinked addresses: %w", err)
+	}
+	pairFor := func(x, y int64) (emailEquivalencePair, bool) {
+		if emailaddr.Compare(addresses[x], addresses[y]) != emailaddr.SameMailbox {
+			return emailEquivalencePair{}, false
+		}
+		key, _ := emailaddr.Mailbox(addresses[x])
+		lo, hi := normalizeEdge(x, y)
+		return emailEquivalencePair{basis: IdentityMatchEmailEquivalence, lo: lo, hi: hi, key: key}, true
+	}
+	pair, found := pairFor(a, b)
+	if !found {
+		leftByMailbox := make(map[string]int64)
+		for _, id := range ids {
+			if _, inLeft := left[id]; !inLeft {
+				continue
+			}
+			if key, ok := emailaddr.Mailbox(addresses[id]); ok {
+				if _, seen := leftByMailbox[key]; !seen {
+					leftByMailbox[key] = id
+				}
+			}
+		}
+		for _, id := range ids {
+			if _, inRight := right[id]; !inRight {
+				continue
+			}
+			key, ok := emailaddr.Mailbox(addresses[id])
+			if !ok {
+				continue
+			}
+			if partner, shared := leftByMailbox[key]; shared {
+				if pair, found = pairFor(partner, id); found {
+					break
+				}
+			}
+		}
+	}
+	if !found {
+		return nil
+	}
+	var candidateID int64
+	var state IdentityMatchState
+	err = tx.QueryRowContext(ctx, `SELECT id, state FROM identity_match_candidates
+		WHERE left_kind = ? AND left_id = ? AND right_kind = ? AND right_id = ?
+		  AND basis = ?
+		ORDER BY CASE WHEN state = ? THEN 0 ELSE 1 END, id LIMIT 1`,
+		IdentityMatchParticipant, pair.lo, IdentityMatchParticipant, pair.hi,
+		IdentityMatchEmailEquivalence, IdentityMatchStateRejected,
+	).Scan(&candidateID, &state)
+	switch {
+	case err == nil && state == IdentityMatchStateRejected:
+		return nil
+	case err == nil:
+		if _, err := tx.ExecContext(ctx, `UPDATE identity_match_candidates SET
+			state = ?, decided_by = ?, decided_at = `+s.dialect.Now()+`, notes = ?,
+			pre_conflict_state = NULL, application_pending = FALSE,
+			updated_at = `+s.dialect.Now()+` WHERE id = ?`,
+			IdentityMatchStateRejected, string(ProvenanceUser), emailEquivalenceUnlinkNote,
+			candidateID); err != nil {
+			return fmt.Errorf("record unlinked mailbox pair: %w", err)
+		}
+		return dropCandidateDecisionSnapshotTx(ctx, tx, candidateID)
+	case !errors.Is(err, sql.ErrNoRows):
+		return fmt.Errorf("find unlinked mailbox pair: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO identity_match_candidates (
+		left_kind, left_id, right_kind, right_id, basis, normalized_value, state,
+		source, source_ref, notes, decided_by, decided_at, application_pending,
+		created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, `+s.dialect.Now()+`, FALSE,
+		`+s.dialect.Now()+`, `+s.dialect.Now()+`)`,
+		IdentityMatchParticipant, pair.lo, IdentityMatchParticipant, pair.hi,
+		IdentityMatchEmailEquivalence, pair.key, IdentityMatchStateRejected,
+		ProvenanceUser, EmailEquivalenceSourceRef, emailEquivalenceUnlinkNote,
+		string(ProvenanceUser),
+	); err != nil {
+		return fmt.Errorf("record unlinked mailbox pair: %w", err)
+	}
+	return nil
 }

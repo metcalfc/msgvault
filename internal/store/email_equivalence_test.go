@@ -466,3 +466,107 @@ func TestLinkEquivalentEmailAddressesHonorsDetachment(t *testing.T) {
 	assert.True(linkedPair(t, st, primary, bridge))
 	assert.Equal(store.IdentityMatchStateAccepted, equivalenceCandidateFor(t, st, primary, bridge).State)
 }
+
+// An unlinked pair must stay apart even when a pair on a different mailbox
+// would join the two sides.
+func TestLinkEquivalentEmailAddressesUnlinkHoldsAcrossMailboxes(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	ctx := context.Background()
+
+	primary := ensureEmailParticipant(t, st, "pat@example.com")
+	work := ensureEmailParticipant(t, st, "pat+work@example.com")
+	colleague := ensureEmailParticipant(t, st, "lee@example.org")
+	_, err := st.LinkParticipants(work, colleague)
+	require.NoError(err, "manual link")
+	_, err = st.LinkEquivalentEmailAddressesContext(ctx, false)
+	require.NoError(err, "first pass")
+	require.True(linkedPair(t, st, primary, work))
+	_, err = st.UnlinkParticipants(primary, work)
+	require.NoError(err, "unlink")
+
+	// A tag of the colleague's mailbox tied to the primary side would bridge
+	// the colleague's side, and with it the unlinked tag, back in.
+	home := ensureEmailParticipant(t, st, "lee+home@example.org")
+	_, err = st.LinkParticipants(primary, home)
+	require.NoError(err, "manual link")
+	result, err := st.LinkEquivalentEmailAddressesContext(ctx, false)
+	require.NoError(err, "pass after new tag")
+	assert.Equal(0, result.Linked)
+	assert.Equal(1, result.Suppressed)
+	assert.False(linkedPair(t, st, primary, work), "the unlink holds across mailboxes")
+	assert.False(linkedPair(t, st, home, colleague))
+}
+
+// A manual unlink of two addresses of one mailbox is a decision too, even
+// when no equivalence candidate recorded the link.
+func TestUnlinkSameMailboxAddressesIsRemembered(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	ctx := context.Background()
+
+	primary := ensureEmailParticipant(t, st, "pat@example.com")
+	work := ensureEmailParticipant(t, st, "pat+work@example.com")
+	_, err := st.LinkParticipants(primary, work)
+	require.NoError(err, "manual link")
+	_, err = st.UnlinkParticipants(primary, work)
+	require.NoError(err, "manual unlink")
+
+	recorded := equivalenceCandidateFor(t, st, primary, work)
+	assert.Equal(store.IdentityMatchStateRejected, recorded.State)
+	require.NotNil(recorded.DecidedBy)
+	assert.Equal("user", *recorded.DecidedBy)
+
+	_, err = st.LinkEquivalentEmailAddressesContext(ctx, true)
+	require.NoError(err, "pass after unlink")
+	assert.False(linkedPair(t, st, primary, work), "the pass keeps a manual unlink")
+}
+
+// A manual unlink that separates a mailbox's addresses through another edge
+// is remembered for the pair that crosses the cut.
+func TestUnlinkSeparatingSameMailboxThroughAnotherEdgeIsRemembered(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	ctx := context.Background()
+
+	primary := ensureEmailParticipant(t, st, "pat@example.com")
+	colleague := ensureEmailParticipant(t, st, "lee@example.org")
+	work := ensureEmailParticipant(t, st, "pat+work@example.com")
+	_, err := st.LinkParticipants(primary, colleague)
+	require.NoError(err)
+	_, err = st.LinkParticipants(colleague, work)
+	require.NoError(err)
+	_, err = st.UnlinkParticipants(colleague, work)
+	require.NoError(err, "cut the edge between the two mailboxes")
+
+	_, err = st.LinkEquivalentEmailAddressesContext(ctx, true)
+	require.NoError(err, "pass after unlink")
+	assert.False(linkedPair(t, st, primary, work), "the pass keeps the separation")
+}
+
+// When the lowest-ID address of a mailbox cannot anchor its group, the other
+// addresses still link to each other.
+func TestLinkEquivalentEmailAddressesAnchorsOnEligibleMember(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	ctx := context.Background()
+
+	hub := ensureEmailParticipant(t, st, "pat@example.com")
+	first := ensureEmailParticipant(t, st, "pat+a@example.com")
+	second := ensureEmailParticipant(t, st, "pat+b@example.com")
+	_, err := st.WriteDerivedCorrespondentKindsContext(ctx, []store.DerivedCorrespondentKind{{
+		ParticipantID: hub, Source: correspondentkind.SourceRule,
+		Kind: correspondentkind.Automated, Actor: "rule:noreply_address",
+	}})
+	require.NoError(err, "classify the lowest-ID address by rule")
+
+	result, err := st.LinkEquivalentEmailAddressesContext(ctx, true)
+	require.NoError(err, "link equivalent addresses")
+	assert.Equal(1, result.Linked)
+	assert.True(linkedPair(t, st, first, second), "siblings link without the hub")
+	assert.False(linkedPair(t, st, hub, first), "the automated address stays apart")
+}

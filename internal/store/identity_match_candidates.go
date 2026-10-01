@@ -754,6 +754,16 @@ func (s *Store) decideIdentityMatchCandidateContext(
 				); err != nil {
 					return err
 				}
+				// A user rejection that withdrew the link is the same decision
+				// as an unlink for the equivalence pass.
+				if decidedBy == string(ProvenanceUser) &&
+					current.Basis != IdentityMatchEmailEquivalence {
+					if err := s.rememberSameMailboxSplitTx(
+						ctx, tx, current.LeftID, current.RightID,
+					); err != nil {
+						return err
+					}
+				}
 			}
 		}
 		// A system decision is a compare-and-set from the reviewable candidate

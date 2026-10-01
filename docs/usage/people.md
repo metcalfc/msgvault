@@ -91,8 +91,11 @@ person so their messages and history appear together.
   mailbox address". It appears on the person's page like any other link.
 - **Undo:** unlink the address on the person's page, or reject the accepted
   match in Reviews. msgvault records that decision and never links that pair
-  again. New tags on the same mailbox still join the remaining identity, but
-  never pull the address you split off back in.
+  again. New tags still join the remaining identity, but no link on any
+  mailbox pulls the address you split off back in. This also holds when you
+  unlink two addresses of one mailbox that you had linked by hand. Unlinks
+  made before upgrading to this release left no record, so the first run may
+  link those addresses again; unlink them once more to keep them apart.
 - **Two saved profiles:** when the addresses already belong to two different
   person profiles, msgvault does not merge the profiles. The pair waits in
   Reviews; accepting it offers the merge.
