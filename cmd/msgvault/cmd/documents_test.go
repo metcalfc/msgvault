@@ -33,15 +33,10 @@ import (
 )
 
 func TestProbeMistralCommandWritesCompleteSanitizedManifest(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
-	previousConfig := cfg
-	t.Cleanup(func() { cfg = previousConfig })
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = t.TempDir()
 	cfg.Attachments.Documents.Enabled = true
 	cfg.Attachments.Documents.RetentionPosture = documentindex.RetentionStandard
@@ -79,14 +74,9 @@ func TestProbeMistralCommandWritesCompleteSanitizedManifest(t *testing.T) {
 }
 
 func TestProbeMistralValidateOnlyNeedsNoProviderConfiguration(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
-	previousConfig := cfg
-	t.Cleanup(func() { cfg = previousConfig })
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = t.TempDir()
 	providerCalled := false
 	validationCalled := false
@@ -117,16 +107,11 @@ func TestProbeMistralValidateOnlyNeedsNoProviderConfiguration(t *testing.T) {
 }
 
 func TestDocumentsConsentBuildAndStatusUseExactAuthenticatedProfile(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	markDaemonCLISubprocessForTest(t)
-	previousConfig := cfg
-	t.Cleanup(func() { cfg = previousConfig })
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = t.TempDir()
 	cfg.Attachments.Documents.Enabled = true
 	cfg.Attachments.Documents.Conversion.CSV.Enabled = true
@@ -389,16 +374,11 @@ func TestDocumentConsentDisclosureListsResolvedUploadRoutes(t *testing.T) {
 }
 
 func TestDocumentBuildRepairsHistoricalMIMERolesBeforePreflight(t *testing.T) {
-	cfg := testConfigValue()
-
 	markDaemonCLISubprocessForTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	previousConfig := cfg
-	t.Cleanup(func() { cfg = previousConfig })
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = t.TempDir()
 	cfg.Attachments.Documents.Enabled = true
 	cfg.Attachments.Documents.RetentionPosture = documentindex.RetentionStandard
@@ -575,14 +555,9 @@ func TestDocumentsSearchRejectsNonPositivePersonScopeBeforeDispatch(t *testing.T
 }
 
 func TestDocumentsStatusUsesConfiguredReadClient(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
-	previousConfig := cfg
-	t.Cleanup(func() { cfg = previousConfig })
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Attachments.Documents.Enabled = true
 	cfg.Attachments.Documents.RetentionPosture = documentindex.RetentionStandard
 	cfg.Attachments.Documents.TrainingPosture = documentindex.TrainingOptedOut
@@ -623,14 +598,9 @@ func TestDocumentsStatusUsesConfiguredReadClient(t *testing.T) {
 }
 
 func TestDocumentsBuildRefusesAPIUseBeforeExactConsent(t *testing.T) {
-	cfg := testConfigValue()
-
 	markDaemonCLISubprocessForTest(t)
-	previousConfig := cfg
-	t.Cleanup(func() { cfg = previousConfig })
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = t.TempDir()
 	cfg.Attachments.Documents.Enabled = true
 	cfg.Attachments.Documents.RetentionPosture = documentindex.RetentionStandard
@@ -654,16 +624,11 @@ func TestDocumentsBuildRefusesAPIUseBeforeExactConsent(t *testing.T) {
 }
 
 func TestDocumentFullRebuildResumesDurableTargetSnapshot(t *testing.T) {
-	cfg := testConfigValue()
-
 	markDaemonCLISubprocessForTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	previousConfig := cfg
-	t.Cleanup(func() { cfg = previousConfig })
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = t.TempDir()
 	cfg.Attachments.Documents.Enabled = true
 	cfg.Attachments.Documents.RetentionPosture = documentindex.RetentionStandard
@@ -1104,15 +1069,10 @@ func TestScheduledDocumentReconcilePreservesExistingConsentWhenExtractionDisable
 }
 
 func TestProbeMistralCommandRequiresExplicitEnablementAndPosture(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
-	previousConfig := cfg
-	t.Cleanup(func() { cfg = previousConfig })
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	providerCalled := false
 	deps := documentsCommandDeps{
 		runCapabilityProbe: func(context.Context, docprovider.Policy, docprovider.ClientConfig, docprovider.ProbeConfig) (docprovider.Manifest, error) {
@@ -1201,16 +1161,11 @@ func commandPolicyFingerprint(t *testing.T, documentsConfig *documentindex.Docum
 }
 
 func TestDocumentBuildAndProbeRefuseEmptyDataDirectory(t *testing.T) {
-	cfg := testConfigValue()
-
 	markDaemonCLISubprocessForTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	previousConfig := cfg
-	t.Cleanup(func() { cfg = previousConfig })
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = ""
 	cfg.Attachments.Documents.Enabled = true
 	cfg.Attachments.Documents.RetentionPosture = documentindex.RetentionStandard

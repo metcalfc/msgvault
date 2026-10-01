@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -201,9 +200,6 @@ func TestCalendarAddOAuthAppDecisionKeepsCalendarDefaultOverGmailBinding(t *test
 }
 
 func TestAddCalendarHeadlessNormalizesAccountEmail(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -211,17 +207,12 @@ func TestAddCalendarHeadlessNormalizesAccountEmail(t *testing.T) {
 	secretsPath := filepath.Join(tmpDir, "client_secret.json")
 	require.NoError(os.WriteFile(secretsPath, []byte(fakeClientSecrets), 0600))
 
-	savedCfg, savedLogger := cfg, logger
-	defer func() {
-		cfg, logger = savedCfg, savedLogger
-	}()
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth:   config.OAuthConfig{ClientSecrets: secretsPath},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	addCmd := newAddCalendarLocalCmd()
 	addCmd.SetContext(testCtx)
@@ -313,9 +304,6 @@ func TestCalendarSyncOAuthAppDecisionKeepsCalendarDefaultOverGmailBinding(t *tes
 }
 
 func TestCalendarAddTokenReusableRejectsMismatchedInheritedClient(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -326,9 +314,7 @@ func TestCalendarAddTokenReusableRejectsMismatchedInheritedClient(t *testing.T) 
 	require.NoError(os.MkdirAll(tokensDir, 0700))
 	writeCalendarToken(t, tokensDir, "user-a@example.com", "wrong-client.apps.googleusercontent.com")
 
-	savedCfg, savedLogger := cfg, logger
-	defer func() { cfg, logger = savedCfg, savedLogger }()
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth: config.OAuthConfig{
@@ -338,8 +324,6 @@ func TestCalendarAddTokenReusableRejectsMismatchedInheritedClient(t *testing.T) 
 		},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	mgr, err := newCalendarOAuthManager(
 		secretsPath,

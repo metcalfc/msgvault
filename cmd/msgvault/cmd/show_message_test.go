@@ -65,28 +65,15 @@ func TestOutputMessageJSONShowsDeletedFromSourceOnlyWhenPresent(t *testing.T) {
 }
 
 func TestShowMessageUsesLocalDaemonHTTPAndPreservesTextOutput(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	dataDir := t.TempDir()
 	server, messageRequests := messageHTTPDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 	showMessageJSON := false
 
@@ -109,28 +96,15 @@ func TestShowMessageUsesLocalDaemonHTTPAndPreservesTextOutput(t *testing.T) {
 }
 
 func TestShowMessageHTTPNotFoundPreservesCLIError(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	dataDir := t.TempDir()
 	server := messageHTTPNotFoundDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 	showMessageJSON := false
 
@@ -262,18 +236,11 @@ func TestOutputMessageLabelsSanitizedOnlyForText(t *testing.T) {
 }
 
 func TestShowMessageJSONPreservesRFCMessageIDFromDaemon(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	dataDir := t.TempDir()
 	server, _ := messageHTTPDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
-	oldCfg, oldLocal := cfg, useLocal
-	t.Cleanup(func() { cfg, useLocal = oldCfg, oldLocal })
-	cfg = &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
+	cfg := &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	showMessageJSON := true
 	done := captureStdout(t)
 	cmd := newShowMessageCommand()

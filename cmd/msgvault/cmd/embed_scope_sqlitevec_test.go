@@ -100,7 +100,6 @@ func embedGenByID(t *testing.T, dataDir string) map[int64]sql.NullInt64 {
 // fingerprint mismatch with the scope visible in the error.
 func TestRunEmbed_AccountScopedBuildActivatesScopedGeneration(t *testing.T) {
 	flags := embeddingCommandOptions{}
-	cfg := testConfigValue()
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -111,7 +110,6 @@ func TestRunEmbed_AccountScopedBuildActivatesScopedGeneration(t *testing.T) {
 	dataDir := t.TempDir()
 	seedTwoAccountMainDB(t, dataDir)
 
-	oldCfg := cfg
 	c := &config.Config{}
 	c.Vector.Enabled = true
 	c.Vector.DBPath = filepath.Join(dataDir, "vectors.db")
@@ -119,12 +117,8 @@ func TestRunEmbed_AccountScopedBuildActivatesScopedGeneration(t *testing.T) {
 	c.Vector.Embeddings.Model = "test-model"
 	c.Vector.Embeddings.Dimension = 4
 	c.Data.DataDir = dataDir
-	cfg = c
 	testCtx := testInvocationContext(t.Context(), c, invocationOptions{})
 
-	t.Cleanup(func() {
-		cfg = oldCfg
-	})
 	flags.embedYes = true
 	flags.embedBackstop = false
 
@@ -219,7 +213,6 @@ func TestRunEmbedLivePersonGateStopsLaterBatchesAfterConfigDeletion(t *testing.T
 	t.Cleanup(provider.Close)
 	configured.Vector.Embeddings.Endpoint = provider.URL
 	testCtx := withTestConfig(t, configured)
-	_ = testCtx
 	require.NoError(configured.Save())
 
 	seedTwoAccountMainDB(t, dataDir)
@@ -305,7 +298,6 @@ func TestRunEmbedLivePersonGateStopsLaterBatchesAfterConfigDeletion(t *testing.T
 // index. The run must fail instead of activating.
 func TestRunEmbed_AccountScopedRebuildRefusesEmptyScope(t *testing.T) {
 	flags := embeddingCommandOptions{}
-	cfg := testConfigValue()
 
 	require := require.New(t)
 	assert := assert.New(t)
@@ -321,7 +313,6 @@ func TestRunEmbed_AccountScopedRebuildRefusesEmptyScope(t *testing.T) {
 	require.NoError(err, "seed empty account")
 	require.NoError(s.Close())
 
-	oldCfg := cfg
 	c := &config.Config{}
 	c.Vector.Enabled = true
 	c.Vector.DBPath = filepath.Join(dataDir, "vectors.db")
@@ -329,12 +320,8 @@ func TestRunEmbed_AccountScopedRebuildRefusesEmptyScope(t *testing.T) {
 	c.Vector.Embeddings.Model = "test-model"
 	c.Vector.Embeddings.Dimension = 4
 	c.Data.DataDir = dataDir
-	cfg = c
 	testCtx := testInvocationContext(t.Context(), c, invocationOptions{})
 
-	t.Cleanup(func() {
-		cfg = oldCfg
-	})
 	flags.embedYes = true
 	flags.embedBackstop = false
 	flags.embedFullRebuild = true

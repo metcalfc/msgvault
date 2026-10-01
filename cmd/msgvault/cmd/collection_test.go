@@ -20,30 +20,18 @@ import (
 )
 
 func TestCollectionListUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
 	server, requests := collectionHTTPDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	t.Cleanup(func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	})
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	var stdout bytes.Buffer
@@ -65,30 +53,18 @@ func TestCollectionListUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 }
 
 func TestCollectionShowUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
 	server, requests := collectionHTTPDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	t.Cleanup(func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	})
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	var stdout bytes.Buffer
@@ -114,30 +90,18 @@ func TestCollectionShowUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 }
 
 func TestCollectionCreateUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
 	server, requests := collectionHTTPDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	t.Cleanup(func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	})
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	var stdout bytes.Buffer
@@ -158,30 +122,18 @@ func TestCollectionCreateUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 }
 
 func TestCollectionAddUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
 	server, requests := collectionHTTPDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	t.Cleanup(func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	})
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	var stdout bytes.Buffer
@@ -202,30 +154,18 @@ func TestCollectionAddUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 }
 
 func TestCollectionRemoveUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
 	server, requests := collectionHTTPDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	t.Cleanup(func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	})
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	var stdout bytes.Buffer
@@ -246,30 +186,18 @@ func TestCollectionRemoveUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 }
 
 func TestCollectionDeleteUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
 	server, requests := collectionHTTPDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	t.Cleanup(func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	})
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	var stdout bytes.Buffer
@@ -402,27 +330,16 @@ func collectionHTTPDaemon(t *testing.T) (*httptest.Server, *atomic.Int32) {
 }
 
 func TestCollectionShowPrintsReadableSourceNames(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
 
 	tmpDir := t.TempDir()
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	dbPath := filepath.Join(tmpDir, "msgvault.db")

@@ -58,9 +58,6 @@ func TestDerivedOnlyRefusesStaleSchemaBeforeCreatingStaging(t *testing.T) {
 func TestProductionCacheBuilderOpenSitesUseConfiguredOverrides(t *testing.T) {
 	cfg := testConfigValue()
 
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-
 	configure := func(dataDir, dbPath string) {
 		cfg = config.NewDefaultConfig()
 		cfg.Data.DataDir = dataDir
@@ -335,8 +332,6 @@ func snapshotMessagesDatasetBytes(t *testing.T, root string) map[string]string {
 }
 
 func TestRebuildCacheAfterWriteReturnsError(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "msgvault.db")
@@ -345,11 +340,8 @@ func TestRebuildCacheAfterWriteReturnsError(t *testing.T) {
 	require.NoError(st.InitSchema())
 	require.NoError(st.Close())
 
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = &config.Config{HomeDir: tmpDir, Data: config.DataConfig{DataDir: tmpDir}}
+	cfg := &config.Config{HomeDir: tmpDir, Data: config.DataConfig{DataDir: tmpDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 
 	sentinel := errors.New("cache export sentinel")
 	buildCacheBeforeMessagesExportHook = func() error { return sentinel }
@@ -361,18 +353,13 @@ func TestRebuildCacheAfterWriteReturnsError(t *testing.T) {
 }
 
 func TestRebuildCacheAfterDerivedRepairRefreshesCurrentCache(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "msgvault.db")
 
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = &config.Config{HomeDir: tmpDir, Data: config.DataConfig{DataDir: tmpDir}}
+	cfg := &config.Config{HomeDir: tmpDir, Data: config.DataConfig{DataDir: tmpDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	analyticsDir := cfg.AnalyticsDir()
 	var logs strings.Builder
 	invocationFromContext(testCtx).logger = slog.New(slog.NewTextHandler(&logs, nil))
@@ -483,17 +470,12 @@ func TestRebuildCacheAfterDerivedRepairRefreshesCurrentCache(t *testing.T) {
 }
 
 func TestRebuildCacheAfterMixedBeeperMetadataRefreshRebuildsExistingRows(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "msgvault.db")
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = &config.Config{HomeDir: tmpDir, Data: config.DataConfig{DataDir: tmpDir}}
+	cfg := &config.Config{HomeDir: tmpDir, Data: config.DataConfig{DataDir: tmpDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	analyticsDir := cfg.AnalyticsDir()
 	invocationFromContext(testCtx).logger = testDiscardLogger()
 
@@ -562,15 +544,11 @@ func TestRebuildCacheAfterMixedBeeperMetadataRefreshRebuildsExistingRows(t *test
 }
 
 func TestScheduledCacheRefreshSkipsWhenAutoBuildCacheDisabled(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	tmpDir := t.TempDir()
 
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		Analytics: config.AnalyticsConfig{
@@ -578,7 +556,6 @@ func TestScheduledCacheRefreshSkipsWhenAutoBuildCacheDisabled(t *testing.T) {
 		},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 
 	builds := 0
 	oldRunBuild := runScheduledBuildCacheSubprocess
@@ -745,7 +722,6 @@ func TestScheduledCacheRefreshMinimumInterval(t *testing.T) {
 			requirements.NoError(err)
 			requirements.NoError(db.Close())
 
-			savedCfg := cfg
 			cfg = &config.Config{
 				HomeDir: tmpDir,
 				Data: config.DataConfig{
@@ -757,7 +733,6 @@ func TestScheduledCacheRefreshMinimumInterval(t *testing.T) {
 					MinRebuildInterval: 6 * time.Hour,
 				},
 			}
-			t.Cleanup(func() { cfg = savedCfg })
 			testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
 
 			oldNow := scheduledCacheBuildNow
@@ -788,13 +763,9 @@ func TestScheduledCacheRefreshMinimumInterval(t *testing.T) {
 }
 
 func TestRepairEncodingReturnsCacheRefreshError(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	tmpDir := t.TempDir()
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = &config.Config{HomeDir: tmpDir, Data: config.DataConfig{DataDir: tmpDir}}
+	cfg := &config.Config{HomeDir: tmpDir, Data: config.DataConfig{DataDir: tmpDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
 	stateFile := filepath.Join(cfg.AnalyticsDir(), "_last_sync.json")
 	require.NoError(os.MkdirAll(cfg.AnalyticsDir(), 0o755))
@@ -815,8 +786,6 @@ func TestRepairEncodingReturnsCacheRefreshError(t *testing.T) {
 }
 
 func TestScheduledCacheRefreshFailurePreservesCompletedSyncRun(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	tmpDir := t.TempDir()
@@ -838,9 +807,7 @@ func TestScheduledCacheRefreshFailurePreservesCompletedSyncRun(t *testing.T) {
 	}))
 	require.NoError(st.CompleteSync(syncID, "cursor-2"))
 
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		Analytics: config.AnalyticsConfig{
@@ -848,7 +815,6 @@ func TestScheduledCacheRefreshFailurePreservesCompletedSyncRun(t *testing.T) {
 		},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 
 	sentinel := errors.New("scheduled cache sentinel")
 	oldRunBuild := runScheduledBuildCacheSubprocess
@@ -1338,16 +1304,11 @@ func TestIncrementalBuildRepairsParticipantIdentifierDriftWithNewMessages(t *tes
 }
 
 func TestRepairEncodingRebuildsCacheWithRegeneratedCalendarSnippet(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	tmpDir := t.TempDir()
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = &config.Config{HomeDir: tmpDir, Data: config.DataConfig{DataDir: tmpDir}}
+	cfg := &config.Config{HomeDir: tmpDir, Data: config.DataConfig{DataDir: tmpDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 
 	dbPath := cfg.DatabaseDSN()
 	st, err := store.Open(dbPath)

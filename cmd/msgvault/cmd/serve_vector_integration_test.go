@@ -23,11 +23,8 @@ import (
 // seam is overridden to block until daemon shutdown, so a passing test
 // proves the API listener comes up independently of vector maintenance.
 func TestRunServeServesHealthWhileVectorInitBlocked(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
-	oldCfg := cfg
 	dataDir := t.TempDir()
 	c := lifecycleTestConfig(dataDir)
 	c.Server.APIPort = freeTCPPort(t)
@@ -36,8 +33,7 @@ func TestRunServeServesHealthWhileVectorInitBlocked(t *testing.T) {
 	c.Vector.Embeddings.Endpoint = "http://localhost:11434/v1/embeddings"
 	c.Vector.Embeddings.Model = "test-model"
 	c.Vector.Embeddings.Dimension = 768
-	cfg = c
-	t.Cleanup(func() { cfg = oldCfg })
+	cfg := c
 
 	// The seam blocks until the daemon shuts down (ctx cancelled), so
 	// health is polled while vector init is guaranteed still pending. It
@@ -94,10 +90,7 @@ func TestRunServeServesHealthWhileVectorInitBlocked(t *testing.T) {
 }
 
 func TestRunServeStartsVectorWhileAnalyticsInitializationBlocked(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
-	oldCfg := cfg
 	dataDir := t.TempDir()
 	c := lifecycleTestConfig(dataDir)
 	c.Server.APIPort = freeTCPPort(t)
@@ -108,8 +101,7 @@ func TestRunServeStartsVectorWhileAnalyticsInitializationBlocked(t *testing.T) {
 	c.Vector.Embeddings.Endpoint = "http://localhost:11434/v1/embeddings"
 	c.Vector.Embeddings.Model = "test-model"
 	c.Vector.Embeddings.Dimension = 768
-	cfg = c
-	t.Cleanup(func() { cfg = oldCfg })
+	cfg := c
 
 	analyticsStarted := make(chan struct{})
 	releaseAnalytics := make(chan struct{})

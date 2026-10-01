@@ -319,8 +319,6 @@ func TestSchedulerWithConfig(t *testing.T) {
 			{Email: "test3@gmail.com", Schedule: "invalid", Enabled: true},
 		},
 	}
-	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 
 	var syncCalls []string
 	sched := scheduler.New(func(ctx context.Context, email string) error {
@@ -369,13 +367,9 @@ func TestServeOAuthValidationReportsNoProviders(t *testing.T) {
 }
 
 func TestRunServeStartsReadOnlyWithoutOAuthConfig(t *testing.T) {
-	cfg := testConfigValue()
-
-	oldCfg := cfg
 	dataDir := t.TempDir()
-	cfg = lifecycleTestConfig(dataDir)
+	cfg := lifecycleTestConfig(dataDir)
 	cfg.Server.APIPort = freeTCPPort(t)
-	t.Cleanup(func() { cfg = oldCfg })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -398,18 +392,14 @@ func TestRunServeStartsReadOnlyWithoutOAuthConfig(t *testing.T) {
 }
 
 func TestRunServeFailsPendingImportFromPreviousDaemon(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
-	oldCfg := cfg
 	dataDir := t.TempDir()
 	c := lifecycleTestConfig(dataDir)
 	c.Server.APIPort = freeTCPPort(t)
 	c.Analytics.Engine = config.AnalyticsEngineSQL
 	c.Vector.Enabled = false
-	cfg = c
-	t.Cleanup(func() { cfg = oldCfg })
+	cfg := c
 
 	st, err := store.Open(c.DatabaseDSN())
 	require.NoError(err)
@@ -446,17 +436,13 @@ func TestRunServeFailsPendingImportFromPreviousDaemon(t *testing.T) {
 }
 
 func TestRunServeImmediateCancellationWaitsForAPIStart(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
-	oldCfg := cfg
 	dataDir := t.TempDir()
 	c := lifecycleTestConfig(dataDir)
 	c.Server.APIPort = freeTCPPort(t)
 	c.Vector.Enabled = false
 	c.Analytics.Engine = config.AnalyticsEngineSQL
-	cfg = c
-	t.Cleanup(func() { cfg = oldCfg })
+	cfg := c
 
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -504,16 +490,12 @@ func TestRunServeImmediateCancellationWaitsForAPIStart(t *testing.T) {
 }
 
 func TestRunServeAutoSelectsAPIPortWhenUnconfigured(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
 
-	oldCfg := cfg
 	dataDir := t.TempDir()
-	cfg = lifecycleTestConfig(dataDir)
+	cfg := lifecycleTestConfig(dataDir)
 	cfg.Server.APIPort = 0 // auto-select an open port
-	t.Cleanup(func() { cfg = oldCfg })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -560,19 +542,15 @@ func TestRunServeAutoSelectsAPIPortWhenUnconfigured(t *testing.T) {
 }
 
 func TestRunServeServesHealthWhileAnalyticsBuildBlocked(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
-	oldCfg := cfg
 	dataDir := t.TempDir()
 	c := lifecycleTestConfig(dataDir)
 	c.Server.APIPort = freeTCPPort(t)
 	c.Analytics.Engine = config.AnalyticsEngineAuto
 	c.Analytics.AutoBuildCache = true
 	c.Vector.Enabled = false
-	cfg = c
-	t.Cleanup(func() { cfg = oldCfg })
+	cfg := c
 
 	buildStarted := make(chan struct{})
 	stubBuildCacheSubprocess(t, func(ctx context.Context, _ bool) error {
@@ -631,19 +609,15 @@ func TestRunServeServesHealthWhileAnalyticsBuildBlocked(t *testing.T) {
 }
 
 func TestRunServeDuckDBReportsInitializingWithoutSQLFallback(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
-	oldCfg := cfg
 	dataDir := t.TempDir()
 	c := lifecycleTestConfig(dataDir)
 	c.Server.APIPort = freeTCPPort(t)
 	c.Analytics.Engine = config.AnalyticsEngineDuckDB
 	c.Analytics.AutoBuildCache = true
 	c.Vector.Enabled = false
-	cfg = c
-	t.Cleanup(func() { cfg = oldCfg })
+	cfg := c
 
 	buildStarted := make(chan struct{})
 	stubBuildCacheSubprocess(t, func(ctx context.Context, _ bool) error {
@@ -720,19 +694,15 @@ func TestRunServeDuckDBReportsInitializingWithoutSQLFallback(t *testing.T) {
 }
 
 func TestRunServeAutoSwitchesToDuckDBAfterBackgroundBuild(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
-	oldCfg := cfg
 	dataDir := t.TempDir()
 	c := lifecycleTestConfig(dataDir)
 	c.Server.APIPort = freeTCPPort(t)
 	c.Analytics.Engine = config.AnalyticsEngineAuto
 	c.Analytics.AutoBuildCache = true
 	c.Vector.Enabled = false
-	cfg = c
-	t.Cleanup(func() { cfg = oldCfg })
+	cfg := c
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	t.Cleanup(cancel)
@@ -810,8 +780,6 @@ func TestListenServeAPIHonorsAvailableExplicitPort(t *testing.T) {
 }
 
 func TestRunServeFailsBeforeArchiveWorkWhenAPIPortInUse(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -821,11 +789,9 @@ func TestRunServeFailsBeforeArchiveWorkWhenAPIPortInUse(t *testing.T) {
 	addr, ok := ln.Addr().(*net.TCPAddr)
 	require.True(ok, "listener address must be TCP")
 
-	oldCfg := cfg
 	dataDir := t.TempDir()
-	cfg = lifecycleTestConfig(dataDir)
+	cfg := lifecycleTestConfig(dataDir)
 	cfg.Server.APIPort = addr.Port
-	t.Cleanup(func() { cfg = oldCfg })
 
 	cmd := &cobra.Command{Use: "serve"}
 	cmd.SetContext(testInvocationContext(context.Background(), cfg, invocationOptions{}))
@@ -2125,11 +2091,6 @@ func TestCLISyncSubprocessArgsIncludesExactSourceID(t *testing.T) {
 }
 
 func TestDaemonCLIRunCannotUseServerRemoteDeleteConfigOrEnvironment(t *testing.T) {
-	cfg := testConfigValue()
-	cfgFile := ""
-	homeDir := ""
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -2164,11 +2125,6 @@ remote_enabled = true
 	serverCfg, err := config.Load(configPath, "")
 	require.NoError(err)
 
-	savedCfg, savedCfgFile, savedHomeDir, savedUseLocal := cfg, cfgFile, homeDir, useLocal
-	cfg, cfgFile, homeDir, useLocal = serverCfg, configPath, "", false
-	t.Cleanup(func() {
-		cfg, cfgFile, homeDir, useLocal = savedCfg, savedCfgFile, savedHomeDir, savedUseLocal
-	})
 	t.Setenv(remoteDeleteEnvVar, "1")
 
 	st, err := store.Open(serverCfg.DatabaseDSN())
@@ -2811,13 +2767,8 @@ func TestStoreAPIAdapterServesCLIDeleteDeduped(t *testing.T) {
 // cfg.Vector.Enabled is false, setupVectorFeatures returns (nil, nil)
 // regardless of build tag. Runs under both tagged and untagged builds.
 func TestSetupVectorFeatures_Disabled(t *testing.T) {
-	cfg := testConfigValue()
-
-	savedCfg := cfg
-	defer func() { cfg = savedCfg }()
-	cfg = &config.Config{}
+	cfg := &config.Config{}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Vector.Enabled = false
 
 	vf, err := setupVectorFeatures(testCtx, nil, "", false)
@@ -2862,15 +2813,10 @@ func TestRunScheduledGmailSync_ReauthGuidance(t *testing.T) {
 // rather than the misleading "oauth2: token expired and refresh token
 // is not set" message reported in #329.
 func TestRunScheduledIMAPSync_NoCredentials(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
-	savedCfg := cfg
-	defer func() { cfg = savedCfg }()
-	cfg = &config.Config{}
+	cfg := &config.Config{}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = t.TempDir()
 
 	s, err := store.Open(filepath.Join(cfg.Data.DataDir, "msgvault.db"))
@@ -2907,15 +2853,10 @@ func TestRunScheduledIMAPSync_NoCredentials(t *testing.T) {
 // matched against identifier, so config-driven scheduled syncs fell
 // through to the Gmail OAuth path (#329).
 func TestRunScheduledIMAPSync_DispatchByDisplayName(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
-	savedCfg := cfg
-	defer func() { cfg = savedCfg }()
-	cfg = &config.Config{}
+	cfg := &config.Config{}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = t.TempDir()
 
 	s, err := store.Open(filepath.Join(cfg.Data.DataDir, "msgvault.db"))
@@ -2956,15 +2897,10 @@ func TestRunScheduledIMAPSync_DispatchByDisplayName(t *testing.T) {
 // would inject e.g. "imaps://user@host:993" into account_identities
 // when the user had cleared their identities.
 func TestRunScheduledIMAPSync_DefaultIdentityIsDisplayName(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
-	savedCfg := cfg
-	defer func() { cfg = savedCfg }()
-	cfg = &config.Config{}
+	cfg := &config.Config{}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = t.TempDir()
 
 	s, err := store.Open(filepath.Join(cfg.Data.DataDir, "msgvault.db"))
@@ -3099,12 +3035,8 @@ func TestFindScheduledSyncSources(t *testing.T) {
 }
 
 func TestScheduledTeamsImportOptionsApplyMediaPolicy(t *testing.T) {
-	cfg := testConfigValue()
-
-	oldConfig := cfg
-	t.Cleanup(func() { cfg = oldConfig })
 	enabled := true
-	cfg = &config.Config{
+	cfg := &config.Config{
 		Data: config.DataConfig{DataDir: t.TempDir()},
 		Teams: config.TeamsConfig{
 			MediaScope: "direct",
@@ -3113,8 +3045,6 @@ func TestScheduledTeamsImportOptionsApplyMediaPolicy(t *testing.T) {
 			},
 		},
 	}
-	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 
 	opts := scheduledTeamsImportOptions("user@example.com", cfg)
 	assert.Equal(t, cfg.Teams.MediaPolicy("user@example.com"), opts.MediaPolicy)

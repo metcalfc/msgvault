@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync/atomic"
 	"testing"
 
@@ -165,7 +163,6 @@ func TestSyncFullUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
 
 func configureRemoteSyncTest(t *testing.T, remoteURL string) context.Context {
 	t.Helper()
-	logger := testLoggerValue()
 
 	dataDir := t.TempDir()
 	testCtx := withStoreResolverConfig(t, &config.Config{
@@ -176,9 +173,6 @@ func configureRemoteSyncTest(t *testing.T, remoteURL string) context.Context {
 			AllowInsecure: true,
 		},
 	})
-	oldLogger := logger
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
-	t.Cleanup(func() { logger = oldLogger })
 	return testCtx
 }
 

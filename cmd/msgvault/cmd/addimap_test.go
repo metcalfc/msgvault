@@ -199,7 +199,6 @@ func TestAddIMAPUsesDaemonRunnerAndForwardsPasswordEnv(t *testing.T) {
 		assert.Equal(map[string]string{"MSGVAULT_IMAP_PASSWORD": "secret"}, req.Env, "env")
 	}, `{"type":"stdout","data":"IMAP account added successfully!\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	t.Setenv("MSGVAULT_IMAP_PASSWORD", "secret")
 
 	var stdout bytes.Buffer

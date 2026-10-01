@@ -13,9 +13,6 @@ import (
 )
 
 func TestRebuildFTSUsesLocalDaemonHTTPAndPreservesStderr(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
@@ -36,20 +33,11 @@ func TestRebuildFTSUsesLocalDaemonHTTPAndPreservesStderr(t *testing.T) {
 	t.Cleanup(server.Close)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	doneErr := captureStderr(t)

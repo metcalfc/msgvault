@@ -70,7 +70,6 @@ func TestAttributeDefinitionListPrintsRegistryAndForwardsFilter(t *testing.T) {
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
-	_ = testCtx
 
 	output, err := runAttributeCommand(testCtx, t, freshCommandForTest(t, newAttributeDefinitionCommand(), "list"),
 		"--object-type", "person")
@@ -93,7 +92,6 @@ func TestAttributeDefinitionCreateDryRunValidatesLocally(t *testing.T) {
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
-	_ = testCtx
 
 	output, err := runAttributeCommand(testCtx, t, freshCommandForTest(t, newAttributeDefinitionCommand(), "create"),
 		"--definition", `{"object_type":"person","slug":"scratch_note",
@@ -182,7 +180,6 @@ func TestAttributeDefinitionRenameUsesFreshRevisionETag(t *testing.T) {
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
-	_ = testCtx
 
 	_, err := runAttributeCommand(testCtx, t, freshCommandForTest(t, newAttributeDefinitionCommand(), "rename"),
 		"3", "--label", "Conversation starters")
@@ -208,7 +205,6 @@ func TestAttributeDefinitionClearDescriptionSendsEmptyString(t *testing.T) {
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
-	_ = testCtx
 
 	_, err := runAttributeCommand(testCtx, t, freshCommandForTest(t, newAttributeDefinitionCommand(), "rename"),
 		"3", "--clear-description")

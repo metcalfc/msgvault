@@ -98,12 +98,6 @@ func runWhatsAppIdentityCommand(
 	noDefaultIdentity bool,
 ) (string, error) {
 	t.Helper()
-	cfg := testConfigValue()
-
-	oldCfg := cfg
-	t.Cleanup(func() {
-		cfg = oldCfg
-	})
 
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		HomeDir: home,

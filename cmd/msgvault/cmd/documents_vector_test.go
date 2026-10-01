@@ -166,14 +166,9 @@ func TestSetupStatusTracksBothDocumentVectorConsentPurposes(t *testing.T) {
 }
 
 func TestDocumentVectorStatusWorksWhenEmbeddingsAreDisabled(t *testing.T) {
-	cfg := testConfigValue()
-
 	markDaemonCLISubprocessForTest(t)
-	previous := cfg
-	t.Cleanup(func() { cfg = previous })
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	runtimeCalls := 0
 	command := newDocumentsCmd(documentsCommandDeps{
 		runDocumentVector: func(context.Context, *store.Store, int64, int) (vectordocument.ReconcileResult, error) {
@@ -238,14 +233,9 @@ func TestConfiguredDocumentVectorSpecRejectsInvalidDisabledEmbeddingPolicy(t *te
 }
 
 func TestDocumentVectorStatusWorksBeforeExtractionTargetExists(t *testing.T) {
-	cfg := testConfigValue()
-
 	markDaemonCLISubprocessForTest(t)
-	previous := cfg
-	t.Cleanup(func() { cfg = previous })
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Vector.Enabled = true
 	cfg.Vector.Embeddings.Endpoint = "https://embeddings.example.test/v1"
 	cfg.Vector.Embeddings.Model = "embed-test"

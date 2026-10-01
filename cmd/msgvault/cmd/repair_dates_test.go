@@ -33,7 +33,6 @@ func TestRepairDatesAlwaysProxiesThroughDaemonCLIRunner(t *testing.T) {
 		`{"type":"complete"}`,
 	)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	t.Setenv(daemonCLISubprocessEnv, "")
 
 	var stdout bytes.Buffer
@@ -48,19 +47,14 @@ func TestRepairDatesAlwaysProxiesThroughDaemonCLIRunner(t *testing.T) {
 }
 
 func TestRunRepairDatesLocalDryRunApplyAndIdempotency(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
-	savedCfg := cfg
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	t.Cleanup(func() { cfg = savedCfg })
 
 	st, err := store.OpenForTest(cfg.DatabaseDSN())
 	require.NoError(err)
@@ -206,19 +200,14 @@ func TestRunRepairDatesLocalDryRunApplyAndIdempotency(t *testing.T) {
 }
 
 func TestRunRepairDatesLocalReportsUnresolvedReasons(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
-	savedCfg := cfg
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	t.Cleanup(func() { cfg = savedCfg })
 
 	st, err := store.OpenForTest(cfg.DatabaseDSN())
 	require.NoError(err)
@@ -397,18 +386,13 @@ func TestDateRepairPostApplyLedgerErrorProvidesRecoveryCommand(t *testing.T) {
 }
 
 func TestRunRepairDatesLocalInvalidatesAndUnlocksCacheWhenApplyFails(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	dataDir := t.TempDir()
-	savedCfg := cfg
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	t.Cleanup(func() { cfg = savedCfg })
 
 	st, err := store.OpenForTest(cfg.DatabaseDSN())
 	require.NoError(err)
@@ -472,19 +456,14 @@ func TestRunRepairDatesLocalInvalidatesAndUnlocksCacheWhenApplyFails(t *testing.
 }
 
 func TestRunRepairDatesLocalReportsCommittedRepairWhenContactInvalidationFails(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
-	savedCfg := cfg
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	t.Cleanup(func() { cfg = savedCfg })
 
 	st, err := store.OpenForTest(cfg.DatabaseDSN())
 	require.NoError(err)

@@ -36,10 +36,8 @@ func TestAutomaticProviderIdentityRefreshIsOptInAndRunsAfterIMAPCompletion(t *te
 	source, err := st.GetOrCreateSource(sourceTypeIMAP, sourceIdentifier)
 	require.NoError(t, err)
 
-	savedCfg := cfg
 	savedFactory := fastmailIdentityInventoryFactory
 	t.Cleanup(func() {
-		cfg = savedCfg
 		fastmailIdentityInventoryFactory = savedFactory
 	})
 
@@ -95,20 +93,17 @@ func setUpScheduledProviderIdentityRefresh(
 	st *store.Store,
 ) (*store.Source, *scheduledProviderInventory, context.Context) {
 	t.Helper()
-	cfg := testConfigValue()
 	const sourceIdentifier = "gmail-user@example.test"
 	source, err := st.GetOrCreateSource(sourceTypeGmail, sourceIdentifier)
 	require.NoError(t, err)
 	require.NoError(t, st.UpdateSourceSyncCursor(source.ID, "100"))
 	source.SyncCursor = sql.NullString{String: "100", Valid: true}
 
-	savedCfg := cfg
 	savedFactory := fastmailIdentityInventoryFactory
 	t.Cleanup(func() {
-		cfg = savedCfg
 		fastmailIdentityInventoryFactory = savedFactory
 	})
-	cfg = &config.Config{Fastmail: []config.FastmailSource{{
+	cfg := &config.Config{Fastmail: []config.FastmailSource{{
 		SourceID: source.ID, APIToken: "provider-token", AutoConfirmIdentities: true,
 	}}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})

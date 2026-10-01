@@ -11,14 +11,10 @@ import (
 )
 
 func TestStoreAPIAdapterDeletionManifests(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = &config.Config{Data: config.DataConfig{DataDir: t.TempDir()}}
+	cfg := &config.Config{Data: config.DataConfig{DataDir: t.TempDir()}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
 	_ = testCtx
 

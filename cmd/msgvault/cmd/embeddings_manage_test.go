@@ -32,7 +32,6 @@ func TestRunEmbeddingsPruneRemovesOrphansWithoutEmbeddingCalls(t *testing.T) {
 	c.Vector.Embeddings.Model = "test-model"
 	c.Vector.Embeddings.Dimension = 4
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 
 	mainStore, err := store.Open(mainPath)
 	require.NoError(t, err)
@@ -80,7 +79,6 @@ func TestRunEmbeddingsOptimizeBuildsFromStoredVectorsWithoutProvider(t *testing.
 	c.Vector.Embeddings.Dimension = 4
 	c.Vector.Search.ANNThreads = 1
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 
 	mainStore, err := store.Open(mainPath)
 	require.NoError(t, err)
@@ -238,7 +236,6 @@ func TestRunEmbeddingsActivate_ContextualRequiresConvergenceUnlessForced(t *test
 	c.Vector.Embeddings.Model = "voyage-context-4"
 	c.Vector.Embeddings.Dimension = 4
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 
 	mainStore, err := store.Open(mainPath)
 	require.NoError(err)
@@ -300,7 +297,6 @@ func TestRunEmbeddingsActivateOpenAIBlocksMissingPersonCoverage(t *testing.T) {
 		Enabled: true, RetentionPosture: "zero_data_retention", TrainingPosture: "no_training",
 	}
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 	require.NoError(c.Save())
 
 	mainStore, err := store.Open(mainPath)
@@ -360,7 +356,6 @@ func setupManualContextualGeneration(t *testing.T, fingerprint string, retire bo
 	c.Vector.Embeddings.Model = "voyage-context-4"
 	c.Vector.Embeddings.Dimension = 4
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 	if fingerprint == "" {
 		fingerprint = c.Vector.GenerationFingerprint()
 	}

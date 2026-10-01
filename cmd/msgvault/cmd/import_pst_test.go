@@ -95,7 +95,6 @@ func TestRunPstPostImportMigrationsConfirmsDefaultIdentityBeforeHardErrorMigrati
 	testCfg := lifecycleTestConfig(tmp)
 	testCfg.Identity.Addresses = []string{"legacy@example.com"}
 	testCtx := withStoreResolverConfig(t, testCfg)
-	_ = testCtx
 
 	st, err := store.Open(testCfg.DatabaseDSN())
 	require.NoError(

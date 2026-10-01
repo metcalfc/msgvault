@@ -26,7 +26,6 @@ func TestGCAlwaysProxiesThroughDaemonCLIRunner(t *testing.T) {
 		`{"type":"complete"}`,
 	)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	t.Setenv(daemonCLISubprocessEnv, "")
 
 	var stdout bytes.Buffer
@@ -48,7 +47,6 @@ func TestGCConfirmsBeforeProxyingToDaemon(t *testing.T) {
 		`{"type":"complete"}`,
 	)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	t.Setenv(daemonCLISubprocessEnv, "")
 
 	var stdout bytes.Buffer
@@ -66,7 +64,6 @@ func TestGCConfirmsBeforeProxyingToDaemon(t *testing.T) {
 func TestGCCancelledConfirmationDoesNotProxy(t *testing.T) {
 	server, requests := newDaemonCLIRunnerTestServer(t, nil, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	t.Setenv(daemonCLISubprocessEnv, "")
 
 	var stdout bytes.Buffer

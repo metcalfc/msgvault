@@ -138,7 +138,6 @@ func TestGoogleCardDAVSchedulerWaitsForAuthorization(t *testing.T) {
 	required.NoError(os.WriteFile(secrets, []byte(`{"web":{"client_id":"synthetic-client","client_secret":"synthetic-secret","redirect_uris":["https://archive.example/"]}}`), 0600))
 	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.HomeDir, cfg.Data.DataDir = dir, dir
 	cfg.OAuth.ClientSecrets = secrets
 	cfg.CardDAV = config.CardDAVConfig{Provider: "google", BaseURL: carddav.GoogleDiscoveryURL, Username: "person@example.com", Enabled: true, Schedule: "0 1 * * *"}

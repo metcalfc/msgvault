@@ -26,7 +26,6 @@ func TestCreateSubsetVCardResourcesRequireFlag(t *testing.T) {
 	dataDir := t.TempDir()
 	testCfg := lifecycleTestConfig(dataDir)
 	testCtx := withStoreResolverConfig(t, testCfg)
-	_ = testCtx
 	t.Setenv(daemonCLISubprocessEnv, strconv.Itoa(os.Getppid()))
 
 	st, err := store.Open(testCfg.DatabaseDSN())

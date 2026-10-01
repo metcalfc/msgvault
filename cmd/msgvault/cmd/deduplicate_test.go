@@ -546,7 +546,6 @@ func TestDeduplicateInteractiveAccountPlansPromptsAndExecutesThroughDaemon(t *te
 		}, req.Args, "runner args")
 	}, `{"type":"stdout","data":"Merging duplicates...\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	cmd := newDeduplicateRoutingTestCommand()
 	cmd.SetContext(testCtx)
@@ -575,7 +574,6 @@ func TestDeduplicateInteractiveAccountCancelDoesNotExecute(t *testing.T) {
 		},
 	}, nil)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	cmd := newDeduplicateRoutingTestCommand()
 	cmd.SetContext(testCtx)
@@ -616,7 +614,6 @@ func TestDeduplicateInteractivePerSourcePromptsShareInput(t *testing.T) {
 		assert.Contains(t, req.Args, "--dedup-source-plan=202:fp-bob", "bob approval")
 	}, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	cmd := newDeduplicateRoutingTestCommand()
 	cmd.SetContext(testCtx)

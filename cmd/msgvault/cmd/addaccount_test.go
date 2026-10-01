@@ -54,7 +54,6 @@ func TestFindGmailSource(t *testing.T) {
 // token's client_id against the inherited binding.
 func TestAddAccount_InheritedBindingValidatesToken(t *testing.T) {
 	cfg := testConfigValue()
-	logger := testLoggerValue()
 
 	for _, tc := range []struct {
 		name      string
@@ -90,9 +89,6 @@ func TestAddAccount_InheritedBindingValidatesToken(t *testing.T) {
 			secretsPath := filepath.Join(tmpDir, "secret.json")
 			require.NoError(os.WriteFile(secretsPath, []byte(fakeClientSecrets), 0600), "write secrets")
 
-			savedCfg, savedLogger := cfg, logger
-			defer func() { cfg, logger = savedCfg, savedLogger }()
-
 			cfg = &config.Config{
 				HomeDir: tmpDir,
 				Data:    config.DataConfig{DataDir: tmpDir},
@@ -102,7 +98,6 @@ func TestAddAccount_InheritedBindingValidatesToken(t *testing.T) {
 					},
 				},
 			}
-			logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 			ctx := gmailProfileContext(t, "user@acme.com")
 			ctx = testInvocationContext(ctx, cfg, invocationOptions{})
@@ -125,9 +120,6 @@ func TestAddAccount_InheritedBindingValidatesToken(t *testing.T) {
 }
 
 func TestAddAccount_CalendarOnlyTokenRequiresGmailReauth(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	tmpDir := t.TempDir()
 
@@ -146,17 +138,12 @@ func TestAddAccount_CalendarOnlyTokenRequiresGmailReauth(t *testing.T) {
 	secretsPath := filepath.Join(tmpDir, "secret.json")
 	require.NoError(os.WriteFile(secretsPath, []byte(fakeClientSecrets), 0600), "write secrets")
 
-	savedCfg, savedLogger := cfg, logger
-	defer func() { cfg, logger = savedCfg, savedLogger }()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth:   config.OAuthConfig{ClientSecrets: secretsPath},
 	}
 	testCtx := testInvocationContext(gmailProfileContext(t, "user@example.com"), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	ctx, cancel := context.WithCancel(testCtx)
 	cancel()
@@ -181,9 +168,6 @@ func TestAddAccount_CalendarOnlyTokenRequiresGmailReauth(t *testing.T) {
 }
 
 func TestAddAccount_FullGmailScopeTokenCanBeReused(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "msgvault.db")
@@ -203,20 +187,12 @@ func TestAddAccount_FullGmailScopeTokenCanBeReused(t *testing.T) {
 	secretsPath := filepath.Join(tmpDir, "secret.json")
 	require.NoError(os.WriteFile(secretsPath, []byte(fakeClientSecrets), 0600), "write secrets")
 
-	savedCfg, savedLogger := cfg, logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth:   config.OAuthConfig{ClientSecrets: secretsPath},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	ctx := gmailProfileContext(t, "user@example.com")
 	ctx = testInvocationContext(ctx, cfg, invocationOptions{})
@@ -253,9 +229,6 @@ func TestAddAccountOAuthScopesForTokenPreservesExistingCalendarGrant(t *testing.
 // OAuth app binding with an existing token updates the binding
 // without re-authorizing (headless rebind scenario).
 func TestAddAccount_RebindWithExistingToken(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	tmpDir := t.TempDir()
@@ -293,14 +266,7 @@ func TestAddAccount_RebindWithExistingToken(t *testing.T) {
 		secretsPath, []byte(fakeClientSecrets), 0600,
 	), "write secrets")
 
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth: config.OAuthConfig{
@@ -311,8 +277,6 @@ func TestAddAccount_RebindWithExistingToken(t *testing.T) {
 		},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	testCmd := newAddAccountLocalCmd()
 
@@ -349,9 +313,6 @@ func TestAddAccount_RebindWithExistingToken(t *testing.T) {
 // add-account --oauth-app with no existing source row rejects a token
 // minted by a different OAuth client (forces re-auth, not silent accept).
 func TestAddAccount_NewRegistrationRejectsMismatchedToken(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	tmpDir := t.TempDir()
 
@@ -375,14 +336,7 @@ func TestAddAccount_NewRegistrationRejectsMismatchedToken(t *testing.T) {
 		secretsPath, []byte(fakeClientSecrets), 0600,
 	), "write secrets")
 
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth: config.OAuthConfig{
@@ -392,8 +346,6 @@ func TestAddAccount_NewRegistrationRejectsMismatchedToken(t *testing.T) {
 		},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	// Pre-cancel so if it falls through to Authorize, it fails fast
 	ctx, cancel := context.WithCancel(testCtx)
@@ -416,9 +368,6 @@ func TestAddAccount_NewRegistrationRejectsMismatchedToken(t *testing.T) {
 // TestAddAccount_ExplicitDefaultRejectsMismatchedToken verifies that
 // --oauth-app "" rejects a token minted by a different client.
 func TestAddAccount_ExplicitDefaultRejectsMismatchedToken(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	tmpDir := t.TempDir()
 
@@ -442,21 +391,12 @@ func TestAddAccount_ExplicitDefaultRejectsMismatchedToken(t *testing.T) {
 		secretsPath, []byte(fakeClientSecrets), 0600,
 	), "write secrets")
 
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth:   config.OAuthConfig{ClientSecrets: secretsPath},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	ctx, cancel := context.WithCancel(testCtx)
 	cancel()
@@ -477,9 +417,6 @@ func TestAddAccount_ExplicitDefaultRejectsMismatchedToken(t *testing.T) {
 // TestAddAccount_ExplicitDefaultAcceptsMatchingToken verifies that
 // --oauth-app "" accepts a token minted by the default client.
 func TestAddAccount_ExplicitDefaultAcceptsMatchingToken(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	tmpDir := t.TempDir()
 
@@ -503,21 +440,12 @@ func TestAddAccount_ExplicitDefaultAcceptsMatchingToken(t *testing.T) {
 		secretsPath, []byte(fakeClientSecrets), 0600,
 	), "write secrets")
 
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth:   config.OAuthConfig{ClientSecrets: secretsPath},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	testCmd := newAddAccountLocalCmd()
 
@@ -538,9 +466,6 @@ func TestAddAccount_ExplicitDefaultAcceptsMatchingToken(t *testing.T) {
 }
 
 func TestAddAccount_ForceRebindPreservesBindingOnFailure(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "msgvault.db")
@@ -560,14 +485,7 @@ func TestAddAccount_ForceRebindPreservesBindingOnFailure(t *testing.T) {
 		secretsPath, []byte(fakeClientSecrets), 0600,
 	), "write secrets")
 
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth: config.OAuthConfig{
@@ -578,8 +496,6 @@ func TestAddAccount_ForceRebindPreservesBindingOnFailure(t *testing.T) {
 		},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	// Pre-cancel context so Authorize fails immediately
 	ctx, cancel := context.WithCancel(testCtx)
@@ -613,9 +529,6 @@ func TestAddAccount_ForceRebindPreservesBindingOnFailure(t *testing.T) {
 // TestAddAccount_HeadlessExplicitEmptyOAuthApp verifies that
 // --headless --oauth-app "" does not re-inherit the stored binding.
 func TestAddAccount_HeadlessExplicitEmptyOAuthApp(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "msgvault.db")
@@ -631,21 +544,11 @@ func TestAddAccount_HeadlessExplicitEmptyOAuthApp(t *testing.T) {
 	}), "set oauth_app")
 	_ = s.Close()
 
-	// Save/restore globals
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	// The RunE reads package-level flag vars, but uses
 	// cmd.Flags().Changed() to detect explicit --oauth-app.
@@ -676,9 +579,6 @@ func TestAddAccount_HeadlessExplicitEmptyOAuthApp(t *testing.T) {
 // TestAddAccount_AutoDefaultIdentityFires verifies that running add-account
 // with a reusable token writes an account-identifier identity row.
 func TestAddAccount_AutoDefaultIdentityFires(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	tmpDir := t.TempDir()
@@ -698,21 +598,13 @@ func TestAddAccount_AutoDefaultIdentityFires(t *testing.T) {
 	secretsPath := filepath.Join(tmpDir, "secret.json")
 	require.NoError(os.WriteFile(secretsPath, []byte(fakeClientSecrets), 0600), "write secrets")
 
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth:   config.OAuthConfig{ClientSecrets: secretsPath},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	testCmd := newAddAccountLocalCmd()
 
@@ -744,9 +636,6 @@ func TestAddAccount_AutoDefaultIdentityFires(t *testing.T) {
 // TestAddAccount_NoDefaultIdentitySuppresses verifies that --no-default-identity
 // prevents the auto-identity write.
 func TestAddAccount_NoDefaultIdentitySuppresses(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "msgvault.db")
@@ -765,21 +654,12 @@ func TestAddAccount_NoDefaultIdentitySuppresses(t *testing.T) {
 	secretsPath := filepath.Join(tmpDir, "secret.json")
 	require.NoError(os.WriteFile(secretsPath, []byte(fakeClientSecrets), 0600), "write secrets")
 
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth:   config.OAuthConfig{ClientSecrets: secretsPath},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	testCmd := newAddAccountLocalCmd()
 
@@ -811,9 +691,6 @@ func TestAddAccount_NoDefaultIdentitySuppresses(t *testing.T) {
 // applied on the *next* command — leaving the new source without its
 // configured identities until then.
 func TestAddAccount_DeferredLegacyIdentityMigrationFires(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	tmpDir := t.TempDir()
@@ -833,14 +710,7 @@ func TestAddAccount_DeferredLegacyIdentityMigrationFires(t *testing.T) {
 	secretsPath := filepath.Join(tmpDir, "secret.json")
 	require.NoError(os.WriteFile(secretsPath, []byte(fakeClientSecrets), 0600), "write secrets")
 
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth:   config.OAuthConfig{ClientSecrets: secretsPath},
@@ -850,7 +720,7 @@ func TestAddAccount_DeferredLegacyIdentityMigrationFires(t *testing.T) {
 	}
 	testCtx := testInvocationContext(gmailProfileContext(t, "user@example.com"), cfg, invocationOptions{})
 	var logBuf strings.Builder
-	logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 	invocationFromContext(testCtx).logger = logger
 
 	testCmd := newAddAccountLocalCmd()
@@ -909,9 +779,6 @@ func TestAddAccount_DeferredLegacyIdentityMigrationFires(t *testing.T) {
 // account-identifier write entirely — leaving the source without its
 // own identifier and breaking dedup sent-copy detection.
 func TestAddAccount_LegacyMigrationDoesNotSuppressDefaultIdentity(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "msgvault.db")
@@ -930,14 +797,7 @@ func TestAddAccount_LegacyMigrationDoesNotSuppressDefaultIdentity(t *testing.T) 
 	secretsPath := filepath.Join(tmpDir, "secret.json")
 	require.NoError(os.WriteFile(secretsPath, []byte(fakeClientSecrets), 0600), "write secrets")
 
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth:   config.OAuthConfig{ClientSecrets: secretsPath},
@@ -949,8 +809,6 @@ func TestAddAccount_LegacyMigrationDoesNotSuppressDefaultIdentity(t *testing.T) 
 		},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	testCmd := newAddAccountLocalCmd()
 
@@ -985,19 +843,9 @@ func TestAddAccount_LegacyMigrationDoesNotSuppressDefaultIdentity(t *testing.T) 
 }
 
 func TestAddAccount_HeadlessServiceAccountReturnsActionableError(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	tmpDir := t.TempDir()
 
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth: config.OAuthConfig{
@@ -1007,8 +855,6 @@ func TestAddAccount_HeadlessServiceAccountReturnsActionableError(t *testing.T) {
 		},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	testCmd := newAddAccountLocalCmd()
 
@@ -1031,19 +877,9 @@ func TestAddAccount_HeadlessServiceAccountReturnsActionableError(t *testing.T) {
 }
 
 func TestAddAccount_ForceServiceAccountReturnsActionableError(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	tmpDir := t.TempDir()
 
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth: config.OAuthConfig{
@@ -1053,8 +889,6 @@ func TestAddAccount_ForceServiceAccountReturnsActionableError(t *testing.T) {
 		},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	testCmd := newAddAccountLocalCmd()
 

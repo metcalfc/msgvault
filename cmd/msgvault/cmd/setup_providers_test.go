@@ -498,8 +498,6 @@ training_posture = "opted-out"
 }
 
 func TestSetupProvidersResolvesUnknownDocumentPostures(t *testing.T) {
-	cfg := testConfigValue()
-
 	for _, enabled := range []bool{false, true} {
 		for _, explicit := range []bool{false, true} {
 			t.Run(fmt.Sprintf("enabled=%t/explicit=%t", enabled, explicit), func(t *testing.T) {
@@ -530,9 +528,6 @@ training_posture = %q
 				assert.Equal(wantTraining, loaded.Attachments.Documents.TrainingPosture)
 				assert.Contains(output, "retention="+wantRetention+", training="+wantTraining)
 				if explicit {
-					previous := cfg
-					cfg = loaded
-					t.Cleanup(func() { cfg = previous })
 					testCtx := testInvocationContext(t.Context(), loaded, invocationOptions{})
 					_, err := configuredDocumentProfile(writeCommandCapabilityManifest(t, loaded.Attachments.Documents.MaxPagesPerDocument), invocationFromContext(testCtx))
 					require.NoError(err)
@@ -592,7 +587,6 @@ func TestEmbeddingProviderNameUsesURLHost(t *testing.T) {
 }
 
 func TestSetupStatusConfiguredVectorLanesRequireCompiledBackend(t *testing.T) {
-	cfg := testConfigValue()
 	require := require.New(t)
 
 	fixture := newSetupProvidersFixture(t, setupProvidersMinimalConfig)
@@ -602,9 +596,6 @@ func TestSetupStatusConfiguredVectorLanesRequireCompiledBackend(t *testing.T) {
 	output, err := fixture.run(t, "providers", "--yes")
 	require.NoError(err, output)
 	loaded := fixture.load(t)
-	previous := cfg
-	cfg = loaded
-	t.Cleanup(func() { cfg = previous })
 	for _, dsn := range []string{"", "postgres://localhost/setup_test"} {
 		t.Run(dsn, func(t *testing.T) {
 			assert := assert.New(t)

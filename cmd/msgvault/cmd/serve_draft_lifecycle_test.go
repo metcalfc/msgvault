@@ -23,7 +23,6 @@ func TestDraftLifecycleEndToEnd(t *testing.T) {
 	server := httptest.NewServer(api.NewServerWithOptions(api.ServerOptions{Config: &config.Config{HomeDir: t.TempDir()}, Store: adapter, Logger: slog.New(slog.DiscardHandler)}).Router())
 	t.Cleanup(server.Close)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	run := func(args ...string) (string, error) {
 		root := &cobra.Command{Use: "msgvault"}
 		root.SetContext(testCtx)

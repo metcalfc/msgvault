@@ -2,10 +2,8 @@ package cmd
 
 import (
 	"bytes"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync/atomic"
 	"testing"
 
@@ -46,8 +44,6 @@ func TestPrintCacheStatsRequiresFullRebuildForInvalidPublication(t *testing.T) {
 }
 
 func TestCacheStatsUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
-	logger := testLoggerValue()
-
 	assert := assert.New(t)
 
 	var requests atomic.Int32
@@ -81,9 +77,6 @@ func TestCacheStatsUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
 			AllowInsecure: true,
 		},
 	})
-	oldLogger := logger
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
-	t.Cleanup(func() { logger = oldLogger })
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

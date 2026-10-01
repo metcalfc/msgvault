@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -78,7 +77,6 @@ func gmailProfileContext(t *testing.T, email string) context.Context {
 // source or changes its display name, even if its OAuth client is correct.
 func TestAddAccountCachedTokenIdentity(t *testing.T) {
 	cfg := testConfigValue()
-	logger := testLoggerValue()
 
 	for _, existing := range []bool{false, true} {
 		for _, legacy := range []bool{false, true} {
@@ -89,10 +87,7 @@ func TestAddAccountCachedTokenIdentity(t *testing.T) {
 					home := t.TempDir()
 					secrets := filepath.Join(home, "client.json")
 					require.NoError(os.WriteFile(secrets, []byte(fakeClientSecrets), 0600))
-					savedCfg, savedLogger := cfg, logger
-					t.Cleanup(func() { cfg, logger = savedCfg, savedLogger })
 					cfg = &config.Config{HomeDir: home, Data: config.DataConfig{DataDir: home}, OAuth: config.OAuthConfig{ClientSecrets: secrets}}
-					logger = slog.New(slog.DiscardHandler)
 					require.NoError(os.MkdirAll(cfg.TokensDir(), 0700))
 					tokenFields := map[string]any{"access_token": "synthetic-token", "token_type": "Bearer"}
 					if !legacy {

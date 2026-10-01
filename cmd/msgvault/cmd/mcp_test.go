@@ -310,18 +310,14 @@ func TestDaemonMCPServeOptionsGatesPeopleToolsByAPISchema(t *testing.T) {
 }
 
 func TestDaemonMCPServeOptionsWarnsWhenPeopleCapabilityProbeFails(t *testing.T) {
-	logger := testLoggerValue()
-
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Data: config.DataConfig{DataDir: t.TempDir()},
 	})
 	var logs bytes.Buffer
-	previousLogger := logger
-	logger = slog.New(slog.NewTextHandler(&logs, nil))
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
 	inv := invocationFromContext(testCtx)
 	previousInvocationLogger := inv.logger
 	inv.logger = logger
-	t.Cleanup(func() { logger = previousLogger })
 	t.Cleanup(func() { inv.logger = previousInvocationLogger })
 
 	client := newMCPDaemonClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -340,15 +336,10 @@ func TestDaemonMCPServeOptionsWarnsWhenPeopleCapabilityProbeFails(t *testing.T) 
 }
 
 func TestDaemonMCPServeOptionsUsesOneCapabilityProbe(t *testing.T) {
-	logger := testLoggerValue()
-
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Data: config.DataConfig{DataDir: t.TempDir()},
 	})
 	var logs bytes.Buffer
-	previousLogger := logger
-	logger = slog.New(slog.NewTextHandler(&logs, nil))
-	t.Cleanup(func() { logger = previousLogger })
 	var healthRequests atomic.Int32
 	client := newMCPDaemonClient(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

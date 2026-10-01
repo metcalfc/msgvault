@@ -196,17 +196,8 @@ func TestSummaryFromDisplayFallsBackForPhoneMessages(t *testing.T) {
 }
 
 func TestSearchCmd_AccountFlagForwardsToRemoteHTTP(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
 
 	requests := &atomic.Int32{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -219,12 +210,10 @@ func TestSearchCmd_AccountFlagForwardsToRemoteHTTP(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cfg = &config.Config{}
+	cfg := &config.Config{}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Remote.URL = srv.URL
 	cfg.Remote.AllowInsecure = true
-	useLocal = false
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -237,16 +226,6 @@ func TestSearchCmd_AccountFlagForwardsToRemoteHTTP(t *testing.T) {
 }
 
 func TestSearchCmd_MessageTypeFlagForwardsToRemoteMode(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-
 	var gotQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v1/cli/search", r.URL.Path, "path")
@@ -260,12 +239,10 @@ func TestSearchCmd_MessageTypeFlagForwardsToRemoteMode(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cfg = &config.Config{}
+	cfg := &config.Config{}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Remote.URL = srv.URL
 	cfg.Remote.AllowInsecure = true
-	useLocal = false
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -278,16 +255,6 @@ func TestSearchCmd_MessageTypeFlagForwardsToRemoteMode(t *testing.T) {
 }
 
 func TestSearchCmd_DeletionScopeForwardsToRemoteFTS(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-
 	searchRequests := &atomic.Int32{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -302,12 +269,10 @@ func TestSearchCmd_DeletionScopeForwardsToRemoteFTS(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cfg = &config.Config{}
+	cfg := &config.Config{}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Remote.URL = srv.URL
 	cfg.Remote.AllowInsecure = true
-	useLocal = false
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -348,29 +313,18 @@ func TestSearchCmd_DeletionScopeRejectsVectorAndHybrid(t *testing.T) {
 }
 
 func TestSearchCmd_FTSUsesLocalDaemonHTTPAndPreservesJSONOutput(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
 	server, searchRequests := searchHTTPDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{useLocal: true})
-	useLocal = true
 
 	done := captureStdout(t)
 	root := newTestRootCmd()
@@ -388,30 +342,18 @@ func TestSearchCmd_FTSUsesLocalDaemonHTTPAndPreservesJSONOutput(t *testing.T) {
 }
 
 func TestSearchCmd_FTSCollectionSearchUsesDaemonHTTPAndPreservesBanner(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
 	server, searchRequests := searchHTTPDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	doneOut := captureStdout(t)
@@ -496,7 +438,6 @@ func searchHTTPDaemon(t *testing.T) (*httptest.Server, *atomic.Int32) {
 // produce a caveat. An unfinished completeness probe alone stays silent.
 func TestSearchCmd_PrintsBackgroundIndexNote(t *testing.T) {
 	cfg := testConfigValue()
-	useLocal := false
 
 	tests := []struct {
 		name       string
@@ -546,20 +487,12 @@ func TestSearchCmd_PrintsBackgroundIndexNote(t *testing.T) {
 			t.Cleanup(server.Close)
 			writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-			savedCfg := cfg
-			savedUseLocal := useLocal
-			defer func() {
-				cfg = savedCfg
-				useLocal = savedUseLocal
-			}()
-
 			cfg = &config.Config{
 				HomeDir: dataDir,
 				Data:    config.DataConfig{DataDir: dataDir},
 			}
 			testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
 			invocationFromContext(testCtx).options.useLocal = true
-			useLocal = true
 
 			doneOut := captureStdout(t)
 			doneErr := captureStderr(t)
@@ -584,9 +517,6 @@ func TestSearchCmd_PrintsBackgroundIndexNote(t *testing.T) {
 }
 
 func TestSearchCmd_AccountFlagWithoutQuery(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	tmpDir := t.TempDir()
@@ -622,21 +552,12 @@ func TestSearchCmd_AccountFlagWithoutQuery(t *testing.T) {
 	require.NoError(err, "insert msg 2")
 	startStoreQueryAPIDaemon(t, tmpDir, s)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	// Search with --account only (no query terms) — must succeed.
@@ -658,9 +579,6 @@ func TestSearchCmd_AccountFlagWithoutQuery(t *testing.T) {
 }
 
 func TestSearchCmd_MessageTypeFlagScopesResults(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	tmpDir := t.TempDir()
@@ -692,21 +610,12 @@ func TestSearchCmd_MessageTypeFlagScopesResults(t *testing.T) {
 	require.NoError(err, "insert calendar event")
 	startStoreQueryAPIDaemon(t, tmpDir, s)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	done := captureStdout(t)
@@ -724,19 +633,13 @@ func TestSearchCmd_MessageTypeFlagScopesResults(t *testing.T) {
 }
 
 func TestSearchCmd_InvalidQueryFailsFastWithoutDB(t *testing.T) {
-	cfg := testConfigValue()
-
-	savedCfg := cfg
-	defer func() { cfg = savedCfg }()
-
 	// Point at a non-existent directory so store.Open would fail
 	// if the code reaches it.
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: "/nonexistent",
 		Data:    config.DataConfig{DataDir: "/nonexistent"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -753,9 +656,6 @@ func TestSearchCmd_InvalidQueryFailsFastWithoutDB(t *testing.T) {
 }
 
 func TestSearchCmd_AccountFlagDoesNotLeakAcrossInvocations(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	tmpDir := t.TempDir()
 	dbPath := tmpDir + "/msgvault.db"
@@ -782,21 +682,12 @@ func TestSearchCmd_AccountFlagDoesNotLeakAcrossInvocations(t *testing.T) {
 	require.NoError(err, "backfill FTS")
 	startStoreQueryAPIDaemon(t, tmpDir, s)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	// First invocation: search with --account.
@@ -830,14 +721,8 @@ func TestSearchCmd_AccountFlagDoesNotLeakAcrossInvocations(t *testing.T) {
 }
 
 func TestSearchCmd_NoQueryNoAccount(t *testing.T) {
-	cfg := testConfigValue()
-
-	savedCfg := cfg
-	defer func() { cfg = savedCfg }()
-
-	cfg = &config.Config{}
+	cfg := &config.Config{}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -853,9 +738,6 @@ func TestSearchCmd_NoQueryNoAccount(t *testing.T) {
 // collection containing only the first, then runs FTS search with
 // --collection. Only the first account's message must come back.
 func TestSearchCmd_CollectionFlagScopesResults(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	tmpDir := t.TempDir()
@@ -891,21 +773,12 @@ func TestSearchCmd_CollectionFlagScopesResults(t *testing.T) {
 	require.NoError(err, "create collection")
 	startStoreQueryAPIDaemon(t, tmpDir, s)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	done := captureStdout(t)
@@ -925,9 +798,6 @@ func TestSearchCmd_CollectionFlagScopesResults(t *testing.T) {
 // TestSearchCmd_CollectionFlagUnknown returns a clear error when the
 // named collection does not exist.
 func TestSearchCmd_CollectionFlagUnknown(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	tmpDir := t.TempDir()
 	dbPath := tmpDir + "/msgvault.db"
@@ -937,20 +807,12 @@ func TestSearchCmd_CollectionFlagUnknown(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 	startStoreQueryAPIDaemon(t, tmpDir, s)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	root := newTestRootCmd()
@@ -969,15 +831,8 @@ func TestSearchCmd_CollectionFlagUnknown(t *testing.T) {
 // FTS allows queryless scoped searches; vector/hybrid don't, because
 // the embeddings client needs text to vectorize.
 func TestSearchCmd_VectorOrHybridRequireQueryText(t *testing.T) {
-	cfg := testConfigValue()
-
 	for _, mode := range []string{"vector", "hybrid"} {
 		t.Run(mode, func(t *testing.T) {
-			savedCfg := cfg
-			defer func() { cfg = savedCfg }()
-
-			cfg = &config.Config{}
-
 			root := newTestRootCmd()
 			root.AddCommand(newSearchCommand())
 			root.SetArgs([]string{
@@ -997,15 +852,8 @@ func TestSearchCmd_VectorOrHybridRequireQueryText(t *testing.T) {
 // like `from:alice` would fail at the engine layer; reject it at the
 // CLI surface instead.
 func TestSearchCmd_VectorOrHybridRejectFilterOnlyQuery(t *testing.T) {
-	cfg := testConfigValue()
-
 	for _, mode := range []string{"vector", "hybrid"} {
 		t.Run(mode, func(t *testing.T) {
-			savedCfg := cfg
-			defer func() { cfg = savedCfg }()
-
-			cfg = &config.Config{}
-
 			root := newTestRootCmd()
 			root.AddCommand(newSearchCommand())
 			root.SetArgs([]string{
@@ -1034,8 +882,6 @@ func TestSearchCmd_MutualExclusion(t *testing.T) {
 	msg := err.Error()
 	assert.Contains(t, msg, "account", "error should mention account flag name")
 	assert.Contains(t, msg, "collection", "error should mention collection flag name")
-	_ = a
-	_ = b
 }
 
 func TestOutputSearchResultsJSONShowsDeletedFromSourceOnlyWhenPresent(t *testing.T) {
@@ -1058,17 +904,8 @@ func TestOutputSearchResultsJSONShowsDeletedFromSourceOnlyWhenPresent(t *testing
 // array, never the "No messages found." prose — agents pipe this
 // straight into jq.
 func TestSearchCmd_JSONEmptyResultsEmitEmptyArray(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	assert := assert.New(t)
 	require := require.New(t)
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -1076,12 +913,10 @@ func TestSearchCmd_JSONEmptyResultsEmitEmptyArray(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cfg = &config.Config{}
+	cfg := &config.Config{}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Remote.URL = srv.URL
 	cfg.Remote.AllowInsecure = true
-	useLocal = false
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)

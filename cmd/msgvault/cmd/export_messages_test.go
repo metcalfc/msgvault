@@ -250,7 +250,6 @@ func TestExportMessagesCommandRoutesThroughDaemon(t *testing.T) {
 			"{\"type\":\"complete\"}\n",
 	)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	t.Setenv(daemonCLISubprocessEnv, "")
 
 	cmd := newExportMessagesCmd(exportMessagesDeps{})

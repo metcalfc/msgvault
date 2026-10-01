@@ -75,9 +75,6 @@ func runPersonDirectoryCommand(ctx context.Context, t *testing.T, args ...string
 }
 
 func TestPersonDirectoryCommandMapsDirectoryQueryParameters(t *testing.T) {
-	cfg := testConfigValue()
-	_ = cfg
-
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -137,7 +134,6 @@ func TestPersonDirectoryCommandMapsDirectoryQueryParameters(t *testing.T) {
 				require.ErrorContains(err, flag+": must be YYYY-MM-DD or RFC3339")
 				assert.Empty(requests)
 				assert.Empty(output)
-				cfg = nil
 				_, err = runPersonDirectoryCommand(testCtx, t, flag, invalid)
 				assert.ErrorContains(err, flag+": must be YYYY-MM-DD or RFC3339")
 			})

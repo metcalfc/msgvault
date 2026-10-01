@@ -49,8 +49,6 @@ func TestVectorProviderCredentialResolutionUsesOneStartupSnapshot(t *testing.T) 
 	requirements := require.New(t)
 	t.Setenv("TEXT_EMBEDDING_KEY", "environment-secret")
 	cfg := config.NewDefaultConfig()
-	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = t.TempDir()
 	cfg.Vector.Embeddings.Endpoint = "https://embeddings.example.test/v1"
 	cfg.Vector.Embeddings.APIKeyEnv = "TEXT_EMBEDDING_KEY"
@@ -92,8 +90,6 @@ func TestPersonEnrichmentProviderCredentialLookupUsesStableNameAndReloadsStore(t
 	requirements := require.New(t)
 	t.Setenv("SHARED_EXA_KEY", "environment-secret")
 	cfg := config.NewDefaultConfig()
-	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = t.TempDir()
 	profile := personenrichment.ProviderProfile{
 		Name: "exa-primary", Kind: personenrichment.ProviderExa,
@@ -124,8 +120,6 @@ func TestStoredSuppressionLookupFeedsReservedRuntimeEnvironmentAndFailsClosed(t 
 	requirements := require.New(t)
 	assertions := assert.New(t)
 	cfg := config.NewDefaultConfig()
-	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = t.TempDir()
 	cfg.People.Enrichment.SuppressionKeyEnv = providercredentials.StoredSuppressionEnvironment
 	empty, err := providercredentials.Read(cfg.TokensDir())
@@ -159,7 +153,6 @@ func TestDefaultPersonEnrichmentLookupReadsRuntimeConfig(t *testing.T) {
 	requirements.NoError(err)
 
 	testCtx := withTestConfig(t, configured)
-	_ = testCtx
 	deps := defaultPersonEnrichmentCommandDeps(testCtx)
 
 	value, ok := deps.lookupEnv(providercredentials.StoredSuppressionEnvironment)
@@ -172,7 +165,6 @@ func TestPersonEnrichmentGateLoadsStableStoredCredentialOnlyAfterSuppression(t *
 	t.Setenv("SCHEDULE_PROVIDER_KEY", "")
 	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = t.TempDir()
 	profile := scheduleTestEnrichmentProfile(t)
 	empty, err := providercredentials.Read(cfg.TokensDir())
@@ -212,8 +204,6 @@ func TestDefaultCLIProxyLookupsNeverForwardStoredCredentials(t *testing.T) {
 	requirements := require.New(t)
 	t.Setenv("TEST_PROVIDER_KEY", "")
 	cfg := config.NewDefaultConfig()
-	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = t.TempDir()
 	cfg.People.Sweep = personProviderTestConfig()
 	cfg.People.Enrichment = personEnrichmentCLIConfig(providercredentials.StoredSuppressionEnvironment)
@@ -232,8 +222,7 @@ func TestDefaultCLIProxyLookupsNeverForwardStoredCredentials(t *testing.T) {
 		providercredentials.PersonEnrichmentID(cfg.People.Enrichment.Providers[0].Name),
 		cfg.People.Enrichment.Providers[0].Endpoint, "stored-enrichment-secret")
 	requirements.NoError(err)
-	testCtx = withTestConfig(t, cfg)
-	_ = testCtx
+	testCtx := withTestConfig(t, cfg)
 
 	sweepDeps := defaultPersonSweepCommandDeps()
 	assertions.Empty(personSweepForwardEnv(cfg.People.Sweep, sweepDeps.lookupEnv))

@@ -105,7 +105,6 @@ func runSetupForTest(t *testing.T, answers string) (string, string) {
 	c.HomeDir = home
 	c.Data.DataDir = home
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 
 	var out bytes.Buffer
 	cmd := &cobra.Command{}

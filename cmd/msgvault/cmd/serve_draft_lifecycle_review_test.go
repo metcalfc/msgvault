@@ -147,7 +147,6 @@ func TestDraftReplyHumanLifecycleHandle(t *testing.T) {
 	server := httptest.NewServer(api.NewServerWithOptions(api.ServerOptions{Config: &config.Config{HomeDir: t.TempDir()}, Store: adapter, Logger: slog.New(slog.DiscardHandler)}).Router())
 	t.Cleanup(server.Close)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	root := &cobra.Command{Use: "msgvault"}
 	root.SetContext(testCtx)
 	root.AddCommand(newDraftReplyCommand())
@@ -412,7 +411,6 @@ func TestDraftLifecyclePublicationFailure(t *testing.T) {
 	server := httptest.NewServer(api.NewServerWithOptions(api.ServerOptions{Config: &config.Config{HomeDir: t.TempDir()}, Store: adapter, Logger: slog.New(slog.DiscardHandler)}).Router())
 	t.Cleanup(server.Close)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	root := &cobra.Command{Use: "msgvault"}
 	root.SetContext(testCtx)
 	root.AddCommand(newDraftEditCommand())
@@ -468,7 +466,6 @@ func TestDraftLifecycleHumanAcknowledgedReceiptWhenRecordFails(t *testing.T) {
 	}).Router())
 	t.Cleanup(server.Close)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	root := &cobra.Command{Use: "msgvault"}
 	root.SetContext(testCtx)
 	root.AddCommand(newDraftEditCommand())
@@ -581,7 +578,6 @@ func TestDraftLifecycleHumanUnknownAppendThroughHTTP(t *testing.T) {
 	}).Router())
 	t.Cleanup(server.Close)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	root := &cobra.Command{Use: "msgvault"}
 	root.SetContext(testCtx)
 	root.AddCommand(newDraftEditCommand())
@@ -1001,7 +997,6 @@ func TestDraftLifecycleHumanCleanupPartialThroughHTTP(t *testing.T) {
 	}).Router())
 	t.Cleanup(server.Close)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	root := &cobra.Command{Use: "msgvault"}
 	root.SetContext(testCtx)
 	root.AddCommand(newDraftDeleteCommand())

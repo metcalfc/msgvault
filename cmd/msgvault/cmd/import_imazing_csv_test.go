@@ -34,7 +34,6 @@ func TestImportIMazingCSVRejectsConfiguredRemoteDaemon(t *testing.T) {
 	assert := assert.New(t)
 	server, requests := newDaemonCLIRunnerTestServer(t, nil, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	t.Setenv(daemonCLISubprocessEnv, "")
 
 	command := &cobra.Command{Use: "test"}
@@ -60,7 +59,6 @@ func TestImportIMazingCSVReportsSummary(t *testing.T) {
 	home := t.TempDir()
 	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.HomeDir = home
 	cfg.Data.DataDir = home
 	exportDir := writeIMazingCSVCommandFixture(t)
@@ -86,19 +84,14 @@ func TestImportIMazingCSVReportsSummary(t *testing.T) {
 // the analytics cache, not stay invisible until the next maintenance build,
 // even though the command returns an error.
 func TestImportIMazingCSVRebuildsCacheAfterPartialImportFailure(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	markDaemonCLISubprocessForTest(t)
 	dataDir := t.TempDir()
-	savedCfg := cfg
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.HomeDir = dataDir
 	cfg.Data.DataDir = dataDir
-	t.Cleanup(func() { cfg = savedCfg })
 
 	exportDir := writeIMazingCSVCommandFixture(t)
 	command := &cobra.Command{Use: "test"}
@@ -138,19 +131,14 @@ func TestImportIMazingCSVRebuildsCacheAfterPartialImportFailure(t *testing.T) {
 // opaque name is persisted with the source. The command must fail before the
 // importer creates a source, starts a sync, or persists a message.
 func TestImportIMazingCSVRejectsLocalTimezone(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	markDaemonCLISubprocessForTest(t)
 	dataDir := t.TempDir()
-	savedCfg := cfg
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.HomeDir = dataDir
 	cfg.Data.DataDir = dataDir
-	t.Cleanup(func() { cfg = savedCfg })
 
 	exportDir := writeIMazingCSVCommandFixture(t)
 	command := &cobra.Command{Use: "test"}
@@ -216,19 +204,14 @@ func TestResolveLocalTimezonePlatformContract(t *testing.T) {
 // with the resolved zone, and the Windows branch must fail before any
 // source, sync, or message is created.
 func TestImportIMazingCSVOmittedTimezonePlatformContract(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	markDaemonCLISubprocessForTest(t)
 	dataDir := t.TempDir()
-	savedCfg := cfg
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.HomeDir = dataDir
 	cfg.Data.DataDir = dataDir
-	t.Cleanup(func() { cfg = savedCfg })
 
 	exportDir := writeIMazingCSVCommandFixture(t)
 	command := &cobra.Command{Use: "test"}

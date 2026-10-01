@@ -1340,8 +1340,6 @@ func TestPersonProviderUseAndRemoveRecommendDaemonRestartWhenDaemonKeepsStartupC
 // running policy through the incompatible daemon. The test uses a responding
 // ping endpoint and the runtime record pattern from the restore guards.
 func TestPersonProviderUseAndRemoveNoticeLiveIncompatibleDaemon(t *testing.T) {
-	cfg := testConfigValue()
-
 	newAssert := assert.New
 	newRequire := require.New
 	require := require.New(t)
@@ -1377,11 +1375,8 @@ func TestPersonProviderUseAndRemoveNoticeLiveIncompatibleDaemon(t *testing.T) {
 	require.NotNil(findAnyDaemonRuntimeContext(ctx, dataDir),
 		"precondition: the incompatible daemon still responds")
 
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = &config.Config{Data: config.DataConfig{DataDir: dataDir}}
+	cfg := &config.Config{Data: config.DataConfig{DataDir: dataDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	defaults := defaultPersonProviderCommandDeps()
 
 	for _, operation := range []struct {

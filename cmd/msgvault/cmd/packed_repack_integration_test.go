@@ -152,7 +152,6 @@ func assertBlobReadSurfaces(
 	})
 	require.NoError(t, err)
 	testCtx := configureRemoteDaemonForTest(t, httpServer.URL)
-	_ = testCtx
 	mcpOpts := daemonMCPServeOptions(testCtx, client, invocationFromContext(testCtx))
 	require.NotNil(t, mcpOpts.AttachmentReader)
 	mcpData, err := mcpOpts.AttachmentReader.ReadAttachment(testCtx, hash)

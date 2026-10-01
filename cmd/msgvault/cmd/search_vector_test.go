@@ -276,9 +276,7 @@ func vectorSearchHTTPDaemon(
 func configureVectorSearchHTTPTest(t *testing.T, dataDir string, local bool, remoteURL string) (context.Context, func()) {
 	t.Helper()
 	cfg := testConfigValue()
-	useLocal := false
 	savedCfg := cfg
-	savedUseLocal := useLocal
 	cfg = &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
@@ -292,11 +290,9 @@ func configureVectorSearchHTTPTest(t *testing.T, dataDir string, local bool, rem
 	if local {
 		cfg.Remote.URL = "http://configured-daemonclient.invalid"
 	}
-	useLocal = local
 
 	return testCtx, func() {
 		cfg = savedCfg
-		useLocal = savedUseLocal
 	}
 }
 

@@ -102,31 +102,18 @@ func TestExportAttachmentBinaryDownloadPreservesExistingFileOnCloseError(t *test
 }
 
 func TestExportAttachmentUsesLocalDaemonHTTPAndPreservesFileOutput(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	dataDir := t.TempDir()
 	wantData := []byte("daemon attachment content")
 	contentHash := fmt.Sprintf("%x", sha256.Sum256(wantData))
 	server, attachmentRequests := attachmentHTTPDaemon(t, contentHash, wantData)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 	t.Chdir(dataDir)
 	exportAttachmentOutput := "attachment.bin"
@@ -151,31 +138,18 @@ func TestExportAttachmentUsesLocalDaemonHTTPAndPreservesFileOutput(t *testing.T)
 }
 
 func TestExportAttachmentUsesLocalDaemonHTTPAndPreservesJSONOutput(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	dataDir := t.TempDir()
 	wantData := []byte("daemon attachment content")
 	contentHash := fmt.Sprintf("%x", sha256.Sum256(wantData))
 	server, attachmentRequests := attachmentHTTPDaemon(t, contentHash, wantData)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 	exportAttachmentOutput := ""
 	exportAttachmentJSON := true
@@ -202,31 +176,18 @@ func TestExportAttachmentUsesLocalDaemonHTTPAndPreservesJSONOutput(t *testing.T)
 }
 
 func TestExportAttachmentUsesLocalDaemonHTTPAndPreservesBase64Output(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	dataDir := t.TempDir()
 	wantData := []byte("daemon attachment content")
 	contentHash := fmt.Sprintf("%x", sha256.Sum256(wantData))
 	server, attachmentRequests := attachmentHTTPDaemon(t, contentHash, wantData)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 	exportAttachmentOutput := ""
 	exportAttachmentJSON := false

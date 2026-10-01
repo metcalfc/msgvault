@@ -74,8 +74,6 @@ func TestRunCLIReplyDraftUsesTypedRoute(t *testing.T) {
 
 func TestDraftPolicySnapshotRequiresDaemonRestart(t *testing.T) {
 	cfg := config.Config{IMAP: config.IMAPConfig{Drafts: []config.IMAPDraftSource{{SourceID: 42, Enabled: true, Mailbox: "Drafts"}}}}
-	testCtx := testInvocationContext(t.Context(), &cfg, invocationOptions{})
-	_ = testCtx
 	snapshot := snapshotIMAPDraftPolicy(&cfg)
 	cfg.IMAP.Drafts[0].Enabled = false
 	assert.True(t, snapshot[0].Enabled)

@@ -218,7 +218,6 @@ func TestAgentTokenIssueOutputsSecret(t *testing.T) {
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
-	_ = testCtx
 
 	output, err := runAgentTokenCommand(testCtx, t, freshCommandForTest(t, newAgentTokenCommand(), "issue"),
 		"--label", "Test Agent",
@@ -259,7 +258,6 @@ func TestAgentTokenListFormatsTable(t *testing.T) {
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
-	_ = testCtx
 
 	output, err := runAgentTokenCommand(testCtx, t, freshCommandForTest(t, newAgentTokenCommand(), "list"))
 	require.NoError(err)
@@ -290,7 +288,6 @@ func TestAgentTokenRevokeCallsDelete(t *testing.T) {
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
-	_ = testCtx
 
 	output, err := runAgentTokenCommand(testCtx, t, freshCommandForTest(t, newAgentTokenCommand(), "revoke"), "tok_abc123")
 	require.NoError(err)

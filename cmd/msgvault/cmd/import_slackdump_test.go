@@ -69,13 +69,7 @@ func TestRunImportSlackdumpRejectsMissingSourcePath(t *testing.T) {
 }
 
 func TestResolveSlackdumpMediaPolicyPreservesWorkspaceRulesAndOverridesOnlySize(t *testing.T) {
-	cfg := testConfigValue()
-
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = config.NewDefaultConfig()
-	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
+	cfg := config.NewDefaultConfig()
 	disabled := false
 	cfg.Slack = config.SlackConfig{
 		Media:                &disabled,

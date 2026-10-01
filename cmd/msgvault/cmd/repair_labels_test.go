@@ -19,16 +19,11 @@ import (
 // issue #748 gap directly: an add-only label merge leaves a label no
 // imap_message_memberships row backs.
 func TestRunRepairLabelsLocalDryRunApplyAndNoop(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	dataDir := t.TempDir()
-	savedCfg := cfg
-	cfg = &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
+	cfg := &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	t.Cleanup(func() { cfg = savedCfg })
 
 	messageID := newLabelRepairArchive(t, "labels@example.test", cfg)
 	_, err := buildCache(cfg.DatabaseDSN(), cfg.AnalyticsDir(), true)
@@ -82,15 +77,10 @@ func TestRunRepairLabelsLocalDryRunApplyAndNoop(t *testing.T) {
 // that silently matches no source instead of failing loudly when the given
 // identifier does not resolve to one.
 func TestRunRepairLabelsLocalUnknownIdentifierErrors(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	dataDir := t.TempDir()
-	savedCfg := cfg
-	cfg = &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
+	cfg := &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	t.Cleanup(func() { cfg = savedCfg })
 
 	newLabelRepairArchive(t, "one@example.test", cfg)
 
@@ -107,16 +97,11 @@ func TestRunRepairLabelsLocalUnknownIdentifierErrors(t *testing.T) {
 // its imaps://user@host:port connection string, not the email a person types
 // on the command line — the display name carries that email.
 func TestRunRepairLabelsLocalIdentifierScopesByDisplayName(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	dataDir := t.TempDir()
-	savedCfg := cfg
-	cfg = &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
+	cfg := &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	t.Cleanup(func() { cfg = savedCfg })
 
 	st, err := store.OpenForTest(cfg.DatabaseDSN())
 	require.NoError(err)
@@ -169,16 +154,11 @@ func (w *errAfterNWriter) Write(p []byte) (int, error) {
 // is that a real, already-committed change is not lost from the cache just
 // because the command as a whole reports an error.
 func TestRunRepairLabelsLocalRebuildsCacheDespitePartialFailure(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	dataDir := t.TempDir()
-	savedCfg := cfg
-	cfg = &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
+	cfg := &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	t.Cleanup(func() { cfg = savedCfg })
 
 	newLabelRepairArchive(t, "one@example.test", cfg)
 	newLabelRepairArchive(t, "two@example.test", cfg)
@@ -216,7 +196,6 @@ func TestRepairLabelsCommandRoutesThroughDaemonCLIRunner(t *testing.T) {
 		`{"type":"complete"}`,
 	)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	t.Setenv(daemonCLISubprocessEnv, "")
 
 	cmd := newRepairLabelsCmd()

@@ -52,8 +52,6 @@ func readEmbedGen(t *testing.T, db *sql.DB, id int64) (val int64, isNull bool) {
 // This FAILS with the old reset-before-open ordering (the message ends stamped
 // =active) and PASSES with the open-before-reset fix.
 func TestRepairResetEmbeddings_OpensBackendBeforeResettingEmbedGen(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	require.NoError(
@@ -122,9 +120,7 @@ VALUES (1, 1, 1, 'm1', 'email'), (2, 1, 1, 'm2', 'email');
 
 	// Wire cfg so repairResetEmbeddings opens the SAME vector backend the real
 	// repair command would (this open triggers the one-time backfill).
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = &config.Config{}
+	cfg := &config.Config{}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
 	cfg.Data.DataDir = dir
 	cfg.Vector.Enabled = true
@@ -154,8 +150,6 @@ VALUES (1, 1, 1, 'm1', 'email'), (2, 1, 1, 'm2', 'email');
 // with vector search disabled, repairResetEmbeddings opens no backend (no
 // backfill) but still clears embed_gen so the column is consistent. No error.
 func TestRepairResetEmbeddings_VectorDisabledStillResets(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 
 	dir := t.TempDir()
@@ -178,9 +172,7 @@ VALUES (1, 1, 1, 'm1', 'email', 7);
 	require.NoError(
 		err, "seed message with embed_gen set")
 
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = &config.Config{}
+	cfg := &config.Config{}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
 	cfg.Data.DataDir = dir
 	cfg.Vector.Enabled = false

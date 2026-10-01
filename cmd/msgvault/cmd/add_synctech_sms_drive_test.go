@@ -177,7 +177,6 @@ func TestSynctechSMSDriveRunMarksOuterSyncFailedOnDownloadError(t *testing.T) {
 	home := t.TempDir()
 	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.HomeDir = home
 	cfg.Data.DataDir = home
 	f := storetest.New(t)
@@ -211,16 +210,11 @@ func TestSynctechSMSDriveRunMarksOuterSyncFailedOnDownloadError(t *testing.T) {
 }
 
 func TestSynctechSMSDrivePartialFailureEnqueuesImportedMessages(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	home := t.TempDir()
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.HomeDir = home
 	cfg.Data.DataDir = home
 	st := testutil.NewSQLiteTestStore(t)
@@ -295,17 +289,11 @@ func TestSynctechSMSDrivePartialFailureEnqueuesImportedMessages(t *testing.T) {
 }
 
 func TestRunConfiguredSynctechSMSSourceLeavesManualSyncMessagesUnstamped(t *testing.T) {
-	cfg := testConfigValue()
-
 	stubScheduledCacheBuild(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	home := t.TempDir()
-	savedCfg := cfg
-	t.Cleanup(func() {
-		cfg = savedCfg
-	})
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
 	ctx := testCtx
 	cfg.HomeDir = home
@@ -348,17 +336,12 @@ func TestRunConfiguredSynctechSMSSourceLeavesManualSyncMessagesUnstamped(t *test
 }
 
 func TestConfiguredSynctechSMSCompletesAfterImport(t *testing.T) {
-	cfg := testConfigValue()
-
 	stubScheduledCacheBuild(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	home := t.TempDir()
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.HomeDir = home
 	cfg.Data.DataDir = home
 

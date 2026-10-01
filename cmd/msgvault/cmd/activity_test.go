@@ -18,16 +18,11 @@ import (
 )
 
 func TestRunActivityBuildLocalUsesConfigAndBackstop(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	markDaemonCLISubprocessForTest(t)
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = filepath.Join(t.TempDir(), "data")
 	cfg.Activity.Timezone = "Pacific/Kiritimati"
 	cfg.Activity.BatchSize = 1
@@ -179,7 +174,6 @@ func TestActivityBuildProxiesThroughDaemonCLIRunner(t *testing.T) {
 		`{"type":"complete"}`,
 	)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	cfg.Data.DataDir = t.TempDir()
 
 	var stdout bytes.Buffer

@@ -13,7 +13,6 @@ func TestImportSynctechSMSRequiresOwnerPhone(t *testing.T) {
 	dir := t.TempDir()
 	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.HomeDir = t.TempDir()
 	cfg.Data.DataDir = cfg.HomeDir
 	cmd := newTestRootCmd()
@@ -34,7 +33,6 @@ func TestImportSynctechSMSCommandRuns(t *testing.T) {
 	require.NoError(t, err, "write fixture")
 	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.HomeDir = home
 	cfg.Data.DataDir = home
 	cmd := newTestRootCmd()

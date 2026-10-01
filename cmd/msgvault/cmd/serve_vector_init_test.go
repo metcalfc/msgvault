@@ -144,7 +144,6 @@ func TestStartVectorInitDisabledFinishesImmediately(t *testing.T) {
 	c := config.NewDefaultConfig()
 	c.Vector.Enabled = false
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 
 	h := startVectorInit(testCtx, nil, "", nil, nil, nil)
 	assert.True(t, h.WaitTimeout(time.Second))
@@ -155,7 +154,6 @@ func TestStartVectorInitRunsForIndependentMultimodalLane(t *testing.T) {
 	c.Vector.Enabled = false
 	c.Vector.Multimodal.Enabled = true
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 
 	called := false
 	prev := setupVectorFeaturesForRun
@@ -177,7 +175,6 @@ func TestStartVectorInitInstallsFeaturesOnSuccess(t *testing.T) {
 	c := config.NewDefaultConfig()
 	c.Vector.Enabled = true
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 
 	closed := false
 	backend := &vectorInitPersonBackend{fakeCmdVectorBackend: &fakeCmdVectorBackend{
@@ -370,7 +367,6 @@ func TestStartVectorInitFlagsStaleIndex(t *testing.T) {
 	c := config.NewDefaultConfig()
 	c.Vector.Enabled = true
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 
 	// Active generation's fingerprint differs from the configured one, so
 	// the same check the query path runs (ResolveActiveForFingerprint)
@@ -401,7 +397,6 @@ func TestStartVectorInitReportsError(t *testing.T) {
 	c := config.NewDefaultConfig()
 	c.Vector.Enabled = true
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 
 	overrideSetupVectorFeatures(t, func(context.Context, *store.Store, string, bool) (*vectorFeatures, error) {
 		return nil, errors.New("migration exploded")
@@ -471,7 +466,6 @@ func TestStartVectorInitAbortsQuietlyOnCancel(t *testing.T) {
 	c := config.NewDefaultConfig()
 	c.Vector.Enabled = true
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 
 	ctx, cancel := context.WithCancel(testCtx)
 	overrideSetupVectorFeatures(t, func(ctx context.Context, _ *store.Store, _ string, _ bool) (*vectorFeatures, error) {
@@ -595,7 +589,6 @@ func runRegisteredContextJob(
 	testCfg := config.NewDefaultConfig()
 	testCfg.Vector = vectorCfg
 	testCtx := withTestConfig(t, testCfg)
-	_ = testCtx
 	if buildingFingerprint == "" {
 		buildingFingerprint = vectorCfg.GenerationFingerprint()
 	}
@@ -828,7 +821,6 @@ func TestVisualHTTPProductionRegistrationRecordsBuildResumeAndRetryPasses(t *tes
 	c.Vector.Multimodal.Schedule.Cron = ""
 	c.Vector.Multimodal.Schedule.RunAfterSync = false
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 	st := testutil.NewSQLiteTestStore(t)
 	generation, err := st.EnsureVisualGeneration(testCtx, store.VisualGenerationSpec{
 		Fingerprint: "visual-http-production-registration", Model: "visual-test", Dimension: 1024,
@@ -909,7 +901,6 @@ func TestRegisterVisualJobSkipsUnconsentedScheduledPassWithoutRow(t *testing.T) 
 	c.Vector.Multimodal.Schedule.Cron = "0 0 1 1 *"
 	c.Vector.Multimodal.Schedule.RunAfterSync = false
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 	st := testutil.NewSQLiteTestStore(t)
 	generation, err := st.EnsureVisualGeneration(testCtx, store.VisualGenerationSpec{
 		Fingerprint: "visual-scheduled-unconsented", Model: "visual-test", Dimension: 1024,
@@ -1005,7 +996,6 @@ func TestRegisterVisualJobRecordsLaterPostActivationMaintenancePass(t *testing.T
 	c.Vector.Multimodal.Schedule.Cron = "0 0 1 1 *"
 	c.Vector.Multimodal.Schedule.RunAfterSync = false
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 	st := testutil.NewSQLiteTestStore(t)
 	generation, err := st.EnsureVisualGeneration(testCtx, store.VisualGenerationSpec{
 		Fingerprint: "visual-scheduled-post-activation", Model: "visual-test", Dimension: 1024,

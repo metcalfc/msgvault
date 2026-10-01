@@ -113,7 +113,6 @@ func TestPersonAttributesSetCoercesScalarAndForwardsMetadata(t *testing.T) {
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
-	_ = testCtx
 
 	output, err := runAttributeCommand(testCtx, t, freshCommandForTest(t, newPersonAttributesCommand(), "set"),
 		"7", "primary_channel", "--value", "chat",
@@ -146,7 +145,6 @@ func TestPersonAttributesSetRejectsExplicitNonPositiveExpectedValueID(t *testing
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
-	_ = testCtx
 
 	for _, expectedID := range []string{"0", "-1"} {
 		t.Run(expectedID, func(t *testing.T) {
@@ -184,7 +182,6 @@ func TestPersonAttributesClearForwardsOrdinalAndExpectedValueID(t *testing.T) {
 	testCtx := withStoreResolverConfig(t, &config.Config{
 		Remote: config.RemoteConfig{URL: server.URL, AllowInsecure: true},
 	})
-	_ = testCtx
 
 	output, err := runAttributeCommand(testCtx, t, freshCommandForTest(t, newPersonAttributesCommand(), "clear"),
 		"7", "ask_me_about", "--ordinal", "1", "--expected-value-id", "11")

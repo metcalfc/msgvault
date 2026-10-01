@@ -21,7 +21,6 @@ func TestPackAttachmentsProxiesThroughDaemonCLIRunner(t *testing.T) {
 		`{"type":"complete"}`,
 	)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	var stdout bytes.Buffer
 	cmd := newPackAttachmentsCmd()

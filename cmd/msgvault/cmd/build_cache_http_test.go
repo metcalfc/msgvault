@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -137,8 +135,6 @@ func TestBuildCacheFullRebuildPassesFullStartupIntent(t *testing.T) {
 }
 
 func TestBuildCacheUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
-	logger := testLoggerValue()
-
 	assert := assert.New(t)
 
 	var requests atomic.Int32
@@ -165,9 +161,6 @@ func TestBuildCacheUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
 			AllowInsecure: true,
 		},
 	})
-	oldLogger := logger
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
-	t.Cleanup(func() { logger = oldLogger })
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -209,7 +202,6 @@ func TestBuildCacheRunningLocalDaemonUsesSingleHTTPRequest(t *testing.T) {
 
 	dataDir := t.TempDir()
 	testCtx := withStoreResolverConfig(t, lifecycleTestConfig(dataDir))
-	_ = testCtx
 	rt := daemonRuntimeForHTTPServer(t, server, daemonAPIKeyFingerprint(""))
 	_, err := daemonRuntimeStore(dataDir).Write(rt.Record)
 	require.NoError(err, "write running daemon record")
@@ -248,7 +240,6 @@ func stubBuildCacheDaemonAutostart(
 	t.Helper()
 	dataDir := t.TempDir()
 	testCtx := withStoreResolverConfig(t, lifecycleTestConfig(dataDir))
-	_ = testCtx
 	waitCh := make(chan error)
 	logPath := filepath.Join(dataDir, "serve.log")
 	if logPathOverride != nil {

@@ -15,9 +15,6 @@ import (
 )
 
 func TestUpdateAccountUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
@@ -51,21 +48,12 @@ func TestUpdateAccountUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 	t.Cleanup(server.Close)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	t.Cleanup(func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	})
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 		Remote:  config.RemoteConfig{URL: "http://configured-daemonclient.invalid"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	var stdout bytes.Buffer
@@ -85,9 +73,6 @@ func TestUpdateAccountUsesLocalDaemonHTTPAndPreservesOutput(t *testing.T) {
 }
 
 func TestUpdateAccountSourceIDUsesTypedDaemonRequest(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	requests := &atomic.Int32{}
@@ -117,20 +102,12 @@ func TestUpdateAccountSourceIDUsesTypedDaemonRequest(t *testing.T) {
 	t.Cleanup(server.Close)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	t.Cleanup(func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	})
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 		Remote:  config.RemoteConfig{URL: server.URL},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	cmd := newUpdateAccountCmd()

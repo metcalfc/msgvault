@@ -282,7 +282,6 @@ func TestDefaultVectorConfigBlocksCuratedPeopleButKeepsMessageEmbedding(t *testi
 	configured.Vector.Embeddings.Dimension = 4
 	configured.Vector.Embeddings.MaxRetries = 1
 	testCtx := withTestConfig(t, configured)
-	_ = testCtx
 	requirements.NoError(configured.Save())
 
 	mainStore, err := store.Open(mainPath)
@@ -398,9 +397,6 @@ func TestDefaultVectorConfigBlocksCuratedPeopleButKeepsMessageEmbedding(t *testi
 // catches deletion of a live config silently falling back to the authorized
 // startup snapshot.
 func TestCurrentSemanticPersonVectorConfigSourceFailsClosedAfterConfigRemoval(t *testing.T) {
-	cfg := testConfigValue()
-	_ = cfg
-
 	assertions := assert.New(t)
 	requirements := require.New(t)
 	configured := config.NewDefaultConfig()
@@ -414,7 +410,6 @@ func TestCurrentSemanticPersonVectorConfigSourceFailsClosedAfterConfigRemoval(t 
 		Enabled: true, RetentionPosture: "zero_data_retention", TrainingPosture: "no_training",
 	}
 	testCtx := withTestConfig(t, configured)
-	_ = testCtx
 	requirements.NoError(configured.Save())
 
 	source := currentSemanticPersonVectorConfigSource(invocationFromContext(testCtx))
@@ -569,8 +564,6 @@ func TestCompletedBuildActivatesWithoutPersonRequestsAfterLivePolicyDrift(t *tes
 // profile document through the provider and SQLite person index to the
 // authenticated generated client used by the CLI.
 func TestPersonSearchProductionCompositionDoesNotPublishReadyWithoutThePersonEngine(t *testing.T) {
-	useLocal := false
-
 	requirements := require.New(t)
 	assertions := assert.New(t)
 
@@ -619,9 +612,6 @@ func TestPersonSearchProductionCompositionDoesNotPublishReadyWithoutThePersonEng
 	}
 	testCtx := withTestConfig(t, configured)
 	requirements.NoError(configured.Save())
-	savedUseLocal := useLocal
-	useLocal = false
-	t.Cleanup(func() { useLocal = savedUseLocal })
 
 	mainStore, err := store.Open(mainPath)
 	requirements.NoError(err)

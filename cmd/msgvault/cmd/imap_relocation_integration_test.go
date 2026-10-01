@@ -526,15 +526,9 @@ func TestIMAPRelocationSkipsSameCompositeForcedCandidate(t *testing.T) {
 // external senders cannot produce; every other adoption keeps the canonical
 // snapshot and only rekeys the location, matching pre-relocation behavior.
 func TestIMAPRelocationForgedSurvivorPreservesSnapshot(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = config.NewDefaultConfig()
-	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
+	cfg := config.NewDefaultConfig()
 	cfg.Sync.ArchiveRemoteImages = true
 	victim := newScriptedRFC7162Message(1, "forged-survivor@example.test", imapapi.FlagSeen)
 	victim.Body = "victimoriginalword"
@@ -987,16 +981,11 @@ func TestIMAPRelocationDraftsSentAllMailTopology(t *testing.T) {
 // trusted_imap_sent_mailboxes configuration restores the edited-copy
 // refresh through the same production wiring.
 func TestIMAPRelocationConfiguredTrustedOutgoingMailbox(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
 	const identifier = "imap://configured-trust@example.test"
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Sync.TrustedIMAPSentMailboxes = map[string][]string{
 		identifier: {"Gesendete Elemente"},
 	}
@@ -1286,8 +1275,6 @@ func TestIMAPRelocationConfiguredConflictDenied(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
-			savedCfg := cfg
-			t.Cleanup(func() { cfg = savedCfg })
 			cfg = config.NewDefaultConfig()
 			testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
 
@@ -2098,15 +2085,10 @@ func runScriptedSourceSync(
 // snapshot, its raw MIME, participants, attachments, or search content, and
 // rejected bytes never reach remote-image processing.
 func TestIMAPRelocationSentTrustIsSourceScoped(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Sync.ArchiveRemoteImages = true
 	const identifierA = "imap://scoped-a@example.test"
 	const identifierB = "imap://scoped-b@example.test"
@@ -2230,15 +2212,9 @@ func TestIMAPRelocationSentTrustIsSourceScoped(t *testing.T) {
 // account's Sent folder and grant its duplicate copies the trusted dedup
 // bypass that would let a stale draft downgrade a fresh snapshot.
 func TestIMAPRelocationConfiguredDraftsRoleNotSent(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = config.NewDefaultConfig()
-	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
+	cfg := config.NewDefaultConfig()
 	const identifier = "imap://configured-drafts@example.test"
 	cfg.Sync.TrustedIMAPSentMailboxes = map[string][]string{
 		identifier: {"My Drafts"},
@@ -2297,8 +2273,6 @@ func TestIMAPRelocationSentOutranksStaleDraftsCanonical(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
-			savedCfg := cfg
-			t.Cleanup(func() { cfg = savedCfg })
 			cfg = config.NewDefaultConfig()
 			testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
 			draft := newScriptedRFC7162Message(1, "sent-precedence@example.test", imapapi.FlagDraft)
@@ -2420,15 +2394,9 @@ func TestIMAPRelocationSentOutranksStaleDraftsCanonical(t *testing.T) {
 // yields to a genuine Sent copy, while never itself gaining the Sent
 // placement's dedup bypass.
 func TestIMAPRelocationConfiguredDraftsCanonicalStillYieldsToSent(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = config.NewDefaultConfig()
-	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
+	cfg := config.NewDefaultConfig()
 	const identifier = "imap://configured-drafts-canonical@example.test"
 	cfg.Sync.TrustedIMAPSentMailboxes = map[string][]string{
 		identifier: {"My Drafts"},
@@ -2522,8 +2490,6 @@ func TestIMAPRelocationDualSentDraftsRoleDenied(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
-			savedCfg := cfg
-			t.Cleanup(func() { cfg = savedCfg })
 			cfg = config.NewDefaultConfig()
 			draft := newScriptedRFC7162Message(1, "dual-role@example.test", imapapi.FlagDraft)
 			draft.Body = "draftoriginalword"

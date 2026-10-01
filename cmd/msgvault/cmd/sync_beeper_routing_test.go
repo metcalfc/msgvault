@@ -206,7 +206,6 @@ func TestSyncBeeperCommandUsesDaemonRunner(t *testing.T) {
 		}, req.Args, "args")
 	}, `{"type":"stdout","data":"Syncing Beeper account signal\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	var stdout bytes.Buffer
 	cmd := newSyncBeeperCmd()
@@ -233,7 +232,6 @@ func TestAddBeeperCommandForwardsTokenEnv(t *testing.T) {
 		assert.Equal("test-token-123", req.Env[clirun.EnvBeeperToken], "token env forwarded")
 	}, `{"type":"stdout","data":"Added signal\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	t.Setenv(clirun.EnvBeeperToken, "test-token-123")
 
 	var stdout bytes.Buffer

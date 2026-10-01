@@ -358,7 +358,6 @@ func setupVectorFeaturesFixture(
 	}
 	require.NoError(t, c.Save())
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 
 	s, err := store.Open(mainPath)
 	require.NoError(t, err)

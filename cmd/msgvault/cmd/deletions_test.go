@@ -43,11 +43,9 @@ func TestRemoteDeleteEnabledUsesConfigOrEnvironment(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(remoteDeleteEnvVar, tt.envValue)
-			savedCfg := cfg
 			cfg = config.NewDefaultConfig()
 			cfg.Deletion.RemoteEnabled = tt.configEnabled
 			testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-			t.Cleanup(func() { cfg = savedCfg })
 
 			assert.Equal(t, tt.want, remoteDeleteEnabled(
 				false,
@@ -59,11 +57,9 @@ func TestRemoteDeleteEnabledUsesConfigOrEnvironment(t *testing.T) {
 	t.Run("captured daemon subprocess ignores config after parent marker changes", func(t *testing.T) {
 		t.Setenv(remoteDeleteEnvVar, "")
 		t.Setenv(daemonCLISubprocessEnv, "")
-		savedCfg := cfg
 		cfg = config.NewDefaultConfig()
 		cfg.Deletion.RemoteEnabled = true
 		testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-		t.Cleanup(func() { cfg = savedCfg })
 
 		assert.False(t, remoteDeleteEnabled(true, invocationFromContext(testCtx)))
 	})
@@ -170,7 +166,6 @@ func TestBuildDeleteStagedPlanPinsPlannedBatches(t *testing.T) {
 
 	dataDir := t.TempDir()
 	testCtx := withStoreResolverConfig(t, lifecycleTestConfig(dataDir))
-	_ = testCtx
 
 	mgr, err := deletion.NewManager(filepath.Join(dataDir, "deletions"))
 	require.NoError(err, "NewManager")
@@ -219,7 +214,6 @@ func TestBuildDeleteStagedPlanListGuidanceNamesBothConsentPaths(t *testing.T) {
 
 	dataDir := t.TempDir()
 	testCtx := withStoreResolverConfig(t, lifecycleTestConfig(dataDir))
-	_ = testCtx
 	mgr, err := deletion.NewManager(filepath.Join(dataDir, "deletions"))
 	require.NoError(err)
 	manifest := deletion.NewManifestForSource("pending", []string{"gm-1"}, deletion.SourceReference{
@@ -246,7 +240,6 @@ func TestBuildDeleteStagedPlanBlockedErrorNamesBothConsentPaths(t *testing.T) {
 
 	dataDir := t.TempDir()
 	testCtx := withStoreResolverConfig(t, lifecycleTestConfig(dataDir))
-	_ = testCtx
 	mgr, err := deletion.NewManager(filepath.Join(dataDir, "deletions"))
 	require.NoError(err)
 	manifest := deletion.NewManifestForSource("pending", []string{"gm-1"}, deletion.SourceReference{
@@ -273,7 +266,6 @@ func TestBuildDeleteStagedPlanFiltersVersionTwoBySourceID(t *testing.T) {
 
 	dataDir := t.TempDir()
 	testCtx := withStoreResolverConfig(t, lifecycleTestConfig(dataDir))
-	_ = testCtx
 	mgr, err := deletion.NewManager(filepath.Join(dataDir, "deletions"))
 	require.NoError(err)
 	first := deletion.NewManifestForSource("first", []string{"gm-1"}, deletion.SourceReference{
@@ -299,7 +291,6 @@ func TestBuildDeleteStagedPlanFiltersVersionTwoBySourceID(t *testing.T) {
 func TestBuildDeleteStagedPlanDoesNotSelectVersionTwoByLegacyFilterAccount(t *testing.T) {
 	dataDir := t.TempDir()
 	testCtx := withStoreResolverConfig(t, lifecycleTestConfig(dataDir))
-	_ = testCtx
 	mgr, err := deletion.NewManager(filepath.Join(dataDir, "deletions"))
 	require.NoError(t, err)
 	manifest := deletion.NewManifestForSource("durable source", []string{"gm-1"}, deletion.SourceReference{
@@ -321,7 +312,6 @@ func TestBuildDeleteStagedPlanAllowsExplicitSelectorForUnboundLegacyManifest(t *
 
 	dataDir := t.TempDir()
 	testCtx := withStoreResolverConfig(t, lifecycleTestConfig(dataDir))
-	_ = testCtx
 	mgr, err := deletion.NewManager(filepath.Join(dataDir, "deletions"))
 	require.NoError(err)
 	manifest, err := mgr.CreateManifest("legacy", []string{"gm-1"}, deletion.Filters{})
@@ -341,7 +331,6 @@ func TestBuildDeleteStagedPlanAllowsSourceIDForLegacyManifestWithMatchingAccount
 
 	dataDir := t.TempDir()
 	testCtx := withStoreResolverConfig(t, lifecycleTestConfig(dataDir))
-	_ = testCtx
 	mgr, err := deletion.NewManager(filepath.Join(dataDir, "deletions"))
 	require.NoError(err)
 	manifest, err := mgr.CreateManifest("legacy", []string{"gm-1"}, deletion.Filters{
@@ -401,7 +390,6 @@ func TestBuildDeleteStagedPlanRejectsUnboundLegacyManifestMixedWithVersionTwoDur
 	require := require.New(t)
 	dataDir := t.TempDir()
 	testCtx := withStoreResolverConfig(t, lifecycleTestConfig(dataDir))
-	_ = testCtx
 	mgr, err := deletion.NewManager(filepath.Join(dataDir, "deletions"))
 	require.NoError(err)
 	_, err = mgr.CreateManifest("legacy", []string{"gm-1"}, deletion.Filters{})
@@ -602,7 +590,6 @@ func TestBuildDeleteStagedPlanRejectsMultipleVersionTwoSourcesDuringExecution(t 
 	require := require.New(t)
 	dataDir := t.TempDir()
 	testCtx := withStoreResolverConfig(t, lifecycleTestConfig(dataDir))
-	_ = testCtx
 	mgr, err := deletion.NewManager(filepath.Join(dataDir, "deletions"))
 	require.NoError(err)
 	require.NoError(mgr.SaveManifest(deletion.NewManifestForSource("first", []string{"gm-1"}, deletion.SourceReference{
@@ -641,7 +628,6 @@ func TestBuildDeleteStagedPlanRejectsMethodFlagMismatch(t *testing.T) {
 
 	dataDir := t.TempDir()
 	testCtx := withStoreResolverConfig(t, lifecycleTestConfig(dataDir))
-	_ = testCtx
 
 	mgr, err := deletion.NewManager(filepath.Join(dataDir, "deletions"))
 	require.NoError(err, "NewManager")

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,9 +13,6 @@ import (
 )
 
 func TestListFoldersCmd_NoIMAPAccounts(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	t.Setenv(daemonCLISubprocessEnv, strconv.Itoa(os.Getppid()))
@@ -33,20 +29,11 @@ func TestListFoldersCmd_NoIMAPAccounts(t *testing.T) {
 	require.NoError(err, "create gmail source")
 	_ = s.Close()
 
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -59,9 +46,6 @@ func TestListFoldersCmd_NoIMAPAccounts(t *testing.T) {
 }
 
 func TestListFoldersCmd_GmailIdentifier(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	t.Setenv(daemonCLISubprocessEnv, strconv.Itoa(os.Getppid()))
@@ -77,20 +61,11 @@ func TestListFoldersCmd_GmailIdentifier(t *testing.T) {
 	require.NoError(err, "create gmail source")
 	_ = s.Close()
 
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	root := newTestRootCmd()
 	root.SetContext(testCtx)
@@ -103,9 +78,6 @@ func TestListFoldersCmd_GmailIdentifier(t *testing.T) {
 }
 
 func TestListFoldersCmd_IMAPNoCredentials(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	t.Setenv(daemonCLISubprocessEnv, strconv.Itoa(os.Getppid()))
@@ -125,21 +97,12 @@ func TestListFoldersCmd_IMAPNoCredentials(t *testing.T) {
 	require.NoError(os.WriteFile(secretsPath, []byte(fakeClientSecrets), 0600),
 		"write client secrets")
 
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth:   config.OAuthConfig{ClientSecrets: secretsPath},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	// Capture stdout
 	getOutput := captureStdout(t)
@@ -158,9 +121,6 @@ func TestListFoldersCmd_IMAPNoCredentials(t *testing.T) {
 }
 
 func TestListFoldersCmd_ListAllPrintsEachSource(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	t.Setenv(daemonCLISubprocessEnv, strconv.Itoa(os.Getppid()))
@@ -182,21 +142,12 @@ func TestListFoldersCmd_ListAllPrintsEachSource(t *testing.T) {
 	require.NoError(os.WriteFile(secretsPath, []byte(fakeClientSecrets), 0600),
 		"write client secrets")
 
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth:   config.OAuthConfig{ClientSecrets: secretsPath},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	// Both sources should have "Credentials not found" in stdout
 	getOutput := captureStdout(t)
@@ -216,9 +167,6 @@ func TestListFoldersCmd_ListAllPrintsEachSource(t *testing.T) {
 }
 
 func TestListFoldersCmd_BrokenOAuthDoesNotBlockIMAP(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 	t.Setenv(daemonCLISubprocessEnv, strconv.Itoa(os.Getppid()))
@@ -240,21 +188,12 @@ func TestListFoldersCmd_BrokenOAuthDoesNotBlockIMAP(t *testing.T) {
 	secretsPath := filepath.Join(tmpDir, "client_secret.json")
 	require.NoError(os.WriteFile(secretsPath, []byte("not json"), 0600), "write secrets")
 
-	savedCfg := cfg
-	savedLogger := logger
-	defer func() {
-		cfg = savedCfg
-		logger = savedLogger
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 		OAuth:   config.OAuthConfig{ClientSecrets: secretsPath},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	getOutput := captureStdout(t)
 

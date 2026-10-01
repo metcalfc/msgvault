@@ -45,17 +45,11 @@ func TestConfirmDefaultIdentity_EmptyIdentifierIsNoOp(t *testing.T) {
 }
 
 func TestConfirmDefaultIdentity_StoreErrorDoesNotPanic(t *testing.T) {
-	logger := testLoggerValue()
-
 	tmpDir := t.TempDir()
 	s, err := store.Open(filepath.Join(tmpDir, "msgvault.db"))
 	require.NoError(t, err)
 	defer func() { _ = s.Close() }()
 	require.NoError(t, s.InitSchema())
-
-	savedLogger := logger
-	defer func() { logger = savedLogger }()
-	logger = slog.New(slog.DiscardHandler)
 
 	prevDefault := slog.Default()
 	slog.SetDefault(slog.New(slog.DiscardHandler))

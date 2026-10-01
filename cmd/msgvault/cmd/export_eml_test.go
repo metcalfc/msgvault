@@ -18,9 +18,6 @@ import (
 )
 
 func TestExportEMLUsesLocalDaemonHTTPAndPreservesFileOutput(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
@@ -28,20 +25,11 @@ func TestExportEMLUsesLocalDaemonHTTPAndPreservesFileOutput(t *testing.T) {
 	server, rawRequests := emlHTTPDaemon(t, raw)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	outputPath := filepath.Join(dataDir, "message.eml")
@@ -63,29 +51,17 @@ func TestExportEMLUsesLocalDaemonHTTPAndPreservesFileOutput(t *testing.T) {
 }
 
 func TestExportEMLHTTPNotFoundPreservesCLIError(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
 	server := emlHTTPNotFoundDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	defer func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	}()
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	var out bytes.Buffer

@@ -23,7 +23,6 @@ func TestAddAccountUsesDaemonRunner(t *testing.T) {
 		}, req.Args, "args")
 	}, `{"type":"stdout","data":"Account authorized\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	var stdout bytes.Buffer
 	cmd := newAddAccountCmd()
@@ -55,7 +54,6 @@ func TestAddO365UsesDaemonRunner(t *testing.T) {
 		}, req.Args, "args")
 	}, `{"type":"stdout","data":"Microsoft 365 account added\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	var stdout bytes.Buffer
 	cmd := newAddO365Cmd()
@@ -81,7 +79,6 @@ func TestAddTeamsUsesDaemonRunner(t *testing.T) {
 		}, req.Args, "args")
 	}, `{"type":"stdout","data":"Microsoft Teams account authorized\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	var stdout bytes.Buffer
 	cmd := newAddTeamsCmd()
@@ -116,7 +113,6 @@ func TestAddCalendarUsesDaemonRunner(t *testing.T) {
 		}, req.Args, "args")
 	}, `{"type":"stdout","data":"Registered 2 calendars\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	var stdout bytes.Buffer
 	cmd := newAddCalendarCmd()
@@ -158,7 +154,6 @@ func TestSyncCalendarUsesDaemonRunner(t *testing.T) {
 		}, req.Args, "args")
 	}, `{"type":"stdout","data":"Calendar sync complete\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	var stdout bytes.Buffer
 	cmd := newSyncCalendarCmd()
@@ -206,7 +201,6 @@ func TestAddCalendarPromptsScopeEscalationBeforeDaemonRunner(t *testing.T) {
 		}, req.Args, "args")
 	}, `{"type":"stdout","data":"Registered 1 calendar\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	var stdout bytes.Buffer
 	cmd := newAddCalendarCmd()

@@ -66,25 +66,14 @@ func TestRefuseUnpackWithLiveDaemon(t *testing.T) {
 }
 
 func TestRunUnpackAttachmentsLocalRejectsConfiguredRemote(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	t.Cleanup(func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	})
 
 	dataDir := t.TempDir()
-	cfg = &config.Config{
+	cfg := &config.Config{
 		Data:   config.DataConfig{DataDir: dataDir},
 		Remote: config.RemoteConfig{URL: "https://vault.example.com"},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = false
 	cmd := &cobra.Command{}
 	cmd.SetContext(testCtx)
 	cmd.SetOut(io.Discard)
@@ -101,24 +90,13 @@ func TestRunUnpackAttachmentsLocalRejectsConfiguredRemote(t *testing.T) {
 }
 
 func TestRunUnpackAttachmentsLocalReportsHeldDaemonLease(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
 	require := require.New(t)
-	savedCfg := cfg
-	savedUseLocal := useLocal
-	t.Cleanup(func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	})
 	dataDir := t.TempDir()
-	cfg = &config.Config{Data: config.DataConfig{
+	cfg := &config.Config{Data: config.DataConfig{
 		DataDir:     dataDir,
 		DatabaseURL: "postgres://user:pass@example.com:5432/msgvault",
 	}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = false
 	owner, err := tryAcquireDaemonOwnerLock(dataDir)
 	require.NoError(err)
 	t.Cleanup(func() { require.NoError(owner.Close()) })

@@ -18,17 +18,12 @@ import (
 )
 
 func TestDeletionStagingEndToEnd(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	assert := assert.New(t)
 
 	tmpDir := t.TempDir()
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = &config.Config{Data: config.DataConfig{DataDir: tmpDir}}
+	cfg := &config.Config{Data: config.DataConfig{DataDir: tmpDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 
 	s, err := store.Open(tmpDir + "/msgvault.db")
 	require.NoError(err, "open store")

@@ -67,8 +67,6 @@ func TestResolveSlackSyncSourcesFiltersByTeam(t *testing.T) {
 }
 
 func TestRunConfiguredSlackSyncIsolatesBrokenWorkspaces(t *testing.T) {
-	cfg := testConfigValue()
-
 	require := require.New(t)
 	st := testutil.NewTestStore(t)
 
@@ -81,14 +79,11 @@ func TestRunConfiguredSlackSyncIsolatesBrokenWorkspaces(t *testing.T) {
 	require.NoError(err)
 
 	tmpDir := t.TempDir()
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: tmpDir,
 		Data:    config.DataConfig{DataDir: tmpDir},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 
 	err = runConfiguredSlackSync(testCtx, st)
 	require.ErrorContains(err, "malformed identifier")
@@ -128,15 +123,11 @@ func TestScheduledSlackAttemptsResumeAfterInterruptedWorkspace(t *testing.T) {
 }
 
 func TestSlackImportOptionsDeriveFromConfig(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
 	media := false
 	dms := false
 	groupDMs := true
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: t.TempDir(),
 		Slack: config.SlackConfig{
 			Channels:        []string{"eng"},
@@ -147,8 +138,6 @@ func TestSlackImportOptionsDeriveFromConfig(t *testing.T) {
 			MaxMediaMB:      7,
 		},
 	}
-	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 
 	opts := slackImportOptions("T01", "UME", cfg)
 	assert.Equal("T01", opts.TeamID)
@@ -227,7 +216,6 @@ func TestSyncSlackCommandUsesDaemonRunner(t *testing.T) {
 		}, req.Args, "args")
 	}, `{"type":"stdout","data":"Syncing Slack workspace T0123456789\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	var stdout bytes.Buffer
 	cmd := newSyncSlackCmd()
@@ -256,7 +244,6 @@ func TestAddSlackCommandForwardsTokenEnv(t *testing.T) {
 		assert.Equal("xoxp-test-123", req.Env[clirun.EnvSlackToken], "token env forwarded")
 	}, `{"type":"stdout","data":"Added Slack workspace Testers\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	t.Setenv(clirun.EnvSlackToken, "xoxp-test-123")
 
 	var stdout bytes.Buffer

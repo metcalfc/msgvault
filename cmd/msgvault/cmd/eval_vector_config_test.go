@@ -46,7 +46,6 @@ func TestAttachVector_RejectsUnusableEmbeddingConfig(t *testing.T) {
 
 	c := evalVectorConfig(t, "voyage", "voyage-context-4")
 	testCtx := withTestConfig(t, c)
-	_ = testCtx
 
 	ev := &evaluator{ctx: testCtx}
 	cleanup, err := ev.attachVector(testCtx, f.Store)
@@ -125,7 +124,6 @@ func TestAttachVector_RejectsContextualModelMismatch(t *testing.T) {
 	f, _, _ := setupScopeFixture(t)
 
 	testCtx := withTestConfig(t, evalVectorConfig(t, vector.APIFormatVoyageContextual, "voyage-large-4"))
-	_ = testCtx
 
 	ev := &evaluator{ctx: testCtx}
 	_, err := ev.attachVector(testCtx, f.Store)

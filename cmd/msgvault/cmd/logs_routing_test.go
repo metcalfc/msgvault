@@ -22,7 +22,6 @@ func TestLogsCommandUsesDaemonRunner(t *testing.T) {
 		}, req.Args, "args")
 	}, `{"type":"stdout","data":"12:00:00 WARN abc123 sync failed\n"}`, `{"type":"stderr","data":"tail warning\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

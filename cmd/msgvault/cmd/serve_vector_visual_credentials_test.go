@@ -170,7 +170,6 @@ func TestNewVisualRuntimeUsesStoredCredentialSnapshotAndRejectsRedirectReplay(t 
 
 	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = dir
 	cfg.Vector.Multimodal.Enabled = true
 	cfg.Vector.Multimodal.CapabilitiesFile = manifestPath

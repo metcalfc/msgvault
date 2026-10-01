@@ -365,7 +365,6 @@ func TestRunDaemonCLICommandHTTPOmitsCallerCwdForConfiguredRemote(t *testing.T) 
 		assert.Empty(req.Cwd, "configured remote must not receive caller-local cwd")
 	}, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	cmd := &cobra.Command{Use: "import-mbox"}
 	cmd.SetContext(testCtx)

@@ -307,7 +307,6 @@ func TestAddCirclebackConfiguredRemoteRejectsHostLocalOAuthBeforeProxy(t *testin
 	assert := assert.New(t)
 	server, requests := newDaemonCLIRunnerTestServer(t, nil, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	cfg.Circleback = []config.CirclebackSource{{
 		Identifier:   "work",
 		AccountEmail: "user-a@example.com",
@@ -326,18 +325,8 @@ func TestAddCirclebackConfiguredRemoteRejectsHostLocalOAuthBeforeProxy(t *testin
 }
 
 func TestAddCirclebackLocalOverrideAllowsHostLocalOAuth(t *testing.T) {
-	cfg := testConfigValue()
-	useLocal := false
-
-	savedCfg, savedUseLocal := cfg, useLocal
-	t.Cleanup(func() {
-		cfg = savedCfg
-		useLocal = savedUseLocal
-	})
-	cfg = &config.Config{Remote: config.RemoteConfig{URL: "https://remote.example.com"}}
+	cfg := &config.Config{Remote: config.RemoteConfig{URL: "https://remote.example.com"}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	useLocal = true
 	invocationFromContext(testCtx).options.useLocal = true
 
 	require.NoError(t, validateAddCirclebackOAuthRouting(invocationFromContext(testCtx)))

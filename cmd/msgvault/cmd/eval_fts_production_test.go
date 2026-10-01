@@ -201,16 +201,11 @@ func writeEvalFile(t *testing.T, dir, name, content string) string {
 //     broader query `renewal` behind, which would have scored exactly like q1
 //     under a question nobody asked. It must be skipped and reported instead.
 func TestRunEval_EndToEnd_RanksByRelevanceAndSkipsAMalformedTopic(t *testing.T) {
-	cfg := testConfigValue()
-
 	dir := t.TempDir()
 	seedRankingDivergenceArchiveIn(t, dir)
 
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = config.NewDefaultConfig()
+	cfg := config.NewDefaultConfig()
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	cfg.Data.DataDir = dir
 
 	options := &evalCommandOptions{}

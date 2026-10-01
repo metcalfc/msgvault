@@ -51,7 +51,6 @@ func TestOpenWritableStoreAndInitOwnsArchiveUntilCleanup(t *testing.T) {
 	dataDir := t.TempDir()
 	testCfg := lifecycleTestConfig(dataDir)
 	testCtx := withStoreResolverConfig(t, testCfg)
-	_ = testCtx
 
 	st, cleanup, err := openWritableStoreAndInitWithInvocation(
 		invocationFromContext(testCtx),
@@ -199,7 +198,6 @@ func TestDeduplicateFailsFastWhenArchiveOwned(t *testing.T) {
 
 	dataDir := t.TempDir()
 	ctx := withStoreResolverConfig(t, lifecycleTestConfig(dataDir))
-	_ = ctx
 
 	owner, err := tryAcquireWriteOwnerLock(dataDir)
 	require.NoError(
@@ -299,7 +297,6 @@ func TestInitDBFailsFastWhenArchiveOwned(t *testing.T) {
 
 	dataDir := t.TempDir()
 	testCtx := withStoreResolverConfig(t, lifecycleTestConfig(dataDir))
-	_ = testCtx
 
 	owner, err := tryAcquireWriteOwnerLock(dataDir)
 	require.NoError(
@@ -322,7 +319,6 @@ func TestVerifyDaemonAutostartFailsFastWhenArchiveOwned(t *testing.T) {
 
 	dataDir := t.TempDir()
 	testCtx := withStoreResolverConfig(t, lifecycleTestConfig(dataDir))
-	_ = testCtx
 
 	owner, err := tryAcquireWriteOwnerLock(dataDir)
 	require.NoError(
@@ -346,7 +342,6 @@ func TestBuildCacheFailsFastWhenArchiveOwned(t *testing.T) {
 	dataDir := t.TempDir()
 	testCfg := lifecycleTestConfig(dataDir)
 	testCtx := withStoreResolverConfig(t, testCfg)
-	_ = testCtx
 
 	st, err := store.Open(testCfg.DatabaseDSN())
 	require.NoError(
@@ -408,7 +403,6 @@ func TestCreateSubsetFailsFastWhenArchiveOwned(t *testing.T) {
 	dataDir := t.TempDir()
 	testCfg := lifecycleTestConfig(dataDir)
 	testCtx := withStoreResolverConfig(t, testCfg)
-	_ = testCtx
 
 	st, err := store.Open(testCfg.DatabaseDSN())
 	require.NoError(

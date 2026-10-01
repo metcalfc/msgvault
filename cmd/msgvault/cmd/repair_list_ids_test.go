@@ -19,16 +19,11 @@ import (
 // cache revision for an already-current archive. The fixture uses the archive's
 // real zlib MIME rows rather than a repair stub.
 func TestRunRepairListIDsLocalDryRunApplyAndNoop(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	dataDir := t.TempDir()
-	savedCfg := cfg
-	cfg = &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
+	cfg := &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	t.Cleanup(func() { cfg = savedCfg })
 
 	messageIDs := newListIDRepairArchive(t, cfg)
 	_, err := buildCache(cfg.DatabaseDSN(), cfg.AnalyticsDir(), true)
@@ -87,16 +82,11 @@ func TestRunRepairListIDsLocalDryRunApplyAndNoop(t *testing.T) {
 }
 
 func TestRunRepairListIDsLocalApplySurfacesCacheRefreshFailure(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	dataDir := t.TempDir()
-	savedCfg := cfg
-	cfg = &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
+	cfg := &config.Config{HomeDir: dataDir, Data: config.DataConfig{DataDir: dataDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	t.Cleanup(func() { cfg = savedCfg })
 
 	messageIDs := newListIDRepairArchive(t, cfg)
 	require.NoError(os.WriteFile(cfg.AnalyticsDir(), []byte("not a directory"), 0o600))
@@ -153,7 +143,6 @@ func TestRepairListIDsCommandRoutesThroughDaemonCLIRunner(t *testing.T) {
 		`{"type":"complete"}`,
 	)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 	t.Setenv(daemonCLISubprocessEnv, "")
 
 	cmd := newRepairListIDsCmd()

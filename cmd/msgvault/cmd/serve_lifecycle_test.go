@@ -100,14 +100,10 @@ func TestDaemonAndServeLifecycleCommandSurfaces(t *testing.T) {
 }
 
 func TestDaemonAndServeStatusHaveIdenticalBehavior(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	dataDir := t.TempDir()
-	oldCfg := cfg
-	cfg = lifecycleTestConfig(dataDir)
-	t.Cleanup(func() { cfg = oldCfg })
+	cfg := lifecycleTestConfig(dataDir)
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
 
 	run := func(args ...string) (string, error) {
@@ -253,8 +249,6 @@ func TestRunServeStatusIncludesVectorHealth(t *testing.T) {
 }
 
 func TestServeStatusCommandUsesAuthenticatedHealthForOperationDetails(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
 	dataDir := t.TempDir()
@@ -304,10 +298,8 @@ func TestServeStatusCommandUsesAuthenticatedHealthForOperationDetails(t *testing
 	})
 	require.NoError(err, "write runtime record")
 
-	oldCfg := cfg
-	cfg = lifecycleTestConfig(dataDir)
+	cfg := lifecycleTestConfig(dataDir)
 	cfg.Server.APIKey = "secret-key"
-	t.Cleanup(func() { cfg = oldCfg })
 
 	cmd, stdout, stderr := lifecycleTestCommand()
 	cmd.SetContext(testInvocationContext(context.Background(), cfg, invocationOptions{}))

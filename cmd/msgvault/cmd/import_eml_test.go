@@ -120,7 +120,6 @@ func TestRunEMLPostImportMigrationsSkipsDefaultIdentityForNonEmailSource(t *test
 	require := require.New(t)
 	testCfg := lifecycleTestConfig(t.TempDir())
 	testCtx := withStoreResolverConfig(t, testCfg)
-	_ = testCtx
 
 	st, err := store.Open(testCfg.DatabaseDSN())
 	require.NoError(err, "open store")

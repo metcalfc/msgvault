@@ -40,7 +40,6 @@ func TestServeOwnershipEnsureRuntimeRecordRepublishesMissingRecord(t *testing.T)
 	dataDir := t.TempDir()
 	cfg := &config.Config{Data: config.DataConfig{DataDir: dataDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	owner, err := claimServeOwnership(testCtx, cfg, "127.0.0.1", 8123, "v-test")
 	require.NoError(err, "claimServeOwnership")
 	t.Cleanup(func() { require.NoError(owner.Close(), "close ownership") })
@@ -122,7 +121,6 @@ func TestRuntimeRecordHeartbeatSerializesStartupPhaseUpdates(t *testing.T) {
 	dataDir := t.TempDir()
 	cfg := &config.Config{Data: config.DataConfig{DataDir: dataDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	owner, err := claimServeOwnership(testCtx, cfg, "127.0.0.1", 8123, "v-test")
 	require.NoError(err, "claimServeOwnership")
 	t.Cleanup(func() { require.NoError(owner.Close(), "close ownership") })
@@ -161,7 +159,6 @@ func TestClaimServeOwnershipLocksAndPublishesRuntime(t *testing.T) {
 	dataDir := t.TempDir()
 	cfg := &config.Config{Data: config.DataConfig{DataDir: dataDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 
 	owner, err := claimServeOwnership(testCtx, cfg, "127.0.0.1", 8123, "v-test")
 	require.NoError(
@@ -201,7 +198,6 @@ func TestServeOwnershipStartupPhaseUpdatesRuntimeRecord(t *testing.T) {
 	dataDir := t.TempDir()
 	cfg := &config.Config{Data: config.DataConfig{DataDir: dataDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	owner, err := claimServeOwnership(testCtx, cfg, "127.0.0.1", 8123, "v-test")
 	require.NoError(err, "claimServeOwnership")
 	t.Cleanup(func() { require.NoError(owner.Close(), "close ownership") })
@@ -234,7 +230,6 @@ func TestServeOwnershipStartupCacheBuildOutcomeUpdatesRuntimeRecord(t *testing.T
 	dataDir := t.TempDir()
 	cfg := &config.Config{Data: config.DataConfig{DataDir: dataDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 	owner, err := claimServeOwnership(testCtx, cfg, "127.0.0.1", 8123, "v-test")
 	require.NoError(err, "claimServeOwnership")
 	t.Cleanup(func() { require.NoError(owner.Close(), "close ownership") })
@@ -262,7 +257,6 @@ func TestClaimServeOwnershipRejectsSecondOwner(t *testing.T) {
 	dataDir := t.TempDir()
 	cfg := &config.Config{Data: config.DataConfig{DataDir: dataDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 
 	first, err := tryAcquireWriteOwnerLock(dataDir)
 	require.NoError(t, err, "pre-held lock")

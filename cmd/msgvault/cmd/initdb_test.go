@@ -2,10 +2,8 @@ package cmd
 
 import (
 	"bytes"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync/atomic"
 	"testing"
 
@@ -15,8 +13,6 @@ import (
 )
 
 func TestInitDBUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
-	logger := testLoggerValue()
-
 	assert := assert.New(t)
 
 	var requests atomic.Int32
@@ -49,9 +45,6 @@ func TestInitDBUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
 			AllowInsecure: true,
 		},
 	})
-	oldLogger := logger
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
-	t.Cleanup(func() { logger = oldLogger })
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

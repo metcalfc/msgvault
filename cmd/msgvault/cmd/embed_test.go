@@ -81,7 +81,6 @@ func TestEmbeddingsListUsesDaemonRunner(t *testing.T) {
 		assert.Equal([]string{embeddingsCommandName, "list"}, req.Args, "args")
 	}, `{"type":"stdout","data":"ID\tSTATE\n1\tactive\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	root := &cobra.Command{Use: daemonService}
 	root.SetContext(testCtx)
@@ -110,7 +109,6 @@ func TestEmbeddingsPruneUsesDaemonRunner(t *testing.T) {
 		assert.Equal([]string{embeddingsCommandName, "prune"}, req.Args, "args")
 	}, `{"type":"stdout","data":"Pruned 2 orphan message embedding(s).\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	root := &cobra.Command{Use: daemonService}
 	root.SetContext(testCtx)
@@ -145,7 +143,6 @@ func TestEmbeddingsBuildPromptsBeforeDaemonRunner(t *testing.T) {
 		}, req.Args, "args")
 	}, `{"type":"stderr","data":"Building generation 2\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	root := &cobra.Command{Use: daemonService}
 	root.SetContext(testCtx)
@@ -174,7 +171,6 @@ func TestEmbeddingsResumeUsesDaemonRunner(t *testing.T) {
 		assert.Equal([]string{embeddingsCommandName, "resume", "--backstop"}, req.Args, "args")
 	}, `{"type":"stdout","data":"Scanned: 1, succeeded: 1, failed: 0, truncated: 0\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	root := &cobra.Command{Use: daemonService}
 	root.SetContext(testCtx)
@@ -213,7 +209,6 @@ func TestEmbeddingsRetirePromptsBeforeDaemonRunner(t *testing.T) {
 		assert.Equal([]string{embeddingsCommandName, "retire", "--force-active", "--yes", "2"}, req.Args, "args")
 	}, `{"type":"stdout","data":"Generation 2 retired.\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	root := &cobra.Command{Use: daemonService}
 	root.SetContext(testCtx)
@@ -257,7 +252,6 @@ func TestEmbeddingsActivatePromptsBeforeDaemonRunner(t *testing.T) {
 		assert.Equal([]string{embeddingsCommandName, "activate", "--force", "--yes", "3"}, req.Args, "args")
 	}, `{"type":"stdout","data":"Generation 3 activated.\n"}`, `{"type":"complete"}`)
 	testCtx := configureRemoteDaemonForTest(t, server.URL)
-	_ = testCtx
 
 	root := &cobra.Command{Use: daemonService}
 	root.SetContext(testCtx)
@@ -531,14 +525,9 @@ func TestEmbeddingsBuildForwardsAPIKeyEnvToDaemonRunner(t *testing.T) {
 }
 
 func TestEmbeddingsForwardEnvSkipsUnsetKey(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
-	savedCfg := cfg
-	t.Cleanup(func() { cfg = savedCfg })
-	cfg = &config.Config{}
+	cfg := &config.Config{}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
 
 	assert.Nil(embeddingsForwardEnv(invocationFromContext(testCtx)), "no api_key_env configured")
 

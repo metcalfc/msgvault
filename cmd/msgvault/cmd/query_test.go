@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"encoding/json/jsontext"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -22,33 +21,17 @@ import (
 )
 
 func TestQueryCommand_UsesLocalDaemonHTTPAndPreservesJSONOutput(t *testing.T) {
-	cfg := testConfigValue()
-	logger := testLoggerValue()
-	useLocal := false
-
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
 	server, queryRequests := queryHTTPDaemon(t)
 	writeStatsHTTPDaemonRuntime(t, dataDir, server)
 
-	savedCfg := cfg
-	savedLogger := logger
-	savedUseLocal := useLocal
-	t.Cleanup(func() {
-		cfg = savedCfg
-		logger = savedLogger
-		useLocal = savedUseLocal
-	})
-
-	cfg = &config.Config{
+	cfg := &config.Config{
 		HomeDir: dataDir,
 		Data:    config.DataConfig{DataDir: dataDir},
 	}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
-	_ = testCtx
-	logger = slog.New(slog.DiscardHandler)
-	useLocal = true
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

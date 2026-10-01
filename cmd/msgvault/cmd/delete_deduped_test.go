@@ -3,10 +3,8 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync/atomic"
 	"testing"
 
@@ -42,8 +40,6 @@ func TestDeleteDeduped_MutualExclusion(t *testing.T) {
 }
 
 func TestDeleteDedupedUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
-	logger := testLoggerValue()
-
 	assert := assert.New(t)
 
 	var planRequests atomic.Int32
@@ -118,9 +114,6 @@ func TestDeleteDedupedUsesConfiguredRemoteHTTPAndPreservesOutput(t *testing.T) {
 			AllowInsecure: true,
 		},
 	})
-	oldLogger := logger
-	logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
-	t.Cleanup(func() { logger = oldLogger })
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

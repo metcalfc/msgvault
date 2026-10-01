@@ -41,19 +41,15 @@ func TestPrepareDaemonAnalyticsEngineAutoStartsWithSQLFallback(t *testing.T) {
 }
 
 func TestRunServeAllowsDeletionIDsWhileAnalyticsBuildBlocked(t *testing.T) {
-	cfg := testConfigValue()
-
 	assert := assert.New(t)
 	require := require.New(t)
-	oldCfg := cfg
 	dataDir := t.TempDir()
 	c := lifecycleTestConfig(dataDir)
 	c.Server.APIPort = freeTCPPort(t)
 	c.Analytics.Engine = config.AnalyticsEngineAuto
 	c.Analytics.AutoBuildCache = true
 	c.Vector.Enabled = false
-	cfg = c
-	t.Cleanup(func() { cfg = oldCfg })
+	cfg := c
 
 	buildStarted := make(chan struct{})
 	stubBuildCacheSubprocess(t, func(ctx context.Context, _ bool) error {
