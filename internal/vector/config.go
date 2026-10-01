@@ -82,7 +82,7 @@ var environmentVariableName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // [vector] TOML table.
 type Config struct {
 	Enabled    bool             `toml:"enabled"`
-	Backend    string           `toml:"backend"` // "sqlite-vec" or "pgvector"; concrete backend is DSN-selected
+	Backend    string           `toml:"backend"` // "sqlite-vec"
 	DBPath     string           `toml:"db_path"` // backend-specific
 	Embeddings EmbeddingsConfig `toml:"embeddings"`
 	Preprocess PreprocessConfig `toml:"preprocess"`
@@ -91,12 +91,7 @@ type Config struct {
 	Multimodal MultimodalConfig `toml:"multimodal"`
 	People     PeopleConfig     `toml:"people"`
 
-	// SkipExtensionCreate skips the `CREATE EXTENSION IF NOT EXISTS
-	// vector` step on the pgvector backend while still letting Migrate
-	// create the schema tables and indexes. Set this on a managed or
-	// locked-down PostgreSQL where the `vector` extension is installed by
-	// an administrator and the msgvault role lacks the superuser privilege
-	// CREATE EXTENSION requires. Ignored on the sqlite-vec backend.
+	// SkipExtensionCreate is retained only to reject legacy PostgreSQL configuration.
 	SkipExtensionCreate bool `toml:"skip_extension_create"`
 }
 
@@ -549,17 +544,16 @@ func (c *Config) MultimodalGenerationFingerprint() string {
 // Disabled lane-specific settings are retained without activating or
 // validating hosted work.
 func (c *Config) Validate() error {
+	switch c.Backend {
+	case "", "sqlite-vec":
+	default:
+		return fmt.Errorf("vector.backend: unknown backend %q (supported: \"sqlite-vec\")", c.Backend)
+	}
+	if c.SkipExtensionCreate {
+		return errors.New("vector.skip_extension_create is no longer supported; SQLite loads its bundled vector extension automatically")
+	}
 	if !c.AnyLaneEnabled() {
 		return nil
-	}
-	// The concrete backend is selected at the command layer from the
-	// database DSN (SQLite → sqlite-vec, PostgreSQL → pgvector); this
-	// field is a declared marker, not the selector. Accept either known
-	// backend and reject anything else.
-	switch c.Backend {
-	case "sqlite-vec", "pgvector":
-	default:
-		return fmt.Errorf("vector.backend: unknown backend %q (supported: \"sqlite-vec\", \"pgvector\")", c.Backend)
 	}
 	if c.Multimodal.Enabled {
 		if err := c.Multimodal.validate(); err != nil {

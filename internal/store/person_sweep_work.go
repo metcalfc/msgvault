@@ -38,12 +38,9 @@ func (s *Store) ClaimPersonSweep(
 	}
 
 	now := s.dialect.Now()
-	leaseUntil, leaseDurationArg := personSweepLeaseExpiration(
-		s.IsPostgreSQL(), request.LeaseDuration)
+	leaseUntil, leaseDurationArg := personSweepLeaseExpiration(request.LeaseDuration)
 	candidateSuffix := ""
-	if s.IsPostgreSQL() {
-		candidateSuffix = " FOR UPDATE OF w SKIP LOCKED"
-	}
+
 	query := fmt.Sprintf(`
 		UPDATE person_sweep_work
 		SET lease_owner = ?, lease_until = %s, lease_fence = lease_fence + 1,
@@ -211,10 +208,7 @@ func (s *Store) finalizeReclaimedPersonSweepAttempt(
 	return nil
 }
 
-func personSweepLeaseExpiration(postgres bool, duration time.Duration) (string, any) {
-	if postgres {
-		return "NOW() + (? * INTERVAL '1 microsecond')", duration.Microseconds()
-	}
+func personSweepLeaseExpiration(duration time.Duration) (string, any) {
 	return "strftime('%Y-%m-%d %H:%M:%f', 'now', '+' || ? || ' seconds')", duration.Seconds()
 }
 
@@ -226,7 +220,7 @@ func (s *Store) RenewPersonSweep(
 	if duration <= 0 {
 		return nil, errors.New("renew person sweep: lease duration must be positive")
 	}
-	leaseUntil, leaseDurationArg := personSweepLeaseExpiration(s.IsPostgreSQL(), duration)
+	leaseUntil, leaseDurationArg := personSweepLeaseExpiration(duration)
 	query := fmt.Sprintf(`
 		UPDATE person_sweep_work
 		SET lease_until = %s, updated_at = %s
@@ -735,9 +729,7 @@ func (s *Store) upsertPersonSweepWorkTxMode(
 	ctx context.Context, tx *loggedTx, personID, dirtyThrough int64, forceAvailable bool,
 ) error {
 	lockSuffix := ""
-	if s.IsPostgreSQL() {
-		lockSuffix = " FOR KEY SHARE"
-	}
+
 	var trackedPersonID int64
 	err := tx.QueryRowContext(ctx, s.Rebind(`
 		SELECT person_id FROM person_tracking WHERE person_id = ?`+lockSuffix),
@@ -749,9 +741,7 @@ func (s *Store) upsertPersonSweepWorkTxMode(
 		return fmt.Errorf("lock person %d tracking for sweep publication: %w", personID, err)
 	}
 	maxExpr := "MAX(person_sweep_work.dirty_through_sequence, excluded.dirty_through_sequence)"
-	if s.IsPostgreSQL() {
-		maxExpr = "GREATEST(person_sweep_work.dirty_through_sequence, excluded.dirty_through_sequence)"
-	}
+
 	// New activity advances the high water, but must not cancel an active
 	// failure delay. Only an explicit force bypasses retry backoff.
 	now := s.dialect.Now()

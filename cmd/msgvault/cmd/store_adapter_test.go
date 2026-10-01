@@ -230,7 +230,7 @@ func TestMarkedCLISearchCancellationReturnsFromProductionQuickFTSProbe(t *testin
 	require := require.New(t)
 	st := testutil.NewTestStore(t)
 	require.True(st.FTS5Available(), "tagged test store has FTS5")
-	engine := query.NewEngine(st.DB(), st.IsPostgreSQL())
+	engine := query.NewEngine(st.DB())
 	t.Cleanup(func() { _ = engine.Close() })
 
 	st.DB().SetMaxOpenConns(1)

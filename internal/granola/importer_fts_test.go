@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/msgvault/internal/testutil"
 )
 
 // TestImport_FTSIndexed verifies imported meetings are searchable: subject,
@@ -15,7 +14,6 @@ import (
 // Gated on the fts5 build tag (the project's canonical test invocation).
 func TestImport_FTSIndexed(t *testing.T) {
 	require := require.New(t)
-	testutil.SkipIfPostgres(t, "directly MATCH-queries the SQLite FTS5 vtable; PG uses a tsvector column")
 
 	api := &fakeAPI{notes: map[string][]byte{
 		"not_Ab12Cd34Ef56Gh": loadFixture(t, "note_full.json"),

@@ -1023,15 +1023,8 @@ func NewAttributeUniversalID() (string, error) {
 // Exposure alone takes EXCLUSIVE, then locks all people in ID order before its
 // eventual global projection bump; ordinary person writes remain concurrent.
 func (s *Store) lockAttributeDefinitionCatalogTx(ctx context.Context, tx *loggedTx, exclusive bool) error {
-	if !s.IsPostgreSQL() {
+	{
 		return nil
 	}
-	mode := "ROW SHARE"
-	if exclusive {
-		mode = "EXCLUSIVE"
-	}
-	if _, err := tx.ExecContext(ctx, "LOCK TABLE attribute_definitions IN "+mode+" MODE"); err != nil {
-		return fmt.Errorf("lock attribute definition catalog in %s mode: %w", mode, err)
-	}
-	return nil
+
 }

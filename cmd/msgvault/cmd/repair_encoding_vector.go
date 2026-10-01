@@ -1,4 +1,4 @@
-//go:build sqlite_vec || pgvector
+//go:build sqlite_vec
 
 package cmd
 
@@ -11,7 +11,6 @@ import (
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/vector"
-	"go.kenn.io/msgvault/internal/vector/pgvector"
 	"go.kenn.io/msgvault/internal/vector/sqlitevec"
 )
 
@@ -39,18 +38,6 @@ func openVectorBackendForRepair(ctx context.Context, s *store.Store, cfg *config
 	if !cfg.Vector.Enabled {
 		// Vector search disabled: nothing to open. No-op.
 		return nil, nil, nil
-	}
-
-	if s.IsPostgreSQL() {
-		pgb, err := pgvector.Open(ctx, pgvector.Options{
-			DB:            s.DB(),
-			Dimension:     cfg.Vector.Embeddings.Dimension,
-			SkipExtension: cfg.Vector.SkipExtensionCreate,
-		})
-		if err != nil {
-			return nil, nil, fmt.Errorf("open pgvector backend: %w", err)
-		}
-		return pgb, pgb.Close, nil
 	}
 
 	if err := sqlitevec.RegisterExtension(); err != nil {

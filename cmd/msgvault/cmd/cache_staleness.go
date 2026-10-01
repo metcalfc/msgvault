@@ -133,9 +133,7 @@ func cacheNeedsBuildContext(ctx context.Context, dbPath, analyticsDir string) ca
 	if ctx.Err() != nil {
 		return cacheStaleness{}
 	}
-	if store.IsPostgresURL(dbPath) {
-		return cacheStaleness{}
-	}
+
 	buildLock, err := acquireCacheBuildLock(ctx, analyticsDir)
 	if err != nil {
 		return cacheStalenessFailure(ctx, "cannot acquire cache recovery lock")
@@ -171,9 +169,7 @@ func cacheNeedsBuildForServing(ctx context.Context, dbPath, analyticsDir string)
 }
 
 func inspectCacheForQuery(ctx context.Context, dbPath, analyticsDir string, full, markerOnly bool) (cacheStaleness, error) {
-	if store.IsPostgresURL(dbPath) {
-		return cacheStaleness{}, nil
-	}
+
 	release, err := query.AcquireCacheReadLock(ctx, analyticsDir)
 	if err != nil {
 		return cacheStaleness{}, err

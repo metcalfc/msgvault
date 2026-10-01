@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -1401,18 +1400,8 @@ func TestMergePersons_DerivedRollback(t *testing.T) {
 	assert := assert.New(t)
 	f, survivor, absorbed, messageID := mergeDerivedStateFixture(t)
 	ctx := context.Background()
-	if f.Store.IsPostgreSQL() {
-		_, err := f.Store.DB().ExecContext(ctx, `
-			CREATE FUNCTION fail_person_merge_contact_recompute() RETURNS trigger AS $$
-			BEGIN
-				RAISE EXCEPTION 'forced person merge contact recompute failure';
-			END;
-			$$ LANGUAGE plpgsql;
-			CREATE TRIGGER fail_person_merge_contact_recompute
-			BEFORE INSERT OR UPDATE ON person_contact_state
-			FOR EACH ROW EXECUTE FUNCTION fail_person_merge_contact_recompute();`)
-		require.NoError(err)
-	} else {
+
+	{
 		_, err := f.Store.DB().ExecContext(ctx, `CREATE TRIGGER fail_person_merge_contact_recompute
 			BEFORE INSERT ON person_contact_state BEGIN
 				SELECT RAISE(ABORT, 'forced person merge contact recompute failure');
@@ -1828,18 +1817,7 @@ func installPersonMergeFailureTrigger(
 ) {
 	t.Helper()
 	triggerName := fmt.Sprintf("fail_person_merge_stage_%d", index)
-	if st.IsPostgreSQL() {
-		functionName := triggerName + "_fn"
-		_, err := st.DB().ExecContext(context.Background(), fmt.Sprintf(`
-			CREATE FUNCTION %s() RETURNS trigger AS $$
-			BEGIN RAISE EXCEPTION 'forced merge rollback stage'; END;
-			$$ LANGUAGE plpgsql;
-			CREATE TRIGGER %s BEFORE %s ON %s
-			FOR EACH ROW EXECUTE FUNCTION %s();`,
-			functionName, triggerName, event, table, functionName))
-		require.NoError(t, err)
-		return
-	}
+
 	_, err := st.DB().ExecContext(context.Background(), fmt.Sprintf(`
 		CREATE TRIGGER %s BEFORE %s ON %s BEGIN
 			SELECT RAISE(ABORT, 'forced merge rollback stage');
@@ -2096,9 +2074,7 @@ func assertPersonMergeConcurrencyState(t *testing.T, st *store.Store, wantMerges
 
 func assertSQLiteForeignKeysClean(t *testing.T, st *store.Store) {
 	t.Helper()
-	if st.IsPostgreSQL() {
-		return
-	}
+
 	rows, err := st.DB().Query(`PRAGMA foreign_key_check`)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, rows.Close()) }()
@@ -2143,266 +2119,6 @@ func TestPersonMergeSchema(t *testing.T) {
 	assertPersonMergeSchema(t, st)
 }
 
-func TestPostgresPersonMergeSchema(t *testing.T) {
-	st := testutil.NewTestStore(t)
-	if !st.IsPostgreSQL() {
-		t.Skip("PostgreSQL-only person merge schema assertion")
-	}
-
-	assertPersonMergeSchema(t, st)
-	var currentRowIDType string
-	require.NoError(t, st.DB().QueryRowContext(context.Background(), `SELECT data_type
-		FROM information_schema.columns
-		WHERE table_schema = current_schema()
-		  AND table_name = 'person_merge_rows'
-		  AND column_name = 'current_row_id'`).Scan(&currentRowIDType))
-	assert.Equal(t, "bigint", currentRowIDType)
-}
-
-func TestPostgresMergePersonsReconcilesSingleAttributes(t *testing.T) {
-	require := require.New(t)
-	st := testutil.NewTestStore(t)
-	if !st.IsPostgreSQL() {
-		t.Skip("PostgreSQL-only merge lock assertion")
-	}
-	ctx := context.Background()
-	survivorParticipant, err := st.EnsureParticipant(
-		"pg-merge-survivor@example.com", "Survivor", "example.com",
-	)
-	require.NoError(err)
-	absorbedParticipant, err := st.EnsureParticipant(
-		"pg-merge-absorbed@example.com", "Absorbed", "example.com",
-	)
-	require.NoError(err)
-	survivor, _, err := st.CreatePersonFromParticipant(survivorParticipant)
-	require.NoError(err)
-	absorbed, _, err := st.CreatePersonFromParticipant(absorbedParticipant)
-	require.NoError(err)
-	for personID, value := range map[int64]string{survivor.ID: "email", absorbed.ID: "chat"} {
-		_, err = st.SetPersonAttributeValueContext(ctx, store.PersonAttributeValueInput{
-			PersonID: personID, DefinitionSlug: store.AttributeSlugPrimaryChannel,
-			Value:  store.AttributeValue{Type: store.AttributeValueText, Text: &value},
-			Source: store.ProvenanceUser,
-		})
-		require.NoError(err)
-	}
-	jsonDefinition := personTextDefinition("postgres_merge_json_equivalence")
-	jsonDefinition.UniversalID = "test-postgres-merge-json-equivalence"
-	jsonDefinition.ValueType = store.AttributeValueJSON
-	jsonDefinition.FieldType = store.AttributeFieldJSON
-	_, err = st.CreateAttributeDefinitionContext(ctx, jsonDefinition)
-	require.NoError(err)
-	for personID, value := range map[int64]json.RawMessage{
-		survivor.ID: json.RawMessage(`{"a":1,"b":2}`),
-		absorbed.ID: json.RawMessage(`{"b":2,"a":1}`),
-	} {
-		_, err = st.SetPersonAttributeValueContext(ctx, store.PersonAttributeValueInput{
-			PersonID: personID, DefinitionSlug: jsonDefinition.Slug,
-			Value:  store.AttributeValue{Type: store.AttributeValueJSON, JSON: value},
-			Source: store.ProvenanceUser,
-		})
-		require.NoError(err)
-	}
-	survivor, err = st.GetPersonContext(ctx, survivor.ID)
-	require.NoError(err)
-	absorbed, err = st.GetPersonContext(ctx, absorbed.ID)
-	require.NoError(err)
-
-	result, err := st.MergePersonsContext(ctx, store.PersonMergeRequest{
-		SurvivorID: survivor.ID, AbsorbedID: absorbed.ID,
-		ExpectedSurvivorRevision: survivor.Revision,
-		ExpectedAbsorbedRevision: absorbed.Revision,
-		IdempotencyKey:           "postgres-single-attribute-merge", Actor: "test",
-	})
-	require.NoError(err)
-	assert.Len(t, result.ReviewCandidates, 1)
-}
-
-func TestPostgresMergePersonsFencesConcurrentEnvelopeWriter(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	st := storetest.New(t).Store
-	if !st.IsPostgreSQL() {
-		t.Skip("PostgreSQL merge/envelope interleaving regression")
-	}
-	ctx := t.Context()
-	survivorParticipant, err := st.EnsureParticipant(
-		"pg-envelope-merge-survivor@example.com", "Survivor", "example.com",
-	)
-	require.NoError(err)
-	absorbedParticipant, err := st.EnsureParticipant(
-		"pg-envelope-merge-absorbed@example.com", "Absorbed", "example.com",
-	)
-	require.NoError(err)
-	survivor, _, err := st.CreatePersonFromParticipant(survivorParticipant)
-	require.NoError(err)
-	absorbed, _, err := st.CreatePersonFromParticipant(absorbedParticipant)
-	require.NoError(err)
-	raw := []byte("BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Absorbed\r\nEND:VCARD\r\n")
-	envelope := parseStoreEnvelope(t, raw, "pg-merge-book", "pg-merge-envelope")
-	envelope.CanonicalPersonUID = absorbed.VCardUID
-	stored, err := st.PutVCardResourceEnvelopeContext(ctx, store.VCardResourceEnvelopeInput{
-		PersonID: absorbed.ID, Envelope: envelope,
-	})
-	require.NoError(err)
-	replacement := replaceStoreFormattedName(t, stored.ResourceEnvelope, "Stale Replacement")
-
-	gate := openPostgreSQLUpdateGate(ctx, t, st, 638901,
-		"vcard_resource_envelopes", stored.ID, "wait_for_person_merge_envelope_move")
-	type mergeOutcome struct {
-		result *store.PersonMergeResult
-		err    error
-	}
-	mergeDone := make(chan mergeOutcome, 1)
-	gate.run(func() {
-		result, mergeErr := st.MergePersonsContext(context.Background(), store.PersonMergeRequest{
-			SurvivorID: survivor.ID, AbsorbedID: absorbed.ID,
-			ExpectedSurvivorRevision: survivor.Revision,
-			ExpectedAbsorbedRevision: absorbed.Revision,
-			IdempotencyKey:           "postgres-envelope-fence", Actor: "test",
-		})
-		mergeDone <- mergeOutcome{result: result, err: mergeErr}
-	})
-	mergePID := waitForPostgreSQLBlockedPID(ctx, t, st, gate.holderPID,
-		"UPDATE vcard_resource_envelopes", "merge did not reach the envelope ownership move")
-
-	writerDone := make(chan error, 1)
-	gate.run(func() {
-		expected := stored.Revision
-		_, writeErr := st.PutVCardResourceEnvelopeContext(context.Background(), store.VCardResourceEnvelopeInput{
-			PersonID: absorbed.ID, ExpectedRevision: &expected, Envelope: replacement,
-		})
-		writerDone <- writeErr
-	})
-	require.True(waitForPostgreSQLBlockedBy(ctx, t, st, mergePID,
-		"UPDATE vcard_resource_envelopes"), "stale writer did not wait behind merge fence")
-
-	gate.release()
-	merged := <-mergeDone
-	require.NoError(merged.err)
-	require.NotNil(merged.result)
-	require.ErrorIs(<-writerDone, store.ErrVCardResourceWriteConflict)
-	moved, err := st.GetVCardResourceEnvelopeContext(ctx, "pg-merge-book", "pg-merge-envelope")
-	require.NoError(err)
-	assert.Equal(survivor.ID, moved.PersonID)
-	assert.Equal(stored.Revision+1, moved.Revision)
-}
-
-func TestPostgresMergePersonsFencesConcurrentReferenceSupersede(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	st := testutil.NewTestStore(t)
-	if !st.IsPostgreSQL() {
-		t.Skip("PostgreSQL merge/reference supersede interleaving regression")
-	}
-	ctx := t.Context()
-	survivor := mustPromotedPerson(t, st,
-		"pg-reference-merge-survivor@example.com", "Survivor")
-	absorbed := mustPromotedPerson(t, st,
-		"pg-reference-merge-absorbed@example.com", "Absorbed")
-	observer := mustPromotedPerson(t, st,
-		"pg-reference-merge-observer@example.com", "Observer")
-	definition := personTextDefinition("pg_merge_reference_supersede")
-	definition.ValueType = store.AttributeValueRecordReference
-	definition.FieldType = store.AttributeFieldPerson
-	definition.RecordTarget = new("person")
-	_, err := st.CreateAttributeDefinitionContext(ctx, definition)
-	require.NoError(err)
-	write, err := st.SetPersonAttributeValueContext(ctx, store.PersonAttributeValueInput{
-		PersonID: observer.ID, DefinitionSlug: definition.Slug,
-		Value: store.AttributeValue{
-			Type: store.AttributeValueRecordReference, RecordType: new("person"),
-			RecordID: &absorbed.ID,
-		},
-		Source: store.ProvenanceUser,
-	})
-	require.NoError(err)
-	survivor, err = st.GetPersonContext(ctx, survivor.ID)
-	require.NoError(err)
-	absorbed, err = st.GetPersonContext(ctx, absorbed.ID)
-	require.NoError(err)
-
-	snapshotCaptured := make(chan struct{}, 1)
-	releaseMerge := make(chan struct{})
-	var releaseOnce sync.Once
-	release := func() { releaseOnce.Do(func() { close(releaseMerge) }) }
-	t.Cleanup(release)
-	restoreHook := st.SetPersonMergeAfterSnapshotHookForTest(func() {
-		select {
-		case snapshotCaptured <- struct{}{}:
-		default:
-		}
-		<-releaseMerge
-	})
-	t.Cleanup(restoreHook)
-	type mergeOutcome struct {
-		result *store.PersonMergeResult
-		err    error
-	}
-	mergeDone := make(chan mergeOutcome, 1)
-	go func() {
-		result, mergeErr := st.MergePersonsContext(context.Background(), store.PersonMergeRequest{
-			SurvivorID: survivor.ID, AbsorbedID: absorbed.ID,
-			ExpectedSurvivorRevision: survivor.Revision,
-			ExpectedAbsorbedRevision: absorbed.Revision,
-			IdempotencyKey:           "postgres-reference-supersede-merge", Actor: "test",
-		})
-		mergeDone <- mergeOutcome{result: result, err: mergeErr}
-	}()
-	select {
-	case <-snapshotCaptured:
-	case <-time.After(10 * time.Second):
-		release()
-		require.FailNow("merge did not pause after capturing its reversal snapshot")
-	}
-
-	type supersedeOutcome struct {
-		write *store.PersonAttributeWrite
-		err   error
-	}
-	supersedeDone := make(chan supersedeOutcome, 1)
-	go func() {
-		result, supersedeErr := st.SupersedePersonAttributeValueContext(
-			context.Background(), store.PersonAttributeSupersedeInput{
-				PersonID: observer.ID, DefinitionSlug: definition.Slug,
-				ExpectedValueID: &write.Value.ID,
-			})
-		supersedeDone <- supersedeOutcome{write: result, err: supersedeErr}
-	}()
-	select {
-	case early := <-supersedeDone:
-		release()
-		require.FailNow("reference supersede did not wait for merge identity lock",
-			"result=%v err=%v", early.write, early.err)
-	case <-time.After(500 * time.Millisecond):
-	}
-	release()
-	merged := <-mergeDone
-	require.NoError(merged.err)
-	require.NotNil(merged.result)
-	superseded := <-supersedeDone
-	require.NoError(superseded.err)
-	require.NotNil(superseded.write)
-
-	current, err := st.GetPersonContext(ctx, merged.result.Person.ID)
-	require.NoError(err)
-	split, err := st.SplitPersonMergeContext(ctx, store.PersonSplitRequest{
-		SourcePersonID: current.ID, MergeID: merged.result.Merge.ID,
-		ParticipantIDs:         absorbed.ParticipantIDs,
-		ExpectedSourceRevision: current.Revision,
-		IdempotencyKey:         "postgres-reference-supersede-split", Actor: "test",
-	})
-	require.NoError(err)
-	values, err := st.ListPersonAttributeValuesContext(ctx, observer.ID,
-		store.PersonAttributeQuery{DefinitionSlug: definition.Slug, IncludeHistory: true})
-	require.NoError(err)
-	require.Len(values, 1)
-	require.NotNil(values[0].Value.RecordID)
-	assert.Equal(split.NewPerson.ID, *values[0].Value.RecordID)
-	assert.NotNil(values[0].ActiveUntil)
-	assert.NotNil(values[0].SupersededAt)
-}
-
 func assertPersonMergeSchema(t *testing.T, st *store.Store) {
 	t.Helper()
 	require := require.New(t)
@@ -2435,20 +2151,7 @@ func assertForeignKeyTarget(t *testing.T, st *store.Store, table, column, target
 	t.Helper()
 	query := `SELECT "table" FROM pragma_foreign_key_list(?) WHERE "from" = ?`
 	args := []any{table, column}
-	if st.IsPostgreSQL() {
-		query = `SELECT ccu.table_name
-			FROM information_schema.table_constraints tc
-			JOIN information_schema.key_column_usage kcu
-			  ON tc.constraint_name = kcu.constraint_name
-			 AND tc.constraint_schema = kcu.constraint_schema
-			JOIN information_schema.constraint_column_usage ccu
-			  ON tc.constraint_name = ccu.constraint_name
-			 AND tc.constraint_schema = ccu.constraint_schema
-			WHERE tc.constraint_type = 'FOREIGN KEY'
-			  AND tc.table_schema = current_schema()
-			  AND tc.table_name = ?
-			  AND kcu.column_name = ?`
-	}
+
 	var got string
 	require.NoError(t, st.DB().QueryRowContext(context.Background(), st.Rebind(query), args...).Scan(&got),
 		"foreign key %s.%s", table, column)

@@ -2,18 +2,13 @@ version: "2"
 
 run:
   go: "1.27"
-  # Lint the build-tagged code, not just the untagged subset. The primary
-  # build uses `fts5 sqlite_vec` (Makefile BUILD_TAGS) and the pgvector
-  # backend is gated behind `pgvector`; without these tags golangci-lint
-  # never compiles those files, so lint debt silently accumulates behind
-  # //go:build constraints (it did — see reviews/codex-pr4-iter3.md).
+  # Lint the same SQLite and vector features as the shipped binary.
   # Wait for duplicate runners in this worktree instead of failing on the
   # runner lock; Makefile targets scope that lock to the worktree as well.
   allow-serial-runners: true
   build-tags:
     - fts5
     - sqlite_vec
-    - pgvector
 
 linters:
   # Opt-in linter set: only the linters listed under `enable` run. Using

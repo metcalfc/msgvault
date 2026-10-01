@@ -1,4 +1,4 @@
-//go:build sqlite_vec || pgvector
+//go:build sqlite_vec
 
 package cmd
 
@@ -26,7 +26,6 @@ import (
 	"go.kenn.io/msgvault/internal/vector/embed"
 	"go.kenn.io/msgvault/internal/vector/hybrid"
 	"go.kenn.io/msgvault/internal/vector/personsearch"
-	"go.kenn.io/msgvault/internal/vector/pgvector"
 	"go.kenn.io/msgvault/internal/vector/sqlitevec"
 	"go.kenn.io/msgvault/internal/vector/visual"
 )
@@ -420,15 +419,8 @@ func newConvergenceChecker(
 	return &contextualConvergenceChecker{legacy: legacy, publisher: publisher}, nil
 }
 
-// precheckVectorFeatures validates vector configuration cheaply so runServe
-// can fail fast on misconfiguration while deferring the expensive backend
-// open/migrate/backfill to the background init task. Returns nil when
-// vector search is disabled. mainPath drives a dialect-aware build-tag
-// check that fails fast on the "binary built without backend support" case
-// the cheap precheck can catch synchronously: a postgres:// DSN needs the
-// pgvector tag, a SQLite path needs the sqlite_vec tag. Without this,
-// setupVectorFeatures would only discover the gap later inside the
-// background init goroutine.
+// precheckVectorFeatures validates vector configuration before the daemon starts
+// expensive background initialization. SQLite vector support needs sqlite_vec.
 func precheckVectorFeatures(mainPath string, cfg *config.Config) error {
 	if cfg == nil {
 		return errors.New("configuration is unavailable")
@@ -436,12 +428,8 @@ func precheckVectorFeatures(mainPath string, cfg *config.Config) error {
 	if !cfg.Vector.AnyLaneEnabled() {
 		return nil
 	}
-	if store.IsPostgresURL(mainPath) && !pgvector.Available() {
-		return errors.New("vector search is enabled in config but this binary was built without vector support; " +
-			"to use vector search on PostgreSQL, rebuild with `go build -tags \"fts5 sqlite_vec pgvector\"` " +
-			"or set [vector] enabled = false")
-	}
-	if !store.IsPostgresURL(mainPath) && !sqlitevec.Available() {
+
+	if !sqlitevec.Available() {
 		return errors.New("vector search is enabled in config but this binary was built without sqlite-vec support; " +
 			"to use vector search on SQLite, rebuild with `go build -tags \"fts5 sqlite_vec\"` or `make build`, " +
 			"or set [vector] enabled = false")
@@ -462,31 +450,11 @@ func precheckVectorFeatures(mainPath string, cfg *config.Config) error {
 	return nil
 }
 
-// setupVectorFeatures builds the vector backend, hybrid engine, and embed
-// worker used by the serve daemon and the MCP command. The backend is
-// dialect-selected from mainPath: a postgres:// DSN uses the pgvector
-// backend sharing mainStore's DB (no separate vectors.db, no ATTACH);
-// otherwise the sqlitevec backend opens/attaches vectors.db. Returns
-// (nil, nil) when cfg.Vector.Enabled is false. The returned Close function
-// must be called on shutdown.
-//
-// mainStore is the already-opened main-database store. On SQLite, mainPath
-// is the msgvault.db filesystem path FusedSearch uses to ATTACH
-// vectors.db; on PostgreSQL it is the DSN, used only for dialect detection
-// (store.IsPostgresURL).
-//
-// readOnly marks mainDB as a read-only connection — e.g. the MCP server's
-// store.OpenReadOnly. On PostgreSQL it sets BOTH pgvector.Options.SkipMigrate
-// and pgvector.Options.ReadOnly: SkipMigrate suppresses the privileged
-// CREATE EXTENSION + full migrate, and ReadOnly suppresses ALL remaining
-// writes — the extension-less schema apply, the orphan reset, and the
-// embed_gen backfill — because PG vector tables share the (read-only) main
-// connection and any DDL/UPDATE would be rejected with SQLSTATE 25006. On
-// SQLite it sets sqlitevec.Options.ReadOnly so only the one-time embed_gen
-// upgrade backfill — which WRITES messages.embed_gen + applied_migrations
-// through the main handle — is skipped (the query-only handle would reject
-// those writes); Migrate still runs there because it only touches the
-// separate vectors.db, which is read-write regardless.
+// setupVectorFeatures opens the SQLite vector store, hybrid engine, and embedding
+// worker. The returned Close function must be called on shutdown.
+// mainStore owns msgvault.db; mainPath supplies its path for ATTACH.
+// readOnly skips the embed_gen backfill through mainStore. The separate
+// vectors.db remains writable so its own schema can be migrated.
 func setupVectorFeatures(ctx context.Context, mainStore *store.Store, mainPath string, readOnly bool, openers ...visual.StreamOpener) (*vectorFeatures, error) {
 	state := invocationFromContext(ctx)
 	if state == nil || state.cfg == nil {
@@ -548,10 +516,6 @@ func setupVectorFeatures(ctx context.Context, mainStore *store.Store, mainPath s
 	// defeat go-sqlite3's DATETIME→time.Time coercion (which would break
 	// round-trip equality); PG uses the bare column.
 	lastModifiedExpr := "CAST(m.last_modified AS TEXT)"
-	if store.IsPostgresURL(mainPath) {
-		dialect = &store.PostgreSQLDialect{}
-		lastModifiedExpr = "m.last_modified"
-	}
 
 	var (
 		backend         vector.Backend
@@ -559,33 +523,8 @@ func setupVectorFeatures(ctx context.Context, mainStore *store.Store, mainPath s
 		vectorsDB       *sql.DB
 		closeFn         func() error
 	)
-	if store.IsPostgresURL(mainPath) {
-		// Same database handle as the main store: pgvector embeddings
-		// live alongside messages, so there is no separate vectors.db.
-		pgb, err := pgvector.Open(ctx, pgvector.Options{
-			DB:          mainDB,
-			Dimension:   vecCfg.Embeddings.Dimension,
-			BuildScope:  vecCfg.Embed.Scope.BuildScope(),
-			SkipMigrate: readOnly,
-			// ReadOnly MUST track readOnly here: this is the MCP read-only
-			// path (store.OpenReadOnly). When set, Open performs no writes —
-			// no schema apply, no orphan reset, no upgrade backfill — so the
-			// query-only connection never attempts DDL/UPDATE (SQLSTATE 25006).
-			ReadOnly: readOnly,
-			// On a managed/locked-down PG the `vector` extension is
-			// pre-installed by an admin and CREATE EXTENSION would fail
-			// for the msgvault role; SkipExtensionCreate lets schema +
-			// index DDL still run. Ignored when SkipMigrate (readOnly).
-			SkipExtension: vecCfg.SkipExtensionCreate,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("open pgvector backend: %w", err)
-		}
-		backend = pgb
-		documentBackend = pgb.DocumentBackend()
-		vectorsDB = pgb.DB()
-		closeFn = pgb.Close
-	} else {
+
+	{
 		if err := sqlitevec.RegisterExtension(); err != nil {
 			return nil, fmt.Errorf("register sqlite-vec: %w", err)
 		}
@@ -810,8 +749,7 @@ func newVisualRuntime(
 	switch typed := backend.(type) {
 	case *sqlitevec.Backend:
 		visualBackend = typed.Visual()
-	case *pgvector.Backend:
-		visualBackend = typed.Visual()
+
 	default:
 		return nil, errors.New("selected vector backend has no visual lane")
 	}

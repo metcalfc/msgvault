@@ -17,7 +17,6 @@ import (
 	"go.kenn.io/msgvault/internal/export"
 	"go.kenn.io/msgvault/internal/mime"
 	"go.kenn.io/msgvault/internal/store"
-	"go.kenn.io/msgvault/internal/testutil"
 	"go.kenn.io/msgvault/internal/whatsapp"
 )
 
@@ -93,7 +92,7 @@ func TestStoredMediaUnhintedAudioHeaderRecovery(t *testing.T) {
 
 func TestStoredMediaUsesMessageTimestampWithoutRawRead(t *testing.T) {
 	require, assert := require.New(t), assert.New(t)
-	testutil.SkipIfPostgres(t, "SQLite authorizer detects unnecessary MIME reads")
+
 	world := importVoiceChat(t)
 	for _, provider := range []string{"gmail", "imap", "mbox"} {
 		addStoredMediaSource(t, world, provider, "test@example.com", provider, syntheticWAV(800, 77),

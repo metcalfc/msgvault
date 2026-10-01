@@ -21,16 +21,11 @@ var errMeetingRawTooLarge = errors.New("meeting raw exceeds decode limit")
 // reserve SQLite's writer before reading, or lock the PostgreSQL message before raw.
 func (s *Store) lockMeetingEvidenceWith(ctx context.Context, tx *loggedTx, messageID int64) error {
 	q := boundQuerier{ctx: ctx, q: tx}
-	if s.dialect.DriverName() != postgresDriverName {
+	{
 		_, err := q.Exec(`UPDATE embedding_change_clock SET sequence = sequence WHERE singleton = 1`)
 		return err
 	}
-	var id int64
-	err := q.QueryRow(`SELECT id FROM messages WHERE id = ? FOR UPDATE`, messageID).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	return err
+
 }
 
 // refreshMeetingProjectionWith reads the persisted snapshot under the caller's

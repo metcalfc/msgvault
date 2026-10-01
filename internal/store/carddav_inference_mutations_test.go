@@ -114,9 +114,7 @@ func TestInferenceExportDefinitionExposureRetriesConcurrentWrite(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	st, id, _ := newPersonFactProjectionStore(t)
-	if st.IsPostgreSQL() {
-		t.Skip("SQLite snapshot contention")
-	}
+
 	inferenceNote(t, st, id, ProvenanceExtraction, "Inferred note")
 	definition, err := st.GetAttributeDefinitionBySlugContext(t.Context(), AttributeObjectPerson, AttributeSlugNotes)
 	require.NoError(err)

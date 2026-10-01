@@ -328,13 +328,13 @@ func TestGetAttachmentsByHashUsesDialectRebind(t *testing.T) {
 	`, hash)
 	require.NoError(err, "insert attachment")
 
-	dialect := &rebindRecordingDialect{Dialect: PostgreSQLQueryDialect{}}
+	dialect := &rebindRecordingDialect{Dialect: SQLiteQueryDialect{}}
 	engine := NewEngineWithDialect(env.DB, dialect)
 	attachments, err := engine.GetAttachmentsByHash(env.Ctx, hash)
 	require.NoError(err, "GetAttachmentsByHash")
 	require.Len(attachments, 1, "attachments")
 	require.NotEmpty(dialect.queries, "dialect Rebind calls")
-	assert.Contains(dialect.queries[len(dialect.queries)-1], "content_hash = $1", "rebound query")
+	assert.Contains(dialect.queries[len(dialect.queries)-1], "content_hash = ?", "rebound query")
 }
 
 func TestDuplicateCASAliasRetainsHashAcrossAttachmentQueries(t *testing.T) {

@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"go.kenn.io/msgvault/internal/api"
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/daemonclient"
 	"go.kenn.io/msgvault/internal/deletion"
@@ -171,8 +170,7 @@ func daemonMCPServeOptions(ctx context.Context, st *daemonclient.Client, state *
 	if capabilityErr == nil && daemonclient.APISchemaVersionAtLeast(schemaVersion, personAgendaMinAPISchemaVersion) {
 		opts.PersonAgendaBackend = st
 	}
-	if capabilityErr == nil && daemonclient.APISchemaVersionAtLeast(schemaVersion, archiveSQLMinAPISchemaVersion) &&
-		(health.AnalyticsEngine == nil || *health.AnalyticsEngine != api.AnalyticsModePostgres) {
+	if capabilityErr == nil && daemonclient.APISchemaVersionAtLeast(schemaVersion, archiveSQLMinAPISchemaVersion) {
 		opts.ArchiveSQLQuerier = engine
 	}
 

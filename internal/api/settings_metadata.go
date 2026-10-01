@@ -2,9 +2,10 @@ package api
 
 import (
 	"errors"
-	"go.kenn.io/msgvault/internal/vector"
 	"strconv"
 	"strings"
+
+	"go.kenn.io/msgvault/internal/vector"
 
 	"go.kenn.io/msgvault/internal/config"
 )
@@ -137,10 +138,9 @@ var settingsMetadata = map[string]settingMetadata{
 	"activity.schedule":                {"Schedule", "When the activity projection runs.", "activity"},
 	"backup.zstd_level":                {"Compression level", "Zstandard level for portable backups.", "backups"},
 
-	"vector.enabled":               {"Semantic search", "Index message text with an embedding provider so semantic and hybrid search work.", "semantic"},
-	"vector.backend":               {"Vector backend", "Where embeddings are stored.", "semantic"},
-	"vector.db_path":               {"Vector database path", "Override the vector database location.", "semantic"},
-	"vector.skip_extension_create": {"Skip extension creation", "Use a vector extension an administrator already installed.", "semantic"},
+	"vector.enabled": {"Semantic search", "Index message text with an embedding provider so semantic and hybrid search work.", "semantic"},
+	"vector.backend": {"Vector backend", "Embeddings use the local SQLite vector store.", "semantic"},
+	"vector.db_path": {"Vector database path", "Override the vector database location.", "semantic"},
 
 	"vector.embeddings.api_format":      {"Text embedding API format", "Request format the provider expects.", sectionProvider},
 	"vector.embeddings.endpoint":        {"Text embedding endpoint", "Base URL of the embedding API.", sectionProvider},

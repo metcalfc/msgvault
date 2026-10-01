@@ -34,7 +34,7 @@ type entityLabelTestDaemon struct {
 func newEntityLabelTestDaemon(t *testing.T) entityLabelTestDaemon {
 	t.Helper()
 	st := testutil.NewTestStore(t)
-	engine := query.NewEngine(st.DB(), st.IsPostgreSQL())
+	engine := query.NewEngine(st.DB())
 	t.Cleanup(func() { _ = engine.Close() })
 	dataDir := t.TempDir()
 	configured := config.NewDefaultConfig()

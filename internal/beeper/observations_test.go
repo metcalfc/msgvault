@@ -439,29 +439,6 @@ func installAnchorClassificationFailure(t *testing.T, st *store.Store) func() {
 	t.Helper()
 	require := require.New(t)
 
-	if st.IsPostgreSQL() {
-		_, err := st.DB().Exec(`CREATE FUNCTION fail_beeper_anchor_classification()
-			RETURNS trigger LANGUAGE plpgsql AS $$
-			BEGIN
-				RAISE EXCEPTION 'forced anchor classification failure';
-			END;
-			$$`)
-		require.NoError(err, "create PostgreSQL failure function")
-		_, err = st.DB().Exec(`CREATE TRIGGER fail_beeper_anchor_classification
-			BEFORE UPDATE OF service_id ON participant_identifiers
-			FOR EACH ROW EXECUTE FUNCTION fail_beeper_anchor_classification()`)
-		require.NoError(err, "create PostgreSQL failure trigger")
-		release := func() {
-			_, err := st.DB().Exec(`DROP TRIGGER IF EXISTS fail_beeper_anchor_classification
-				ON participant_identifiers`)
-			require.NoError(err, "drop PostgreSQL failure trigger")
-			_, err = st.DB().Exec(`DROP FUNCTION IF EXISTS fail_beeper_anchor_classification()`)
-			require.NoError(err, "drop PostgreSQL failure function")
-		}
-		t.Cleanup(release)
-		return release
-	}
-
 	_, err := st.DB().Exec(`CREATE TRIGGER fail_beeper_anchor_classification
 		BEFORE UPDATE OF service_id ON participant_identifiers
 		FOR EACH ROW BEGIN
@@ -962,31 +939,6 @@ func TestRenamedUsernameSupersessionRetriesAfterPartialWrite(t *testing.T) {
 func installRenameSupersedeFailure(t *testing.T, st *store.Store) func() {
 	t.Helper()
 	require := require.New(t)
-
-	if st.IsPostgreSQL() {
-		_, err := st.DB().Exec(`CREATE FUNCTION fail_beeper_username_supersede()
-			RETURNS trigger LANGUAGE plpgsql AS $$
-			BEGIN
-				RAISE EXCEPTION 'forced rename supersede failure';
-			END;
-			$$`)
-		require.NoError(err, "create PostgreSQL failure function")
-		_, err = st.DB().Exec(`CREATE TRIGGER fail_beeper_username_supersede
-			BEFORE UPDATE OF active_until ON participant_contact_observations
-			FOR EACH ROW WHEN (NEW.active_until IS NOT NULL)
-			EXECUTE FUNCTION fail_beeper_username_supersede()`)
-		require.NoError(err, "create PostgreSQL failure trigger")
-
-		release := func() {
-			_, err := st.DB().Exec(`DROP TRIGGER IF EXISTS fail_beeper_username_supersede
-				ON participant_contact_observations`)
-			require.NoError(err, "drop PostgreSQL failure trigger")
-			_, err = st.DB().Exec(`DROP FUNCTION IF EXISTS fail_beeper_username_supersede()`)
-			require.NoError(err, "drop PostgreSQL failure function")
-		}
-		t.Cleanup(release)
-		return release
-	}
 
 	_, err := st.DB().Exec(`CREATE TRIGGER fail_beeper_username_supersede
 		BEFORE UPDATE OF active_until ON participant_contact_observations

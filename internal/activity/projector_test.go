@@ -5,10 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1116,43 +1114,10 @@ func seedProjectorFixture(
 	return f, messageID, person.ID
 }
 
-var concurrentActivityStoreSequence atomic.Uint64
-
 func newConcurrentActivityStores(t *testing.T) (*store.Store, *store.Store) {
 	t.Helper()
-	databaseURL := os.Getenv("MSGVAULT_TEST_DB")
 	var first, second *store.Store
-	if strings.HasPrefix(databaseURL, "postgres://") ||
-		strings.HasPrefix(databaseURL, "postgresql://") {
-		schema := fmt.Sprintf(
-			"msgvault_activity_concurrency_%d_%d",
-			time.Now().UnixNano(),
-			concurrentActivityStoreSequence.Add(1),
-		)
-		setup, err := sql.Open("pgx", databaseURL)
-		require.NoError(t, err)
-		_, err = setup.ExecContext(t.Context(), "CREATE SCHEMA "+schema)
-		require.NoError(t, err)
-		require.NoError(t, setup.Close())
-		separator := "?"
-		if strings.Contains(databaseURL, "?") {
-			separator = "&"
-		}
-		testURL := databaseURL + separator + "search_path=" + schema
-		first, err = store.Open(testURL)
-		require.NoError(t, err)
-		second, err = store.Open(testURL)
-		require.NoError(t, err)
-		t.Cleanup(func() {
-			_ = first.Close()
-			_ = second.Close()
-			cleanup, cleanupErr := sql.Open("pgx", databaseURL)
-			if cleanupErr == nil {
-				_, _ = cleanup.Exec("DROP SCHEMA " + schema + " CASCADE")
-				_ = cleanup.Close()
-			}
-		})
-	} else {
+	{
 		databasePath := filepath.Join(t.TempDir(), "activity-concurrency.db")
 		var err error
 		first, err = store.OpenForTest(databasePath)

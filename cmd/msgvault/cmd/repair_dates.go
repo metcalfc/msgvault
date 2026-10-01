@@ -121,9 +121,8 @@ func runRepairDatesLocal(
 		return fmt.Errorf("write date repair ledger: %w", err)
 	}
 
-	usesAnalyticsCache := dateRepairUsesAnalyticsCache(cfg.DatabaseDSN())
 	unlockCache := func() error { return nil }
-	if usesAnalyticsCache {
+	{
 		releaseCacheLocks, err := lockCacheAndInvalidateSyncState(cfg.AnalyticsDir())
 		if err != nil {
 			return fmt.Errorf("protect analytics cache for date repair: %w", err)
@@ -177,7 +176,7 @@ func runRepairDatesLocal(
 	}
 
 	cacheRebuilt := false
-	if usesAnalyticsCache {
+	{
 		if _, err := buildCacheLocked(
 			cfg.DatabaseDSN(),
 			cfg.AnalyticsDir(),
@@ -205,7 +204,7 @@ func runRepairDatesLocal(
 		)
 	}
 
-	cacheSummary := "Analytics cache not used for PostgreSQL."
+	cacheSummary := "Analytics cache rebuild pending."
 	if cacheRebuilt {
 		cacheSummary = "Analytics cache rebuilt."
 	}
@@ -219,10 +218,6 @@ func runRepairDatesLocal(
 		return fmt.Errorf("write completed date repair summary: %w", err)
 	}
 	return nil
-}
-
-func dateRepairUsesAnalyticsCache(dsn string) bool {
-	return !store.IsPostgresURL(dsn)
 }
 
 func applyPlannedDateRepairs(

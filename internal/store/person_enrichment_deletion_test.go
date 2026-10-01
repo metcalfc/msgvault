@@ -49,18 +49,7 @@ func TestDeletePersonWithEnrichmentSuppressionsRollsBackOnSuppressionFailure(t *
 		CREATE TRIGGER fail_person_enrichment_suppression
 		BEFORE INSERT ON person_enrichment_suppressions
 		BEGIN SELECT RAISE(ABORT, 'synthetic suppression failure'); END`
-	if f.store.IsPostgreSQL() {
-		triggerSQL = `
-			CREATE OR REPLACE FUNCTION fail_person_enrichment_suppression()
-			RETURNS trigger AS $$
-			BEGIN
-				RAISE EXCEPTION 'synthetic suppression failure';
-			END;
-			$$ LANGUAGE plpgsql;
-			CREATE TRIGGER fail_person_enrichment_suppression
-			BEFORE INSERT ON person_enrichment_suppressions
-			FOR EACH ROW EXECUTE FUNCTION fail_person_enrichment_suppression()`
-	}
+
 	_, err := f.store.DB().ExecContext(t.Context(), triggerSQL)
 	requirements.NoError(err)
 

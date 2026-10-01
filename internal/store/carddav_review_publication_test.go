@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -141,52 +140,6 @@ func TestReviewedPublicationZeroStateRemainsSparseAndIntentAuthorized(t *testing
 	require.NoError(st.RollbackCardDAVPublicationContext(t.Context(), pending))
 	_, err = st.GetCardDAVPublicationContext(t.Context(), personID)
 	require.ErrorIs(err, store.ErrCardDAVPublicationNotFound)
-}
-
-func TestReviewedPublicationFirstInvalidationRejectsStalePostgresSnapshot(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	st, _, _ := newCardDAVResourceStore(t)
-	if !st.IsPostgreSQL() {
-		t.Skip("requires PostgreSQL repeatable-read row version conflicts")
-	}
-	personID := inferenceReviewPerson(t, st)
-	initial := reviewedCurrentPlan(t, st, personID)
-	pending, err := st.PrepareCardDAVPublicationContext(t.Context(), initial.Publication)
-	require.NoError(err)
-	require.NoError(st.CommitCardDAVPublicationContext(t.Context(), store.CardDAVCanonicalMutation{
-		Publication: *pending, Remote: store.CardDAVRemoteResource{Href: pending.Href, RemoteUID: "review-person",
-			RemoteETag: `"one"`, RemoteBody: pending.OutgoingBody, SemanticHash: pending.OutgoingSemanticHash},
-	}))
-	plan := reviewedCurrentPlan(t, st, personID)
-	lockedBook, resume := make(chan struct{}), make(chan struct{})
-	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
-	defer cancel()
-	st.SetCardDAVPublicationReviewBeforePersonLockHookForTest(func() {
-		close(lockedBook)
-		select {
-		case <-resume:
-		case <-ctx.Done():
-		}
-	})
-	defer st.SetCardDAVPublicationReviewBeforePersonLockHookForTest(nil)
-	done := make(chan error, 1)
-	go func() { _, err := st.PrepareReviewedCardDAVPublicationContext(ctx, plan); done <- err }()
-	select {
-	case <-lockedBook:
-	case <-ctx.Done():
-		require.NoError(ctx.Err())
-	}
-	_, err = st.AppendPersonNoteContext(ctx, store.PersonNoteAppendInput{PersonID: personID, Text: "First inferred detail", Source: store.ProvenanceExtraction})
-	require.NoError(err)
-	close(resume)
-	require.ErrorIs(<-done, store.ErrCardDAVReviewStale)
-	source, err := st.LoadCardDAVPublicationReviewSourceContext(t.Context(), personID)
-	require.NoError(err)
-	assert.Equal(int64(1), source.Inference.InferenceRevision)
-	assert.Zero(source.Inference.ApprovedRevision)
-	require.NotNil(source.Publication)
-	assert.Empty(source.Publication.PendingOperation)
 }
 
 func TestReviewedPublicationUpgradeLeavesLegacyIntentUnapproved(t *testing.T) {

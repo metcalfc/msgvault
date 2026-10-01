@@ -2175,7 +2175,7 @@ func TestHandleCLISearchCollectionScope(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewTestStore(t)
-	engine := query.NewEngine(st.DB(), st.IsPostgreSQL())
+	engine := query.NewEngine(st.DB())
 	defer func() { _ = engine.Close() }()
 	srv := NewServerWithOptions(ServerOptions{
 		Config: &config.Config{Server: config.ServerConfig{APIPort: 8080}},
@@ -3134,7 +3134,7 @@ func TestHandleCLIMessageResolvesSourceMessageID(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewTestStore(t)
-	engine := query.NewEngine(st.DB(), st.IsPostgreSQL())
+	engine := query.NewEngine(st.DB())
 	defer func() { _ = engine.Close() }()
 	srv := NewServerWithOptions(ServerOptions{
 		Config: &config.Config{Server: config.ServerConfig{APIPort: 8080}},
@@ -3187,10 +3187,8 @@ func TestHandleCLIMessageInvalidUTF8SnippetReturnsCompleteJSON(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewTestStore(t)
-	if st.IsPostgreSQL() {
-		t.Skip("PostgreSQL rejects invalid UTF-8")
-	}
-	engine := query.NewEngine(st.DB(), st.IsPostgreSQL())
+
+	engine := query.NewEngine(st.DB())
 	defer func() { _ = engine.Close() }()
 	srv := NewServerWithOptions(ServerOptions{
 		Config: &config.Config{Server: config.ServerConfig{APIPort: 8080}},
@@ -3238,7 +3236,7 @@ func TestHandleCLIMessageRawResolvesSourceMessageID(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewTestStore(t)
-	engine := query.NewEngine(st.DB(), st.IsPostgreSQL())
+	engine := query.NewEngine(st.DB())
 	defer func() { _ = engine.Close() }()
 	srv := NewServerWithOptions(ServerOptions{
 		Config: &config.Config{Server: config.ServerConfig{APIPort: 8080}},
@@ -3281,7 +3279,7 @@ func TestHandleCLIMessageRawMissingMessageUsesStableErrorCode(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewTestStore(t)
-	engine := query.NewEngine(st.DB(), st.IsPostgreSQL())
+	engine := query.NewEngine(st.DB())
 	defer func() { _ = engine.Close() }()
 	srv := NewServerWithOptions(ServerOptions{
 		Config: &config.Config{Server: config.ServerConfig{APIPort: 8080}},
@@ -3306,7 +3304,7 @@ func TestHandleCLIMessageRawMissingRawUsesStableErrorCode(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewTestStore(t)
-	engine := query.NewEngine(st.DB(), st.IsPostgreSQL())
+	engine := query.NewEngine(st.DB())
 	defer func() { _ = engine.Close() }()
 	srv := NewServerWithOptions(ServerOptions{
 		Config: &config.Config{Server: config.ServerConfig{APIPort: 8080}},
@@ -3448,7 +3446,7 @@ func TestCLIAttachmentServesPackedBlob(t *testing.T) {
 		},
 		Logger:    testLogger(),
 		BlobStore: bs,
-		Engine:    query.NewEngine(st.DB(), st.IsPostgreSQL()),
+		Engine:    query.NewEngine(st.DB()),
 	})
 
 	t.Run("packed blob returns 200 with body", func(t *testing.T) {
@@ -5971,7 +5969,7 @@ func TestDaemonAdapterListIDScopeReachesServerQueryEngine(t *testing.T) {
 	END WHERE id IN (1, 2)`)
 	require.NoError(err, "seed list IDs")
 
-	srv := newTestServerWithEngine(t, query.NewSQLiteEngine(db.DB))
+	srv := newTestServerWithEngine(t, query.NewEngine(db.DB))
 	daemon := httptest.NewServer(srv.Router())
 	t.Cleanup(daemon.Close)
 	client, err := daemonclient.New(daemonclient.Config{
@@ -7843,7 +7841,7 @@ func TestHandleSearch_UnknownMode(t *testing.T) {
 
 func TestHandleQuery_SQLiteEngine503(t *testing.T) {
 	t.Parallel()
-	engine := query.NewSQLiteEngine(nil)
+	engine := query.NewEngine(nil)
 
 	cfg := &config.Config{
 		Server: config.ServerConfig{APIPort: 8080},
@@ -8818,7 +8816,7 @@ func TestDaemonTextSearchScopesBeforePagination(t *testing.T) {
 	`)
 	require.NoError(err)
 
-	srv := newTestServerWithEngine(t, query.NewSQLiteEngine(db.DB))
+	srv := newTestServerWithEngine(t, query.NewEngine(db.DB))
 	daemon := httptest.NewServer(srv.Router())
 	t.Cleanup(daemon.Close)
 	engine, err := daemonclient.NewEngine(daemonclient.Config{
@@ -8892,7 +8890,7 @@ func TestTextConversationLabelsNameNotAPersonParticipantsByTheirOwnName(t *testi
 			srv := NewServerWithOptions(ServerOptions{
 				Config:    &config.Config{Server: config.ServerConfig{APIPort: 8080}},
 				Store:     &notPeopleMockStore{mockStore: &mockStore{}, notPeople: tc.notPeople},
-				Engine:    query.NewSQLiteEngine(db.DB),
+				Engine:    query.NewEngine(db.DB),
 				Scheduler: newMockScheduler(),
 				Logger:    testLogger(),
 			})

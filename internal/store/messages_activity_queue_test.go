@@ -88,7 +88,7 @@ func TestMessageBookkeepingUpdatesDoNotRequeueActivity(t *testing.T) {
 // whatever definition is already there, so the swap has to ride the
 // EnsureActivityProjectionTriggers migration.
 func TestActivityMessagesTriggerUpgradeReplacesBlanketDefinition(t *testing.T) {
-	testutil.SkipIfPostgres(t, "PostgreSQL always DROP + CREATEs its activity triggers")
+
 	require := require.New(t)
 	assert := assert.New(t)
 	dbPath := filepath.Join(t.TempDir(), "blanket-activity.db")

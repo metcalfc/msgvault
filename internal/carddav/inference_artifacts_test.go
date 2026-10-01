@@ -2,9 +2,6 @@ package carddav
 
 import (
 	"bytes"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"go.kenn.io/msgvault/internal/store"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -12,6 +9,10 @@ import (
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.kenn.io/msgvault/internal/store"
 )
 
 func TestLegacyPendingCreateRequiresExactApproval(t *testing.T) {
@@ -81,7 +82,7 @@ func TestPendingPreviewApprovesImmutableBytesLeavingNewInference(t *testing.T) {
 			preview, err = service.PreviewPublication(t.Context(), personID)
 			require.NoError(err)
 			assert.True(preview.ReviewRequired)
-			if !st.IsPostgreSQL() {
+			{
 				databasePath := filepath.Join(t.TempDir(), "pending-restart.db")
 				require.NoError(st.BackupDatabase(databasePath))
 				reopened, err := store.Open(databasePath)

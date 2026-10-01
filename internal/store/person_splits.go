@@ -1742,9 +1742,8 @@ func (s *Store) insertPersonSplitSnapshotRowTx(
 	}
 	table := personSplitIdentifier(row.TableName)
 	insert := `INSERT INTO ` + table
-	if s.IsPostgreSQL() && row.TableName != "person_fact_pin_events" {
-		insert += ` (` + strings.Join(columns, ", ") + `) OVERRIDING SYSTEM VALUE`
-	} else {
+
+	{
 		insert += ` (` + strings.Join(columns, ", ") + `)`
 	}
 	insert += ` VALUES (` + personMergeSnapshotPlaceholders(len(columns)) + `)`

@@ -1374,9 +1374,7 @@ func (s *Store) getDocumentVectorPublicationForClaim(
 	query := `SELECT token, state, lease_owner, lease_fence, lease_until, attempt_count, next_retry_at
 		FROM document_vector_publications
 		WHERE generation_id = ? AND extraction_id = ? AND chunk_id = ?`
-	if s.dialect.DriverName() == postgresDriverName {
-		query += ` FOR UPDATE`
-	}
+
 	var publication documentVectorPublication
 	publication.DocumentVectorChunkCandidate = candidate
 	err := q.QueryRow(query, candidate.GenerationID, candidate.ExtractionID, candidate.ChunkID).Scan(
@@ -1398,9 +1396,7 @@ func (s *Store) getDocumentVectorPublicationByToken(
 		chunk_id, chunk_key, chunk_checksum, source_sequence, token, state, lease_owner,
 		lease_fence, lease_until, attempt_count, next_retry_at
 		FROM document_vector_publications WHERE generation_id = ? AND token = ?`
-	if s.dialect.DriverName() == postgresDriverName {
-		query += ` FOR UPDATE`
-	}
+
 	var publication documentVectorPublication
 	publication.GenerationID = generationID
 	err := q.QueryRow(query, generationID, token).Scan(

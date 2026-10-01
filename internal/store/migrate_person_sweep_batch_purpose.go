@@ -13,9 +13,7 @@ import (
 // column, key, and row is preserved.
 func (s *Store) migratePersonSweepBatchPurposeV2(ctx context.Context) error {
 	return s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
-		if s.IsPostgreSQL() {
-			return migratePersonSweepBatchPurposeV2PostgreSQL(ctx, tx)
-		}
+
 		return migratePersonSweepBatchPurposeV2SQLite(ctx, tx)
 	})
 }
@@ -92,22 +90,6 @@ func migratePersonSweepBatchPurposeV2SQLite(ctx context.Context, tx *loggedTx) e
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("rebuild person sweep call journal purposes: %w", err)
 		}
-	}
-	return nil
-}
-
-func migratePersonSweepBatchPurposeV2PostgreSQL(ctx context.Context, tx *loggedTx) error {
-	if err := validatePersonSweepBatchPurposeRows(ctx, tx); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `ALTER TABLE person_sweep_batches
-		DROP CONSTRAINT IF EXISTS person_sweep_batches_call_coordinate_check`); err != nil {
-		return fmt.Errorf("drop person sweep call journal purpose constraint: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `ALTER TABLE person_sweep_batches
-		ADD CONSTRAINT person_sweep_batches_call_coordinate_check `+
-		personSweepBatchPurposeCheck); err != nil {
-		return fmt.Errorf("create person sweep call journal purpose constraint: %w", err)
 	}
 	return nil
 }

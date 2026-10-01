@@ -438,19 +438,8 @@ func TestImporterReportsWriteCommittedBeforeConversationStatsFailure(t *testing.
 	assert := assert.New(t)
 	require := require.New(t)
 	st, _, imp := newImporterFixture(t)
-	if st.IsPostgreSQL() {
-		_, err := st.DB().Exec(`
-			CREATE FUNCTION fail_notion_meeting_stats() RETURNS trigger AS $$
-			BEGIN
-				RAISE EXCEPTION 'forced Notion meeting stats failure';
-			END;
-			$$ LANGUAGE plpgsql;
-			CREATE TRIGGER fail_notion_meeting_stats
-			BEFORE UPDATE OF message_count ON conversations
-			FOR EACH ROW EXECUTE FUNCTION fail_notion_meeting_stats();
-		`)
-		require.NoError(err)
-	} else {
+
+	{
 		_, err := st.DB().Exec(`
 			CREATE TRIGGER fail_notion_meeting_stats
 			BEFORE UPDATE OF message_count ON conversations

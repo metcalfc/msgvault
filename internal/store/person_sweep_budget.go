@@ -150,9 +150,8 @@ func (s *Store) StartPersonSweepAttempt(
 		var runStatus peoplesweep.RunStatus
 		query := `SELECT mode, status, program_fingerprint, catalog_fingerprint,
 		                 provider_fingerprint FROM person_sweep_runs WHERE id = ?`
-		if s.IsPostgreSQL() {
-			query += " FOR UPDATE"
-		} else if _, lockErr := tx.ExecContext(ctx,
+
+		if _, lockErr := tx.ExecContext(ctx,
 			`UPDATE person_sweep_runs SET id = id WHERE id = ?`, input.RunID); lockErr != nil {
 			return fmt.Errorf("lock person sweep run: %w", lockErr)
 		}
@@ -237,7 +236,7 @@ func (s *Store) ReservePersonSweepBudget(
 			return err
 		}
 		if existing, found, err := loadPersonSweepBatchTx(ctx, tx, input.AttemptID,
-			input.BatchOrdinal, input.CallOrdinal, s.IsPostgreSQL()); err != nil {
+			input.BatchOrdinal, input.CallOrdinal); err != nil {
 			return err
 		} else if found {
 			if existing.matches(input) && existing.status == "reserved" {
@@ -319,7 +318,7 @@ type personSweepBudgetAttempt struct {
 func (s *Store) lockPersonSweepBudgetAttempt(
 	ctx context.Context, tx *loggedTx, attemptID string,
 ) (personSweepBudgetAttempt, error) {
-	if !s.IsPostgreSQL() {
+	{
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE person_sweep_attempts SET id = id WHERE id = ?`, attemptID); err != nil {
 			return personSweepBudgetAttempt{}, fmt.Errorf("lock person sweep attempt: %w", err)
@@ -327,9 +326,7 @@ func (s *Store) lockPersonSweepBudgetAttempt(
 	}
 	query := `SELECT run_id, person_id, lease_fence, provider_fingerprint, status, failure_class
 	          FROM person_sweep_attempts WHERE id = ?`
-	if s.IsPostgreSQL() {
-		query += " FOR UPDATE"
-	}
+
 	var attempt personSweepBudgetAttempt
 	if err := tx.QueryRowContext(ctx, query, attemptID).Scan(&attempt.runID,
 		&attempt.personID, &attempt.leaseFence, &attempt.providerFingerprint,
@@ -340,16 +337,11 @@ func (s *Store) lockPersonSweepBudgetAttempt(
 }
 
 func (s *Store) lockPersonSweepBudgetRun(ctx context.Context, tx *loggedTx, runID string) error {
-	if !s.IsPostgreSQL() {
+	{
 		_, err := tx.ExecContext(ctx, `UPDATE person_sweep_runs SET id = id WHERE id = ?`, runID)
 		return err
 	}
-	var locked string
-	if err := tx.QueryRowContext(ctx,
-		`SELECT id FROM person_sweep_runs WHERE id = ? FOR UPDATE`, runID).Scan(&locked); err != nil {
-		return fmt.Errorf("lock person sweep run: %w", err)
-	}
-	return nil
+
 }
 
 func (s *Store) requirePersonSweepBudgetRunRunning(
@@ -378,9 +370,7 @@ func (s *Store) lockPersonSweepDailyUsage(
 	                 reserved_cost_micro_usd, actual_requests, actual_input_tokens,
 	                 actual_output_tokens, actual_cost_micro_usd
 	          FROM person_sweep_daily_usage WHERE utc_day = ?`
-	if s.IsPostgreSQL() {
-		query += " FOR UPDATE"
-	}
+
 	var usage personSweepDailyUsage
 	err := tx.QueryRowContext(ctx, query, day).Scan(&usage.reserved.Requests,
 		&usage.reserved.InputTokens, &usage.reserved.OutputTokens,
@@ -504,7 +494,7 @@ func validatePersonSweepCallPredecessorTx(
 ) error {
 	if input.CallOrdinal == 1 {
 		lead, found, err := loadPersonSweepBatchTx(
-			ctx, tx, input.AttemptID, input.BatchOrdinal, 0, false)
+			ctx, tx, input.AttemptID, input.BatchOrdinal, 0)
 		if err != nil {
 			return err
 		}
@@ -525,7 +515,7 @@ func validatePersonSweepCallPredecessorTx(
 	// brief — must follow an extraction batch. That admits at most one brief
 	// and keeps its ordinal above every extraction ordinal in the attempt.
 	previous, found, err := loadPersonSweepBatchTx(
-		ctx, tx, input.AttemptID, input.BatchOrdinal-1, 0, false)
+		ctx, tx, input.AttemptID, input.BatchOrdinal-1, 0)
 	if err != nil {
 		return err
 	}
@@ -639,7 +629,7 @@ type personSweepBatch struct {
 }
 
 func loadPersonSweepBatchTx(ctx context.Context, tx *loggedTx, attemptID string,
-	ordinal, callOrdinal int, postgres bool,
+	ordinal, callOrdinal int,
 ) (personSweepBatch, bool, error) {
 	query := `SELECT utc_day, purpose, reservation_id, budget_fingerprint, input_hash,
 	                 item_count, status, reserved_requests,
@@ -649,9 +639,6 @@ func loadPersonSweepBatchTx(ctx context.Context, tx *loggedTx, attemptID string,
 	                 completed_at
 	          FROM person_sweep_batches
 	          WHERE attempt_id = ? AND batch_ordinal = ? AND call_ordinal = ?`
-	if postgres {
-		query += " FOR UPDATE"
-	}
 	var batch personSweepBatch
 	err := tx.QueryRowContext(ctx, query, attemptID, ordinal, callOrdinal).Scan(&batch.day,
 		&batch.purpose, &batch.reservationID, &batch.budgetFingerprint, &batch.inputHash,
@@ -714,7 +701,7 @@ func (s *Store) ReleasePersonSweepBudget(
 			return err
 		}
 		batch, found, err := loadPersonSweepBatchTx(ctx, tx, reservation.Request.AttemptID,
-			reservation.Request.BatchOrdinal, reservation.Request.CallOrdinal, s.IsPostgreSQL())
+			reservation.Request.BatchOrdinal, reservation.Request.CallOrdinal)
 		if err != nil {
 			return err
 		}
@@ -835,7 +822,7 @@ func (s *Store) markPersonSweepBudgetStartedOnce(
 		}
 		batch, found, err := loadPersonSweepBatchTx(ctx, tx,
 			reservation.Request.AttemptID, reservation.Request.BatchOrdinal,
-			reservation.Request.CallOrdinal, s.IsPostgreSQL())
+			reservation.Request.CallOrdinal)
 		if err != nil {
 			return err
 		}
@@ -967,7 +954,7 @@ func (s *Store) FinalizePersonSweepFailure(
 		}
 		for _, reservation := range reservations {
 			batch, found, err := loadPersonSweepBatchTx(ctx, tx, input.AttemptID,
-				reservation.Request.BatchOrdinal, reservation.Request.CallOrdinal, s.IsPostgreSQL())
+				reservation.Request.BatchOrdinal, reservation.Request.CallOrdinal)
 			if err != nil {
 				return err
 			}

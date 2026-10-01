@@ -457,39 +457,8 @@ func (s *Store) searchDocumentContent(
 	validity := documentSearchValidity()
 	var query string
 	args := make([]any, 0, len(scopeArgs)+2)
-	if s.IsPostgreSQL() {
-		query = `
-			WITH search_query AS (
-				SELECT to_tsquery('simple', ?) AS value
-			), ranked AS (
-				SELECT ` + documentSearchRankedSelectColumns + `,
-				       ROW_NUMBER() OVER (
-				           PARTITION BY o.occurrence_key
-				           ORDER BY ts_rank(dc.search_fts, sq.value) DESC, dc.id
-				       ) AS occurrence_rank,
-				       ts_rank(dc.search_fts, sq.value) AS search_rank
-				FROM document_chunks dc
-				JOIN document_extraction_heads h ON h.extraction_id = dc.extraction_id
-				JOIN document_extraction_profiles p ON p.id = h.profile_id
-				JOIN document_provider_consents c ON c.profile_id = p.id
-				JOIN document_occurrences o ON o.canonical_blob_hash = h.canonical_blob_hash
-				JOIN attachments a ON a.id = o.attachment_id
-				JOIN messages m ON m.id = o.message_id
-				JOIN conversations cv ON cv.id = m.conversation_id
-				CROSS JOIN document_index_state ds
-				CROSS JOIN search_query sq
-				WHERE dc.search_fts @@ sq.value
-				  AND ` + validity + conditions + `
-			)
-			SELECT ` + documentSearchOuterColumns + `
-			FROM ranked
-			WHERE occurrence_rank = 1
-			ORDER BY search_rank DESC, occurrence_key
-			LIMIT ?`
-		args = append(args, ftsArg)
-		args = append(args, scopeArgs...)
-		args = append(args, limit+1)
-	} else {
+
+	{
 		query = `
 			WITH matched AS MATERIALIZED (
 				SELECT ` + documentSearchRankedSelectColumns + `,
@@ -524,7 +493,7 @@ func (s *Store) searchDocumentContent(
 		args = append(args, limit+1)
 		return s.scanDocumentSearchRows(ctx, query, args, true, limit)
 	}
-	return s.scanDocumentSearchRows(ctx, query, args, true, limit)
+
 }
 
 func (s *Store) searchDocumentFilenames(

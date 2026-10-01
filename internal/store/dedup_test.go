@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/store"
-	"go.kenn.io/msgvault/internal/testutil"
 	"go.kenn.io/msgvault/internal/testutil/storetest"
 )
 
@@ -185,7 +184,7 @@ func TestStore_DuplicateGroupFetchMatchesWhitespaceDiscoveryGroups(t *testing.T)
 }
 
 func TestStore_DuplicateGroupFetchPreservesInvalidUTF8(t *testing.T) {
-	testutil.SkipIfPostgres(t, "PostgreSQL TEXT rejects invalid UTF-8 before duplicate grouping")
+
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)
@@ -284,7 +283,7 @@ func TestStore_DuplicateGroupFetchPreservesNonASCIIAndControlEdges(t *testing.T)
 }
 
 func TestStore_DuplicateGroupFetchPreservesEmbeddedNUL(t *testing.T) {
-	testutil.SkipIfPostgres(t, "PostgreSQL TEXT rejects embedded NUL bytes")
+
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)
@@ -313,7 +312,7 @@ func TestStore_DuplicateGroupFetchPreservesEmbeddedNUL(t *testing.T) {
 }
 
 func TestStore_DuplicateDiscoveryDoesNotTruncateAtEmbeddedNUL(t *testing.T) {
-	testutil.SkipIfPostgres(t, "PostgreSQL TEXT rejects embedded NUL bytes")
+
 	f := storetest.New(t)
 	newRFC822Message(t, f, "nul-tail-c", "<ab>\x00c>")
 	newRFC822Message(t, f, "nul-tail-d", "<ab>\x00d>")
@@ -324,7 +323,7 @@ func TestStore_DuplicateDiscoveryDoesNotTruncateAtEmbeddedNUL(t *testing.T) {
 }
 
 func TestStore_DuplicateGroupsPreserveNULTailAsOwnKey(t *testing.T) {
-	testutil.SkipIfPostgres(t, "PostgreSQL TEXT rejects embedded NUL bytes")
+
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)
@@ -544,10 +543,8 @@ func TestStore_RFC822IDBackfillHandlesNULByBackend(t *testing.T) {
 	plan, err := f.Store.PlanRFC822IDBackfill(t.Context(), []int64{f.Source.ID})
 	require.NoError(err)
 	require.Equal(int64(1), plan.Candidates)
-	if f.Store.IsPostgreSQL() {
-		assert.Zero(plan.Ready)
-		assert.Equal(int64(1), plan.Failed)
-	} else {
+
+	{
 		assert.Equal(int64(1), plan.Ready)
 		assert.Zero(plan.Failed)
 	}
@@ -555,10 +552,8 @@ func TestStore_RFC822IDBackfillHandlesNULByBackend(t *testing.T) {
 	updated, err := f.Store.ApplyRFC822IDBackfill(
 		t.Context(), []int64{f.Source.ID}, plan, nil)
 	require.NoError(err)
-	if f.Store.IsPostgreSQL() {
-		assert.Zero(updated)
-		assert.Empty(storedRFC822ID(t, f.Store, messageID))
-	} else {
+
+	{
 		assert.Equal(int64(1), updated)
 		assert.Equal(derivedID, storedRFC822ID(t, f.Store, messageID))
 	}
@@ -880,7 +875,7 @@ func TestStore_ApplyRFC822IDBackfillParsesFromRawMIME(t *testing.T) {
 
 func TestStore_ApplyRFC822IDBackfillDoesNotOvercountRolledBackBatch(t *testing.T) {
 	require := require.New(t)
-	testutil.SkipIfPostgres(t, "uses SQLite-specific CREATE TRIGGER ... NEW.* / RAISE(FAIL,...) syntax to force a mid-batch rollback")
+
 	f := storetest.New(t)
 
 	idA := newRFC822Message(t, f, "needs-backfill-a", "")

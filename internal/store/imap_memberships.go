@@ -194,7 +194,7 @@ func (s *Store) applyIMAPMailboxDeltas(
 		if err != nil {
 			return err
 		}
-		resolver := imapMembershipResolver{tx: tx, sourceID: sourceID, sqlite: !s.IsPostgreSQL()}
+		resolver := imapMembershipResolver{tx: tx, sourceID: sourceID}
 		if err := resolver.primeIdentities(normalizedDeltas); err != nil {
 			return err
 		}
@@ -658,7 +658,6 @@ func captureIMAPMembershipMessageIDs(
 type imapMembershipResolver struct {
 	tx                *loggedTx
 	sourceID          int64
-	sqlite            bool
 	rawMessages       map[int64]map[[32]byte]int64
 	canonicalMessages map[string]int64
 }
@@ -725,16 +724,10 @@ func (r *imapMembershipResolver) retireMailboxKeys(mailbox string, previous uint
 		observations[observation.UID] = observation
 	}
 	// Validate the final UID separator below to exclude nested mailboxes.
-	pattern := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(mailbox+"|") + "%"
-	predicate := `source_message_id LIKE ? ESCAPE '\'`
-	args := []any{mailbox, delta.uidValidity, mailbox, delta.uidValidity, r.sourceID, pattern}
-	if r.sqlite {
-		// SQLite's default LIKE cannot use the binary source-key index. The
-		// byte after '|' is '}', so these bounds cover exactly this prefix.
-		predicate = `source_message_id >= ? AND source_message_id < ?`
-		args[len(args)-1] = mailbox + "|"
-		args = append(args, mailbox+"}")
-	}
+	// SQLite's default LIKE cannot use the binary source-key index. The
+	// byte after '|' is '}', so these bounds cover exactly this prefix.
+	predicate := `source_message_id >= ? AND source_message_id < ?`
+	args := []any{mailbox, delta.uidValidity, mailbox, delta.uidValidity, r.sourceID, mailbox + "|", mailbox + "}"}
 	rows, err := r.tx.Query(`
 		SELECT messages.id, messages.source_message_id, messages.deleted_from_source_at IS NOT NULL,
 		  EXISTS (SELECT 1 FROM imap_message_memberships m WHERE m.source_id = messages.source_id AND m.message_id = messages.id),

@@ -5,7 +5,6 @@
     duckdb: 'DuckDB',
     sql: 'SQL',
     'sqlite-vec': 'sqlite-vec',
-    pgvector: 'pgvector',
   };
 
   function optionLabel(value: string): string {

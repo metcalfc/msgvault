@@ -73,15 +73,7 @@ func seedPersonFactClaimLedger(t *testing.T, st *store.Store, personID int64, cl
 func installLegacyPersonFactClaimOrigin(t *testing.T, st *store.Store) {
 	t.Helper()
 	requirements := require.New(t)
-	if st.IsPostgreSQL() {
-		_, err := st.DB().ExecContext(t.Context(), `
-			ALTER TABLE person_fact_claims
-				DROP CONSTRAINT IF EXISTS person_fact_claims_origin_check;
-			ALTER TABLE person_fact_claims
-				ADD CONSTRAINT person_fact_claims_origin_check `+legacyPersonFactClaimOriginCheck)
-		requirements.NoError(err)
-		return
-	}
+
 	conn, err := st.DB().Conn(t.Context())
 	requirements.NoError(err)
 	defer func() { requirements.NoError(conn.Close()) }()
@@ -293,9 +285,7 @@ func TestPersonFactClaimOriginMigrationScopesForeignKeyChecks(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
 			f := newPersonSweepBudgetFixture(t, "scoped-claim-migration")
-			if f.store.IsPostgreSQL() {
-				t.Skip("SQLite table rebuild")
-			}
+
 			seedPersonFactClaimLedger(t, f.store, f.personID, "extraction-claim")
 			installLegacyPersonFactClaimOrigin(t, f.store)
 			conn, err := f.store.DB().Conn(t.Context())

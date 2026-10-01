@@ -2,10 +2,11 @@ package store_test
 
 import (
 	"fmt"
+	"testing"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/store"
-	"testing"
 )
 
 func TestConflictOwnedIntentReopenPreservesEvidenceAndIdentity(t *testing.T) {
@@ -171,9 +172,7 @@ func TestConflictOwnedIntentSurvivesLegacyTableUpgrade(t *testing.T) {
 	require.NoError(err)
 	require.NoError(recreateE7CardDAVConflicts(t, st))
 	binary := "BLOB"
-	if st.IsPostgreSQL() {
-		binary = "BYTEA"
-	}
+
 	// A partially upgraded database already has durable evidence, but lacks the
 	// e7 pending constraint. The SQLite rebuild must copy these bytes as well.
 	_, err = st.DB().Exec(`ALTER TABLE carddav_conflicts ADD COLUMN review_revision INTEGER NOT NULL DEFAULT 1`)

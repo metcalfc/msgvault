@@ -198,7 +198,7 @@ func rfc822MessageIDStorageForms(id string) []string {
 func (s *Store) findDuplicatesByRFC822IDQuery(sourceIDs []int64) (string, []any) {
 	canonicalID := s.dialect.RFC822CanonicalIDExpr("rfc822_message_id")
 	from := "messages"
-	if len(sourceIDs) > 0 && !s.IsPostgreSQL() {
+	if len(sourceIDs) > 0 {
 		// SQLite otherwise estimates the equality lookup through
 		// idx_messages_source as cheaper, then sorts every scoped row into a
 		// temporary GROUP BY B-tree. The canonical/source index is ordered for
@@ -983,7 +983,7 @@ func (s *Store) PlanRFC822IDBackfill(
 		if err != nil {
 			return RFC822IDBackfillPlan{}, fmt.Errorf("fetch RFC822 ID backfill batch: %w", err)
 		}
-		batch, err := readRFC822IDBackfillBatch(rows, s.IsPostgreSQL())
+		batch, err := readRFC822IDBackfillBatch(rows, false)
 		if err != nil {
 			return RFC822IDBackfillPlan{}, err
 		}
@@ -1100,7 +1100,7 @@ func (s *Store) applyRFC822IDBackfillRows(
 		if err != nil {
 			return 0, digest, fmt.Errorf("fetch RFC822 ID backfill apply batch: %w", err)
 		}
-		batch, err := readRFC822IDBackfillBatch(rows, s.IsPostgreSQL())
+		batch, err := readRFC822IDBackfillBatch(rows, false)
 		if err != nil {
 			return 0, digest, err
 		}

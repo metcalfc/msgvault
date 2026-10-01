@@ -1,15 +1,13 @@
 package store_test
 
 import (
-	"context"
+	"testing"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/vcard"
 	"go.kenn.io/msgvault/internal/vcardmap"
-	"sync"
-	"testing"
-	"time"
 )
 
 func conflictApprovalPlan(t *testing.T, st *store.Store, id int64) store.CardDAVConflictLocalApprovalPlan {
@@ -247,70 +245,4 @@ func TestConflictIntentReopenAndRollbackPreserveExactOwnership(t *testing.T) {
 	assert.Nil(rolledBack.ApprovedMutationRevision)
 	assert.Nil(rolledBack.ApprovedBodySHA256)
 	assert.Nil(rolledBack.ApprovedInferenceRevision)
-}
-
-func TestArtifactApprovalRejectsConcurrentPostgresInference(t *testing.T) {
-	for _, kind := range []string{"pending", "conflict"} {
-		t.Run(kind, func(t *testing.T) {
-			require := require.New(t)
-			st, _, book := newCardDAVResourceStore(t)
-			if !st.IsPostgreSQL() {
-				t.Skip("requires PostgreSQL repeatable-read row conflicts")
-			}
-			var personID int64
-			var approve func(context.Context) error
-			if kind == "pending" {
-				personID = inferenceReviewPerson(t, st)
-				initial := reviewedCurrentPlan(t, st, personID)
-				_, err := st.PrepareCardDAVPublicationContext(t.Context(), initial.Publication)
-				require.NoError(err)
-				source, err := st.LoadCardDAVPublicationReviewSourceContext(t.Context(), personID)
-				require.NoError(err)
-				fence := store.CardDAVPendingReviewFence(source)
-				plan := store.CardDAVPendingCreateApprovalPlan{Fence: fence, Body: source.Publication.OutgoingBody, ApprovalToken: store.CardDAVReviewToken(fence)}
-				approve = func(ctx context.Context) error {
-					_, err := st.ApprovePendingCardDAVCreateContext(ctx, plan)
-					return err
-				}
-			} else {
-				account, err := st.GetCardDAVAccountContext(t.Context())
-				require.NoError(err)
-				remote := remoteResource(book.CanonicalURL+"race.vcf", "race", "Race Person", "race@example.test", `"base"`)
-				_, err = st.ApplyCardDAVSyncPlanContext(t.Context(), store.CardDAVSyncPlan{AddressBookID: book.ID, ConnectionGeneration: account.ConnectionGeneration, SyncRevision: book.SyncRevision, Upserts: []store.CardDAVRemoteResource{remote}})
-				require.NoError(err)
-				mapping, err := st.GetCardDAVResourceContext(t.Context(), book.ID, remote.Href)
-				require.NoError(err)
-				personID = *mapping.PersonID
-				conflict, err := st.RecordCardDAVConflictContext(t.Context(), conflictCapture(mapping))
-				require.NoError(err)
-				plan := conflictApprovalPlan(t, st, conflict.ID)
-				approve = func(ctx context.Context) error { return st.ApproveCardDAVConflictLocalContext(ctx, plan) }
-			}
-			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-			defer cancel()
-			reached, resume := make(chan struct{}), make(chan struct{})
-			var once sync.Once
-			st.SetCardDAVPublicationReviewBeforePersonLockHookForTest(func() {
-				once.Do(func() {
-					close(reached)
-					select {
-					case <-resume:
-					case <-ctx.Done():
-					}
-				})
-			})
-			defer st.SetCardDAVPublicationReviewBeforePersonLockHookForTest(nil)
-			done := make(chan error, 1)
-			go func() { done <- approve(ctx) }()
-			select {
-			case <-reached:
-			case <-ctx.Done():
-				require.NoError(ctx.Err())
-			}
-			_, err := st.AppendPersonNoteContext(ctx, store.PersonNoteAppendInput{PersonID: personID, Text: "First inference during approval", Source: store.ProvenanceExtraction})
-			require.NoError(err)
-			close(resume)
-			require.ErrorIs(<-done, store.ErrCardDAVReviewStale)
-		})
-	}
 }

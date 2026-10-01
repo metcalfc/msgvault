@@ -95,8 +95,7 @@ func TestManagedGmailDraftLifecycleAndRetention(t *testing.T) {
 	assert.NotNil(finished.DiscardedAt)
 	assert.Nil(finished.Pending)
 
-	// Archive GC is SQLite-only; the lifecycle above runs on both backends.
-	if !st.IsPostgreSQL() {
+	{
 		plan, err := st.PlanGCContext(t.Context())
 		require.NoError(err)
 		assert.Equal(int64(1), plan.SourceDeleted)
@@ -207,7 +206,7 @@ func TestGmailDraftAbortClearsClaim(t *testing.T) {
 }
 
 func TestGmailDraftPendingOriginalRetainedByGC(t *testing.T) {
-	testutil.SkipIfPostgres(t, "archive GC is SQLite-only")
+
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewTestStore(t)

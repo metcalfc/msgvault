@@ -2765,15 +2765,8 @@ func TestSplitPersonMerge_Rollback(t *testing.T) {
 	assert := assert.New(t)
 	f := newPersonSplitFixture(t)
 	ctx := context.Background()
-	if f.store.IsPostgreSQL() {
-		_, err := f.store.DB().ExecContext(ctx, `
-			CREATE FUNCTION fail_person_split_name() RETURNS trigger AS $$
-			BEGIN RAISE EXCEPTION 'forced person split failure'; END;
-			$$ LANGUAGE plpgsql;
-			CREATE TRIGGER fail_person_split_name BEFORE UPDATE ON person_names
-			FOR EACH ROW EXECUTE FUNCTION fail_person_split_name();`)
-		require.NoError(err)
-	} else {
+
+	{
 		_, err := f.store.DB().ExecContext(ctx, `CREATE TRIGGER fail_person_split_name
 			BEFORE UPDATE ON person_names BEGIN
 				SELECT RAISE(ABORT, 'forced person split failure');

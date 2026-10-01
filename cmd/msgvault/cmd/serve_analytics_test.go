@@ -130,7 +130,7 @@ func TestStartDaemonAnalyticsInitializerAutoInstallsDuckDB(t *testing.T) {
 		return err
 	})
 
-	initial := query.NewEngine(s.DB(), false)
+	initial := query.NewEngine(s.DB())
 	srv := api.NewServerWithOptions(api.ServerOptions{
 		Config:        c,
 		Engine:        initial,
@@ -168,7 +168,7 @@ func TestStartDaemonAnalyticsInitializerTracksAutoInitializationIndependently(t 
 		}
 	})
 
-	initial := query.NewEngine(s.DB(), false)
+	initial := query.NewEngine(s.DB())
 	srv := api.NewServerWithOptions(api.ServerOptions{
 		Config: c, Engine: initial, AnalyticsMode: api.AnalyticsModeSQLFallback, Logger: slog.Default(),
 	})

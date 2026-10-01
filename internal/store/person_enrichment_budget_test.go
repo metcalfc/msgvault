@@ -1,7 +1,6 @@
 package store_test
 
 import (
-	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -186,70 +185,9 @@ func TestPersonEnrichmentGuaranteedCostChecksOnlyConfiguredCaps(t *testing.T) {
 	}
 }
 
-func TestPersonEnrichmentPersonDayBudgetContentionUsesProductionReservation(t *testing.T) {
-	checks := assert.New(t)
-	requirements := require.New(t)
-	fixture := storetest.New(t)
-	if !fixture.Store.IsPostgreSQL() {
-		t.Skip("PostgreSQL row-lock interleaving requires MSGVAULT_TEST_DB")
-	}
-	profile := enrichmentBudgetProfile(t, 10, 1000, 0, 0)
-	_, err := fixture.Store.EnsurePersonEnrichmentProfile(t.Context(), profile)
-	requirements.NoError(err)
-	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
-	store.SetPersonEnrichmentClockForTest(fixture.Store, func() time.Time { return now })
-	participantID := fixture.EnsureParticipant("same-budget-person@example.com", "Same Budget Person", "example.com")
-	person, _, err := fixture.Store.CreatePersonFromParticipantContext(t.Context(), participantID)
-	requirements.NoError(err)
-
-	starts := make([]personenrichment.AttemptStart, 0, 2)
-	for i := range 2 {
-		run, _, startErr := fixture.Store.StartRun(t.Context(), personenrichment.RunStart{
-			Kind: "manual", RequestedBy: "person-day-contention-" + string(rune('a'+i)), RequestedAt: now,
-		})
-		requirements.NoError(startErr)
-		starts = append(starts, personenrichment.AttemptStart{
-			RunID: run.ID, PersonID: person.ID, ProfileFingerprint: profile.Fingerprint,
-			HardCostCap:       true,
-			GuaranteedMaxCost: personenrichment.Cost{Currency: "USD", AmountMicros: 600},
-		})
-	}
-
-	for _, start := range starts {
-		requirements.NoError(store.EnsurePersonEnrichmentBudgetCountersForTest(t.Context(), fixture.Store, start))
-	}
-	installTwoPartyPersonEnrichmentBudgetBarrier(fixture.Store)
-	errs := make(chan error, len(starts))
-	var wg sync.WaitGroup
-	for _, start := range starts {
-		wg.Go(func() {
-			errs <- store.ReservePersonEnrichmentBudgetForTest(t.Context(), fixture.Store, start)
-		})
-	}
-	wg.Wait()
-	close(errs)
-	var success, exceeded int
-	for reserveErr := range errs {
-		switch {
-		case reserveErr == nil:
-			success++
-		case errors.Is(reserveErr, store.ErrCostBudgetExceeded):
-			exceeded++
-		default:
-			requirements.NoError(reserveErr)
-		}
-	}
-	checks.Equal(1, success)
-	checks.Equal(1, exceeded)
-}
-
 func assertExactlyOneBudgetReservation(t *testing.T, st *store.Store, claims []budgetClaim, cost bool) {
 	t.Helper()
-	if st.IsPostgreSQL() {
-		for _, claim := range claims {
-			require.NoError(t, store.EnsurePersonEnrichmentBudgetCountersForTest(t.Context(), st, claim.start))
-		}
-	}
+
 	var wg sync.WaitGroup
 	errs := make(chan error, len(claims))
 	created := make(chan bool, len(claims))

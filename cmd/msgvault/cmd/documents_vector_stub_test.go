@@ -1,4 +1,4 @@
-//go:build !sqlite_vec && !pgvector
+//go:build !sqlite_vec
 
 package cmd
 
@@ -30,5 +30,5 @@ func TestDocumentVectorStubKeepsStatusAvailableAndBuildActionable(t *testing.T) 
 	assert.JSONEq(t, `{"enabled":false}`, output.String())
 
 	_, err := runConfiguredDocumentVectorGeneration(testCtx, nil, 1, 1)
-	require.ErrorContains(t, err, "rebuild with sqlite_vec or pgvector support")
+	require.ErrorContains(t, err, "rebuild with sqlite_vec support")
 }

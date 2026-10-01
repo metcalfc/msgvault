@@ -91,6 +91,12 @@ type Backend struct {
 // Open opens vectors.db, runs migrations, and retains the main database
 // handle for seed queries. Caller must call Close.
 func Open(ctx context.Context, opts Options) (*Backend, error) {
+	if err := sqliteutil.ValidateDSN(opts.Path); err != nil {
+		return nil, fmt.Errorf("vector database path: %w", err)
+	}
+	if err := sqliteutil.ValidateDSN(opts.MainPath); err != nil {
+		return nil, fmt.Errorf("main database path: %w", err)
+	}
 	if err := RegisterExtension(); err != nil {
 		return nil, err
 	}

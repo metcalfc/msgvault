@@ -6,13 +6,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/store"
-	"go.kenn.io/msgvault/internal/testutil"
 	"go.kenn.io/msgvault/internal/testutil/storetest"
 )
 
 func TestCacheRelatedChangeJournalTracksUnlinkedLabelRename(t *testing.T) {
 	require := require.New(t)
-	testutil.SkipIfPostgres(t, "analytics cache journal is SQLite-only")
+
 	f := storetest.New(t)
 	_, err := f.Store.EnsureLabelsBatch(f.Source.ID, map[string]store.LabelInfo{
 		"remote-label": {Name: "Before", Type: "user"},
@@ -32,7 +31,7 @@ func TestCacheRelatedChangeJournalTracksUnlinkedLabelRename(t *testing.T) {
 
 func TestCacheRelatedChangeJournalTracksChildMutations(t *testing.T) {
 	require := require.New(t)
-	testutil.SkipIfPostgres(t, "analytics cache journal is SQLite-only")
+
 	f := storetest.New(t)
 	st := f.Store
 	first, err := st.UpsertMessage(f.NewMessage().WithSourceMessageID("first").Build())
@@ -93,7 +92,7 @@ func TestCacheRelatedChangeJournalTracksChildMutations(t *testing.T) {
 
 func TestCacheRelatedChangeJournalRollsBackWithMutation(t *testing.T) {
 	require := require.New(t)
-	testutil.SkipIfPostgres(t, "analytics cache journal is SQLite-only")
+
 	f := storetest.New(t)
 	st := f.Store
 	messageID, err := st.UpsertMessage(f.NewMessage().Build())
@@ -114,7 +113,7 @@ func TestCacheRelatedChangeJournalRollsBackWithMutation(t *testing.T) {
 
 func TestCacheRelatedChangeJournalInstallsOnExistingArchive(t *testing.T) {
 	require := require.New(t)
-	testutil.SkipIfPostgres(t, "analytics cache journal is SQLite-only")
+
 	f := storetest.New(t)
 	st := f.Store
 	for _, name := range []string{

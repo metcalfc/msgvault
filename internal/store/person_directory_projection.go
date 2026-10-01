@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"slices"
 	"sort"
 	"strings"
@@ -77,9 +76,7 @@ func (s *Store) ensureDirectoryProjectionInfrastructure(ctx context.Context) err
 }
 
 func (s *Store) installDirectoryProjectionTriggers(ctx context.Context) error {
-	if s.IsPostgreSQL() {
-		return s.installPostgresDirectoryProjectionTriggers(ctx)
-	}
+
 	// The projection is installed once, so every trigger is created IF NOT
 	// EXISTS. The migration backfill that follows marks every person dirty, so
 	// a base write racing the first install is refreshed anyway.
@@ -142,56 +139,6 @@ func (s *Store) installDirectoryProjectionTriggers(ctx context.Context) error {
 		if _, err := s.db.ExecContext(ctx, trigger); err != nil {
 			return fmt.Errorf("install SQLite directory projection trigger: %w", err)
 		}
-	}
-	return nil
-}
-
-func (s *Store) installPostgresDirectoryProjectionTriggers(ctx context.Context) error {
-	statements := []string{
-		`CREATE OR REPLACE FUNCTION directory_projection_mark_dirty() RETURNS trigger AS $$
-			BEGIN
-				IF TG_OP = 'UPDATE' THEN
-					INSERT INTO directory_projection_dirty(person_id)
-					VALUES ((to_jsonb(OLD)->>TG_ARGV[0])::bigint), ((to_jsonb(NEW)->>TG_ARGV[0])::bigint)
-					ON CONFLICT DO NOTHING;
-				ELSIF TG_OP = 'DELETE' THEN
-					INSERT INTO directory_projection_dirty(person_id)
-					VALUES ((to_jsonb(OLD)->>TG_ARGV[0])::bigint) ON CONFLICT DO NOTHING;
-				ELSE
-					INSERT INTO directory_projection_dirty(person_id)
-					VALUES ((to_jsonb(NEW)->>TG_ARGV[0])::bigint) ON CONFLICT DO NOTHING;
-				END IF;
-				RETURN NULL;
-			END $$ LANGUAGE plpgsql`,
-		`CREATE OR REPLACE FUNCTION directory_projection_mark_organization_dirty() RETURNS trigger AS $$
-			DECLARE organization bigint;
-			BEGIN
-				IF TG_OP = 'DELETE' THEN organization := OLD.id; ELSE organization := NEW.id; END IF;
-				INSERT INTO directory_projection_dirty(person_id)
-				SELECT person_id FROM employments WHERE organization_id = organization
-				ON CONFLICT DO NOTHING;
-				RETURN NULL;
-			END $$ LANGUAGE plpgsql`,
-	}
-	for _, statement := range statements {
-		if _, err := s.db.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("install PostgreSQL directory projection function: %w", err)
-		}
-	}
-	for _, tableAndColumn := range [][2]string{
-		{"persons", "id"}, {personNamesTableName, personMergePersonIDColumn}, {personContactPointsTableName, personMergePersonIDColumn},
-		{"person_categories", personMergePersonIDColumn}, {"employments", personMergePersonIDColumn}, {"person_contact_state", personMergePersonIDColumn},
-	} {
-		name := "directory_dirty_" + tableAndColumn[0]
-		if _, err := s.db.ExecContext(ctx, `CREATE OR REPLACE TRIGGER `+name+` AFTER INSERT OR UPDATE OR DELETE ON `+tableAndColumn[0]+`
-			FOR EACH ROW EXECUTE FUNCTION directory_projection_mark_dirty('`+tableAndColumn[1]+`')`); err != nil {
-			return fmt.Errorf("install PostgreSQL directory projection trigger: %w", err)
-		}
-	}
-	_, err := s.db.ExecContext(ctx, `CREATE OR REPLACE TRIGGER directory_dirty_organizations AFTER INSERT OR UPDATE OR DELETE ON organizations
-		FOR EACH ROW EXECUTE FUNCTION directory_projection_mark_organization_dirty()`)
-	if err != nil {
-		return fmt.Errorf("install PostgreSQL organization projection trigger: %w", err)
 	}
 	return nil
 }
@@ -311,43 +258,10 @@ func (s *Store) refreshDirectoryProjectionsBeforeCommitTx(ctx context.Context, t
 	if err != nil || !dirty {
 		return err
 	}
-	if !s.IsPostgreSQL() {
+	{
 		return s.refreshDirectoryProjectionsTx(ctx, tx)
 	}
 
-	const savepoint = "directory_projection_refresh"
-	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {
-		return fmt.Errorf("create Directory projection refresh savepoint: %w", err)
-	}
-	_, refreshErr := tx.ExecContext(ctx, `LOCK TABLE
-		persons, person_names, person_contact_points, employments,
-		organizations, person_contact_state
-		IN ACCESS SHARE MODE NOWAIT`)
-	if refreshErr == nil {
-		refreshErr = s.refreshDirectoryProjectionsTx(ctx, tx)
-	}
-	if refreshErr == nil {
-		if _, err := tx.ExecContext(ctx, "RELEASE SAVEPOINT "+savepoint); err != nil {
-			return fmt.Errorf("release Directory projection refresh savepoint: %w", err)
-		}
-		return nil
-	}
-	if _, err := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); err != nil {
-		return fmt.Errorf("rollback Directory projection refresh: refresh: %w; rollback: %w", refreshErr, err)
-	}
-	if _, err := tx.ExecContext(ctx, "RELEASE SAVEPOINT "+savepoint); err != nil {
-		return fmt.Errorf("release deferred Directory projection refresh: %w", err)
-	}
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return ctxErr
-	}
-	if s.dialect.IsBusyError(refreshErr) || s.dialect.IsSerializationFailureError(refreshErr) ||
-		s.dialect.IsConflictError(refreshErr) {
-		slog.Debug("defer Directory projection refresh after PostgreSQL contention",
-			"error", refreshErr.Error())
-		return nil
-	}
-	return refreshErr
 }
 
 func claimDirtyDirectoryPeopleTx(ctx context.Context, tx *loggedTx) ([]int64, error) {

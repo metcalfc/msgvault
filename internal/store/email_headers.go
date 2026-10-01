@@ -168,7 +168,7 @@ func (s *Store) resolveEmailReply(ctx context.Context, sourceID, childID int64) 
 		}
 		// The SQLite canonical index compares BLOB bytes; PostgreSQL compares TEXT.
 		var canonical any = parentRFCID
-		if !s.IsPostgreSQL() {
+		{
 			canonical = []byte(parentRFCID)
 		}
 		rows, err := tx.QueryContext(ctx, fmt.Sprintf(`SELECT id FROM messages

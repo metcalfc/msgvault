@@ -42,9 +42,7 @@ func mustAttributeOrganization(t *testing.T, st *store.Store) *store.Organizatio
 }
 
 func organizationAttributeTestBind(st *store.Store) string {
-	if st.IsPostgreSQL() {
-		return "$1"
-	}
+
 	return "?"
 }
 
@@ -368,56 +366,6 @@ func TestDeleteAttributeDefinitionRejectsDefinitionsWithOnlyOrganizationValues(
 	require.ErrorIs(err, store.ErrAttributeDefinitionHasValues)
 }
 
-func TestOrganizationAttributeWriteUsesTransactionalDefinitionState(t *testing.T) {
-	require := require.New(t)
-	ctx := context.Background()
-	st := testutil.NewTestStore(t)
-	if !st.IsPostgreSQL() {
-		t.Skip("PostgreSQL row locks are required for this race regression")
-	}
-	organization := mustAttributeOrganization(t, st)
-	definition := mustOrganizationAttributeDefinition(t, st, "industry_focus")
-
-	definitionUpdate, err := st.DB().BeginTx(ctx, nil)
-	require.NoError(err)
-	t.Cleanup(func() { _ = definitionUpdate.Rollback() })
-	_, err = definitionUpdate.ExecContext(ctx, `
-		UPDATE attribute_definitions
-		SET is_active = FALSE, revision = revision + 1
-		WHERE id = $1
-	`, definition.ID)
-	require.NoError(err)
-
-	writeDone := make(chan error, 1)
-	go func() {
-		_, err := st.SetOrganizationAttributeValueContext(
-			ctx, store.OrganizationAttributeValueInput{
-				OrganizationID: organization.ID,
-				DefinitionSlug: definition.Slug,
-				Value:          textAttributeValue("archival software"),
-				Source:         store.ProvenanceUser,
-			})
-		writeDone <- err
-	}()
-
-	select {
-	case err := <-writeDone:
-		require.ErrorIs(err, store.ErrAttributeDefinitionInactive,
-			"an attribute write must not use stale definition state")
-		require.NoError(definitionUpdate.Commit())
-		return
-	case <-time.After(200 * time.Millisecond):
-	}
-	require.NoError(definitionUpdate.Commit())
-
-	select {
-	case err := <-writeDone:
-		require.ErrorIs(err, store.ErrAttributeDefinitionInactive)
-	case <-time.After(5 * time.Second):
-		require.FailNow("attribute write did not finish after definition update committed")
-	}
-}
-
 func TestInactiveOrganizationAttributeDefinitionAllowsSupersede(t *testing.T) {
 	require := require.New(t)
 	ctx := context.Background()
@@ -445,74 +393,6 @@ func TestInactiveOrganizationAttributeDefinitionAllowsSupersede(t *testing.T) {
 		})
 	require.NoError(err, "retracting a value from an inactive organization definition must stay possible")
 	require.NotNil(cleared.Superseded)
-}
-
-func TestOrganizationAttributeSupersedeRetriesDeadlock(t *testing.T) {
-	require := require.New(t)
-	st := testutil.NewTestStore(t)
-	if !st.IsPostgreSQL() {
-		t.Skip("PostgreSQL row locks are required for attribute retry regression")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	t.Cleanup(cancel)
-	organization := mustAttributeOrganization(t, st)
-	definition := mustOrganizationAttributeDefinition(t, st, "retry_field")
-	write, err := st.SetOrganizationAttributeValueContext(ctx, store.OrganizationAttributeValueInput{
-		OrganizationID: organization.ID,
-		DefinitionSlug: definition.Slug,
-		Value:          textAttributeValue("stale"),
-		Source:         store.ProvenanceUser,
-	})
-	require.NoError(err)
-
-	blocker, err := st.DB().BeginTx(ctx, nil)
-	require.NoError(err)
-	t.Cleanup(func() { _ = blocker.Rollback() })
-	var lockedID int64
-	require.NoError(blocker.QueryRowContext(ctx,
-		`SELECT id FROM organizations WHERE id = $1 FOR UPDATE`, organization.ID).Scan(&lockedID))
-	require.Equal(organization.ID, lockedID)
-
-	writeDone := make(chan error, 1)
-	go func() {
-		_, supersedeErr := st.SupersedeOrganizationAttributeValueContext(ctx,
-			store.OrganizationAttributeSupersedeInput{
-				OrganizationID:  organization.ID,
-				DefinitionSlug:  definition.Slug,
-				ExpectedValueID: &write.Value.ID,
-			})
-		writeDone <- supersedeErr
-	}()
-	require.Eventually(func() bool {
-		return postgreSQLWaitingLockCount(t, st) >= 1
-	}, 5*time.Second, 10*time.Millisecond, "supersede did not reach the organization lock")
-
-	blockerDefinitionDone := make(chan error, 1)
-	go func() {
-		var id int64
-		definitionErr := blocker.QueryRowContext(ctx,
-			`SELECT id FROM attribute_definitions WHERE id = $1 FOR UPDATE`, definition.ID).Scan(&id)
-		if definitionErr == nil {
-			definitionErr = blocker.Commit()
-		} else {
-			_ = blocker.Rollback()
-		}
-		blockerDefinitionDone <- definitionErr
-	}()
-
-	var writeErr, blockerErr error
-	select {
-	case writeErr = <-writeDone:
-	case <-ctx.Done():
-		require.FailNow("supersede did not finish after the deadlock detector", ctx.Err())
-	}
-	select {
-	case blockerErr = <-blockerDefinitionDone:
-	case <-ctx.Done():
-		require.FailNow("blocker did not finish after the deadlock detector", ctx.Err())
-	}
-	require.NoError(blockerErr, "blocker must release the organization lock")
-	require.NoError(writeErr, "organization supersede must retry a transient PostgreSQL deadlock")
 }
 
 func TestDeletePersonRejectsOrganizationStoredRecordReferences(t *testing.T) {

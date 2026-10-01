@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -106,13 +105,7 @@ func (f *personBriefAPIFixture) generationID(t *testing.T) int64 {
 
 // personBriefAPIJSONBind matches the JSON bind the store's own writer uses, so
 // the fixture inserts JSON rather than bytes on PostgreSQL.
-func personBriefAPIJSONBind() string {
-	testDB := os.Getenv("MSGVAULT_TEST_DB")
-	if strings.HasPrefix(testDB, "postgres://") || strings.HasPrefix(testDB, "postgresql://") {
-		return "?::jsonb"
-	}
-	return "?"
-}
+func personBriefAPIJSONBind() string { return "?" }
 
 type personBriefAPISeed struct {
 	structured  string

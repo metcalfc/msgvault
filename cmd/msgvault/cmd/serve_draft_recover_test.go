@@ -894,7 +894,7 @@ func TestDraftRecoverReloadsActionAndSourceAfterSourceLock(t *testing.T) {
 }
 
 func TestDraftRecoverRejectsInvalidPendingOperation(t *testing.T) {
-	testutil.SkipIfPostgres(t, "invalid pending operation injection uses SQLite check-constraint bypass")
+
 	requirements := require.New(t)
 	assertions := assert.New(t)
 	fixture, _ := newDraftRecoveryFixture(t)

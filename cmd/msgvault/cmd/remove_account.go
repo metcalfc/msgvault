@@ -194,9 +194,8 @@ func runRemoveAccountLocal(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("collect attachment paths: %w", err)
 	}
 
-	isSQLite := !store.IsPostgresURL(cfg.DatabaseDSN())
 	var unlockCache func() error
-	if isSQLite {
+	{
 		unlockCache, err = lockCacheAndInvalidateSyncState(cfg.AnalyticsDir())
 		if err != nil {
 			return fmt.Errorf("protect analytics cache for account removal: %w", err)
@@ -247,9 +246,6 @@ func runRemoveAccountLocal(cmd *cobra.Command, args []string) error {
 	}
 
 	refreshCache := func() error {
-		if !isSQLite {
-			return nil
-		}
 		if removeAccountAfterCascadeHook != nil {
 			removeAccountAfterCascadeHook()
 		}

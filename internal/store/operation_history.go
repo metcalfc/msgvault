@@ -204,7 +204,7 @@ func (s *Store) listInvocationOperationRunsFrom(
 // Both >= and < retain their meaning when a fractional bound rounds up,
 // rather than truncates.
 func (s *Store) millisecondOperationDateBound(value time.Time) any {
-	if !s.IsPostgreSQL() {
+	{
 		if truncated := value.Truncate(time.Millisecond); truncated.Before(value) {
 			value = truncated.Add(time.Millisecond)
 		}

@@ -12,15 +12,13 @@ import (
 	"text/tabwriter"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib" // pgx driver for PostgreSQL metadata commands.
-	_ "github.com/mattn/go-sqlite3"    // SQLite driver for vectors.db metadata commands.
+	_ "github.com/mattn/go-sqlite3" // SQLite driver for vectors.db metadata commands.
 	"github.com/spf13/cobra"
 	"go.kenn.io/msgvault/internal/api"
 	"go.kenn.io/msgvault/internal/daemonclient"
 	"go.kenn.io/msgvault/internal/scheduler"
 	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/vector"
-	"go.kenn.io/msgvault/internal/vector/pgvector"
 	"go.kenn.io/msgvault/internal/vector/sqlitevec"
 )
 
@@ -168,7 +166,7 @@ func runEmbeddingsList(cmd *cobra.Command, _ []string) error {
 			break
 		}
 	}
-	sqliteAcceleratorOnly := !store.IsPostgresURL(cfg.DatabaseDSN()) && sqlitevec.Available()
+	sqliteAcceleratorOnly := sqlitevec.Available()
 	if needCoverage || sqliteAcceleratorOnly {
 		backend, closeBackend, err := openEmbeddingsBackend(cmd.Context())
 		if err != nil {
@@ -694,37 +692,6 @@ func openEmbeddingsMetadataDB(ctx context.Context) (*sql.DB, func(string) string
 		return nil, nil, nil, errors.New("configuration is unavailable")
 	}
 	cfg := state.cfg
-	dsn := cfg.DatabaseDSN()
-	if store.IsPostgresURL(dsn) {
-		// Use the store-level PG opener so that connection runtime params
-		// (statement_timeout) and the pgx stdlib registration are applied
-		// consistently with the rest of the codebase. Raw sql.Open("pgx",
-		// dsn) bypasses those settings.
-		db, cleanup, err := store.OpenPostgresDB(dsn)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("open postgres for embeddings metadata: %w", err)
-		}
-		closeDB := func() { _ = db.Close(); cleanup() }
-		// Pre-check that the embedding metadata tables exist. They are created
-		// only by pgvector.Migrate (on an embed/serve run), not by the core PG
-		// store init, so on a PG deployment where no embed run has happened yet
-		// the bare query path would surface a raw
-		// `relation "index_generations" does not exist (SQLSTATE 42P01)`.
-		// Return a friendly message mirroring the SQLite "vectors.db not found"
-		// UX and pointing at `msgvault embeddings build`.
-		var reg sql.NullString
-		if err := db.QueryRowContext(ctx, `SELECT to_regclass('index_generations')`).Scan(&reg); err != nil {
-			closeDB()
-			return nil, nil, nil, fmt.Errorf("check embeddings metadata: %w", err)
-		}
-		if !reg.Valid {
-			closeDB()
-			return nil, nil, nil, errors.New(
-				"no embedding metadata found in PostgreSQL; run \"msgvault embeddings build\" first")
-		}
-		rebind := (&store.PostgreSQLDialect{}).Rebind
-		return db, rebind, closeDB, nil
-	}
 
 	vecPath := cfg.Vector.DBPath
 	if vecPath == "" {
@@ -761,35 +728,6 @@ func openEmbeddingsBackend(ctx context.Context) (vector.Backend, func(), error) 
 	}
 	cfg := state.cfg
 	dsn := cfg.DatabaseDSN()
-	if store.IsPostgresURL(dsn) {
-		db, cleanup, err := store.OpenPostgresDB(dsn)
-		if err != nil {
-			return nil, nil, fmt.Errorf("open postgres for embeddings backend: %w", err)
-		}
-		// SkipMigrate skips only the privileged CREATE EXTENSION + full
-		// migrate: the extension + metadata tables already exist (the caller's
-		// openEmbeddingsMetadataDB pre-checks index_generations), so a
-		// management command must not attempt the privileged extension step.
-		// This open is WRITABLE management, NOT read-only — ReadOnly stays
-		// false so Open still applies the extension-less schema (bringing up
-		// embed_watermark etc. if missing) and runs the one-time embed_gen
-		// upgrade backfill, matching the SQLite management path (which always
-		// migrates vectors.db + backfills). Without this, a post-upgrade PG
-		// archive would report its whole corpus as missing on the first
-		// writable management command.
-		b, err := pgvector.Open(ctx, pgvector.Options{
-			DB:          db,
-			Dimension:   cfg.Vector.Embeddings.Dimension,
-			SkipMigrate: true,
-			BuildScope:  cfg.Vector.Embed.Scope.BuildScope(),
-		})
-		if err != nil {
-			_ = db.Close()
-			cleanup()
-			return nil, nil, fmt.Errorf("open pgvector backend: %w", err)
-		}
-		return b, func() { _ = b.Close(); _ = db.Close(); cleanup() }, nil
-	}
 
 	if err := sqlitevec.RegisterExtension(); err != nil {
 		return nil, nil, fmt.Errorf("register sqlite-vec: %w", err)

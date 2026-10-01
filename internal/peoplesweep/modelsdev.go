@@ -8,7 +8,6 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
-	"go.kenn.io/msgvault/internal/jsonexact"
 	"io"
 	"math/big"
 	"net"
@@ -21,6 +20,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"go.kenn.io/msgvault/internal/jsonexact"
 )
 
 const (

@@ -1,7 +1,6 @@
 package store_test
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"testing"
@@ -135,84 +134,6 @@ func TestSetEmbedGenGroupIfUnchanged_PreservesPublishedRevisionTokens(t *testing
 		"contextual coverage bookkeeping must not change the published document revision")
 }
 
-func TestSetEmbedGenGroupIfUnchanged_PostgresAvoidsPersistenceLockInversion(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	f := newEmbedGenGroupFixture(t, 1)
-	if !f.store.IsPostgreSQL() {
-		t.Skip("PostgreSQL-only advisory-lock ordering regression")
-	}
-	versions, metadata := f.snapshot()
-
-	persistence, err := f.store.DB().BeginTx(t.Context(), nil)
-	require.NoError(err)
-	committed := false
-	t.Cleanup(func() {
-		if !committed {
-			_ = persistence.Rollback()
-		}
-	})
-	_, err = persistence.ExecContext(t.Context(), `SELECT pg_advisory_xact_lock_shared(
-		hashtextextended('msgvault.embedding_change_clock', 0))`)
-	require.NoError(err)
-	var conversationID int64
-	require.NoError(persistence.QueryRowContext(t.Context(), f.store.Rebind(
-		`SELECT id FROM conversations WHERE id = ? FOR UPDATE`), f.conversationID).
-		Scan(&conversationID))
-	assert.Equal(f.conversationID, conversationID)
-
-	type casResult struct {
-		stamped bool
-		err     error
-	}
-	casCtx, cancelCAS := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancelCAS()
-	resultCh := make(chan casResult, 1)
-	go func() {
-		stamped, casErr := f.store.SetEmbedGenGroupIfUnchanged(casCtx, versions, metadata, 4)
-		resultCh <- casResult{stamped: stamped, err: casErr}
-	}()
-
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		var blocked int
-		require.NoError(f.store.DB().QueryRowContext(t.Context(), `
-			SELECT COUNT(*)
-			FROM pg_stat_activity
-			WHERE datname = current_database()
-			  AND pid <> pg_backend_pid()
-			  AND wait_event_type = 'Lock'
-			  AND (
-			      query LIKE '%FROM conversations WHERE id = %FOR UPDATE%'
-			      OR (
-			          query LIKE '%pg_advisory_xact_lock%'
-			          AND query LIKE '%msgvault.embedding_change_clock%'
-			      )
-			  )`).Scan(&blocked))
-		if blocked > 0 {
-			break
-		}
-		require.False(time.Now().After(deadline), "group CAS did not reach a blocked lock request")
-		time.Sleep(10 * time.Millisecond) //nolint:kennlint // polls PostgreSQL lock state
-	}
-
-	var messageID int64
-	require.NoError(persistence.QueryRowContext(t.Context(), f.store.Rebind(
-		`SELECT id FROM messages WHERE id = ? FOR UPDATE NOWAIT`), f.messageIDs[0]).Scan(&messageID),
-		"the group CAS must wait on the advisory lock before it locks message rows")
-	assert.Equal(f.messageIDs[0], messageID)
-	require.NoError(persistence.Commit())
-	committed = true
-
-	select {
-	case result := <-resultCh:
-		require.NoError(result.err)
-		assert.True(result.stamped)
-	case <-casCtx.Done():
-		require.NoError(casCtx.Err(), "group CAS did not finish after persistence committed")
-	}
-}
-
 func TestSetEmbedGenGroupIfUnchanged_OneMissStampsNone(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -344,9 +265,8 @@ func TestSetEmbedGenGroupIfUnchanged_DialectNativeTimestampToken(t *testing.T) {
 	f := newEmbedGenGroupFixture(t, 1)
 	versions, metadata := f.snapshot()
 	require.Len(versions, 1)
-	if f.store.IsPostgreSQL() {
-		assert.IsType(time.Time{}, versions[0].LastModified)
-	} else {
+
+	{
 		assert.IsType("", versions[0].LastModified)
 	}
 
@@ -357,9 +277,7 @@ func TestSetEmbedGenGroupIfUnchanged_DialectNativeTimestampToken(t *testing.T) {
 
 func TestSetEmbedGenGroupIfUnchanged_StampErrorRollsBackEveryMember(t *testing.T) {
 	f := newEmbedGenGroupFixture(t, 2)
-	if f.store.IsPostgreSQL() {
-		t.Skip("SQLite trigger injection proves the shared manual transaction rollback path")
-	}
+
 	versions, metadata := f.snapshot()
 	f.exec(fmt.Sprintf(`CREATE TRIGGER synthetic_group_stamp_failure
 		BEFORE UPDATE OF embed_gen ON messages FOR EACH ROW
@@ -377,9 +295,7 @@ func TestSetEmbedGenGroupIfUnchanged_StampErrorRollsBackEveryMember(t *testing.T
 
 func TestEmbedGenMetadataVersion_MatchesAssemblerCanonicalDigest(t *testing.T) {
 	f := newEmbedGenGroupFixture(t, 1)
-	if f.store.IsPostgreSQL() {
-		t.Skip("the literal vector pins SQLite's canonical timestamp text; PostgreSQL parity is covered by the live snapshot test")
-	}
+
 	f.exec(`UPDATE participants SET updated_at = ? WHERE id IN (?, ?)`,
 		"2030-01-02 03:04:05", f.aliceID, f.bobID)
 	versions, metadata := f.snapshot()

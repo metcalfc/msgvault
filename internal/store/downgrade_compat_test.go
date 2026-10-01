@@ -23,35 +23,6 @@ BEGIN
     UPDATE messages SET last_modified = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;`
 
-// previousReleasePGTriggers is what PostgreSQLDialect.EnsureTriggers ran before
-// the change feed. It DROPs and CREATEs unconditionally, so unlike SQLite's it
-// really does replace this build's messages trigger — which is safe there,
-// because PostgreSQL stamps last_modified in a BEFORE trigger, in place, and so
-// never needed the UPDATE OF scope SQLite's replacement exists for.
-var previousReleasePGTriggers = []string{
-	`CREATE OR REPLACE FUNCTION set_messages_last_modified() RETURNS trigger AS $$
-	 BEGIN
-	     NEW.last_modified := CURRENT_TIMESTAMP;
-	     RETURN NEW;
-	 END;
-	 $$ LANGUAGE plpgsql`,
-	`DROP TRIGGER IF EXISTS trg_messages_last_modified ON messages`,
-	`CREATE TRIGGER trg_messages_last_modified
-	     BEFORE UPDATE ON messages FOR EACH ROW
-	     WHEN (OLD.last_modified IS NOT DISTINCT FROM NEW.last_modified)
-	     EXECUTE FUNCTION set_messages_last_modified()`,
-	`CREATE OR REPLACE FUNCTION bump_message_last_modified() RETURNS trigger AS $$
-	 BEGIN
-	     UPDATE messages SET last_modified = CURRENT_TIMESTAMP WHERE id = NEW.message_id;
-	     RETURN NEW;
-	 END;
-	 $$ LANGUAGE plpgsql`,
-	`DROP TRIGGER IF EXISTS trg_message_bodies_last_modified ON message_bodies`,
-	`CREATE TRIGGER trg_message_bodies_last_modified
-	     AFTER INSERT OR UPDATE ON message_bodies FOR EACH ROW
-	     EXECUTE FUNCTION bump_message_last_modified()`,
-}
-
 // openArchiveAsPreviousRelease replays what the release before the change feed
 // does when it opens an archive this build has migrated: it re-execs its schema
 // file and installs its own last_modified triggers.
@@ -70,9 +41,7 @@ func openArchiveAsPreviousRelease(t *testing.T, st *store.Store) {
 	t.Helper()
 
 	schemaFile := "schema.sql"
-	if st.IsPostgreSQL() {
-		schemaFile = "schema_pg.sql"
-	}
+
 	schema, err := os.ReadFile(schemaFile)
 	require.NoErrorf(t, err, "read %s", schemaFile)
 	_, err = st.DB().Exec(string(schema))
@@ -81,37 +50,18 @@ func openArchiveAsPreviousRelease(t *testing.T, st *store.Store) {
 			"still satisfy it", schemaFile)
 
 	stmts := []string{previousReleaseSQLiteLastModifiedTrigger}
-	if st.IsPostgreSQL() {
-		stmts = previousReleasePGTriggers
-	}
+
 	for _, stmt := range stmts {
 		_, err := st.DB().Exec(stmt)
 		require.NoError(t, err, "previous release trigger installation")
 	}
 }
 
-// countContentChangedAtTriggers counts how many of the feed's own triggers are
-// still installed ON THE ARCHIVE UNDER TEST, on either backend.
-//
-// SQLite's sqlite_master is per-database-file, so it is already scoped. PG's
-// pg_trigger is not: it lists every trigger in the database, and each PostgreSQL
-// test store lives in its own schema of ONE shared test database. An unscoped
-// count therefore reads other tests' triggers as if they were this archive's,
-// and the "same number before and after" assertion below then depends on nothing
-// else in that database creating or dropping a trigger of the same name in
-// between -- which anything running concurrently does, making the test fail for
-// a reason that has nothing to do with the downgrade. Join through pg_class and
-// pg_namespace to count only this store's schema.
+// countContentChangedAtTriggers counts the feed triggers installed in this archive.
 func countContentChangedAtTriggers(t *testing.T, st *store.Store) int {
 	t.Helper()
 	query := `SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name = ?`
-	if st.IsPostgreSQL() {
-		query = `SELECT COUNT(*) FROM pg_trigger tg
-		         JOIN pg_class c ON c.oid = tg.tgrelid
-		         JOIN pg_namespace n ON n.oid = c.relnamespace
-		         WHERE NOT tg.tgisinternal AND tg.tgname = ?
-		           AND n.nspname = current_schema()`
-	}
+
 	total := 0
 	for _, trg := range contentChangedAtTriggerNames {
 		var n int
@@ -158,13 +108,7 @@ func TestDowngrade_PreviousReleaseCanOpenAndWriteAMigratedArchive(t *testing.T) 
 	assert.Equal(triggersBefore, countContentChangedAtTriggers(t, st),
 		"the previous release must leave the content_changed_at triggers installed")
 
-	// 2. On SQLite the scoped last_modified trigger survives too: the previous
-	//    release's definition is CREATE TRIGGER IF NOT EXISTS under the same
-	//    name, so it is a no-op rather than a replacement. (On PostgreSQL the old
-	//    definition DROPs and CREATEs, and replacing it there is harmless — the
-	//    UPDATE OF scope exists for SQLite's second-UPDATE stamp, which
-	//    PostgreSQL does not perform.)
-	if !st.IsPostgreSQL() {
+	{
 		var ddl string
 		require.NoError(st.DB().QueryRow(
 			`SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?`,
@@ -231,12 +175,8 @@ func TestDowngrade_PreviousReleaseCanOpenAndWriteAMigratedArchive(t *testing.T) 
 // LastInsertId is a SQLite affordance PostgreSQL's driver does not offer, so on
 // PostgreSQL the id is looked up by the natural key instead.
 func lastInsertedMessageID(st *store.Store, res sql.Result) (int64, error) {
-	if !st.IsPostgreSQL() {
+	{
 		return res.LastInsertId()
 	}
-	var id int64
-	err := st.DB().QueryRow(st.Rebind(
-		`SELECT id FROM messages WHERE source_message_id = ?`),
-		"msg-written-by-previous-release").Scan(&id)
-	return id, err
+
 }

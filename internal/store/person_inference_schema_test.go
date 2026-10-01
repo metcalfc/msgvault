@@ -1,11 +1,6 @@
 package store_test
 
 import (
-	"crypto/rand"
-	"database/sql"
-	"encoding/hex"
-	"net/url"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -41,9 +36,6 @@ func TestPersonInferenceProviderV2RemovesPreProfileRows(t *testing.T) {
 	assert := assert.New(t)
 	st := newUninitializedPersonInferenceMigrationStore(t)
 	createdAtType := "DATETIME"
-	if st.IsPostgreSQL() {
-		createdAtType = "TIMESTAMPTZ"
-	}
 
 	_, err := st.DB().Exec(`
 		CREATE TABLE person_inference_profiles (
@@ -82,38 +74,13 @@ func TestPersonInferenceProviderV2RemovesPreProfileRows(t *testing.T) {
 
 func newUninitializedPersonInferenceMigrationStore(t *testing.T) *store.Store {
 	t.Helper()
-	dbURL := os.Getenv("MSGVAULT_TEST_DB")
-	if !store.IsPostgresURL(dbURL) {
+	{
 		st, err := store.OpenForTest(filepath.Join(t.TempDir(), "legacy.db"))
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, st.Close()) })
 		return st
 	}
 
-	admin, err := sql.Open("pgx", dbURL)
-	require.NoError(t, err)
-	require.NoError(t, admin.Ping())
-	var entropy [8]byte
-	_, err = rand.Read(entropy[:])
-	require.NoError(t, err)
-	schema := "msgvault_task3_" + hex.EncodeToString(entropy[:])
-	_, err = admin.Exec(`CREATE SCHEMA ` + schema)
-	require.NoError(t, err)
-
-	parsed, err := url.Parse(dbURL)
-	require.NoError(t, err)
-	query := parsed.Query()
-	query.Set("search_path", schema)
-	parsed.RawQuery = query.Encode()
-	st, err := store.OpenForTest(parsed.String())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, st.Close())
-		_, dropErr := admin.Exec(`DROP SCHEMA ` + schema + ` CASCADE`)
-		require.NoError(t, dropErr)
-		require.NoError(t, admin.Close())
-	})
-	return st
 }
 
 func TestPersonInferenceConsentSchemaEnforcesAuditState(t *testing.T) {

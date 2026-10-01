@@ -854,10 +854,7 @@ func (s *Store) ClearAttachmentPackMetadata() error {
 
 func (s *Store) tableExists(name string) (bool, error) {
 	query := `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`
-	if s.dialect.DriverName() == postgresDriverName {
-		query = `SELECT COUNT(*) FROM information_schema.tables
-		         WHERE table_schema = current_schema() AND table_name = ?`
-	}
+
 	var count int
 	if err := s.db.QueryRow(query, name).Scan(&count); err != nil {
 		return false, err

@@ -153,7 +153,7 @@ func prepareDaemonAnalyticsEngine(
 	if engineMode == "" {
 		engineMode = config.AnalyticsEngineAuto
 	}
-	if s.IsPostgreSQL() || engineMode == config.AnalyticsEngineSQL {
+	if engineMode == config.AnalyticsEngineSQL {
 		engine, mode, outcome, err := openDaemonAnalyticsEngine(ctx, c, s, intent)
 		return engine, mode, outcome, false, err
 	}
@@ -162,7 +162,7 @@ func prepareDaemonAnalyticsEngine(
 	case config.AnalyticsEngineAuto:
 		logger.Info("using live SQL analytics engine while cache initializes",
 			"engine", engineMode)
-		return query.NewEngine(s.DB(), false), api.AnalyticsModeSQLFallback,
+		return query.NewEngine(s.DB()), api.AnalyticsModeSQLFallback,
 			startupCacheBuildOutcomeNone, true, nil
 	case config.AnalyticsEngineDuckDB:
 		logger.Info("DuckDB analytics unavailable while required cache initializes",
@@ -170,7 +170,7 @@ func prepareDaemonAnalyticsEngine(
 		// Keep SQLite-backed detail, search, attachment, and text routes live.
 		// The API mode gates DuckDB-dependent analytics until the initializer
 		// atomically replaces this engine.
-		return query.NewEngine(s.DB(), false), api.AnalyticsModeInitializing,
+		return query.NewEngine(s.DB()), api.AnalyticsModeInitializing,
 			startupCacheBuildOutcomeNone, true, nil
 	default:
 		// Config validation normally rejects this before runServe. Keep the old

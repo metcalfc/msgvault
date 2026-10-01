@@ -334,7 +334,7 @@ func TestOperationHistoryReaderUsesOneCoherentSnapshot(t *testing.T) {
 	require.Len(runs.Runs, 2)
 	for _, run := range runs.Runs {
 		wantStartedAt := before
-		if run.ID.Kind() == operations.KindCardDAVSync && !st.IsPostgreSQL() {
+		if run.ID.Kind() == operations.KindCardDAVSync {
 			wantStartedAt = before.Truncate(time.Second)
 		}
 		assert.Equal(wantStartedAt, run.StartedAt,

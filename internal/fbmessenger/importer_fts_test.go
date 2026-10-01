@@ -18,7 +18,7 @@ import (
 func TestImportDYI_MojibakeFTSIndexed(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t, "directly MATCH-queries the SQLite FTS5 vtable; PG uses a tsvector column exercised via FTSSearchClause")
+
 	st := testutil.NewTestStore(t)
 	_ = importFixture(t, st, "testdata/json_simple")
 	require.True(st.FTS5Available(), "FTS5 build tag set but FTS5 not available in this binary")
@@ -46,7 +46,7 @@ func TestImportDYI_MojibakeFTSIndexed(t *testing.T) {
 func TestImportDYI_ReactionsDualPath(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t, "directly MATCH-queries the SQLite FTS5 vtable; PG uses a tsvector column exercised via FTSSearchClause")
+
 	st := testutil.NewTestStore(t)
 	_ = importFixture(t, st, "testdata/json_simple")
 	require.True(st.FTS5Available(), "FTS5 build tag set but FTS5 not available in this binary")

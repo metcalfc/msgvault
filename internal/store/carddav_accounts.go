@@ -111,7 +111,7 @@ func (s *Store) ReplaceCardDAVDiscoveryContext(
 		}
 	}()
 	logged := &loggedTx{Tx: tx, rebind: s.Rebind}
-	if err := lockCardDAVDiscoveryReplacement(ctx, tx, s.Rebind, s.IsPostgreSQL()); err != nil {
+	if err := lockCardDAVDiscoveryReplacement(ctx, tx, s.Rebind); err != nil {
 		return nil, nil, err
 	}
 
@@ -403,17 +403,8 @@ func cardDAVBookHasProtectedStateTx(
 }
 
 func lockCardDAVDiscoveryReplacement(
-	ctx context.Context, tx *sql.Tx, rebind func(string) string, postgres bool,
+	ctx context.Context, tx *sql.Tx, rebind func(string) string,
 ) error {
-	if postgres {
-		var singleton int
-		if err := tx.QueryRowContext(ctx,
-			`SELECT singleton FROM carddav_discovery_lock WHERE singleton = 1 FOR UPDATE`,
-		).Scan(&singleton); err != nil {
-			return fmt.Errorf("lock CardDAV discovery replacement: %w", err)
-		}
-		return nil
-	}
 	if _, err := tx.ExecContext(ctx, rebind(
 		`UPDATE carddav_discovery_lock SET singleton = singleton WHERE singleton = ?`), 1); err != nil {
 		return fmt.Errorf("lock CardDAV discovery replacement: %w", err)

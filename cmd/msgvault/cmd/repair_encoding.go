@@ -72,9 +72,8 @@ func runRepairEncodingLocal(cmd *cobra.Command) (runErr error) {
 
 	dbPath := cfg.DatabaseDSN()
 	analyticsDir := cfg.AnalyticsDir()
-	usesAnalyticsCache := dateRepairUsesAnalyticsCache(dbPath)
 	unlockCache := func() error { return nil }
-	if usesAnalyticsCache {
+	{
 		releaseCacheLocks, err := lockCacheAndInvalidateSyncState(analyticsDir)
 		if err != nil {
 			return fmt.Errorf("protect analytics cache for encoding repair: %w", err)
@@ -109,24 +108,14 @@ func runRepairEncodingLocal(cmd *cobra.Command) (runErr error) {
 		}
 	}
 
-	var buildErr error
-	if usesAnalyticsCache {
-		_, buildErr = buildCacheLocked(
-			dbPath,
-			analyticsDir,
-			true,
-			false,
-			publishLockHeld,
-			analyticsBuilderOverrides(cfg.Analytics),
-		)
-	} else {
-		_, buildErr = buildCache(
-			dbPath,
-			analyticsDir,
-			true,
-			analyticsBuilderOverrides(cfg.Analytics),
-		)
-	}
+	_, buildErr := buildCacheLocked(
+		dbPath,
+		analyticsDir,
+		true,
+		false,
+		publishLockHeld,
+		analyticsBuilderOverrides(cfg.Analytics),
+	)
 	if buildErr != nil {
 		return fmt.Errorf("encoding repair completed, but analytics cache refresh failed: %w", buildErr)
 	}

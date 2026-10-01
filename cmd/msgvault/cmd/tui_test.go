@@ -316,7 +316,6 @@ func TestAnalyticsCacheNotice(t *testing.T) {
 		{name: "sql fallback warns", mode: api.AnalyticsModeSQLFallback, statusCode: http.StatusOK, wantNotice: true},
 		{name: "duckdb is silent", mode: api.AnalyticsModeDuckDB, statusCode: http.StatusOK},
 		{name: "deliberate sql is silent", mode: api.AnalyticsModeSQL, statusCode: http.StatusOK},
-		{name: "postgres is silent", mode: api.AnalyticsModePostgres, statusCode: http.StatusOK},
 		{name: "older daemon without field is silent", statusCode: http.StatusOK},
 		{name: "health error is silent", statusCode: http.StatusInternalServerError},
 	}

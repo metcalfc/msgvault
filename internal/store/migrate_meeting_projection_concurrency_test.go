@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -110,11 +109,8 @@ func (tx *meetingProjectionTx) Commit() error {
 func gatedMeetingProjectionStore(t *testing.T, base *Store, gate *meetingProjectionGate) *Store {
 	t.Helper()
 	var connector driver.Connector
-	if base.IsPostgreSQL() {
-		config, err := postgresConnConfig(base.dbPath, false)
-		require.NoError(t, err)
-		connector = stdlib.GetConnector(*config)
-	} else {
+
+	{
 		sqliteDriver := &sqlite3.SQLiteDriver{ConnectHook: sqliteutil.RegisterFunctions}
 		connector = &rfc822IDBackfillSQLiteConnector{driver: sqliteDriver, dsn: base.dbPath + testSQLiteParams}
 	}
@@ -240,10 +236,8 @@ func TestMeetingProjectionPublicRawWritesLockMessageBeforeRaw(t *testing.T) {
 			}()
 			select {
 			case first := <-statement:
-				if base.IsPostgreSQL() {
-					assertions.Contains(first, "FROM messages WHERE id =")
-					assertions.Contains(first, "FOR UPDATE")
-				} else {
+
+				{
 					assertions.Contains(first, "UPDATE embedding_change_clock")
 				}
 			case <-ctx.Done():

@@ -22,7 +22,7 @@ import (
 )
 
 func TestDraftReplyOutputFailureRefreshesCache(t *testing.T) {
-	testutil.SkipIfPostgres(t, "analytics cache rebuild uses a SQLite snapshot")
+
 	requirements := require.New(t)
 	assertions := assert.New(t)
 	fixture := newDraftReplyFixture(t)
@@ -68,7 +68,7 @@ func TestDraftReplyOutputFailureRefreshesCache(t *testing.T) {
 }
 
 func TestDraftEditCancelledAfterPublicationRefreshesCache(t *testing.T) {
-	testutil.SkipIfPostgres(t, "analytics cache rebuild uses a SQLite snapshot")
+
 	requirements := require.New(t)
 	assertions := assert.New(t)
 	fixture := newDraftReplyFixture(t)
@@ -135,7 +135,7 @@ func TestDraftEditCancelledAfterPublicationRefreshesCache(t *testing.T) {
 }
 
 func TestDraftDeleteOutputFailureRefreshesCache(t *testing.T) {
-	testutil.SkipIfPostgres(t, "analytics cache rebuild uses a SQLite snapshot")
+
 	for _, resume := range []bool{false, true} {
 		name := "normal deletion"
 		if resume {
@@ -200,7 +200,7 @@ func TestDraftDeleteOutputFailureRefreshesCache(t *testing.T) {
 }
 
 func TestDraftRecoverRefreshesCache(t *testing.T) {
-	testutil.SkipIfPostgres(t, "analytics cache rebuild uses a SQLite snapshot")
+
 	requirements := require.New(t)
 	assertions := assert.New(t)
 	fixture := newDraftReplyFixture(t)
@@ -271,7 +271,7 @@ func TestDraftRecoverRefreshesCache(t *testing.T) {
 }
 
 func TestDraftRecoverPublishedEditCleanupRefreshesCache(t *testing.T) {
-	testutil.SkipIfPostgres(t, "analytics cache rebuild uses a SQLite snapshot")
+
 	requirements := require.New(t)
 	assertions := assert.New(t)
 	fixture := newDraftReplyFixture(t)

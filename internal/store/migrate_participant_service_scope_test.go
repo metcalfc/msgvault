@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -11,9 +10,7 @@ import (
 )
 
 func TestParticipantIdentifiersServiceScopeBackfillClassifiesLegacyIdentifiers(t *testing.T) {
-	if IsPostgresURL(os.Getenv("MSGVAULT_TEST_DB")) {
-		t.Skip("SQLite file-path migration test")
-	}
+
 	require := require.New(t)
 	assert := assert.New(t)
 	st, err := OpenForTest(filepath.Join(t.TempDir(), "legacy.db"))
@@ -52,9 +49,7 @@ func TestParticipantIdentifiersServiceScopeBackfillClassifiesLegacyIdentifiers(t
 }
 
 func TestInitSchemaContext_ParticipantIdentifiersServiceScopeBackfillStopsWhenContextIsCancelled(t *testing.T) {
-	if IsPostgresURL(os.Getenv("MSGVAULT_TEST_DB")) {
-		t.Skip("SQLite file-path migration test")
-	}
+
 	require := require.New(t)
 	assert := assert.New(t)
 	st, err := OpenForTest(filepath.Join(t.TempDir(), "cancelled-backfill.db"))
@@ -96,9 +91,7 @@ func TestInitSchemaContext_ParticipantIdentifiersServiceScopeBackfillStopsWhenCo
 }
 
 func TestInitSchemaContext_CommunicationServiceSeedStopsWhenContextIsCancelled(t *testing.T) {
-	if IsPostgresURL(os.Getenv("MSGVAULT_TEST_DB")) {
-		t.Skip("SQLite statement interception test")
-	}
+
 	require := require.New(t)
 	assert := assert.New(t)
 	st, err := OpenForTest(filepath.Join(t.TempDir(), "cancelled-seed.db"))

@@ -988,13 +988,8 @@ func TestStore_UpsertMessageBodyInvalidatesChangedFTS(t *testing.T) {
 	// An idempotent body write must not create needless backfill work.
 	require.NoError(f.Store.UpsertMessageBody(messageID, body, sql.NullString{}),
 		"store unchanged body")
-	if f.Store.IsPostgreSQL() {
-		var searchIsNull bool
-		require.NoError(f.Store.DB().QueryRow(
-			"SELECT search_fts IS NULL FROM messages WHERE id = $1", messageID,
-		).Scan(&searchIsNull), "check unchanged PostgreSQL index")
-		assert.False(searchIsNull, "unchanged body must retain its FTS document")
-	} else {
+
+	{
 		var count int
 		require.NoError(f.Store.DB().QueryRow(
 			"SELECT COUNT(*) FROM messages_fts WHERE rowid = ?", messageID,
@@ -1006,15 +1001,8 @@ func TestStore_UpsertMessageBodyInvalidatesChangedFTS(t *testing.T) {
 		sql.NullString{},
 		sql.NullString{String: "<p>old indexed body</p>", Valid: true}),
 		"replace indexed text with equivalent HTML-only body")
-	if f.Store.IsPostgreSQL() {
-		var searchIsNull, versionIsNull bool
-		require.NoError(f.Store.DB().QueryRow(`
-			SELECT search_fts IS NULL, indexing_version IS NULL
-			FROM messages WHERE id = $1
-		`, messageID).Scan(&searchIsNull, &versionIsNull), "check PostgreSQL invalidation")
-		assert.True(searchIsNull, "changed body must clear its old FTS document")
-		assert.True(versionIsNull, "changed body must require a fresh index version")
-	} else {
+
+	{
 		var count int
 		require.NoError(f.Store.DB().QueryRow(
 			"SELECT COUNT(*) FROM messages_fts WHERE rowid = ?", messageID,
@@ -1392,7 +1380,7 @@ func TestStore_ReplaceMessageRecipients_LargeBatch(t *testing.T) {
 func TestStore_UpsertFTS(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t, "directly queries the SQLite FTS5 vtable with MATCH; PG uses a tsvector column tested via FTSSearchClause")
+
 	f := storetest.New(t)
 
 	if !f.Store.FTS5Available() {
@@ -1446,7 +1434,7 @@ func TestStore_UpsertFTS(t *testing.T) {
 func TestStore_BackfillFTS(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t, "directly queries the SQLite FTS5 vtable; PG backfill is exercised separately via FTSBackfillBatchSQL")
+
 	f := storetest.New(t)
 
 	if !f.Store.FTS5Available() {
@@ -1523,7 +1511,7 @@ func TestStore_FTS5Available(t *testing.T) {
 func TestStore_NeedsFTSBackfill(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t, "directly mutates the SQLite FTS5 vtable; PG NeedsFTSBackfill probes the tsvector column instead")
+
 	f := storetest.New(t)
 
 	if !f.Store.FTS5Available() {
@@ -1969,7 +1957,7 @@ func TestStore_PersistMessage_Atomicity(t *testing.T) {
 }
 
 func TestStore_PersistMessageContext_CancellationRollsBack(t *testing.T) {
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger and registered function to pause persistence")
+
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)
@@ -2122,7 +2110,7 @@ func TestStore_PersistMessage_Upsert(t *testing.T) {
 }
 
 func TestStore_PersistMessageSerializesSQLiteWritersBeforePriorStateRead(t *testing.T) {
-	testutil.SkipIfPostgres(t, "exercises SQLite WAL snapshot upgrades")
+
 	require := require.New(t)
 	f := storetest.New(t)
 	f.Store.DB().SetMaxOpenConns(2)

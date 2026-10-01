@@ -19,7 +19,6 @@ import (
 	"go.kenn.io/msgvault/internal/importer"
 	msgmime "go.kenn.io/msgvault/internal/mime"
 	"go.kenn.io/msgvault/internal/store"
-	"go.kenn.io/msgvault/internal/testutil"
 	"go.kenn.io/msgvault/internal/testutil/email"
 	"go.kenn.io/msgvault/internal/testutil/storetest"
 )
@@ -187,7 +186,7 @@ func TestEngine_ScanRejectsRecoveredMalformedRFC822Group(t *testing.T) {
 }
 
 func TestEngine_ScanMergesEmbeddedNULMessageIDForms(t *testing.T) {
-	testutil.SkipIfPostgres(t, "PostgreSQL TEXT rejects embedded NUL bytes")
+
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)

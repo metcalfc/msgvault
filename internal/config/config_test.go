@@ -2312,13 +2312,6 @@ func TestDatabasePath(t *testing.T) {
 		assert.Equal(t, `C:\Users\runner\msgvault.db`, got)
 	})
 
-	t.Run("postgres:// is rejected", func(t *testing.T) {
-		cfg := &Config{}
-		cfg.Data.DatabaseURL = "postgres://user@host:5432/db"
-		_, err := cfg.DatabasePath()
-		require.Error(t, err, "DatabasePath: expected error for non-file DSN")
-	})
-
 	t.Run("empty file: URI is rejected", func(t *testing.T) {
 		cfg := &Config{}
 		cfg.Data.DatabaseURL = "file:"

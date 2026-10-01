@@ -785,7 +785,7 @@ func (s *Store) searchMessagesQueryImpl(
 	// keeps the argument stable on both backends. [cr2-9]
 	timestampExpr := "COALESCE(m.sent_at, m.received_at, m.internal_date)"
 	boundExpr := "?"
-	if !s.IsPostgreSQL() {
+	{
 		timestampExpr = "julianday(" + timestampExpr + ")"
 		boundExpr = "julianday(?)"
 	}

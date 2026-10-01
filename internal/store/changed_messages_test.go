@@ -89,7 +89,7 @@ func setWatermark(t *testing.T, st *store.Store, value any, ids ...int64) {
 func setWatermarkAt(t *testing.T, st *store.Store, when time.Time, ids ...int64) {
 	t.Helper()
 	var value any = when.UTC()
-	if !st.IsPostgreSQL() {
+	{
 		value = when.UTC().Format(store.SQLiteTimestampLayout)
 	}
 	setWatermark(t, st, value, ids...)

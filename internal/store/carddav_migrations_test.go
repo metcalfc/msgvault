@@ -1,8 +1,6 @@
 package store_test
 
 import (
-	"os"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,43 +14,13 @@ func TestCardDAVSyncTokenUpgradeSQLite(t *testing.T) {
 	assertCardDAVSyncTokenUpgrade(t, st)
 }
 
-func TestCardDAVSyncTokenUpgradePostgreSQL(t *testing.T) {
-	testDB := os.Getenv("MSGVAULT_TEST_DB")
-	if !strings.HasPrefix(testDB, "postgres://") && !strings.HasPrefix(testDB, "postgresql://") {
-		t.Skip("CardDAV PostgreSQL upgrade test requires MSGVAULT_TEST_DB")
-	}
-	st := testutil.NewTestStore(t)
-	require.True(t, st.IsPostgreSQL())
-	assertCardDAVSyncTokenUpgrade(t, st)
-}
-
 func TestCardDAVRoleReconcileUpgradeSQLite(t *testing.T) {
 	st := testutil.NewSQLiteTestStore(t)
 	assertCardDAVRoleReconcileUpgrade(t, st)
 }
 
-func TestCardDAVRoleReconcileUpgradePostgreSQL(t *testing.T) {
-	testDB := os.Getenv("MSGVAULT_TEST_DB")
-	if !strings.HasPrefix(testDB, "postgres://") && !strings.HasPrefix(testDB, "postgresql://") {
-		t.Skip("CardDAV PostgreSQL role upgrade test requires MSGVAULT_TEST_DB")
-	}
-	st := testutil.NewTestStore(t)
-	require.True(t, st.IsPostgreSQL())
-	assertCardDAVRoleReconcileUpgrade(t, st)
-}
-
 func TestCardDAVConflictPendingUpgradeSQLite(t *testing.T) {
 	st := testutil.NewSQLiteTestStore(t)
-	assertCardDAVConflictPendingUpgrade(t, st)
-}
-
-func TestCardDAVConflictPendingUpgradePostgreSQL(t *testing.T) {
-	testDB := os.Getenv("MSGVAULT_TEST_DB")
-	if !strings.HasPrefix(testDB, "postgres://") && !strings.HasPrefix(testDB, "postgresql://") {
-		t.Skip("CardDAV PostgreSQL conflict upgrade test requires MSGVAULT_TEST_DB")
-	}
-	st := testutil.NewTestStore(t)
-	require.True(t, st.IsPostgreSQL())
 	assertCardDAVConflictPendingUpgrade(t, st)
 }
 
@@ -148,12 +116,7 @@ func recreateE7CardDAVConflicts(t *testing.T, st *store.Store) error {
 	body := "BLOB"
 	timestamp := "DATETIME"
 	integer := "INTEGER"
-	if st.IsPostgreSQL() {
-		id = "BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY"
-		body = "BYTEA"
-		timestamp = "TIMESTAMPTZ"
-		integer = "BIGINT"
-	}
+
 	ddl := `CREATE TABLE carddav_conflicts (
 		id ` + id + `,
 		address_book_id ` + integer + ` NOT NULL REFERENCES carddav_address_books(id) ON DELETE CASCADE,
@@ -201,12 +164,7 @@ func assertCardDAVConflictIndexes(t *testing.T, st *store.Store) {
 		WHERE type = 'index' AND name IN (
 			'idx_carddav_one_unresolved_conflict', 'idx_carddav_conflicts_resolved_at'
 		)`
-	if st.IsPostgreSQL() {
-		query = `SELECT COUNT(*) FROM pg_indexes
-			WHERE schemaname = current_schema() AND indexname IN (
-				'idx_carddav_one_unresolved_conflict', 'idx_carddav_conflicts_resolved_at'
-			)`
-	}
+
 	require.NoError(t, st.DB().QueryRow(query).Scan(&count))
 	assert.Equal(t, 2, count)
 }

@@ -35,23 +35,7 @@ const personEnrichmentAttemptStateConstraint = "person_enrichment_attempts_state
 // key, index, and row is preserved, including the identifiers, citations,
 // sources, and work rows that reference the attempt.
 func (s *Store) migratePersonEnrichmentIdentityUncertain(ctx context.Context) error {
-	if s.IsPostgreSQL() {
-		return s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
-			if err := validatePersonEnrichmentAttemptStateRows(ctx, tx); err != nil {
-				return err
-			}
-			if _, err := tx.ExecContext(ctx, `ALTER TABLE person_enrichment_attempts
-				DROP CONSTRAINT IF EXISTS `+personEnrichmentAttemptStateConstraint); err != nil {
-				return fmt.Errorf("drop person enrichment attempt state constraint: %w", err)
-			}
-			if _, err := tx.ExecContext(ctx, `ALTER TABLE person_enrichment_attempts
-				ADD CONSTRAINT `+personEnrichmentAttemptStateConstraint+` `+
-				personEnrichmentAttemptStateCheck); err != nil {
-				return fmt.Errorf("create person enrichment attempt state constraint: %w", err)
-			}
-			return nil
-		})
-	}
+
 	return s.migratePersonEnrichmentIdentityUncertainSQLite(ctx)
 }
 

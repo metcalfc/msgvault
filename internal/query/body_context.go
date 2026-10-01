@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
-	"go.kenn.io/msgvault/internal/sqldialect"
 	"go.kenn.io/msgvault/internal/sqliteutil"
 )
 
@@ -29,17 +29,11 @@ const (
 	messageBodyContextRequestScanBytes = 1 * 1024 * 1024
 	messageBodyContextChunkCoreBytes   = 4 * 1024
 	messageBodyContextChunkGuardBytes  = 1 * 1024
-	// PostgreSQL's indexed body input is byte-capped at 700 kB on the
-	// incremental path. Keeping the canonical probe at or below that bound
-	// avoids creating a tsvector larger than the one that produced the hit.
-	messageBodyContextPostgresScanBytes = 700_000
 
-	messageBodyContextMaxQueryTerms     = 32
-	messageBodyContextMaxQueryBytes     = 32 * 1024
-	messageBodyContextMaxQueryLexemes   = 256
-	messageBodyContextMaxMarkers        = 2_048
-	messageBodyContextMaxCandidates     = 2_048
-	messageBodyContextMaxCandidateBytes = 8 * 1024 * 1024
+	messageBodyContextMaxQueryTerms   = 32
+	messageBodyContextMaxQueryBytes   = 32 * 1024
+	messageBodyContextMaxQueryLexemes = 256
+	messageBodyContextMaxMarkers      = 2_048
 )
 
 type bodyContextSpan struct {
@@ -85,13 +79,6 @@ type parsedBodyContext struct {
 	truncated     bool
 }
 
-type postgresBodyContextCandidate struct {
-	parsedIndex int
-	query       string
-	fragment    string
-	spans       []bodyContextSpan
-}
-
 type bodyContextGroupKey struct {
 	messageID int64
 	group     int
@@ -115,7 +102,9 @@ func validateMessageBodyContextQuery(terms []string) error {
 	totalBytes := 0
 	for _, term := range terms {
 		totalBytes += len(term)
-		if len(sqldialect.EscapeTSQueryTerm(term)) > messageBodyContextMaxQueryLexemes {
+		if len(strings.FieldsFunc(term, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		})) > messageBodyContextMaxQueryLexemes {
 			return fmt.Errorf("%w: one term expands beyond the %d-lexeme limit",
 				ErrMessageBodySearchInvalidQuery, messageBodyContextMaxQueryLexemes)
 		}
@@ -132,14 +121,6 @@ func (e *SQLiteEngine) searchableBodyContextTerms(
 	terms []string,
 ) ([]string, error) {
 	switch e.dialect.messageBodyContextBackend() {
-	case messageBodyContextPostgreSQL:
-		searchable := make([]string, 0, len(terms))
-		for _, term := range terms {
-			if _, arg := e.dialect.BuildFTSBodyTerm([]string{term}); arg != "" {
-				searchable = append(searchable, term)
-			}
-		}
-		return searchable, nil
 	case messageBodyContextSQLite:
 		return sqliteSearchableBodyContextTerms(ctx, terms)
 	default:
@@ -254,9 +235,7 @@ func (e *SQLiteEngine) attachMessageBodySearchContexts(
 	groupCount := min(len(searchableTerms), MessageBodyContextMaxSnippets)
 	contextTerms := searchableTerms[:groupCount]
 	perBodyScanBytes := max(1, messageBodyContextRequestScanBytes/len(results))
-	if e.dialect.messageBodyContextBackend() == messageBodyContextPostgreSQL {
-		perBodyScanBytes = min(perBodyScanBytes, messageBodyContextPostgresScanBytes)
-	}
+
 	states, chunks, bodies, err := e.loadBodyContextChunks(ctx, ids, perBodyScanBytes)
 	if err != nil {
 		return err
@@ -293,8 +272,6 @@ func (e *SQLiteEngine) attachMessageBodySearchContexts(
 	switch e.dialect.messageBodyContextBackend() {
 	case messageBodyContextSQLite:
 		raw, err = e.sqliteBodyContexts(ctx, chunks, contextTerms, markers)
-	case messageBodyContextPostgreSQL:
-		raw, err = e.postgresBodyContexts(ctx, chunks, contextTerms, markers)
 	default:
 		return errors.New("message body context is unavailable for this query dialect")
 	}
@@ -344,45 +321,33 @@ func (e *SQLiteEngine) attachMessageBodySearchContexts(
 			}
 		}
 	}
-	if e.dialect.messageBodyContextBackend() == messageBodyContextPostgreSQL {
-		var postgresUncertain map[bodyContextGroupKey]struct{}
-		accepted, postgresUncertain, err = e.validatePostgresBodyContextCandidates(
-			ctx, parsed, contextTerms, chunksByID, states,
-		)
-		if err != nil {
-			return err
+
+	acceptedGroups := make(map[bodyContextGroupKey]struct{})
+	for i := range parsed {
+		chunk := chunksByID[parsed[i].chunkID]
+		state := states[parsed[i].messageID]
+		var safeSpan *bodyContextSpan
+		for j := range parsed[i].spans {
+			if bodyContextSpanIsSafe(
+				chunk, parsed[i].spanInChunk(parsed[i].spans[j]), state,
+			) {
+				safeSpan = &parsed[i].spans[j]
+				break
+			}
 		}
-		for key := range postgresUncertain {
+		key := bodyContextGroupKey{messageID: parsed[i].messageID, group: parsed[i].group}
+		if safeSpan == nil {
 			uncertainGroups[key] = struct{}{}
+			continue
 		}
-	} else {
-		acceptedGroups := make(map[bodyContextGroupKey]struct{})
-		for i := range parsed {
-			chunk := chunksByID[parsed[i].chunkID]
-			state := states[parsed[i].messageID]
-			var safeSpan *bodyContextSpan
-			for j := range parsed[i].spans {
-				if bodyContextSpanIsSafe(
-					chunk, parsed[i].spanInChunk(parsed[i].spans[j]), state,
-				) {
-					safeSpan = &parsed[i].spans[j]
-					break
-				}
-			}
-			key := bodyContextGroupKey{messageID: parsed[i].messageID, group: parsed[i].group}
-			if safeSpan == nil {
-				uncertainGroups[key] = struct{}{}
-				continue
-			}
-			if _, exists := acceptedGroups[key]; exists {
-				continue
-			}
-			// FTS5 snippet() marks complete phrase instances. One marked span is
-			// sufficient to represent this query-term group and reserves the
-			// remaining response slots for other groups.
-			accepted[i] = []bodyContextSpan{*safeSpan}
-			acceptedGroups[key] = struct{}{}
+		if _, exists := acceptedGroups[key]; exists {
+			continue
 		}
+		// FTS5 snippet() marks complete phrase instances. One marked span is
+		// sufficient to represent this query-term group and reserves the
+		// remaining response slots for other groups.
+		accepted[i] = []bodyContextSpan{*safeSpan}
+		acceptedGroups[key] = struct{}{}
 	}
 
 	accumulators := make(map[int64]*messageBodyContextAccumulator, len(results))
@@ -497,18 +462,6 @@ func (e *SQLiteEngine) loadBodyContextChunks(
 			WHERE mb.message_id IN (%s)
 			ORDER BY mb.message_id
 		`, idPlaceholders)
-	case messageBodyContextPostgreSQL:
-		args = append([]any{scanBytes + utf8.UTFMax}, idArgs...)
-		querySQL = fmt.Sprintf(`
-			SELECT mb.message_id,
-				COALESCE(convert_to(
-					SUBSTRING(COALESCE(mb.body_text, '') FROM 1 FOR ?), 'UTF8'
-				), ''::bytea),
-				FALSE
-			FROM message_bodies mb
-			WHERE mb.message_id IN (%s)
-			ORDER BY mb.message_id
-		`, idPlaceholders)
 	default:
 		return nil, nil, nil, errors.New("message body context is unavailable for this query dialect")
 	}
@@ -613,35 +566,7 @@ func (e *SQLiteEngine) canonicalBodyContextMatches(
 		return scanCanonicalBodyContextMatches(rows)
 	}
 
-	if e.dialect.messageBodyContextBackend() != messageBodyContextPostgreSQL {
-		return nil, errors.New("message body context is unavailable for this query dialect")
-	}
-	sourceValues := make([]string, len(ids))
-	args := make([]any, 0, 2*len(ids)+len(terms))
-	for i, messageID := range ids {
-		sourceValues[i] = "(?::bigint, ?::text)"
-		args = append(args, messageID, bodies[messageID])
-	}
-	queryValues := make([]string, len(terms))
-	for group, term := range terms {
-		_, weightedArg := e.dialect.BuildFTSBodyTerm([]string{term})
-		queryValues[group] = fmt.Sprintf("(%d, to_tsquery('simple', ?))", group)
-		args = append(args, postgresContextTSQuery(weightedArg))
-	}
-	rows, err := e.queryContext(ctx, fmt.Sprintf(`
-		WITH
-		canonical_bodies(message_id, body) AS (VALUES %s),
-		query_groups(group_id, query) AS (VALUES %s)
-		SELECT b.message_id, q.group_id
-		FROM canonical_bodies b
-		CROSS JOIN query_groups q
-		WHERE to_tsvector('simple', b.body) @@ q.query
-	`, strings.Join(sourceValues, ", "), strings.Join(queryValues, ", ")), args...)
-	if err != nil {
-		return nil, fmt.Errorf("query PostgreSQL canonical body-context probe: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	return scanCanonicalBodyContextMatches(rows)
+	return nil, errors.New("message body context is unavailable for this query dialect")
 }
 
 func scanCanonicalBodyContextMatches(rows *sql.Rows) (map[bodyContextGroupKey]struct{}, error) {
@@ -831,57 +756,6 @@ func (e *SQLiteEngine) sqliteBodyContexts(
 	return scanRawBodyContexts(rows)
 }
 
-func (e *SQLiteEngine) postgresBodyContexts(
-	ctx context.Context,
-	chunks []bodyContextChunk,
-	terms []string,
-	markers bodyContextMarkers,
-) ([]rawBodyContext, error) {
-	if len(chunks) == 0 {
-		return nil, nil
-	}
-	chunkValues := make([]string, len(chunks))
-	args := make([]any, 0, 3*len(chunks)+len(terms)+1)
-	for i, chunk := range chunks {
-		chunkValues[i] = "(?::integer, ?::bigint, ?::text)"
-		args = append(args, chunk.id, chunk.messageID, chunk.body)
-	}
-	queryValues := make([]string, 0, len(terms))
-	for group, term := range terms {
-		_, weightedArg := e.dialect.BuildFTSBodyTerm([]string{term})
-		arg := postgresContextTSQuery(weightedArg)
-		if arg == "" {
-			continue
-		}
-		queryValues = append(queryValues, fmt.Sprintf("(%d, to_tsquery('simple', ?))", group))
-		args = append(args, arg)
-	}
-	if len(queryValues) == 0 {
-		return nil, errors.New("message body context query has no searchable terms")
-	}
-	options := fmt.Sprintf(
-		"StartSel=%s, StopSel=%s, MaxWords=64, MinWords=1, MaxFragments=1, FragmentDelimiter=%s",
-		markers.start, markers.end, markers.ellipsis,
-	)
-	args = append(args, options)
-	rows, err := e.queryContext(ctx, fmt.Sprintf(`
-		WITH
-		chunks(chunk_id, message_id, body) AS (VALUES %s),
-		query_groups(group_id, query) AS (VALUES %s)
-		SELECT c.message_id, q.group_id, c.chunk_id,
-			ts_headline('simple', c.body, q.query, ?) AS marked
-		FROM chunks c
-		CROSS JOIN query_groups q
-		WHERE to_tsvector('simple', c.body) @@ q.query
-		ORDER BY c.message_id, q.group_id, c.chunk_id
-	`, strings.Join(chunkValues, ", "), strings.Join(queryValues, ", ")), args...)
-	if err != nil {
-		return nil, fmt.Errorf("query bounded PostgreSQL body contexts: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	return scanRawBodyContexts(rows)
-}
-
 func scanRawBodyContexts(rows *sql.Rows) ([]rawBodyContext, error) {
 	var raw []rawBodyContext
 	for rows.Next() {
@@ -895,128 +769,6 @@ func scanRawBodyContexts(rows *sql.Rows) ([]rawBodyContext, error) {
 		return nil, fmt.Errorf("iterate body contexts: %w", err)
 	}
 	return raw, nil
-}
-
-func (e *SQLiteEngine) validatePostgresBodyContextCandidates(
-	ctx context.Context,
-	parsed []parsedBodyContext,
-	terms []string,
-	chunks map[int]bodyContextChunk,
-	states map[int64]bodyContextSourceState,
-) (map[int][]bodyContextSpan, map[bodyContextGroupKey]struct{}, error) {
-	accepted := make(map[int][]bodyContextSpan, len(parsed))
-	uncertain := make(map[bodyContextGroupKey]struct{})
-	candidates := make([]postgresBodyContextCandidate, 0)
-	totalCandidateBytes := 0
-
-	for parsedIndex, item := range parsed {
-		chunk := chunks[item.chunkID]
-		state := states[item.messageID]
-		key := bodyContextGroupKey{messageID: item.messageID, group: item.group}
-		if item.truncated {
-			uncertain[key] = struct{}{}
-		}
-		lexemeCount := len(sqldialect.EscapeTSQueryTerm(terms[item.group]))
-		if lexemeCount <= 1 {
-			for _, span := range item.spans {
-				if bodyContextSpanIsSafe(chunk, item.spanInChunk(span), state) {
-					accepted[parsedIndex] = []bodyContextSpan{span}
-					break
-				}
-			}
-			if len(accepted[parsedIndex]) == 0 {
-				uncertain[key] = struct{}{}
-			}
-			continue
-		}
-		_, weightedArg := e.dialect.BuildFTSBodyTerm([]string{terms[item.group]})
-		queryArg := postgresContextTSQuery(weightedArg)
-		foundBudget := false
-		for start := range item.spans {
-			for width := 1; width <= lexemeCount && start+width <= len(item.spans); width++ {
-				if len(candidates) >= messageBodyContextMaxCandidates {
-					uncertain[key] = struct{}{}
-					foundBudget = true
-					break
-				}
-				end := start + width
-				fragmentStart := item.spans[start].start
-				fragmentEnd := item.spans[end-1].end
-				if !bodyContextSpanIsSafe(chunk, item.spanInChunk(bodyContextSpan{
-					start: fragmentStart,
-					end:   fragmentEnd,
-				}), state) {
-					uncertain[key] = struct{}{}
-					continue
-				}
-				fragment := item.plain[fragmentStart:fragmentEnd]
-				if totalCandidateBytes+len(fragment) > messageBodyContextMaxCandidateBytes {
-					uncertain[key] = struct{}{}
-					foundBudget = true
-					break
-				}
-				totalCandidateBytes += len(fragment)
-				componentSpans := append([]bodyContextSpan(nil), item.spans[start:end]...)
-				candidates = append(candidates, postgresBodyContextCandidate{
-					parsedIndex: parsedIndex,
-					query:       queryArg,
-					fragment:    fragment,
-					spans:       componentSpans,
-				})
-			}
-			if foundBudget {
-				break
-			}
-		}
-	}
-	if len(candidates) == 0 {
-		return accepted, uncertain, nil
-	}
-
-	values := make([]string, len(candidates))
-	args := make([]any, 0, 3*len(candidates))
-	for i, candidate := range candidates {
-		values[i] = "(?::integer, ?::text, ?::text)"
-		args = append(args, i, candidate.fragment, candidate.query)
-	}
-	rows, err := e.queryContext(ctx, fmt.Sprintf(`
-		WITH candidates(candidate_id, fragment, query_text) AS (VALUES %s)
-		SELECT candidate_id
-		FROM candidates
-		WHERE to_tsvector('simple', fragment) @@ to_tsquery('simple', query_text)
-		ORDER BY candidate_id
-	`, strings.Join(values, ", ")), args...)
-	if err != nil {
-		return nil, nil, fmt.Errorf("validate PostgreSQL body-context candidates: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var candidateID int
-		if err := rows.Scan(&candidateID); err != nil {
-			return nil, nil, fmt.Errorf("scan PostgreSQL body-context validation: %w", err)
-		}
-		candidate := candidates[candidateID]
-		if _, alreadyAccepted := accepted[candidate.parsedIndex]; alreadyAccepted {
-			continue
-		}
-		accepted[candidate.parsedIndex] = candidate.spans
-		if len(candidate.fragment) > MessageBodyContextSnippetBytes {
-			parsed[candidate.parsedIndex].truncated = true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("iterate PostgreSQL body-context validations: %w", err)
-	}
-	for parsedIndex, item := range parsed {
-		if len(accepted[parsedIndex]) == 0 {
-			uncertain[bodyContextGroupKey{messageID: item.messageID, group: item.group}] = struct{}{}
-		}
-	}
-	return accepted, uncertain, nil
-}
-
-func postgresContextTSQuery(weightedArg string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(weightedArg, ":*D", ":*"), ":D", "")
 }
 
 func parseMarkedBodyContext(

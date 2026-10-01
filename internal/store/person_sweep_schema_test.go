@@ -24,12 +24,8 @@ func TestPersonSweepSchemaParity(t *testing.T) {
 		"idx_person_sweep_changes_person_message",
 	} {
 		var count int
-		if f.store.IsPostgreSQL() {
-			requirements.NoError(f.store.DB().QueryRow(`
-				SELECT COUNT(*) FROM pg_indexes
-				WHERE schemaname = current_schema() AND tablename = 'person_sweep_changes' AND indexname = $1`,
-				indexName).Scan(&count))
-		} else {
+
+		{
 			requirements.NoError(f.store.DB().QueryRow(`
 				SELECT COUNT(*) FROM sqlite_master
 				WHERE type = 'index' AND tbl_name = 'person_sweep_changes' AND name = ?`,

@@ -13,7 +13,6 @@ import (
 	"github.com/gofrs/flock"
 	"go.kenn.io/kit/daemon"
 	"go.kenn.io/msgvault/internal/config"
-	"go.kenn.io/msgvault/internal/store"
 )
 
 const daemonOwnerLockFile = "daemon.lock"
@@ -43,7 +42,7 @@ func claimServeOwnership(
 		return nil, err
 	}
 	var lock *writeOwnerLock
-	if !store.IsPostgresURL(cfg.DatabaseDSN()) {
+	{
 		lock, err = acquireWriteOwnerLock(ctx, cfg.Data.DataDir)
 		if err != nil {
 			_ = daemonLock.Close()

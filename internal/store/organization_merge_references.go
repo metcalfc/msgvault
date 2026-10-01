@@ -58,10 +58,7 @@ func (s *Store) retargetOrganizationReferencesTx(
 // tableExistsTx is tableExists inside a transaction.
 func (s *Store) tableExistsTx(ctx context.Context, tx *loggedTx, name string) (bool, error) {
 	query := `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`
-	if s.dialect.DriverName() == postgresDriverName {
-		query = `SELECT COUNT(*) FROM information_schema.tables
-		         WHERE table_schema = current_schema() AND table_name = ?`
-	}
+
 	var count int
 	if err := tx.QueryRowContext(ctx, query, name).Scan(&count); err != nil {
 		return false, fmt.Errorf("check table %s: %w", name, err)

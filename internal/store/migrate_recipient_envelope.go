@@ -54,11 +54,8 @@ func (s *Store) ensureRecipientEnvelopeUniqueIndex(ctx context.Context) error {
 				rebuilt bool
 			)
 			if err := s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
-				if s.IsPostgreSQL() {
-					if err := dropRecipientTableUniqueConstraintsPG(ctx, tx); err != nil {
-						return err
-					}
-				} else {
+
+				{
 					var err error
 					cleanup, rebuilt, err = rebuildRecipientTableWithoutUniqueSQLite(ctx, tx)
 					if err != nil {

@@ -2,9 +2,6 @@ package store
 
 import (
 	"context"
-	"fmt"
-	"strconv"
-	"strings"
 )
 
 // lockProfileIdentityKeyTxContext serializes a check-then-insert for one
@@ -20,27 +17,8 @@ func (s *Store) lockProfileIdentityKeyTxContext(
 	namespace string,
 	parts ...any,
 ) error {
-	if !s.IsPostgreSQL() {
+	{
 		return s.lockIdentityMutationTxContext(ctx, tx)
 	}
 
-	var key strings.Builder
-	key.WriteString(namespace)
-	for _, part := range parts {
-		rendered := fmt.Sprintf("%v", part)
-		partType := fmt.Sprintf("%T", part)
-		key.WriteByte('|')
-		key.WriteString(partType)
-		key.WriteByte(':')
-		key.WriteString(strconv.Itoa(len(rendered)))
-		key.WriteByte(':')
-		key.WriteString(rendered)
-	}
-	if _, err := tx.ExecContext(ctx,
-		`SELECT pg_advisory_xact_lock(hashtextextended(CAST(? AS TEXT), 0))`,
-		key.String(),
-	); err != nil {
-		return fmt.Errorf("lock %s identity key: %w", namespace, err)
-	}
-	return nil
 }

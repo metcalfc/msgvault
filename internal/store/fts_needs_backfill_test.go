@@ -1,9 +1,7 @@
 package store_test
 
 import (
-	"os"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,16 +9,6 @@ import (
 
 	"go.kenn.io/msgvault/internal/testutil/storetest"
 )
-
-// isPostgresTestDB reports whether the active test backend is PostgreSQL,
-// inferred from MSGVAULT_TEST_DB. Used by backend-portable tests that must issue
-// dialect-specific SQL to set up a scenario (e.g. punching a hole in the FTS
-// index differs between SQLite's messages_fts shadow table and PG's search_fts
-// column).
-func isPostgresTestDB() bool {
-	db := os.Getenv("MSGVAULT_TEST_DB")
-	return strings.HasPrefix(db, "postgres://") || strings.HasPrefix(db, "postgresql://")
-}
 
 // TestStore_NeedsFTSBackfill_Transition (finding for P2) verifies the
 // FTSNeedsBackfill contract on BOTH backends: it reports true while any message
@@ -105,13 +93,8 @@ func TestStore_NeedsFTSBackfill_HoleAtLowestID(t *testing.T) {
 	// Remove the FTS entry for the LOWEST id only. The highest id stays indexed,
 	// so any MAX-based heuristic would wrongly report "complete".
 	lowest := slices.Min(ids)
-	if isPostgresTestDB() {
-		_, err = f.Store.DB().Exec(
-			"UPDATE messages SET search_fts = NULL WHERE id = $1", lowest)
-	} else {
-		_, err = f.Store.DB().Exec(
-			"DELETE FROM messages_fts WHERE rowid = ?", lowest)
-	}
+	_, err = f.Store.DB().Exec(
+		"DELETE FROM messages_fts WHERE rowid = ?", lowest)
 	require.NoError(err, "punch a hole at the lowest id")
 
 	assert.True(t, f.Store.NeedsFTSBackfill(),

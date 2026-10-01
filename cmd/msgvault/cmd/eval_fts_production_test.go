@@ -125,7 +125,7 @@ func TestRankedFTS_MatchesProductionRelevanceRanking(t *testing.T) {
 	require.Equal(t, []string{"<m1@example.com>", "<m2@example.com>"}, productionKeys,
 		"production ranks the subject hit first and never returns the source-deleted message")
 
-	qeng := query.NewEngine(s.DB(), s.IsPostgreSQL())
+	qeng := query.NewEngine(s.DB())
 	legacy, err := qeng.Search(ctx, search.Parse(topic), 10, 0)
 	require.NoError(t, err, "query engine search")
 	legacyKeys := keysOfSummaries(legacy)
@@ -169,7 +169,7 @@ INSERT INTO message_recipients (message_id, participant_id, recipient_type) VALU
 	require.Equal(t, []string{"<m1@example.com>"}, keysOfAPIMessages(production),
 		"production matches the address by substring")
 
-	qeng := query.NewEngine(s.DB(), s.IsPostgreSQL())
+	qeng := query.NewEngine(s.DB())
 	legacy, err := qeng.Search(ctx, search.Parse(topic), 10, 0)
 	require.NoError(t, err, "query engine search")
 	require.Empty(t, legacy, "the exact-match path finds nothing for the same topic")

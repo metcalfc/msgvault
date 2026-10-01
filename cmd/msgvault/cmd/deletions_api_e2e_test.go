@@ -47,7 +47,7 @@ func TestDeletionStagingEndToEnd(t *testing.T) {
 	})
 	require.NoError(err, "insert message")
 
-	engine := query.NewEngine(s.DB(), s.IsPostgreSQL())
+	engine := query.NewEngine(s.DB())
 	t.Cleanup(func() { _ = engine.Close() })
 
 	srv := api.NewServerWithOptions(api.ServerOptions{

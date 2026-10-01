@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/store"
-	"go.kenn.io/msgvault/internal/testutil"
 	"go.kenn.io/msgvault/internal/testutil/storetest"
 )
 
@@ -61,7 +60,7 @@ func TestRemoveAccountIdentityRecomputesOnlyIdentityDerivedAttribution(t *testin
 }
 
 func TestAddAccountIdentityUpdatesOnlyChangedMessageAttribution(t *testing.T) {
-	testutil.SkipIfPostgres(t, "SQLite audit trigger measures updated message rows")
+
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)

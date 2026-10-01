@@ -24,14 +24,8 @@ func TestPersonSweepCallJournalMigrationPreservesLegacyRowsAndIsIdempotent(t *te
 		reserved_cost_micro_usd, actual_requests, actual_input_tokens,
 		actual_output_tokens, actual_cost_micro_usd, latency_milliseconds,
 		failure_class, created_at, completed_at`
-	if f.store.IsPostgreSQL() {
-		_, err = f.store.DB().Exec(`CREATE TABLE person_sweep_batches_legacy AS
-			SELECT ` + legacyColumns + ` FROM person_sweep_batches;
-			DROP TABLE person_sweep_batches;
-			ALTER TABLE person_sweep_batches_legacy RENAME TO person_sweep_batches;
-			ALTER TABLE person_sweep_batches
-				ADD PRIMARY KEY (attempt_id, batch_ordinal)`)
-	} else {
+
+	{
 		_, err = f.store.DB().Exec(`CREATE TABLE person_sweep_batches_legacy AS
 			SELECT ` + legacyColumns + ` FROM person_sweep_batches;
 			DROP TABLE person_sweep_batches;

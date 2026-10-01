@@ -82,9 +82,7 @@ var verifyCmd = &cobra.Command{
 and sampling messages to ensure raw MIME data is intact.
 
 This command:
-1. On SQLite: runs PRAGMA integrity_check on the database (unless --skip-db-check).
-   On PostgreSQL: prints a notice that the in-engine check is skipped — use
-   pg_amcheck out-of-band to validate the cluster.
+1. Runs PRAGMA integrity_check on the database (unless --skip-db-check).
 2. Compares local message count with Gmail's reported total
 3. Checks how many messages have raw MIME data stored
 4. Samples random messages and verifies their MIME can be decompressed
@@ -156,10 +154,8 @@ func runVerifyLocal(cmd *cobra.Command, args []string) error {
 	var dbCorrupt bool
 	var dbIntegrityOK *bool
 	if !verifySkipDBCheck {
-		if s.IsPostgreSQL() {
-			emitln("Skipping database integrity check (PostgreSQL — use pg_amcheck out-of-band).")
-			emitln()
-		} else {
+
+		{
 			emitln("Running database integrity check...")
 			integrityErrors, err := runIntegrityCheck(s)
 			if err != nil {
@@ -421,9 +417,7 @@ func runVerifyLocal(cmd *cobra.Command, args []string) error {
 // return no errors so the rest of `verify` (Gmail message round-trip)
 // still runs — the user is expected to monitor PG health separately.
 func runIntegrityCheck(s *store.Store) ([]string, error) {
-	if s.IsPostgreSQL() {
-		return nil, nil
-	}
+
 	rows, err := s.DB().Query("PRAGMA integrity_check(100)")
 	if err != nil {
 		return nil, err

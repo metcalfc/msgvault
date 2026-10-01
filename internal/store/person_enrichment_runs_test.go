@@ -12,60 +12,10 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-func TestPersonEnrichmentClaimLocksRunBeforeBindingWork(t *testing.T) {
-	f := newEnrichmentWorkFixture(t)
-	if !f.store.IsPostgreSQL() {
-		t.Skip("PostgreSQL row-lock interleaving requires MSGVAULT_TEST_DB")
-	}
-	run := f.startRun(t, "claim-vs-complete")
-	f.enqueue(t)
-
-	claimLocked := make(chan struct{})
-	releaseClaim := make(chan struct{})
-	completeBeforeLock := make(chan struct{})
-	var claimOnce, completeOnce sync.Once
-	store.SetPersonEnrichmentRunBarrierForTest(f.store, func(phase string) {
-		switch phase {
-		case "claim_run_locked":
-			claimOnce.Do(func() { close(claimLocked) })
-			<-releaseClaim
-		case "complete_before_run_lock":
-			completeOnce.Do(func() { close(completeBeforeLock) })
-		}
-	})
-
-	claimResult := make(chan *personenrichment.WorkLease, 1)
-	claimErr := make(chan error, 1)
-	go func() {
-		lease, err := f.store.ClaimWork(t.Context(), personenrichment.ClaimOptions{
-			RunID: run.ID, Owner: "claim-worker", ProviderName: f.profile.Name,
-			Now: f.now, LeaseDuration: time.Minute,
-		})
-		claimResult <- lease
-		claimErr <- err
-	}()
-	<-claimLocked
-
-	completeErr := make(chan error, 1)
-	go func() {
-		completeErr <- f.store.CompleteRun(t.Context(), run.ID, personenrichment.RunCompletion{
-			State: "succeeded", CompletedAt: f.now,
-		})
-	}()
-	<-completeBeforeLock
-	close(releaseClaim)
-
-	require.NoError(t, <-claimErr)
-	require.NotNil(t, <-claimResult)
-	require.ErrorIs(t, <-completeErr, store.ErrRunNotTerminal)
-}
-
 func TestPersonEnrichmentClaimRetriesSQLiteSnapshotContention(t *testing.T) {
 	require := require.New(t)
 	f := newEnrichmentWorkFixture(t)
-	if f.store.IsPostgreSQL() {
-		t.Skip("SQLite snapshot contention requires the SQLite backend")
-	}
+
 	run := f.startRun(t, "claim-snapshot-contention")
 	f.enqueue(t)
 

@@ -222,23 +222,8 @@ func installFailingRepairIdentityTrigger(t *testing.T, st *store.Store) {
 	t.Helper()
 
 	var err error
-	if st.IsPostgreSQL() {
-		_, err = st.DB().Exec(`
-			CREATE FUNCTION fail_repair_identity() RETURNS trigger
-			LANGUAGE plpgsql AS $$
-			BEGIN
-				IF NEW.address = 'fail@example.com' THEN
-					RAISE EXCEPTION 'forced identity failure';
-				END IF;
-				RETURN NEW;
-			END
-			$$;
 
-			CREATE TRIGGER fail_repair_identity
-			BEFORE INSERT ON account_identities
-			FOR EACH ROW EXECUTE FUNCTION fail_repair_identity()
-		`)
-	} else {
+	{
 		_, err = st.DB().Exec(`
 			CREATE TRIGGER fail_repair_identity
 			BEFORE INSERT ON account_identities

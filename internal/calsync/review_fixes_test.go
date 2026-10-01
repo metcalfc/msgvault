@@ -53,7 +53,6 @@ func TestFull_LimitDoesNotAdvanceCursor(t *testing.T) {
 func TestFull_CompletionFailureDoesNotPublishCursor(t *testing.T) {
 	assertions := assert.New(t)
 	requirements := require.New(t)
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger to inject the completion failure")
 
 	m := gcal.NewMockAPI()
 	m.Calendars = []gcal.Calendar{{ID: "primary", AccessRole: "owner"}}
@@ -80,7 +79,6 @@ func TestFull_CompletionFailureDoesNotPublishCursor(t *testing.T) {
 func TestIncremental_CompletionFailureDoesNotPublishCursor(t *testing.T) {
 	assertions := assert.New(t)
 	requirements := require.New(t)
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger to inject the completion failure")
 
 	m := gcal.NewMockAPI()
 	m.IncNextToken["T1"] = "T2"
@@ -228,7 +226,7 @@ func TestFull_NormalizesCalendarParticipantEmails(t *testing.T) {
 	meta := parseMeta(t, row)
 	assert.Equal("alice@example.com", meta["organizer_email"])
 
-	if st.FTS5Available() && !st.IsPostgreSQL() {
+	if st.FTS5Available() && !false {
 		var fromAddr, toAddr string
 		require.NoError(st.DB().QueryRow(
 			`SELECT from_addr, to_addr FROM messages_fts WHERE message_id = ?`, row.id).Scan(&fromAddr, &toAddr))
@@ -342,7 +340,7 @@ func TestFull_FTSFailureDoesNotAbortCalendarSync(t *testing.T) {
 	m.FullSyncToken["primary"] = "T1"
 
 	s, st := newSyncer(t, m, Options{})
-	if !st.FTS5Available() || st.IsPostgreSQL() {
+	if !st.FTS5Available() || false {
 		t.Skip("SQLite FTS5-specific regression")
 	}
 	_, err := st.DB().Exec("DROP TABLE messages_fts")

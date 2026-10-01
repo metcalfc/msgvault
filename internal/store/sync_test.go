@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -43,7 +42,7 @@ func TestScanSource_NullLastSyncAt_Valid(t *testing.T) {
 // The driver converts unparseable DATETIME values to "0001-01-01T00:00:00Z".
 func TestScanSyncRun_ZeroTime(t *testing.T) {
 	require := require.New(t)
-	testutil.SkipIfPostgres(t, "tests go-sqlite3 driver normalization of invalid DATETIME strings to zero time; PG TIMESTAMPTZ rejects invalid strings outright")
+
 	f := storetest.New(t)
 
 	syncID := f.StartSync()
@@ -133,7 +132,7 @@ func TestSyncRunRecoveryTerminalizesOnlyRunningRows(t *testing.T) {
 // normalizes to zero time are handled correctly.
 func TestScanSource_ZeroTime(t *testing.T) {
 	require := require.New(t)
-	testutil.SkipIfPostgres(t, "tests go-sqlite3 driver normalization of invalid DATETIME strings to zero time; PG TIMESTAMPTZ rejects invalid strings outright")
+
 	st := testutil.NewTestStore(t)
 
 	// Create a source
@@ -242,7 +241,7 @@ func TestStore_CompleteSyncWriteFailureReleasesExecution(t *testing.T) {
 
 func TestStore_StartSyncRejectsConcurrentRunAcrossSQLiteStores(t *testing.T) {
 	requirements := require.New(t)
-	testutil.SkipIfPostgres(t, "exercises the cross-process SQLite file lock")
+
 	dbPath := filepath.Join(t.TempDir(), "archive.db")
 	first, err := store.OpenForTest(dbPath)
 	requirements.NoError(err)
@@ -268,7 +267,7 @@ func TestStore_StartSyncRejectsConcurrentRunAcrossSQLiteStores(t *testing.T) {
 
 func TestStore_StartSyncUsesFilesystemPathForSQLiteFileURI(t *testing.T) {
 	requirements := require.New(t)
-	testutil.SkipIfPostgres(t, "exercises SQLite file URI lock resolution")
+
 	dbPath := filepath.Join(t.TempDir(), "archive.db")
 	uriPath := filepath.ToSlash(dbPath)
 	if filepath.VolumeName(dbPath) != "" && !strings.HasPrefix(uriPath, "/") {
@@ -454,29 +453,6 @@ func TestStore_UnfinishedSyncOperationRecoveryFailsRunningRun(t *testing.T) {
 	requirements.ErrorIs(err, store.ErrSyncRunNotFound)
 }
 
-func TestStore_StartSyncRejectsConcurrentRunAcrossPostgresStores(t *testing.T) {
-	requirements := require.New(t)
-	if !store.IsPostgresURL(os.Getenv("MSGVAULT_TEST_DB")) {
-		t.Skip("PostgreSQL integration test")
-	}
-	first := testutil.NewTestStore(t)
-	source, err := first.GetOrCreateSource("gmail", "lock-owner@example.com")
-	requirements.NoError(err)
-	second, err := store.OpenForTest(store.DBPathForTest(first))
-	requirements.NoError(err)
-	t.Cleanup(func() { _ = second.Close() })
-
-	firstRun, err := first.StartSync(source.ID, "full")
-	requirements.NoError(err)
-	_, err = second.StartSync(source.ID, "full")
-	requirements.ErrorIs(err, store.ErrSyncAlreadyActive)
-
-	requirements.NoError(first.CompleteSync(firstRun, "cursor"))
-	secondRun, err := second.StartSync(source.ID, "full")
-	requirements.NoError(err)
-	requirements.NoError(second.FailSync(secondRun, "test complete"))
-}
-
 func TestStore_CompleteSyncAndUpdateSourceCursorRejectsSupersededRunAtomically(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -641,28 +617,6 @@ func TestScopedStoreRejectsEveryImporterMutationAfterSupersession(t *testing.T) 
 		WHERE source_id = ? AND source_conversation_id = 'stale-email-thread'`),
 		f.Source.ID).Scan(&staleEmailThreads))
 	checks.Zero(staleEmailThreads)
-}
-
-func TestScopedSourceWriteMatchesStartSyncLockOrder(t *testing.T) {
-	f := storetest.New(t)
-	if !f.Store.IsPostgreSQL() {
-		t.Skip("PostgreSQL-only sync source lock-order regression")
-	}
-	syncID := f.StartSync()
-	scoped := f.Store.ScopedToSync(f.Source.ID, syncID)
-
-	writeErr := forcePostgreSQLDeadlock(t.Context(), t, f.Store,
-		postgreSQLRowLock{table: "sources", id: f.Source.ID},
-		postgreSQLRowLock{table: "sync_runs", id: syncID},
-		func(ctx context.Context) error {
-			return scoped.UpdateSourceDisplayNameContext(ctx, f.Source.ID, "Updated Source")
-		})
-	require.NoError(t, writeErr,
-		"a scoped source write must not reverse StartSync's source-then-run lock order")
-
-	source, err := f.Store.GetSourceByID(f.Source.ID)
-	require.NoError(t, err)
-	assert.Equal(t, "Updated Source", source.DisplayName.String)
 }
 
 func TestSuccessfulSyncCoalescesTrackedPeopleOnce(t *testing.T) {

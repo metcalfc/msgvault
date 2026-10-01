@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -1077,7 +1076,7 @@ func TestContactCadenceAcceptanceMatrixAndNoteSeparation(t *testing.T) {
 	assert.Equal(store.CadenceUnknown, malformed.CadenceStatus)
 	deleteValue(malformedID)
 
-	if !store.IsPostgresURL(os.Getenv("MSGVAULT_TEST_DB")) {
+	{
 		malformedIntegerID := insertCorruptAttribute(
 			0, "value_integer", "not-an-integer")
 		malformedInteger, err := f.Store.ContactStateContext(

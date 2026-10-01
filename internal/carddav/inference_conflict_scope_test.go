@@ -2,15 +2,16 @@ package carddav
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"go.kenn.io/msgvault/internal/store"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.kenn.io/msgvault/internal/store"
 )
 
 func TestQueuedConflictPreviewRejectsPersonReboundByMerge(t *testing.T) {
@@ -82,9 +83,7 @@ func TestNonWriteConflictPreservesOrdinaryPublicationAcrossRecovery(t *testing.T
 			}))
 			t.Cleanup(server.Close)
 			service, st, personID, w := seededMutationServiceForServer(t, server)
-			if restart && st.IsPostgreSQL() {
-				t.Skip("real file reopen uses SQLite backup; PostgreSQL durable intent reopening covered by store contracts")
-			}
+
 			appendInferenceReviewNote(t, st, personID, "Initially approved")
 			preview, err := service.PreviewPublication(t.Context(), personID)
 			require.NoError(err)

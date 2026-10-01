@@ -2260,8 +2260,3 @@ func (d *SQLiteDialect) IsBusyError(err error) bool {
 // committed by another transaction while this one held its snapshot — the
 // condition PostgreSQL reports as SQLSTATE 40001 does not arise.
 func (d *SQLiteDialect) IsSerializationFailureError(err error) bool { return false }
-
-// IsFTSValueTooLargeError always returns false for SQLite: FTS5 has no
-// per-value size limit analogous to PostgreSQL's tsvector "string is too long"
-// (SQLSTATE 54000), so the backfill never has a row to skip on SQLite.
-func (d *SQLiteDialect) IsFTSValueTooLargeError(err error) bool { return false }

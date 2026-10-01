@@ -237,9 +237,8 @@ var settingsCatalog = []settingDefinition{
 	int64Setting("log.sql_slow_ms", "server", func(c *config.Config) int64 { return c.Log.SQLSlowMs }),
 	boolSetting("log.sql_trace", "server", func(c *config.Config) bool { return c.Log.SQLTrace }),
 	boolSetting("vector.enabled", "search", func(c *config.Config) bool { return c.Vector.Enabled }),
-	readOnlyStringSettingWithOptions("vector.backend", "search", []string{"sqlite-vec", "pgvector"}, func(c *config.Config) string { return c.Vector.Backend }),
+	readOnlyStringSettingWithOptions("vector.backend", "search", []string{"sqlite-vec"}, func(c *config.Config) string { return c.Vector.Backend }),
 	readOnlyStringSetting("vector.db_path", "search", func(c *config.Config) string { return c.Vector.DBPath }),
-	readOnlyBoolSetting("vector.skip_extension_create", "search", func(c *config.Config) bool { return c.Vector.SkipExtensionCreate }),
 	stringSetting("vector.embeddings.api_format", "search", []string{"openai", "voyage-contextual"}, func(c *config.Config) string {
 		return string(c.Vector.Embeddings.EffectiveAPIFormat())
 	}),

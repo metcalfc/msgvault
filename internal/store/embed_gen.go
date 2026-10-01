@@ -207,15 +207,9 @@ func (s *Store) SetEmbedGenGroupIfUnchanged(
 			retErr = fmt.Errorf("rollback embed_gen group transaction: %w", rollbackErr)
 		}
 	}()
-	if s.IsPostgreSQL() {
-		if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_xact_lock(
-			hashtextextended('msgvault.embedding_change_clock', 0))`); err != nil {
-			return false, fmt.Errorf("lock embed_gen group journal boundary: %w", err)
-		}
-	}
 
 	lastModified := "last_modified"
-	if !s.IsPostgreSQL() {
+	{
 		lastModified = "CAST(last_modified AS TEXT)"
 	}
 	for _, version := range orderedVersions {
@@ -291,8 +285,7 @@ func (s *Store) SetEmbedGenGroupIfUnchanged(
 // renders per-session TimeZone/DateStyle — a divergence would make the CAS
 // miss on every scope and republish forever.
 const (
-	ParticipantRevisionSQLite   = "CAST(p.updated_at AS TEXT)"
-	ParticipantRevisionPostgres = "to_char(p.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US')"
+	ParticipantRevisionSQLite = "CAST(p.updated_at AS TEXT)"
 )
 
 func (s *Store) embedGenMetadataDigest(
@@ -312,10 +305,6 @@ func (s *Store) embedGenMetadataDigest(
 
 	lockClause := s.dialect.SelectForUpdate()
 	participantRevision := ParticipantRevisionSQLite
-	if lockClause != "" {
-		lockClause = " FOR UPDATE OF cp, p"
-		participantRevision = ParticipantRevisionPostgres
-	}
 	rows, err := conn.QueryContext(ctx, s.dialect.Rebind(fmt.Sprintf(`
 		SELECT cp.participant_id, COALESCE(cp.role, ''),
 		       COALESCE(NULLIF(TRIM(p.display_name), ''),

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -91,9 +90,7 @@ func TestRepairListIDsIdempotentApplyPreservesMessageWatermarks(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	f := storetest.New(t)
-	if f.Store.IsPostgreSQL() {
-		t.Skip("SQLite writer-lock watermark regression")
-	}
+
 	messageID := f.CreateMessage("list-id-idempotent-watermarks")
 	require.NoError(f.Store.UpsertMessageRaw(messageID,
 		[]byte("List-Id: <idempotent.example.test>\r\n\r\nbody")))
@@ -213,9 +210,7 @@ func TestRepairListIDsRollsBackEarlierBatchesOnLaterWriteFailure(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	f := storetest.New(t)
-	if f.Store.IsPostgreSQL() {
-		t.Skip("SQLite trigger injects a later-batch write failure")
-	}
+
 	first := f.CreateMessage("list-id-rollback-first")
 	second := f.CreateMessage("list-id-rollback-second")
 	require.NoError(f.Store.UpsertMessageRaw(first,
@@ -478,98 +473,6 @@ func TestRepairListIDsSerializesSQLiteWriterBeforeSnapshot(t *testing.T) {
 	assert.Equal(sql.NullString{String: "<wal.example.test>", Valid: true}, listID)
 }
 
-// TestPostgreSQLRepairListIDsLocksFingerprintBeforeUpdate catches removing
-// SELECT FOR UPDATE from the fingerprint guard. The second real connection
-// must block until repair commits its old-MIME update, then publish its newer
-// raw MIME and List-Id.
-func TestPostgreSQLRepairListIDsLocksFingerprintBeforeUpdate(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	f := storetest.New(t)
-	if !f.Store.IsPostgreSQL() {
-		t.Skip("PostgreSQL fingerprint-lock regression")
-	}
-	messageID := f.CreateMessage("list-id-postgres-fingerprint-lock")
-	require.NoError(f.Store.UpsertMessageRaw(messageID,
-		[]byte("List-Id: <old.example.test>\r\n\r\nbody")))
-
-	locked := make(chan struct{}, 1)
-	release := make(chan struct{})
-	var releaseOnce sync.Once
-	releaseRepair := func() { releaseOnce.Do(func() { close(release) }) }
-	defer releaseRepair()
-	restore := f.Store.SetListIDRepairAfterFingerprintLockHookForTest(func() {
-		locked <- struct{}{}
-		<-release
-	})
-	defer restore()
-
-	type repairResult struct {
-		summary store.ListIDRepairSummary
-		err     error
-	}
-	repairDone := make(chan repairResult, 1)
-	go func() {
-		summary, err := f.Store.RepairListIDs(
-			t.Context(), store.ListIDRepairOptions{Apply: true}, nil)
-		repairDone <- repairResult{summary: summary, err: err}
-	}()
-	select {
-	case <-locked:
-	case <-time.After(5 * time.Second):
-		require.FailNow("repair did not lock its fingerprint")
-	}
-
-	writer, err := f.Store.DB().Conn(t.Context())
-	require.NoError(err)
-	t.Cleanup(func() { _ = writer.Close() })
-	writerDone := make(chan error, 1)
-	go func() {
-		tx, err := writer.BeginTx(t.Context(), nil)
-		if err != nil {
-			writerDone <- err
-			return
-		}
-		defer func() { _ = tx.Rollback() }()
-		_, err = tx.ExecContext(t.Context(),
-			`UPDATE message_raw SET raw_data = $1, compression = NULL WHERE message_id = $2`,
-			[]byte("List-Id: <new.example.test>\r\n\r\nbody"), messageID)
-		if err != nil {
-			writerDone <- err
-			return
-		}
-		_, err = tx.ExecContext(t.Context(),
-			`UPDATE messages SET list_id = $1 WHERE id = $2`, "<new.example.test>", messageID)
-		if err != nil {
-			writerDone <- err
-			return
-		}
-		writerDone <- tx.Commit()
-	}()
-
-	require.Eventually(func() bool {
-		var waiting int
-		err := f.Store.DB().QueryRowContext(t.Context(), `
-			SELECT COUNT(*) FROM pg_stat_activity
-			WHERE datname = current_database() AND wait_event_type = 'Lock'`).Scan(&waiting)
-		require.NoError(err)
-		return waiting > 0
-	}, 5*time.Second, 10*time.Millisecond, "concurrent raw-MIME writer did not block on fingerprint lock")
-
-	releaseRepair()
-	repair := <-repairDone
-	require.NoError(repair.err)
-	assert.Equal(store.ListIDRepairSummary{Scanned: 1, Found: 1, Changed: 1}, repair.summary)
-	require.NoError(<-writerDone)
-	assertListID(t, f, messageID, sql.NullString{String: "<new.example.test>", Valid: true})
-	revision, err := f.Store.DerivedDataRevision()
-	require.NoError(err)
-	assert.Equal(int64(1), revision)
-	decoded, err := f.Store.RepairListIDs(t.Context(), store.ListIDRepairOptions{}, nil)
-	require.NoError(err)
-	assert.Equal(store.ListIDRepairSummary{Scanned: 1, Found: 1}, decoded)
-}
-
 // TestRepairListIDsCommitsRevisionWithRepair catches an apply repair that
 // commits changed list IDs without the matching derived-data revision.
 func TestRepairListIDsCommitsRevisionWithRepair(t *testing.T) {
@@ -656,12 +559,7 @@ func insertMessageAtID(t *testing.T, f *storetest.Fixture, id int64, sourceMessa
 	insert := `
 		INSERT INTO messages (id, conversation_id, source_id, source_message_id, message_type, size_estimate)
 		VALUES (?, ?, ?, ?, 'email', 1)`
-	if f.Store.IsPostgreSQL() {
-		insert = `
-			INSERT INTO messages (id, conversation_id, source_id, source_message_id, message_type, size_estimate)
-			OVERRIDING SYSTEM VALUE
-			VALUES (?, ?, ?, ?, 'email', 1)`
-	}
+
 	_, err := f.Store.DB().Exec(f.Store.Rebind(insert), id, f.ConvID, f.Source.ID, sourceMessageID)
 	require.NoError(t, err)
 	return id

@@ -292,12 +292,7 @@ func insertMeetingQueryRowWithID(t *testing.T, fixture *meetingQueryFixture, id 
 	insert := `INSERT INTO messages
 		(id, conversation_id, source_id, source_message_id, message_type, subject)
 		VALUES (?, (SELECT MIN(id) FROM conversations), ?, ?, 'meeting_transcript', ?)`
-	if fixture.store.IsPostgreSQL() {
-		insert = `INSERT INTO messages
-			(id, conversation_id, source_id, source_message_id, message_type, subject)
-			OVERRIDING SYSTEM VALUE
-			VALUES (?, (SELECT MIN(id) FROM conversations), ?, ?, 'meeting_transcript', ?)`
-	}
+
 	_, err := fixture.store.db.Exec(insert, id, fixture.sourceOne, fmt.Sprintf("signed-%d", id), fmt.Sprintf("Signed %d", id))
 	require.NoError(t, err)
 	_, err = fixture.store.db.Exec(`

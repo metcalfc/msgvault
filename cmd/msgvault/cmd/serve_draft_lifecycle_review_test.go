@@ -91,7 +91,7 @@ func TestDraftLifecycleCancelledAfterClaimBeforeAppend(t *testing.T) {
 }
 
 func TestDraftLifecycleRejectedClaimPersistenceEvidence(t *testing.T) {
-	testutil.SkipIfPostgres(t, "claim failure injection uses SQLite triggers")
+
 	for _, fault := range []string{"record", "clear"} {
 		t.Run(fault, func(t *testing.T) {
 			requirements := require.New(t)
@@ -315,7 +315,7 @@ func TestEmitDraftLifecycleOutputJSONRoundTrip(t *testing.T) {
 }
 
 func TestDraftLifecycleAcceptedReadFailureEvidence(t *testing.T) {
-	testutil.SkipIfPostgres(t, "local read fault injection alters SQLite tables")
+
 	for _, fault := range []string{"message", "reply_link"} {
 		for _, asJSON := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/json=%t", fault, asJSON), func(t *testing.T) {
@@ -448,7 +448,7 @@ func TestDraftLifecyclePublicationFailure(t *testing.T) {
 }
 
 func TestDraftLifecycleHumanAcknowledgedReceiptWhenRecordFails(t *testing.T) {
-	testutil.SkipIfPostgres(t, "receipt write fault injection uses a SQLite trigger")
+
 	requirements := require.New(t)
 	assertions := assert.New(t)
 	fixture := newDraftReplyFixture(t)
@@ -859,7 +859,7 @@ func TestDraftLifecycleCleanupOutcomeEvidence(t *testing.T) {
 }
 
 func TestDraftLifecycleCleanup(t *testing.T) {
-	testutil.SkipIfPostgres(t, "finish failure injection uses a SQLite trigger")
+
 	for _, operation := range []string{api.CLIRunDraftEditCommand, api.CLIRunDraftDeleteCommand} {
 		t.Run(operation, func(t *testing.T) {
 			requirements := require.New(t)
@@ -947,7 +947,7 @@ func TestDraftLifecycleCleanup(t *testing.T) {
 }
 
 func TestDraftLifecycleRemovedOutcomePersistenceFailure(t *testing.T) {
-	testutil.SkipIfPostgres(t, "removed outcome failure injection uses a SQLite trigger")
+
 	for _, operation := range []string{api.CLIRunDraftEditCommand, api.CLIRunDraftDeleteCommand} {
 		t.Run(operation, func(t *testing.T) {
 			requirements := require.New(t)
@@ -1046,7 +1046,7 @@ func TestDraftLifecycleSyncProjection(t *testing.T) {
 	adapter := fixture.grantedAdapter()
 	created := createReviewDraft(t, fixture, adapter, "sync projection")
 	var analyticsDir string
-	if !fixture.store.IsPostgreSQL() {
+	{
 		cacheRoot := t.TempDir()
 		cacheDB := filepath.Join(cacheRoot, "cache.db")
 		analyticsDir = filepath.Join(cacheRoot, "analytics")
@@ -1084,7 +1084,7 @@ func TestDraftLifecycleSyncProjection(t *testing.T) {
 	assertions.Equal(output.MessageID, draft.CurrentMessageID)
 	assertions.Equal(output.Receipt.UID, draft.CurrentReceipt.UID)
 	assertions.Nil(draft.Pending)
-	if !fixture.store.IsPostgreSQL() {
+	{
 		engine, err := query.NewDuckDBEngine(analyticsDir, "", nil)
 		requirements.NoError(err)
 		t.Cleanup(func() { _ = engine.Close() })

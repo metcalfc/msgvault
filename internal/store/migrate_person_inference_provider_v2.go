@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json/v2"
 	"fmt"
-	"strings"
 )
 
 // migratePersonInferenceProviderV2 brings person_inference_profiles up to the
@@ -31,12 +30,7 @@ func (s *Store) migratePersonInferenceProviderV2(ctx context.Context) error {
 			{`ALTER TABLE person_inference_profiles ADD COLUMN program_fingerprint TEXT NOT NULL DEFAULT ''`, "person_inference_profiles.program_fingerprint"},
 			{`ALTER TABLE person_inference_profiles ADD COLUMN disclosed_packet_fields JSON NOT NULL DEFAULT '[]'`, "person_inference_profiles.disclosed_packet_fields"},
 		}
-		if s.IsPostgreSQL() {
-			for index := range columns {
-				columns[index].SQL = postgresPersonInferenceAddColumn(columns[index].SQL)
-			}
-			columns[len(columns)-1].SQL = `ALTER TABLE person_inference_profiles ADD COLUMN IF NOT EXISTS disclosed_packet_fields JSONB NOT NULL DEFAULT '[]'::jsonb`
-		}
+
 		for _, column := range columns {
 			if _, err := tx.ExecContext(ctx, column.SQL); err != nil && !s.dialect.IsDuplicateColumnError(err) {
 				return fmt.Errorf("add %s: %w", column.Desc, err)
@@ -44,9 +38,7 @@ func (s *Store) migratePersonInferenceProviderV2(ctx context.Context) error {
 		}
 
 		checkedAtType := "TEXT"
-		if s.IsPostgreSQL() {
-			checkedAtType = "TIMESTAMPTZ"
-		}
+
 		if _, err := tx.ExecContext(ctx, `
 			CREATE TABLE IF NOT EXISTS person_inference_checks (
 				profile_fingerprint TEXT PRIMARY KEY REFERENCES person_inference_profiles(fingerprint),
@@ -76,10 +68,6 @@ func (s *Store) migratePersonInferenceProviderV2(ctx context.Context) error {
 		}
 		return nil
 	})
-}
-
-func postgresPersonInferenceAddColumn(statement string) string {
-	return strings.Replace(statement, " ADD COLUMN ", " ADD COLUMN IF NOT EXISTS ", 1)
 }
 
 // preProfilePersonInferenceFingerprints lists profile rows whose stored

@@ -254,7 +254,7 @@ func TestFull_PersistsEventsAsMessages(t *testing.T) {
 	assert.NotContains(body, "bob@example.com", "raw attendee email must not be in body_text")
 
 	// FTS to_addr indexes the raw attendee email (SQLite vtable).
-	if st.FTS5Available() && !st.IsPostgreSQL() {
+	if st.FTS5Available() && !false {
 		var toAddr, ftsBody string
 		require.NoError(st.DB().QueryRow(
 			`SELECT to_addr, body FROM messages_fts WHERE message_id = ?`, row.id).Scan(&toAddr, &ftsBody))

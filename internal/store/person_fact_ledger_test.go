@@ -2,7 +2,6 @@ package store
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -629,10 +628,8 @@ func TestPersonFactLedgerPaginationValidationAndOrdering(t *testing.T) {
 func newPersonFactLedgerStore(t *testing.T) (*Store, int64) {
 	t.Helper()
 	var st *Store
-	testDB := os.Getenv("MSGVAULT_TEST_DB")
-	if IsPostgresURL(testDB) {
-		st = newPGStoreInternal(t, testDB)
-	} else {
+
+	{
 		var err error
 		st, err = OpenForTest(filepath.Join(t.TempDir(), "fact-ledger.db"))
 		require.NoError(t, err)

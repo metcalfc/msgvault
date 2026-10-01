@@ -178,15 +178,7 @@ func installLegacyPersonEnrichmentAttemptStates(t *testing.T, st *Store) {
 	t.Helper()
 	requirements := require.New(t)
 	legacy := strings.Replace(personEnrichmentAttemptStateCheck, ", 'identity_uncertain'", "", 1)
-	if st.IsPostgreSQL() {
-		_, err := st.DB().ExecContext(t.Context(), `
-			ALTER TABLE person_enrichment_attempts
-				DROP CONSTRAINT IF EXISTS `+personEnrichmentAttemptStateConstraint+`;
-			ALTER TABLE person_enrichment_attempts
-				ADD CONSTRAINT `+personEnrichmentAttemptStateConstraint+` `+legacy)
-		requirements.NoError(err)
-		return
-	}
+
 	statements := personEnrichmentAttemptStateRebuildStatements()
 	for i, statement := range statements {
 		statements[i] = strings.Replace(statement, personEnrichmentAttemptStateCheck, legacy, 1)
@@ -268,9 +260,7 @@ func rerunIdentityUncertainMigration(t *testing.T, st *Store) error {
 
 func TestPersonEnrichmentIdentityUncertainMigrationIgnoresUnrelatedDanglingReferences(t *testing.T) {
 	f := newEnrichmentResultFixture(t)
-	if f.store.IsPostgreSQL() {
-		t.Skip("the rebuild and its foreign key check are SQLite-only")
-	}
+
 	installLegacyPersonEnrichmentAttemptStates(t, f.store)
 	execWithForeignKeysOff(t, f.store,
 		`INSERT INTO labels (source_id, name) VALUES (987654321, 'orphaned label')`)
@@ -291,20 +281,20 @@ func TestPersonEnrichmentIdentityUncertainMigrationRefusesDanglingAttemptReferen
 	}
 	for name, plant := range cases {
 		t.Run(name, func(t *testing.T) {
+			checks := assert.New(t)
+			requirements := require.New(t)
 			f := newEnrichmentResultFixture(t)
-			if f.store.IsPostgreSQL() {
-				t.Skip("the rebuild and its foreign key check are SQLite-only")
-			}
+
 			installLegacyPersonEnrichmentAttemptStates(t, f.store)
 			execWithForeignKeysOff(t, f.store, plant)
 
 			err := rerunIdentityUncertainMigration(t, f.store)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "dangling references")
+			requirements.Error(err)
+			checks.Contains(err.Error(), "dangling references")
 			var definition string
-			require.NoError(t, f.store.DB().QueryRowContext(t.Context(), `SELECT sql FROM sqlite_master
+			requirements.NoError(f.store.DB().QueryRowContext(t.Context(), `SELECT sql FROM sqlite_master
 				WHERE type = 'table' AND name = 'person_enrichment_attempts'`).Scan(&definition))
-			assert.NotContains(t, definition, "'identity_uncertain'", "the failed rebuild rolls back")
+			checks.NotContains(definition, "'identity_uncertain'", "the failed rebuild rolls back")
 		})
 	}
 }
@@ -404,15 +394,16 @@ func TestPersonMergeAndSplitTreatIdentityJudgmentsLikeTheirAttempts(t *testing.T
 // one state list the migration and validation derive from is exactly what a
 // fresh archive's table admits, on the backend under test.
 func TestPersonEnrichmentAttemptStateVocabularyMatchesTheSchema(t *testing.T) {
+	checks := assert.New(t)
 	f := newEnrichmentResultFixture(t)
 	for _, state := range personEnrichmentAttemptStates {
-		assert.True(t, validPersonEnrichmentAttemptState(state), state)
+		checks.True(validPersonEnrichmentAttemptState(state), state)
 		_, err := f.store.DB().ExecContext(t.Context(), f.store.Rebind(
 			`UPDATE person_enrichment_attempts SET state = ? WHERE id = ?`), state, f.attempt.ID)
-		assert.NoError(t, err, "the fresh schema admits %s", state)
+		checks.NoError(err, "the fresh schema admits %s", state)
 	}
-	assert.False(t, validPersonEnrichmentAttemptState("abandoned"))
+	checks.False(validPersonEnrichmentAttemptState("abandoned"))
 	_, err := f.store.DB().ExecContext(t.Context(), f.store.Rebind(
 		`UPDATE person_enrichment_attempts SET state = 'abandoned' WHERE id = ?`), f.attempt.ID)
-	assert.Error(t, err, "the fresh schema rejects a state outside the vocabulary")
+	checks.Error(err, "the fresh schema rejects a state outside the vocabulary")
 }

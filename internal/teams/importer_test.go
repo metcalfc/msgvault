@@ -892,24 +892,8 @@ func installFailingTeamsRawArchiveTrigger(t *testing.T, st *store.Store) {
 	t.Helper()
 
 	var err error
-	if st.IsPostgreSQL() {
-		_, err = st.DB().Exec(`
-			CREATE OR REPLACE FUNCTION fail_teams_raw_archive()
-			RETURNS trigger AS $$
-			BEGIN
-				IF NEW.raw_format = 'teams_json' THEN
-					RAISE EXCEPTION 'raw archive blocked';
-				END IF;
-				RETURN NEW;
-			END;
-			$$ LANGUAGE plpgsql;
 
-			CREATE TRIGGER fail_teams_raw_archive
-			BEFORE INSERT ON message_raw
-			FOR EACH ROW
-			EXECUTE FUNCTION fail_teams_raw_archive();
-		`)
-	} else {
+	{
 		_, err = st.DB().Exec(`
 			CREATE TRIGGER fail_teams_raw_archive
 			BEFORE INSERT ON message_raw

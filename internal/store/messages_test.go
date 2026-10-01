@@ -497,12 +497,7 @@ func readSiblingMessageSnapshot(t *testing.T, st *store.Store, messageID int64) 
 	}
 	require.NoError(t, workRows.Err(), "iterate sibling person sweep work")
 
-	if st.IsPostgreSQL() {
-		err = st.DB().QueryRowContext(t.Context(), `
-			SELECT id, COALESCE(CAST(search_fts AS TEXT), '') FROM messages WHERE id = $1
-		`, messageID).Scan(&snapshot.FTS.MessageID, &snapshot.FTS.SearchDocument)
-		require.NoError(t, err, "read sibling PostgreSQL FTS document")
-	} else {
+	{
 		err = st.DB().QueryRowContext(t.Context(), `
 			SELECT message_id, subject, body, from_addr, to_addr, cc_addr
 			FROM messages_fts WHERE rowid = ?
@@ -1322,10 +1317,7 @@ func TestPersistRepairMessageSerializesIdentityGuardRevalidation(t *testing.T) {
 		result <- persistErr
 	}()
 
-	if fixture.Store.IsPostgreSQL() {
-		waitForPostgreSQLLockWait(t, fixture.Store,
-			"%SELECT id, source_id, source_message_id%FROM messages%FOR UPDATE%")
-	} else {
+	{
 		require.Eventually(func() bool {
 			return fixture.Store.DB().Stats().InUse >= 2 || len(result) > 0
 		}, time.Second, time.Millisecond)
@@ -1347,57 +1339,6 @@ func TestPersistRepairMessageSerializesIdentityGuardRevalidation(t *testing.T) {
 		require.FailNow("repair did not finish after releasing identity writer")
 	}
 	assert.False(built.Load(), "guard must be re-read after acquiring serialization")
-}
-
-func TestPersistRepairMessageLocksParticipantDirectoryBeforeIdentityGuard(t *testing.T) {
-	require := require.New(t)
-	fixture := seedRepairStoreFixture(t)
-	if !fixture.Store.IsPostgreSQL() {
-		t.Skip("PostgreSQL advisory and row locks are required")
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-
-	blocker, err := fixture.Store.DB().BeginTx(ctx, nil)
-	require.NoError(err)
-	held := true
-	t.Cleanup(func() {
-		if held {
-			_ = blocker.Rollback()
-		}
-	})
-	_, err = blocker.ExecContext(ctx, `
-		SELECT pg_advisory_xact_lock(
-			hashtextextended('participant-directory-mutation', 0)
-		)`)
-	require.NoError(err)
-
-	result := make(chan error, 1)
-	go func() {
-		_, persistErr := fixture.Store.PersistRepairMessageWithParticipantsContext(
-			ctx, fixture.Guard, repairParticipants(),
-			func(participantIDs []int64) *store.MessagePersistData {
-				return repairedMessageData(fixture, participantIDs, nil)
-			},
-		)
-		result <- persistErr
-	}()
-	waitForPostgreSQLLockWait(t, fixture.Store, "%pg_advisory_xact_lock%")
-
-	var messageID int64
-	require.NoError(blocker.QueryRowContext(ctx,
-		`SELECT id FROM messages WHERE id = $1 FOR UPDATE`, fixture.TargetID,
-	).Scan(&messageID), "repair must not lock its message while waiting for the participant directory")
-	require.Equal(fixture.TargetID, messageID)
-	require.NoError(blocker.Commit())
-	held = false
-
-	select {
-	case persistErr := <-result:
-		require.NoError(persistErr)
-	case <-ctx.Done():
-		require.FailNow("repair did not finish after the directory lock was released", ctx.Err())
-	}
 }
 
 func TestPersistRepairMessageHonorsCanceledContext(t *testing.T) {

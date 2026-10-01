@@ -10,12 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/store"
-	"go.kenn.io/msgvault/internal/testutil"
 	"go.kenn.io/msgvault/internal/testutil/storetest"
 )
 
 func TestBackupDatabaseContext_AtomicallyPublishesValidBackup(t *testing.T) {
-	testutil.SkipIfPostgres(t, "VACUUM INTO backup publication is SQLite-only")
+
 	assert := assert.New(t)
 	require := require.New(t)
 	f := storetest.New(t)
@@ -47,7 +46,7 @@ func TestBackupDatabaseContext_AtomicallyPublishesValidBackup(t *testing.T) {
 }
 
 func TestBackupDatabaseContext_PreservesTargetCreatedDuringBackup(t *testing.T) {
-	testutil.SkipIfPostgres(t, "VACUUM INTO backup publication is SQLite-only")
+
 	assert := assert.New(t)
 	require := require.New(t)
 	f := storetest.New(t)
@@ -90,7 +89,7 @@ func TestBackupDatabaseContext_PreservesTargetCreatedDuringBackup(t *testing.T) 
 }
 
 func TestBackupDatabaseContext_CancellationRemovesUnpublishedBackup(t *testing.T) {
-	testutil.SkipIfPostgres(t, "VACUUM INTO backup cancellation is SQLite-only")
+
 	assert := assert.New(t)
 	require := require.New(t)
 	f := storetest.New(t)
@@ -143,7 +142,7 @@ func TestBackupDatabaseContext_CancellationRemovesUnpublishedBackup(t *testing.T
 func TestBackupDatabaseContext_PreservesReversiblePersonMerge(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t, "VACUUM INTO backup publication is SQLite-only")
+
 	ctx := context.Background()
 	f := storetest.New(t)
 	survivorParticipant := f.EnsureParticipant(

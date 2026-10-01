@@ -25,9 +25,7 @@ func acquireDirectSQLiteWriteLock(cfg *config.Config, state *invocation) (func()
 	if isDaemonCLISubprocess() {
 		return func() {}, nil
 	}
-	if store.IsPostgresURL(cfg.DatabaseDSN()) {
-		return func() {}, nil
-	}
+
 	lock, err := tryAcquireWriteOwnerLock(cfg.Data.DataDir)
 	if err != nil {
 		if errors.As(err, &writeOwnerLockHeldError{}) {
@@ -68,7 +66,7 @@ func archiveOwnedError(dataDir string) error {
 // live daemon legitimately owns the lock, so its presence means this is not a
 // direct-writer situation.
 func directSQLiteWriterOwnsArchive(cfg *config.Config) (bool, error) {
-	if cfg == nil || store.IsPostgresURL(cfg.DatabaseDSN()) {
+	if cfg == nil {
 		return false, nil
 	}
 	records, err := listLiveDaemonRuntimeRecords(cfg.Data.DataDir)

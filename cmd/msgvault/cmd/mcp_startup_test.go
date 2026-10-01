@@ -32,10 +32,6 @@ func TestMCPInitializeWithoutStats(t *testing.T) {
 	testMCPStartupCatalog(t, api.AnalyticsModeDuckDB)
 }
 
-func TestMCPPostgresCatalogWithoutSQL(t *testing.T) {
-	testMCPStartupCatalog(t, api.AnalyticsModePostgres)
-}
-
 func testMCPStartupCatalog(t *testing.T, analyticsEngine string) {
 	t.Helper()
 	require := require.New(t)
@@ -151,11 +147,7 @@ func testMCPStartupCatalog(t *testing.T, analyticsEngine string) {
 	assert.Contains(names, "semantic_search_messages")
 	assert.NotContains(names, "find_similar_messages")
 	assert.NotContains(names, "search_visual_attachments")
-	if analyticsEngine == api.AnalyticsModePostgres {
-		assert.NotContains(names, "query_sql")
-	} else {
-		assert.Contains(names, "query_sql")
-	}
+	assert.Contains(names, "query_sql")
 	assert.Empty(statsSeen, "tool discovery must not request /api/v1/stats")
 
 	_ = stdin.Close()

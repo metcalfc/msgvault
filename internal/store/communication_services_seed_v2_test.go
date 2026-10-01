@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -15,9 +14,7 @@ import (
 // under the same name or claiming a name that is already another
 // service's alias.
 func TestCommunicationServiceSeedV2UpgradesWithoutOverridingUserServices(t *testing.T) {
-	if IsPostgresURL(os.Getenv("MSGVAULT_TEST_DB")) {
-		t.Skip("SQLite file-path migration test")
-	}
+
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := context.Background()

@@ -191,10 +191,6 @@ const (
 	feedCommitBoundAdvanceBudget = 30 * time.Second
 	databaseProgressPoll         = 200 * time.Microsecond
 
-	// These budgets observe PostgreSQL lock catalogs.
-	postgresLockWaiterBudget = 3 * time.Second
-	postgresLockWaiterPoll   = 10 * time.Millisecond
-
 	// This real-time window keeps a database-stamped write uncommitted.
 	pendingStampWindow = 3 * time.Millisecond
 )
@@ -358,19 +354,6 @@ func readWatermarkInTx(t *testing.T, st *store.Store, tx *sql.Tx, id int64) time
 	}
 }
 
-// skipUnlessSecondWriterCanCommit skips a test whose arrangement needs one
-// connection to commit while another holds an open write transaction. SQLite
-// serialises writers, so the second write blocks until the first finishes and
-// the scenario cannot be built there at all — a different thing from the feed
-// behaving differently.
-func skipUnlessSecondWriterCanCommit(t *testing.T, st *store.Store) {
-	t.Helper()
-	if !st.IsPostgreSQL() {
-		t.Skip("SQLite serialises writers: a second writer cannot commit while a " +
-			"write transaction is open, so this arrangement is unreachable")
-	}
-}
-
 // TestListChangedMessages_SameInstantUncommittedChangeIsNotStranded is
 // SQLite's deterministic form of the loss.
 //
@@ -396,7 +379,7 @@ func skipUnlessSecondWriterCanCommit(t *testing.T, st *store.Store) {
 func TestListChangedMessages_SameInstantUncommittedChangeIsNotStranded(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t, "millisecond stamps make same-instant ties ordinary on SQLite alone")
+
 	st := testutil.NewTestStore(t)
 
 	low := seedFeedMessage(t, st, 1, time.Time{})
@@ -414,7 +397,7 @@ func TestListChangedMessages_SameInstantUncommittedChangeIsNotStranded(t *testin
 	// its own reading.
 	shared := databaseClock(t, st)
 	var sharedParam any = shared.UTC()
-	if !st.IsPostgreSQL() {
+	{
 		sharedParam = shared.UTC().Format(store.SQLiteTimestampLayout)
 	}
 	const pinned = `UPDATE messages SET subject = ?, content_changed_at = ? WHERE id = ?`
@@ -447,64 +430,6 @@ func TestListChangedMessages_SameInstantUncommittedChangeIsNotStranded(t *testin
 			"back: a page that publishes a cursor from an instant still open for "+
 			"commits loses every change still pending in it. Cursor is now (%s, %d)",
 		low, shared, high, consumer.cursor.At(), consumer.cursorID())
-}
-
-// TestListChangedMessages_LaterCommitDoesNotStrandAnEarlierPendingChange is the
-// shape that cost 40 of 40 tombstones: a batched writer holds one transaction
-// open across a whole run (MarkMessagesDeletedFromReader streams its input, so
-// its transaction lives as long as the network does) while ordinary autocommit
-// traffic keeps committing alongside it. Every one of the batch's stamps is
-// older than the traffic the consumer is being served, so the cursor climbs
-// straight over the lot.
-//
-// PostgreSQL only, and not because SQLite behaves differently: SQLite has one
-// writer, so no second connection can commit anything while the transaction is
-// open, and the arrangement cannot be built at all. SQLite's version of this
-// loss is the same-instant test above.
-func TestListChangedMessages_LaterCommitDoesNotStrandAnEarlierPendingChange(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	st := testutil.NewTestStore(t)
-	skipUnlessSecondWriterCanCommit(t, st)
-
-	pending := seedFeedMessage(t, st, 1, time.Time{})
-	traffic := seedFeedMessage(t, st, 2, time.Time{})
-	settleFeedClock(t, st)
-
-	consumer := newChangeFeedConsumer()
-	consumer.drain(t, st)
-
-	tx, err := st.DB().BeginTx(context.Background(), nil)
-	require.NoError(err, "begin the batched write")
-	defer func() { _ = tx.Rollback() }()
-	_, err = tx.Exec(
-		st.Rebind(`UPDATE messages SET subject = ? WHERE id = ?`), "batched-change", pending)
-	require.NoError(err, "stamp the batched change")
-	pendingAt := readWatermarkInTx(t, st, tx, pending)
-
-	// Ordinary traffic commits while the batch is still open, so its watermark
-	// is strictly newer than the batch's.
-	setSubject(t, st, traffic, "ordinary-traffic")
-	waitForDatabaseClockPast(t, st, pendingAt)
-
-	page := consumer.mustPoll(t, st)
-	require.Falsef(page.CompleteThrough.After(pendingAt),
-		"the feed reported itself complete through %s while a change stamped %s "+
-			"was still uncommitted", page.CompleteThrough, pendingAt)
-
-	consumer.drain(t, st)
-	require.NoError(tx.Commit(), "commit the batched write")
-
-	delivered := consumer.drainUntil(t, st, func() bool {
-		return consumer.subject(pending) == "batched-change"
-	})
-
-	assert.Truef(delivered,
-		"message %d was stamped %s inside a transaction that committed after the "+
-			"consumer had been served newer traffic. The feed reported %q for it "+
-			"and never corrected itself: an entire batched write is lost this way. "+
-			"Cursor is now (%s, %d)",
-		pending, pendingAt, consumer.subject(pending), consumer.cursor.At(), consumer.cursorID())
 }
 
 // TestListChangedMessages_CompleteThroughHoldsBelowAPendingChange pins what the
@@ -734,7 +659,6 @@ func TestListChangedMessages_BoundNeverEntersABatchesStampRange(t *testing.T) {
 	for i := 1; i <= batchSize; i++ {
 		batch = append(batch, seedFeedMessage(t, st, i, time.Time{}))
 	}
-	traffic := seedFeedMessage(t, st, batchSize+1, time.Time{})
 	settleFeedClock(t, st)
 
 	consumer := newChangeFeedConsumer()
@@ -743,30 +667,6 @@ func TestListChangedMessages_BoundNeverEntersABatchesStampRange(t *testing.T) {
 	tx, err := st.DB().BeginTx(context.Background(), nil)
 	require.NoError(err, "begin the batch")
 	defer func() { _ = tx.Rollback() }()
-
-	stop := make(chan struct{})
-	var workers sync.WaitGroup
-	var trafficErr error
-	if st.IsPostgreSQL() {
-		// Autocommit traffic gives the cursor something to climb while the batch
-		// is pending. On SQLite it cannot run at all — the batch holds the single
-		// writer slot — and the equivalent there is the same-instant tie covered
-		// by TestListChangedMessages_SameInstantUncommittedChangeIsNotStranded.
-		workers.Go(func() {
-			for i := 0; ; i++ {
-				select {
-				case <-stop:
-					return
-				default:
-				}
-				if err := writeSubject(st, traffic, fmt.Sprintf("traffic-%d", i)); err != nil {
-					trafficErr = err
-					return
-				}
-				time.Sleep(time.Millisecond) //nolint:kennlint // paces real writes against the database clock
-			}
-		})
-	}
 
 	var firstStamp time.Time
 	consumer.watchBounds(func() {
@@ -781,10 +681,6 @@ func TestListChangedMessages_BoundNeverEntersABatchesStampRange(t *testing.T) {
 			consumer.mustPoll(t, st)
 		}
 	})
-
-	close(stop)
-	workers.Wait()
-	require.NoError(trafficErr, "the autocommit writer failed")
 
 	trespassing := consumer.boundsPast(firstStamp)
 	require.Emptyf(trespassing,
@@ -943,47 +839,6 @@ func storedWatermarks(t *testing.T, st *store.Store, ids []int64) map[int64]stri
 	return out
 }
 
-// TestListChangedMessages_UnresolvableMessagesTableIsRefused pins the direction
-// the bound query fails in.
-//
-// Every filter in that query NARROWS the set of transactions that hold the
-// bound back, so a filter that stops matching does not raise an error — it
-// quietly returns the database clock, which is the bound this whole mechanism
-// exists to replace. `messages` is resolved by name through the session's
-// search_path, so it is the filter most likely to stop matching in a real
-// deployment (a search_path change, a rename, a schema-qualified deployment
-// gone wrong). It must refuse rather than serve pages nobody can trust.
-//
-// PostgreSQL only: the SQLite bound is a write-lock probe, which cannot fail
-// this way — it either takes the lock or it does not.
-func TestListChangedMessages_UnresolvableMessagesTableIsRefused(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	st := testutil.NewTestStore(t)
-	skipUnlessSecondWriterCanCommit(t, st)
-
-	seedFeedMessage(t, st, 1, time.Time{})
-	settleFeedClock(t, st)
-	_, err := st.ListChangedMessages(context.Background(), store.ChangedMessagesCursor{}, 10)
-	require.NoError(err, "the feed works before the table moves out of reach")
-
-	_, err = st.DB().Exec(`ALTER TABLE messages RENAME TO messages_moved`)
-	require.NoError(err, "move the table out of the bound query's reach")
-	defer func() {
-		_, err := st.DB().Exec(`ALTER TABLE messages_moved RENAME TO messages`)
-		require.NoError(err, "put the table back")
-	}()
-
-	_, err = st.ListChangedMessages(context.Background(), store.ChangedMessagesCursor{}, 10)
-	require.Error(err,
-		"a bound that cannot see which transactions are writing must refuse the "+
-			"page; serving one bounded at the clock is the original data loss, "+
-			"reached by a filter matching nothing instead of by a decision")
-	assert.Contains(err.Error(), "search_path",
-		"the error must name what went wrong, so an operator is not left with a "+
-			"bare `relation does not exist` from a query they did not write")
-}
-
 // TestListChangedMessages_BlockedFirstProbePublishesNoBound pins the one state
 // in which the feed has no bound at all rather than a stale one.
 //
@@ -1006,7 +861,6 @@ func TestListChangedMessages_UnresolvableMessagesTableIsRefused(t *testing.T) {
 func TestListChangedMessages_BlockedFirstProbePublishesNoBound(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t, "the SQLite bound is a write-lock probe; PostgreSQL has none")
 
 	path := filepath.Join(t.TempDir(), "feed.db")
 	seedStore, err := store.OpenForTest(path)

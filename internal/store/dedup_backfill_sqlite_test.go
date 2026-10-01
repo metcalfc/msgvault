@@ -4,18 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
-	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -74,9 +69,6 @@ func TestStore_RFC822IDBackfillStreamsAcrossBoundedPages(t *testing.T) {
 
 func newRFC822IDBackfillBackendStore(t *testing.T) *Store {
 	t.Helper()
-	if dbURL := os.Getenv("MSGVAULT_TEST_DB"); IsPostgresURL(dbURL) {
-		return newPGStoreInternal(t, dbURL)
-	}
 	st, err := OpenForTest(filepath.Join(t.TempDir(), "bounded-rfc822-backfill.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
@@ -105,7 +97,6 @@ type rfc822IDBackfillGateConnector struct {
 	driver.Connector
 
 	statementGate *rfc822IDBackfillStatementGate
-	rowGate       *rfc822IDBackfillPostgresRowGate
 	connections   atomic.Int64
 }
 
@@ -115,7 +106,7 @@ func (c *rfc822IDBackfillGateConnector) Connect(ctx context.Context) (driver.Con
 		return nil, err
 	}
 	return &rfc822IDBackfillGateConn{
-		Conn: conn, statementGate: c.statementGate, rowGate: c.rowGate,
+		Conn: conn, statementGate: c.statementGate,
 		report: c.connections.Add(1) == 2,
 	}, nil
 }
@@ -135,7 +126,6 @@ type rfc822IDBackfillGateConn struct {
 	driver.Conn
 
 	statementGate *rfc822IDBackfillStatementGate
-	rowGate       *rfc822IDBackfillPostgresRowGate
 	report        bool
 }
 
@@ -151,11 +141,7 @@ func (c *rfc822IDBackfillGateConn) QueryContext(
 	if !ok {
 		return nil, driver.ErrSkip
 	}
-	if active, _ := ctx.Value(rfc822IDBackfillApplyContextKey{}).(bool); active && c.rowGate != nil &&
-		strings.Contains(strings.ToUpper(query), "FROM MESSAGES M") &&
-		strings.Contains(strings.ToUpper(query), "JOIN MESSAGE_RAW MR") {
-		c.rowGate.reportQueryStarted()
-	}
+
 	return queryer.QueryContext(ctx, query, args)
 }
 
@@ -211,27 +197,9 @@ func (c *rfc822IDBackfillGateConn) CheckNamedValue(value *driver.NamedValue) err
 	return driver.ErrSkip
 }
 
-type rfc822IDBackfillPostgresRowGate struct {
-	queryStarted chan struct{}
-	startedOnce  sync.Once
-}
-
-func newRFC822IDBackfillPostgresRowGate() *rfc822IDBackfillPostgresRowGate {
-	return &rfc822IDBackfillPostgresRowGate{
-		queryStarted: make(chan struct{}),
-	}
-}
-
-func (g *rfc822IDBackfillPostgresRowGate) reportQueryStarted() {
-	g.startedOnce.Do(func() { close(g.queryStarted) })
-}
-
 func TestStore_ApplyRFC822IDBackfillSQLiteReservesWriterBeforeValidation(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	if IsPostgresURL(os.Getenv("MSGVAULT_TEST_DB")) {
-		t.Skip("SQLite lock-order contract")
-	}
 
 	gate := &rfc822IDBackfillStatementGate{statements: make(chan string, 16)}
 	st := newRFC822IDBackfillSQLiteGateStore(t, gate)
@@ -292,98 +260,6 @@ func TestStore_ApplyRFC822IDBackfillSQLiteReservesWriterBeforeValidation(t *test
 	}
 	assert.Empty(internalStoredRFC822ID(t, st, firstID))
 	assert.Equal("stale@example.com", internalStoredRFC822ID(t, st, secondID))
-}
-
-func TestStore_ApplyRFC822IDBackfillPostgresLocksAscendingAndRollsBackDrift(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	dbURL := skipUnlessPostgresInternal(t)
-	gate := newRFC822IDBackfillPostgresRowGate()
-	st := newRFC822IDBackfillPostgresGateStore(t, dbURL, gate)
-	firstID, secondID, sourceID, plan := newInternalRFC822IDBackfillPlan(t, st, "pg-lock")
-
-	connA, err := st.db.Conn(t.Context())
-	require.NoError(err)
-	t.Cleanup(func() { _ = connA.Close() })
-	require.NoError(execManualSQL(t.Context(), connA, "BEGIN"))
-	committedA := false
-	t.Cleanup(func() {
-		if !committedA {
-			_ = execManualSQL(context.Background(), connA, "ROLLBACK")
-		}
-	})
-	var lockedID int64
-	require.NoError(connA.QueryRowContext(t.Context(), st.dialect.Rebind(
-		`SELECT id FROM messages WHERE id = ? FOR UPDATE`), secondID).Scan(&lockedID))
-	require.Equal(secondID, lockedID)
-	require.NoError(connA.QueryRowContext(t.Context(), st.dialect.Rebind(
-		`SELECT message_id FROM message_raw WHERE message_id = ? FOR UPDATE`), secondID).Scan(&lockedID))
-
-	type applyResult struct {
-		updated int64
-		err     error
-	}
-	applyCtx, cancel := context.WithTimeout(
-		context.WithValue(t.Context(), rfc822IDBackfillApplyContextKey{}, true), 30*time.Second)
-	defer cancel()
-	resultCh := make(chan applyResult, 1)
-	progressCalls := make(chan struct{}, 1)
-	go func() {
-		updated, applyErr := st.ApplyRFC822IDBackfill(
-			applyCtx, []int64{sourceID}, plan,
-			func(_, _ int64) { progressCalls <- struct{}{} },
-		)
-		resultCh <- applyResult{updated: updated, err: applyErr}
-	}()
-
-	select {
-	case <-gate.queryStarted:
-	case <-applyCtx.Done():
-		require.NoError(applyCtx.Err(), "Apply did not start its locking query")
-	}
-	requirePostgresRowLocked(applyCtx, t, connA,
-		`SELECT id FROM messages WHERE id = $1 FOR UPDATE NOWAIT`, firstID)
-	requirePostgresRowLocked(applyCtx, t, connA,
-		`SELECT message_id FROM message_raw WHERE message_id = $1 FOR UPDATE NOWAIT`, firstID)
-
-	_, err = connA.ExecContext(t.Context(), st.dialect.Rebind(
-		`UPDATE messages SET rfc822_message_id = ? WHERE id = ?`), "stale@example.com", secondID)
-	require.NoError(err)
-	require.NoError(execManualSQL(t.Context(), connA, "COMMIT"))
-	committedA = true
-
-	select {
-	case result := <-resultCh:
-		require.ErrorIs(result.err, ErrRFC822IDBackfillPlanChanged)
-		assert.Equal(int64(0), result.updated)
-	case <-applyCtx.Done():
-		require.NoError(applyCtx.Err(), "Apply did not finish after connection A committed")
-	}
-	select {
-	case <-progressCalls:
-		require.Fail("progress fired for a rolled-back apply")
-	default:
-	}
-	assert.Empty(internalStoredRFC822ID(t, st, firstID))
-	assert.Equal("stale@example.com", internalStoredRFC822ID(t, st, secondID))
-}
-
-func newRFC822IDBackfillPostgresGateStore(
-	t *testing.T, dbURL string, gate *rfc822IDBackfillPostgresRowGate,
-) *Store {
-	t.Helper()
-	base := newPGStoreInternal(t, dbURL)
-	config, err := postgresConnConfig(base.dbPath, false)
-	require.NoError(t, err)
-	db := sql.OpenDB(&rfc822IDBackfillGateConnector{
-		Connector: stdlib.GetConnector(*config), rowGate: gate,
-	})
-	db.SetMaxOpenConns(2)
-	db.SetMaxIdleConns(2)
-	dialect := &PostgreSQLDialect{}
-	st := &Store{db: newLoggedDB(db, dialect.Rebind), dbPath: base.dbPath, dialect: dialect}
-	t.Cleanup(func() { _ = st.Close() })
-	return st
 }
 
 func newRFC822IDBackfillSQLiteGateStore(
@@ -447,51 +323,3 @@ func execManualSQL(ctx context.Context, conn *sql.Conn, statement string) error 
 	_, err := conn.ExecContext(ctx, statement)
 	return err
 }
-
-func requirePostgresRowLocked(
-	ctx context.Context, t *testing.T, conn *sql.Conn, query string, messageID int64,
-) {
-	t.Helper()
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		locked, err := postgresRowLocked(t.Context(), conn, query, messageID)
-		require.NoError(t, err)
-		if locked {
-			return
-		}
-		select {
-		case <-ctx.Done():
-			require.NoError(t, ctx.Err(), "Apply did not lock row %d", messageID)
-		case <-ticker.C:
-		}
-	}
-}
-
-func postgresRowLocked(
-	ctx context.Context, conn *sql.Conn, query string, messageID int64,
-) (bool, error) {
-	if err := execManualSQL(ctx, conn, "SAVEPOINT rfc822_id_backfill_probe"); err != nil {
-		return false, err
-	}
-	var id int64
-	err := conn.QueryRowContext(ctx, query, messageID).Scan(&id)
-	if rollbackErr := execManualSQL(
-		ctx, conn, "ROLLBACK TO SAVEPOINT rfc822_id_backfill_probe",
-	); rollbackErr != nil {
-		return false, rollbackErr
-	}
-	if err == nil {
-		return false, nil
-	}
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "55P03" {
-		return true, nil
-	}
-	return false, err
-}
-
-var _ driver.Connector = (*rfc822IDBackfillGateConnector)(nil)
-var _ driver.Connector = (*rfc822IDBackfillSQLiteConnector)(nil)
-var _ driver.QueryerContext = (*rfc822IDBackfillGateConn)(nil)
-var _ driver.ExecerContext = (*rfc822IDBackfillGateConn)(nil)

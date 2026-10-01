@@ -5,15 +5,11 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
-	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -200,41 +196,6 @@ func newGmailAuditSnapshotSQLiteStore(
 	return st
 }
 
-func newGmailAuditSnapshotPostgresStore(
-	t *testing.T, dbURL string, gate *gmailAuditSnapshotGate,
-) *Store {
-	t.Helper()
-	require := require.New(t)
-	schemaName := fmt.Sprintf("msgvault_test_gmail_audit_snapshot_%d", time.Now().UnixNano())
-	admin, err := sql.Open("pgx", dbURL)
-	require.NoError(err)
-	t.Cleanup(func() { _ = admin.Close() })
-	_, err = admin.ExecContext(t.Context(), "CREATE SCHEMA "+schemaName)
-	require.NoError(err)
-	t.Cleanup(func() {
-		_, _ = admin.ExecContext(context.Background(), "DROP SCHEMA "+schemaName+" CASCADE")
-	})
-
-	separator := "?"
-	if strings.Contains(dbURL, "?") {
-		separator = "&"
-	}
-	testURL := dbURL + separator + "search_path=" + schemaName
-	config, err := postgresConnConfig(testURL, false)
-	require.NoError(err)
-	db := sql.OpenDB(&gmailAuditSnapshotConnector{
-		Connector: stdlib.GetConnector(*config), gate: gate,
-	})
-	db.SetMaxOpenConns(8)
-	db.SetMaxIdleConns(4)
-	dialect := &PostgreSQLDialect{}
-	require.NoError(dialect.InitConn(db))
-	st := &Store{db: newLoggedDB(db, dialect.Rebind), dbPath: testURL, dialect: dialect}
-	t.Cleanup(func() { _ = st.Close() })
-	require.NoError(st.InitSchemaContext(t.Context()))
-	return st
-}
-
 func seedGmailAuditSnapshotMessage(
 	t *testing.T, st *Store, sourceID int64, sourceMessageID, fromAddress string,
 ) int64 {
@@ -283,11 +244,9 @@ func TestGmailAuditEvidencePageReadsOneCoherentSnapshot(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	gate := newGmailAuditSnapshotGate(0)
-	dbURL := os.Getenv("MSGVAULT_TEST_DB")
 	var st *Store
-	if IsPostgresURL(dbURL) {
-		st = newGmailAuditSnapshotPostgresStore(t, dbURL, gate)
-	} else {
+
+	{
 		st = newGmailAuditSnapshotSQLiteStore(t, gate)
 	}
 	source, err := st.GetOrCreateSource("gmail", "snapshot-audit@example.test")

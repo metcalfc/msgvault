@@ -176,9 +176,8 @@ func TestEmailHeaderRepairRollsBackWhenRevisionWriteFails(t *testing.T) {
 	id := f.CreateMessage("repair")
 	requirements.NoError(st.SetMessageMetadata(id, sql.NullString{String: `{"other":true}`, Valid: true}))
 	var err error
-	if st.IsPostgreSQL() {
-		_, err = st.DB().Exec(`ALTER TABLE archive_metadata ADD CONSTRAINT reject_email_revision CHECK (key <> 'derived_data_revision')`)
-	} else {
+
+	{
 		_, err = st.DB().Exec(`CREATE TRIGGER reject_email_revision BEFORE INSERT ON archive_metadata
    WHEN NEW.key = 'derived_data_revision' BEGIN SELECT RAISE(ABORT,'synthetic revision failure'); END`)
 	}

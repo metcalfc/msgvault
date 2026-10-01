@@ -233,7 +233,7 @@ func TestPersonEnrichmentSchemaSQLiteForeignKeysAndIndexes(t *testing.T) {
 }
 
 func TestPersonEnrichmentSchemaWorkAttemptPointerAndIndexes(t *testing.T) {
-	testutil.SkipIfPostgres(t, "SQLite PRAGMA shape is covered here; portable behavior runs on both backends")
+
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewSQLiteTestStore(t)
@@ -267,7 +267,7 @@ func TestPersonEnrichmentSchemaWorkAttemptPointerAndIndexes(t *testing.T) {
 }
 
 func TestPersonEnrichmentSchemaManualRunTargetBinding(t *testing.T) {
-	testutil.SkipIfPostgres(t, "SQLite PRAGMA shape is covered here; portable behavior runs on both backends")
+
 	st := testutil.NewSQLiteTestStore(t)
 	columns := pragmaTextColumn(t, st.DB(),
 		`PRAGMA table_info(person_enrichment_manual_run_targets)`, 1)
@@ -282,8 +282,7 @@ func TestPersonEnrichmentSchemaManualRunTargetBinding(t *testing.T) {
 
 func TestPersonEnrichmentAttemptProviderStartedAtLegacyMigrationParity(t *testing.T) {
 	for name, migrations := range map[string][]store.ColumnMigration{
-		"sqlite":   (&store.SQLiteDialect{}).LegacyColumnMigrations(),
-		"postgres": (&store.PostgreSQLDialect{}).LegacyColumnMigrations(),
+		"sqlite": (&store.SQLiteDialect{}).LegacyColumnMigrations(),
 	} {
 		t.Run(name, func(t *testing.T) {
 			matches := 0
@@ -301,8 +300,7 @@ func TestPersonEnrichmentAttemptProviderStartedAtLegacyMigrationParity(t *testin
 
 func TestPersonEnrichmentAttemptDispatchAuthorizationLegacyMigrationParity(t *testing.T) {
 	for name, migrations := range map[string][]store.ColumnMigration{
-		"sqlite":   (&store.SQLiteDialect{}).LegacyColumnMigrations(),
-		"postgres": (&store.PostgreSQLDialect{}).LegacyColumnMigrations(),
+		"sqlite": (&store.SQLiteDialect{}).LegacyColumnMigrations(),
 	} {
 		t.Run(name, func(t *testing.T) {
 			matches := 0
@@ -320,8 +318,7 @@ func TestPersonEnrichmentAttemptDispatchAuthorizationLegacyMigrationParity(t *te
 
 func TestPersonEnrichmentAttemptTargetsLegacyMigrationParity(t *testing.T) {
 	for name, migrations := range map[string][]store.ColumnMigration{
-		"sqlite":   (&store.SQLiteDialect{}).LegacyColumnMigrations(),
-		"postgres": (&store.PostgreSQLDialect{}).LegacyColumnMigrations(),
+		"sqlite": (&store.SQLiteDialect{}).LegacyColumnMigrations(),
 	} {
 		t.Run(name, func(t *testing.T) {
 			matches := 0
@@ -339,8 +336,7 @@ func TestPersonEnrichmentAttemptTargetsLegacyMigrationParity(t *testing.T) {
 
 func TestPersonEnrichmentFreshTriggerLegacyMigrationParity(t *testing.T) {
 	for name, migrations := range map[string][]store.ColumnMigration{
-		"sqlite":   (&store.SQLiteDialect{}).LegacyColumnMigrations(),
-		"postgres": (&store.PostgreSQLDialect{}).LegacyColumnMigrations(),
+		"sqlite": (&store.SQLiteDialect{}).LegacyColumnMigrations(),
 	} {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -361,20 +357,14 @@ func TestInitSchemaAddsDurableAttemptTargetsToLegacySchema(t *testing.T) {
 	requirements := require.New(t)
 	st := testutil.NewTestStore(t)
 	drop := `ALTER TABLE person_enrichment_attempts DROP COLUMN targets_json`
-	if st.IsPostgreSQL() {
-		drop += ` CASCADE`
-	}
+
 	_, err := st.DB().Exec(drop)
 	requirements.NoError(err)
 
 	requirements.NoError(st.InitSchema())
 	var columnCount int
 	query := `SELECT COUNT(*) FROM pragma_table_info('person_enrichment_attempts') WHERE name = 'targets_json'`
-	if st.IsPostgreSQL() {
-		query = `SELECT COUNT(*) FROM information_schema.columns
-		         WHERE table_schema = current_schema()
-		           AND table_name = 'person_enrichment_attempts' AND column_name = 'targets_json'`
-	}
+
 	requirements.NoError(st.DB().QueryRow(query).Scan(&columnCount))
 	assert.Equal(t, 1, columnCount)
 }
@@ -383,20 +373,14 @@ func TestInitSchemaAddsProviderStartedAtToLegacySchema(t *testing.T) {
 	requirements := require.New(t)
 	st := testutil.NewTestStore(t)
 	drop := `ALTER TABLE person_enrichment_attempts DROP COLUMN provider_started_at`
-	if st.IsPostgreSQL() {
-		drop += ` CASCADE`
-	}
+
 	_, err := st.DB().Exec(drop)
 	requirements.NoError(err)
 
 	requirements.NoError(st.InitSchema())
 	var columnCount int
 	query := `SELECT COUNT(*) FROM pragma_table_info('person_enrichment_attempts') WHERE name = 'provider_started_at'`
-	if st.IsPostgreSQL() {
-		query = `SELECT COUNT(*) FROM information_schema.columns
-		         WHERE table_schema = current_schema()
-		           AND table_name = 'person_enrichment_attempts' AND column_name = 'provider_started_at'`
-	}
+
 	requirements.NoError(st.DB().QueryRow(query).Scan(&columnCount))
 	assert.Equal(t, 1, columnCount)
 }
@@ -406,26 +390,20 @@ func TestInitSchemaAddsFreshTriggerMarkerToLegacySchema(t *testing.T) {
 	assert := assert.New(t)
 	st := testutil.NewTestStore(t)
 	drop := `ALTER TABLE person_enrichment_work DROP COLUMN has_fresh_trigger`
-	if st.IsPostgreSQL() {
-		drop += ` CASCADE`
-	}
+
 	_, err := st.DB().Exec(drop)
 	require.NoError(err)
 
 	require.NoError(st.InitSchema())
 	var columnCount int
 	query := `SELECT COUNT(*) FROM pragma_table_info('person_enrichment_work') WHERE name = 'has_fresh_trigger'`
-	if st.IsPostgreSQL() {
-		query = `SELECT COUNT(*) FROM information_schema.columns
-		         WHERE table_schema = current_schema()
-		           AND table_name = 'person_enrichment_work' AND column_name = 'has_fresh_trigger'`
-	}
+
 	require.NoError(st.DB().QueryRow(query).Scan(&columnCount))
 	assert.Equal(1, columnCount)
 }
 
 func TestPersonEnrichmentSchemaResultMetadataPrivacyIdentityAndCitationIndexes(t *testing.T) {
-	testutil.SkipIfPostgres(t, "SQLite PRAGMA shape is covered here; portable behavior runs on both backends")
+
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewSQLiteTestStore(t)

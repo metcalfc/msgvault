@@ -418,9 +418,7 @@ func insertPersonSweepOperationAttempt(
 }
 
 func personSweepTimestampParam(st *store.Store, value time.Time) any {
-	if st.IsPostgreSQL() {
-		return value.UTC()
-	}
+
 	return value.UTC().Format("2006-01-02 15:04:05.000")
 }
 
@@ -717,9 +715,7 @@ func insertSourceOperationRun(
 }
 
 func sourceOperationTimestampParam(st *store.Store, value time.Time) any {
-	if st.IsPostgreSQL() {
-		return value.UTC()
-	}
+
 	return value.UTC().Format("2006-01-02 15:04:05")
 }
 
@@ -1136,9 +1132,7 @@ func insertCardDAVOperationRun(
 }
 
 func cardDAVOperationTimestampArg(st *store.Store, value time.Time) any {
-	if st.IsPostgreSQL() {
-		return value.UTC()
-	}
+
 	return value.UTC().Format("2006-01-02 15:04:05")
 }
 

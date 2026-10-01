@@ -9,43 +9,32 @@ import (
 const (
 	migrationPhoneUniqueIndex = "participants_phone_unique_index"
 
-	identityMatchObservationConflictOriginMigrationDesc     = "identity_match_candidates.observation_conflict_origin"
-	sqliteParticipantLinkIdentityMatchCandidateMigration    = `ALTER TABLE participant_links ADD COLUMN identity_match_candidate_id INTEGER`
-	postgresParticipantLinkIdentityMatchCandidateMigration  = `ALTER TABLE participant_links ADD COLUMN IF NOT EXISTS identity_match_candidate_id BIGINT`
-	sqliteIdentityMatchObservationConflictOriginMigration   = `ALTER TABLE identity_match_candidates ADD COLUMN observation_conflict_origin TEXT CHECK (observation_conflict_origin IN ('generated', 'promoted'))`
-	postgresIdentityMatchObservationConflictOriginMigration = `ALTER TABLE identity_match_candidates ADD COLUMN IF NOT EXISTS observation_conflict_origin TEXT CHECK (observation_conflict_origin IN ('generated', 'promoted'))`
-	sqliteIdentityMatchPreConflictStateMigration            = `ALTER TABLE identity_match_candidates ADD COLUMN pre_conflict_state TEXT CHECK (pre_conflict_state IN ('candidate', 'accepted', 'rejected'))`
-	postgresIdentityMatchPreConflictStateMigration          = `ALTER TABLE identity_match_candidates ADD COLUMN IF NOT EXISTS pre_conflict_state TEXT CHECK (pre_conflict_state IN ('candidate', 'accepted', 'rejected'))`
-	sqliteIdentityMatchApplicationPendingMigration          = `ALTER TABLE identity_match_candidates ADD COLUMN application_pending BOOLEAN NOT NULL DEFAULT TRUE`
-	postgresIdentityMatchApplicationPendingMigration        = `ALTER TABLE identity_match_candidates ADD COLUMN IF NOT EXISTS application_pending BOOLEAN NOT NULL DEFAULT TRUE`
-	sqliteIdentityMatchCandidateSourcesMigration            = `CREATE TABLE IF NOT EXISTS identity_match_candidate_sources (
+	identityMatchObservationConflictOriginMigrationDesc  = "identity_match_candidates.observation_conflict_origin"
+	sqliteParticipantLinkIdentityMatchCandidateMigration = `ALTER TABLE participant_links ADD COLUMN identity_match_candidate_id INTEGER`
+
+	sqliteIdentityMatchObservationConflictOriginMigration = `ALTER TABLE identity_match_candidates ADD COLUMN observation_conflict_origin TEXT CHECK (observation_conflict_origin IN ('generated', 'promoted'))`
+
+	sqliteIdentityMatchPreConflictStateMigration = `ALTER TABLE identity_match_candidates ADD COLUMN pre_conflict_state TEXT CHECK (pre_conflict_state IN ('candidate', 'accepted', 'rejected'))`
+
+	sqliteIdentityMatchApplicationPendingMigration = `ALTER TABLE identity_match_candidates ADD COLUMN application_pending BOOLEAN NOT NULL DEFAULT TRUE`
+
+	sqliteIdentityMatchCandidateSourcesMigration = `CREATE TABLE IF NOT EXISTS identity_match_candidate_sources (
 		candidate_id INTEGER NOT NULL REFERENCES identity_match_candidates(id) ON DELETE CASCADE,
 		source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
 		is_conservative BOOLEAN NOT NULL DEFAULT FALSE,
 		PRIMARY KEY (candidate_id, source_id)
 	)`
-	postgresIdentityMatchCandidateSourcesMigration = `CREATE TABLE IF NOT EXISTS identity_match_candidate_sources (
-		candidate_id BIGINT NOT NULL REFERENCES identity_match_candidates(id) ON DELETE CASCADE,
-		source_id BIGINT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
-		is_conservative BOOLEAN NOT NULL DEFAULT FALSE,
-		PRIMARY KEY (candidate_id, source_id)
-	)`
+
 	sqliteIdentityMatchEvidenceSourcesMigration = `CREATE TABLE IF NOT EXISTS identity_match_evidence_sources (
 		evidence_id INTEGER NOT NULL REFERENCES identity_match_evidence(id) ON DELETE CASCADE,
 		source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
 		is_conservative BOOLEAN NOT NULL DEFAULT FALSE,
 		PRIMARY KEY (evidence_id, source_id)
 	)`
-	postgresIdentityMatchEvidenceSourcesMigration = `CREATE TABLE IF NOT EXISTS identity_match_evidence_sources (
-		evidence_id BIGINT NOT NULL REFERENCES identity_match_evidence(id) ON DELETE CASCADE,
-		source_id BIGINT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
-		is_conservative BOOLEAN NOT NULL DEFAULT FALSE,
-		PRIMARY KEY (evidence_id, source_id)
-	)`
-	sqliteIdentityMatchCandidateSourcesConservativeMigration   = `ALTER TABLE identity_match_candidate_sources ADD COLUMN is_conservative BOOLEAN NOT NULL DEFAULT TRUE`
-	postgresIdentityMatchCandidateSourcesConservativeMigration = `ALTER TABLE identity_match_candidate_sources ADD COLUMN IF NOT EXISTS is_conservative BOOLEAN NOT NULL DEFAULT TRUE`
-	sqliteIdentityMatchEvidenceSourcesConservativeMigration    = `ALTER TABLE identity_match_evidence_sources ADD COLUMN is_conservative BOOLEAN NOT NULL DEFAULT TRUE`
-	postgresIdentityMatchEvidenceSourcesConservativeMigration  = `ALTER TABLE identity_match_evidence_sources ADD COLUMN IF NOT EXISTS is_conservative BOOLEAN NOT NULL DEFAULT TRUE`
+
+	sqliteIdentityMatchCandidateSourcesConservativeMigration = `ALTER TABLE identity_match_candidate_sources ADD COLUMN is_conservative BOOLEAN NOT NULL DEFAULT TRUE`
+
+	sqliteIdentityMatchEvidenceSourcesConservativeMigration = `ALTER TABLE identity_match_evidence_sources ADD COLUMN is_conservative BOOLEAN NOT NULL DEFAULT TRUE`
 )
 
 // ensureParticipantsPhoneUniqueIndex upgrades legacy databases whose
@@ -131,18 +120,7 @@ func (s *Store) ensureIdentityMatchCandidateMergeColumns(ctx context.Context) er
 		sqliteIdentityMatchCandidateSourcesConservativeMigration,
 		sqliteIdentityMatchEvidenceSourcesConservativeMigration,
 	}
-	if s.IsPostgreSQL() {
-		migrations = []string{
-			postgresParticipantLinkIdentityMatchCandidateMigration,
-			postgresIdentityMatchObservationConflictOriginMigration,
-			postgresIdentityMatchPreConflictStateMigration,
-			postgresIdentityMatchApplicationPendingMigration,
-			postgresIdentityMatchCandidateSourcesMigration,
-			postgresIdentityMatchEvidenceSourcesMigration,
-			postgresIdentityMatchCandidateSourcesConservativeMigration,
-			postgresIdentityMatchEvidenceSourcesConservativeMigration,
-		}
-	}
+
 	for _, migrationSQL := range migrations {
 		if _, err := s.db.ExecContext(ctx, migrationSQL); err != nil &&
 			!s.dialect.IsDuplicateColumnError(err) {
@@ -163,12 +141,7 @@ func (s *Store) ensureIdentityMatchCandidateSourceSupportColumns(
 		sqliteIdentityMatchCandidateSourcesConservativeMigration,
 		sqliteIdentityMatchEvidenceSourcesConservativeMigration,
 	}
-	if s.IsPostgreSQL() {
-		migrations = []string{
-			postgresIdentityMatchCandidateSourcesConservativeMigration,
-			postgresIdentityMatchEvidenceSourcesConservativeMigration,
-		}
-	}
+
 	for _, migrationSQL := range migrations {
 		if _, err := s.db.ExecContext(ctx, migrationSQL); err != nil &&
 			!s.dialect.IsDuplicateColumnError(err) {

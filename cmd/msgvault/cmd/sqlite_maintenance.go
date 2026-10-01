@@ -16,9 +16,7 @@ const (
 )
 
 func registerSQLiteMaintenanceJob(sched *scheduler.Scheduler, s *store.Store) error {
-	if s.IsPostgreSQL() {
-		return nil
-	}
+
 	return sched.AddJob(scheduler.Job{
 		Name:     sqliteMaintenanceJob,
 		Schedule: sqliteMaintenanceCron,

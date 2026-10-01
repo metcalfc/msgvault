@@ -26,7 +26,6 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/testutil"
 	"go.kenn.io/msgvault/internal/vector"
-	"go.kenn.io/msgvault/internal/vector/pgvector"
 	"go.kenn.io/msgvault/internal/vector/visual"
 )
 
@@ -589,32 +588,6 @@ func TestEmbeddingProviderNameUsesURLHost(t *testing.T) {
 			assert := assert.New(t)
 			assert.Equal(want, embeddingProviderName(endpoint))
 		})
-	}
-}
-
-func TestSetupProvidersPostgresRequiresCompiledBackend(t *testing.T) {
-	cfg := testConfigValue()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	fixture := newSetupProvidersFixture(t, setupProvidersMinimalConfig+`database_url = "postgres://localhost/setup_test"`)
-	fixture.env[setupVoyageKeyEnv] = setupProvidersTestKey
-	fixture.writeVisualManifest(t, filepath.Join(fixture.dir, setupVoyageManifestName), voyage.CapabilityQueryText)
-	output, err := fixture.run(t, "providers", "--yes", "--json")
-	require.NoError(err, output)
-	loaded := fixture.load(t)
-	assert.Equal(pgvector.Available(), loaded.Vector.Enabled)
-	assert.Equal(pgvector.Available(), loaded.Vector.Multimodal.Enabled)
-	assert.Equal(pgvector.Available(), loaded.Vector.People.Enabled)
-	previous := cfg
-	cfg = loaded
-	t.Cleanup(func() { cfg = previous })
-	require.NoError(precheckVectorFeatures(loaded.DatabaseDSN(), loaded))
-	if !pgvector.Available() {
-		var result setupProvidersOutput
-		require.NoError(json.Unmarshal([]byte(output), &result))
-		assert.False(result.Applied)
-		assert.Contains(output, "rebuild")
 	}
 }
 

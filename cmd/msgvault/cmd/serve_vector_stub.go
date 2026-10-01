@@ -1,4 +1,4 @@
-//go:build !sqlite_vec && !pgvector
+//go:build !sqlite_vec
 
 package cmd
 
@@ -32,13 +32,7 @@ func manualConvergenceError(vector.GenerationID, scheduler.ConvergenceResult) er
 // mainPath's dialect. Shared by setupVectorFeatures and
 // precheckVectorFeatures so both surface the identical rebuild guidance.
 func errVectorBuildUnsupported(mainPath string) error {
-	// Point the user at the build tags they need: sqlite_vec for the
-	// SQLite backend, plus pgvector for the PostgreSQL backend.
-	if store.IsPostgresURL(mainPath) {
-		return errors.New("vector search is enabled in config but this binary was built without vector support; " +
-			"to use vector search on PostgreSQL, rebuild with `go build -tags \"fts5 sqlite_vec pgvector\"` " +
-			"or set [vector] enabled = false")
-	}
+
 	return errors.New("vector search is enabled in config but this binary was built without -tags sqlite_vec; " +
 		"rebuild with `make build` (or `go build -tags \"fts5 sqlite_vec\"`) " +
 		"or set [vector] enabled = false")

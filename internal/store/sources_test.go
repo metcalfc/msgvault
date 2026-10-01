@@ -116,7 +116,7 @@ func TestStore_RemoveSource(t *testing.T) {
 	// Verify FTS rows are gone (SQLite FTS5 vtable only; on PG the
 	// equivalent invariant — search_fts cleared — is covered by the
 	// dialect-level FTSDeleteSQL test).
-	if f.Store.FTS5Available() && !f.Store.IsPostgreSQL() {
+	if f.Store.FTS5Available() {
 		var ftsCount int
 		err = f.Store.DB().QueryRow(
 			`SELECT COUNT(*) FROM messages_fts`,
@@ -1044,7 +1044,7 @@ func TestStore_RemoveSourceSerialized_PreservesPackedCaseAliasReferences(t *test
 			require := require.New(t)
 			assert := assert.New(t)
 			f := storetest.New(t)
-			if !f.Store.IsPostgreSQL() {
+			{
 				f.Store.DB().SetMaxOpenConns(1)
 				f.Store.DB().SetMaxIdleConns(1)
 				_, err := f.Store.DB().Exec(`PRAGMA case_sensitive_like = ON`)
@@ -1115,20 +1115,7 @@ func TestStore_RemoveSourceSerialized_PackedRollbackOnSourceDeleteFailure(t *tes
 		CreatedAt: time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC),
 	}, []store.PackIndexEntry{{BlobHash: hash, PackID: packID, StoredLen: 10, RawLen: 10}}))
 
-	if f.Store.IsPostgreSQL() {
-		_, err := f.Store.DB().Exec(`
-			CREATE FUNCTION force_source_delete_failure() RETURNS trigger AS $$
-			BEGIN
-			    RAISE EXCEPTION 'forced source delete failure';
-			END;
-			$$ LANGUAGE plpgsql`)
-		require.NoError(err)
-		_, err = f.Store.DB().Exec(`
-			CREATE TRIGGER force_source_delete_failure
-			BEFORE DELETE ON sources FOR EACH ROW
-			EXECUTE FUNCTION force_source_delete_failure()`)
-		require.NoError(err)
-	} else {
+	{
 		_, err := f.Store.DB().Exec(`
 			CREATE TRIGGER force_source_delete_failure
 			BEFORE DELETE ON sources

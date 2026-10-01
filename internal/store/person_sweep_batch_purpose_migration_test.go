@@ -22,16 +22,7 @@ const legacyPersonSweepBatchPurposeCheck = `CHECK (
 func installLegacyPersonSweepBatchPurpose(t *testing.T, st *store.Store) {
 	t.Helper()
 	requirements := require.New(t)
-	if st.IsPostgreSQL() {
-		_, err := st.DB().ExecContext(t.Context(), `
-			ALTER TABLE person_sweep_batches
-				DROP CONSTRAINT IF EXISTS person_sweep_batches_call_coordinate_check;
-			ALTER TABLE person_sweep_batches
-				ADD CONSTRAINT person_sweep_batches_call_coordinate_check `+
-			legacyPersonSweepBatchPurposeCheck)
-		requirements.NoError(err)
-		return
-	}
+
 	_, err := st.DB().ExecContext(t.Context(), `
 		CREATE TABLE person_sweep_batches_legacy (
 			attempt_id TEXT NOT NULL REFERENCES person_sweep_attempts(id) ON DELETE CASCADE,

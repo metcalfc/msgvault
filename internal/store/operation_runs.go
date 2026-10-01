@@ -265,9 +265,7 @@ func (s *Store) sourceOperationPositionCondition(
 // operationTimestampParam renders a run position timestamp the way the
 // source and CardDAV run tables store started_at on each backend.
 func (s *Store) operationTimestampParam(value time.Time) any {
-	if s.IsPostgreSQL() {
-		return s.dialect.TimestampParam(value)
-	}
+
 	return value.UTC().Format(operationSQLiteTimestampLayout)
 }
 
@@ -538,9 +536,7 @@ func personSweepOperationStatusRun(
 }
 
 func (s *Store) bytewiseTextCollation() string {
-	if s.dialect.DriverName() == postgresDriverName {
-		return ` COLLATE "C"`
-	}
+
 	return ` COLLATE BINARY`
 }
 
@@ -785,7 +781,7 @@ func (s *Store) cardDAVOperationPositionCondition(
 func (s *Store) sqliteOperationPositionFinerThan(
 	value time.Time, precision time.Duration,
 ) bool {
-	return !s.IsPostgreSQL() && value.Nanosecond()%int(precision) != 0
+	return value.Nanosecond()%int(precision) != 0
 }
 
 func cardDAVOperationStatusQuery(condition string) string {

@@ -461,12 +461,6 @@ func runBuildCacheLocalMode(mode buildCacheMode, state *invocation) error {
 	analyticsDir := cfg.AnalyticsDir()
 	builderOverrides := analyticsBuilderOverrides(cfg.Analytics)
 
-	// The Parquet cache is a SQLite -> DuckDB ETL; feeding a postgres:// DSN to
-	// the SQLite driver inside buildCache fails immediately with a confusing
-	// driver error.
-	if store.IsPostgresURL(dbDSN) {
-		return errors.New("build-cache is SQLite-only; PostgreSQL backends do not use the Parquet analytics cache")
-	}
 	dbPath, err := resolveCacheSQLitePath(dbDSN)
 	if err != nil {
 		return err
@@ -2406,9 +2400,7 @@ func rebuildCacheAfterWrite(dbPath string, state *invocation) error {
 	}
 	cfg := state.cfg
 	logger := repairLogger(state.logger)
-	if store.IsPostgresURL(dbPath) {
-		return nil
-	}
+
 	analyticsDir := cfg.AnalyticsDir()
 	staleness := cacheNeedsBuild(dbPath, analyticsDir)
 	if !staleness.NeedsBuild {
@@ -2442,9 +2434,7 @@ func rebuildCacheAfterManualSync(dbPath string, state *invocation) error {
 		// refresh. A CLI child must not keep its HTTP caller waiting on a build.
 		return nil
 	}
-	if store.IsPostgresURL(dbPath) {
-		return nil
-	}
+
 	if !cfg.Analytics.AutoBuildCache {
 		return nil
 	}
@@ -2738,10 +2728,6 @@ func rebuildCacheAfterScheduledSync(ctx context.Context, identifier string) erro
 		// selected a usable DuckDB cache; engine = "sql" is the live-data choice.
 		return nil
 	}
-	dbPath := cfg.DatabaseDSN()
-	if store.IsPostgresURL(dbPath) {
-		return nil
-	}
 	if refresher := daemonCacheRefresher; refresher != nil {
 		refresher.Request(identifier)
 		return nil
@@ -2766,9 +2752,7 @@ func rebuildCacheNow(
 		return nil
 	}
 	dbPath := cfg.DatabaseDSN()
-	if store.IsPostgresURL(dbPath) {
-		return nil
-	}
+
 	analyticsDir := cfg.AnalyticsDir()
 	staleness := cacheNeedsBuildContext(ctx, dbPath, analyticsDir)
 	if err := ctx.Err(); err != nil {

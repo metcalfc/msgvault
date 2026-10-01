@@ -22,7 +22,6 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/vector"
 	vectordocument "go.kenn.io/msgvault/internal/vector/document"
-	"go.kenn.io/msgvault/internal/vector/pgvector"
 	"go.kenn.io/msgvault/internal/vector/sqlitevec"
 )
 
@@ -165,12 +164,7 @@ func defaultFileExists(path string) bool {
 // Like daemon startup, select the concrete backend from the archive DSN,
 // not the declarative vector.backend marker.
 func setupVectorBackend(cfg *config.Config) (backend, unavailable string) {
-	if store.IsPostgresURL(cfg.DatabaseDSN()) {
-		if !pgvector.Available() {
-			return "pgvector", "pgvector support is not compiled in; rebuild with `go build -tags \"fts5 sqlite_vec pgvector\" ./cmd/msgvault`, then re-run setup"
-		}
-		return "pgvector", ""
-	}
+
 	if !sqlitevec.Available() {
 		return "sqlite-vec", "sqlite-vec support is not compiled in; rebuild with `make build`, then re-run setup"
 	}

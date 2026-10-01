@@ -17,8 +17,7 @@ import (
 func TestRepairDisplayNamesBumpsParticipantRevisionWithTheRepair(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t,
-		"inserts invalid UTF-8 bytes into a TEXT column; PostgreSQL rejects them")
+
 	st := testutil.NewTestStore(t)
 
 	_, err := st.DB().Exec(`
@@ -50,7 +49,7 @@ func TestRepairDisplayNamesBumpsParticipantRevisionWithTheRepair(t *testing.T) {
 // TEXT id column and inserting a non-numeric id that can't be scanned into int64.
 func TestRepairOtherStrings_LogsScanErrors(t *testing.T) {
 	require := require.New(t)
-	testutil.SkipIfPostgres(t, "uses PRAGMA foreign_keys=OFF and recreates labels with TEXT id to trigger a SQLite scan error; PG enforces FK + types differently")
+
 	st := testutil.NewTestStore(t)
 	db := st.DB()
 
@@ -86,7 +85,7 @@ func TestRepairOtherStrings_LogsScanErrors(t *testing.T) {
 // by recreating the participants table with a TEXT id column.
 func TestRepairDisplayNames_LogsScanErrors(t *testing.T) {
 	require := require.New(t)
-	testutil.SkipIfPostgres(t, "uses PRAGMA foreign_keys=OFF and recreates a table with mismatched id type to trigger a SQLite scan error; PG enforces types differently")
+
 	st := testutil.NewTestStore(t)
 	db := st.DB()
 
@@ -135,8 +134,7 @@ func TestRepairEncoding_NoScanErrors(t *testing.T) {
 func TestRepairEncodingPreservesAndReportsInvalidMessageIDs(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t,
-		"inserts invalid UTF-8 bytes into a TEXT column; PostgreSQL rejects them")
+
 	st := testutil.NewTestStore(t)
 	db := st.DB()
 
@@ -181,7 +179,7 @@ func TestRepairEncodingPreservesAndReportsInvalidMessageIDs(t *testing.T) {
 func TestRepairMessageFields_ReturnsReembedNeededIDs(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t, "inserts invalid UTF-8 bytes into TEXT columns; SQLite stores them permissively, PG rejects with invalid_text_representation")
+
 	st := testutil.NewTestStore(t)
 	db := st.DB()
 
@@ -248,7 +246,7 @@ func TestRepairMessageFields_ReturnsReembedNeededIDs(t *testing.T) {
 func TestRepairOtherStrings_FixesNewColumns(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t, "inserts invalid UTF-8 bytes into TEXT columns; SQLite stores them permissively, PG rejects with invalid_text_representation")
+
 	st := testutil.NewTestStore(t)
 	db := st.DB()
 
@@ -286,7 +284,7 @@ func TestRepairOtherStrings_FixesNewColumns(t *testing.T) {
 func TestRepairConversationPreviews_RestoresPreviewStrandedByEarlierRepair(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t, "inserts invalid UTF-8 bytes into TEXT columns; PostgreSQL rejects them")
+
 	st := testutil.NewTestStore(t)
 	db := st.DB()
 
@@ -322,7 +320,7 @@ func TestRepairConversationPreviews_RestoresPreviewStrandedByEarlierRepair(t *te
 func TestRepairConversationPreviews_UsesLatestMessageAfterCollidingRepairs(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t, "inserts invalid UTF-8 bytes into TEXT columns; PostgreSQL rejects them")
+
 	st := testutil.NewTestStore(t)
 	db := st.DB()
 
@@ -365,7 +363,7 @@ func TestRepairConversationPreviews_UsesLatestMessageAfterCollidingRepairs(t *te
 func TestRepairMessageFields_RegeneratesOnlyInvalidCalendarSnippetFromCanonicalBody(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t, "inserts invalid UTF-8 bytes into TEXT columns; PostgreSQL rejects them")
+
 	st := testutil.NewTestStore(t)
 	db := st.DB()
 
@@ -470,7 +468,7 @@ func TestRepairMessageFields_RegeneratesOnlyInvalidCalendarSnippetFromCanonicalB
 func TestRepairOtherStrings_RefreshesOwnershipAtomicallyPerBatch(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t, "inserts invalid UTF-8 bytes into TEXT columns; SQLite stores them permissively, PG rejects with invalid_text_representation")
+
 	st := testutil.NewTestStore(t)
 	db := st.DB()
 

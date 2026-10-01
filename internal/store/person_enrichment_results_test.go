@@ -2,10 +2,7 @@ package store
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"net/url"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -477,9 +474,7 @@ func TestCommitEnrichmentClaimsRollsBackCitationAndProjectionFailures(t *testing
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			f := newEnrichmentResultFixture(t)
-			if f.store.IsPostgreSQL() {
-				t.Skip("SQLite trigger injection; PostgreSQL atomicity is covered by the shared transaction path")
-			}
+
 			_, err := f.store.DB().ExecContext(t.Context(), test.trigger)
 			require.NoError(t, err)
 			_, err = f.store.CommitEnrichmentClaims(t.Context(), f.commit)
@@ -913,171 +908,6 @@ func TestCommitEnrichmentClaimsProviderIdentityOwnedByAnotherPersonIsAuditable(t
 	checks.Equal(int64(0), enrichmentTableCount(t, f.store, "person_enrichment_citations"))
 	checks.Equal(int64(0), enrichmentTableCount(t, f.store, "person_enrichment_attempt_sources"))
 	assertNoRefreshWork(t, f)
-}
-
-func TestCommitEnrichmentClaimsPostgresSerializesTwoPersonProviderIdentityOwnership(t *testing.T) {
-	checks := assert.New(t)
-	requirements := require.New(t)
-	testDB := os.Getenv("MSGVAULT_TEST_DB")
-	if !IsPostgresURL(testDB) {
-		t.Skip("PostgreSQL ownership race requires MSGVAULT_TEST_DB")
-	}
-	first := newEnrichmentResultFixture(t)
-	secondParticipant, err := first.store.EnsureParticipant("second@example.com", "Second", "example.com")
-	requirements.NoError(err)
-	secondPerson, _, err := first.store.CreatePersonFromParticipantContext(t.Context(), secondParticipant)
-	requirements.NoError(err)
-	secondStore := openPostgresStoreInCurrentSchema(t, first.store, testDB)
-	requirements.NotSame(first.store.DB(), secondStore.DB())
-
-	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
-	defer cancel()
-	type keyStage struct {
-		backendPID int
-		err        error
-	}
-	firstKeyHeld := make(chan keyStage, 1)
-	releaseFirst := make(chan struct{})
-	var releaseFirstOnce sync.Once
-	defer releaseFirstOnce.Do(func() { close(releaseFirst) })
-	setPersonEnrichmentProviderIdentityBarrierForTest(first.store, func(phase string, tx *loggedTx) {
-		if phase != "provider_identity_key_locked" {
-			return
-		}
-		var backendPID int
-		pidErr := tx.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&backendPID)
-		firstKeyHeld <- keyStage{backendPID: backendPID, err: pidErr}
-		<-releaseFirst
-	})
-	secondBeforeKey := make(chan struct{})
-	secondKeyHeld := make(chan struct{})
-	var secondBeforeKeyOnce sync.Once
-	var secondKeyHeldOnce sync.Once
-	setPersonEnrichmentProviderIdentityBarrierForTest(secondStore, func(phase string, _ *loggedTx) {
-		switch phase {
-		case "before_provider_identity_key":
-			secondBeforeKeyOnce.Do(func() { close(secondBeforeKey) })
-		case "provider_identity_key_locked":
-			secondKeyHeldOnce.Do(func() { close(secondKeyHeld) })
-		}
-	})
-	await := func(stage string, reached <-chan struct{}) {
-		t.Helper()
-		select {
-		case <-reached:
-		case <-ctx.Done():
-			require.NoError(t, ctx.Err(), "await %s", stage)
-		}
-	}
-
-	type ownershipResult struct {
-		personID int64
-		owner    int64
-		claimed  bool
-		err      error
-	}
-	results := make(chan ownershipResult, 2)
-	claim := func(st *Store, personID int64) {
-		item := ownershipResult{personID: personID}
-		item.err = st.withTxContext(ctx, func(tx *loggedTx) error {
-			owner, owned, lockErr := st.lockPersonEnrichmentProviderIdentityOwnershipTx(
-				ctx, tx, first.profile.ProviderNamespace, first.result.ProviderPersonIDs[0].ID)
-			if lockErr != nil {
-				return lockErr
-			}
-			if owned {
-				item.owner = owner
-				return nil
-			}
-			item.claimed = true
-			return st.attachPersonEnrichmentProviderIdentityTx(ctx, tx, personID,
-				first.profile.ProviderNamespace, first.result.ProviderPersonIDs[0], first.now)
-		})
-		results <- item
-	}
-	go claim(first.store, first.person.ID)
-	var firstStage keyStage
-	select {
-	case firstStage = <-firstKeyHeld:
-	case <-ctx.Done():
-		requirements.NoError(ctx.Err(), "await first provider identity key")
-	}
-	requirements.NoError(firstStage.err)
-	go claim(secondStore, secondPerson.ID)
-	await("second pre-provider-key stage", secondBeforeKey)
-	requirements.Eventually(func() bool {
-		var waiting bool
-		queryErr := first.store.DB().QueryRowContext(ctx, `
-			SELECT EXISTS (
-				SELECT 1
-				FROM pg_stat_activity activity
-				JOIN pg_locks waiting
-				  ON waiting.pid = activity.pid
-				 AND waiting.locktype = 'advisory'
-				 AND NOT waiting.granted
-				WHERE activity.datname = current_database()
-				  AND activity.wait_event_type = 'Lock'
-				  AND $1 = ANY(pg_blocking_pids(activity.pid))
-			)`, firstStage.backendPID).Scan(&waiting)
-		return queryErr == nil && waiting
-	}, 3*time.Second, 10*time.Millisecond,
-		"second transaction must wait on the first transaction's provider identity key")
-	select {
-	case <-secondKeyHeld:
-		requirements.Fail("second transaction acquired provider identity key before release")
-	default:
-	}
-	releaseFirstOnce.Do(func() { close(releaseFirst) })
-	await("second post-provider-key stage", secondKeyHeld)
-
-	claims := make(map[int64]ownershipResult, 2)
-	for range 2 {
-		var item ownershipResult
-		select {
-		case item = <-results:
-		case <-ctx.Done():
-			requirements.NoError(ctx.Err(), "await serialized commits")
-		}
-		requirements.NoError(item.err)
-		claims[item.personID] = item
-	}
-	requirements.Len(claims, 2)
-	checks.True(claims[first.person.ID].claimed)
-	checks.False(claims[secondPerson.ID].claimed)
-	checks.Equal(first.person.ID, claims[secondPerson.ID].owner)
-	var owners int64
-	requirements.NoError(first.store.DB().QueryRowContext(t.Context(), first.store.Rebind(`
-		SELECT COUNT(*) FROM person_enrichment_provider_identities
-		WHERE provider_namespace = ? AND provider_person_id = ?`),
-		first.profile.ProviderNamespace, first.result.ProviderPersonIDs[0].ID).Scan(&owners))
-	checks.Equal(int64(1), owners)
-
-	var publicPathStages []string
-	setPersonEnrichmentProviderIdentityBarrierForTest(first.store, func(phase string, _ *loggedTx) {
-		publicPathStages = append(publicPathStages, phase)
-	})
-	outcome, err := first.store.CommitEnrichmentClaims(t.Context(), first.commit)
-	requirements.NoError(err)
-	requirements.NotNil(outcome)
-	checks.Equal(personenrichment.ClaimApplied, outcome.Status)
-	checks.Equal([]string{
-		"before_provider_identity_key", "provider_identity_key_locked",
-	}, publicPathStages)
-}
-
-func openPostgresStoreInCurrentSchema(t *testing.T, current *Store, testDB string) *Store {
-	t.Helper()
-	var schema string
-	require.NoError(t, current.DB().QueryRowContext(t.Context(), "SELECT current_schema()").Scan(&schema))
-	dsn, err := url.Parse(testDB)
-	require.NoError(t, err)
-	query := dsn.Query()
-	query.Set("search_path", schema)
-	dsn.RawQuery = query.Encode()
-	st, err := OpenForTest(dsn.String())
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, st.Close()) })
-	return st
 }
 
 func TestPersonEnrichmentResultRevokedConsentAfterPreparationIsPolicyTerminal(t *testing.T) {

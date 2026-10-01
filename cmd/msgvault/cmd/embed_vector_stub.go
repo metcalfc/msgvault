@@ -1,4 +1,4 @@
-//go:build !sqlite_vec && !pgvector
+//go:build !sqlite_vec
 
 package cmd
 
@@ -14,5 +14,5 @@ import (
 // produced by `make build` (which sets `-tags "fts5 sqlite_vec"`) use the
 // real implementation in embed_vector.go.
 func runEmbed(_ *cobra.Command) error {
-	return errors.New("msgvault embeddings build requires a vector backend; rebuild with `go build -tags sqlite_vec` (SQLite vectors) or `-tags pgvector` (PostgreSQL vectors)")
+	return errors.New("msgvault embeddings build requires a vector backend; rebuild with `go build -tags sqlite_vec`")
 }

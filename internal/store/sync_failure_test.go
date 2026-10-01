@@ -43,7 +43,7 @@ func TestFinalizeSyncFailure(t *testing.T) {
 
 func TestFinalizeSyncFailurePreservesBothErrors(t *testing.T) {
 	require := require.New(t)
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger to reject the terminal sync write")
+
 	st := testutil.NewTestStore(t)
 	source, err := st.GetOrCreateSource("granola", "failed-finalization@example.test")
 	require.NoError(err)

@@ -11,6 +11,13 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
+func countSources(t *testing.T, st *store.Store) int {
+	t.Helper()
+	var count int
+	require.NoError(t, st.DB().QueryRow("SELECT count(*) FROM sources").Scan(&count), "count sources")
+	return count
+}
+
 // TestSQLiteFixtureClonesTemplateWithoutReplayingDDL pins the fixture's cost
 // model: the schema is built once per test binary and every later fixture is a
 // copy of that file. A fixture that replayed the DDL would show CREATE

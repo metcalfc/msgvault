@@ -1053,9 +1053,7 @@ func listenerPort(ln net.Listener) (int, error) {
 }
 
 func daemonStartupDatabaseLabel(dsn string) string {
-	if store.IsPostgresURL(dsn) {
-		return "postgres://<redacted>"
-	}
+
 	return dsn
 }
 
@@ -1128,16 +1126,7 @@ func runDaemonSQLQueryWithJobs(
 	if err := query.EnsureReadOnly(sqlStr); err != nil {
 		return nil, nil, err
 	}
-	if s.IsPostgreSQL() {
-		if options.archiveOnly {
-			return nil, nil, api.ErrSQLQueryEngineUnavailable
-		}
-		if querier, ok := engine.(query.SQLQuerier); ok {
-			result, err := queryCommittedSQLWithConsumer(ctx, querier, sqlStr, cacheStaleness{}, options.consume)
-			return result, nil, err
-		}
-		return nil, nil, api.ErrSQLQueryEngineUnavailable
-	}
+
 	staleness, err := cacheNeedsBuildForServing(ctx, c.DatabaseDSN(), c.AnalyticsDir())
 	if err != nil {
 		return nil, nil, fmt.Errorf("inspect analytics cache: %w", err)
@@ -1284,13 +1273,6 @@ func openDaemonAnalyticsEngine(
 			errors.New("daemon analytics engine unavailable")
 	}
 	logger := loggerFromContext(ctx)
-	if s.IsPostgreSQL() {
-		outcome := startupCacheBuildOutcomeNone
-		if intent != startupCacheBuildIntentNone {
-			outcome = startupCacheBuildOutcomeUnconsumed
-		}
-		return query.NewEngine(s.DB(), true), api.AnalyticsModePostgres, outcome, nil
-	}
 
 	engineMode := c.Analytics.Engine
 	if engineMode == "" {
@@ -1303,7 +1285,7 @@ func openDaemonAnalyticsEngine(
 		if intent != startupCacheBuildIntentNone {
 			outcome = startupCacheBuildOutcomeUnconsumed
 		}
-		return query.NewEngine(s.DB(), false), api.AnalyticsModeSQL, outcome, nil
+		return query.NewEngine(s.DB()), api.AnalyticsModeSQL, outcome, nil
 	}
 
 	dbPath := c.DatabaseDSN()
@@ -1380,7 +1362,7 @@ func openDaemonAnalyticsEngine(
 					outcome = startupCacheBuildOutcomeFatal
 					return nil, "", outcome, fmt.Errorf("build analytics cache: %w", buildErr)
 				}
-				return query.NewEngine(s.DB(), false), api.AnalyticsModeSQLFallback, outcome, nil
+				return query.NewEngine(s.DB()), api.AnalyticsModeSQLFallback, outcome, nil
 			}
 			// A usable publication can still be served below, including a
 			// partial snapshot awaiting a full repair.
@@ -1425,7 +1407,7 @@ func openDaemonAnalyticsEngine(
 			}
 			logger.Warn("DuckDB engine failed, falling back to live SQL",
 				"error", err)
-			return query.NewEngine(s.DB(), false), api.AnalyticsModeSQLFallback, outcome, nil
+			return query.NewEngine(s.DB()), api.AnalyticsModeSQLFallback, outcome, nil
 		}
 		if intent != startupCacheBuildIntentNone {
 			outcome = startupCacheBuildOutcomeFulfilled
@@ -1468,7 +1450,7 @@ func openDaemonAnalyticsEngine(
 		logger.Info("analytics cache not built - using live SQL engine (run 'msgvault build-cache' for faster aggregates)",
 			"auto_build_cache", c.Analytics.AutoBuildCache)
 	}
-	return query.NewEngine(s.DB(), false), api.AnalyticsModeSQLFallback, outcome, nil
+	return query.NewEngine(s.DB()), api.AnalyticsModeSQLFallback, outcome, nil
 }
 
 var openDaemonDuckDBEngineForRun = openDaemonDuckDBEngine

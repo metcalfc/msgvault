@@ -334,7 +334,7 @@ func backupRestoreTargetCoordinator(
 	}
 	databasePath := ""
 	configuredVectorPath := ""
-	if !store.IsPostgresURL(cfg.DatabaseDSN()) {
+	{
 		var err error
 		databasePath, err = cfg.DatabasePath()
 		if err != nil {
@@ -764,7 +764,7 @@ func restoreTargetsConfiguredArchive(target string, cfg *config.Config) (bool, e
 	if err != nil {
 		return false, fmt.Errorf("backup restore: compare target with configured data directory: %w", err)
 	}
-	if dataDirMatch || store.IsPostgresURL(cfg.DatabaseDSN()) {
+	if dataDirMatch {
 		return dataDirMatch, nil
 	}
 	databasePath, err := cfg.DatabasePath()

@@ -124,9 +124,7 @@ func TestAttachmentChangeConsumersPruneOnlySharedConsumedPrefix(t *testing.T) {
 func TestSQLiteAttachmentChangeAdvanceWaitsForWriterSlot(t *testing.T) {
 	require := require.New(t)
 	f := storetest.New(t)
-	if f.Store.IsPostgreSQL() {
-		t.Skip("SQLite writer-slot regression")
-	}
+
 	consumer, _, err := f.Store.RegisterAttachmentChangeConsumer(t.Context(), "document-index/v1")
 	require.NoError(err)
 	require.NoError(f.Store.CompleteAttachmentChangeReconciliation(

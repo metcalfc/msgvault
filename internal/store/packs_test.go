@@ -475,9 +475,7 @@ type packAttachmentFixture struct {
 
 func forceCaseSensitiveSQLiteLike(t *testing.T, st *store.Store) {
 	t.Helper()
-	if store.IsPostgresURL(os.Getenv("MSGVAULT_TEST_DB")) {
-		return
-	}
+
 	st.DB().SetMaxOpenConns(1)
 	st.DB().SetMaxIdleConns(1)
 	_, err := st.DB().Exec(`PRAGMA case_sensitive_like = ON`)

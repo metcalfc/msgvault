@@ -466,13 +466,8 @@ func TestPersonSweepHistoryAttemptGenerationIdentity(t *testing.T) {
 	requirements.Error(err)
 
 	var indexCount int
-	if f.store.IsPostgreSQL() {
-		err = f.store.DB().QueryRowContext(t.Context(), `
-			SELECT COUNT(*) FROM pg_indexes
-			WHERE schemaname = current_schema()
-			  AND indexname = 'idx_person_sweep_attempts_generation'
-			  AND indexdef LIKE '%(generation_id)%'`).Scan(&indexCount)
-	} else {
+
+	{
 		err = f.store.DB().QueryRowContext(t.Context(), `
 			SELECT COUNT(*) FROM sqlite_master
 			WHERE type = 'index' AND name = 'idx_person_sweep_attempts_generation'

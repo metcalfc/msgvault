@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -133,29 +132,6 @@ func (s *Store) acquireSyncExecutionLock(
 func (s *Store) acquireBackendSyncExecutionLock(
 	ctx context.Context, sourceID int64,
 ) (syncExecutionLock, error) {
-	if s.IsPostgreSQL() {
-		conn, err := s.db.Conn(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("acquire PostgreSQL sync lock connection: %w", err)
-		}
-		lock := &postgresSyncExecutionLock{conn: conn, sourceID: sourceID, rebind: s.Rebind}
-		var acquired bool
-		err = conn.QueryRowContext(ctx, s.Rebind(`
-			SELECT pg_try_advisory_lock(
-				hashtextextended(
-					current_schema() || ':msgvault-sync:' || CAST(CAST(? AS BIGINT) AS TEXT), 0
-				)
-			)`), sourceID).Scan(&acquired)
-		if err != nil {
-			_ = conn.Close()
-			return nil, fmt.Errorf("acquire PostgreSQL sync lock: %w", err)
-		}
-		if !acquired {
-			_ = conn.Close()
-			return nil, ErrSyncAlreadyActive
-		}
-		return lock, nil
-	}
 
 	dbPath := s.sqliteFilesystemPath
 	if dbPath == ":memory:" || strings.Contains(dbPath, ":memory:") {
@@ -346,30 +322,4 @@ func (l *sqliteSyncExecutionLock) release() error {
 	delete(sqliteSyncLockRegistry.paths, l.path)
 	sqliteSyncLockRegistry.mu.Unlock()
 	return nil
-}
-
-type postgresSyncExecutionLock struct {
-	conn     *sql.Conn
-	sourceID int64
-	rebind   func(string) string
-}
-
-func (l *postgresSyncExecutionLock) release() error {
-	ctx, cancel := context.WithTimeout(context.Background(), syncExecutionLockCleanupTimeout)
-	defer cancel()
-	var released bool
-	err := l.conn.QueryRowContext(ctx, l.rebind(`
-		SELECT pg_advisory_unlock(
-			hashtextextended(
-				current_schema() || ':msgvault-sync:' || CAST(CAST(? AS BIGINT) AS TEXT), 0
-			)
-		)`), l.sourceID).Scan(&released)
-	closeErr := l.conn.Close()
-	if err != nil {
-		return errors.Join(fmt.Errorf("unlock PostgreSQL sync lock: %w", err), closeErr)
-	}
-	if !released {
-		return errors.Join(errors.New("PostgreSQL sync lock was not held"), closeErr)
-	}
-	return closeErr
 }

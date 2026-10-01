@@ -52,7 +52,7 @@ func TestMessagesColumnClassificationIsExhaustive(t *testing.T) {
 		actualSet[col] = true
 	}
 	for col := range classified {
-		if col == "search_fts" && !st.IsPostgreSQL() {
+		if col == "search_fts" {
 			continue // PostgreSQL-only column
 		}
 		assert.True(actualSet[col], "%q is classified but is not a column of messages", col)
@@ -466,9 +466,7 @@ func dropContentChangedAtColumn(t *testing.T, st *store.Store) {
 	t.Helper()
 	for _, trg := range contentChangedAtTriggerNames {
 		stmt := `DROP TRIGGER IF EXISTS ` + trg.name
-		if st.IsPostgreSQL() {
-			stmt += ` ON ` + trg.table
-		}
+
 		_, err := st.DB().Exec(stmt)
 		require.NoErrorf(t, err, "drop trigger %s", trg.name)
 	}
@@ -742,22 +740,7 @@ func TestContentChangedAt_BackfillStopsWhenTheContextIsCancelled(t *testing.T) {
 // Returns the id, having checked the row really landed on it.
 func seedMessageAtID(t *testing.T, st *store.Store, n int, id int64) int64 {
 	t.Helper()
-	if st.IsPostgreSQL() {
-		// The default lower bound of a bigint identity is 1, so an id below that
-		// needs MINVALUE lowered before RESTART will accept it. MINVALUE is only
-		// ever lowered: raising it above the sequence's START (still 1) or up to
-		// MAXVALUE is rejected outright.
-		alter := fmt.Sprintf(`ALTER TABLE messages ALTER COLUMN id RESTART WITH %d`, id)
-		if id < 1 {
-			alter = fmt.Sprintf(
-				`ALTER TABLE messages ALTER COLUMN id SET MINVALUE %d RESTART WITH %d`, id, id)
-		}
-		_, err := st.DB().Exec(alter)
-		require.NoErrorf(t, err, "reposition the messages identity sequence to %d", id)
-		got := seedMessage(t, st, n)
-		require.Equalf(t, id, got, "message %d did not land on the requested id", n)
-		return id
-	}
+
 	got := seedMessage(t, st, n)
 	_, err := st.DB().Exec(
 		st.Rebind(`UPDATE messages SET id = ? WHERE id = ?`), id, got)
@@ -902,7 +885,7 @@ func TestContentChangedAt_BackfillSkipsIDRangesWithNoWork(t *testing.T) {
 // PostgreSQL cannot fail this way — last_modified is a real TIMESTAMPTZ there
 // and the backfill copies it without conversion — so this is SQLite-only.
 func TestContentChangedAt_BackfillNeverMintsANullWatermark(t *testing.T) {
-	testutil.SkipIfPostgres(t, "only SQLite's untyped DATETIME text can hold a value strftime rejects")
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -1049,7 +1032,7 @@ var contentChangedStampShape = regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2
 // layout, because the two databases can meet — subset.go copies messages
 // between them and the cursor comparison is lexical.
 func TestContentChangedAt_FreshAndUpgradedStampsShareOneFormat(t *testing.T) {
-	testutil.SkipIfPostgres(t, "PostgreSQL compares TIMESTAMPTZ natively and has one stamping writer")
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -1120,7 +1103,7 @@ func insertMessagesTriggerPrograms(t *testing.T, st *store.Store, insert string,
 // changes() it does include rows written by trigger programs — which is exactly
 // what has to be counted.
 func TestContentChangedAt_InsertRunsNoTriggerOnAFreshDatabase(t *testing.T) {
-	testutil.SkipIfPostgres(t, "PostgreSQL stamps in a BEFORE trigger, which needs no second write")
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -1175,7 +1158,7 @@ func TestContentChangedAt_InsertRunsNoTriggerOnAFreshDatabase(t *testing.T) {
 // permanently invisible to the feed, since the backfill has already marked
 // itself applied.
 func TestContentChangedAt_UpgradedDatabaseKeepsTheInsertTrigger(t *testing.T) {
-	testutil.SkipIfPostgres(t, "the DEFAULT/trigger split is a SQLite ALTER TABLE limitation")
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -1273,7 +1256,7 @@ func readContentChangedAtDefault(t *testing.T, st *store.Store) string {
 // So the archive is refused at open, before a single row can be written with the
 // wrong shape. Loud and immediate beats a feed that quietly loses records.
 func TestContentChangedAt_NoncanonicalDefaultIsRejected(t *testing.T) {
-	testutil.SkipIfPostgres(t, "the DEFAULT/trigger interaction is a SQLite one")
+
 	require := require.New(t)
 	assert := assert.New(t)
 

@@ -12,7 +12,6 @@ import (
 	"go.kenn.io/msgvault/internal/attachmentpolicy"
 	"go.kenn.io/msgvault/internal/documentindex"
 	"go.kenn.io/msgvault/internal/store"
-	"go.kenn.io/msgvault/internal/testutil"
 )
 
 // TestRepairArchiveRewritesStaleDerivedRows covers repairing an archive
@@ -136,7 +135,7 @@ func TestRepairArchiveRewritesStaleDerivedRows(t *testing.T) {
 }
 
 func TestRepairArchiveRollsBackDerivedTextTogether(t *testing.T) {
-	testutil.SkipIfPostgres(t, "SQLite trigger injects a failure after the body write")
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -182,7 +181,7 @@ func TestRepairArchiveRollsBackDerivedTextTogether(t *testing.T) {
 }
 
 func TestRepairSourceResumesFromLastSuccessfulRowAfterFailure(t *testing.T) {
-	testutil.SkipIfPostgres(t, "SQLite trigger injects a row-level repair failure")
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -236,7 +235,7 @@ func TestRepairSourceResumesFromLastSuccessfulRowAfterFailure(t *testing.T) {
 }
 
 func TestRepairArchiveRefreshesSnippetAndFTSWhenBodyIsCurrent(t *testing.T) {
-	testutil.SkipIfPostgres(t, "directly corrupts the SQLite FTS5 table")
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -276,7 +275,7 @@ func TestRepairArchiveRefreshesSnippetAndFTSWhenBodyIsCurrent(t *testing.T) {
 }
 
 func TestSyncReportsIncompleteRepair(t *testing.T) {
-	testutil.SkipIfPostgres(t, "SQLite trigger injects a row-level metadata failure")
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -421,7 +420,7 @@ func TestSyncHealsRowsFromAnOlderBuild(t *testing.T) {
 }
 
 func TestSyncRunsCurrentRepairAfterV2WasApplied(t *testing.T) {
-	testutil.SkipIfPostgres(t, "directly corrupts the SQLite FTS5 table")
+
 	require := require.New(t)
 	assert := assert.New(t)
 

@@ -15,7 +15,6 @@ import (
 
 	"go.kenn.io/msgvault/internal/docbankmedia"
 	"go.kenn.io/msgvault/internal/store"
-	"go.kenn.io/msgvault/internal/testutil"
 )
 
 type processDeliveryIdentity struct {
@@ -284,7 +283,7 @@ func TestBeeperMediaDailyRescan(t *testing.T) {
 }
 
 func TestBeeperMediaDiscoveryReadsOutsideGate(t *testing.T) {
-	testutil.SkipIfPostgres(t, "SQLite authorizer observes reads under the operation gate")
+
 	require, assert := require.New(t), assert.New(t)
 	world := importVoiceChat(t, voiceSpec{id: "voice1", asset: "mxc://beeper.local/voice1",
 		mime: "audio/wav", fileName: "voice.wav", transcript: "words", data: syntheticWAV(800, 25)})
@@ -412,7 +411,7 @@ func TestBeeperMediaOperationRawReadFailure(t *testing.T) {
 	})
 
 	t.Run("database-error-does-not-create-gap", func(t *testing.T) {
-		testutil.SkipIfPostgres(t, "SQLite authorizer injects a real message_raw query failure")
+
 		require, assert := require.New(t), assert.New(t)
 		world := importVoiceChat(t, voiceSpec{id: "voice1", asset: "mxc://beeper.local/query-failure",
 			mime: "audio/wav", fileName: "voice.wav", transcript: "query failure", data: syntheticWAV(800, 34)})
@@ -441,7 +440,7 @@ func TestBeeperMediaOperationRawReadFailure(t *testing.T) {
 		for _, failure := range []string{"cancel", "database"} {
 			t.Run(kind+"-final-read-"+failure, func(t *testing.T) {
 				if failure == "database" {
-					testutil.SkipIfPostgres(t, "SQLite authorizer injects a final message_raw query failure")
+
 				}
 				require, assert := require.New(t), assert.New(t)
 				destination := kind + "-final-" + failure
@@ -542,7 +541,7 @@ func TestBeeperMediaOperationRawReadFailure(t *testing.T) {
 	}
 
 	t.Run("artifact-final-read-error-preserves-prior-stale-revocation", func(t *testing.T) {
-		testutil.SkipIfPostgres(t, "SQLite authorizer injects the final message_raw query failure")
+
 		require, assert := require.New(t), assert.New(t)
 		world := importVoiceChat(t,
 			voiceSpec{id: "first", asset: "mxc://beeper.local/stale-first", mime: "audio/wav",
@@ -1436,7 +1435,7 @@ func TestBeeperMediaFullRescanRevokesAllNonRevokedStates(t *testing.T) {
 
 func installMessageRawReadAuthorizer(t *testing.T, st *store.Store, denied *bool) {
 	t.Helper()
-	testutil.SkipIfPostgres(t, "SQLite authorizer injects a message_raw query failure")
+
 	st.DB().SetMaxOpenConns(1)
 	conn, err := st.DB().Conn(t.Context())
 	require.NoError(t, err)

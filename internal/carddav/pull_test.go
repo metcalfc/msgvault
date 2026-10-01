@@ -470,19 +470,8 @@ func TestSyncJoinsExecutionAndFinishFailuresWithoutReplay(t *testing.T) {
 	t.Cleanup(server.Close)
 	service, st, _ := newPullService(t, server, true)
 	var err error
-	if st.IsPostgreSQL() {
-		_, err = st.DB().Exec(`CREATE FUNCTION fail_carddav_run_finish_fn() RETURNS trigger AS $$
-			BEGIN
-				IF OLD.state = 'running' THEN
-					RAISE EXCEPTION 'injected finish failure';
-				END IF;
-				RETURN NEW;
-			END $$ LANGUAGE plpgsql`)
-		require.NoError(err)
-		_, err = st.DB().Exec(`CREATE TRIGGER fail_carddav_run_finish
-			BEFORE UPDATE OF state ON carddav_sync_runs
-			FOR EACH ROW EXECUTE FUNCTION fail_carddav_run_finish_fn()`)
-	} else {
+
+	{
 		_, err = st.DB().Exec(`CREATE TRIGGER fail_carddav_run_finish
 			BEFORE UPDATE OF state ON carddav_sync_runs
 			WHEN OLD.state = 'running'

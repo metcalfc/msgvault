@@ -80,7 +80,6 @@ type sourceSnapshotState struct {
 	rebind         func(string) string
 	lastModified   string
 	sourceSequence int64
-	postgres       bool
 	closed         bool
 }
 
@@ -100,10 +99,7 @@ func BeginSourceSnapshot(ctx context.Context, st *store.Store) (SourceSnapshot, 
 	}
 	opts := &sql.TxOptions{ReadOnly: true}
 	lastModified := "CAST(m.last_modified AS TEXT)"
-	if st.IsPostgreSQL() {
-		opts.Isolation = sql.LevelRepeatableRead
-		lastModified = "m.last_modified"
-	}
+
 	tx, err := st.DB().BeginTx(ctx, opts)
 	if err != nil {
 		return SourceSnapshot{}, fmt.Errorf("begin embedding source snapshot: %w", err)
@@ -116,7 +112,7 @@ func BeginSourceSnapshot(ctx context.Context, st *store.Store) (SourceSnapshot, 
 	}
 	return SourceSnapshot{state: &sourceSnapshotState{
 		tx: tx, rebind: st.Rebind, lastModified: lastModified,
-		sourceSequence: sequence, postgres: st.IsPostgreSQL(),
+		sourceSequence: sequence,
 	}}, nil
 }
 
@@ -373,7 +369,7 @@ func (s *sourceSnapshotState) scopeRange(
 	rawCanonicalTime := `COALESCE(m.sent_at, m.received_at, m.internal_date)`
 	canonicalTime := rawCanonicalTime
 	timeParameter := `?`
-	if !s.postgres {
+	{
 		// SQLite stores source timestamps as text. julianday normalizes explicit
 		// offsets before UTC range comparisons and chronological ordering.
 		canonicalTime = `julianday(` + rawCanonicalTime + `)`
@@ -441,9 +437,6 @@ func (s SourceSnapshot) Conversation(ctx context.Context, id int64) (AssemblyCon
 		return AssemblyConversation{}, false, fmt.Errorf("read embedding conversation %d: %w", id, err)
 	}
 	participantRevision := store.ParticipantRevisionSQLite
-	if s.state.postgres {
-		participantRevision = store.ParticipantRevisionPostgres
-	}
 	query := s.state.rebind(fmt.Sprintf(`
 		SELECT cp.participant_id, COALESCE(cp.role, ''),
 		       COALESCE(NULLIF(TRIM(p.display_name), ''),
@@ -512,10 +505,6 @@ func (s *sourceSnapshotState) chatMessageSelectSQL(predicate string) string {
 	// tab/newline-padded body_text still falls back to body_html. The Go-side
 	// predicate in ContextualBodyText must match this set exactly.
 	blankText := `NULLIF(TRIM(COALESCE(mb.body_text, ''), char(32,9,10,13)), '') IS NULL`
-	if s.postgres {
-		bodyText = fmt.Sprintf(`LEFT(COALESCE(mb.body_text, ''), %d)`, chatMessageBodyMaxChars)
-		blankText = `NULLIF(BTRIM(COALESCE(mb.body_text, ''), E' \t\n\r'), '') IS NULL`
-	}
 	bodyHTML := fmt.Sprintf(`CASE WHEN %s AND LENGTH(COALESCE(mb.body_html, '')) <= %d
 		THEN COALESCE(mb.body_html, '') ELSE '' END`, blankText, chatHTMLBodySkipChars)
 	bodyTruncated := fmt.Sprintf(`CASE
@@ -593,9 +582,6 @@ func scanChatAssemblyMessage(scanner rowScanner, sequence int64) (AssemblyMessag
 
 func (s *sourceSnapshotState) timestampParam(value time.Time) any {
 	value = value.UTC()
-	if s.postgres {
-		return value
-	}
 	return value.Format("2006-01-02 15:04:05.999999999")
 }
 

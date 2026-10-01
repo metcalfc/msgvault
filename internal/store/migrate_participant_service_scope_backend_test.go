@@ -14,14 +14,7 @@ import (
 func rebuildLegacyParticipantIdentifiers(t *testing.T, st *store.Store) {
 	t.Helper()
 	ctx := t.Context()
-	if st.IsPostgreSQL() {
-		_, err := st.DB().ExecContext(ctx, `ALTER TABLE participant_identifiers
-			DROP COLUMN service_id,
-			DROP COLUMN scope_kind,
-			DROP COLUMN scope_value`)
-		require.NoError(t, err)
-		return
-	}
+
 	for _, statement := range []string{
 		`CREATE TABLE participant_identifiers_legacy (
 			id INTEGER PRIMARY KEY,
@@ -46,13 +39,7 @@ func rebuildLegacyParticipantIdentifiers(t *testing.T, st *store.Store) {
 
 func installRejectParticipantIdentifierWrite(t *testing.T, st *store.Store) {
 	t.Helper()
-	if st.IsPostgreSQL() {
-		_, err := st.DB().ExecContext(t.Context(), `ALTER TABLE participant_identifiers
-			ADD CONSTRAINT participant_identifiers_reject_test_values
-			CHECK (identifier_value NOT IN ('legacy-reject', '+15550009999'))`)
-		require.NoError(t, err)
-		return
-	}
+
 	_, err := st.DB().ExecContext(t.Context(), `CREATE TRIGGER reject_participant_identifier_test_values
 		BEFORE INSERT ON participant_identifiers
 		WHEN NEW.identifier_value IN ('legacy-reject', '+15550009999')

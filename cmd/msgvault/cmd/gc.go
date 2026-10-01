@@ -71,9 +71,6 @@ func runGCLocal(cmd *cobra.Command, options gcOptions) error {
 		return err
 	}
 	defer cleanup()
-	if st.IsPostgreSQL() {
-		return store.ErrGCUnsupported
-	}
 
 	plan, err := st.PlanGCContext(ctx)
 	if err != nil {

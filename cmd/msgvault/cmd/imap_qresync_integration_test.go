@@ -604,23 +604,7 @@ func queryScriptedRFC7162LabelsBySourceMessageID(
 
 func installScriptedRFC7162ApplyFailureTrigger(t *testing.T, st *store.Store) {
 	t.Helper()
-	if st.IsPostgreSQL() {
-		_, err := st.DB().Exec(`
-			CREATE FUNCTION fail_scripted_imap_apply() RETURNS trigger AS $$
-			BEGIN
-				RAISE EXCEPTION 'scripted IMAP apply failure';
-			END;
-			$$ LANGUAGE plpgsql
-		`)
-		require.NoError(t, err)
-		_, err = st.DB().Exec(`
-			CREATE TRIGGER fail_scripted_imap_apply
-			BEFORE UPDATE ON imap_folder_state
-			FOR EACH ROW EXECUTE FUNCTION fail_scripted_imap_apply()
-		`)
-		require.NoError(t, err)
-		return
-	}
+
 	_, err := st.DB().Exec(`
 		CREATE TRIGGER fail_scripted_imap_apply
 		BEFORE UPDATE ON imap_folder_state

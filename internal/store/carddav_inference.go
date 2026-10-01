@@ -321,9 +321,7 @@ func (s *Store) personHasPublishedInferenceHistoryTx(ctx context.Context, tx *lo
 	// Select only mapping metadata: full envelopes may contain large media bodies
 	// and property trees, which are irrelevant to migration attribution.
 	mappingsExpr := "json_extract(resource_metadata, '$.native_mappings')"
-	if s.IsPostgreSQL() {
-		mappingsExpr = "resource_metadata ->> 'native_mappings'"
-	}
+
 	rows, err = tx.QueryContext(ctx, `SELECT `+mappingsExpr+` FROM vcard_resource_envelopes
     WHERE person_id = ? AND source_ref = 'carddav:' || CAST((SELECT address_book_id
        FROM carddav_publications WHERE person_id = ?) AS TEXT)`, personID, personID)

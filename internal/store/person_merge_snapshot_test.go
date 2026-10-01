@@ -117,11 +117,6 @@ func TestPersonMergeTableInventoryClassifiesEveryPersonReference(t *testing.T) {
 	assertPersonMergeTableInventory(t, st)
 }
 
-func TestPostgresPersonMergeTableInventoryClassifiesEveryPersonReference(t *testing.T) {
-	dbURL := skipUnlessPostgresInternal(t)
-	assertPersonMergeTableInventory(t, newPGStoreInternal(t, dbURL))
-}
-
 func assertPersonMergeTableInventory(t *testing.T, st *Store) {
 	t.Helper()
 	require := require.New(t)
@@ -134,23 +129,7 @@ func assertPersonMergeTableInventory(t *testing.T, st *Store) {
 		WHERE child.type = 'table' AND child.name NOT LIKE 'sqlite_%'
 		  AND foreign_key."table" = 'persons'
 		ORDER BY child.name, foreign_key."from"`
-	if st.IsPostgreSQL() {
-		query = `SELECT constraints.table_name, columns.column_name
-			FROM information_schema.table_constraints constraints
-			JOIN information_schema.key_column_usage columns
-			  ON columns.constraint_catalog = constraints.constraint_catalog
-			 AND columns.constraint_schema = constraints.constraint_schema
-			 AND columns.constraint_name = constraints.constraint_name
-			JOIN information_schema.constraint_column_usage target
-			  ON target.constraint_catalog = constraints.constraint_catalog
-			 AND target.constraint_schema = constraints.constraint_schema
-			 AND target.constraint_name = constraints.constraint_name
-			WHERE constraints.constraint_type = 'FOREIGN KEY'
-			  AND constraints.table_schema = current_schema()
-			  AND target.table_schema = current_schema()
-			  AND target.table_name = 'persons'
-			ORDER BY constraints.table_name, columns.column_name`
-	}
+
 	rows, err := st.db.Query(query)
 	require.NoError(err)
 	for rows.Next() {

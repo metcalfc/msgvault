@@ -1,7 +1,6 @@
 package store_test
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -77,20 +76,14 @@ func TestInitSchemaAddsDocumentRebuildIDToLegacyExtractionTable(t *testing.T) {
 	require := require.New(t)
 	st := testutil.NewTestStore(t)
 	drop := `ALTER TABLE document_extractions DROP COLUMN rebuild_id`
-	if st.IsPostgreSQL() {
-		drop += ` CASCADE`
-	}
+
 	_, err := st.DB().Exec(drop)
 	require.NoError(err)
 
 	require.NoError(st.InitSchema())
 	var columnCount int
 	query := `SELECT COUNT(*) FROM pragma_table_info('document_extractions') WHERE name = 'rebuild_id'`
-	if st.IsPostgreSQL() {
-		query = `SELECT COUNT(*) FROM information_schema.columns
-		         WHERE table_schema = current_schema()
-		           AND table_name = 'document_extractions' AND column_name = 'rebuild_id'`
-	}
+
 	require.NoError(st.DB().QueryRow(query).Scan(&columnCount))
 	assert.Equal(t, 1, columnCount)
 }
@@ -104,11 +97,7 @@ func TestInitSchemaAddsDocumentTargetProfileToLegacyIndexState(t *testing.T) {
 	require.NoError(st.InitSchema())
 	var columnCount int
 	query := `SELECT COUNT(*) FROM pragma_table_info('document_index_state') WHERE name = 'target_profile_id'`
-	if st.IsPostgreSQL() {
-		query = `SELECT COUNT(*) FROM information_schema.columns
-		         WHERE table_schema = current_schema()
-		           AND table_name = 'document_index_state' AND column_name = 'target_profile_id'`
-	}
+
 	require.NoError(st.DB().QueryRow(query).Scan(&columnCount))
 	assert.Equal(t, 1, columnCount)
 }
@@ -125,11 +114,7 @@ func TestInitSchemaAddsDocumentProviderAccountingToLegacyExtractions(t *testing.
 	for _, column := range []string{"request_count", "retry_count", "provider_latency_ms"} {
 		var columnCount int
 		query := `SELECT COUNT(*) FROM pragma_table_info('document_extractions') WHERE name = ?`
-		if st.IsPostgreSQL() {
-			query = `SELECT COUNT(*) FROM information_schema.columns
-			         WHERE table_schema = current_schema()
-			           AND table_name = 'document_extractions' AND column_name = ?`
-		}
+
 		require.NoError(st.DB().QueryRow(st.Rebind(query), column).Scan(&columnCount))
 		assert.Equal(t, 1, columnCount, column)
 	}
@@ -138,12 +123,7 @@ func TestInitSchemaAddsDocumentProviderAccountingToLegacyExtractions(t *testing.
 func documentFTSMatchCount(t *testing.T, st *store.Store, term string) int {
 	t.Helper()
 	var count int
-	if store.IsPostgresURL(os.Getenv("MSGVAULT_TEST_DB")) {
-		require.NoError(t, st.DB().QueryRow(st.Rebind(`
-			SELECT COUNT(*) FROM document_chunks
-			WHERE search_fts @@ plainto_tsquery('simple', ?)`), term).Scan(&count))
-		return count
-	}
+
 	require.NoError(t, st.DB().QueryRow(`
 		SELECT COUNT(*) FROM document_chunks_fts
 		WHERE document_chunks_fts MATCH ?`, term).Scan(&count))

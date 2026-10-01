@@ -113,26 +113,13 @@ func (s *Store) LatestEmbeddingChangeSequence(ctx context.Context) (int64, error
 // can be in flight while the enable statement runs.
 func (s *Store) EnableEmbeddingChangeJournal(ctx context.Context) error {
 	const enable = `UPDATE embedding_change_clock SET enabled = TRUE WHERE singleton = 1`
-	if s.dialect.DriverName() != postgresDriverName {
+	{
 		if _, err := s.db.ExecContext(ctx, enable); err != nil {
 			return fmt.Errorf("enable embedding change journal: %w", err)
 		}
 		return nil
 	}
-	err := s.withTxContext(ctx, func(tx *loggedTx) error {
-		if _, err := tx.Exec(
-			`SELECT pg_advisory_xact_lock(hashtextextended('msgvault.embedding_change_clock', 0))`); err != nil {
-			return fmt.Errorf("fence in-flight source transactions: %w", err)
-		}
-		if _, err := tx.Exec(enable); err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("enable embedding change journal: %w", err)
-	}
-	return nil
+
 }
 
 // PruneEmbeddingChangesThrough removes the journal prefix consumed by every

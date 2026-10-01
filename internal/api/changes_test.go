@@ -132,7 +132,7 @@ func setChangesWatermark(t *testing.T, st *store.Store, value string, ids ...int
 func setChangesWatermarkAt(t *testing.T, st *store.Store, when time.Time, ids ...int64) {
 	t.Helper()
 	var value any = when.UTC()
-	if !st.IsPostgreSQL() {
+	{
 		value = when.UTC().Format(store.SQLiteTimestampLayout)
 	}
 	for _, id := range ids {
@@ -154,20 +154,7 @@ func setChangesWatermarkAt(t *testing.T, st *store.Store, when time.Time, ids ..
 // repositioned before the insert instead.
 func seedChangedMessageAtID(t *testing.T, st *store.Store, id int64) int64 {
 	t.Helper()
-	if st.IsPostgreSQL() {
-		// The default lower bound of a bigint identity is 1, so an id below that
-		// needs MINVALUE lowered before RESTART will accept it.
-		alter := fmt.Sprintf(`ALTER TABLE messages ALTER COLUMN id RESTART WITH %d`, id)
-		if id < 1 {
-			alter = fmt.Sprintf(
-				`ALTER TABLE messages ALTER COLUMN id SET MINVALUE %d RESTART WITH %d`, id, id)
-		}
-		_, err := st.DB().Exec(alter)
-		require.NoErrorf(t, err, "reposition the messages identity sequence to %d", id)
-		got := seedChangedMessages(t, st, 1)[0]
-		require.Equalf(t, id, got, "the seeded message did not land on id %d", id)
-		return id
-	}
+
 	got := seedChangedMessages(t, st, 1)[0]
 	_, err := st.DB().Exec(
 		st.Rebind(`UPDATE messages SET id = ? WHERE id = ?`), id, got)
@@ -190,9 +177,7 @@ func setChangesMessageTimestamp(t *testing.T, st *store.Store, id int64, col str
 // parameter is encoded at that same resolution). Either way the fraction is
 // non-zero, which is what the RFC3339Nano serialisation has to preserve.
 func subSecondWatermark(st *store.Store) string {
-	if st.IsPostgreSQL() {
-		return "2026-07-26 10:00:00.731123"
-	}
+
 	return "2026-07-26 10:00:00.731"
 }
 
@@ -1751,7 +1736,7 @@ func TestChangesEndpoint_CompleteThroughIsAReachabilityBoundNotACursor(t *testin
 func countMessagesStampedBelow(t *testing.T, st *store.Store, instant time.Time) int {
 	t.Helper()
 	var arg any = instant.UTC()
-	if !st.IsPostgreSQL() {
+	{
 		arg = instant.UTC().Format(store.SQLiteTimestampLayout)
 	}
 	var n int

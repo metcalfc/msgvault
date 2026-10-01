@@ -161,14 +161,10 @@ func dailyNoteRetryable(ctx context.Context, s *Store, err error) bool {
 	if err == nil || ctx.Err() != nil {
 		return false
 	}
-	if s.dialect.DriverName() != postgresDriverName {
+	{
 		return s.dialect.IsBusyError(err)
 	}
-	var state sqlStateError
-	if !errors.As(err, &state) {
-		return false
-	}
-	return state.SQLState() == "40P01" || state.SQLState() == "40001"
+
 }
 
 func loadDailyNoteEntryTx(

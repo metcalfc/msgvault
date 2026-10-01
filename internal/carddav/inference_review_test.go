@@ -307,9 +307,7 @@ func TestReviewedPublicationRestartRecoversPersistedOwnershipWithoutAnotherPut(t
 	assert := assert.New(t)
 	fixture := &mutationFixture{timeout: true}
 	service, st, personID, book := seededMutationService(t, fixture)
-	if st.IsPostgreSQL() {
-		t.Skip("SQLite backup is used to reopen an independent on-disk archive; PostgreSQL intent reopen is covered by store tests")
-	}
+
 	appendInferenceReviewNote(t, st, personID, "Persisted detail")
 	beforePins, err := st.ListPersonFactPinsContext(t.Context(), personID)
 	require.NoError(err)

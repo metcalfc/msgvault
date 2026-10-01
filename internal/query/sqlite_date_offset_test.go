@@ -16,9 +16,6 @@ import (
 func TestSQLiteQueryEngineDateBoundsCompareMixedOffsetsAsInstants(t *testing.T) {
 	req := require.New(t)
 	f := storetest.New(t)
-	if f.Store.IsPostgreSQL() {
-		t.Skip("mixed textual timestamp encodings are specific to SQLite archives")
-	}
 
 	earlierID := f.NewMessage().
 		WithSourceMessageID("mixed-offset-earlier").
@@ -49,7 +46,7 @@ func TestSQLiteQueryEngineDateBoundsCompareMixedOffsetsAsInstants(t *testing.T) 
 	`, earlierID, insideID, laterID, earlierID, insideID, laterID)
 	req.NoError(err)
 
-	eng := query.NewEngine(f.Store.DB(), false)
+	eng := query.NewEngine(f.Store.DB())
 	after := time.Date(2024, 1, 15, 15, 30, 0, 0, time.UTC)
 	before := time.Date(2024, 1, 15, 17, 0, 0, 0, time.UTC)
 
@@ -111,9 +108,6 @@ func TestSQLiteInstantDatePredicateUsesExpressionIndex(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)
-	if f.Store.IsPostgreSQL() {
-		t.Skip("SQLite query-plan regression")
-	}
 
 	f.NewMessage().
 		WithSourceMessageID("indexed-date-bound").

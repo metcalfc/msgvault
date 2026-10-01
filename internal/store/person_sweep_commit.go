@@ -456,7 +456,7 @@ func (s *Store) lockPersonSweepUsageThenWorkTx(
 		case personSweepLockBatch:
 			if _, found, err := loadPersonSweepBatchTx(
 				ctx, tx, attemptID, coordinate.ordinal, coordinate.callOrdinal,
-				s.IsPostgreSQL()); err != nil {
+			); err != nil {
 				return false, err
 			} else if !found {
 				return false, errors.New("person sweep lock plan batch is missing")
@@ -475,7 +475,7 @@ func (s *Store) lockPersonSweepUsageThenWorkTx(
 func (s *Store) lockPersonSweepWorkRowTx(
 	ctx context.Context, tx *loggedTx, lease peoplesweep.Lease,
 ) (bool, error) {
-	if !s.IsPostgreSQL() {
+	{
 		if _, err := tx.ExecContext(ctx, `UPDATE person_sweep_work SET person_id = person_id
 			WHERE person_id = ?`, lease.PersonID); err != nil {
 			return false, err
@@ -483,9 +483,7 @@ func (s *Store) lockPersonSweepWorkRowTx(
 	}
 	query := `SELECT lease_owner, lease_fence, COALESCE(lease_until > ` + s.dialect.Now() + `, FALSE)
 		FROM person_sweep_work WHERE person_id = ?`
-	if s.IsPostgreSQL() {
-		query += " FOR UPDATE"
-	}
+
 	var owner string
 	var fence int64
 	var live bool
@@ -525,7 +523,7 @@ func (s *Store) reconcilePersonSweepSuccessBatchesTx(
 	for _, coordinate := range coordinates {
 		completed, applied := byCoordinate[coordinate.providerCoordinate()]
 		batch, found, err := loadPersonSweepBatchTx(ctx, tx, request.AttemptID,
-			coordinate.ordinal, coordinate.callOrdinal, s.IsPostgreSQL())
+			coordinate.ordinal, coordinate.callOrdinal)
 		if err != nil {
 			return 0, err
 		}
@@ -626,9 +624,7 @@ func (s *Store) advanceBoundPersonSweepCursorsTx(
 			queryUpper := `SELECT reconcile_upper_key FROM person_sweep_cursors
 				WHERE person_id = ? AND source_lane = ? AND program_fingerprint = ?
 				AND catalog_fingerprint = ?`
-			if s.IsPostgreSQL() {
-				queryUpper += " FOR UPDATE"
-			}
+
 			var upper string
 			if err := tx.QueryRowContext(ctx, queryUpper, advance.Key.PersonID, advance.Key.SourceLane,
 				advance.Key.ProgramFingerprint, advance.Key.CatalogFingerprint).Scan(&upper); err != nil {

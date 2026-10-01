@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math/rand"
 	"regexp"
 	"slices"
@@ -1251,7 +1250,7 @@ func (s *Store) UpsertMessageContext(ctx context.Context, msg *Message) (int64, 
 	var id int64
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
 		q := boundQuerier{ctx: ctx, q: tx}
-		if s.dialect.DriverName() != postgresDriverName {
+		{
 			// Reserve the writer before upsertMessageWith reads prior journal state.
 			if _, err := q.Exec(`UPDATE embedding_change_clock SET sequence = sequence WHERE singleton = 1`); err != nil {
 				return fmt.Errorf("lock message upsert: %w", err)
@@ -1362,7 +1361,7 @@ func upsertMessageWith(q querier, d Dialect, msg *Message) (int64, error) {
 	if err := enqueueActivityProjectionMessage(q, d, id); err != nil {
 		return 0, err
 	}
-	if journalCandidate && !prior.found && d.DriverName() != postgresDriverName {
+	if journalCandidate && !prior.found && true {
 		if err := appendPersonSweepMessageInsert(q, d, id); err != nil {
 			return 0, err
 		}
@@ -1412,15 +1411,7 @@ func appendBodylessMessageChange(
 	newType := sql.NullString{String: msg.MessageType, Valid: msg.MessageType != ""}
 	newConversation := nullInt64(msg.ConversationID)
 	newSentAt := canonicalMessageTime(msg.SentAt, msg.ReceivedAt, msg.InternalDate)
-	if dialect.DriverName() == postgresDriverName {
-		if _, err := q.Exec(`
-			SELECT pg_advisory_xact_lock_shared(hashtextextended('msgvault.embedding_change_clock', 0)),
-			       append_embedding_change(?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-			string(kind), messageID, oldType, newType, oldConversation, newConversation, oldSentAt, newSentAt); err != nil {
-			return fmt.Errorf("append PostgreSQL bodyless message journal: %w", err)
-		}
-		return nil
-	}
+
 	if _, err := q.Exec(`UPDATE embedding_change_clock SET sequence = sequence + 1 WHERE singleton = 1 AND enabled = TRUE`); err != nil {
 		return fmt.Errorf("advance bodyless message journal: %w", err)
 	}
@@ -1973,7 +1964,7 @@ func (s *Store) persistMessageWithParticipantsTx(
 	afterPersist messagePersistAfter,
 ) (int64, error) {
 	var messageID int64
-	if s.dialect.DriverName() != postgresDriverName {
+	{
 		// Reserve SQLite's writer slot before any prior-state or related
 		// snapshot reads. Otherwise a concurrent commit can leave this
 		// deferred WAL transaction unable to upgrade to a writer.
@@ -3544,20 +3535,7 @@ func (s *Store) backfillFTSRangeContext(
 		batchEnd := cursor + batchSize
 		n, err := s.backfillFTSBatchContext(ctx, cursor, batchEnd)
 		if err != nil {
-			// Only the specific PG tsvector-overflow error (a single
-			// pathological row whose body exceeds PostgreSQL's tsvector
-			// limit) is recoverable by retrying the batch row by row and
-			// skipping the offending row(s). EVERY OTHER error (dead
-			// connection, a non-size SQLSTATE, etc.) is systemic — it would
-			// hit every row and silently clear-then-skip the whole archive —
-			// so it must ABORT and propagate, not be masked as success.
-			if !s.dialect.IsFTSValueTooLargeError(err) {
-				return indexed, err
-			}
-			n, err = s.backfillFTSRowByRowContext(ctx, cursor, batchEnd)
-			if err != nil {
-				return indexed, err
-			}
+			return indexed, err
 		}
 		indexed += n
 		cursor = batchEnd
@@ -3570,75 +3548,12 @@ func (s *Store) backfillFTSRangeContext(
 	return indexed, nil
 }
 
-// backfillFTSRowByRow re-runs the batch backfill one message id at a time over
-// [fromID, toID), called only after a whole-batch failure that was classified
-// as the recoverable PG tsvector-overflow error. A row is skipped (with a
-// logged warning naming the id) ONLY when its per-row failure is itself the
-// tsvector-overflow error; any OTHER per-row error aborts and is returned so a
-// systemic failure cannot be swallowed. Returns the number of rows indexed.
-//
-// A skipped row is NOT left with search_fts NULL or an obsolete
-// indexing_version: either state means "needs backfill", so leaving a
-// permanently-unindexable row stale would make backfill re-run forever,
-// re-hitting the same overflow each time. Instead the row is marked with a
-// non-NULL empty tsvector at the current layout version; the row is correctly
-// unsearchable (an empty vector matches nothing). This skip write is PG-only —
-// the overflow error is PG-specific (IsFTSValueTooLargeError is always false on
-// SQLite), so the PG-syntax empty-tsvector literal is safe.
-func (s *Store) backfillFTSRowByRowContext(
-	ctx context.Context,
-	fromID, toID int64,
-) (int64, error) {
-	var indexed int64
-	for id := fromID; id < toID; id++ {
-		n, err := s.backfillFTSBatchContext(ctx, id, id+1)
-		if err != nil {
-			if !s.dialect.IsFTSValueTooLargeError(err) {
-				return indexed, err
-			}
-			// Mark the overflow row terminal with a non-NULL empty tsvector so
-			// FTSNeedsBackfill stops flagging it and backfill cannot loop on it
-			// forever. Keep the warning so the skipped id is still logged.
-			slog.Warn("skipping message in FTS backfill",
-				slog.Int64("message_id", id),
-				slog.Any("error", err))
-			if _, uerr := s.db.ExecContext(ctx,
-				`UPDATE messages SET search_fts = ''::tsvector, indexing_version = ? WHERE id = ?`,
-				CurrentFTSIndexingVersion, id,
-			); uerr != nil {
-				return indexed, fmt.Errorf("mark FTS-overflow row %d terminal: %w", id, uerr)
-			}
-			continue
-		}
-		indexed += n
-	}
-	return indexed, nil
-}
-
-// backfillFTSBatchErrHook is a test-only seam: when non-nil it is consulted
-// before each batch's UPDATE, and a non-nil return forces backfillFTSBatch to
-// fail for the given id range. It lets tests exercise backfillFTSRowByRow's
-// skip-and-continue fallback deterministically without depending on a body that
-// happens to overflow PostgreSQL's tsvector limit after the LEFT cap. Nil (and
-// thus a no-op) in production; only export_test.go ever sets it, and it is
-// per-Store: see the field's declaration on Store.
-
-// backfillFTSBatch inserts FTS rows for messages with id in [fromID, toID).
-//
-// Each batch runs under runMaintenance so the pool-wide 30s statement_timeout
-// is disabled for the batch: a 5000-row tsvector rewrite can exceed 30s on a
-// large archive (finding S1). Each batch remains its own committed transaction,
-// preserving the existing "partial progress is preserved if interrupted"
-// semantics. No-op timeout reset on SQLite.
+// backfillFTSBatchContext inserts FTS rows for [fromID, toID) in its own
+// transaction so an interrupted backfill keeps its previously committed batches.
 func (s *Store) backfillFTSBatchContext(
 	ctx context.Context,
 	fromID, toID int64,
 ) (int64, error) {
-	if s.backfillFTSBatchErrHook != nil {
-		if err := s.backfillFTSBatchErrHook(fromID, toID); err != nil {
-			return 0, err
-		}
-	}
 	var affected int64
 	err := s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
 		result, err := tx.ExecContext(ctx, s.dialect.FTSBackfillBatchSQL(), fromID, toID)
@@ -4718,12 +4633,7 @@ func (s *Store) participantIdentifierClassificationColumnsTx(
 	var count int
 	query := `SELECT COUNT(*) FROM pragma_table_info('participant_identifiers')
 		WHERE name IN ('service_id', 'scope_kind', 'scope_value')`
-	if s.IsPostgreSQL() {
-		query = `SELECT COUNT(*) FROM information_schema.columns
-			WHERE table_schema = current_schema()
-			  AND table_name = 'participant_identifiers'
-			  AND column_name IN ('service_id', 'scope_kind', 'scope_value')`
-	}
+
 	if err := tx.QueryRow(query).Scan(&count); err != nil {
 		return false, fmt.Errorf("inspect participant identifier classification schema: %w", err)
 	}
@@ -5317,7 +5227,7 @@ func replaceConversationParticipantsTx(
 	participants []ConversationParticipantRef,
 ) error {
 	q := boundQuerier{ctx: ctx, q: tx}
-	if dialect.DriverName() != postgresDriverName {
+	{
 		// Acquire SQLite's writer slot before taking the journal snapshot. A
 		// deferred transaction that reads first cannot upgrade its stale WAL
 		// snapshot if another writer commits before the membership DELETE.

@@ -201,13 +201,12 @@ type OperationHealth struct {
 // its startup engine when background cache initialization completes, so this
 // reflects the engine that aggregate endpoints use now.
 // AnalyticsModeSQLFallback distinguishes live SQL forced by a missing or
-// unusable cache from live SQL chosen deliberately (engine = "sql",
-// PostgreSQL backends).
+// unusable cache from live SQL chosen deliberately (engine = "sql").
 const (
 	AnalyticsModeDuckDB      = "duckdb"
 	AnalyticsModeSQL         = "sql"
 	AnalyticsModeSQLFallback = "sql-fallback"
-	AnalyticsModePostgres    = "postgres"
+
 	// AnalyticsModeInitializing reports that a required DuckDB cache is being
 	// built or opened in the background. Analytics routes remain unavailable
 	// until the initializer installs the engine.
@@ -3322,8 +3321,7 @@ func (s *Server) logIfChangeFeedStalled(serverTime, completeThrough time.Time) {
 		"complete_through", completeThrough.UTC().Format(changesTimeLayout),
 		"server_time", serverTime.UTC().Format(changesTimeLayout),
 		"cause", "a write transaction on the message table is open and the feed "+
-			"cannot publish past the instant it began. On PostgreSQL the lag is "+
-			"that transaction's own age. On SQLite the transaction's start is "+
+			"cannot publish past the instant it began. The transaction's start is "+
 			"unknowable, so the lag is the age of the last proof that the database "+
 			"was quiescent: a writer that started a moment ago reports the whole "+
 			"gap since that proof, including time in which nothing polled this feed")

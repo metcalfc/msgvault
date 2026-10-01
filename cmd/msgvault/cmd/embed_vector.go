@@ -1,4 +1,4 @@
-//go:build sqlite_vec || pgvector
+//go:build sqlite_vec
 
 package cmd
 
@@ -19,7 +19,6 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/vector"
 	"go.kenn.io/msgvault/internal/vector/embed"
-	"go.kenn.io/msgvault/internal/vector/pgvector"
 	"go.kenn.io/msgvault/internal/vector/sqlitevec"
 )
 
@@ -73,26 +72,8 @@ func runEmbed(cmd *cobra.Command) error {
 		// would break round-trip equality); PG uses the bare column.
 		lastModifiedExpr = "CAST(m.last_modified AS TEXT)"
 	)
-	if s.IsPostgreSQL() {
-		// pgvector embeddings live in the same Postgres database as
-		// messages — no separate vectors.db. The queue/worker layer is
-		// dialect-aware via rebind, so the build pipeline runs directly
-		// against pgx.
-		pgb, err := pgvector.Open(ctx, pgvector.Options{
-			DB:            s.DB(),
-			Dimension:     cfg.Vector.Embeddings.Dimension,
-			BuildScope:    cfg.Vector.Embed.Scope.BuildScope(),
-			SkipExtension: cfg.Vector.SkipExtensionCreate,
-		})
-		if err != nil {
-			return fmt.Errorf("open pgvector backend: %w", err)
-		}
-		backend = pgb
-		vectorsDB = pgb.DB()
-		closeFn = pgb.Close
-		rebind = (&store.PostgreSQLDialect{}).Rebind
-		lastModifiedExpr = "m.last_modified"
-	} else {
+
+	{
 		if err := sqlitevec.RegisterExtension(); err != nil {
 			return fmt.Errorf("register sqlite-vec: %w", err)
 		}

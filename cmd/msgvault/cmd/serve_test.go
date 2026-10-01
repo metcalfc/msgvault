@@ -1176,7 +1176,7 @@ func TestSQLAnalyticsModeQueryQueuesMissingCache(t *testing.T) {
 	assert := assert.New(t)
 	c, s := openTestDaemonAnalyticsStore(t)
 	c.Analytics.Engine = config.AnalyticsEngineSQL
-	engine := query.NewEngine(s.DB(), false)
+	engine := query.NewEngine(s.DB())
 	t.Cleanup(func() { _ = engine.Close() })
 	started := make(chan buildCacheMode, 1)
 	jobs := newCacheBuildJobs(t.Context(), nil, func(_ context.Context, mode buildCacheMode) error {
@@ -1198,7 +1198,7 @@ func TestSQLAnalyticsModeQueryQueuesMissingCache(t *testing.T) {
 
 func TestQueryUsesPublishedParquetWhenDaemonEngineIsSQLite(t *testing.T) {
 	c, s := openPublishedQueryTestStore(t)
-	sqliteEngine := query.NewEngine(s.DB(), false)
+	sqliteEngine := query.NewEngine(s.DB())
 	t.Cleanup(func() { _ = sqliteEngine.Close() })
 	// Model a SQL-capable fallback without changing the real SQLite engine.
 	// Cache queries must still go to DuckDB when a publication exists.
@@ -1363,7 +1363,7 @@ func TestRunDaemonSQLQueryReturnsCancellationWhenCachePublicationIsLocked(t *tes
 	require := require.New(t)
 	assert := assert.New(t)
 	c, s := openTestDaemonAnalyticsStore(t)
-	engine := query.NewEngine(s.DB(), false)
+	engine := query.NewEngine(s.DB())
 	defer func() { _ = engine.Close() }()
 
 	publicationLock, err := cacheBuildFileLock(c.AnalyticsDir())

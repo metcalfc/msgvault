@@ -668,29 +668,6 @@ func installParticipantLinkFailure(t *testing.T, st *store.Store) func() {
 	t.Helper()
 	require := require.New(t)
 
-	if st.IsPostgreSQL() {
-		_, err := st.DB().Exec(`CREATE FUNCTION fail_beeper_participant_link()
-			RETURNS trigger LANGUAGE plpgsql AS $$
-			BEGIN
-				RAISE EXCEPTION 'forced participant link failure';
-			END;
-			$$`)
-		require.NoError(err, "create PostgreSQL failure function")
-		_, err = st.DB().Exec(`CREATE TRIGGER fail_beeper_participant_link
-			BEFORE INSERT ON participant_links
-			FOR EACH ROW EXECUTE FUNCTION fail_beeper_participant_link()`)
-		require.NoError(err, "create PostgreSQL failure trigger")
-		release := func() {
-			_, err := st.DB().Exec(`DROP TRIGGER IF EXISTS fail_beeper_participant_link
-				ON participant_links`)
-			require.NoError(err, "drop PostgreSQL failure trigger")
-			_, err = st.DB().Exec(`DROP FUNCTION IF EXISTS fail_beeper_participant_link()`)
-			require.NoError(err, "drop PostgreSQL failure function")
-		}
-		t.Cleanup(release)
-		return release
-	}
-
 	_, err := st.DB().Exec(`CREATE TRIGGER fail_beeper_participant_link
 		BEFORE INSERT ON participant_links
 		FOR EACH ROW BEGIN

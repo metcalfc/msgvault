@@ -991,6 +991,11 @@ func decodeConfig(cfg *Config, path string, explicit, homeOverride bool, content
 		return nil, err
 	}
 
+	// Validate before path expansion can turn a server DSN into a local path.
+	if err := sqliteutil.ValidateDSN(cfg.Vector.DBPath); err != nil {
+		return nil, fmt.Errorf("vector.db_path: %w", err)
+	}
+
 	// Expand ~ in paths
 	cfg.Data.DataDir = expandPath(cfg.Data.DataDir)
 	cfg.Data.ExportDir = expandPath(cfg.Data.ExportDir)
@@ -1030,6 +1035,15 @@ func decodeConfig(cfg *Config, path string, explicit, homeOverride bool, content
 	// an explicit false in the file stays false.
 	cfg.Vector.ApplyDefaults()
 	cfg.Attachments.Documents.ApplyDefaults()
+	if err := sqliteutil.ValidateDSN(cfg.DatabaseDSN()); err != nil {
+		return nil, fmt.Errorf("data.database_url: %w", err)
+	}
+	if cfg.Vector.Backend != "" && cfg.Vector.Backend != "sqlite-vec" {
+		return nil, fmt.Errorf("vector.backend: only sqlite-vec is supported; remove the legacy PostgreSQL backend setting")
+	}
+	if cfg.Vector.SkipExtensionCreate {
+		return nil, fmt.Errorf("vector.skip_extension_create is a legacy PostgreSQL option and is no longer supported")
+	}
 	if err := cfg.Attachments.Documents.Validate(); err != nil {
 		return nil, err
 	}
@@ -1325,15 +1339,6 @@ func (c *Config) DatabaseDSN() string {
 // cannot operate on.
 func (c *Config) DatabasePath() (string, error) {
 	dsn := c.DatabaseDSN()
-	if strings.Contains(dsn, "://") && !strings.HasPrefix(dsn, "file:") {
-		// postgres://, mysql://, etc. — non-file DSN; backup is
-		// SQLite-specific and the caller can't operate on these.
-		return "", fmt.Errorf(
-			"backup operations require a SQLite filesystem DSN; "+
-				"got non-file DSN %q (set [data].database_url to a "+
-				"plain filesystem path or file: URI)", dsn,
-		)
-	}
 	_, path, err := sqliteutil.ResolveDSN(dsn)
 	return path, err
 }

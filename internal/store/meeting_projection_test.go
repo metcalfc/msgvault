@@ -127,9 +127,8 @@ func TestMeetingProjectionDirectWritesAndCascade(t *testing.T) {
 func rejectMeetingProjectionWrites(t *testing.T, st *Store) {
 	t.Helper()
 	var statements []string
-	if st.dialect.DriverName() == postgresDriverName {
-		statements = []string{`CREATE FUNCTION reject_meeting_projection() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'projection blocked'; END $$`, `CREATE TRIGGER reject_meeting_projection BEFORE INSERT OR UPDATE ON meeting_details FOR EACH ROW EXECUTE FUNCTION reject_meeting_projection()`}
-	} else {
+
+	{
 		statements = []string{`CREATE TRIGGER reject_meeting_projection BEFORE INSERT ON meeting_details BEGIN SELECT RAISE(ABORT, 'projection blocked'); END`}
 	}
 	for _, statement := range statements {
@@ -192,12 +191,8 @@ func TestMeetingProjectionActionWriteFailureRestoresPriorSnapshot(t *testing.T) 
 	st := newRFC822IDBackfillBackendStore(t)
 	data, id := projectionFixture(t, st, "action-rollback", "meeting_json", meetingProjectionRaw)
 	_, oldHash := readProjection(t, st, id)
-	if st.IsPostgreSQL() {
-		_, err := st.db.Exec(`CREATE FUNCTION reject_meeting_action() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'action blocked'; END $$`)
-		requirements.NoError(err)
-		_, err = st.db.Exec(`CREATE TRIGGER reject_meeting_action BEFORE INSERT ON meeting_action_items FOR EACH ROW EXECUTE FUNCTION reject_meeting_action()`)
-		requirements.NoError(err)
-	} else {
+
+	{
 		_, err := st.db.Exec(`CREATE TRIGGER reject_meeting_action BEFORE INSERT ON meeting_action_items BEGIN SELECT RAISE(ABORT, 'action blocked'); END`)
 		requirements.NoError(err)
 	}
@@ -260,22 +255,4 @@ func TestMeetingProjectionCompressedRawBoundAndCorruption(t *testing.T) {
 			assertions.Empty(content.Actions)
 		})
 	}
-}
-
-func TestMeetingProjectionPostgresKeepsWideMessageIDs(t *testing.T) {
-	assertions := assert.New(t)
-	requirements := require.New(t)
-	st := newRFC822IDBackfillBackendStore(t)
-	if !st.IsPostgreSQL() {
-		t.Skip("PostgreSQL ID width contract")
-	}
-	var next int64
-	requirements.NoError(st.db.QueryRow(`SELECT setval(pg_get_serial_sequence('messages', 'id'), 2147483648, false)`).Scan(&next))
-	_, id := projectionFixture(t, st, "wide", "meeting_json", meetingProjectionRaw)
-	assertions.Equal(int64(2147483648), id)
-	content, _ := readProjection(t, st, id)
-	requirements.Len(content.Actions, 1)
-	var storedID int64
-	requirements.NoError(st.db.QueryRow(`SELECT message_id FROM meeting_action_items WHERE message_id = ?`, id).Scan(&storedID))
-	assertions.Equal(id, storedID)
 }

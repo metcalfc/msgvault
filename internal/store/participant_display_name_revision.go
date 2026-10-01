@@ -17,12 +17,10 @@ const participantDisplayNameRevisionKey = "participant_display_name_revision"
 func (s *Store) lockParticipantDirectoryMutationTxContext(
 	ctx context.Context, tx *loggedTx,
 ) error {
-	if !s.IsPostgreSQL() {
+	{
 		return nil
 	}
-	return s.lockProfileIdentityKeyTxContext(
-		ctx, tx, "participant-directory-mutation",
-	)
+
 }
 
 // ParticipantDisplayNameRepair is one validated display-name replacement used

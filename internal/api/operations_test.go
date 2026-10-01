@@ -1221,9 +1221,7 @@ func TestOperationHistoryAPIRealStoreSameSecondWalkAndPrivacy(t *testing.T) {
 	source, err := st.GetOrCreateSource("gmail", sentinels.Address)
 	require.NoError(err)
 	identityOverride := ""
-	if st.IsPostgreSQL() {
-		identityOverride = " OVERRIDING SYSTEM VALUE"
-	}
+
 	var sourceRunID int64
 	err = st.DB().QueryRowContext(t.Context(), st.Rebind(`INSERT INTO sync_runs (
 		id, source_id, started_at, completed_at, status, messages_processed, messages_added,
@@ -1363,9 +1361,7 @@ func TestOperationHistoryAPIRealStoreSameSecondWalkAndPrivacy(t *testing.T) {
 }
 
 func operationAPITimestamp(st *store.Store, value time.Time, milliseconds bool) any {
-	if st.IsPostgreSQL() {
-		return value.UTC()
-	}
+
 	if milliseconds {
 		return value.UTC().Format("2006-01-02 15:04:05.000")
 	}

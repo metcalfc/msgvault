@@ -1719,9 +1719,6 @@ func (s SourceSnapshot) metadataScopesAfter(
 	dayExpr := `COALESCE(strftime('%Y-%m-%d', COALESCE(m.sent_at,m.received_at,m.internal_date)), 'undated')`
 	blockStartExpr := `(((m.id - 1) / ` + strconv.Itoa(chatScopeMaxMessages) + `) * ` +
 		strconv.Itoa(chatScopeMaxMessages) + ` + 1)`
-	if s.state != nil && s.state.postgres {
-		dayExpr = `COALESCE(TO_CHAR(COALESCE(m.sent_at,m.received_at,m.internal_date) AT TIME ZONE 'UTC', 'YYYY-MM-DD'), 'undated')`
-	}
 	where := []string{
 		`m.message_type = 'beeper'`,
 		`m.deleted_at IS NULL`,

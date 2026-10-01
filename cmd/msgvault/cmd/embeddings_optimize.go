@@ -13,7 +13,6 @@ import (
 	"strconv"
 
 	"github.com/spf13/cobra"
-	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/vector"
 	"go.kenn.io/msgvault/internal/vector/sqlitevec"
 )
@@ -61,9 +60,7 @@ func runEmbeddingsOptimize(cmd *cobra.Command, args []string) error {
 	if !cfg.Vector.Enabled {
 		return errors.New("vector search not enabled; add [vector] enabled=true to config.toml first")
 	}
-	if store.IsPostgresURL(cfg.DatabaseDSN()) {
-		return errors.New("embeddings optimize is only needed for SQLite; PostgreSQL uses its native vector index")
-	}
+
 	release, err := acquireDirectSQLiteWriteLock(cfg, state)
 	if err != nil {
 		return err

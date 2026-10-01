@@ -840,7 +840,7 @@ func runEvalWithRerankerFactory(cmd *cobra.Command, _ []string, makeReranker eva
 		// path /api/v1/search?mode=fts uses; the query engine serves the
 		// rowid -> source-id hydration the vector/hybrid path needs.
 		fts:         s,
-		qeng:        query.NewEngine(s.DB(), s.IsPostgreSQL()),
+		qeng:        query.NewEngine(s.DB()),
 		key:         keySpec,
 		limit:       evalLimit,
 		diag:        diag,
@@ -1089,13 +1089,6 @@ func (e *evaluator) attachVector(ctx context.Context, mainStore *store.Store) (f
 		return nil, errors.New("vector/hybrid modes need [vector].enabled = true in config")
 	}
 	mainPath := cfg.DatabaseDSN()
-	if store.IsPostgresURL(mainPath) {
-		// This command's vector path is the sqlite-vec one; a PG archive
-		// stores its embeddings in pgvector, alongside the messages. Fail
-		// clearly rather than pointing a sqlite-vec backend at a PG handle.
-		return nil, errors.New("vector/hybrid eval currently supports SQLite archives only; " +
-			"the configured database is PostgreSQL — run with --modes fts")
-	}
 
 	// Resolve [vector.embed.scope] accounts to source IDs before deriving the
 	// build scope or the generation fingerprint, exactly as the serve/embed

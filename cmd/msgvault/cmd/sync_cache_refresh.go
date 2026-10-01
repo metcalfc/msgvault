@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"go.kenn.io/msgvault/internal/store"
 )
 
 // addManualSyncCacheFlags is called by each archive-writing sync command.
@@ -89,9 +88,7 @@ func (a *storeAPIAdapter) queueCacheRefreshAfterManualSync(force, skip bool) err
 	if a.cacheJobs.ctx.Err() != nil {
 		return nil //nolint:nilerr // Shutdown must not turn a completed sync into a failure.
 	}
-	if store.IsPostgresURL(cfg.DatabaseDSN()) {
-		return nil
-	}
+
 	mode := buildCacheModeScheduledAuto
 	if force {
 		mode = buildCacheModeAuto

@@ -22,23 +22,7 @@ const personFactClaimOriginConstraint = "person_fact_claims_origin_check"
 // check changes; every column, key, index, and row is preserved, including the
 // claim's evidence links and the resolutions and decisions that reference it.
 func (s *Store) migratePersonFactClaimOriginBrief(ctx context.Context) error {
-	if s.IsPostgreSQL() {
-		return s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
-			if err := validatePersonFactClaimOriginRows(ctx, tx); err != nil {
-				return err
-			}
-			if _, err := tx.ExecContext(ctx, `ALTER TABLE person_fact_claims
-				DROP CONSTRAINT IF EXISTS `+personFactClaimOriginConstraint); err != nil {
-				return fmt.Errorf("drop person fact claim origin constraint: %w", err)
-			}
-			if _, err := tx.ExecContext(ctx, `ALTER TABLE person_fact_claims
-				ADD CONSTRAINT `+personFactClaimOriginConstraint+` `+
-				personFactClaimOriginCheck); err != nil {
-				return fmt.Errorf("create person fact claim origin constraint: %w", err)
-			}
-			return nil
-		})
-	}
+
 	return s.migratePersonFactClaimOriginBriefSQLite(ctx)
 }
 
@@ -135,23 +119,7 @@ func validatePersonFactClaimOriginRows(ctx context.Context, tx *loggedTx) error 
 // EXISTS (PostgreSQL) or a column probe (SQLite) makes it idempotent.
 func (s *Store) migratePersonSweepAttemptBriefFailure(ctx context.Context) error {
 	return s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
-		if s.IsPostgreSQL() {
-			_, err := tx.ExecContext(ctx, `ALTER TABLE person_sweep_attempts
-				ADD COLUMN IF NOT EXISTS brief_failure_class TEXT NOT NULL DEFAULT ''`)
-			if err != nil {
-				return fmt.Errorf("add person sweep attempt brief failure class: %w", err)
-			}
-			if _, err := tx.ExecContext(ctx, `ALTER TABLE person_sweep_attempts
-				DROP CONSTRAINT IF EXISTS person_sweep_attempts_brief_failure_class_check`); err != nil {
-				return fmt.Errorf("drop person sweep attempt brief failure constraint: %w", err)
-			}
-			if _, err := tx.ExecContext(ctx, `ALTER TABLE person_sweep_attempts
-				ADD CONSTRAINT person_sweep_attempts_brief_failure_class_check `+
-				personSweepBriefFailureClassCheck); err != nil {
-				return fmt.Errorf("create person sweep attempt brief failure constraint: %w", err)
-			}
-			return nil
-		}
+
 		present, err := sqliteColumnPresent(ctx, tx, "person_sweep_attempts", "brief_failure_class")
 		if err != nil {
 			return err

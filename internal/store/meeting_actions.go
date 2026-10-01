@@ -358,13 +358,7 @@ func (s *Store) meetingActionPosition(cursor *meetingActionsCursor) (string, []a
 			(sm.message_id < ? OR (sm.message_id = ? AND a.ordinal > ?))`,
 			[]any{messageID, messageID, ordinal}
 	}
-	if s.IsPostgreSQL() {
-		position := cursor.OccurredAt.UTC()
-		return ` AND (sm.occurred_key IS NULL OR sm.occurred_at < ? OR
-			(sm.occurred_at = ? AND (sm.message_id < ? OR
-				(sm.message_id = ? AND a.ordinal > ?))))`,
-			[]any{position, position, messageID, messageID, ordinal}
-	}
+
 	position := sqliteutil.TimestampKey(*cursor.OccurredAt)
 	return ` AND (sm.occurred_key IS NULL OR sm.occurred_key < ? OR
 		(sm.occurred_key = ? AND (sm.message_id < ? OR

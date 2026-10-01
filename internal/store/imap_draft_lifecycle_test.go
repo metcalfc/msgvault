@@ -128,7 +128,7 @@ func TestManagedIMAPDraftReplacementUIDReuse(t *testing.T) {
 }
 
 func TestManagedIMAPDraftRetainedByGCWhileCurrent(t *testing.T) {
-	testutil.SkipIfPostgres(t, "archive GC is SQLite-only")
+
 	requirements := require.New(t)
 	st := testutil.NewTestStore(t)
 	source, err := st.GetOrCreateSource("imap", "imap://gc@example.com:143")

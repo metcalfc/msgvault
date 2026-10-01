@@ -272,18 +272,7 @@ func (s *Store) SyncVisualGenerationCapabilityFingerprint(
 			changed = false
 			return nil
 		}
-		// Rebaseline while reopening: the re-scan claims owners against this
-		// fence, and keeping the original baseline would classify every
-		// retained historical journal entry as a concurrent change, blocking
-		// commits forever. The replay cursor advances with it (the schema
-		// requires last_sequence >= baseline_sequence): entries before the
-		// new baseline need no replay because the reopened full scan
-		// re-evaluates every owner, and later changes land after it.
-		if s.IsPostgreSQL() {
-			if _, err := q.Exec(`LOCK TABLE attachments, messages IN SHARE MODE`); err != nil {
-				return fmt.Errorf("lock visual rebaseline boundary: %w", err)
-			}
-		}
+
 		baseline, err := attachmentChangeBaseline(q)
 		if err != nil {
 			return err

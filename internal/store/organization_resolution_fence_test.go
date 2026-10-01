@@ -161,7 +161,7 @@ func TestSweepFencedOrganizationWritesNeedAnUnexpiredLease(t *testing.T) {
 	require := require.New(t)
 	st, personID := newPersonFactLedgerStore(t)
 	labs := createPersonFactOrganization(t, st, "Example Labs", "")
-	leaseUntil, leaseArg := personSweepLeaseExpiration(st.IsPostgreSQL(), 10*time.Minute)
+	leaseUntil, leaseArg := personSweepLeaseExpiration(10 * time.Minute)
 	_, err := st.db.ExecContext(t.Context(), st.Rebind(`
 		INSERT INTO person_sweep_work (
 			person_id, dirty_through_sequence, available_at, attempt_count,

@@ -28,7 +28,7 @@ func TestGoogleGroupsLabelsSanitizedAtDisplay(t *testing.T) {
 	require.Equal(int64(1), summary.MessagesAdded)
 	var id int64
 	require.NoError(st.DB().QueryRow("SELECT id FROM messages").Scan(&id))
-	engine := query.NewEngine(st.DB(), st.IsPostgreSQL())
+	engine := query.NewEngine(st.DB())
 	detail, err := engine.GetMessage(t.Context(), id)
 	require.NoError(err)
 	require.Contains(detail.Labels, label, "archive reads retain the original label")

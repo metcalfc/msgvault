@@ -391,12 +391,7 @@ func (s *Store) meetingIDsMembership(column string, ids []int64) (string, []any,
 	if err != nil {
 		return "", nil, fmt.Errorf("encode meeting IDs: %w", err)
 	}
-	if s.IsPostgreSQL() {
-		return column + ` IN (
-			SELECT CAST(value AS BIGINT)
-			FROM jsonb_array_elements_text(CAST(? AS jsonb)) AS meeting_id(value)
-		)`, []any{string(encoded)}, nil
-	}
+
 	return column + ` IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`, []any{string(encoded)}, nil
 }
 
@@ -476,23 +471,19 @@ func (s *Store) buildMeetingScopeStatement(scope MeetingQueryScope) (meetingScop
 	}
 	occurredAt := `COALESCE(m.sent_at, m.received_at, m.internal_date)`
 	occurredKey := occurredAt
-	if !s.IsPostgreSQL() {
+	{
 		occurredKey = sqliteutil.TimestampKeyFunction + `(` + occurredAt + `)`
 	}
 	if scope.After != nil {
-		if s.IsPostgreSQL() {
-			conditions = append(conditions, occurredAt+` >= ?`)
-			args = append(args, scope.After.UTC())
-		} else {
+
+		{
 			conditions = append(conditions, occurredKey+` >= ?`)
 			args = append(args, sqliteutil.TimestampKey(*scope.After))
 		}
 	}
 	if scope.Before != nil {
-		if s.IsPostgreSQL() {
-			conditions = append(conditions, occurredAt+` < ?`)
-			args = append(args, scope.Before.UTC())
-		} else {
+
+		{
 			conditions = append(conditions, occurredKey+` < ?`)
 			args = append(args, sqliteutil.TimestampKey(*scope.Before))
 		}

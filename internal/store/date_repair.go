@@ -25,7 +25,7 @@ type MessageDateRepair struct {
 
 func (s *Store) messageDateOutsideBoundsPredicate(column string) string {
 	boundExpr := "?"
-	if !s.IsPostgreSQL() {
+	{
 		column = "julianday(" + column + ")"
 		boundExpr = "julianday(?)"
 	}

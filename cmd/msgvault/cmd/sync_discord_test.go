@@ -231,22 +231,8 @@ func TestSyncDiscordRebuildsCacheAfterRepairBeforeSyncSetupFailure(t *testing.T)
 func installFailingDiscordParticipantTrigger(t *testing.T, st *store.Store) {
 	t.Helper()
 	var err error
-	if st.IsPostgreSQL() {
-		_, err = st.DB().Exec(`
-			CREATE OR REPLACE FUNCTION fail_discord_conversation_participant()
-			RETURNS trigger AS $$
-			BEGIN
-				RAISE EXCEPTION 'synthetic participant persistence failure';
-				RETURN NEW;
-			END;
-			$$ LANGUAGE plpgsql;
 
-			CREATE TRIGGER fail_discord_conversation_participant
-			BEFORE INSERT ON conversation_participants
-			FOR EACH ROW
-			EXECUTE FUNCTION fail_discord_conversation_participant();
-		`)
-	} else {
+	{
 		_, err = st.DB().Exec(`
 			CREATE TRIGGER fail_discord_conversation_participant
 			BEFORE INSERT ON conversation_participants

@@ -17,31 +17,6 @@ const cardDAVConflictPendingInvariant = `pending_operation IS NULL OR
 // table constraint in place. SQLite cannot, so an old table is rebuilt in one
 // transaction with all rows and the two public indexes restored before commit.
 func (s *Store) ensureCardDAVConflictPendingInvariant(ctx context.Context) error {
-	if s.IsPostgreSQL() {
-		var present bool
-		if err := s.db.QueryRowContext(ctx, `SELECT EXISTS (
-			SELECT 1 FROM pg_constraint
-			WHERE conrelid = 'carddav_conflicts'::regclass
-			  AND contype = 'c'
-			  AND pg_get_constraintdef(oid) ILIKE '%pending_started_at IS NOT NULL%'
-		)`).Scan(&present); err != nil {
-			return fmt.Errorf("inspect PostgreSQL pending constraint: %w", err)
-		}
-		if present {
-			return nil
-		}
-		if _, err := s.db.ExecContext(ctx, `DO $migration$
-			BEGIN
-				ALTER TABLE carddav_conflicts
-					ADD CONSTRAINT carddav_conflicts_pending_invariant CHECK (`+
-			cardDAVConflictPendingInvariant+`);
-			EXCEPTION WHEN duplicate_object THEN NULL;
-			END;
-		$migration$;`); err != nil {
-			return fmt.Errorf("add PostgreSQL pending constraint: %w", err)
-		}
-		return nil
-	}
 
 	var tableSQL sql.NullString
 	if err := s.db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master

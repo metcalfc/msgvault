@@ -232,9 +232,7 @@ func TestCardDAVSyncRunTerminalTransitionsSurvivePruneFailure(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewTestStore(t)
-	if st.IsPostgreSQL() {
-		t.Skip("SQLite trigger supplies the deterministic DELETE failure")
-	}
+
 	ctx := t.Context()
 
 	for range 101 {
@@ -320,11 +318,8 @@ func TestCardDAVSyncRunSchemaIndexesAndSQLiteReopenRecovery(t *testing.T) {
 	assert := assert.New(t)
 	st := testutil.NewTestStore(t)
 	var indexCount int
-	if st.IsPostgreSQL() {
-		require.NoError(st.DB().QueryRow(`SELECT COUNT(*) FROM pg_indexes
-			WHERE schemaname = current_schema()
-			  AND indexname IN ('idx_carddav_sync_runs_one_active', 'idx_carddav_sync_runs_state_id')`).Scan(&indexCount))
-	} else {
+
+	{
 		require.NoError(st.DB().QueryRow(`SELECT COUNT(*) FROM sqlite_master
 			WHERE type = 'index'
 			  AND name IN ('idx_carddav_sync_runs_one_active', 'idx_carddav_sync_runs_state_id')`).Scan(&indexCount))
@@ -341,9 +336,6 @@ func TestCardDAVSyncRunSchemaIndexesAndSQLiteReopenRecovery(t *testing.T) {
 		store.CardDAVSyncTriggerManual, false)
 	require.Error(err, "schema must reject errors on succeeded runs")
 
-	if st.IsPostgreSQL() {
-		return
-	}
 	path := filepath.Join(t.TempDir(), "reopen.db")
 	first, err := store.OpenForTest(path)
 	require.NoError(err)

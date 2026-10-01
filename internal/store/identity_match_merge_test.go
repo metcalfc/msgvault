@@ -697,19 +697,7 @@ func TestMergeParticipantsRollsBackWhenCandidateRewriteFails(t *testing.T) {
 	third := f.EnsureParticipant("third@example.com", "Third", "example.com")
 	createParticipantMatchCandidate(t, st, absorbed, third, 0.50)
 
-	if st.IsPostgreSQL() {
-		_, err := st.DB().ExecContext(context.Background(), `
-			CREATE FUNCTION fail_candidate_merge() RETURNS trigger AS $$
-			BEGIN
-				RAISE EXCEPTION 'forced candidate merge failure';
-			END;
-			$$ LANGUAGE plpgsql;
-			CREATE TRIGGER fail_candidate_merge
-			BEFORE UPDATE OF left_id, right_id ON identity_match_candidates
-			FOR EACH ROW EXECUTE FUNCTION fail_candidate_merge();
-		`)
-		require.NoError(err)
-	} else {
+	{
 		_, err := st.DB().ExecContext(context.Background(), `
 			CREATE TRIGGER fail_candidate_merge
 			BEFORE UPDATE OF left_id, right_id ON identity_match_candidates

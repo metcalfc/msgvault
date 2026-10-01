@@ -25,11 +25,7 @@ func DBPathForTest(s *Store) string {
 // caller reads the schema this way, so it stays out of the package's API.
 func MessagesTableColumns(s *Store) ([]string, error) {
 	q := `SELECT name FROM pragma_table_info('messages')`
-	if s.IsPostgreSQL() {
-		q = `SELECT column_name FROM information_schema.columns
-		     WHERE table_name = 'messages' AND table_schema = current_schema()
-		     ORDER BY ordinal_position`
-	}
+
 	rows, err := s.db.Query(q)
 	if err != nil {
 		return nil, fmt.Errorf("read messages columns: %w", err)
@@ -73,20 +69,6 @@ func (s *Store) SetCardDAVConflictTombstonePreparationSnapshotHookForTest(fn fun
 	s.cardDAVTombstonePrepareSnapshotHook = fn
 }
 
-// SetBackfillFTSBatchErrHookForTest installs (or, with nil, clears) the
-// test-only hook that forces backfillFTSBatch to fail for a chosen id range.
-// Tests use it to deterministically trigger backfillFTSRowByRow's
-// skip-the-bad-row-and-continue fallback. Returns a restore func that clears
-// the hook, so callers can defer it.
-//
-// Scoped to this Store: other Stores migrating concurrently in the same test
-// binary — test fixtures build their schemas in the background — must not see
-// this test's injected failure.
-func (s *Store) SetBackfillFTSBatchErrHookForTest(fn func(fromID, toID int64) error) func() {
-	s.backfillFTSBatchErrHook = fn
-	return func() { s.backfillFTSBatchErrHook = nil }
-}
-
 // SetContentChangedBackfillBatchHookForTest installs (or, with nil, clears) the
 // test-only hook consulted before each content_changed_at backfill batch, with
 // that batch's first and last id (inclusive). A non-nil return from it aborts
@@ -95,7 +77,7 @@ func (s *Store) SetBackfillFTSBatchErrHookForTest(fn func(fromID, toID int64) er
 // transactions an archive's shape costs. Returns a restore func that clears the
 // hook, so callers can defer it.
 //
-// Scoped to this Store; see SetBackfillFTSBatchErrHookForTest.
+// Scoped to this Store so concurrent test stores remain isolated.
 func (s *Store) SetContentChangedBackfillBatchHookForTest(fn func(fromID, toID int64) error) func() {
 	s.contentChangedBackfillBatchHook = fn
 	return func() { s.contentChangedBackfillBatchHook = nil }
@@ -106,7 +88,7 @@ func (s *Store) SetContentChangedBackfillBatchHookForTest(fn func(fromID, toID i
 // Returns a restore func that puts the production value back, so callers can
 // defer it.
 //
-// Scoped to this Store; see SetBackfillFTSBatchErrHookForTest.
+// Scoped to this Store so concurrent test stores remain isolated.
 func (s *Store) SetContentChangedBackfillBatchSizeForTest(n int64) func() {
 	prev := s.contentChangedBackfillBatchSizeOverride
 	s.contentChangedBackfillBatchSizeOverride = n
@@ -119,7 +101,7 @@ func (s *Store) SetContentChangedBackfillBatchSizeForTest(n int64) func() {
 // use it to perform a real INSERT exactly where a concurrent writer used to lose
 // its watermark. Returns a restore func, so callers can defer it.
 //
-// Scoped to this Store; see SetBackfillFTSBatchErrHookForTest. This one is the
+// Scoped to this Store so concurrent test stores remain isolated. This one is the
 // reason the seams are per-Store at all: it calls back into the installing
 // test's own Store, so a concurrent fixture build firing it would write through
 // a Store the test had already closed.

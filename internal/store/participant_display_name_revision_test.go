@@ -1,11 +1,8 @@
 package store_test
 
 import (
-	"context"
-	"fmt"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,73 +36,6 @@ func TestPersistMessageWithParticipantsBumpsDisplayNameRevisionOnce(t *testing.T
 	require.NoError(err)
 	assert.Equal(before+1, participantDisplayNameRevision(t, st),
 		"one message transaction must invalidate derived participant data once")
-}
-
-func TestPostgreSQLParticipantBatchSerializesWithMerge(t *testing.T) {
-	require := require.New(t)
-	st := storetest.New(t).Store
-	if !st.IsPostgreSQL() {
-		t.Skip("PostgreSQL lock-order regression")
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
-	defer cancel()
-
-	absorbedID, err := st.EnsureParticipant(
-		"z-batch-merge@example.com", "Absorbed", "example.com",
-	)
-	require.NoError(err)
-	survivorID, err := st.EnsureParticipant(
-		"a-batch-merge@example.com", "Survivor", "example.com",
-	)
-	require.NoError(err)
-	require.Less(absorbedID, survivorID,
-		"fixture requires merge row order to oppose sorted email order")
-
-	const advisoryKey int64 = 88442212
-	barrier, err := st.DB().Conn(ctx)
-	require.NoError(err)
-	t.Cleanup(func() {
-		_, _ = barrier.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", advisoryKey)
-		_ = barrier.Close()
-	})
-	_, err = barrier.ExecContext(ctx, "SELECT pg_advisory_lock($1)", advisoryKey)
-	require.NoError(err)
-	_, err = st.DB().ExecContext(ctx, fmt.Sprintf(`
-		CREATE FUNCTION delay_participant_merge_update_fn() RETURNS trigger LANGUAGE plpgsql AS $$
-		BEGIN
-			IF OLD.id = %d THEN
-				PERFORM pg_advisory_xact_lock(%d);
-			END IF;
-			RETURN NEW;
-		END
-		$$;
-		CREATE TRIGGER delay_participant_merge_update
-		BEFORE UPDATE ON participants
-		FOR EACH ROW EXECUTE FUNCTION delay_participant_merge_update_fn()`, absorbedID, advisoryKey))
-	require.NoError(err)
-
-	mergeDone := make(chan error, 1)
-	go func() { mergeDone <- st.MergeParticipants(absorbedID, survivorID) }()
-	require.Eventually(func() bool {
-		return postgreSQLWaitingLockCount(t, st) >= 1
-	}, 5*time.Second, 10*time.Millisecond, "merge did not reach its update barrier")
-
-	batchDone := make(chan error, 1)
-	go func() {
-		_, batchErr := st.EnsureParticipantsBatch([]mime.Address{
-			{Name: "Absorbed", Email: "z-batch-merge@example.com", Domain: "example.com"},
-			{Name: "Survivor", Email: "a-batch-merge@example.com", Domain: "example.com"},
-		})
-		batchDone <- batchErr
-	}()
-	require.Eventually(func() bool {
-		return postgreSQLWaitingLockCount(t, st) >= 2
-	}, 5*time.Second, 10*time.Millisecond, "batch did not reach the opposing lock order")
-
-	_, err = barrier.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", advisoryKey)
-	require.NoError(err)
-	require.NoError(<-mergeDone)
-	require.NoError(<-batchDone)
 }
 
 func TestEnsureParticipantsBatchConcurrentOppositeOrderConverges(t *testing.T) {

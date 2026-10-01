@@ -306,17 +306,10 @@ func (s *Store) lockPersonFactOrganizationTableForReferencesTx(
 func (s *Store) lockPersonFactOrganizationTableTx(
 	ctx context.Context, tx *loggedTx, exclusive bool,
 ) error {
-	if !s.IsPostgreSQL() {
+	{
 		return nil
 	}
-	mode := "ROW SHARE"
-	if exclusive {
-		mode = "EXCLUSIVE"
-	}
-	if _, err := tx.ExecContext(ctx, "LOCK TABLE organizations IN "+mode+" MODE"); err != nil {
-		return fmt.Errorf("lock person fact organization table in %s mode: %w", mode, err)
-	}
-	return nil
+
 }
 
 func (s *Store) lockPersonFactOrganizationChainsTx(

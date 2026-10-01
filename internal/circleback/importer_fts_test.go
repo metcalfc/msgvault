@@ -8,13 +8,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/msgvault/internal/testutil"
 )
 
 // TestImport_FTSIndexed verifies imported meetings are searchable, including
 // archived transcript text recovered while current notes are refreshed.
 func TestImport_FTSIndexed(t *testing.T) {
-	testutil.SkipIfPostgres(t, "directly MATCH-queries the SQLite FTS5 vtable; PG uses a tsvector column")
 
 	for _, archive := range archivedTranscriptFixtures {
 		for _, refresh := range transcriptRefreshFixtures {

@@ -206,7 +206,7 @@ func TestLastModified_BodyInsertBumpsParent(t *testing.T) {
 // CURRENT_TIMESTAMP backfills automatically and its triggers are created
 // after the column, so the upgrade ordering risk does not apply there.
 func TestLastModified_UpgradePathMissingColumn(t *testing.T) {
-	testutil.SkipIfPostgres(t, "SQLite ALTER TABLE DROP COLUMN + deferred trigger column resolution")
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -310,7 +310,7 @@ INSERT INTO message_bodies (message_id, body_text) VALUES (1, 'body one'), (2, '
 // place, so it has no second UPDATE to re-enter and no blanket trigger to
 // replace.
 func TestLastModified_UpgradeReplacesBlanketTrigger(t *testing.T) {
-	testutil.SkipIfPostgres(t, "the blanket-trigger clobber is a SQLite-only failure")
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -458,7 +458,7 @@ func openArchiveWithMessagesColumn(t *testing.T, name string) (*store.Store, err
 }
 
 func TestLastModified_TriggerMigrationDoesNotRunOnEveryOpen(t *testing.T) {
-	testutil.SkipIfPostgres(t, "the test inspects SQLite trigger DDL")
+
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewSQLiteTestStore(t)
@@ -508,7 +508,7 @@ func messagesTableExists(t *testing.T, st *store.Store) bool {
 // the same initialisation have already committed. So the archive must open, the
 // payload must stay inert, and the trigger must go on working.
 func TestLastModified_TriggerScopeEscapesAQuoteInAColumnName(t *testing.T) {
-	testutil.SkipIfPostgres(t, "only the SQLite dialect interpolates the UPDATE OF column list")
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -538,7 +538,7 @@ func TestLastModified_TriggerScopeEscapesAQuoteInAColumnName(t *testing.T) {
 // A renderer that dropped or mangled the quote would silently scope the trigger
 // to a column that does not exist.
 func TestLastModified_TriggerScopeRoundTripsAQuotedColumnName(t *testing.T) {
-	testutil.SkipIfPostgres(t, "only the SQLite dialect interpolates the UPDATE OF column list")
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -581,7 +581,7 @@ func TestLastModified_TriggerScopeRoundTripsAQuotedColumnName(t *testing.T) {
 // none — SQLite accepts an unterminated comment at end of input — so it commits
 // and the archive is destroyed. Quoted, the whole thing is one column name.
 func TestLastModified_TriggerScopeQuotesAHostileColumnName(t *testing.T) {
-	testutil.SkipIfPostgres(t, "only the SQLite dialect interpolates the UPDATE OF column list")
+
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -608,7 +608,6 @@ func TestLastModified_TriggerScopeQuotesAHostileColumnName(t *testing.T) {
 // identifiers that a real archive can carry, and every one of them is fine once
 // quoted — a fix that refused them would make legitimate archives unopenable.
 func TestLastModified_TriggerScopeAcceptsAwkwardButLegalColumnNames(t *testing.T) {
-	testutil.SkipIfPostgres(t, "only the SQLite dialect interpolates the UPDATE OF column list")
 
 	for _, name := range []string{
 		"a column with spaces",

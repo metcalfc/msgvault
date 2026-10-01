@@ -1,4 +1,4 @@
-//go:build !sqlite_vec && !pgvector
+//go:build !sqlite_vec
 
 package cmd
 
@@ -11,9 +11,9 @@ import (
 )
 
 func runConfiguredDocumentVectorGeneration(context.Context, *store.Store, int64, int) (vectordocument.ReconcileResult, error) {
-	return vectordocument.ReconcileResult{}, errors.New("document vector backend is unavailable: rebuild with sqlite_vec or pgvector support")
+	return vectordocument.ReconcileResult{}, errors.New("document vector backend is unavailable: rebuild with sqlite_vec support")
 }
 
 func runScheduledDocumentVectorGeneration(context.Context, *store.Store, *vectorFeatures, int) error {
-	return errors.New("document vector backend is unavailable: rebuild with sqlite_vec or pgvector support")
+	return errors.New("document vector backend is unavailable: rebuild with sqlite_vec support")
 }

@@ -596,9 +596,7 @@ func legacyCalendarOrganizerSelf(
 // InitSchemaContext issues its first version-aware ledger query.
 func (s *Store) ensureMigrationLedgerVersionColumn(ctx context.Context) error {
 	statement := `ALTER TABLE applied_migrations ADD COLUMN version INTEGER NOT NULL DEFAULT 1`
-	if s.IsPostgreSQL() {
-		statement = `ALTER TABLE applied_migrations ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1`
-	}
+
 	if _, err := s.db.ExecContext(ctx, statement); err != nil &&
 		!s.dialect.IsDuplicateColumnError(err) {
 		return fmt.Errorf("add migration ledger version: %w", err)

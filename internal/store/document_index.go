@@ -416,32 +416,16 @@ func (s *Store) ReconcileDocumentOccurrence(
 func (s *Store) lockDocumentPublicationHashTx(
 	ctx context.Context, tx *loggedTx, canonicalBlobHash string,
 ) error {
-	if !s.IsPostgreSQL() {
+	{
 		return nil
 	}
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(
-		hashtextextended(CAST(? AS TEXT), 0))`,
-		"msgvault.document_publication.hash:"+canonicalBlobHash,
-	); err != nil {
-		return fmt.Errorf("lock document publication hash: %w", err)
-	}
-	return nil
+
 }
 
 func (s *Store) lockDocumentOccurrenceAttachmentTx(
 	ctx context.Context, tx *loggedTx, attachmentID int64,
 ) error {
-	if s.IsPostgreSQL() {
-		// The occurrence row may not exist yet, so there is no row to lock.
-		// Serialize the eligibility read and its write by attachment identity.
-		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(
-			hashtextextended(CAST(? AS TEXT), 0))`,
-			fmt.Sprintf("msgvault.document_occurrence.attachment:%d", attachmentID),
-		); err != nil {
-			return fmt.Errorf("lock document occurrence attachment: %w", err)
-		}
-		return nil
-	}
+
 	// Reserve SQLite's writer slot before reading attachment authority. A
 	// deferred transaction cannot upgrade a stale WAL snapshot after a
 	// concurrent reconciliation commits.

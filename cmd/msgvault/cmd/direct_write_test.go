@@ -15,21 +15,6 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 )
 
-func TestAcquireDirectSQLiteWriteLockSkipsPostgreSQL(t *testing.T) {
-	dataDir := t.TempDir()
-	cfg := lifecycleTestConfig(dataDir)
-	cfg.Data.DatabaseURL = "postgres://user:pass@example.com:5432/msgvault"
-
-	owner, err := tryAcquireWriteOwnerLock(dataDir)
-	require.NoError(t, err, "pre-acquire sqlite lock")
-	t.Cleanup(func() { _ = owner.Close() })
-
-	release, err := acquireDirectSQLiteWriteLock(cfg, &invocation{cfg: cfg, logger: testDiscardLogger()})
-	require.NoError(t, err, "postgres direct writer should not use sqlite flock")
-	require.NotNil(t, release, "release")
-	release()
-}
-
 func TestAcquireDirectSQLiteWriteLock_HoldsThenReleases(t *testing.T) {
 	require := require.New(
 		t)

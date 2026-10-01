@@ -2153,14 +2153,10 @@ func (s *Store) lockActivityProjectionQueueFreshnessTx(
 	ctx context.Context,
 	tx *loggedTx,
 ) error {
-	if !s.IsPostgreSQL() {
+	{
 		return nil
 	}
-	if _, err := tx.ExecContext(ctx,
-		`LOCK TABLE activity_projection_queue IN SHARE MODE`); err != nil {
-		return fmt.Errorf("lock activity projection queue freshness: %w", err)
-	}
-	return nil
+
 }
 
 type contactEvidenceRow struct {

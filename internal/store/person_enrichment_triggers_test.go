@@ -1,7 +1,6 @@
 package store_test
 
 import (
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -242,14 +241,7 @@ func testPersonEnrichmentMissingPersonRevocationBackends(t *testing.T, manual bo
 	t.Run("sqlite", func(t *testing.T) {
 		testPersonEnrichmentMissingPersonRevocation(t, testutil.NewSQLiteTestStore(t), manual)
 	})
-	t.Run("postgres", func(t *testing.T) {
-		if os.Getenv("MSGVAULT_TEST_DB") == "" {
-			t.Skip("PostgreSQL missing-person revocation race requires MSGVAULT_TEST_DB")
-		}
-		st := testutil.NewTestStore(t)
-		require.True(t, st.IsPostgreSQL(), "MSGVAULT_TEST_DB must select PostgreSQL")
-		testPersonEnrichmentMissingPersonRevocation(t, st, manual)
-	})
+
 }
 
 func testPersonEnrichmentMissingPersonRevocation(t *testing.T, st *store.Store, manual bool) {
@@ -376,14 +368,7 @@ func testPersonEnrichmentManualAuthorizationRaceBackends(t *testing.T, removal s
 	t.Run("sqlite", func(t *testing.T) {
 		testPersonEnrichmentManualAuthorizationRace(t, testutil.NewSQLiteTestStore(t), removal)
 	})
-	t.Run("postgres", func(t *testing.T) {
-		if os.Getenv("MSGVAULT_TEST_DB") == "" {
-			t.Skip("PostgreSQL manual authorization race requires MSGVAULT_TEST_DB")
-		}
-		st := testutil.NewTestStore(t)
-		require.True(t, st.IsPostgreSQL(), "MSGVAULT_TEST_DB must select PostgreSQL")
-		testPersonEnrichmentManualAuthorizationRace(t, st, removal)
-	})
+
 }
 
 func testPersonEnrichmentManualAuthorizationRace(t *testing.T, st *store.Store, removal string) {

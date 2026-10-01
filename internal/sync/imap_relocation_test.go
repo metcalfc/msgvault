@@ -365,7 +365,7 @@ func TestIMAPRelocationSQLFailureRetainsSnapshotAndRetries(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger to inject relocation failure")
+
 	env := newTestEnv(t)
 	opts := DefaultOptions()
 	opts.SourceType = sourceTypeIMAP
@@ -762,7 +762,7 @@ func TestIMAPRelocationUntrustedDestinationSkipsRemoteImages(t *testing.T) {
 // instead of consuming the key the next retry needs.
 func TestIMAPPreferredAdoptionKeepsOldKeyOnLabelFailure(t *testing.T) {
 	t.Parallel()
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger to fail the label write")
+
 	assert := assert.New(t)
 	require := require.New(t)
 	env := newTestEnv(t)

@@ -7,9 +7,7 @@ import (
 
 func (s *Store) migratePersonSweepCallsV2(ctx context.Context) error {
 	return s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
-		if s.IsPostgreSQL() {
-			return migratePersonSweepCallsV2PostgreSQL(ctx, tx)
-		}
+
 		return migratePersonSweepCallsV2SQLite(ctx, tx)
 	})
 }
@@ -111,52 +109,6 @@ func migratePersonSweepCallsV2SQLite(ctx context.Context, tx *loggedTx) error {
 	for _, statement := range statements {
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("rebuild person sweep call journal: %w", err)
-		}
-	}
-	return nil
-}
-
-func migratePersonSweepCallsV2PostgreSQL(ctx context.Context, tx *loggedTx) error {
-	for _, statement := range []string{
-		`ALTER TABLE person_sweep_batches ADD COLUMN IF NOT EXISTS call_ordinal INTEGER NOT NULL DEFAULT 0`,
-		`ALTER TABLE person_sweep_batches ADD COLUMN IF NOT EXISTS purpose TEXT NOT NULL DEFAULT 'primary'`,
-	} {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("add person sweep call journal coordinate: %w", err)
-		}
-	}
-	if err := validatePersonSweepCallRows(ctx, tx); err != nil {
-		return err
-	}
-	var primaryKey string
-	if err := tx.QueryRowContext(ctx, `
-		SELECT conname FROM pg_constraint
-		WHERE conrelid = 'person_sweep_batches'::regclass AND contype = 'p'
-	`).Scan(&primaryKey); err != nil {
-		return fmt.Errorf("load person sweep call journal primary key: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx,
-		`ALTER TABLE person_sweep_batches DROP CONSTRAINT `+quoteIdentifier(primaryKey)); err != nil {
-		return fmt.Errorf("drop person sweep call journal primary key: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `ALTER TABLE person_sweep_batches
-		ADD PRIMARY KEY (attempt_id, batch_ordinal, call_ordinal)`); err != nil {
-		return fmt.Errorf("create person sweep call journal primary key: %w", err)
-	}
-	var coordinateCheck bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
-		SELECT 1 FROM pg_constraint
-		WHERE conrelid = 'person_sweep_batches'::regclass
-		  AND conname = 'person_sweep_batches_call_coordinate_check'
-	)`).Scan(&coordinateCheck); err != nil {
-		return fmt.Errorf("inspect person sweep call journal constraint: %w", err)
-	}
-	if !coordinateCheck {
-		if _, err := tx.ExecContext(ctx, `ALTER TABLE person_sweep_batches
-			ADD CONSTRAINT person_sweep_batches_call_coordinate_check CHECK (
-				(call_ordinal = 0 AND purpose = 'primary') OR
-				(call_ordinal = 1 AND purpose = 'repair'))`); err != nil {
-			return fmt.Errorf("create person sweep call journal constraint: %w", err)
 		}
 	}
 	return nil

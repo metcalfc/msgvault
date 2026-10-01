@@ -31,7 +31,7 @@ type MaintenanceReport struct {
 // is reported in the result. A no-op for PostgreSQL and read-only stores.
 func (s *Store) RunDailyMaintenance(ctx context.Context) (MaintenanceReport, error) {
 	var report MaintenanceReport
-	if s.IsPostgreSQL() || s.readOnly {
+	if s.readOnly {
 		return report, nil
 	}
 	report.OptimizeErr = s.optimizeSQLiteWithin(ctx, dailyOptimizeTimeout)

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -16,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1718,9 +1716,7 @@ func TestPersonFactEmploymentReplayIsByteIdentical(t *testing.T) {
 }
 
 func TestPersonFactEmploymentAutomaticLockPrecedesCurrentStateSQLite(t *testing.T) {
-	if IsPostgresURL(os.Getenv("MSGVAULT_TEST_DB")) {
-		t.Skip("SQLite production-path lock-order observation")
-	}
+
 	assert := assert.New(t)
 	require := require.New(t)
 	gate := newPersonFactEmploymentLockOrderGate(personFactEmploymentStagePerson)
@@ -1769,154 +1765,6 @@ func TestPersonFactEmploymentAutomaticLockPrecedesCurrentStateSQLite(t *testing.
 	})
 	require.NoError(err)
 	assert.Len(employments, 2)
-}
-
-func TestPersonFactEmploymentAutomaticAndDeclaredMutationSerializePostgres(t *testing.T) {
-	dbURL := os.Getenv("MSGVAULT_TEST_DB")
-	if !IsPostgresURL(dbURL) {
-		t.Skip("PostgreSQL person/organization lock interleaving requires MSGVAULT_TEST_DB")
-	}
-	assert := assert.New(t)
-	require := require.New(t)
-	gate := newPersonFactEmploymentLockOrderGate(personFactEmploymentStageOrganization)
-	defer gate.release()
-	st := newPersonFactEmploymentPostgresGateStore(t, dbURL, gate)
-	personID, target, organization := newPersonFactEmploymentLockOrderFixture(t, st, "postgres")
-
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	declaredCtx := context.WithValue(ctx, personFactEmploymentLockActorKey{}, personFactEmploymentActorDeclared)
-	automaticCtx := context.WithValue(ctx, personFactEmploymentLockActorKey{}, personFactEmploymentActorAutomatic)
-	type declaredResult struct {
-		employment *Employment
-		err        error
-	}
-	declaredDone := make(chan declaredResult, 1)
-	go func() {
-		employment, err := st.AddEmploymentContext(declaredCtx, EmploymentInput{
-			PersonID: personID, OrganizationID: organization.ID,
-			Title: new("Declared Advisor"), Source: ProvenanceUser, IsPrimary: new(false),
-		})
-		declaredDone <- declaredResult{employment: employment, err: err}
-	}()
-	waitPersonFactEmploymentLockSignal(t, gate.declaredPaused,
-		"declared mutation did not hold the person lock before organization validation")
-
-	automaticDone := make(chan struct {
-		result *personfacts.GenerationResult
-		err    error
-	}, 1)
-	go func() {
-		submitted := fmt.Sprintf(`{"organization":{"id":%d,"name":"Lock Order Company","domain":"lock-order.example"},"title":"Automatic Engineer"}`, organization.ID)
-		result, err := st.ApplyPersonFactGenerationContext(automaticCtx,
-			personFactProjectionInput(personID, "lock-order-postgres", []personfacts.ProposedClaim{
-				personFactProjectionClaim(personID, target, submitted, "lock-order-postgres"),
-			}, nil), nil)
-		automaticDone <- struct {
-			result *personfacts.GenerationResult
-			err    error
-		}{result: result, err: err}
-	}()
-	firstAutomatic := waitPersonFactEmploymentLockStage(t, gate.automaticFirst)
-	gate.release()
-	declared := waitPersonFactEmploymentLockResult(t, declaredDone, "declared mutation")
-	automatic := waitPersonFactEmploymentLockResult(t, automaticDone, "automatic projection")
-	require.NoError(declared.err)
-	require.NotNil(declared.employment)
-	require.NoError(automatic.err)
-	require.NotNil(automatic.result)
-	assert.Equal(personFactEmploymentStagePerson, firstAutomatic,
-		"automatic projection must wait on the person before touching current employment or organizations")
-	assert.Empty(automatic.result.Projections,
-		"the automatic projection must observe the committed declared pin after waiting")
-
-	employments, err := st.ListEmploymentsContext(t.Context(), EmploymentFilter{
-		PersonID: personID, CurrentOnly: true,
-	})
-	require.NoError(err)
-	require.Len(employments, 1)
-	assert.Equal("Declared Advisor", *employments[0].Title)
-	assert.Equal(ProvenanceUser, employments[0].Source)
-}
-
-func TestPersonFactEmploymentNonIDTableLockDeadlockRetriesPostgres(t *testing.T) {
-	dbURL := os.Getenv("MSGVAULT_TEST_DB")
-	if !IsPostgresURL(dbURL) {
-		t.Skip("PostgreSQL table and row locks are required for the retry regression")
-	}
-	assertions := assert.New(t)
-	requirements := require.New(t)
-	gate := newPersonFactEmploymentLockOrderGate(personFactEmploymentStageOrganization)
-	t.Cleanup(gate.release)
-	st := newPersonFactEmploymentPostgresGateStore(t, dbURL, gate)
-	personID, target, organization := newPersonFactEmploymentLockOrderFixture(
-		t, st, "non-id-deadlock")
-	var deadlocksBefore int64
-	requirements.NoError(st.DB().QueryRowContext(t.Context(), `
-		SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()
-	`).Scan(&deadlocksBefore))
-
-	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
-	t.Cleanup(cancel)
-	declaredCtx := context.WithValue(
-		ctx, personFactEmploymentLockActorKey{}, personFactEmploymentActorDeclared)
-	automaticCtx := context.WithValue(
-		ctx, personFactEmploymentLockActorKey{}, personFactEmploymentActorAutomatic)
-	type declaredResult struct {
-		employment *Employment
-		err        error
-	}
-	declaredDone := make(chan declaredResult, 1)
-	go func() {
-		employment, err := st.AddEmploymentContext(declaredCtx, EmploymentInput{
-			PersonID: personID, OrganizationID: organization.ID,
-			Title: new("Declared Advisor"), Source: ProvenanceUser, IsPrimary: new(false),
-		})
-		declaredDone <- declaredResult{employment: employment, err: err}
-	}()
-	waitPersonFactEmploymentLockSignal(t, gate.declaredPaused,
-		"declared mutation did not hold the person before organization validation")
-
-	automaticDone := make(chan struct {
-		result *personfacts.GenerationResult
-		err    error
-	}, 1)
-	go func() {
-		result, err := st.ApplyPersonFactGenerationContext(automaticCtx,
-			personFactProjectionInput(personID, "non-id-deadlock", []personfacts.ProposedClaim{
-				personFactProjectionClaim(personID, target,
-					`{"organization":{"name":"Lock Order Company","domain":"lock-order.example"},"title":"Automatic Engineer"}`,
-					"non-id-deadlock"),
-			}, nil), nil)
-		automaticDone <- struct {
-			result *personfacts.GenerationResult
-			err    error
-		}{result: result, err: err}
-	}()
-	firstAutomatic := waitPersonFactEmploymentLockStage(t, gate.automaticFirst)
-	gate.release()
-	declared := waitPersonFactEmploymentLockResult(t, declaredDone, "declared mutation")
-	automatic := waitPersonFactEmploymentLockResult(t, automaticDone, "automatic projection")
-	requirements.NoError(declared.err)
-	requirements.NotNil(declared.employment)
-	requirements.NoError(automatic.err)
-	requirements.NotNil(automatic.result)
-	assertions.Equal(personFactEmploymentStagePerson, firstAutomatic,
-		"non-ID projection must take its table lock, then preserve person-before-row ordering")
-	requirements.Eventually(func() bool {
-		var deadlocksAfter int64
-		return st.DB().QueryRowContext(t.Context(), `
-			SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()
-		`).Scan(&deadlocksAfter) == nil && deadlocksAfter > deadlocksBefore
-	}, 5*time.Second, 10*time.Millisecond,
-		"the non-ID table/person lock cycle did not exercise PostgreSQL deadlock retry")
-	employments, err := st.ListEmploymentsContext(t.Context(), EmploymentFilter{
-		PersonID: personID, CurrentOnly: true,
-	})
-	requirements.NoError(err)
-	requirements.NotEmpty(employments)
-	assertions.Contains([]string{"Declared Advisor", "Automatic Engineer"},
-		*employments[0].Title)
 }
 
 type personFactEmploymentLockActorKey struct{}
@@ -2124,28 +1972,6 @@ func newPersonFactEmploymentSQLiteGateStore(
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	require.NoError(st.InitSchemaContext(t.Context()))
-	return st
-}
-
-func newPersonFactEmploymentPostgresGateStore(
-	t *testing.T, dbURL string, gate *personFactEmploymentLockOrderGate,
-) *Store {
-	t.Helper()
-	require := require.New(t)
-	base := newPGStoreInternal(t, dbURL)
-	config, err := postgresConnConfig(base.dbPath, false)
-	require.NoError(err)
-	db := sql.OpenDB(&personFactEmploymentGateConnector{
-		Connector: stdlib.GetConnector(*config), gate: gate,
-	})
-	db.SetMaxOpenConns(8)
-	db.SetMaxIdleConns(4)
-	dialect := &PostgreSQLDialect{}
-	require.NoError(dialect.InitConn(db))
-	st := &Store{
-		db: newLoggedDB(db, dialect.Rebind), dbPath: base.dbPath, dialect: dialect,
-	}
-	t.Cleanup(func() { _ = st.Close() })
 	return st
 }
 

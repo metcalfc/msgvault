@@ -600,9 +600,7 @@ func TestApplyPersonFactGenerationProtectsUnownedDerivedAttributeFromProjectionP
 
 func TestPersonFactProjectionOwnershipUsesScopedCompositeIndex(t *testing.T) {
 	st, personID, _ := newPersonFactProjectionStore(t)
-	if st.IsPostgreSQL() {
-		t.Skip("SQLite query-plan coverage; PostgreSQL schema uses the same composite key order")
-	}
+
 	plan := explainPlan(t, st, personFactAttributeProjectionOwnershipSQL,
 		personID, "person_attribute", int64(1))
 	t.Logf("query plan:\n%s", plan)
@@ -1328,9 +1326,7 @@ func TestApplyPersonFactProjectionFailureRollsBackAllTargets(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	st, personID, targets := newPersonFactProjectionStore(t)
-	if st.IsPostgreSQL() {
-		t.Skip("SQLite trigger supplies a deterministic projection failure; PostgreSQL atomicity is covered by caller-owned rollback")
-	}
+
 	_, err := st.db.Exec(`
 		CREATE TRIGGER fail_ask_me_about_projection
 		BEFORE INSERT ON person_attribute_values

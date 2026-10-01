@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/store"
-	"go.kenn.io/msgvault/internal/testutil"
 	"go.kenn.io/msgvault/internal/testutil/storetest"
 )
 
@@ -74,7 +73,7 @@ func TestImporterRejectsMissingOwnerPhone(t *testing.T) {
 }
 
 func TestImporterContinuesWhenFTSUpsertFails(t *testing.T) {
-	testutil.SkipIfPostgres(t, "drops SQLite's messages_fts virtual table; PostgreSQL FTS is a messages.search_fts column")
+
 	f := storetest.New(t)
 	if f.Store.FTS5Available() {
 		_, err := f.Store.DB().Exec(`DROP TABLE messages_fts`)

@@ -502,7 +502,7 @@ func TestImport_IdempotentAndRefresh(t *testing.T) {
 }
 
 func TestIngestNote_RawFailureRollsBackCanonicalWrite(t *testing.T) {
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger to inject a raw-archive write failure")
+
 	require := require.New(t)
 	assert := assert.New(t)
 	api := &fakeAPI{notes: map[string][]byte{}}
@@ -953,7 +953,7 @@ func TestSnippetPreservesUTF8(t *testing.T) {
 
 func TestImportReportsFailureToRecordFailedSync(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger to reject terminal sync writes")
+
 	raw := loadFixture(t, "note_full.json")
 	var note Note
 	require.NoError(json.Unmarshal(raw, &note))

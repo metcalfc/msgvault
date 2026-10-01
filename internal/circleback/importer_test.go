@@ -1636,7 +1636,7 @@ func TestImport_TranscriptProviderUnrecognizedAndIngestFailuresRetainCursor(t *t
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.ingestFailure {
-				testutil.SkipIfPostgres(t, "uses a SQLite trigger to inject a canonical ingest failure")
+
 			}
 			assert := assert.New(t)
 			require := require.New(t)
@@ -2048,7 +2048,7 @@ func TestImport_ArchivedTranscriptRecovery(t *testing.T) {
 }
 
 func TestIngestMeeting_RawFailureRollsBackCanonicalRefresh(t *testing.T) {
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger to inject a raw-archive write failure")
+
 	assert := assert.New(t)
 	require := require.New(t)
 	f := &fakeSource{
@@ -2090,7 +2090,7 @@ func TestIngestMeeting_RawFailureRollsBackCanonicalRefresh(t *testing.T) {
 }
 
 func TestImport_MessageLookupFailureMarksSyncFailed(t *testing.T) {
-	testutil.SkipIfPostgres(t, "renames the SQLite messages table to force MessageExistsBatch failure")
+
 	assert := assert.New(t)
 	require := require.New(t)
 	f := &fakeSource{
@@ -2114,7 +2114,7 @@ func TestImport_MessageLookupFailureMarksSyncFailed(t *testing.T) {
 }
 
 func TestImport_CheckpointFailureJoinsHardError(t *testing.T) {
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger to inject a checkpoint failure")
+
 	assert := assert.New(t)
 	require := require.New(t)
 	f := &fakeSource{

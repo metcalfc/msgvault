@@ -546,7 +546,7 @@ func TestImportRepeatedGoneFails(t *testing.T) {
 // A message that fails to store stops the sync before its page cursor is
 // saved, so the next sync stores it.
 func TestImportStoreFailureDoesNotAdvanceCursor(t *testing.T) {
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger to fail one insert")
+
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewTestStore(t)
@@ -938,7 +938,7 @@ func TestImportCanceledDownloadDoesNotAdvance(t *testing.T) {
 }
 
 func TestImportRetryDeletionErrorKeepsMarker(t *testing.T) {
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger to fail a deletion write")
+
 	require := require.New(t)
 	st := testutil.NewTestStore(t)
 	f := newFakeGraph(t)

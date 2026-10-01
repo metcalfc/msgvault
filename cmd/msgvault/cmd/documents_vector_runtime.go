@@ -1,4 +1,4 @@
-//go:build sqlite_vec || pgvector
+//go:build sqlite_vec
 
 package cmd
 
@@ -14,7 +14,6 @@ import (
 	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/vector"
 	vectordocument "go.kenn.io/msgvault/internal/vector/document"
-	"go.kenn.io/msgvault/internal/vector/pgvector"
 	"go.kenn.io/msgvault/internal/vector/sqlitevec"
 )
 
@@ -128,13 +127,7 @@ func openDocumentVectorCleanupBackend(ctx context.Context, st *store.Store, main
 		return nil, nil, errors.New("configuration is unavailable")
 	}
 	cfg := state.cfg
-	if store.IsPostgresURL(mainPath) {
-		backend, err := pgvector.DocumentBackendForDB(st.DB())
-		if err != nil {
-			return nil, nil, fmt.Errorf("open pgvector document cleanup backend: %w", err)
-		}
-		return backend, func() error { return nil }, nil
-	}
+
 	vectorPath := cfg.Vector.DBPath
 	if vectorPath == "" {
 		vectorPath = filepath.Join(cfg.Data.DataDir, "vectors.db")

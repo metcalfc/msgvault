@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/store"
-	"go.kenn.io/msgvault/internal/testutil"
 	"go.kenn.io/msgvault/internal/testutil/storetest"
 )
 
@@ -137,7 +136,7 @@ func TestUserAcceptRecordsLegacyAcceptedDecision(t *testing.T) {
 }
 
 func TestAcceptStableProviderIDCandidateCancellationDoesNotCommitLink(t *testing.T) {
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger to cancel during participant linking")
+
 	require := require.New(t)
 	assert := assert.New(t)
 	st := storetest.New(t).Store
@@ -201,7 +200,7 @@ func TestAcceptStableProviderIDCandidateCancellationDoesNotCommitLink(t *testing
 }
 
 func TestSQLiteSystemAcceptanceCannotOverwriteConcurrentRejection(t *testing.T) {
-	testutil.SkipIfPostgres(t, "uses SQLite writer-lock scheduling")
+
 	requirements := require.New(t)
 	assertions := assert.New(t)
 	st := storetest.New(t).Store
@@ -749,7 +748,7 @@ func TestUnlinkManualLinkLeavesUnrelatedCandidateAccepted(t *testing.T) {
 }
 
 func TestUnlinkOwnedIdentityMatchRollsBackSuppressionAndEdge(t *testing.T) {
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger to force unlink rollback")
+
 	require := require.New(t)
 	assert := assert.New(t)
 	st := storetest.New(t).Store

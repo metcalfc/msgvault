@@ -13,7 +13,6 @@ import (
 	"github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/msgvault/internal/testutil"
 )
 
 // budgetTestChat builds a single-network chat with n messages starting at base.
@@ -106,7 +105,7 @@ func TestStoppedImportUpdatesTouchedConversationStats(t *testing.T) {
 }
 
 func TestImportStopDuringConversationStatsCompletesSync(t *testing.T) {
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger to cancel during conversation stats")
+
 	for _, budgetExpiry := range []bool{false, true} {
 		name := "yield"
 		if budgetExpiry {

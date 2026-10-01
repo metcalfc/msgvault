@@ -188,18 +188,7 @@ func TestReplaceMessageBeeperAttachmentsRollsBackRevisionAndMetadata(t *testing.
 		BEFORE UPDATE OF value ON archive_metadata
 		WHEN NEW.key = 'derived_data_revision'
 		BEGIN SELECT RAISE(ABORT, 'injected revision failure'); END`
-	if f.Store.IsPostgreSQL() {
-		triggerSQL = `
-			CREATE FUNCTION fail_derived_revision() RETURNS trigger AS $$
-			BEGIN
-				RAISE EXCEPTION 'injected revision failure';
-			END;
-			$$ LANGUAGE plpgsql;
-			CREATE TRIGGER fail_derived_revision
-			BEFORE UPDATE OF value ON archive_metadata
-			FOR EACH ROW WHEN (NEW.key = 'derived_data_revision')
-			EXECUTE FUNCTION fail_derived_revision()`
-	}
+
 	_, err := f.Store.DB().Exec(triggerSQL)
 	require.NoError(err)
 	ref.Metadata = `{"source_transcript":{"provider":"beeper","text":"new"}}`
@@ -213,9 +202,7 @@ func TestReplaceMessageBeeperAttachmentsRollsBackRevisionAndMetadata(t *testing.
 		SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM archive_metadata WHERE key = 'derived_data_revision'), 0)`).Scan(&revision))
 	require.Equal(int64(1), revision)
 	dropSQL := `DROP TRIGGER fail_derived_revision`
-	if f.Store.IsPostgreSQL() {
-		dropSQL = `DROP TRIGGER fail_derived_revision ON archive_metadata; DROP FUNCTION fail_derived_revision()`
-	}
+
 	_, err = f.Store.DB().Exec(dropSQL)
 	require.NoError(err)
 }

@@ -257,9 +257,7 @@ func TestApplySenderRepairSerializesConcurrentFromWriter(t *testing.T) {
 func TestApplySenderRepairRefreshesSQLiteFTS(t *testing.T) {
 	require := require.New(t)
 	f := storetest.New(t)
-	if f.Store.IsPostgreSQL() {
-		t.Skip("directly verifies the standalone SQLite FTS5 row")
-	}
+
 	if !f.Store.FTS5Available() {
 		t.Skip("FTS5 not available")
 	}
@@ -499,9 +497,7 @@ func TestApplySenderRepairRollsBackSenderWhenRecipientWriteFails(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	f := storetest.New(t)
-	if f.Store.IsPostgreSQL() {
-		t.Skip("SQLite trigger injection; the shared transaction path is backend-neutral")
-	}
+
 	messageID := f.NewMessage().
 		WithSourceMessageID("sender-repair-rollback").
 		Create(t, f.Store)

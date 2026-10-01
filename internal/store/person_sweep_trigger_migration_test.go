@@ -15,17 +15,8 @@ func TestPersonSweepTriggerMigrationRepairsOldDefinition(t *testing.T) {
 	_, err := f.store.DB().Exec(f.store.Rebind(
 		`DELETE FROM applied_migrations WHERE name = ?`), "person_sweep_change_triggers_v5")
 	requirements.NoError(err)
-	if f.store.IsPostgreSQL() {
-		_, err = f.store.DB().Exec(`DROP TRIGGER IF EXISTS trg_person_sweep_changes_recipients ON message_recipients`)
-		requirements.NoError(err)
-		_, err = f.store.DB().Exec(`
-			CREATE OR REPLACE FUNCTION msgvault_person_sweep_changes_recipients() RETURNS trigger AS $$
-			BEGIN RETURN NEW; END $$ LANGUAGE plpgsql;
-			CREATE TRIGGER trg_person_sweep_changes_recipients
-			AFTER INSERT OR UPDATE OR DELETE ON message_recipients
-			FOR EACH ROW EXECUTE FUNCTION msgvault_person_sweep_changes_recipients()`)
-		requirements.NoError(err)
-	} else {
+
+	{
 		_, err = f.store.DB().Exec(`DROP TRIGGER IF EXISTS trg_person_sweep_recipients_insert`)
 		requirements.NoError(err)
 		_, err = f.store.DB().Exec(`
@@ -61,14 +52,8 @@ func TestPersonSweepTriggerMigrationV5RepairsV4DocumentLifecycleDefinition(t *te
 	_, err = f.Store.DB().Exec(f.Store.Rebind(
 		`DELETE FROM applied_migrations WHERE name = ?`), "person_sweep_change_triggers_v5")
 	requirements.NoError(err)
-	if f.Store.IsPostgreSQL() {
-		_, err = f.Store.DB().Exec(`
-			CREATE OR REPLACE FUNCTION msgvault_append_person_sweep_document_changes(
-			    _person_id BIGINT, _source_id BIGINT, _message_id BIGINT,
-			    _change_kind TEXT, _evidence_effect TEXT)
-			RETURNS VOID AS $$ BEGIN RETURN; END $$ LANGUAGE plpgsql`)
-		requirements.NoError(err)
-	} else {
+
+	{
 		_, err = f.Store.DB().Exec(`DROP TRIGGER IF EXISTS trg_person_sweep_documents_message_update`)
 		requirements.NoError(err)
 	}

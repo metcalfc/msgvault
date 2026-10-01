@@ -2,9 +2,7 @@ package store_test
 
 import (
 	"context"
-	"errors"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -263,68 +261,4 @@ func TestOrganizationProfileHistorizesSourceResourceUIDChanges(t *testing.T) {
 	history, err := st.GetOrganizationProfileContext(ctx, organization.ID, true)
 	require.NoError(err)
 	require.Len(history.Identifiers, 2)
-}
-
-func TestMergeOrganizationsLocksBothRootsInStableOrder(t *testing.T) {
-	require := require.New(t)
-	st := testutil.NewTestStore(t)
-	if !st.IsPostgreSQL() {
-		t.Skip("PostgreSQL row locks are required for reciprocal merge deadlock regression")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	t.Cleanup(cancel)
-	first, err := st.CreateOrganizationContext(ctx, store.OrganizationInput{Name: "First Org"})
-	require.NoError(err)
-	second, err := st.CreateOrganizationContext(ctx, store.OrganizationInput{Name: "Second Org"})
-	require.NoError(err)
-
-	// Hold the higher ID so the reverse-order merge waits on it first. Then
-	// start the lower-ID merge, which acquires the lower row and waits on the
-	// same higher row. This makes the caller-order deadlock deterministic.
-	blocker, err := st.DB().BeginTx(ctx, nil)
-	require.NoError(err)
-	t.Cleanup(func() { _ = blocker.Rollback() })
-	var lockedID int64
-	require.NoError(blocker.QueryRowContext(ctx,
-		`SELECT id FROM organizations WHERE id = $1 FOR UPDATE`, second.ID).Scan(&lockedID))
-	require.Equal(second.ID, lockedID)
-
-	results := make(chan error, 2)
-	go func() {
-		// The reverse-order call waits on the higher row before the lower row.
-		_, mergeErr := st.MergeOrganizationsContext(ctx,
-			second.ID, second.Revision, first.ID, first.Revision)
-		results <- mergeErr
-	}()
-	require.Eventually(func() bool {
-		return postgreSQLWaitingLockCount(t, st) >= 1
-	}, 5*time.Second, 10*time.Millisecond, "reverse merge did not reach the held higher row")
-	go func() {
-		// The lower-order call owns the lower row and then waits on the higher.
-		_, mergeErr := st.MergeOrganizationsContext(ctx,
-			first.ID, first.Revision, second.ID, second.Revision)
-		results <- mergeErr
-	}()
-	require.Eventually(func() bool {
-		return postgreSQLWaitingLockCount(t, st) >= 2
-	}, 5*time.Second, 10*time.Millisecond, "both reciprocal merges did not reach the lock inversion")
-	require.NoError(blocker.Commit())
-
-	successes := 0
-	for range 2 {
-		select {
-		case err := <-results:
-			switch {
-			case err == nil:
-				successes++
-			case errors.Is(err, store.ErrOrganizationInvalid),
-				errors.Is(err, store.ErrOrganizationRevisionConflict):
-			default:
-				require.NoError(err, "reciprocal merges must not leak a database deadlock")
-			}
-		case <-ctx.Done():
-			require.FailNow("reciprocal merges did not finish", ctx.Err())
-		}
-	}
-	require.Equal(1, successes, "exactly one reciprocal merge should commit")
 }

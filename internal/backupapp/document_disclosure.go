@@ -36,8 +36,7 @@ type DocumentDisclosure struct {
 }
 
 func (v *frozenView) AuxiliaryArtifacts(ctx context.Context) ([]backup.AuxiliaryArtifact, error) {
-	postgres := documentDisclosureUsesPostgres(ctx, v.tx)
-	tableExists, err := documentDisclosureTableExists(ctx, v.tx, "document_chunks", postgres)
+	tableExists, err := documentDisclosureTableExists(ctx, v.tx, "document_chunks")
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +52,7 @@ func (v *frozenView) AuxiliaryArtifacts(ctx context.Context) ([]backup.Auxiliary
 	if disclosure.Chunks == 0 {
 		return nil, nil
 	}
-	profilesExist, err := documentDisclosureTableExists(ctx, v.tx, "document_extraction_profiles", postgres)
+	profilesExist, err := documentDisclosureTableExists(ctx, v.tx, "document_extraction_profiles")
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +63,7 @@ func (v *frozenView) AuxiliaryArtifacts(ctx context.Context) ([]backup.Auxiliary
 			return nil, fmt.Errorf("backupapp: count document extraction profiles: %w", err)
 		}
 	}
-	consentsExist, err := documentDisclosureTableExists(ctx, v.tx, "document_provider_consents", postgres)
+	consentsExist, err := documentDisclosureTableExists(ctx, v.tx, "document_provider_consents")
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +74,7 @@ func (v *frozenView) AuxiliaryArtifacts(ctx context.Context) ([]backup.Auxiliary
 			return nil, fmt.Errorf("backupapp: count document provider consents: %w", err)
 		}
 	}
-	extractionsExist, err := documentDisclosureTableExists(ctx, v.tx, "document_extractions", postgres)
+	extractionsExist, err := documentDisclosureTableExists(ctx, v.tx, "document_extractions")
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +85,7 @@ func (v *frozenView) AuxiliaryArtifacts(ctx context.Context) ([]backup.Auxiliary
 			return nil, fmt.Errorf("backupapp: count document extractions: %w", err)
 		}
 	}
-	headsExist, err := documentDisclosureTableExists(ctx, v.tx, "document_extraction_heads", postgres)
+	headsExist, err := documentDisclosureTableExists(ctx, v.tx, "document_extraction_heads")
 	if err != nil {
 		return nil, err
 	}
@@ -110,31 +109,15 @@ func (v *frozenView) AuxiliaryArtifacts(ctx context.Context) ([]backup.Auxiliary
 	}}, nil
 }
 
-// documentDisclosureUsesPostgres probes PostgreSQL first. The probe succeeds
-// without special privileges there; SQLite treats the unknown function as a
-// statement-local error and keeps its read transaction usable.
-func documentDisclosureUsesPostgres(ctx context.Context, tx *sql.Tx) bool {
-	var version string
-	return tx.QueryRowContext(ctx, `SELECT current_setting('server_version_num')`).Scan(&version) == nil
-}
-
 func documentDisclosureTableExists(
 	ctx context.Context,
 	tx *sql.Tx,
 	table string,
-	postgres bool,
 ) (bool, error) {
 	query := `
 		SELECT EXISTS (
 			SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?
 		)`
-	if postgres {
-		query = `
-			SELECT EXISTS (
-				SELECT 1 FROM information_schema.tables
-				WHERE table_schema = current_schema() AND table_name = $1
-			)`
-	}
 	var exists bool
 	if err := tx.QueryRowContext(ctx, query, table).Scan(&exists); err != nil {
 		return false, fmt.Errorf("backupapp: inspect %s schema: %w", table, err)

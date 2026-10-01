@@ -33,9 +33,7 @@ func (s *Store) GetMeetingMetricsContext(
 		var average sql.NullFloat64
 		var first, last nullableTimestamp
 		firstExpression, lastExpression := `NULL`, `NULL`
-		if s.IsPostgreSQL() {
-			firstExpression, lastExpression = `MIN(occurred_at)`, `MAX(occurred_at)`
-		}
+
 		readErr = tx.QueryRowContext(ctx, statement.cte+`
 			SELECT COUNT(*), COUNT(duration_seconds), COUNT(*) - COUNT(duration_seconds),
 				COALESCE(SUM(duration_seconds), 0), AVG(duration_seconds),
@@ -57,7 +55,7 @@ func (s *Store) GetMeetingMetricsContext(
 		result.Totals.AverageKnownSeconds = nullableFloatPointer(average)
 		result.FirstMeetingAt = nullableTimePointer(first)
 		result.LastMeetingAt = nullableTimePointer(last)
-		if !s.IsPostgreSQL() {
+		{
 			first, last, readErr = readSQLiteMeetingExtrema(ctx, tx, statement)
 			if readErr != nil {
 				return readErr
@@ -96,9 +94,7 @@ func (s *Store) GetMeetingMetricsContext(
 		}
 
 		monthExpression := `strftime('%Y-%m', occurred_at)`
-		if s.IsPostgreSQL() {
-			monthExpression = `TO_CHAR(occurred_at AT TIME ZONE 'UTC', 'YYYY-MM')`
-		}
+
 		rows, queryErr = tx.QueryContext(ctx, statement.cte+`
 			SELECT `+monthExpression+`, COUNT(*), COUNT(duration_seconds),
 				COUNT(*) - COUNT(duration_seconds), COALESCE(SUM(duration_seconds), 0),

@@ -648,12 +648,7 @@ func (s *Store) lockEmploymentPeopleTx(
 	ctx context.Context, tx *loggedTx, personIDs ...int64,
 ) error {
 	lockClause := s.dialect.SelectForUpdate()
-	if s.IsPostgreSQL() {
-		// These mutations do not change person keys. Match enrichment's lock
-		// so nested projection writes do not upgrade it and deadlock with a
-		// participant merge holding a foreign-key KEY SHARE lock.
-		lockClause = " FOR NO KEY UPDATE"
-	}
+
 	ids := append([]int64(nil), personIDs...)
 	slices.Sort(ids)
 	var previous int64

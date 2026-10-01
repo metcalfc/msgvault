@@ -345,9 +345,7 @@ func (s *Store) claimWorkOnce(
 			return errors.New("person enrichment claim requires a running run")
 		}
 		lock := ""
-		if s.IsPostgreSQL() {
-			lock = " FOR UPDATE OF w SKIP LOCKED"
-		}
+
 		query := `WITH candidate AS (
 			SELECT w.person_id, w.profile_fingerprint
 			FROM person_enrichment_work w
@@ -917,9 +915,6 @@ func (s *Store) reservePersonEnrichmentBudgetTx(
 	utcDay := s.personEnrichmentTime().Format("2006-01-02")
 	if err := ensurePersonEnrichmentBudgetCountersTx(ctx, tx, start, utcDay); err != nil {
 		return err
-	}
-	if s.personEnrichmentBudgetBarrier != nil && s.IsPostgreSQL() {
-		s.personEnrichmentBudgetBarrier()
 	}
 
 	runCounter, personCounter, dayCounter, err := lockPersonEnrichmentCountersTx(

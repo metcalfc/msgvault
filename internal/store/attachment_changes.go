@@ -54,11 +54,7 @@ func (s *Store) RegisterAttachmentChangeConsumer(
 	var created bool
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
 		q := boundQuerier{ctx: ctx, q: tx}
-		if s.IsPostgreSQL() {
-			if _, err := q.Exec(`LOCK TABLE attachments, messages IN SHARE MODE`); err != nil {
-				return fmt.Errorf("lock attachment change registration boundary: %w", err)
-			}
-		}
+
 		result, err := q.Exec(`
 			INSERT INTO attachment_change_consumers
 				(consumer_key, baseline_sequence, last_sequence, reconciliation_complete)
@@ -226,7 +222,7 @@ func (s *Store) AdvanceAttachmentChangeConsumer(
 	}
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
 		q := boundQuerier{ctx: ctx, q: tx}
-		if !s.IsPostgreSQL() {
+		{
 			// Reserve SQLite's writer slot before reading the cursor and event.
 			// A deferred transaction cannot upgrade a stale WAL snapshot after
 			// a peer advances the same consumer and commits.
@@ -307,11 +303,7 @@ func (s *Store) UnregisterAttachmentChangeConsumer(ctx context.Context, consumer
 	}
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
 		q := boundQuerier{ctx: ctx, q: tx}
-		if s.IsPostgreSQL() {
-			if _, err := q.Exec(`LOCK TABLE attachments, messages IN SHARE MODE`); err != nil {
-				return fmt.Errorf("lock attachment change unregistration boundary: %w", err)
-			}
-		}
+
 		if _, err := q.Exec(`DELETE FROM attachment_change_consumers WHERE consumer_key = ?`, consumerKey); err != nil {
 			return fmt.Errorf("unregister attachment change consumer: %w", err)
 		}

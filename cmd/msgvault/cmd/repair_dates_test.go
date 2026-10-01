@@ -400,12 +400,6 @@ func TestDateRepairPostApplyLedgerErrorProvidesRecoveryCommand(t *testing.T) {
 	require.ErrorContains(t, err, "msgvault build-cache --full-rebuild")
 }
 
-func TestDateRepairUsesAnalyticsCacheOnlyForSQLite(t *testing.T) {
-	assert.True(t, dateRepairUsesAnalyticsCache("/tmp/msgvault.db"))
-	assert.False(t, dateRepairUsesAnalyticsCache("postgres://db.example.com/msgvault"))
-	assert.False(t, dateRepairUsesAnalyticsCache("postgresql://db.example.com/msgvault"))
-}
-
 func TestRunRepairDatesLocalInvalidatesAndUnlocksCacheWhenApplyFails(t *testing.T) {
 	cfg := testConfigValue()
 

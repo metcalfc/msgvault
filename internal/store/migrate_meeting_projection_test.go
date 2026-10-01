@@ -3,7 +3,6 @@ package store
 import (
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -60,9 +59,7 @@ func TestMeetingProjectionUpgradeAllFormatsTwice(t *testing.T) {
 }
 
 func TestMeetingProjectionCopySubsetRebuildsFromLegacyEvidence(t *testing.T) {
-	if IsPostgresURL(os.Getenv("MSGVAULT_TEST_DB")) {
-		t.Skip("CopySubset accepts SQLite archives")
-	}
+
 	for _, legacy := range []bool{false, true} {
 		t.Run(fmt.Sprint("legacy=", legacy), func(t *testing.T) {
 			assertions := assert.New(t)
@@ -104,10 +101,7 @@ func TestMeetingProjectionUpgradeIncludesNonpositiveIDs(t *testing.T) {
 	requirements.NoError(err)
 	insert := `INSERT INTO messages (id, conversation_id, source_id, source_message_id, message_type)
   VALUES (?, ?, ?, ?, 'meeting_transcript')`
-	if st.IsPostgreSQL() {
-		insert = `INSERT INTO messages (id, conversation_id, source_id, source_message_id, message_type)
-   OVERRIDING SYSTEM VALUE VALUES (?, ?, ?, ?, 'meeting_transcript')`
-	}
+
 	ids := []int64{math.MinInt64, -1, 0, 7}
 	for _, id := range ids {
 		_, err := st.db.Exec(insert, id, conversationID, source.ID, fmt.Sprintf("signed-%d", id))

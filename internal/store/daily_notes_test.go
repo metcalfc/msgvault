@@ -3,7 +3,6 @@ package store_test
 import (
 	"context"
 	"fmt"
-	"os"
 	"slices"
 	"sync"
 	"testing"
@@ -173,27 +172,8 @@ func TestDailyNoteTargetInsertFailureRollsBackAllocator(t *testing.T) {
 	f := storetest.New(t)
 	person := dailyNotePerson(t, f, "rollback")
 	var dropStatements []string
-	if f.Store.IsPostgreSQL() {
-		_, err := f.Store.DB().ExecContext(t.Context(), `
-			CREATE FUNCTION fail_daily_note_target() RETURNS trigger
-			LANGUAGE plpgsql AS $$
-			BEGIN
-				RAISE EXCEPTION 'injected daily note target failure';
-			END
-			$$
-		`)
-		require.NoError(err)
-		_, err = f.Store.DB().ExecContext(t.Context(), `
-			CREATE TRIGGER fail_daily_note_target
-			BEFORE INSERT ON daily_note_entry_persons
-			FOR EACH ROW EXECUTE FUNCTION fail_daily_note_target()
-		`)
-		require.NoError(err)
-		dropStatements = []string{
-			`DROP TRIGGER fail_daily_note_target ON daily_note_entry_persons`,
-			`DROP FUNCTION fail_daily_note_target()`,
-		}
-	} else {
+
+	{
 		_, err := f.Store.DB().ExecContext(t.Context(), `
 			CREATE TRIGGER fail_daily_note_target
 			BEFORE INSERT ON daily_note_entry_persons
@@ -275,9 +255,6 @@ func TestDailyNotePaginationDefaultsAndCaps(t *testing.T) {
 func TestDailyNoteConcurrentAppendsUseConsecutiveOrdinals(t *testing.T) {
 	f := storetest.New(t)
 	n := 24
-	if store.IsPostgresURL(os.Getenv("MSGVAULT_TEST_DB")) {
-		n = 48
-	}
 
 	start := make(chan struct{})
 	ordinals := make(chan int64, n)

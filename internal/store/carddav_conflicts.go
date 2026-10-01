@@ -1413,7 +1413,7 @@ func (s *Store) SweepResolvedCardDAVConflictsContext(
 	query := `DELETE FROM carddav_conflicts
 		WHERE status = 'resolved' AND resolved_at < ?`
 	parameter := any(cutoff)
-	if s.dialect.DriverName() != postgresDriverName {
+	{
 		query = `DELETE FROM carddav_conflicts
 			WHERE status = 'resolved' AND datetime(resolved_at) < datetime(?)`
 		parameter = cutoff.Format(time.RFC3339Nano)

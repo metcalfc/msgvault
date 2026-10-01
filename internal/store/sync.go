@@ -64,7 +64,6 @@ func (s *Store) ScopedToSync(sourceID, syncRunID int64) *Store {
 		initSchemaWindowHook:                  base.initSchemaWindowHook,
 		attributeSeedReadHook:                 base.attributeSeedReadHook,
 		contentChangedBackfillBatchHook:       base.contentChangedBackfillBatchHook,
-		backfillFTSBatchErrHook:               base.backfillFTSBatchErrHook,
 		attachmentRoleRepairPreparedHook:      base.attachmentRoleRepairPreparedHook,
 		cardDAVConflictResolveSnapshotHook:    base.cardDAVConflictResolveSnapshotHook,
 		cardDAVTombstonePrepareSnapshotHook:   base.cardDAVTombstonePrepareSnapshotHook,

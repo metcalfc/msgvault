@@ -2,11 +2,9 @@ package store_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -75,91 +73,6 @@ func TestAtMostOnePrimaryCurrentEmploymentIsEnforced(t *testing.T) {
 	assert.False(demoted.IsPrimary)
 	assert.True(demoted.IsCurrent)
 	assert.Equal(primary.Revision+1, demoted.Revision)
-}
-
-func TestConcurrentPrimaryRotationDoesNotLeakDatabaseConflicts(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := context.Background()
-	st := testutil.NewTestStore(t)
-	if !st.IsPostgreSQL() {
-		t.Skip("PostgreSQL row locks are required for this race regression")
-	}
-	person := mustPromotedPerson(t, st, "primary-race@example.com", "primary-race")
-	firstOrg := mustOrganization(t, st, "Primary Race A")
-	secondOrg := mustOrganization(t, st, "Primary Race B")
-	first, err := st.AddEmploymentContext(ctx, store.EmploymentInput{
-		PersonID: person.ID, OrganizationID: firstOrg.ID,
-		Title: new("Engineer"), Source: store.ProvenanceUser,
-		IsPrimary: new(false),
-	})
-	require.NoError(err)
-	second, err := st.AddEmploymentContext(ctx, store.EmploymentInput{
-		PersonID: person.ID, OrganizationID: secondOrg.ID,
-		Title: new("Advisor"), Source: store.ProvenanceUser,
-		IsPrimary: new(false),
-	})
-	require.NoError(err)
-
-	firstLock, err := st.DB().BeginTx(ctx, nil)
-	require.NoError(err)
-	t.Cleanup(func() { _ = firstLock.Rollback() })
-	var lockedID int64
-	err = firstLock.QueryRowContext(ctx,
-		`SELECT id FROM employments WHERE id = $1 FOR UPDATE`, first.ID).Scan(&lockedID)
-	require.NoError(err)
-	assert.Equal(first.ID, lockedID)
-
-	secondLock, err := st.DB().BeginTx(ctx, nil)
-	require.NoError(err)
-	t.Cleanup(func() { _ = secondLock.Rollback() })
-	err = secondLock.QueryRowContext(ctx,
-		`SELECT id FROM employments WHERE id = $1 FOR UPDATE`, second.ID).Scan(&lockedID)
-	require.NoError(err)
-	assert.Equal(second.ID, lockedID)
-
-	results := make(chan error, 2)
-	go func() {
-		_, promoteErr := st.SetPrimaryEmploymentContext(ctx, first.ID, first.Revision)
-		results <- promoteErr
-	}()
-	go func() {
-		_, promoteErr := st.SetPrimaryEmploymentContext(ctx, second.ID, second.Revision)
-		results <- promoteErr
-	}()
-
-	select {
-	case early := <-results:
-		require.FailNow("promotion bypassed held target row", "error: %v", early)
-	case <-time.After(200 * time.Millisecond):
-	}
-	require.NoError(firstLock.Commit())
-	require.NoError(secondLock.Commit())
-
-	successes := 0
-	for range 2 {
-		promoteErr := <-results
-		switch {
-		case promoteErr == nil:
-			successes++
-		case errors.Is(promoteErr, store.ErrEmploymentPrimaryConflict),
-			errors.Is(promoteErr, store.ErrEmploymentRevisionConflict):
-		default:
-			require.NoError(promoteErr, "database conflicts must retain a typed classification")
-		}
-	}
-	assert.Positive(successes)
-
-	employments, err := st.ListEmploymentsContext(
-		ctx, store.EmploymentFilter{PersonID: person.ID, CurrentOnly: true})
-	require.NoError(err)
-	primaries := 0
-	for _, employment := range employments {
-		if employment.IsPrimary {
-			primaries++
-		}
-	}
-	assert.Equal(1, primaries)
 }
 
 func TestEndEmploymentClearsCurrentAndPrimaryWithoutDeletingHistory(t *testing.T) {
@@ -370,78 +283,6 @@ func TestEmploymentCannotTargetAMergedOrganizationRedirect(t *testing.T) {
 	require.ErrorContains(err, "merged organization")
 }
 
-func TestEmploymentWaitingBehindMergeCannotTargetRedirect(t *testing.T) {
-	require := require.New(t)
-	ctx := context.Background()
-	st := testutil.NewTestStore(t)
-	if !st.IsPostgreSQL() {
-		t.Skip("PostgreSQL row locks are required for this race regression")
-	}
-	person := mustPromotedPerson(t, st, "merge-race@example.com", "merge-race")
-	survivor := mustOrganization(t, st, "Merge Race Survivor")
-	losing := mustOrganization(t, st, "Merge Race Losing")
-
-	blocker, err := st.DB().BeginTx(ctx, nil)
-	require.NoError(err)
-	t.Cleanup(func() { _ = blocker.Rollback() })
-	var lockedID int64
-	err = blocker.QueryRowContext(ctx,
-		`SELECT id FROM organizations WHERE id = $1 FOR UPDATE`,
-		losing.ID).Scan(&lockedID)
-	require.NoError(err)
-	require.Equal(losing.ID, lockedID)
-
-	mergeDone := make(chan error, 1)
-	go func() {
-		_, mergeErr := st.MergeOrganizationsContext(
-			ctx, survivor.ID, survivor.Revision, losing.ID, losing.Revision)
-		mergeDone <- mergeErr
-	}()
-
-	require.Eventually(func() bool {
-		probe, beginErr := st.DB().BeginTx(ctx, nil)
-		if beginErr != nil {
-			return false
-		}
-		defer func() { _ = probe.Rollback() }()
-		var id int64
-		probeErr := probe.QueryRowContext(ctx,
-			`SELECT id FROM organizations WHERE id = $1 FOR UPDATE NOWAIT`,
-			survivor.ID).Scan(&id)
-		return probeErr != nil
-	}, 5*time.Second, 10*time.Millisecond,
-		"merge never acquired the survivor lock before waiting on the losing row")
-
-	writeDone := make(chan error, 1)
-	go func() {
-		_, writeErr := st.AddEmploymentContext(ctx, store.EmploymentInput{
-			PersonID: person.ID, OrganizationID: losing.ID,
-			Title: new("Engineer"), Source: store.ProvenanceUser,
-		})
-		writeDone <- writeErr
-	}()
-	time.Sleep(100 * time.Millisecond) //nolint:kennlint // lets the write queue on a PostgreSQL row lock
-	require.NoError(blocker.Commit())
-
-	select {
-	case mergeErr := <-mergeDone:
-		require.NoError(mergeErr)
-	case <-time.After(5 * time.Second):
-		require.FailNow("merge did not finish after releasing the losing row")
-	}
-	select {
-	case writeErr := <-writeDone:
-		require.ErrorIs(writeErr, store.ErrOrganizationInvalid)
-	case <-time.After(5 * time.Second):
-		require.FailNow("employment write did not finish after merge")
-	}
-
-	employments, err := st.ListEmploymentsContext(
-		ctx, store.EmploymentFilter{PersonID: person.ID})
-	require.NoError(err)
-	require.Empty(employments)
-}
-
 func TestDeletingAPersonRemovesTheirEmploymentsButNotTheOrganization(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -622,9 +463,7 @@ func TestConcurrentEmploymentWritesRetryOnSQLiteBusy(t *testing.T) {
 	require := require.New(t)
 	ctx := context.Background()
 	st := testutil.NewTestStore(t)
-	if st.IsPostgreSQL() {
-		t.Skip("exercises the SQLite snapshot-upgrade retry path")
-	}
+
 	person := mustPromotedPerson(t, st, "busy-retry@example.com", "busy-retry")
 	organizations := make([]*store.Organization, 4)
 	for i := range organizations {

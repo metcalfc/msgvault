@@ -29,10 +29,7 @@ func TestPersonBriefSchemaParity(t *testing.T) {
 	var count int
 	indexQuery := `SELECT COUNT(*) FROM sqlite_master
 		WHERE type = 'index' AND tbl_name = 'person_briefs' AND name = ?`
-	if st.IsPostgreSQL() {
-		indexQuery = `SELECT COUNT(*) FROM pg_indexes
-			WHERE schemaname = current_schema() AND tablename = 'person_briefs' AND indexname = $1`
-	}
+
 	requirements.NoError(st.DB().QueryRowContext(t.Context(), indexQuery,
 		"idx_person_briefs_current").Scan(&count))
 	checks.Equal(1, count, "both backends need the one-current partial unique index")

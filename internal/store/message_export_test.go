@@ -220,9 +220,7 @@ func TestExportMessagesFiltersSourcesAndMessageTypes(t *testing.T) {
 
 func TestExportMessagesSourceFilterBoundsConversationScan(t *testing.T) {
 	st := testutil.NewTestStore(t)
-	if st.IsPostgreSQL() {
-		t.Skip("SQLite query-plan regression")
-	}
+
 	requirements := require.New(t)
 	selected, err := st.GetOrCreateSource("text", "selected")
 	requirements.NoError(err)

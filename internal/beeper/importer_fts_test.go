@@ -8,7 +8,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/msgvault/internal/testutil"
 )
 
 // TestImportIndexesFTS verifies imported messages (including voice-note
@@ -18,7 +17,6 @@ import (
 func TestImportIndexesFTS(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	testutil.SkipIfPostgres(t, "directly MATCH-queries the SQLite FTS5 vtable")
 
 	f := newFakeBeeper(t)
 	f.addChat(e2eChat())

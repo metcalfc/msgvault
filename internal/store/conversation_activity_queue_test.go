@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/store"
-	"go.kenn.io/msgvault/internal/testutil"
 	"go.kenn.io/msgvault/internal/testutil/storetest"
 )
 
@@ -116,7 +115,7 @@ func TestConversationStatsRecomputeDoesNotRequeueActivity(t *testing.T) {
 // shares the same statement shape, while 66k round trips to a PostgreSQL
 // server would dominate the suite's runtime.
 func TestReplaceConversationParticipantsHandlesHugeMemberships(t *testing.T) {
-	testutil.SkipIfPostgres(t, "SQLite bound-variable cap regression; shared statement shape")
+
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)

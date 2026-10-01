@@ -138,78 +138,6 @@ func TestImporterCreatesCanonicalMeetingAndSyncRun(t *testing.T) {
 	assert.Equal(int64(0), latest.MessagesUpdated)
 }
 
-func TestImporterRejectsConcurrentStartWhileWriterIsBlocked(t *testing.T) {
-	checks := assert.New(t)
-	requirements := require.New(t)
-	st := testutil.NewTestStore(t)
-	if !st.IsPostgreSQL() {
-		t.Skip("PostgreSQL-only stale meeting writer regression")
-	}
-	req := validImportRequest(t)
-	importer := NewImporter(st, Hooks{})
-	baseline, err := importer.Import(t.Context(), req)
-	requirements.NoError(err)
-	_, err = st.DB().ExecContext(t.Context(), st.Rebind(
-		`DELETE FROM messages WHERE id = ?`), baseline.MessageID)
-	requirements.NoError(err)
-
-	holder, err := st.DB().Conn(t.Context())
-	requirements.NoError(err)
-	t.Cleanup(func() { _ = holder.Close() })
-	tx, err := holder.BeginTx(t.Context(), nil)
-	requirements.NoError(err)
-	locked := true
-	t.Cleanup(func() {
-		if locked {
-			_ = tx.Rollback()
-		}
-	})
-	_, err = tx.ExecContext(t.Context(), `LOCK TABLE messages IN ACCESS EXCLUSIVE MODE`)
-	requirements.NoError(err)
-	var holderPID int
-	requirements.NoError(tx.QueryRowContext(t.Context(), `SELECT pg_backend_pid()`).Scan(&holderPID))
-
-	type importResult struct {
-		result Result
-		err    error
-	}
-	importDone := make(chan importResult, 1)
-	importFinished := make(chan struct{})
-	go func() {
-		defer close(importFinished)
-		result, importErr := importer.Import(t.Context(), req)
-		importDone <- importResult{result: result, err: importErr}
-	}()
-	t.Cleanup(func() {
-		if locked {
-			_ = tx.Rollback()
-			locked = false
-		}
-		waitForMeetingImportGoroutine(t, importFinished)
-	})
-	waitForBlockedMeetingImportPID(t, st, holderPID, "SELECT source_message_id",
-		"meeting importer did not pause in its post-start message lookup")
-
-	_, err = st.StartSyncContext(t.Context(), baseline.SourceID, "concurrent-test-run")
-	requirements.ErrorIs(err, store.ErrSyncAlreadyActive)
-	requirements.NoError(tx.Commit())
-	locked = false
-
-	got := <-importDone
-	requirements.NoError(got.err)
-	checks.NotZero(got.result.MessageID)
-	var messageCount int
-	requirements.NoError(st.DB().QueryRowContext(t.Context(), st.Rebind(`
-		SELECT COUNT(*) FROM messages
-		WHERE source_id = ? AND source_message_id = ?
-	`), baseline.SourceID, "meeting:42").Scan(&messageCount))
-	checks.Equal(1, messageCount)
-
-	newRunID, err := st.StartSyncContext(t.Context(), baseline.SourceID, "post-import-test-run")
-	requirements.NoError(err)
-	requirements.NoError(st.FailSync(newRunID, "test cleanup"))
-}
-
 func waitForBlockedMeetingImportPID(
 	t *testing.T,
 	st *store.Store,
@@ -359,7 +287,6 @@ func TestImporterUnchangedRetryRepairsStatsAfterPostPersistFailure(t *testing.T)
 	assert := assert.New(t)
 	require := require.New(t)
 
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger to inject a stats failure")
 	st := testutil.NewTestStore(t)
 	importer := NewImporter(st, Hooks{})
 	_, err := st.DB().Exec(`
@@ -795,7 +722,7 @@ func TestImporterCancellationStopsBeforeSourceSetup(t *testing.T) {
 }
 
 func TestImporterCancellationDuringParticipantResolutionRollsBackParticipants(t *testing.T) {
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger and registered function to pause participant insertion")
+
 	assert := assert.New(t)
 	require := require.New(t)
 	st := testutil.NewTestStore(t)
@@ -922,7 +849,6 @@ func TestImporterRawFailureRollsBackCanonicalSnapshot(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	testutil.SkipIfPostgres(t, "uses a SQLite trigger to inject a raw archive failure")
 	st := testutil.NewTestStore(t)
 	importer := NewImporter(st, Hooks{})
 	require.True(st.FTS5Available())
@@ -966,7 +892,6 @@ func TestImporterIndexesSubjectBodyAndAddresses(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	testutil.SkipIfPostgres(t, "asserts against the SQLite FTS5 virtual table")
 	st := testutil.NewTestStore(t)
 	importer := NewImporter(st, Hooks{})
 

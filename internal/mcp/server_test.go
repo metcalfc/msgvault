@@ -857,10 +857,8 @@ func TestSearchTools_RealEngineScopeIsolation(t *testing.T) {
 	_, err := f.Store.BackfillFTS(nil)
 	require.NoError(err, "BackfillFTS")
 
-	engine := query.NewSQLiteEngine(f.Store.DB())
-	if f.Store.IsPostgreSQL() {
-		engine = query.NewEngineWithDialect(f.Store.DB(), query.PostgreSQLQueryDialect{})
-	}
+	engine := query.NewEngine(f.Store.DB())
+
 	h := newTestHandlers(engine)
 
 	metadata := runTool[paginatedSearchMessages](t, "search_metadata", h.searchMetadata,
@@ -943,9 +941,7 @@ func TestSearchMessageBodies_RealEngineFTSNormalizedContext(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
 			f := storetest.New(t)
-			if tc.sqliteOnly && f.Store.IsPostgreSQL() {
-				t.Skip("unicode61 remove_diacritics regression is SQLite-specific")
-			}
+
 			messageID := f.NewMessage().
 				WithSourceMessageID("mcp-normalized-context").
 				WithSubject("ordinary subject").
@@ -956,10 +952,8 @@ func TestSearchMessageBodies_RealEngineFTSNormalizedContext(t *testing.T) {
 			_, err := f.Store.BackfillFTS(nil)
 			require.NoError(err, "BackfillFTS")
 
-			engine := query.NewSQLiteEngine(f.Store.DB())
-			if f.Store.IsPostgreSQL() {
-				engine = query.NewEngineWithDialect(f.Store.DB(), query.PostgreSQLQueryDialect{})
-			}
+			engine := query.NewEngine(f.Store.DB())
+
 			h := newTestHandlers(engine)
 			resp := runTool[paginatedSearchMessages](t, "search_message_bodies", h.searchMessageBodies,
 				map[string]any{"query": tc.query})
@@ -972,103 +966,6 @@ func TestSearchMessageBodies_RealEngineFTSNormalizedContext(t *testing.T) {
 				assert.NotContains(resp.Data[0].Matches[0].Snippet, tc.reject,
 					"context must start from an FTS token-prefix match")
 			}
-		})
-	}
-}
-
-func TestSearchMessageBodies_PostgreSQLContextIgnoresAccentLookalikes(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	f := storetest.New(t)
-	if !f.Store.IsPostgreSQL() {
-		t.Skip("PostgreSQL simple-dictionary context semantics")
-	}
-
-	accentLookalike := "résumé " + strings.Repeat("padding ", 60)
-	body := strings.Repeat(accentLookalike, query.MessageBodyContextMaxSnippets) + "resume marker"
-	messageID := f.NewMessage().
-		WithSourceMessageID("mcp-postgres-accent-context").
-		WithSubject("ordinary subject").
-		WithSnippet("ordinary preview").
-		Create(t, f.Store)
-	require.NoError(f.Store.UpsertMessageBody(messageID,
-		sql.NullString{String: body, Valid: true}, sql.NullString{}), "UpsertMessageBody")
-	_, err := f.Store.BackfillFTS(nil)
-	require.NoError(err, "BackfillFTS")
-
-	engine := query.NewEngine(f.Store.DB(), true)
-	resp := runTool[paginatedSearchMessages](t, "search_message_bodies",
-		newTestHandlers(engine).searchMessageBodies, map[string]any{"query": "resume"})
-	require.Len(resp.Data, 1, "body hit")
-	assert.Equal(messageID, resp.Data[0].ID, "body hit ID")
-	require.NotEmpty(resp.Data[0].Matches, "FTS hit context windows")
-	assert.Condition(func() bool {
-		for _, m := range resp.Data[0].Matches {
-			if strings.Contains(m.Snippet, "resume marker") {
-				return true
-			}
-		}
-		return false
-	}, "context snippets must include the true PostgreSQL simple-dictionary hit")
-}
-
-func TestSearchMessageBodies_PostgreSQLContextUsesParserTokens(t *testing.T) {
-	f := storetest.New(t)
-	if !f.Store.IsPostgreSQL() {
-		t.Skip("PostgreSQL parser-specific body context semantics")
-	}
-
-	tests := []struct {
-		name      string
-		lookalike string
-		query     string
-		marker    string
-	}{
-		{
-			name:      "decomposed combining mark stays inside a word",
-			lookalike: "cafe\u0301teria",
-			query:     "cafe\u0301teria",
-			marker:    "cafe teria marker",
-		},
-		{
-			name:      "host stays one token",
-			lookalike: "foo.bar",
-			query:     `"foo bar"`,
-			marker:    "foo bar marker",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			require := require.New(t)
-			assert := assert.New(t)
-			lookalike := tc.lookalike + " " + strings.Repeat("padding ", 60)
-			body := strings.Repeat(lookalike, query.MessageBodyContextMaxSnippets) + tc.marker
-			messageID := f.NewMessage().
-				WithSourceMessageID("mcp-postgres-parser-"+tc.name).
-				WithSubject("ordinary subject").
-				WithSnippet("ordinary preview").
-				Create(t, f.Store)
-			require.NoError(f.Store.UpsertMessageBody(messageID,
-				sql.NullString{String: body, Valid: true}, sql.NullString{}), "UpsertMessageBody")
-			_, err := f.Store.BackfillFTS(nil)
-			require.NoError(err, "BackfillFTS")
-
-			engine := query.NewEngine(f.Store.DB(), true)
-			resp := runTool[paginatedSearchMessages](t, "search_message_bodies",
-				newTestHandlers(engine).searchMessageBodies,
-				map[string]any{"query": tc.query})
-			require.Len(resp.Data, 1, "body hit")
-			assert.Equal(messageID, resp.Data[0].ID, "body hit ID")
-			require.NotEmpty(resp.Data[0].Matches, "FTS hit context windows")
-			assert.Condition(func() bool {
-				for _, m := range resp.Data[0].Matches {
-					if strings.Contains(m.Snippet, tc.marker) {
-						return true
-					}
-				}
-				return false
-			}, "context snippets must ignore PostgreSQL parser lookalikes")
 		})
 	}
 }
@@ -1090,7 +987,7 @@ func TestSearchMessageBodies_ContextIgnoresFullFoldExpansionLookalikes(t *testin
 	_, err := f.Store.BackfillFTS(nil)
 	require.NoError(err, "BackfillFTS")
 
-	engine := query.NewEngine(f.Store.DB(), f.Store.IsPostgreSQL())
+	engine := query.NewEngine(f.Store.DB())
 	resp := runTool[paginatedSearchMessages](t, "search_message_bodies",
 		newTestHandlers(engine).searchMessageBodies, map[string]any{"query": "strasse"})
 	require.Len(resp.Data, 1, "body hit")
@@ -1108,9 +1005,6 @@ func TestSearchMessageBodies_ContextIgnoresFullFoldExpansionLookalikes(t *testin
 
 func TestSearchMessageBodies_SQLiteContextPreservesUnicode61Diacritics(t *testing.T) {
 	f := storetest.New(t)
-	if f.Store.IsPostgreSQL() {
-		t.Skip("SQLite unicode61 remove_diacritics=1 compatibility semantics")
-	}
 
 	tests := []struct {
 		name      string
@@ -1138,7 +1032,7 @@ func TestSearchMessageBodies_SQLiteContextPreservesUnicode61Diacritics(t *testin
 			_, err := f.Store.BackfillFTS(nil)
 			require.NoError(err, "BackfillFTS")
 
-			engine := query.NewEngine(f.Store.DB(), false)
+			engine := query.NewEngine(f.Store.DB())
 			resp := runTool[paginatedSearchMessages](t, "search_message_bodies",
 				newTestHandlers(engine).searchMessageBodies, map[string]any{"query": tc.query})
 			require.Len(resp.Data, 1, "body hit")
@@ -1173,7 +1067,7 @@ func TestSearchMessageBodies_PhraseContextSurvivesSnippetCap(t *testing.T) {
 	_, err := f.Store.BackfillFTS(nil)
 	require.NoError(err, "BackfillFTS")
 
-	engine := query.NewEngine(f.Store.DB(), f.Store.IsPostgreSQL())
+	engine := query.NewEngine(f.Store.DB())
 	resp := runTool[paginatedSearchMessages](t, "search_message_bodies",
 		newTestHandlers(engine).searchMessageBodies, map[string]any{"query": `"alpha beta"`})
 	require.Len(resp.Data, 1, "phrase hit")
@@ -1204,7 +1098,7 @@ func TestSearchMessageBodies_WidePhrasePreservesMatchedEndpoint(t *testing.T) {
 	require.NoError(err, "BackfillFTS")
 
 	response := runTool[paginatedSearchMessages](t, "search_message_bodies",
-		newTestHandlers(query.NewEngine(f.Store.DB(), f.Store.IsPostgreSQL())).searchMessageBodies,
+		newTestHandlers(query.NewEngine(f.Store.DB())).searchMessageBodies,
 		map[string]any{"query": `"alpha beta"`})
 	require.Len(response.Data, 1, "wide phrase hit")
 	require.NotEmpty(response.Data[0].Matches, "wide phrase endpoint contexts")
@@ -1246,9 +1140,7 @@ func TestSearchMessageBodies_LongBodyOutsideContextBudgetIsExplicitlyTruncated(t
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)
-	if f.Store.IsPostgreSQL() {
-		t.Skip("SQLite indexes bodies beyond PostgreSQL's bounded tsvector input")
-	}
+
 	body := strings.Repeat("hay ", 300_000) + "needle marker"
 	messageID := f.NewMessage().
 		WithSourceMessageID("mcp-context-scan-budget").
@@ -1261,7 +1153,7 @@ func TestSearchMessageBodies_LongBodyOutsideContextBudgetIsExplicitlyTruncated(t
 	require.NoError(err, "BackfillFTS")
 
 	response := runTool[paginatedSearchMessages](t, "search_message_bodies",
-		newTestHandlers(query.NewEngine(f.Store.DB(), false)).searchMessageBodies,
+		newTestHandlers(query.NewEngine(f.Store.DB())).searchMessageBodies,
 		map[string]any{"query": "needle"})
 	require.Len(response.Data, 1, "body hit")
 	assert.True(response.Data[0].MatchesTruncated,
@@ -1274,9 +1166,7 @@ func TestSearchMessageBodies_SQLiteOversizedLexemeDoesNotEscapeContextBudget(t *
 	require := require.New(t)
 	assert := assert.New(t)
 	f := storetest.New(t)
-	if f.Store.IsPostgreSQL() {
-		t.Skip("SQLite FTS5 oversized-token regression")
-	}
+
 	body := strings.Repeat("a", 2<<20)
 	messageID := f.NewMessage().
 		WithSourceMessageID("mcp-context-oversized-lexeme").
@@ -1289,7 +1179,7 @@ func TestSearchMessageBodies_SQLiteOversizedLexemeDoesNotEscapeContextBudget(t *
 	require.NoError(err, "BackfillFTS")
 
 	response := runTool[paginatedSearchMessages](t, "search_message_bodies",
-		newTestHandlers(query.NewEngine(f.Store.DB(), false)).searchMessageBodies,
+		newTestHandlers(query.NewEngine(f.Store.DB())).searchMessageBodies,
 		map[string]any{"query": "a"})
 	require.Len(response.Data, 1, "body hit")
 	assert.True(response.Data[0].MatchesTruncated)
@@ -1313,7 +1203,7 @@ func TestSearchMessageBodies_DenseNativeMarkersStayBounded(t *testing.T) {
 	require.NoError(err, "BackfillFTS")
 
 	response := runTool[paginatedSearchMessages](t, "search_message_bodies",
-		newTestHandlers(query.NewEngine(f.Store.DB(), f.Store.IsPostgreSQL())).searchMessageBodies,
+		newTestHandlers(query.NewEngine(f.Store.DB())).searchMessageBodies,
 		map[string]any{"query": "a"})
 	require.Len(response.Data, 1, "dense body hit")
 	require.NotEmpty(response.Data[0].Matches, "dense body context")
@@ -2003,7 +1893,7 @@ func TestGetMessage(t *testing.T) {
 		), senderID, messageID)
 		require.NoError(t, err, "set direct sender")
 
-		realHandlers := newTestHandlers(query.NewEngine(f.Store.DB(), f.Store.IsPostgreSQL()))
+		realHandlers := newTestHandlers(query.NewEngine(f.Store.DB()))
 		msg := runTool[getMessageResp](t, "get_message", realHandlers.getMessage, map[string]any{"id": float64(messageID)})
 		assert.Equal(t, []query.Address{{Email: "sender@example.com", Name: "Test Sender"}}, msg.From)
 	})
@@ -2404,7 +2294,7 @@ func TestAggregate(t *testing.T) {
 		_, err := f.Store.DB().Exec(f.Store.Rebind(`UPDATE messages SET list_id = ? WHERE id = ?`),
 			"<announce.example.test>", messageID)
 		require.NoError(t, err)
-		realHandlers := newTestHandlers(query.NewEngine(f.Store.DB(), f.Store.IsPostgreSQL()))
+		realHandlers := newTestHandlers(query.NewEngine(f.Store.DB()))
 
 		response := runTool[dataResponse[query.AggregateRow]](t, "aggregate", realHandlers.aggregate,
 			map[string]any{"group_by": "list"})
@@ -3424,7 +3314,7 @@ func TestStageDeletionRejectsInvalidOrEmptyParsedQuery(t *testing.T) {
 		WithSubject("Unrelated message").
 		Create(t, f.Store)
 	h := &handlers{
-		engine: query.NewEngine(f.Store.DB(), f.Store.IsPostgreSQL()),
+		engine: query.NewEngine(f.Store.DB()),
 	}
 
 	for _, queryText := range []string{"list:", "list:(example.org)"} {

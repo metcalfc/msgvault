@@ -33,7 +33,7 @@ func (s *Store) bumpDerivedDataRevision(tx *loggedTx, relatedOnly ...bool) error
 	`, derivedDataRevisionKey); err != nil {
 		return fmt.Errorf("bump derived-data revision: %w", err)
 	}
-	if len(relatedOnly) > 0 && relatedOnly[0] && !s.IsPostgreSQL() {
+	if len(relatedOnly) > 0 && relatedOnly[0] {
 		if _, err := tx.Exec(`INSERT INTO cache_related_revision_journal (revision)
 			SELECT CAST(value AS INTEGER) FROM archive_metadata WHERE key = ?`,
 			derivedDataRevisionKey); err != nil {
@@ -46,7 +46,7 @@ func (s *Store) bumpDerivedDataRevision(tx *loggedTx, relatedOnly ...bool) error
 // RelatedDerivedRevisionsOnly verifies that every derived revision after the
 // committed cache marker was caused by a journaled child-row mutation.
 func (s *Store) RelatedDerivedRevisionsOnly(ctx context.Context, previous, current int64) (bool, error) {
-	if current <= previous || s.IsPostgreSQL() {
+	if current <= previous {
 		return false, nil
 	}
 	var count int64

@@ -2,7 +2,6 @@ package store_test
 
 import (
 	"database/sql"
-	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -15,65 +14,18 @@ import (
 )
 
 func TestDocumentVectorChunkLifecycleSQLiteContract(t *testing.T) {
-	if store.IsPostgresURL(os.Getenv("MSGVAULT_TEST_DB")) {
-		t.Skip("SQLite contract runs without MSGVAULT_TEST_DB")
-	}
+
 	runDocumentVectorChunkLifecycleContract(t)
 }
 
 func TestDocumentVectorGenerationLifecycleSQLiteContract(t *testing.T) {
-	if store.IsPostgresURL(os.Getenv("MSGVAULT_TEST_DB")) {
-		t.Skip("SQLite contract runs without MSGVAULT_TEST_DB")
-	}
+
 	runDocumentVectorGenerationLifecycleContract(t)
-}
-
-func TestDocumentVectorOperationLockSerializesPostgresWriters(t *testing.T) {
-	requirements := require.New(t)
-	if !store.IsPostgresURL(os.Getenv("MSGVAULT_TEST_DB")) {
-		t.Skip("PostgreSQL-only cross-process writer lock")
-	}
-	f := storetest.New(t)
-	firstEntered := make(chan struct{})
-	releaseFirst := make(chan struct{})
-	firstDone := make(chan error, 1)
-	go func() {
-		firstDone <- f.Store.WithDocumentVectorOperationLock(t.Context(), func() error {
-			close(firstEntered)
-			<-releaseFirst
-			return nil
-		})
-	}()
-	<-firstEntered
-
-	secondEntered := make(chan struct{})
-	secondDone := make(chan error, 1)
-	go func() {
-		secondDone <- f.Store.WithDocumentVectorOperationLock(t.Context(), func() error {
-			close(secondEntered)
-			return nil
-		})
-	}()
-	select {
-	case <-secondEntered:
-		requirements.FailNow("second document-vector writer entered while the first held the lock")
-	case <-time.After(100 * time.Millisecond):
-	}
-	close(releaseFirst)
-	requirements.NoError(<-firstDone)
-	select {
-	case <-secondEntered:
-	case <-time.After(2 * time.Second):
-		requirements.FailNow("second document-vector writer did not acquire the released lock")
-	}
-	requirements.NoError(<-secondDone)
 }
 
 func TestDocumentVectorOperationLockSerializesSQLiteWriters(t *testing.T) {
 	requirements := require.New(t)
-	if store.IsPostgresURL(os.Getenv("MSGVAULT_TEST_DB")) {
-		t.Skip("SQLite-only process-local writer lock")
-	}
+
 	f := storetest.New(t)
 	firstEntered := make(chan struct{})
 	releaseFirst := make(chan struct{})
@@ -126,13 +78,8 @@ func testDocumentVectorOperationsState(t *testing.T) {
 	f, generation := seedDocumentVectorGenerationWithChunks(t, 1)
 	now := time.Date(2026, time.August, 20, 12, 34, 56, 987654321, time.FixedZone("consent", 2*60*60))
 	require.NoError(t, f.Store.InitSchema(), "the document-vector base schema is replay-safe")
-	if f.Store.IsPostgreSQL() {
-		var indexDefinition string
-		require.NoError(t, f.Store.DB().QueryRow(`
-			SELECT indexdef FROM pg_indexes
-			WHERE schemaname = current_schema() AND indexname = 'idx_document_vector_generations_live_fingerprint'`).Scan(&indexDefinition))
-		assert.NotContains(t, indexDefinition, "UNIQUE")
-	} else {
+
+	{
 		rows, err := f.Store.DB().Query(`PRAGMA index_list(document_vector_generations)`)
 		require.NoError(t, err)
 		defer func() { _ = rows.Close() }()
@@ -1275,29 +1222,6 @@ func TestDocumentVectorBaseSchemaPreservesCleanupAuthority(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	f := storetest.New(t)
-	if f.Store.IsPostgreSQL() {
-		rows, err := f.Store.DB().Query(`
-			SELECT confrelid::regclass::text
-			FROM pg_constraint
-			WHERE conrelid = 'document_vector_publications'::regclass
-			  AND contype = 'f'
-			ORDER BY confrelid::regclass::text`)
-		require.NoError(err)
-		defer func() { _ = rows.Close() }()
-		var references []string
-		for rows.Next() {
-			var table string
-			require.NoError(rows.Scan(&table))
-			references = append(references, table)
-		}
-		require.NoError(rows.Err())
-		assert.Equal([]string{"document_vector_generations"}, references)
-		var definition string
-		require.NoError(f.Store.DB().QueryRow(`
-			SELECT pg_get_indexdef('idx_document_vector_publications_cleanup'::regclass)`).Scan(&definition))
-		assert.Contains(definition, "(generation_id, backend_cleaned_at, token)")
-		return
-	}
 
 	rows, err := f.Store.DB().Query(`PRAGMA foreign_key_list('document_vector_publications')`)
 	require.NoError(err)

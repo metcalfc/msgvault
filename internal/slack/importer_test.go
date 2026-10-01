@@ -1837,26 +1837,6 @@ func installAttachmentInsertFailure(t *testing.T, st *store.Store) func() {
 	t.Helper()
 	require := require.New(t)
 
-	if st.IsPostgreSQL() {
-		_, err := st.DB().Exec(`CREATE FUNCTION fail_slack_attachment_insert()
-			RETURNS trigger LANGUAGE plpgsql AS $$
-			BEGIN
-				RAISE EXCEPTION 'forced attachment insert failure';
-			END;
-			$$`)
-		require.NoError(err)
-		_, err = st.DB().Exec(`CREATE TRIGGER fail_slack_attachment_insert
-			BEFORE INSERT ON attachments
-			FOR EACH ROW EXECUTE FUNCTION fail_slack_attachment_insert()`)
-		require.NoError(err)
-		return func() {
-			_, err := st.DB().Exec(`DROP TRIGGER IF EXISTS fail_slack_attachment_insert ON attachments`)
-			require.NoError(err)
-			_, err = st.DB().Exec(`DROP FUNCTION IF EXISTS fail_slack_attachment_insert()`)
-			require.NoError(err)
-		}
-	}
-
 	_, err := st.DB().Exec(`CREATE TRIGGER fail_slack_attachment_insert
 		BEFORE INSERT ON attachments
 		FOR EACH ROW BEGIN

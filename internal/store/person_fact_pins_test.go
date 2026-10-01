@@ -192,9 +192,7 @@ func TestListPersonFactPinsDoesNotInferPinForFactOwnedDerivedAttribute(t *testin
 
 func TestListPersonFactPinsAttributeDiscoveryUsesCurrentIndex(t *testing.T) {
 	st, personID, _ := newPersonFactProjectionStore(t)
-	if st.IsPostgreSQL() {
-		t.Skip("SQLite query-plan coverage; PostgreSQL uses the equivalent partial current-row index")
-	}
+
 	plan := explainPlan(t, st, personFactPinAttributeTargetCandidatesSQL, personID,
 		ProvenanceUser, ProvenanceCardDAVImport, ProvenanceVCardImport, "person_attribute")
 	t.Logf("query plan:\n%s", plan)
@@ -208,9 +206,7 @@ func TestListPersonFactPinsAttributeDiscoveryUsesCurrentIndex(t *testing.T) {
 
 func TestListPersonFactPinsEmploymentDiscoveryUsesCurrentAndOwnershipIndexes(t *testing.T) {
 	st, personID, _ := newPersonFactProjectionStore(t)
-	if st.IsPostgreSQL() {
-		t.Skip("SQLite query-plan coverage; PostgreSQL has equivalent person/current and ownership indexes")
-	}
+
 	plan := explainPlan(t, st, personFactPinEmploymentTargetCandidateSQL,
 		personID, ProvenanceUser, ProvenanceCardDAVImport, ProvenanceVCardImport,
 		personID, "employment", personFactDecisionSourceRefPrefix)

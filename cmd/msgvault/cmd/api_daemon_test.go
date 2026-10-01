@@ -38,7 +38,7 @@ func startStoreAPIDaemon(
 func startStoreQueryAPIDaemon(t *testing.T, dataDir string, st *store.Store) {
 	t.Helper()
 
-	engine := query.NewEngine(st.DB(), st.IsPostgreSQL())
+	engine := query.NewEngine(st.DB())
 	t.Cleanup(func() { _ = engine.Close() })
 	startStoreAPIDaemon(t, dataDir, st, engine)
 }
