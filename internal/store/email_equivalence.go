@@ -24,6 +24,10 @@ import (
 // never applied again, so an undone link stays undone. Pairs that would join
 // two different Directory people, and non-Gmail addresses that differ only by
 // dots, become reviewable candidates instead of links.
+//
+// The pass never links relay and robot mailboxes (emailaddr.IsAutomatedMailbox)
+// or identities classified as not a person, and never rejoins an identity the
+// user detached from a person (detachmentBlockingJoinTx).
 const (
 	// IdentityMatchEmailEquivalence marks a pair of addresses that deliver to
 	// the same mailbox: a plus tag on any domain, or Gmail dots and
@@ -206,7 +210,9 @@ func (s *Store) planEmailEquivalencePairsContext(
 		}
 		scanned++
 		mailbox, ok := emailaddr.Mailbox(address)
-		if !ok {
+		// Relay and robot mailboxes (reply+<thread>@, bounces+<id>@) give
+		// every message its own tag; their tags are not one person's aliases.
+		if !ok || emailaddr.IsAutomatedMailbox(address) {
 			continue
 		}
 		if _, seen := mailboxes[mailbox]; !seen {
@@ -442,15 +448,50 @@ func (s *Store) applyEmailEquivalenceBatchContext(
 				rejected[key.key] = append(rejected[key.key], linkEdge{a: key.lo, b: key.hi})
 			}
 		}
-		hidden := map[int64]correspondentKindRow{}
+		// userHidden holds identities the user marked as not a person; their
+		// pairs are recorded rejected and restored when the mark is cleared.
+		// derivedHidden adds rule and Jev classifications (an automated
+		// sender, a mailing list), whose pairs are skipped without a record
+		// so a changed classification is picked up by the next pass.
+		userHidden := map[int64]correspondentKindRow{}
+		derivedHidden := map[int64]correspondentKindRow{}
 		classified, err := s.anyNotPersonClassificationTx(ctx, tx)
 		if err != nil {
 			return err
 		}
 		if classified {
-			if hidden, err = s.userHiddenCorrespondentParticipantsTx(ctx, tx); err != nil {
+			if userHidden, err = s.userHiddenCorrespondentParticipantsTx(ctx, tx); err != nil {
 				return err
 			}
+			if derivedHidden, err = s.hiddenCorrespondentParticipantsTx(ctx, tx); err != nil {
+				return err
+			}
+		}
+		// A user detachment must never be undone by this pass. Without an
+		// active detachment there is nothing to protect, so the per-pair
+		// checks below are skipped.
+		detachmentActive, err := hasActivePersonDetachmentTx(ctx, tx)
+		if err != nil {
+			return err
+		}
+		// rejectForDetachment records a pair the detachment guard refused as
+		// rejected for that detachment, journaled so undoing the detachment
+		// restores the decision the pair had (or an open candidate).
+		rejectForDetachment := func(
+			pair emailEquivalencePair, existing emailEquivalenceCandidateState,
+			found bool, detachmentID int64,
+		) error {
+			candidateID := existing.id
+			if !found {
+				var err error
+				if candidateID, err = s.insertEmailEquivalenceCandidateTx(
+					ctx, tx, pair, IdentityMatchStateCandidate, "", addresses,
+				); err != nil {
+					return err
+				}
+			}
+			return s.rejectCandidateForDetachmentTx(
+				ctx, tx, detachmentID, candidateID, string(ProvenanceSystem))
 		}
 
 		linkedPeople := make(map[int64]struct{})
@@ -460,14 +501,34 @@ func (s *Store) applyEmailEquivalenceBatchContext(
 				continue
 			}
 			existing, found := candidates[emailEquivalenceCandidateKey(pair)]
-			_, loHidden := hidden[pair.lo]
-			_, hiHidden := hidden[pair.hi]
+			_, loHidden := userHidden[pair.lo]
+			_, hiHidden := userHidden[pair.hi]
+			_, loDerived := derivedHidden[pair.lo]
+			_, hiDerived := derivedHidden[pair.hi]
 			rootLo, rootHi := forest.find(pair.lo), forest.find(pair.hi)
 			personLo, personHi := forest.person[rootLo], forest.person[rootHi]
 
 			if pair.basis == IdentityMatchEmailDotVariant {
 				if found || rootLo == rootHi || (personLo != 0 && personLo == personHi) {
 					continue
+				}
+				if !loHidden && !hiHidden && (loDerived || hiDerived) {
+					batch.Suppressed++
+					continue
+				}
+				if detachmentActive && !loHidden && !hiHidden {
+					detachmentID, separated, err := s.activePersonDetachmentSeparatingTx(
+						ctx, tx, IdentityMatchParticipant, pair.lo, IdentityMatchParticipant, pair.hi)
+					if err != nil {
+						return err
+					}
+					if separated {
+						if err := rejectForDetachment(pair, existing, found, detachmentID); err != nil {
+							return err
+						}
+						batch.Suppressed++
+						continue
+					}
 				}
 				state, notes := IdentityMatchStateCandidate, ""
 				if loHidden || hiHidden {
@@ -495,12 +556,18 @@ func (s *Store) applyEmailEquivalenceBatchContext(
 				batch.Suppressed++
 				continue
 			}
-			if !found && (loHidden || hiHidden) {
-				if _, err := s.insertEmailEquivalenceCandidateTx(ctx, tx, pair,
-					IdentityMatchStateRejected, correspondentkind.NotAPersonReason, addresses,
-				); err != nil {
-					return err
+			if loHidden || hiHidden {
+				if !found {
+					if _, err := s.insertEmailEquivalenceCandidateTx(ctx, tx, pair,
+						IdentityMatchStateRejected, correspondentkind.NotAPersonReason, addresses,
+					); err != nil {
+						return err
+					}
 				}
+				batch.Suppressed++
+				continue
+			}
+			if loDerived || hiDerived {
 				batch.Suppressed++
 				continue
 			}
@@ -509,6 +576,32 @@ func (s *Store) applyEmailEquivalenceBatchContext(
 			conflict := rootLo != rootHi && (personLo == ambiguousPerson ||
 				personHi == ambiguousPerson ||
 				(personLo != 0 && personHi != 0 && personLo != personHi))
+			if detachmentActive && rootLo != rootHi {
+				var detachmentID int64
+				var blocked bool
+				if conflict {
+					// A conflict only asks the user; it is withheld, like any
+					// generated suggestion, when it names a detached pair.
+					detachmentID, blocked, err = s.activePersonDetachmentSeparatingTx(
+						ctx, tx, IdentityMatchParticipant, pair.lo, IdentityMatchParticipant, pair.hi)
+				} else {
+					// A link is refused when the joined identity would hold a
+					// detached participant and one still bound to its person,
+					// including through a third participant.
+					detachmentID, blocked, err = detachmentBlockingJoinTx(
+						ctx, tx, pair.lo, pair.hi, edges)
+				}
+				if err != nil {
+					return err
+				}
+				if blocked {
+					if err := rejectForDetachment(pair, existing, found, detachmentID); err != nil {
+						return err
+					}
+					batch.Suppressed++
+					continue
+				}
+			}
 			outcome := IdentityMatchStateAccepted
 			if conflict {
 				outcome = IdentityMatchStateConflict

@@ -11,7 +11,9 @@
 //     a dot variant. Some providers deliver them to one mailbox and some do
 //     not, so a dot variant is a suggestion for review, never a link.
 //
-// Comparison is case-insensitive on the whole address.
+// Comparison is case-insensitive on the whole address. IsAutomatedMailbox
+// names relay and robot mailboxes (reply+<thread>@, bounces+<id>@) whose
+// tags are per-message tokens rather than one person's aliases.
 package emailaddr
 
 import "strings"
@@ -151,6 +153,34 @@ func Compare(a, b string) Equivalence {
 		return DotVariant
 	}
 	return Different
+}
+
+// automatedLocalParts are mailbox names that relay, bounce, or notification
+// systems put in front of a plus tag (reply+<thread>@, bounces+<id>@). Every
+// tag on such a mailbox is a different conversation or message, not one
+// person's alias, so they are never linked.
+var automatedLocalParts = map[string]struct{}{
+	"reply": {}, "replies": {}, "bounce": {}, "bounces": {},
+	"noreply": {}, "no-reply": {}, "do-not-reply": {}, "donotreply": {},
+	"notifications": {}, "notification": {}, "mailer-daemon": {},
+	"postmaster": {}, "return": {}, "verp": {},
+}
+
+// IsAutomatedMailbox reports whether an address's mailbox name, the local
+// part before any plus tag, is a reply, bounce, or no-reply style token such
+// as reply+abc@example.net or No-Reply@example.com. Dots are ignored, so
+// no.reply@example.com counts too. An invalid address is not automated.
+func IsAutomatedMailbox(address string) bool {
+	mailbox, ok := Mailbox(address)
+	if !ok {
+		return false
+	}
+	local := mailbox[:strings.LastIndexByte(mailbox, '@')]
+	if _, found := automatedLocalParts[local]; found {
+		return true
+	}
+	_, found := automatedLocalParts[strings.ReplaceAll(local, localPartDot, "")]
+	return found
 }
 
 // GmailAccount returns the canonical Google account address for a gmail.com

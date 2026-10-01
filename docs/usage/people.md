@@ -81,6 +81,7 @@ person so their messages and history appear together.
 | `sam.doe@gmail.com`, `samdoe@gmail.com`, and `samdoe@googlemail.com` | Linked automatically. Gmail ignores dots, and googlemail.com is gmail.com. |
 | `lee.roe@example.org` and `leeroe@example.org` | Suggested in Reviews, not linked. Outside Gmail, dots can mean a different mailbox. |
 | `PAT@Example.com` and `pat@example.com` | Linked automatically. Case never matters. |
+| `reply+a1b2@reply.example.net` and `reply+c3d4@reply.example.net` | Never linked. Relay and robot mailboxes give each message its own tag. |
 
 - **When it runs:** after every successful sync or import, for addresses
   added since the last run. The first sync after upgrading checks the whole
@@ -95,8 +96,20 @@ person so their messages and history appear together.
 - **Two saved profiles:** when the addresses already belong to two different
   person profiles, msgvault does not merge the profiles. The pair waits in
   Reviews; accepting it offers the merge.
-- **Not a person:** a pair that involves a record you marked as not a person
-  is set aside. Marking it a person again returns the pair to Reviews.
+- **Robot senders:** tags are ignored for mailboxes named `reply`, `replies`,
+  `bounce`, `bounces`, `noreply`, `no-reply`, `do-not-reply`, `donotreply`,
+  `notifications`, `notification`, `mailer-daemon`, `postmaster`, `return`,
+  or `verp`, in any case. Their addresses are neither linked nor suggested.
+- **Not a person:** a pair that involves a record marked as an automated
+  sender, mailing list, or any other kind that is not a person is not linked.
+  When you made the mark, the pair is set aside and returns to Reviews if you
+  mark the record a person again; the next run that finds a new address, or
+  `person link-equivalent-addresses`, then links it.
+- **Detached addresses:** an address you
+  [detached from a person](#clean-up-a-persons-contact-methods) is never
+  linked back to that person, directly or through another tag. Undoing the
+  detachment returns the pair to Reviews; `person link-equivalent-addresses`,
+  or the next run that finds a new address, then links it.
 
 A local part that starts with `+`, such as `+alerts@example.com`, has no
 mailbox name before the tag, so it only matches itself. Phone numbers and

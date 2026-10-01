@@ -335,8 +335,8 @@ func TestLinkEquivalentEmailAddressesRespectsNotAPerson(t *testing.T) {
 	st := testutil.NewTestStore(t)
 	ctx := context.Background()
 
-	inbox := ensureEmailParticipant(t, st, "reply@example.net")
-	thread := ensureEmailParticipant(t, st, "reply+thread1@example.net")
+	inbox := ensureEmailParticipant(t, st, "desk@example.net")
+	thread := ensureEmailParticipant(t, st, "desk+thread1@example.net")
 	_, err := st.SetCorrespondentKindContext(ctx, store.SetCorrespondentKindInput{
 		ParticipantID: thread, Kind: correspondentkind.Automated,
 	})
@@ -362,4 +362,107 @@ func TestLinkEquivalentEmailAddressesRespectsNotAPerson(t *testing.T) {
 	require.NoError(err, "forced pass")
 	assert.Equal(1, again.Linked)
 	assert.True(linkedPair(t, st, inbox, thread))
+}
+
+func TestLinkEquivalentEmailAddressesSkipsAutomatedSenders(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	ctx := context.Background()
+
+	relay := ensureEmailParticipant(t, st, "reply@reply.example.net")
+	threadOne := ensureEmailParticipant(t, st, "reply+t0k3n1@reply.example.net")
+	threadTwo := ensureEmailParticipant(t, st, "reply+t0k3n2@reply.example.net")
+	bounce := ensureEmailParticipant(t, st, "bounces+4242@mail.example.org")
+	bounceOther := ensureEmailParticipant(t, st, "bounces+4243@mail.example.org")
+	alerts := ensureEmailParticipant(t, st, "alerts@example.com")
+	alertsTagged := ensureEmailParticipant(t, st, "alerts+build@example.com")
+	person := ensureEmailParticipant(t, st, "pat@example.com")
+	personTagged := ensureEmailParticipant(t, st, "pat+news@example.com")
+	// A rule, not the user, marks the tagged alerts address automated.
+	_, err := st.WriteDerivedCorrespondentKindsContext(ctx, []store.DerivedCorrespondentKind{{
+		ParticipantID: alertsTagged, Source: correspondentkind.SourceRule,
+		Kind: correspondentkind.Automated, Actor: "rule:noreply_address",
+	}})
+	require.NoError(err, "classify alerts by rule")
+
+	result, err := st.LinkEquivalentEmailAddressesContext(ctx, false)
+	require.NoError(err, "link equivalent addresses")
+	assert.Equal(1, result.Linked, "only the person's tag links")
+	assert.Equal(0, result.Suggested)
+	assert.True(linkedPair(t, st, person, personTagged))
+	for _, pair := range [][2]int64{
+		{relay, threadOne}, {relay, threadTwo}, {threadOne, threadTwo},
+		{bounce, bounceOther}, {alerts, alertsTagged},
+	} {
+		assert.False(linkedPair(t, st, pair[0], pair[1]),
+			"automated pair %d-%d stays unlinked", pair[0], pair[1])
+	}
+	candidates := equivalenceCandidates(t, st)
+	require.Len(candidates, 1, "skipped pairs leave nothing in Reviews")
+	assert.Equal(min(person, personTagged), candidates[0].LeftID)
+}
+
+func TestLinkEquivalentEmailAddressesHonorsDetachment(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	ctx := context.Background()
+
+	primary := ensureEmailParticipant(t, st, "pat@example.com")
+	news := ensureEmailParticipant(t, st, "pat+news@example.com")
+	_, err := st.LinkParticipants(primary, news)
+	require.NoError(err, "manual link")
+	person, _, err := st.CreatePersonFromParticipant(primary)
+	require.NoError(err, "promote")
+	require.Equal([]int64{primary, news}, person.ParticipantIDs)
+	detached, err := st.DetachPersonParticipantsContext(ctx, store.PersonParticipantDetachRequest{
+		PersonID: person.ID, ParticipantIDs: []int64{news},
+		ExpectedRevision: person.Revision, Actor: "user",
+	})
+	require.NoError(err, "detach the tagged address")
+
+	result, err := st.LinkEquivalentEmailAddressesContext(ctx, false)
+	require.NoError(err, "pass after detach")
+	assert.Equal(0, result.Linked)
+	assert.Equal(1, result.Suppressed)
+	assert.False(linkedPair(t, st, primary, news), "the pass never undoes a detachment")
+	blocked := equivalenceCandidateFor(t, st, primary, news)
+	assert.Equal(store.IdentityMatchStateRejected, blocked.State)
+	require.NotNil(blocked.Notes)
+	assert.Equal(store.PersonDetachmentNote, *blocked.Notes)
+
+	// A new sibling tag links to the person, but one the user tied to the
+	// detached address would pull it back through the sibling, so it is
+	// refused too.
+	sibling := ensureEmailParticipant(t, st, "pat+again@example.com")
+	bridge := ensureEmailParticipant(t, st, "pat+bridge@example.com")
+	_, err = st.LinkParticipants(news, bridge)
+	require.NoError(err, "manual link to the detached address")
+	next, err := st.LinkEquivalentEmailAddressesContext(ctx, false)
+	require.NoError(err, "pass after new siblings")
+	assert.Equal(1, next.Linked)
+	assert.True(linkedPair(t, st, primary, sibling))
+	assert.False(linkedPair(t, st, primary, news))
+	assert.False(linkedPair(t, st, primary, bridge))
+	owner, err := st.PersonForParticipants([]int64{news})
+	require.NoError(err)
+	assert.Nil(owner, "the detached address stays off the person")
+
+	// Undoing the detachment restores the refused pairs, and the pass then
+	// links them normally.
+	current, err := st.GetPerson(person.ID)
+	require.NoError(err)
+	_, err = st.ReattachPersonParticipantsContext(ctx, store.PersonParticipantReattachRequest{
+		PersonID: person.ID, DetachmentID: detached.Detachment.ID,
+		ExpectedRevision: current.Revision, Actor: "user",
+	})
+	require.NoError(err, "undo the detachment")
+	restored := equivalenceCandidateFor(t, st, primary, news)
+	assert.NotEqual(store.IdentityMatchStateRejected, restored.State)
+	_, err = st.LinkEquivalentEmailAddressesContext(ctx, true)
+	require.NoError(err, "pass after undo")
+	assert.True(linkedPair(t, st, primary, news))
+	assert.True(linkedPair(t, st, primary, bridge))
+	assert.Equal(store.IdentityMatchStateAccepted, equivalenceCandidateFor(t, st, primary, bridge).State)
 }

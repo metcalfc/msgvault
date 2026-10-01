@@ -160,7 +160,9 @@ func (s *Server) registerIdentityMatchRoutes(api huma.API) {
 		"ignores dots and treats googlemail.com as gmail.com. Each link is an ordinary " +
 		"participant link owned by an accepted email_equivalence candidate, so unlinking " +
 		"undoes it for good. Addresses on two different people, and non-Gmail addresses " +
-		"that differ only by dots, become reviewable candidates instead. The daemon runs " +
+		"that differ only by dots, become reviewable candidates instead. Relay and robot " +
+		"mailboxes (reply+<token>@, bounces+<id>@), identities that are not a person, and " +
+		"addresses detached from a person are never linked. The daemon runs " +
 		"the same pass after each successful import; this endpoint scans the whole " +
 		"archive even when nothing is new. Repeating it is safe."
 	equivalence.Responses = jsonResponsesFor[store.EmailEquivalenceResult](api)

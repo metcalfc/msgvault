@@ -27,7 +27,9 @@ All notable changes to msgvault, grouped by release.
   `pat@example.com`. Non-Gmail addresses that differ only by dots are
   suggested in Reviews instead. Each link can be undone on the person's page
   and stays undone; addresses on two different profiles wait in Reviews
-  rather than merging. The first sync after upgrading checks the whole
+  rather than merging. Relay and robot mailboxes such as
+  `reply+<token>@`, automated senders, and addresses detached from a person
+  are never linked. The first sync after upgrading checks the whole
   archive; `msgvault person link-equivalent-addresses` (or
   `POST /api/v1/identity/email-equivalence/link`) checks it on demand. See
   [Addresses that share a mailbox](/docs/usage/people/#addresses-that-share-a-mailbox).

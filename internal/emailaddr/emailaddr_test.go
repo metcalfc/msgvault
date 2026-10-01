@@ -146,6 +146,44 @@ func TestGmailAccount(t *testing.T) {
 	}
 }
 
+func TestIsAutomatedMailbox(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		address string
+		want    bool
+	}{
+		{"reply+abc123@reply.example.net", true},
+		{"reply@reply.example.net", true},
+		{"Replies+t1@example.com", true},
+		{"bounce+x@example.com", true},
+		{"bounces+42-abc@mail.example.org", true},
+		{"noreply+alerts@example.com", true},
+		{"No-Reply@example.com", true},
+		{"do-not-reply+a@example.com", true},
+		{"DoNotReply@example.com", true},
+		{"notifications+thread@example.com", true},
+		{"notification@example.com", true},
+		{"MAILER-DAEMON@example.com", true},
+		{"postmaster+x@example.com", true},
+		{"return+abc@example.com", true},
+		{"verp+abc@example.com", true},
+		{"no.reply@example.com", true},
+		{"pat+news@example.com", false},
+		{"replyall+x@example.com", false},
+		{"pat.reply@example.com", false},
+		{"+reply@example.com", false},
+		{"not-an-address", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.address, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, emailaddr.IsAutomatedMailbox(tt.address),
+				"IsAutomatedMailbox(%q)", tt.address)
+		})
+	}
+}
+
 func TestIsGmailDomain(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

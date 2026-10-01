@@ -2297,8 +2297,10 @@ msgvault person link-equivalent-addresses [--json]
 Anything after `+` is ignored on every domain, and Gmail also ignores dots and
 treats googlemail.com as gmail.com; those pairs are linked. Non-Gmail
 addresses that differ only by dots, and pairs whose addresses belong to two
-different profiles, are left for Reviews. Pairs you unlinked or rejected stay
-apart. The daemon runs the same pass after every successful sync or import for
+different profiles, are left for Reviews. Pairs you unlinked or rejected, or
+that would rejoin an address detached from a person, stay apart. Relay and
+robot mailboxes such as `reply+<token>@` and `bounces+<id>@`, and identities
+marked as not a person, are never linked. The daemon runs the same pass after every successful sync or import for
 newly added addresses; this command rescans everything and is safe to repeat.
 
 The output counts email participants scanned, new links, pairs that were
