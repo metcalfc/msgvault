@@ -779,16 +779,10 @@ func (s *Store) searchMessagesQueryImpl(
 	}
 
 	// after: / before:
-	// PostgreSQL compares typed TIMESTAMPTZ values directly. SQLite archives can
-	// contain both UTC and offset-bearing timestamp strings, so compare Julian
-	// day values instead of their lexical encodings. Normalizing the bound to UTC
-	// keeps the argument stable on both backends. [cr2-9]
-	timestampExpr := "COALESCE(m.sent_at, m.received_at, m.internal_date)"
-	boundExpr := "?"
-	{
-		timestampExpr = "julianday(" + timestampExpr + ")"
-		boundExpr = "julianday(?)"
-	}
+	// SQLite archives can contain UTC and offset-bearing timestamp strings.
+	// Compare Julian day values instead of their lexical encodings. [cr2-9]
+	timestampExpr := "julianday(COALESCE(m.sent_at, m.received_at, m.internal_date))"
+	boundExpr := "julianday(?)"
 	if q.AfterDate != nil {
 		conditions = append(conditions, timestampExpr+" >= "+boundExpr)
 		args = append(args, q.AfterDate.UTC())

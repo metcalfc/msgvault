@@ -99,7 +99,7 @@ func runConfiguredDocumentVectorGeneration(ctx context.Context, st *store.Store,
 		return vectordocument.ReconcileResult{}, err
 	}
 	if generation.State == store.DocumentVectorGenerationRetired {
-		backend, closeBackend, err := openDocumentVectorCleanupBackend(ctx, st, cfg.DatabaseDSN())
+		backend, closeBackend, err := openDocumentVectorCleanupBackend(ctx)
 		if err != nil {
 			return vectordocument.ReconcileResult{}, err
 		}
@@ -121,7 +121,7 @@ func runConfiguredDocumentVectorGeneration(ctx context.Context, st *store.Store,
 		newOperationPassScope("cli:document-vector", operations.TriggerManual))
 }
 
-func openDocumentVectorCleanupBackend(ctx context.Context, st *store.Store, mainPath string) (vectordocument.Backend, func() error, error) {
+func openDocumentVectorCleanupBackend(ctx context.Context) (vectordocument.Backend, func() error, error) {
 	state := invocationFromContext(ctx)
 	if state == nil || state.cfg == nil {
 		return nil, nil, errors.New("configuration is unavailable")

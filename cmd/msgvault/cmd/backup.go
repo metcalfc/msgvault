@@ -332,18 +332,13 @@ func backupRestoreTargetCoordinator(
 	if cfg == nil || target == "" || cfg.Data.DataDir == "" {
 		return nil, false, nil
 	}
-	databasePath := ""
-	configuredVectorPath := ""
-	{
-		var err error
-		databasePath, err = cfg.DatabasePath()
-		if err != nil {
-			return nil, false, fmt.Errorf("backup restore: resolving configured database: %w", err)
-		}
-		configuredVectorPath = cfg.Vector.DBPath
-		if configuredVectorPath == "" {
-			configuredVectorPath = filepath.Join(cfg.Data.DataDir, "vectors.db")
-		}
+	databasePath, err := cfg.DatabasePath()
+	if err != nil {
+		return nil, false, fmt.Errorf("backup restore: resolving configured database: %w", err)
+	}
+	configuredVectorPath := cfg.Vector.DBPath
+	if configuredVectorPath == "" {
+		configuredVectorPath = filepath.Join(cfg.Data.DataDir, "vectors.db")
 	}
 	coordinator := &daemonRestoreTargetCoordinator{
 		dataDir:              cfg.Data.DataDir,

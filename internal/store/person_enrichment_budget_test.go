@@ -2,7 +2,6 @@ package store_test
 
 import (
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -220,17 +219,6 @@ func assertExactlyOneBudgetReservation(t *testing.T, st *store.Store, claims []b
 		}
 	}
 	assert.Equal(t, 1, budgetFailures)
-}
-
-func installTwoPartyPersonEnrichmentBudgetBarrier(st *store.Store) {
-	var arrived atomic.Int32
-	release := make(chan struct{})
-	store.SetPersonEnrichmentBudgetBarrierForTest(st, func() {
-		if arrived.Add(1) == 2 {
-			close(release)
-		}
-		<-release
-	})
 }
 
 func TestPersonEnrichmentBudgetRejectsUnsafeGuaranteesAndOnlyReconcilesDown(t *testing.T) {

@@ -251,14 +251,6 @@ func SetPersonEnrichmentTxBarrierForTest(s *Store, barrier func(phase string)) {
 	s.personEnrichmentTxBarrier = barrier
 }
 
-// setPersonEnrichmentProviderIdentityBarrierForTest pauses one Store after its
-// durable provider-identity key lock and before the ownership read.
-func setPersonEnrichmentProviderIdentityBarrierForTest(
-	s *Store, barrier func(phase string, tx *loggedTx),
-) {
-	s.personEnrichmentOwnershipBarrier = barrier
-}
-
 // ReservePersonEnrichmentBudgetForTest exercises the exact transaction-local
 // reservation helper used by BeginAttempt without bypassing its counter logic.
 func ReservePersonEnrichmentBudgetForTest(

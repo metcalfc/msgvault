@@ -138,36 +138,6 @@ func TestImporterCreatesCanonicalMeetingAndSyncRun(t *testing.T) {
 	assert.Equal(int64(0), latest.MessagesUpdated)
 }
 
-func waitForBlockedMeetingImportPID(
-	t *testing.T,
-	st *store.Store,
-	blockerPID int,
-	queryFragment string,
-	message string,
-) {
-	t.Helper()
-	var blockedPID int
-	var waitErr error
-	require.Eventually(t, func() bool {
-		waitErr = st.DB().QueryRowContext(t.Context(), `SELECT COALESCE(MIN(pid), 0)
-			FROM pg_stat_activity
-			WHERE $1 = ANY(pg_blocking_pids(pid))
-			  AND POSITION($2 IN query) > 0`,
-			blockerPID, queryFragment).Scan(&blockedPID)
-		return waitErr == nil && blockedPID > 0
-	}, 5*time.Second, 10*time.Millisecond, message)
-	require.NoError(t, waitErr)
-}
-
-func waitForMeetingImportGoroutine(t *testing.T, finished <-chan struct{}) {
-	t.Helper()
-	select {
-	case <-finished:
-	case <-time.After(5 * time.Second):
-		assert.Fail(t, "meeting import test goroutine did not finish")
-	}
-}
-
 func TestImporterRetriesUpdateSameMessageAndReplacePeople(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -166,11 +166,8 @@ func (s *Store) resolveEmailReply(ctx context.Context, sourceID, childID int64) 
 		if parentRFCID == "" {
 			return nil
 		}
-		// The SQLite canonical index compares BLOB bytes; PostgreSQL compares TEXT.
-		var canonical any = parentRFCID
-		{
-			canonical = []byte(parentRFCID)
-		}
+		// The canonical index compares BLOB bytes.
+		canonical := []byte(parentRFCID)
 		rows, err := tx.QueryContext(ctx, fmt.Sprintf(`SELECT id FROM messages
    WHERE %s = ? AND source_id = ? AND message_type = 'email' AND deleted_at IS NULL
    ORDER BY id LIMIT 2`, s.dialect.RFC822CanonicalIDExpr("rfc822_message_id")), canonical, sourceID)

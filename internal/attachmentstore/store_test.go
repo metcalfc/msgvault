@@ -70,7 +70,6 @@ func TestUppercaseHashReadsLooseAndPackedContent(t *testing.T) {
 			_, err = incomplete.Read(make([]byte, 1))
 			require.NoError(err)
 			require.ErrorIs(incomplete.Close(), pack.ErrVerificationIncomplete)
-
 		})
 	}
 }

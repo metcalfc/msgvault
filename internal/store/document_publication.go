@@ -429,11 +429,6 @@ func (s *Store) PublishDocumentExtraction(
 	}
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
 		q := boundQuerier{ctx: ctx, q: tx}
-		if err := s.lockDocumentPublicationHashTx(
-			ctx, tx, publication.CanonicalBlobHash,
-		); err != nil {
-			return err
-		}
 		var replacesHead bool
 		if err := q.QueryRow(`
 			SELECT EXISTS (

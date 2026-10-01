@@ -56,7 +56,7 @@ func (s *Store) backfillMeetingProjectionsContext(ctx context.Context) error {
 		}
 		for _, id := range ids {
 			err := s.withTxContext(ctx, func(tx *loggedTx) error {
-				if err := s.lockMeetingEvidenceWith(ctx, tx, id); err != nil {
+				if err := s.lockMeetingEvidenceWith(ctx, tx); err != nil {
 					return fmt.Errorf("lock meeting projection %d: %w", id, err)
 				}
 				q := boundQuerier{ctx: ctx, q: tx}

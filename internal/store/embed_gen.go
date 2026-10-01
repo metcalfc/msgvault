@@ -208,10 +208,7 @@ func (s *Store) SetEmbedGenGroupIfUnchanged(
 		}
 	}()
 
-	lastModified := "last_modified"
-	{
-		lastModified = "CAST(last_modified AS TEXT)"
-	}
+	lastModified := "CAST(last_modified AS TEXT)"
 	for _, version := range orderedVersions {
 		query := fmt.Sprintf(`SELECT id FROM messages
 			WHERE id = ? AND %s = ?

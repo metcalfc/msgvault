@@ -88,10 +88,7 @@ func setWatermark(t *testing.T, st *store.Store, value any, ids ...int64) {
 // clock need this; tests that only need a known ordering use the literals above.
 func setWatermarkAt(t *testing.T, st *store.Store, when time.Time, ids ...int64) {
 	t.Helper()
-	var value any = when.UTC()
-	{
-		value = when.UTC().Format(store.SQLiteTimestampLayout)
-	}
+	value := when.UTC().Format(store.SQLiteTimestampLayout)
 	setWatermark(t, st, value, ids...)
 }
 

@@ -321,8 +321,8 @@ func TestOperationHistoryReaderUsesOneCoherentSnapshot(t *testing.T) {
 		once.Do(func() {
 			_, err := st.DB().ExecContext(t.Context(), st.Rebind(`
 				UPDATE person_sweep_runs SET started_at = ?, completed_at = ? WHERE id = ?`),
-				personSweepTimestampParam(st, after),
-				personSweepTimestampParam(st, after.Add(time.Second)),
+				personSweepTimestampParam(after),
+				personSweepTimestampParam(after.Add(time.Second)),
 				"snapshot-person")
 			require.NoError(err)
 		})
@@ -366,7 +366,7 @@ func TestOperationHistoryReaderLaneStatusUsesOneCoherentSnapshot(t *testing.T) {
 		once.Do(func() {
 			_, err := st.DB().ExecContext(t.Context(), st.Rebind(`
 				UPDATE sync_runs SET status = 'failed', completed_at = ? WHERE id = ?`),
-				sourceOperationTimestampParam(st, startedAt.Add(time.Second)), runID)
+				sourceOperationTimestampParam(startedAt.Add(time.Second)), runID)
 			require.NoError(err)
 		})
 	})

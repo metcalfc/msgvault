@@ -175,26 +175,22 @@ func runRepairDatesLocal(
 		)
 	}
 
-	cacheRebuilt := false
-	{
-		if _, err := buildCacheLocked(
-			cfg.DatabaseDSN(),
-			cfg.AnalyticsDir(),
-			true,
-			false,
-			publishLockHeld,
-			analyticsBuilderOverrides(cfg.Analytics),
-		); err != nil {
-			ledger.Status = "applied-cache-failed"
-			ledger.Error = err.Error()
-			_ = writeDateRepairLedger(ledgerPath, ledger)
-			return dateRepairCacheRefreshError(err)
-		}
-		cacheRebuilt = true
+	if _, err := buildCacheLocked(
+		cfg.DatabaseDSN(),
+		cfg.AnalyticsDir(),
+		true,
+		false,
+		publishLockHeld,
+		analyticsBuilderOverrides(cfg.Analytics),
+	); err != nil {
+		ledger.Status = "applied-cache-failed"
+		ledger.Error = err.Error()
+		_ = writeDateRepairLedger(ledgerPath, ledger)
+		return dateRepairCacheRefreshError(err)
 	}
 
 	ledger.Status = "complete"
-	ledger.CacheRebuilt = cacheRebuilt
+	ledger.CacheRebuilt = true
 	completedAt := time.Now().UTC()
 	ledger.CompletedAt = &completedAt
 	if err := writeDateRepairLedger(ledgerPath, ledger); err != nil {
@@ -204,10 +200,7 @@ func runRepairDatesLocal(
 		)
 	}
 
-	cacheSummary := "Analytics cache rebuild pending."
-	if cacheRebuilt {
-		cacheSummary = "Analytics cache rebuilt."
-	}
+	cacheSummary := "Analytics cache rebuilt."
 	if _, err = fmt.Fprintf(
 		cmd.OutOrStdout(),
 		"Repaired %d message(s).\nRepair ledger: %s\n%s\n",

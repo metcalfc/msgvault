@@ -24,11 +24,8 @@ type MessageDateRepair struct {
 }
 
 func (s *Store) messageDateOutsideBoundsPredicate(column string) string {
-	boundExpr := "?"
-	{
-		column = "julianday(" + column + ")"
-		boundExpr = "julianday(?)"
-	}
+	column = "julianday(" + column + ")"
+	boundExpr := "julianday(?)"
 	return column + " < " + boundExpr + " OR " + column + " > " + boundExpr
 }
 

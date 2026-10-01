@@ -344,7 +344,7 @@ func (s *Store) ReconcileDocumentOccurrence(
 	var occurrence DocumentOccurrence
 	var eligible bool
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
-		if err := s.lockDocumentOccurrenceAttachmentTx(ctx, tx, attachmentID); err != nil {
+		if err := s.lockDocumentOccurrenceAttachmentTx(ctx, tx); err != nil {
 			return err
 		}
 		file, found, err := s.getDocumentFileMetadataTx(ctx, tx, attachmentID)
@@ -362,9 +362,6 @@ func (s *Store) ReconcileDocumentOccurrence(
 				ctx, tx, removedOccurrence, peoplesweep.ChangeScope,
 				peoplesweep.EvidenceEffectScopeUnlinked,
 			)
-		}
-		if err := s.lockDocumentPublicationHashTx(ctx, tx, file.ContentHash); err != nil {
-			return err
 		}
 		occurrence = DocumentOccurrence{
 			OccurrenceKey:     documentOccurrenceKey(file.MessageID, file.SourcePartKey, file.ID),
@@ -413,19 +410,9 @@ func (s *Store) ReconcileDocumentOccurrence(
 	return occurrence, eligible, nil
 }
 
-func (s *Store) lockDocumentPublicationHashTx(
-	ctx context.Context, tx *loggedTx, canonicalBlobHash string,
-) error {
-	{
-		return nil
-	}
-
-}
-
 func (s *Store) lockDocumentOccurrenceAttachmentTx(
-	ctx context.Context, tx *loggedTx, attachmentID int64,
+	ctx context.Context, tx *loggedTx,
 ) error {
-
 	// Reserve SQLite's writer slot before reading attachment authority. A
 	// deferred transaction cannot upgrade a stale WAL snapshot after a
 	// concurrent reconciliation commits.

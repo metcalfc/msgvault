@@ -131,7 +131,7 @@ func TestDowngrade_PreviousReleaseCanOpenAndWriteAMigratedArchive(t *testing.T) 
 		VALUES (?, ?, ?, ?, ?, ?)`),
 		src.ID, "msg-written-by-previous-release", convID, "email", "old build subject", 42)
 	require.NoError(err, "the previous release must still be able to insert a message")
-	written, err := lastInsertedMessageID(st, res)
+	written, err := lastInsertedMessageID(res)
 	require.NoError(err, "read the inserted message id")
 
 	inserted := readRawContentChangedAt(t, st, written)
@@ -172,11 +172,6 @@ func TestDowngrade_PreviousReleaseCanOpenAndWriteAMigratedArchive(t *testing.T) 
 }
 
 // lastInsertedMessageID reads the id of a row just inserted with raw SQL.
-// LastInsertId is a SQLite affordance PostgreSQL's driver does not offer, so on
-// PostgreSQL the id is looked up by the natural key instead.
-func lastInsertedMessageID(st *store.Store, res sql.Result) (int64, error) {
-	{
-		return res.LastInsertId()
-	}
-
+func lastInsertedMessageID(res sql.Result) (int64, error) {
+	return res.LastInsertId()
 }

@@ -376,7 +376,7 @@ func insertPersonSweepOperationRun(t *testing.T, st *store.Store, seed personSwe
 	t.Helper()
 	var completedAt any
 	if seed.state != "running" {
-		completedAt = personSweepTimestampParam(st, seed.startedAt.Add(time.Second))
+		completedAt = personSweepTimestampParam(seed.startedAt.Add(time.Second))
 	}
 	_, err := st.DB().ExecContext(t.Context(), st.Rebind(`
 		INSERT INTO person_sweep_runs (
@@ -388,7 +388,7 @@ func insertPersonSweepOperationRun(t *testing.T, st *store.Store, seed personSwe
 		seed.id, seed.trigger, seed.state, "private-program-fingerprint",
 		"private-catalog-fingerprint", "private-provider-fingerprint", seed.attempted,
 		seed.succeeded, seed.failed, seed.projectedWrites,
-		personSweepTimestampParam(st, seed.startedAt), completedAt)
+		personSweepTimestampParam(seed.startedAt), completedAt)
 	require.NoError(t, err)
 	return seed.id
 }
@@ -413,12 +413,11 @@ func insertPersonSweepOperationAttempt(
 		attemptID, runID, personID, class, `[{"marker":"private-cursor-envelope"}]`,
 		"private-envelope-hash", "private-program-fingerprint", "private-catalog-fingerprint",
 		"private-provider-fingerprint", "private-model", "private-provider-request",
-		personSweepTimestampParam(st, startedAt), personSweepTimestampParam(st, startedAt.Add(time.Second)))
+		personSweepTimestampParam(startedAt), personSweepTimestampParam(startedAt.Add(time.Second)))
 	require.NoError(t, err)
 }
 
-func personSweepTimestampParam(st *store.Store, value time.Time) any {
-
+func personSweepTimestampParam(value time.Time) any {
 	return value.UTC().Format("2006-01-02 15:04:05.000")
 }
 
@@ -696,7 +695,7 @@ func insertSourceOperationRun(
 	t.Helper()
 	var completedAt any
 	if seed.state != "running" {
-		completedAt = sourceOperationTimestampParam(st, seed.startedAt.Add(time.Second))
+		completedAt = sourceOperationTimestampParam(seed.startedAt.Add(time.Second))
 	}
 	var id int64
 	err := st.DB().QueryRowContext(t.Context(), st.Rebind(`
@@ -706,7 +705,7 @@ func insertSourceOperationRun(
 			error_message, cursor_before, cursor_after
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''))
 		RETURNING id`),
-		sourceID, sourceOperationTimestampParam(st, seed.startedAt), completedAt, seed.state,
+		sourceID, sourceOperationTimestampParam(seed.startedAt), completedAt, seed.state,
 		seed.processed, seed.added, seed.updated, seed.itemErrors,
 		seed.errorMessage, seed.cursorBefore, seed.cursorAfter,
 	).Scan(&id)
@@ -714,8 +713,7 @@ func insertSourceOperationRun(
 	return id
 }
 
-func sourceOperationTimestampParam(st *store.Store, value time.Time) any {
-
+func sourceOperationTimestampParam(value time.Time) any {
 	return value.UTC().Format("2006-01-02 15:04:05")
 }
 
@@ -1117,22 +1115,21 @@ func insertCardDAVOperationRun(
 	t.Helper()
 	var finishedAt any
 	if seed.state != store.CardDAVSyncRunRunning {
-		finishedAt = cardDAVOperationTimestampArg(st, seed.startedAt.Add(time.Second))
+		finishedAt = cardDAVOperationTimestampArg(seed.startedAt.Add(time.Second))
 	}
 	var id int64
 	err := st.DB().QueryRowContext(t.Context(), st.Rebind(`INSERT INTO carddav_sync_runs (
 		trigger, full_sync, state, started_at, finished_at, books, created, updated, removed,
 		error_code, error_message
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`),
-		seed.trigger, seed.full, seed.state, cardDAVOperationTimestampArg(st, seed.startedAt),
+		seed.trigger, seed.full, seed.state, cardDAVOperationTimestampArg(seed.startedAt),
 		finishedAt, seed.books, seed.created, seed.updated, seed.removed,
 		seed.errorCode, seed.errorMessage).Scan(&id)
 	require.NoError(t, err)
 	return id
 }
 
-func cardDAVOperationTimestampArg(st *store.Store, value time.Time) any {
-
+func cardDAVOperationTimestampArg(value time.Time) any {
 	return value.UTC().Format("2006-01-02 15:04:05")
 }
 

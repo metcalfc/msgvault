@@ -793,7 +793,7 @@ func (s *Store) SetMessageMetadata(messageID int64, metadata sql.NullString) err
 // cancellation propagated through connection acquisition and the transaction.
 func (s *Store) SetMessageMetadataContext(ctx context.Context, messageID int64, metadata sql.NullString) error {
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
-		if err := s.lockMeetingEvidenceWith(ctx, tx, messageID); err != nil {
+		if err := s.lockMeetingEvidenceWith(ctx, tx); err != nil {
 			return err
 		}
 		if err := s.requireSyncMessageSourceTx(boundQuerier{ctx: ctx, q: tx}, messageID); err != nil {
@@ -1345,7 +1345,7 @@ func upsertMessageWith(q querier, d Dialect, msg *Message) (int64, error) {
 		}
 	}
 	if journalCandidate && needsBodylessMessageJournal(prior, msg) {
-		if err := appendBodylessMessageChange(q, d, id, prior, msg); err != nil {
+		if err := appendBodylessMessageChange(q, id, prior, msg); err != nil {
 			return 0, err
 		}
 		if err := coalesceLatestMessageChanges(q, d, id); err != nil {
@@ -1396,7 +1396,7 @@ func needsBodylessMessageJournal(prior bodylessMessageJournalState, msg *Message
 }
 
 func appendBodylessMessageChange(
-	q querier, dialect Dialect, messageID int64, prior bodylessMessageJournalState, msg *Message,
+	q querier, messageID int64, prior bodylessMessageJournalState, msg *Message,
 ) error {
 	kind := EmbeddingChangeMessageInsert
 	oldType := sql.NullString{}
@@ -5372,7 +5372,7 @@ func (s *Store) UpsertMessageRawWithFormat(messageID int64, rawData []byte, form
 // UpsertMessageRawWithFormatContext is the request-aware form of UpsertMessageRawWithFormat.
 func (s *Store) UpsertMessageRawWithFormatContext(ctx context.Context, messageID int64, rawData []byte, format string) error {
 	return s.withTxContext(ctx, func(tx *loggedTx) error {
-		if err := s.lockMeetingEvidenceWith(ctx, tx, messageID); err != nil {
+		if err := s.lockMeetingEvidenceWith(ctx, tx); err != nil {
 			return err
 		}
 		if err := s.requireSyncMessageSourceTx(boundQuerier{ctx: ctx, q: tx}, messageID); err != nil {

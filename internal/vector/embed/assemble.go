@@ -367,14 +367,10 @@ func (s *sourceSnapshotState) scopeRange(
 		args = append(args, scope.MessageIDEnd)
 	}
 	rawCanonicalTime := `COALESCE(m.sent_at, m.received_at, m.internal_date)`
-	canonicalTime := rawCanonicalTime
-	timeParameter := `?`
-	{
-		// SQLite stores source timestamps as text. julianday normalizes explicit
-		// offsets before UTC range comparisons and chronological ordering.
-		canonicalTime = `julianday(` + rawCanonicalTime + `)`
-		timeParameter = `julianday(?)`
-	}
+	// SQLite stores source timestamps as text. julianday normalizes explicit
+	// offsets before UTC range comparisons and chronological ordering.
+	canonicalTime := `julianday(` + rawCanonicalTime + `)`
+	timeParameter := `julianday(?)`
 	if scope.Undated {
 		where = append(where, rawCanonicalTime+` IS NULL`)
 	} else if !scope.UTCStart.IsZero() {

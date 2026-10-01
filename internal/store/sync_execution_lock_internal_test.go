@@ -1,8 +1,10 @@
 package store
 
 import (
+	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,4 +36,23 @@ func TestReleaseOwnedNoOpSyncExecutionLockPreservesOtherSource(t *testing.T) {
 	requirements.True(secondSourceExists)
 	requirements.False(firstRunExists)
 	requirements.True(secondRunExists)
+}
+
+func TestAcquireSyncExecutionCanceledDoesNotRetainOwnership(t *testing.T) {
+	requirements := require.New(t)
+	assertions := assert.New(t)
+	st, err := OpenForTest(":memory:")
+	requirements.NoError(err)
+	t.Cleanup(func() { _ = st.Close() })
+	requirements.NoError(st.InitSchema())
+	source, err := st.GetOrCreateSource("gmail", "sync-cancellation@example.com")
+	requirements.NoError(err)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	execution, err := st.AcquireSyncExecutionContext(ctx, source.ID)
+	requirements.ErrorIs(err, context.Canceled)
+	assertions.Nil(execution)
+	execution, err = st.AcquireSyncExecutionContext(t.Context(), source.ID)
+	requirements.NoError(err)
+	requirements.NoError(execution.Release())
 }

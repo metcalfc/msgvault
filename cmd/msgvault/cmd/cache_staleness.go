@@ -169,7 +169,6 @@ func cacheNeedsBuildForServing(ctx context.Context, dbPath, analyticsDir string)
 }
 
 func inspectCacheForQuery(ctx context.Context, dbPath, analyticsDir string, full, markerOnly bool) (cacheStaleness, error) {
-
 	release, err := query.AcquireCacheReadLock(ctx, analyticsDir)
 	if err != nil {
 		return cacheStaleness{}, err

@@ -1411,13 +1411,8 @@ func (s *Store) SweepResolvedCardDAVConflictsContext(
 ) (int64, error) {
 	cutoff := now.UTC().Add(-30 * 24 * time.Hour)
 	query := `DELETE FROM carddav_conflicts
-		WHERE status = 'resolved' AND resolved_at < ?`
-	parameter := any(cutoff)
-	{
-		query = `DELETE FROM carddav_conflicts
-			WHERE status = 'resolved' AND datetime(resolved_at) < datetime(?)`
-		parameter = cutoff.Format(time.RFC3339Nano)
-	}
+		WHERE status = 'resolved' AND datetime(resolved_at) < datetime(?)`
+	parameter := cutoff.Format(time.RFC3339Nano)
 	result, err := s.db.ExecContext(ctx, query, parameter)
 	if err != nil {
 		return 0, fmt.Errorf("sweep resolved CardDAV conflicts: %w", err)

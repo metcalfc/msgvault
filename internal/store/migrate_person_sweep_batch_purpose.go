@@ -12,10 +12,7 @@ import (
 // person brief and its repair. Only the coupling constraint changes; every
 // column, key, and row is preserved.
 func (s *Store) migratePersonSweepBatchPurposeV2(ctx context.Context) error {
-	return s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
-
-		return migratePersonSweepBatchPurposeV2SQLite(ctx, tx)
-	})
+	return s.runMaintenance(ctx, migratePersonSweepBatchPurposeV2SQLite)
 }
 
 // personSweepBatchPurposeCheck is the widened coupling constraint, written once

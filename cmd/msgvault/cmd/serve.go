@@ -1053,7 +1053,6 @@ func listenerPort(ln net.Listener) (int, error) {
 }
 
 func daemonStartupDatabaseLabel(dsn string) string {
-
 	return dsn
 }
 

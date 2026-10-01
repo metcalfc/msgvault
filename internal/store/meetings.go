@@ -470,10 +470,7 @@ func (s *Store) buildMeetingScopeStatement(scope MeetingQueryScope) (meetingScop
 		}
 	}
 	occurredAt := `COALESCE(m.sent_at, m.received_at, m.internal_date)`
-	occurredKey := occurredAt
-	{
-		occurredKey = sqliteutil.TimestampKeyFunction + `(` + occurredAt + `)`
-	}
+	occurredKey := sqliteutil.TimestampKeyFunction + `(` + occurredAt + `)`
 	if scope.After != nil {
 
 		{

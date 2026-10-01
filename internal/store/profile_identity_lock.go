@@ -1,24 +1,12 @@
 package store
 
-import (
-	"context"
-)
+import "context"
 
-// lockProfileIdentityKeyTxContext serializes a check-then-insert for one
-// logical profile-identity key. PostgreSQL row locks cannot lock an absent
-// row, and its ordinary unique indexes treat NULL values as distinct. A
-// transaction-scoped advisory lock closes that gap without changing the
-// duplicate-tolerant API contract. SQLite has a single writer, so taking the
-// existing identity-mutation write lock before the read provides the same
-// ordering there.
+// lockProfileIdentityKeyTxContext reserves SQLite's writer before a logical
+// profile-identity check-then-insert. Key arguments describe the calling
+// operation; SQLite serializes all of these mutations with the same writer lock.
 func (s *Store) lockProfileIdentityKeyTxContext(
-	ctx context.Context,
-	tx *loggedTx,
-	namespace string,
-	parts ...any,
+	ctx context.Context, tx *loggedTx, _ string, _ ...any,
 ) error {
-	{
-		return s.lockIdentityMutationTxContext(ctx, tx)
-	}
-
+	return s.lockIdentityMutationTxContext(ctx, tx)
 }

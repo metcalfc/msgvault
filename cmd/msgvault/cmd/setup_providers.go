@@ -252,7 +252,8 @@ func detectSetupProviders(ctx context.Context, loaded *config.Config, deps setup
 		openAIKey:     env.hasEnv(setupOpenAIKeyEnv),
 	}
 	detection.mistralKey = env.hasEnv(detection.mistralKeyEnv)
-	detection.backend, detection.backendUnavailable = setupVectorBackend(loaded)
+	detection.backend = "sqlite-vec"
+	detection.backendUnavailable = setupVectorUnavailable()
 	// A disabled lane retains operator settings. Validate those settings and
 	// resolve its own credential before proposing to enable it; the standard
 	// Voyage environment key may belong only to the text lane.

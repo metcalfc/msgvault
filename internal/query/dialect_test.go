@@ -63,5 +63,4 @@ func TestBuildFTSAnyTermOrsTerms(t *testing.T) {
 		assert.Equal(t, "messages_fts MATCH ?", expr)
 		assert.Equal(t, `"budget"* OR "q""3"*`, arg)
 	})
-
 }

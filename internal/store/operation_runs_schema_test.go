@@ -125,10 +125,6 @@ func assertSQLiteIndexDefinitionContains(
 	assert.Contains(t, definition, fragment)
 }
 
-type queryRower interface {
-	QueryRow(query string, args ...any) *sql.Row
-}
-
 func assertSQLiteDescendingIndex(t *testing.T, db *sql.DB, tableName, indexName string, columns []string) {
 	t.Helper()
 	indexRows, err := db.Query("PRAGMA index_list(" + tableName + ")")

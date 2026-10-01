@@ -2156,7 +2156,6 @@ func (s *Store) lockActivityProjectionQueueFreshnessTx(
 	{
 		return nil
 	}
-
 }
 
 type contactEvidenceRow struct {

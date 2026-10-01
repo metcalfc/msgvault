@@ -1039,10 +1039,10 @@ func decodeConfig(cfg *Config, path string, explicit, homeOverride bool, content
 		return nil, fmt.Errorf("data.database_url: %w", err)
 	}
 	if cfg.Vector.Backend != "" && cfg.Vector.Backend != "sqlite-vec" {
-		return nil, fmt.Errorf("vector.backend: only sqlite-vec is supported; remove the legacy PostgreSQL backend setting")
+		return nil, errors.New("vector.backend: only sqlite-vec is supported; remove the legacy PostgreSQL backend setting")
 	}
 	if cfg.Vector.SkipExtensionCreate {
-		return nil, fmt.Errorf("vector.skip_extension_create is a legacy PostgreSQL option and is no longer supported")
+		return nil, errors.New("vector.skip_extension_create is a legacy PostgreSQL option and is no longer supported")
 	}
 	if err := cfg.Attachments.Documents.Validate(); err != nil {
 		return nil, err

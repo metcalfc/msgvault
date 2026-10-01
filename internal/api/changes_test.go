@@ -123,18 +123,13 @@ func setChangesWatermark(t *testing.T, st *store.Store, value string, ids ...int
 	}
 }
 
-// setChangesWatermarkAt forces content_changed_at to an exact INSTANT rather
-// than a fixed literal, binding it the way each backend compares it: SQLite
-// stores the trigger's textual format and compares lexically, PostgreSQL parses
-// a real timestamptz. Tests that have to place a watermark relative to the
-// database clock need this; tests that only need a known ordering can use a
-// literal through setChangesWatermark.
+// setChangesWatermarkAt forces content_changed_at to an exact instant using
+// SQLite's trigger timestamp format for lexical comparison. Tests that place
+// a watermark relative to the database clock need this; tests that only need
+// a known ordering can use a literal through setChangesWatermark.
 func setChangesWatermarkAt(t *testing.T, st *store.Store, when time.Time, ids ...int64) {
 	t.Helper()
-	var value any = when.UTC()
-	{
-		value = when.UTC().Format(store.SQLiteTimestampLayout)
-	}
+	value := when.UTC().Format(store.SQLiteTimestampLayout)
 	for _, id := range ids {
 		_, err := st.DB().Exec(
 			st.Rebind(`UPDATE messages SET content_changed_at = ? WHERE id = ?`), value, id)
@@ -1730,15 +1725,10 @@ func TestChangesEndpoint_CompleteThroughIsAReachabilityBoundNotACursor(t *testin
 }
 
 // countMessagesStampedBelow counts the rows whose watermark is strictly below
-// instant, binding it the way each backend compares watermarks: PostgreSQL
-// parses a real timestamptz, SQLite compares the trigger's textual format
-// lexically.
+// instant, using SQLite's trigger timestamp format for lexical comparison.
 func countMessagesStampedBelow(t *testing.T, st *store.Store, instant time.Time) int {
 	t.Helper()
-	var arg any = instant.UTC()
-	{
-		arg = instant.UTC().Format(store.SQLiteTimestampLayout)
-	}
+	arg := instant.UTC().Format(store.SQLiteTimestampLayout)
 	var n int
 	require.NoError(t, st.DB().QueryRow(
 		st.Rebind(`SELECT count(*) FROM messages WHERE content_changed_at < ?`), arg).Scan(&n),

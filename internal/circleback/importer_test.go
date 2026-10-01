@@ -1635,9 +1635,6 @@ func TestImport_TranscriptProviderUnrecognizedAndIngestFailuresRetainCursor(t *t
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.ingestFailure {
-
-			}
 			assert := assert.New(t)
 			require := require.New(t)
 			meeting := meetingFixture(t, "hard-error", "2026-07-09T10:00:00Z", "2026-07-09T09:00:00Z", "")

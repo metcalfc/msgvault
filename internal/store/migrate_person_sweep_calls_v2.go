@@ -6,10 +6,7 @@ import (
 )
 
 func (s *Store) migratePersonSweepCallsV2(ctx context.Context) error {
-	return s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
-
-		return migratePersonSweepCallsV2SQLite(ctx, tx)
-	})
+	return s.runMaintenance(ctx, migratePersonSweepCallsV2SQLite)
 }
 
 func migratePersonSweepCallsV2SQLite(ctx context.Context, tx *loggedTx) error {

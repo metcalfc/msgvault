@@ -394,13 +394,14 @@ func TestPersonMergeAndSplitTreatIdentityJudgmentsLikeTheirAttempts(t *testing.T
 // one state list the migration and validation derive from is exactly what a
 // fresh archive's table admits, on the backend under test.
 func TestPersonEnrichmentAttemptStateVocabularyMatchesTheSchema(t *testing.T) {
+	requirements := require.New(t)
 	checks := assert.New(t)
 	f := newEnrichmentResultFixture(t)
 	for _, state := range personEnrichmentAttemptStates {
 		checks.True(validPersonEnrichmentAttemptState(state), state)
 		_, err := f.store.DB().ExecContext(t.Context(), f.store.Rebind(
 			`UPDATE person_enrichment_attempts SET state = ? WHERE id = ?`), state, f.attempt.ID)
-		checks.NoError(err, "the fresh schema admits %s", state)
+		requirements.NoError(err, "the fresh schema admits %s", state)
 	}
 	checks.False(validPersonEnrichmentAttemptState("abandoned"))
 	_, err := f.store.DB().ExecContext(t.Context(), f.store.Rebind(

@@ -161,14 +161,12 @@ func defaultFileExists(path string) bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
-// Like daemon startup, select the concrete backend from the archive DSN,
-// not the declarative vector.backend marker.
-func setupVectorBackend(cfg *config.Config) (backend, unavailable string) {
-
+// setupVectorUnavailable reports why sqlite-vec is unavailable in this build.
+func setupVectorUnavailable() string {
 	if !sqlitevec.Available() {
-		return "sqlite-vec", "sqlite-vec support is not compiled in; rebuild with `make build`, then re-run setup"
+		return "sqlite-vec support is not compiled in; rebuild with `make build`, then re-run setup"
 	}
-	return "sqlite-vec", ""
+	return ""
 }
 
 // setupVoyageManifestPath is the path setup recommends for the Voyage
@@ -374,7 +372,7 @@ func textSearchLane(cfg *config.Config, env setupEnvironment) laneStatus {
 		} else {
 			lane.Reason = "per-message vectors; no conversation-window context (Voyage contextual only)"
 		}
-		if _, unavailable := setupVectorBackend(cfg); unavailable != "" {
+		if unavailable := setupVectorUnavailable(); unavailable != "" {
 			lane.State = laneStatePending
 			lane.Reason += "; " + unavailable
 		}
@@ -432,7 +430,7 @@ func visualSearchLane(cfg *config.Config, env setupEnvironment) laneStatus {
 		lane.Model = multimodal.Model
 		lane.Schedule = embedScheduleSummary(multimodal.Schedule)
 		lane.Consent = env.consentState(func(s setupConsentState) bool { return s.Visual })
-		if _, unavailable := setupVectorBackend(cfg); unavailable != "" {
+		if unavailable := setupVectorUnavailable(); unavailable != "" {
 			lane.State, lane.Reason = laneStatePending, unavailable
 			env.reportVectorCredential(&lane, providercredentials.VectorMultimodalID, multimodal.Endpoint, multimodal.APIKeyEnv)
 			return lane

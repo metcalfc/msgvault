@@ -18,8 +18,8 @@ const maxMeetingRawBytes = 64 << 20
 var errMeetingRawTooLarge = errors.New("meeting raw exceeds decode limit")
 
 // lockMeetingEvidenceWith orders public raw writes and backfill like persistence:
-// reserve SQLite's writer before reading, or lock the PostgreSQL message before raw.
-func (s *Store) lockMeetingEvidenceWith(ctx context.Context, tx *loggedTx, messageID int64) error {
+// reserve SQLite's writer before reading the message and its raw evidence.
+func (s *Store) lockMeetingEvidenceWith(ctx context.Context, tx *loggedTx) error {
 	q := boundQuerier{ctx: ctx, q: tx}
 	{
 		_, err := q.Exec(`UPDATE embedding_change_clock SET sequence = sequence WHERE singleton = 1`)

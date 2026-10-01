@@ -439,9 +439,6 @@ func TestBeeperMediaOperationRawReadFailure(t *testing.T) {
 	for _, kind := range []string{"retain", "artifact", "process"} {
 		for _, failure := range []string{"cancel", "database"} {
 			t.Run(kind+"-final-read-"+failure, func(t *testing.T) {
-				if failure == "database" {
-
-				}
 				require, assert := require.New(t), assert.New(t)
 				destination := kind + "-final-" + failure
 				world := importVoiceChat(t, voiceSpec{id: "voice1", asset: "mxc://beeper.local/" + destination,

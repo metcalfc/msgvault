@@ -313,12 +313,6 @@ func writeSubject(st *store.Store, id int64, subject string) error {
 	return nil
 }
 
-// setSubject is writeSubject on the test's own goroutine.
-func setSubject(t *testing.T, st *store.Store, id int64, subject string) {
-	t.Helper()
-	require.NoError(t, writeSubject(st, id, subject))
-}
-
 // staggered generates pseudo-jitter for writer interleavings; it is not a wait.
 // It spreads repeated background work over a range of microseconds
 // without a random source: the point is only that the writers and the poller do
@@ -396,10 +390,7 @@ func TestListChangedMessages_SameInstantUncommittedChangeIsNotStranded(t *testin
 	// content trigger's WHEN guard declines and does not restamp the row with
 	// its own reading.
 	shared := databaseClock(t, st)
-	var sharedParam any = shared.UTC()
-	{
-		sharedParam = shared.UTC().Format(store.SQLiteTimestampLayout)
-	}
+	sharedParam := shared.UTC().Format(store.SQLiteTimestampLayout)
 	const pinned = `UPDATE messages SET subject = ?, content_changed_at = ? WHERE id = ?`
 	_, err := st.DB().Exec(st.Rebind(pinned), "high-changed", sharedParam, high)
 	require.NoError(err, "the committed change")

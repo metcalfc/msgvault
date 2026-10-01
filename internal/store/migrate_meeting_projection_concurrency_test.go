@@ -180,7 +180,7 @@ func TestMeetingProjectionBackfillLocksBeforeEvidenceAndSeesConcurrentUpdate(t *
 	updater, err := base.db.BeginTx(ctx, nil)
 	requirements.NoError(err)
 	defer func() { _ = updater.Rollback() }()
-	requirements.NoError(base.lockMeetingEvidenceWith(ctx, updater, id))
+	requirements.NoError(base.lockMeetingEvidenceWith(ctx, updater))
 	newer := `{"summary_text":"Concurrent current evidence","action_items":[{"title":"Current action","status":"done"}]}`
 	requirements.NoError(upsertMessageRawWithFormat(boundQuerier{ctx: ctx, q: updater}, id, []byte(newer), "meeting_json"))
 	done := make(chan error, 1)
@@ -225,7 +225,7 @@ func TestMeetingProjectionPublicRawWritesLockMessageBeforeRaw(t *testing.T) {
 			held, err := base.db.BeginTx(ctx, nil)
 			requirements.NoError(err)
 			defer func() { _ = held.Rollback() }()
-			requirements.NoError(base.lockMeetingEvidenceWith(ctx, held, id))
+			requirements.NoError(base.lockMeetingEvidenceWith(ctx, held))
 			done := make(chan error, 1)
 			go func() {
 				if mime {

@@ -135,46 +135,6 @@ func ensureRecipientCacheJournalTriggers(q querier) error {
 	return nil
 }
 
-// dropRecipientTableUniqueConstraintsPG drops every UNIQUE constraint on
-// message_recipients by its catalog name. Discovery instead of a hardcoded
-// name: the default constraint name is derived (and 63-byte truncated) by
-// the server, so trusting pg_constraint is what guarantees the drop matches
-// whatever an existing archive actually carries. regclass resolves through
-// search_path, consistent with every unqualified statement here.
-func dropRecipientTableUniqueConstraintsPG(ctx context.Context, tx *loggedTx) error {
-	rows, err := tx.QueryContext(ctx, `
-		SELECT conname FROM pg_constraint
-		WHERE conrelid = 'message_recipients'::regclass AND contype = 'u'
-	`)
-	if err != nil {
-		return fmt.Errorf("list message_recipients unique constraints: %w", err)
-	}
-	var names []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("scan message_recipients unique constraint: %w", err)
-		}
-		names = append(names, name)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return fmt.Errorf("iterate message_recipients unique constraints: %w", err)
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("close message_recipients unique constraints: %w", err)
-	}
-	for _, name := range names {
-		if _, err := tx.ExecContext(ctx,
-			`ALTER TABLE message_recipients DROP CONSTRAINT `+quoteIdentifier(name),
-		); err != nil {
-			return fmt.Errorf("drop message_recipients constraint %q: %w", name, err)
-		}
-	}
-	return nil
-}
-
 // rebuildRecipientTableWithoutUniqueSQLite swaps a legacy message_recipients
 // table for one without the table-level UNIQUE. Detection is the presence of
 // a sqlite_autoindex on the table: only a table-level UNIQUE creates one

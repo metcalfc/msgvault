@@ -395,14 +395,14 @@ func TestOperationStatusProjectsRealStoreRunsAndDegradesOnlyOneLane(t *testing.T
 		source_id, started_at, completed_at, status, messages_processed,
 		messages_added, messages_updated, errors_count, error_message
 	) VALUES (?, ?, ?, 'completed', 2, 1, 0, 0, ?)`), source.ID,
-		operationAPITimestamp(st, started, false),
-		operationAPITimestamp(st, started.Add(time.Second), false), "private-ledger-error")
+		operationAPITimestamp(started, false),
+		operationAPITimestamp(started.Add(time.Second), false), "private-ledger-error")
 	require.NoError(err)
 	_, err = st.DB().ExecContext(t.Context(), st.Rebind(`INSERT INTO sync_runs (
 		source_id, started_at, status, messages_processed, messages_added,
 		messages_updated, errors_count
 	) VALUES (?, ?, 'running', 0, 0, 0, 0)`), source.ID,
-		operationAPITimestamp(st, started.Add(2*time.Second), false))
+		operationAPITimestamp(started.Add(2*time.Second), false))
 	require.NoError(err)
 
 	srv := NewServerWithOptions(ServerOptions{
@@ -1228,7 +1228,7 @@ func TestOperationHistoryAPIRealStoreSameSecondWalkAndPrivacy(t *testing.T) {
 		messages_updated, errors_count, error_message, cursor_before, cursor_after
 	)`+identityOverride+` VALUES (?, ?, ?, ?, 'completed', 7, 2, 1, 0, ?, ?, ?) RETURNING id`),
 		sentinels.numericDatabaseID(t), source.ID,
-		operationAPITimestamp(st, started, false), operationAPITimestamp(st, started.Add(time.Second), false),
+		operationAPITimestamp(started, false), operationAPITimestamp(started.Add(time.Second), false),
 		sentinels.RawError, sentinels.Credential, sentinels.Endpoint).Scan(&sourceRunID)
 	require.NoError(err)
 	_, err = st.DB().ExecContext(t.Context(), st.Rebind(`INSERT INTO sync_run_items (
@@ -1242,7 +1242,7 @@ func TestOperationHistoryAPIRealStoreSameSecondWalkAndPrivacy(t *testing.T) {
 		projected_write_count, started_at, completed_at
 	) VALUES ('person-run', 'manual', 'incremental', 'succeeded', ?, ?, ?, 2, 2, 0, 1, ?, ?)`),
 		sentinels.GenerationFingerprint, "private-person-catalog", sentinels.Provider,
-		operationAPITimestamp(st, started, true), operationAPITimestamp(st, started.Add(time.Second), true))
+		operationAPITimestamp(started, true), operationAPITimestamp(started.Add(time.Second), true))
 	require.NoError(err)
 	var personID int64
 	err = st.DB().QueryRowContext(t.Context(), st.Rebind(`INSERT INTO persons (
@@ -1259,12 +1259,12 @@ func TestOperationHistoryAPIRealStoreSameSecondWalkAndPrivacy(t *testing.T) {
 		sentinels.GenerationFingerprint, "private-person-attempt-program",
 		"private-person-attempt-catalog", sentinels.Provider,
 		sentinels.Model, sentinels.Credential,
-		operationAPITimestamp(st, started, true), operationAPITimestamp(st, started.Add(time.Second), true))
+		operationAPITimestamp(started, true), operationAPITimestamp(started.Add(time.Second), true))
 	require.NoError(err)
 	_, err = st.DB().ExecContext(t.Context(), st.Rebind(`INSERT INTO carddav_sync_runs (
 		trigger, state, started_at, finished_at, books, created, updated, removed, error_code, error_message
 	) VALUES ('manual', 'failed', ?, ?, 1, 2, 3, 4, 'sync_failed', ?)`),
-		operationAPITimestamp(st, started, false), operationAPITimestamp(st, started.Add(time.Second), false), sentinels.RawError)
+		operationAPITimestamp(started, false), operationAPITimestamp(started.Add(time.Second), false), sentinels.RawError)
 	require.NoError(err)
 
 	archiveStore := &operationArchiveRealStore{Store: st, uid: sentinels.ArchiveUID}
@@ -1360,8 +1360,7 @@ func TestOperationHistoryAPIRealStoreSameSecondWalkAndPrivacy(t *testing.T) {
 	assert.Equal("invalid_cursor", decodeErrorEnvelope(t, w).Error)
 }
 
-func operationAPITimestamp(st *store.Store, value time.Time, milliseconds bool) any {
-
+func operationAPITimestamp(value time.Time, milliseconds bool) string {
 	if milliseconds {
 		return value.UTC().Format("2006-01-02 15:04:05.000")
 	}

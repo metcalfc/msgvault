@@ -8,12 +8,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/gofrs/flock"
 )
-
-const syncExecutionLockCleanupTimeout = 5 * time.Second
 
 type syncExecutionLock interface {
 	release() error
@@ -132,6 +129,9 @@ func (s *Store) acquireSyncExecutionLock(
 func (s *Store) acquireBackendSyncExecutionLock(
 	ctx context.Context, sourceID int64,
 ) (syncExecutionLock, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	dbPath := s.sqliteFilesystemPath
 	if dbPath == ":memory:" || strings.Contains(dbPath, ":memory:") {
