@@ -5,6 +5,9 @@ description: Build, test, lint, and code conventions.
 
 ## Build
 
+This fork supports macOS and Linux. Native Windows builds and CI are no longer
+maintained.
+
 The macOS and Linux builds require Go 1.27+, Bun 1.3.14+, Node.js (20.19+ on
 20.x, 22.13+ on 22.x, or 24+), and a C/C++ compiler. The Make targets install
 the pinned browser dependencies when `web/package.json` or `web/bun.lock`
@@ -25,45 +28,6 @@ make build-release
 # Install to ~/.local/bin or GOPATH
 make install
 ```
-
-### Windows
-
-Use the PowerShell helper from the repository root to compile the Go binary.
-It selects the host architecture automatically and embeds assets already in
-`internal/web/dist`; it does not build the browser application.
-
-For a binary with the Web UI, first run `make web-embed` in an MSYS2 shell
-with GNU Make, Bun, and Node.js available. This builds and validates the browser
-assets. Then run the PowerShell helper:
-
-```powershell
-# Debug Go build
-.\scripts\build.ps1
-
-# Optimized, stripped Go build
-.\scripts\build.ps1 -Release
-```
-
-Go and [MSYS2](https://www.msys2.org/) are required because msgvault uses CGO.
-Install the compiler for your Windows architecture:
-
-```powershell
-# Windows AMD64 (run from PowerShell)
-C:\msys64\usr\bin\pacman.exe -S --needed mingw-w64-x86_64-toolchain
-```
-
-For Windows ARM64, install CMake and Ninja from an MSYS2 CLANGARM64 shell:
-
-```bash
-pacman -S --needed mingw-w64-clang-aarch64-cmake \
-  mingw-w64-clang-aarch64-ninja
-```
-
-The first ARM64 build downloads a checksum-verified LLVM-MinGW toolchain,
-compiles the pinned DuckDB native library, and caches both under
-`%LOCALAPPDATA%\msgvault\build-cache`; subsequent builds reuse them. Set
-`MSGVAULT_BUILD_CACHE` to use another cache location, or pass `-RebuildDuckDB`
-to rebuild the cached library.
 
 ### Container builds
 
@@ -131,8 +95,7 @@ sub-second testify budgets so their event and owner are clear.
 `make test-polling-check` rejects bare totals below one second in `Eventually`,
 `Eventuallyf`, `EventuallyWithT`, `EventuallyWithTf`, `Never`, and `Neverf`.
 Named budgets and variables stay outside this rule. Virtual sleeps are valid
-inside a bubble. CI runs this check on Ubuntu, so Windows-only test files still
-need Windows validation.
+inside a bubble. CI runs this check on Ubuntu.
 
 `make lint` and `make lint-ci` build a pinned golangci-lint with Kit's
 `kennlint` plugin and run its `sleeptest` check. The check rejects `time.Sleep`

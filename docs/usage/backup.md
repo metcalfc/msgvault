@@ -88,7 +88,7 @@ Materializes a snapshot (the latest by default) into `--target` as a complete ar
 
 By default, compatible immutable repository packs are copied directly into the
 attachment store. This avoids creating thousands of individual files,
-especially on Windows, without skipping content verification: restore reads
+without skipping content verification: restore reads
 and SHA-256 verifies every selected attachment before granting the restored
 database authority to read it from a pack. An attachment is restored as a
 loose file when it exceeds the target store's configured maintenance limit, or
@@ -144,10 +144,7 @@ Between snapshots, msgvault keeps a per-page hash map of the database. At backup
 
 ## Restoring to a New Machine
 
-This is the scenario `backup` exists for: a drive dies, or you're setting up msgvault on a new Mac, Linux box, or Windows PC, and you need the archive back exactly as it was.
-
-!!! note "Windows: use `$HOME`, not `~`"
-    The examples below are written for a Unix shell, where the shell expands `~` before msgvault sees it. PowerShell does not expand `~` in arguments to native programs, and msgvault does not expand it either — a literal `~` in `--target` creates a directory actually named `~` under the current directory. On Windows, run the examples in PowerShell with `$HOME\.msgvault` and `$HOME\Backups\msgvault` in place of the `~/` paths; the Windows tabs below show the exact commands.
+This is the scenario `backup` exists for: a drive dies, or you're setting up msgvault on a new Mac or Linux box, and you need the archive back exactly as it was.
 
 1. **Install msgvault**, but don't run any command that touches `~/.msgvault` yet — no `init-db`, no `add-account`. Restoring works best into a directory that doesn't exist yet; see the footgun below for why.
 2. **Get the repository onto the new machine.** However you synced it off-site — `rclone`, `rsync`, a cloud-drive client, an external drive — copy or mount it locally:
@@ -161,17 +158,9 @@ This is the scenario `backup` exists for: a drive dies, or you're setting up msg
    There's no `config.toml` on this machine yet, so pass `--repo` explicitly here and below rather than relying on `[backup] repo`.
 4. **Restore into the default location**, `~/.msgvault`:
 
-    === "macOS / Linux"
-
-        ```bash
-        msgvault backup restore --repo ~/Backups/msgvault --target ~/.msgvault
-        ```
-
-    === "Windows (PowerShell)"
-
-        ```powershell
-        msgvault backup restore --repo $HOME\Backups\msgvault --target $HOME\.msgvault
-        ```
+    ```bash
+    msgvault backup restore --repo ~/Backups/msgvault --target ~/.msgvault
+    ```
 
     Since nothing has touched `~/.msgvault` yet, the directory doesn't exist and restore creates it fresh — the path that guarantees the target ends up with exactly the snapshot's contents (see `--overwrite` above for what changes once the target already exists).
 5. **Check for a restored config.** If the snapshot was taken with `--include-config`, the restore just placed the *old machine's* `config.toml` into `~/.msgvault` — and settings in it can point msgvault away from the archive you just restored. Open it and remove or update anything machine-specific before running other commands:
@@ -191,21 +180,11 @@ This is the scenario `backup` exists for: a drive dies, or you're setting up msg
 
     Check before you restore, and if the directory is non-empty and you're not deliberately merging, move it aside rather than deleting it — it may be an archive you still want:
 
-    === "macOS / Linux"
-
-        ```bash
-        ls -la ~/.msgvault
-        mv ~/.msgvault ~/.msgvault.bak
-        msgvault backup restore --repo ~/Backups/msgvault --target ~/.msgvault
-        ```
-
-    === "Windows (PowerShell)"
-
-        ```powershell
-        Get-ChildItem -Force $HOME\.msgvault
-        Move-Item $HOME\.msgvault $HOME\.msgvault.bak
-        msgvault backup restore --repo $HOME\Backups\msgvault --target $HOME\.msgvault
-        ```
+    ```bash
+    ls -la ~/.msgvault
+    mv ~/.msgvault ~/.msgvault.bak
+    msgvault backup restore --repo ~/Backups/msgvault --target ~/.msgvault
+    ```
 
 ## Deleted and Purged Messages
 

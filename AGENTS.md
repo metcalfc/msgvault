@@ -74,6 +74,10 @@ Use these as reasoning checkpoints, not a requirement to create a design doc.
 
 ## Build and test
 
+- Supported host platforms are macOS and Linux. Do not add native Windows
+  builds, installers, CI jobs, or platform implementations. Preserve handling
+  of Windows-originated archive data and upstream dependency portability.
+
 - Use `make build` for a worktree binary. `make install` changes the user's
   installed binary and needs intentional authorization.
 - All `go test` invocations need `-tags "fts5 sqlite_vec"`; prefer `make test`.

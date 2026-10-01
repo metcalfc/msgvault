@@ -102,7 +102,7 @@ install: build
 
 # Clean build artifacts
 clean:
-	rm -f msgvault msgvault.exe msgvault-codex-bridge mimeshootout
+	rm -f msgvault msgvault-codex-bridge mimeshootout
 	rm -rf bin/
 
 # Scale the SQLite suite when both CPU and memory budgets allow it. An explicit

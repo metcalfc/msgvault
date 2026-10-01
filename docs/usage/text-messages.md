@@ -170,13 +170,12 @@ other senders. A title alone does not create participants.
 | Flag | Default | Description |
 |---|---|---|
 | `--me` | (required) | Your phone number or email address; determines outgoing identity |
-| `--timezone` | local IANA zone (required on Windows) | Timezone used for dates without an explicit offset |
+| `--timezone` | local IANA zone | Timezone used for dates without an explicit offset |
 | `--contacts` | — | vCard file used to fill empty participant names by phone or email |
 
 Pass `--timezone` when the export came from a different timezone or the local
 zone cannot be resolved. When the flag is omitted, msgvault resolves the local
-IANA zone on Unix hosts; Windows has no dependable local IANA zone, so the
-flag is required there. The chosen IANA name is stored with the source. A
+IANA zone. The chosen IANA name is stored with the source. A
 later import for the same `--me` value must use the same zone, which keeps
 offset-free dates stable across machines and daylight-saving transitions.
 

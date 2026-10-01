@@ -85,22 +85,6 @@ the provider keys you have, start with
     # afm needs no api_key_env
     ```
 
-### Windows source builds
-
-The sqlite-vec CGo binding needs `sqlite3.h` at compile time, and the
-MinGW 15 toolchain needs two extra flags to link arrow-go/v18's
-helpers. The easiest path is `powershell -File scripts/build.ps1`,
-which wires everything up automatically. To invoke `go build`
-yourself from PowerShell:
-
-```powershell
-C:\msys64\usr\bin\pacman.exe -S --noconfirm --needed mingw-w64-x86_64-sqlite3
-$env:CGO_ENABLED = "1"
-$env:CGO_CFLAGS = "-IC:/msys64/mingw64/include -fgnu89-inline"
-$env:CGO_LDFLAGS = "-Wl,--allow-multiple-definition"
-go build -tags "fts5 sqlite_vec" -o msgvault.exe ./cmd/msgvault
-```
-
 ## Enable
 
 Use `msgvault setup providers` to select defaults, or add a `[vector]` block

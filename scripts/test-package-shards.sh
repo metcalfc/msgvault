@@ -9,7 +9,6 @@
 # shard, and the binary are unchanged; only the process boundary is new.
 #
 # Usage: scripts/test-package-shards.sh <package> [shards=4] [tags] [timeout=60m]
-# Mirrors scripts/test-package-shards.ps1, which the Windows lanes use.
 set -euo pipefail
 
 package=${1:?package (e.g. ./internal/store)}

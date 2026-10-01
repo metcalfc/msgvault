@@ -28,7 +28,7 @@ If you discover a security vulnerability in msgvault, please report it responsib
 - OAuth token files created with 0600 permissions (owner read/write only)
 - Config directory (`~/.msgvault/`) should be 0700
 - Attachment storage directory (`~/.msgvault/attachments/`) is created with 0700; attachment files are 0600
-- Cross-platform support including Windows DACL
+- macOS and Linux file ownership and permission enforcement
 
 **SQL injection prevention:**
 - All SQLite queries use parameterized statements via `database/sql`

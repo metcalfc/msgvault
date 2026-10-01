@@ -185,7 +185,6 @@ FORBIDDEN_SITE_FILENAMES = [
 
 ALLOWED_MISSING_LOCAL_PATHS = {
     "/install.sh",
-    "/install.ps1",
 }
 
 FETCHED_LINK_RELS = {

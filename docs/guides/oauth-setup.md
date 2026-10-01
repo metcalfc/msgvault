@@ -75,7 +75,6 @@ The Web UI's callback URL can remain registered alongside it.
 Create a file called `config.toml` in your msgvault directory.
 
 - **macOS / Linux:** `~/.msgvault/config.toml`
-- **Windows:** `C:\Users\<you>\.msgvault\config.toml`
 
 !!! tip
     The `.msgvault` directory is created automatically the first time you run any msgvault command. If you're unsure of the exact path, run `msgvault add-account you@gmail.com`; the error message may show you where to create the config file.
@@ -85,14 +84,8 @@ Create a file called `config.toml` in your msgvault directory.
 client_secrets = "/path/to/your/client_secret.json"
 ```
 
-On Windows, use forward slashes or escaped backslashes for the path:
-```toml
-[oauth]
-client_secrets = "C:/Users/you/Downloads/client_secret.json"
-```
-
 !!! tip
-    These commands will do what's needed on macOS/Linux/WSL assuming you're putting the client_secret.json file in ~/.msgvault/:
+    These commands will do what's needed on macOS/Linux assuming you're putting the client_secret.json file in ~/.msgvault/:
     ```
     mkdir -m 700 -p ~/.msgvault
     printf '[oauth]\nclient_secrets = "~/.msgvault/client_secret.json"\n' > ~/.msgvault/config.toml

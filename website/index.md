@@ -27,13 +27,7 @@ Or with Homebrew:
 brew install msgvault
 ```
 
-On Windows (PowerShell):
-
-```powershell
-irm https://msgvault.io/install.ps1 | iex
-```
-
-The installers fetch the latest GitHub release and verify its SHA-256
+This fork supports macOS and Linux. The installers fetch the latest upstream GitHub release and verify its SHA-256
 checksum. msgvault is also on
 [conda-forge](https://prefix.dev/channels/conda-forge/packages/msgvault), and
 the [setup documentation](/docs/setup/) covers building from source.

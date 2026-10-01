@@ -11,7 +11,6 @@ Default location:
 | Platform | Path |
 |---|---|
 | **macOS / Linux** | `~/.msgvault/config.toml` |
-| **Windows** | `C:\Users\<you>\.msgvault\config.toml` |
 
 Override the data directory with the `MSGVAULT_HOME` environment variable or the `--home` flag (see below).
 
@@ -280,20 +279,6 @@ send the same seed and context packets, so `allow_sensitive = true` is
 required here as well. Login, model discovery, checks, and consent cannot make
 this profile usable while the release gate is closed. Use one of the available
 HTTP protocols for current [profile automation](usage/people-automation.md).
-
-### Windows Paths
-
-TOML treats backslashes inside double-quoted strings as escape characters. On Windows, this means native paths like `"C:\Users\you\..."` will cause a parse error.
-
-Use one of these formats instead:
-
-```toml
-# Forward slashes (recommended)
-client_secrets = "C:/Users/you/Downloads/client_secret.json"
-
-# Single-quoted string (backslashes are literal)
-client_secrets = 'C:\Users\you\Downloads\client_secret.json'
-```
 
 ## Sections
 
@@ -1464,7 +1449,7 @@ by hand; `--backstop` rescans the whole archive.
 
 ## Overriding the Home Directory
 
-By default, msgvault stores everything under `~/.msgvault` (macOS/Linux) or `C:\Users\<you>\.msgvault` (Windows). To use a different location, you have two options:
+By default, msgvault stores everything under `~/.msgvault`. To use a different location, you have two options:
 
 **`--home` flag** (per-command):
 ```bash
@@ -1492,7 +1477,7 @@ ownership and permission checks to the target directory.
 
 ## File Locations
 
-All data lives under the msgvault home directory (`~/.msgvault` on macOS/Linux, `C:\Users\<you>\.msgvault` on Windows). The directory is created automatically on first use.
+All data lives under the msgvault home directory (`~/.msgvault`). The directory is created automatically on first use.
 
 | File | Description |
 |---|---|

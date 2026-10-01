@@ -14,21 +14,16 @@ opening an existing archive with a newer build.
 
 ## Install Release
 
+This fork supports macOS and Linux. The commands below install upstream
+releases; build from your fork checkout to use its changes. Native Windows
+support has been removed from this fork.
+
 **macOS / Linux:**
 ```bash
 curl -fsSL https://msgvault.io/install.sh | bash
 ```
 
-**Windows (PowerShell):**
-```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://msgvault.io/install.ps1 | iex"
-```
-
 The installer detects your OS and architecture, downloads the latest release from [GitHub Releases](https://github.com/kenn-io/msgvault/releases), verifies the SHA-256 checksum, and installs the binary.
-
-Windows releases include native AMD64 and ARM64 packages. On Windows ARM64,
-the PowerShell installer selects the native package when the release provides
-one and falls back to the AMD64 package under emulation for older releases.
 
 !!! tip "Running on a headless server?"
     msgvault works on headless machines (SSH, VPS, NAS, Docker), but OAuth requires a browser for the initial authorization. You'll authorize on your local machine and copy the token file to the server. See [Headless Server Setup](/docs/guides/oauth-setup/#headless-server-setup) for the copy-token workflow, or jump to the [Remote Deployment](/docs/guides/remote-deployment/) guide for a full NAS/server setup with Docker Compose.
@@ -68,33 +63,13 @@ sudo apt install -y libsqlite3-dev
 ```
 
 ```bash
-git clone https://github.com/kenn-io/msgvault.git
-cd msgvault
+# From your fork checkout:
 make install
 ```
 
 On macOS and Linux this installs to `~/.local/bin` or `$GOPATH/bin`. For a
 debug build use `make build`, or `make build-release` for an optimized binary
 with stripped debug symbols.
-
-On Windows, first build the embedded Web UI from an MSYS2 shell with GNU Make,
-Bun, and Node available:
-
-```bash
-make web-embed
-```
-
-Then use the native PowerShell helper for the Go binary:
-
-```powershell
-.\scripts\build.ps1          # Debug build
-.\scripts\build.ps1 -Release # Optimized, stripped build
-```
-
-It detects AMD64 or ARM64 automatically and writes `msgvault.exe` in the
-repository root. The PowerShell helper does not build the Web UI itself. See
-[Development](/docs/development/#windows) for the UI build step and one-time
-MSYS2 compiler prerequisites.
 
 Verify the installation:
 
@@ -116,7 +91,6 @@ msgvault stores all data (config, database, tokens, attachments) in a single dir
 | Platform | Data directory | Config file |
 |---|---|---|
 | **macOS / Linux** | `~/.msgvault/` | `~/.msgvault/config.toml` |
-| **Windows** | `C:\Users\<you>\.msgvault\` | `C:\Users\<you>\.msgvault\config.toml` |
 
 !!! tip
     The `.msgvault` directory is created automatically the first time you run any msgvault command. If you're unsure of the exact path, run `msgvault add-account you@gmail.com`; the error message may show you where to create the config file.
@@ -125,14 +99,7 @@ To store data on a different drive or location, use the `--home` flag or set the
 
 **Per-command (any platform):**
 ```bash
-msgvault sync --home E:/msgvault
-```
-
-**Windows (PowerShell, persistent):**
-```powershell
-$env:MSGVAULT_HOME = "E:\msgvault"
-# Or set it permanently:
-[Environment]::SetEnvironmentVariable("MSGVAULT_HOME", "E:\msgvault", "User")
+msgvault sync --home /mnt/data/msgvault
 ```
 
 **macOS / Linux (persistent):**
@@ -148,12 +115,6 @@ The `--home` flag takes priority over `MSGVAULT_HOME`. See [Configuration](/docs
 ```toml
 [oauth]
 client_secrets = "/path/to/client_secret.json"
-```
-
-**Windows:** use forward slashes in the path:
-```toml
-[oauth]
-client_secrets = "C:/Users/you/Downloads/client_secret.json"
 ```
 
 ## Add Your Account

@@ -3,26 +3,6 @@ title: Troubleshooting
 description: Common issues and solutions.
 ---
 
-## Windows Path Errors in config.toml
-
-### "invalid escape" or "expected eight hexadecimal digits after '\U'"
-
-TOML treats backslashes inside double-quoted strings as escape characters. A native Windows path like `"C:\Users\you\Downloads\client_secret.json"` triggers a parse error because `\U` is interpreted as a Unicode escape sequence and `\D` is an invalid escape.
-
-**Fix:** use forward slashes or single-quoted strings in your config file:
-
-```toml
-# Option 1: forward slashes (recommended)
-[oauth]
-client_secrets = "C:/Users/you/Downloads/client_secret.json"
-
-# Option 2: single-quoted string (backslashes are literal)
-[oauth]
-client_secrets = 'C:\Users\you\Downloads\client_secret.json'
-```
-
-See [Configuration: Windows paths](/docs/configuration/#windows-paths) for more detail.
-
 ## OAuth Errors
 
 ### "Error 403: access_denied"

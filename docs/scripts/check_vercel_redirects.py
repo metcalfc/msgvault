@@ -12,7 +12,6 @@ VERCEL = ROOT / "vercel.json"
 
 TEMPORARY = {
     "/install.sh": "https://raw.githubusercontent.com/kenn-io/msgvault/main/scripts/install.sh",
-    "/install.ps1": "https://raw.githubusercontent.com/kenn-io/msgvault/main/scripts/install.ps1",
 }
 
 # Legacy root docs URLs permanently redirect into the /docs/ tier so links

@@ -1292,7 +1292,7 @@ msgvault import-imazing-csv ~/Downloads/messages-export \
 | Flag | Default | Description |
 |---|---|---|
 | `--me` | (required) | Your phone number or email address |
-| `--timezone` | local IANA zone (required on Windows) | Timezone used for dates that do not include an offset |
+| `--timezone` | local IANA zone | Timezone used for dates that do not include an offset |
 | `--contacts` | — | vCard file used to fill empty participant names |
 
 The importer accepts comma, tab, and semicolon CSV files with named iMazing
@@ -1541,7 +1541,7 @@ msgvault repack-attachments
 
 Repack always runs through the selected daemon so it can atomically replace
 live blob mappings, retire shared readers, and remove old pack files. It is
-safe to retry after interruption or a Windows file-sharing error.
+safe to retry after interruption or a file-access error.
 It refuses to run when `[data].loose_attachments = true` because repacking
 creates replacement pack files.
 
