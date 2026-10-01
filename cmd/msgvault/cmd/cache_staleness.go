@@ -621,6 +621,10 @@ func cacheNeedsBuildLockedWithOptions(ctx context.Context, dbPath, analyticsDir 
 	return result
 }
 
+type cacheFingerprintQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
 // sourceConversationTypesFingerprint hashes (id, conversation_type, title) for
 // conversations with exportable messages inside the committed watermark. The
 // NULL normalization matches fingerprintConversationTypesFromSnapshot.
@@ -628,7 +632,7 @@ func cacheNeedsBuildLockedWithOptions(ctx context.Context, dbPath, analyticsDir 
 // before hashing, so unchanged data reproduces the stamped fingerprint.
 func sourceConversationTypesFingerprint(
 	ctx context.Context,
-	db *sql.DB,
+	db cacheFingerprintQuerier,
 	lastMessageID int64,
 ) (string, error) {
 	rows, err := db.QueryContext(ctx, `
@@ -657,7 +661,7 @@ func sourceConversationTypesFingerprint(
 
 func sourceConversationParticipantsFingerprint(
 	ctx context.Context,
-	db *sql.DB,
+	db cacheFingerprintQuerier,
 	lastMessageID int64,
 ) (string, error) {
 	rows, err := db.QueryContext(ctx, `

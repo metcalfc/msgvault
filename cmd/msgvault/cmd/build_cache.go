@@ -195,6 +195,14 @@ func wrapError(err error, message string) error {
 	return fmt.Errorf("%s: %w", message, err)
 }
 
+// buildCacheBeforeIdentitySnapshotHook covers archive edits after the build
+// decision but before its identity and source snapshots are captured.
+var buildCacheBeforeIdentitySnapshotHook func()
+
+// buildCacheBeforeParticipantClustersHook covers edits between revision and
+// cluster reads, which deliberately precede the message snapshot.
+var buildCacheBeforeParticipantClustersHook func()
+
 // buildCacheAfterSnapshotHook is a deterministic test seam for writes that
 // race with cache construction after its source watermark is captured.
 var buildCacheAfterSnapshotHook func()
@@ -1066,6 +1074,9 @@ func buildCacheLocked(
 	// alongside it: this full build exports those facts from the current store
 	// state, so stamping a lagging revision here is likewise self-healing — the
 	// matching staleness check catches it on the next pass.
+	if buildCacheBeforeIdentitySnapshotHook != nil {
+		buildCacheBeforeIdentitySnapshotHook()
+	}
 	identityStore, err := store.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open store for identity export: %w", err)
@@ -1079,6 +1090,18 @@ func buildCacheLocked(
 	if err != nil {
 		_ = identityStore.Close()
 		return nil, fmt.Errorf("read derived-data revision: %w", err)
+	}
+	// Revisions can change after the initial staleness decision. Never stamp
+	// an updated revision onto reused message/activity shards. Related-only
+	// repairs remain eligible for the journal-driven child-row replacement.
+	relatedDerivedOnly := false
+	if hasPreviousState && derivedDataRevision != previousState.DerivedDataRevision {
+		relatedDerivedOnly, err = identityStore.RelatedDerivedRevisionsOnly(
+			context.Background(), previousState.DerivedDataRevision, derivedDataRevision)
+		if err != nil {
+			_ = identityStore.Close()
+			return nil, fmt.Errorf("classify captured derived-data revision: %w", err)
+		}
 	}
 	accountIdentityRevision, err := identityStore.AccountIdentityRevision()
 	if err != nil {
@@ -1120,6 +1143,9 @@ func buildCacheLocked(
 		_ = identityStore.Close()
 		return nil, fmt.Errorf("read meeting weights: %w", err)
 	}
+	if buildCacheBeforeParticipantClustersHook != nil {
+		buildCacheBeforeParticipantClustersHook()
+	}
 	participantClusters, err := identityStore.ParticipantClusters()
 	if err != nil {
 		_ = identityStore.Close()
@@ -1127,6 +1153,14 @@ func buildCacheLocked(
 	}
 	if err := identityStore.Close(); err != nil {
 		return nil, fmt.Errorf("close store after identity export: %w", err)
+	}
+
+	if hasPreviousState && !fullRebuild &&
+		(identityRevision != previousState.IdentityRevision ||
+			accountIdentityRevision != previousState.AccountIdentityRevision ||
+			(derivedDataRevision != previousState.DerivedDataRevision && !relatedDerivedOnly)) {
+		fullRebuild = true
+		lastMessageID = 0
 	}
 
 	// Keep metadata reads and every source-table export on one SQLite snapshot.
@@ -1221,6 +1255,39 @@ func buildCacheLocked(
 			syncCounters.failedRunIDSum != previousState.LastFailedSyncRunIDSum
 		if updatesChanged || coveredAdditionsChanged || failedSyncChanged {
 			fmt.Println("Existing cached messages changed. Forcing full rebuild...")
+			fullRebuild = true
+			lastMessageID = 0
+		}
+	}
+
+	if hasPreviousState && !fullRebuild {
+		// Identity revisions are stamped conservatively from before the graph
+		// read, but the graph may include a later merge. Check this snapshot's
+		// revision too so old activity is never reused with that newer graph.
+		var snapshotIdentityRevision int64
+		if err := sourceSnapshot.QueryRow(`SELECT COALESCE((SELECT CAST(value AS INTEGER)
+			FROM archive_metadata WHERE key = 'identity_revision'), 0)`).Scan(&snapshotIdentityRevision); err != nil {
+			return nil, fmt.Errorf("read source snapshot identity revision: %w", err)
+		}
+		if snapshotIdentityRevision != previousState.IdentityRevision {
+			fullRebuild = true
+			lastMessageID = 0
+		}
+		// Hash only the committed message population. New conversations are
+		// appendable; edits to old conversation dimensions require rebuilding
+		// old activity. Use the export snapshot rather than another live read.
+		participants, err := sourceConversationParticipantsFingerprint(
+			context.Background(), sourceSnapshot, previousState.LastMessageID)
+		if err != nil {
+			return nil, err
+		}
+		types, err := sourceConversationTypesFingerprint(
+			context.Background(), sourceSnapshot, previousState.LastMessageID)
+		if err != nil {
+			return nil, err
+		}
+		if participants != previousState.ConversationParticipantsFingerprint ||
+			types != previousState.ConversationTypesFingerprint {
 			fullRebuild = true
 			lastMessageID = 0
 		}
@@ -2037,14 +2104,26 @@ func (s *cacheSourceSnapshot) QueryRow(query string, args ...any) *sql.Row {
 	if s.sqliteTx != nil {
 		return s.sqliteTx.QueryRow(query, args...)
 	}
+	return s.duckTx.QueryRow(cacheSnapshotMetadataSQL(query, len(args)), args...)
+}
+
+// QueryContext streams metadata from the same pinned SQLite snapshot used by
+// QueryRow and Prepare, including on the CSV fallback path.
+func (s *cacheSourceSnapshot) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	if s.sqliteTx != nil {
+		return s.sqliteTx.QueryContext(ctx, query, args...)
+	}
+	return s.duckTx.QueryContext(ctx, cacheSnapshotMetadataSQL(query, len(args)), args...)
+}
+
+func cacheSnapshotMetadataSQL(query string, parameterCount int) string {
 	escapedQuery := strings.ReplaceAll(query, "'", "''")
 	duckQuery := fmt.Sprintf("SELECT * FROM sqlite_query('sqlite_db', '%s'", escapedQuery)
-	if len(args) > 0 {
-		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")
+	if parameterCount > 0 {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", parameterCount), ",")
 		duckQuery += ", params=row(" + placeholders + ")"
 	}
-	duckQuery += ")"
-	return s.duckTx.QueryRow(duckQuery, args...)
+	return duckQuery + ")"
 }
 
 func (s *cacheSourceSnapshot) DuckDB() sqlRunner {
