@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-29"
+last_edited: "2026-09-30"
 title: Web UI
 description: Browse messages and files, maintain people, and monitor archive work from your browser.
 ---
@@ -355,7 +355,7 @@ as not a person shows a banner with **Change** and **This is a person**; see
 
 | Tab | What it shows |
 |---|---|
-| Overview | Contact methods, linked as described in [Links](#links), with a copy action, last contact, the five most recent items across mail, texts, and meetings, and filled context such as location and current employment |
+| Overview | Contact methods, linked as described in [Links](#links), with a copy action and a hover **×** that [retires or detaches](/docs/usage/people/#clean-up-a-persons-contact-methods) the row (retired values move under **Former**), last contact, the five most recent items across mail, texts, and meetings, and filled context such as location and current employment |
 | Timeline | Mail, texts, and meetings interleaved for their busiest archive identity, with a switch between identities |
 | Files | Files exchanged with them |
 | Meetings | Their meetings, with [meeting activity and follow-ups](#meeting-context-and-follow-ups) |

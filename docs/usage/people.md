@@ -98,7 +98,9 @@ Repeating promotion returns the same profile. Archive observation alone does
 not promote people. Linking another cluster into a promoted one expands that
 profile's participant bindings. Linking two clusters that already belong to
 different profiles reports a conflict instead of silently merging curated
-data. Unlinking evidence does not move or delete profile bindings.
+data. Unlinking evidence does not move or delete profile bindings; to take an
+identity away from a person, detach it as described in
+[Clean up a person's contact methods](#clean-up-a-persons-contact-methods).
 
 Your display-name override is also used in analytics, search results, and
 exports. Original addresses and message content stay available. Clear the
@@ -134,6 +136,65 @@ msgvault person directory --last-contact-after 2026-06-01 --cursor "<next_cursor
 ```
 
 `person list` continues to show the full unpaginated profile collection. Its `--json` output remains an array of profiles.
+
+## Clean up a person's contact methods
+
+Remove a dead phone number or a robot address from a saved person in one
+click. On the person's **Overview**, each contact method has a quiet **×**
+that appears when you hover over or focus the row; on a touch screen it is
+always visible. There is no confirmation. The status line says what happened
+and offers **Undo**.
+
+What the **×** does depends on where the row comes from:
+
+| Row | The × | Its label |
+|---|---|---|
+| An address-book value, whether or not the archive also has it | Retires it | Retire *value* — stops syncing, keeps history |
+| Only archive identities | Detaches them | Not *name* — detach *value* |
+
+A row that is both an address-book value and an archive identity is retired,
+not detached, because that identity's messages belong to the person.
+
+### Retire a value
+
+Retiring supersedes the contact point instead of deleting it:
+
+- It leaves the person's vCard, so CardDAV publication and your phone stop
+  receiving it.
+- It stays in profile history and appears under **Former** below the contact
+  methods, with the date it was retired. An archive identity with the same
+  value is listed under **Former** too instead of as current.
+- The person's messages and archive identities do not change.
+- **Undo** adds the same value back as a new current contact point with its
+  kind, label, and type.
+
+### Detach an identity
+
+Detach an address that is not this person, such as a notification sender
+linked by mistake. Detaching:
+
+- removes those archive identities from the person, and cuts the identity
+  links between them and the person's other identities;
+- records the decision as rejected identity matches, so contact matching,
+  duplicate detection, replay of accepted matches, and new automatic matches
+  do not attach the identity to this person again;
+- leaves every message in the archive. The messages stay with the identity,
+  which is no longer part of the person.
+
+Detaching the person's last identity is allowed; the person remains as a
+contact-only profile. **Undo** rebinds the identities, restores the links the
+detach cut, and returns the identity matches it rejected to their earlier
+decisions. Undo is the only action that clears those rejections. It fails if
+the identity has since been saved as, or linked to, another person.
+
+The Web UI calls `POST /api/v1/people/{id}/participants/detach` with
+`{"participant_ids": [...]}` and the person's `If-Match` revision tag, and
+undoes it with `POST /api/v1/people/{id}/participants/reattach` and
+`{"detachment_id": ...}`. Both return the detachment record, the updated
+person, and its new `ETag`. A stale revision returns `409
+person_revision_conflict`; an identity that no longer belongs to the person
+returns `409 person_participant_not_bound`; undoing twice returns `409
+person_detachment_reattached`.
 
 ## Records that aren't people
 

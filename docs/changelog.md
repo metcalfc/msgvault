@@ -12,6 +12,14 @@ All notable changes to msgvault, grouped by release.
   support and their CI lanes have been removed. Existing PostgreSQL connection
   settings are rejected; archives are not converted automatically.
 
+- Clean up a saved person's contact methods in one click. On the person's
+  Overview, a quiet **×** on each row retires an address-book value, which
+  stops syncing to CardDAV and your phone and moves under **Former**, or
+  detaches an archive-only identity such as a robot address, so automatic
+  matching does not attach it to the person again. Messages are unchanged and
+  **Undo** reverses either one. `POST /api/v1/people/{id}/participants/detach`
+  and `/reattach` remove and restore identities. Requires API schema 2.47.0.
+  See [Clean up a person's contact methods](/docs/usage/people/#clean-up-a-persons-contact-methods).
 - Names and short profile labels drop emoji as msgvault imports them, so
   "🎉 Ana" and "Ana ✨" both read "Ana". This covers email and chat display
   names, calendar attendees, CardDAV contact names, and enrichment or sweep
