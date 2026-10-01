@@ -988,7 +988,11 @@ func (s *Store) CompleteSyncContext(ctx context.Context, syncID int64, finalHist
 	if err == nil {
 		completionStore.optimizeAfterSync(ctx)
 	}
-	return completionStore.finalizeSyncExecution(syncID, err)
+	if err = completionStore.finalizeSyncExecution(syncID, err); err != nil {
+		return err
+	}
+	completionStore.linkEquivalentEmailAddressesAfterSync(ctx)
+	return nil
 }
 
 // CompleteSyncAndUpdateSourceCursor atomically publishes a source cursor and
@@ -1091,7 +1095,11 @@ func (s *Store) completeSyncAndUpdateSourceContext(
 	if err == nil {
 		completionStore.optimizeAfterSync(ctx)
 	}
-	return completionStore.finalizeSyncExecution(syncID, err)
+	if err = completionStore.finalizeSyncExecution(syncID, err); err != nil {
+		return err
+	}
+	completionStore.linkEquivalentEmailAddressesAfterSync(ctx)
+	return nil
 }
 
 // finalizeSyncExecution releases source ownership after a terminal write

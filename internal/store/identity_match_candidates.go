@@ -48,7 +48,8 @@ func (b IdentityMatchBasis) valid() bool {
 	switch b {
 	case IdentityMatchStableProviderID, IdentityMatchServiceScopeUsername,
 		IdentityMatchEmail, IdentityMatchPhone, IdentityMatchDisplayName,
-		IdentityMatchConversationMembership:
+		IdentityMatchConversationMembership,
+		IdentityMatchEmailEquivalence, IdentityMatchEmailDotVariant:
 		return true
 	default:
 		return false
