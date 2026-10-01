@@ -76,6 +76,10 @@ type EmailEquivalenceResult struct {
 	// Suppressed counts pairs left apart because the user unlinked or
 	// rejected that equivalence, or classified an address as not a person.
 	Suppressed int `json:"suppressed"`
+	// CacheState is set by the HTTP endpoint after it refreshes the identity
+	// datasets for new links: ready, or stale when the refresh failed. It is
+	// omitted when the pass linked nothing.
+	CacheState string `json:"cache_state,omitempty" enum:"ready,stale"`
 }
 
 type emailEquivalencePair struct {

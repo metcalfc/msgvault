@@ -3598,13 +3598,29 @@ func (d DurationTotals) Validate() error {
 }
 
 type EmailEquivalenceResult struct {
-	AlreadyLinked int64 `json:"already_linked"`
-	Conflicts     int64 `json:"conflicts"`
-	Linked        int64 `json:"linked"`
-	Participants  int64 `json:"participants"`
-	Skipped       bool  `json:"skipped"`
-	Suggested     int64 `json:"suggested"`
-	Suppressed    int64 `json:"suppressed"`
+	AlreadyLinked int64                             `json:"already_linked"`
+	CacheState    *EmailEquivalenceResultCacheState `json:"cache_state,omitempty"`
+	Conflicts     int64                             `json:"conflicts"`
+	Linked        int64                             `json:"linked"`
+	Participants  int64                             `json:"participants"`
+	Skipped       bool                              `json:"skipped"`
+	Suggested     int64                             `json:"suggested"`
+	Suppressed    int64                             `json:"suppressed"`
+}
+
+func (e EmailEquivalenceResult) Validate() error {
+	var errors runtime.ValidationErrors
+	if e.CacheState != nil {
+		if v, ok := any(e.CacheState).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("CacheState", err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
 }
 
 type Employment struct {

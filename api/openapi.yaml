@@ -4053,6 +4053,11 @@ components:
         already_linked:
           format: int64
           type: integer
+        cache_state:
+          enum:
+            - ready
+            - stale
+          type: string
         conflicts:
           format: int64
           type: integer

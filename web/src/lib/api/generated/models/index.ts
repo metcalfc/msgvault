@@ -240,6 +240,7 @@ export * from "./domainSummary";
 export * from "./duplicateCostRisk";
 export * from "./durationTotals";
 export * from "./emailEquivalenceResult";
+export * from "./emailEquivalenceResultCacheState";
 export * from "./employment";
 export * from "./employmentBody";
 export * from "./employmentBodySource";

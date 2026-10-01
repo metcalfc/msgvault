@@ -614,6 +614,23 @@ func (d DiscoverEventType) Validate() error {
 	}
 }
 
+type EmailEquivalenceResultCacheState string
+
+const (
+	EmailEquivalenceResultCacheStateReady EmailEquivalenceResultCacheState = "ready"
+	EmailEquivalenceResultCacheStateStale EmailEquivalenceResultCacheState = "stale"
+)
+
+// Validate checks if the EmailEquivalenceResultCacheState value is valid
+func (e EmailEquivalenceResultCacheState) Validate() error {
+	switch e {
+	case EmailEquivalenceResultCacheStateReady, EmailEquivalenceResultCacheStateStale:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid EmailEquivalenceResultCacheState value, got: %v", e))
+	}
+}
+
 type EmploymentBodySource string
 
 const (

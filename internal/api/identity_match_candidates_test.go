@@ -560,7 +560,10 @@ func TestLinkEquivalentEmailAddressesEndpointLinksSharedMailbox(t *testing.T) {
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	var first store.EmailEquivalenceResult
 	require.NoError(json.Unmarshal(response.Body.Bytes(), &first), response.Body.String())
-	assert.Equal(store.EmailEquivalenceResult{Participants: 2, Linked: 1}, first)
+	assert.Equal(store.EmailEquivalenceResult{
+		Participants: 2, Linked: 1, CacheState: identityCacheStateReady,
+	}, first)
+	assert.Equal(1, st.refreshCalls, "new links refresh the identity datasets")
 	members, err := st.ClusterMembers(primary)
 	require.NoError(err)
 	assert.Equal([]int64{primary, tagged}, members)
@@ -572,4 +575,5 @@ func TestLinkEquivalentEmailAddressesEndpointLinksSharedMailbox(t *testing.T) {
 	var repeat store.EmailEquivalenceResult
 	require.NoError(json.Unmarshal(response.Body.Bytes(), &repeat), response.Body.String())
 	assert.Equal(store.EmailEquivalenceResult{Participants: 2}, repeat)
+	assert.Equal(1, st.refreshCalls, "a pass that links nothing leaves the cache alone")
 }

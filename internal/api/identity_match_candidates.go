@@ -189,6 +189,11 @@ func (s *Server) handleLinkEquivalentEmailAddresses(w http.ResponseWriter, r *ht
 		s.writeIdentityMatchError(w, err)
 		return
 	}
+	if result.Linked > 0 {
+		// New links change identity clusters, so refresh the identity
+		// datasets like every other identity mutation endpoint.
+		result.CacheState = s.refreshIdentityCacheState(r.Context())
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, result)
 }
