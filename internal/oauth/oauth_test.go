@@ -14,7 +14,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -315,26 +314,6 @@ func TestHasPathPrefix(t *testing.T) {
 		{"root dir exact", "/", "/", true},
 		{"unrelated", "/x/y", "/a/b", false},
 		{"dotdot prefix child", "/a/b/..backup", "/a/b", true},
-	}
-
-	// Add Windows drive-root cases when running on Windows.
-	if runtime.GOOS == "windows" {
-		vol := filepath.VolumeName(os.TempDir())
-		root := vol + string(filepath.Separator)
-		tests = append(tests,
-			struct {
-				name string
-				path string
-				dir  string
-				want bool
-			}{"windows drive root exact", root, root, true},
-			struct {
-				name string
-				path string
-				dir  string
-				want bool
-			}{"windows drive root child", root + "Users", root, true},
-		)
 	}
 
 	for _, tt := range tests {

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -40,12 +39,11 @@ func TestCreateNASBundle(t *testing.T) {
 	assert.Contains(configStr, "0.0.0.0", "config.toml should bind to 0.0.0.0")
 
 	// Verify config.toml has secure permissions
-	// Windows doesn't support Unix file permissions.
+
 	info, err := os.Stat(configPath)
 	require.NoError(err, "stat config.toml")
-	if runtime.GOOS != "windows" {
-		assert.Zero(info.Mode().Perm()&0077, "config.toml perm = %04o, want no group/other access", info.Mode().Perm())
-	}
+
+	assert.Zero(info.Mode().Perm()&0077, "config.toml perm = %04o, want no group/other access", info.Mode().Perm())
 
 	// Verify client_secret.json was copied
 	copiedSecrets := filepath.Join(bundleDir, "client_secret.json")

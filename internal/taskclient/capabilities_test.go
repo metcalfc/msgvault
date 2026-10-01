@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,9 +27,6 @@ func TestEvaluateStatusStates(t *testing.T) {
 	})
 
 	t.Run("authentication required", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("descriptor discovery requires Unix file security and fails closed on Windows")
-		}
 		path := writeDescriptor(t, descriptor{
 			ProtocolVersion: ProtocolVersion,
 			InstanceID:      "instance-test",
@@ -55,9 +51,6 @@ func TestEvaluateStatusStates(t *testing.T) {
 	})
 
 	t.Run("stale Unix descriptor is unreachable", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("Unix socket discovery is covered by Unix test lanes")
-		}
 		status := Evaluate(context.Background(), IntegrationConfig{
 			Enabled:        true,
 			DescriptorPath: writeStaleUnixDescriptor(t),

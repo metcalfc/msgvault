@@ -3,7 +3,6 @@ package fileutil
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -41,9 +40,7 @@ func TestSecureWriteFile(t *testing.T) {
 			require.NoError(t, err, "ReadFile")
 			assert.Equal(t, string(data), string(got))
 
-			if runtime.GOOS != "windows" {
-				assertPermNoMoreThan(t, path, tt.perm)
-			}
+			assertPermNoMoreThan(t, path, tt.perm)
 		})
 	}
 }
@@ -67,9 +64,7 @@ func TestSecureMkdirAll(t *testing.T) {
 			require.NoError(t, err, "Stat")
 			assert.True(t, info.IsDir(), "expected directory")
 
-			if runtime.GOOS != "windows" {
-				assertPermNoMoreThan(t, path, tt.perm)
-			}
+			assertPermNoMoreThan(t, path, tt.perm)
 		})
 	}
 }
@@ -83,12 +78,10 @@ func TestSecureChmod(t *testing.T) {
 
 	require.NoError(SecureChmod(path, 0600), "SecureChmod")
 
-	if runtime.GOOS != "windows" {
-		// Chmod sets exact mode (not subject to umask), so we can assert exactly.
-		info, err := os.Stat(path)
-		require.NoError(err, "Stat")
-		assert.Equal(t, os.FileMode(0600), info.Mode().Perm())
-	}
+	// Chmod sets exact mode (not subject to umask), so we can assert exactly.
+	info, err := os.Stat(path)
+	require.NoError(err, "Stat")
+	assert.Equal(t, os.FileMode(0600), info.Mode().Perm())
 }
 
 func TestSecureOpenFile(t *testing.T) {
@@ -117,9 +110,7 @@ func TestSecureOpenFile(t *testing.T) {
 			require.NoError(err, "ReadFile")
 			assert.Equal(t, "data", string(got))
 
-			if runtime.GOOS != "windows" {
-				assertPermNoMoreThan(t, path, tt.perm)
-			}
+			assertPermNoMoreThan(t, path, tt.perm)
 		})
 	}
 }

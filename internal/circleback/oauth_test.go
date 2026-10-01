@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -131,9 +130,6 @@ func newTestManager(t *testing.T, f *fakeAS, port string) *Manager {
 }
 
 func TestAuthorize_FullFlow(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("localhost listener flow not exercised on windows CI")
-	}
 	assert := assert.New(t)
 	require := require.New(t)
 	f := newFakeAS(t)

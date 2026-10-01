@@ -2,7 +2,6 @@ package beeper
 
 import (
 	"os"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -24,11 +23,9 @@ func TestTokenRoundTrip(t *testing.T) {
 	require.NoError(err)
 	assert.Equal("secret-token", got)
 
-	if runtime.GOOS != "windows" {
-		info, err := os.Stat(tokenPath(dir))
-		require.NoError(err)
-		assert.Equal(os.FileMode(0600), info.Mode().Perm())
-	}
+	info, err := os.Stat(tokenPath(dir))
+	require.NoError(err)
+	assert.Equal(os.FileMode(0600), info.Mode().Perm())
 
 	// Overwrite is atomic and replaces the value.
 	require.NoError(SaveToken(dir, "rotated"))

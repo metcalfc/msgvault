@@ -8,7 +8,6 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -45,16 +44,11 @@ func writeServiceAccountKeyWithTokenURI(t *testing.T, path string, perm os.FileM
 	})
 	require.NoError(t, err, "Marshal")
 	require.NoError(t, os.WriteFile(path, data, perm), "WriteFile")
-	if runtime.GOOS != "windows" {
-		require.NoError(t, os.Chmod(path, perm), "Chmod")
-	}
+
+	require.NoError(t, os.Chmod(path, perm), "Chmod")
 }
 
 func TestNewServiceAccountManagerRejectsInsecureKeyPermissions(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX permission bits are not enforced on Windows")
-	}
-
 	path := filepath.Join(t.TempDir(), "service-account.json")
 	writeServiceAccountKey(t, path, 0644)
 

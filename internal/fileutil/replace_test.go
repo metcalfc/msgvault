@@ -3,7 +3,6 @@ package fileutil
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,9 +27,8 @@ func TestSecureReplaceFileReplacesContentWithRequestedPerm(t *testing.T) {
 	require.NoError(err)
 	require.Len(entries, 1, "the staged file must not be left behind")
 	assert.Equal("token.json", entries[0].Name())
-	if runtime.GOOS != "windows" {
-		info, err := os.Stat(path)
-		require.NoError(err)
-		assert.Equal(os.FileMode(0o600), info.Mode().Perm())
-	}
+
+	info, err := os.Stat(path)
+	require.NoError(err)
+	assert.Equal(os.FileMode(0o600), info.Mode().Perm())
 }

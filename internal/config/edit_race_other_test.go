@@ -12,8 +12,7 @@ import (
 // expectedFinalBoundarySymlinkSwapError reports how a final-component symlink
 // substitution surfaces on Unix-family platforms: the link resolves to the
 // operator's byte-identical file, and the pinned identity mismatch is
-// reported as ErrConfigConflict. See edit_race_windows_test.go for the
-// Windows reparse-point behavior.
+// reported as ErrConfigConflict.
 func expectedFinalBoundarySymlinkSwapError() error {
 	return ErrConfigConflict
 }

@@ -29,9 +29,6 @@ import (
 const codexTestDigest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func codexTestAbsolutePath() string {
-	if runtime.GOOS == "windows" {
-		return `C:\attested\codex.exe`
-	}
 	return "/attested/codex"
 }
 

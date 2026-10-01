@@ -1164,9 +1164,7 @@ func TestBuiltExecutable_UsesProductionChildrenFTSExactUsageAndReplay(t *testing
 	}
 	dir := t.TempDir()
 	binaryName := "contextual-retrieval-eval"
-	if runtime.GOOS == "windows" {
-		binaryName += ".exe"
-	}
+
 	binary := filepath.Join(dir, binaryName)
 	build := exec.CommandContext(t.Context(), "go", "build", "-tags", "fts5 sqlite_vec", "-o", binary, ".")
 	buildOutput, err := build.CombinedOutput()

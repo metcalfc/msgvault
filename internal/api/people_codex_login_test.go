@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -322,9 +321,7 @@ func TestPeopleCodexLoginAPIRoutesKeepDeviceCodeOutOfPollAndCancel(t *testing.T)
 func TestPeopleCodexLoginAPICreatesProfileOnlyAfterExactModelDiscovery(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	if runtime.GOOS == "windows" {
-		t.Skip("the private codex auth home layout requires Unix permission bits")
-	}
+
 	srv, _ := newSettingsTestServer(t, "")
 	srv.peopleCodexLogins = newPeopleCodexLogins(completedCodexLoginClient{}, time.Now)
 	started := performSettingsRequest(t, srv, http.MethodPost,

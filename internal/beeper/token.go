@@ -23,8 +23,8 @@ func tokenPath(tokensDir string) string {
 }
 
 // SaveToken saves the Beeper Desktop access token. Uses atomic temp-file +
-// rename to avoid partial writes, and fileutil.Secure* helpers for Windows
-// DACL hardening.
+// rename to avoid partial writes, and fileutil.Secure* helpers for private
+// file permissions.
 func SaveToken(tokensDir, token string) error {
 	if err := fileutil.SecureMkdirAll(tokensDir, 0700); err != nil {
 		return fmt.Errorf("create tokens dir: %w", err)

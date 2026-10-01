@@ -1741,9 +1741,6 @@ type commandCodexStarter struct {
 }
 
 func commandCodexTestAbsolutePath() string {
-	if runtime.GOOS == "windows" {
-		return `C:\attested\codex.exe`
-	}
 	return "/attested/codex"
 }
 

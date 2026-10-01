@@ -61,10 +61,8 @@ The `mcp` command starts a [Model Context Protocol](https://modelcontextprotocol
 
 ### Claude Desktop Configuration
 
-Add the following to your Claude Desktop config file:
-
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+On macOS, add the following to
+`~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {

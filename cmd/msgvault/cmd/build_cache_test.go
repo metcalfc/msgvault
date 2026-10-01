@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -780,9 +779,6 @@ func TestBuildCacheEmptyArchiveKeepsMessagesGlobReadable(t *testing.T) {
 // at its own invalidation), the file is overwritten with content that no
 // staleness probe accepts as a valid sync state.
 func TestInvalidateSyncStateFileFallsBackToOverwrite(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("directory write permissions are not enforced the same way on Windows")
-	}
 	require := require.New(t)
 	dir := t.TempDir()
 	stateFile := filepath.Join(dir, "_last_sync.json")
@@ -3036,7 +3032,7 @@ func TestBuildCache_EmptyDatabase(t *testing.T) {
 	assert.Zero(count)
 }
 
-// TestCSVFallbackPath exercises the Windows-style CSV intermediate path:
+// TestCSVFallbackPath exercises the CSV intermediate path:
 // SQLite → CSV → DuckDB views → COPY to Parquet.
 // This runs on all platforms to ensure the fallback logic works correctly.
 func TestCSVFallbackPath(t *testing.T) {
@@ -3048,7 +3044,7 @@ func TestCSVFallbackPath(t *testing.T) {
 	csvDir := filepath.Join(tmpDir, "csv")
 	require.NoError(os.MkdirAll(csvDir, 0755), "create csv dir")
 
-	// 1. Export tables to CSV (same as setupSQLiteSource Windows path)
+	// 1. Export tables to CSV (same as setupSQLiteSource fallback path)
 	sqliteDB, err := sql.Open("sqlite3", dbPath+"?mode=ro")
 	require.NoError(err, "open sqlite")
 
@@ -3416,8 +3412,8 @@ func TestBuildCache_ZeroMessagesNoRepeatedRebuilds(t *testing.T) {
 }
 
 // TestBuildCacheCSVSnapshotFallback exercises the CSV snapshot path that
-// Windows always uses, so column or type drift between the COPY queries and
-// the CSV views fails on every platform instead of only on Windows CI.
+// macOS always uses, so column or type drift between the COPY queries and
+// the CSV views fails on every platform.
 func TestBuildCacheCSVSnapshotFallback(t *testing.T) {
 	t.Setenv("MSGVAULT_FORCE_CSV_SNAPSHOT", "1")
 

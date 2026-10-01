@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -328,12 +327,12 @@ dimension = 8
 	credentialPath := filepath.Join(srv.cfg.TokensDir(), "provider-credentials.json")
 	info, err := os.Stat(credentialPath)
 	requirements.NoError(err)
-	if runtime.GOOS != "windows" {
-		assertions.Equal(os.FileMode(0o600), info.Mode().Perm())
-		dirInfo, statErr := os.Stat(srv.cfg.TokensDir())
-		requirements.NoError(statErr)
-		assertions.Equal(os.FileMode(0o700), dirInfo.Mode().Perm())
-	}
+
+	assertions.Equal(os.FileMode(0o600), info.Mode().Perm())
+	dirInfo, statErr := os.Stat(srv.cfg.TokensDir())
+	requirements.NoError(statErr)
+	assertions.Equal(os.FileMode(0o700), dirInfo.Mode().Perm())
+
 	credentialBytes, err := os.ReadFile(credentialPath)
 	requirements.NoError(err)
 	assertions.Contains(string(credentialBytes), "browser-secret-must-not-leak")
@@ -675,9 +674,7 @@ dimension = 8
 func TestPatchSettingsHardensSecretBearingConfigFile(t *testing.T) {
 	t.Parallel()
 	requirements := require.New(t)
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows owner-only DACL coverage lives in platform-specific config tests")
-	}
+
 	srv, path := newSettingsTestServer(t, "[server]\napi_key = \"secret\"\n[web]\ntheme = \"system\"\n")
 	requirements.NoError(os.Chmod(path, 0o644))
 
@@ -950,9 +947,9 @@ func TestPatchSettingsPreservesFileAndReturnsNewETag(t *testing.T) {
 	requirements := require.New(t)
 	srv, path := newSettingsTestServer(t, "# operator comment\n[unknown]\nkeep = true\n\n"+
 		"[web]\ntheme = \"system\" # display\n")
-	if runtime.GOOS != "windows" {
-		requirements.NoError(os.Chmod(path, 0o640))
-	}
+
+	requirements.NoError(os.Chmod(path, 0o640))
+
 	get := performSettingsRequest(t, srv, http.MethodGet, settingsPath, nil, "", "")
 	etag := get.Header().Get("ETag")
 
@@ -963,15 +960,12 @@ func TestPatchSettingsPreservesFileAndReturnsNewETag(t *testing.T) {
 	got, err := os.ReadFile(path)
 	requirements.NoError(err)
 	assertions.Equal("# operator comment\n[unknown]\nkeep = true\n\n[web]\ntheme = \"dark\" # display\n", string(got))
-	if runtime.GOOS != "windows" {
-		// Settings publication hardens the entire secret-bearing config to
-		// owner-only. Windows security lives in the DACL, which
-		// the config package's own Windows tests verify; Stat mode bits there
-		// are synthetic.
-		info, err := os.Stat(path)
-		requirements.NoError(err)
-		assertions.Equal(os.FileMode(0o600), info.Mode().Perm())
-	}
+
+	// Settings publication hardens the entire secret-bearing config to
+	// owner-only permissions.
+	info, err := os.Stat(path)
+	requirements.NoError(err)
+	assertions.Equal(os.FileMode(0o600), info.Mode().Perm())
 }
 
 func TestPatchSettingsValidatesWholeCandidateAndRejectsUnknownKeys(t *testing.T) {

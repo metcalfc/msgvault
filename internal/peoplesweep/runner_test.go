@@ -28,8 +28,7 @@ type countingConsent struct {
 
 // runnerTestCredential is deliberately local to this untagged test file:
 // the credentialCanary constant lives in credential_store_test.go, which is
-// compiled only on linux and darwin, so sharing it would break the Windows
-// test build.
+// compiled only on linux and darwin.
 const runnerTestCredential = "runner-test-credential"
 
 type credentialResolverFunc func(

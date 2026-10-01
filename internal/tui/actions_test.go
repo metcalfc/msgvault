@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -875,14 +874,13 @@ func TestDownloadAttachmentDefaultsToPrivateDataDirectory(t *testing.T) {
 	downloadPath := filepath.Join(dataDir, "exports", ".zshenv")
 	assert.Contains(result.Result, downloadPath)
 	assert.FileExists(downloadPath)
-	if runtime.GOOS != "windows" {
-		info, err := os.Stat(downloadPath)
-		require.NoError(err)
-		assert.Zero(info.Mode().Perm()&0o111, "download must not be executable")
-		dirInfo, err := os.Stat(filepath.Dir(downloadPath))
-		require.NoError(err)
-		assert.Equal(os.FileMode(0o700), dirInfo.Mode().Perm())
-	}
+
+	info, err := os.Stat(downloadPath)
+	require.NoError(err)
+	assert.Zero(info.Mode().Perm()&0o111, "download must not be executable")
+	dirInfo, err := os.Stat(filepath.Dir(downloadPath))
+	require.NoError(err)
+	assert.Equal(os.FileMode(0o700), dirInfo.Mode().Perm())
 }
 
 func TestDownloadAttachmentReportsMarkingFailureAndPreservesFile(t *testing.T) {

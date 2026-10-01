@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -839,10 +838,8 @@ func TestManifest_Save_FilePermissions(t *testing.T) {
 	require.NoError(t, err, "Stat()")
 
 	// File should have 0600 permissions (owner read/write only)
-	// Windows does not support Unix permissions.
-	if runtime.GOOS != "windows" {
-		assert.Equal(t, os.FileMode(0600), info.Mode().Perm(), "file permissions")
-	}
+
+	assert.Equal(t, os.FileMode(0600), info.Mode().Perm(), "file permissions")
 }
 
 func TestValidateManifestID(t *testing.T) {

@@ -142,7 +142,7 @@ func (u *Updater) PerformUpdate(info *UpdateInfo, reporter Reporter) error {
 	if err != nil {
 		return err
 	}
-	targetBinary := executableName(u.deps.GOOS)
+	targetBinary := binaryName
 	dstPath := filepath.Join(installDir, targetBinary)
 
 	reporter.Stepf("Downloading %s...\n", info.AssetName)
@@ -201,13 +201,6 @@ func (u *Updater) installDir() (string, error) {
 		return "", fmt.Errorf("resolve symlinks: %w", err)
 	}
 	return filepath.Dir(currentExe), nil
-}
-
-func executableName(goos string) string {
-	if goos == "windows" {
-		return binaryName + ".exe"
-	}
-	return binaryName
 }
 
 func IsDevBuildVersion(v string) bool {

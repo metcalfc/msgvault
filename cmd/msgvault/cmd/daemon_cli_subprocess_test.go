@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -75,9 +74,6 @@ func TestClassifyDaemonCLIWaitErrExitStatus(t *testing.T) {
 // to the caller for a killed process. Unix-only: Windows lacks signal exits
 // (TerminateProcess reports a normal exit code).
 func TestClassifyDaemonCLIWaitErrSignalTerminated(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("signal-terminated exit semantics are Unix-specific")
-	}
 	require := require.New(t)
 
 	cmd := helperProcessCommand(context.Background(), "block")

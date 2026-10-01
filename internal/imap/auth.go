@@ -24,7 +24,7 @@ func CredentialsPath(tokensDir, identifier string) string {
 
 // SaveCredentials saves an IMAP password for the given identifier.
 // Uses atomic temp-file + rename to avoid partial writes, and
-// fileutil.Secure* helpers for Windows DACL hardening.
+// fileutil.Secure* helpers for private file permissions.
 func SaveCredentials(tokensDir, identifier, password string) error {
 	if err := fileutil.SecureMkdirAll(tokensDir, 0700); err != nil {
 		return fmt.Errorf("create tokens dir: %w", err)

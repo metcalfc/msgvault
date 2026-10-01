@@ -3,7 +3,6 @@ package skills
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -185,13 +184,9 @@ func TestUninstall_GlobRootDoesNotEscape(t *testing.T) {
 
 	// A root literally named "*" must not expand to neighboring dirs.
 	removed, err := Uninstall(filepath.Join(parent, "*"))
-	if runtime.GOOS == "windows" {
-		// '*' is an invalid path character on Windows; Uninstall
-		// fails fast instead of expanding it.
-		require.Error(err)
-	} else {
-		require.NoError(err)
-	}
+
+	require.NoError(err)
+
 	assert.Empty(removed)
 	assert.FileExists(
 		filepath.Join(neighbor, "msgvault-search", "SKILL.md"),

@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -151,7 +150,7 @@ func isSQLiteError(err error, substr string) bool {
 // for concurrency parity with production, but synchronous=OFF (no fsync per
 // commit). Test DBs live in t.TempDir() and are discarded at test exit, so
 // durability against OS crashes is irrelevant — and on slow-fsync platforms
-// like Windows CI runners, the production FULL setting can push bulk-import
+// such as CI runners, the production FULL setting can push bulk-import
 // tests past their timing tripwires.
 const testSQLiteParams = "?_journal_mode=WAL&_busy_timeout=30000&_synchronous=OFF&_foreign_keys=ON"
 
@@ -567,11 +566,7 @@ func (s *Store) BackupDatabaseContext(ctx context.Context, dst string) (returnEr
 	// Publish without replacing: a file created at dst while VACUUM INTO ran
 	// must survive. Deferred staging directory cleanup removes any staged name.
 	publish := atomicfile.PublishNoReplace
-	if runtime.GOOS == "windows" {
-		// Hard links are not written through on Windows. Kit's no-replace
-		// rename uses MOVEFILE_WRITE_THROUGH instead.
-		publish = atomicfile.RenameNoReplace
-	}
+
 	if err := publish(tempPath, dst); err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			return fmt.Errorf("backup target already exists: %s", dst)

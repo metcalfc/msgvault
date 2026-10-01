@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -47,13 +46,12 @@ func TestSaveAndLoadToken(t *testing.T) {
 	assert.Equal("refresh-456", loaded.RefreshToken, "RefreshToken")
 	assert.Len(loaded.Scopes, 2, "Scopes len")
 
-	// Verify file permissions (Unix only; Windows ignores POSIX bits).
-	if runtime.GOOS != "windows" {
-		path := m.TokenPath("user@example.com")
-		info, err := os.Stat(path)
-		require.NoError(err)
-		assert.Equal(os.FileMode(0600), info.Mode().Perm(), "permissions")
-	}
+	// Verify private file permissions.
+
+	path := m.TokenPath("user@example.com")
+	info, err := os.Stat(path)
+	require.NoError(err)
+	assert.Equal(os.FileMode(0600), info.Mode().Perm(), "permissions")
 }
 
 func TestHasToken(t *testing.T) {
@@ -874,9 +872,6 @@ func TestTokenSource_PreMigrationTokenGetsTenantBinding(t *testing.T) {
 }
 
 func TestTokenSource_SaveFailureReturnsError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("read-only directory does not prevent file creation on Windows")
-	}
 	// Verify saveToken returns an error when the tokens directory is read-only.
 	dir := t.TempDir()
 	m := &Manager{tokensDir: dir, logger: slog.Default()}

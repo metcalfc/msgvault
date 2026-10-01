@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -18,12 +17,7 @@ var resolveLocalTimezone = ResolveLocalTimezone
 // ResolveLocalTimezone returns a concrete IANA timezone for offset-free CSV
 // timestamps on Unix hosts, where TZ, /etc/localtime, or /etc/timezone name
 // the local zone. Go's opaque "Local" label is not stable enough to persist.
-// Windows exposes no dependable IANA name for the system timezone, so it
-// refuses there and callers must require an explicit --timezone instead.
 func ResolveLocalTimezone() (string, error) {
-	if runtime.GOOS == "windows" {
-		return "", errors.New("the Windows system timezone has no dependable IANA name")
-	}
 	candidates := []string{strings.TrimPrefix(strings.TrimSpace(os.Getenv("TZ")), ":")}
 	if time.Local != nil {
 		candidates = append(candidates, time.Local.String())
@@ -57,8 +51,7 @@ func newImportIMazingCSVCmd() *cobra.Command {
 The input can be the export root containing csv/ and attachments/, or the csv/
 directory itself. --me identifies your phone number or email address. Offset-free
 message dates use --timezone. On Unix, an omitted --timezone resolves the local
-IANA zone; Windows has no dependable local IANA zone, so --timezone is required
-there.`,
+IANA zone; pass --timezone when no local IANA zone can be resolved.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.Timezone == "" {
@@ -82,7 +75,7 @@ there.`,
 	command.Flags().StringVar(&opts.Owner, "me", "", "your phone number or email address")
 	command.Flags().StringVar(&opts.ContactsPath, "contacts", "", "vCard file used to fill empty participant names")
 	command.Flags().StringVar(&opts.Timezone, "timezone", "",
-		"IANA timezone for dates without an offset (required on Windows)")
+		"IANA timezone for dates without an offset")
 	_ = command.MarkFlagRequired("me")
 	return command
 }

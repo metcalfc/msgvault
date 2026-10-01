@@ -2006,7 +2006,7 @@ func TestOpenAPIClientArtifactUpToDate(t *testing.T) {
 	// dependencies and checksums, then run it in the temporary output directory.
 	// A versioned go run outside the module resolves a separate dependency graph
 	// and can fail on checksum-service requests during an otherwise local test.
-	generator := filepath.Join(tmpRoot, "oapi-codegen.exe")
+	generator := filepath.Join(tmpRoot, "oapi-codegen")
 	cmd := exec.Command("go", "build", "-modfile=../../tools/oapi-codegen/go.mod", "-o", generator,
 		"github.com/doordash-oss/oapi-codegen-dd/v3/cmd/oapi-codegen")
 	cmd.Env = append(os.Environ(), "GOWORK=off")

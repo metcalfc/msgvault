@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -145,9 +144,6 @@ func TestStoreAttachmentPreservesMIMEOccurrenceEvidence(t *testing.T) {
 
 func TestStoreAttachment_StatError_DoesNotUpsertRow(t *testing.T) {
 	require := require.New(t)
-	if runtime.GOOS == "windows" {
-		t.Skip("requires symlink support")
-	}
 
 	tmp := t.TempDir()
 

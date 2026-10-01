@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -122,14 +121,12 @@ func TestTokenManagerSaveUsesSecureNamedFile(t *testing.T) {
 	require.True(ok, "stored credential JSON access_token is not a string")
 	assert.Equal(sha256.Sum256([]byte(record.AccessToken())), sha256.Sum256([]byte(storedToken)))
 
-	if runtime.GOOS != "windows" {
-		info, err := os.Stat(path)
-		require.NoError(err)
-		assert.Equal(os.FileMode(0600), info.Mode().Perm())
-		dirInfo, err := os.Stat(dir)
-		require.NoError(err)
-		assert.Equal(os.FileMode(0700), dirInfo.Mode().Perm())
-	}
+	info, err := os.Stat(path)
+	require.NoError(err)
+	assert.Equal(os.FileMode(0600), info.Mode().Perm())
+	dirInfo, err := os.Stat(dir)
+	require.NoError(err)
+	assert.Equal(os.FileMode(0700), dirInfo.Mode().Perm())
 }
 
 func TestTokenManagerResolveNamedBinding(t *testing.T) {

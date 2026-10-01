@@ -18,8 +18,6 @@ func openSystemTarget(ctx context.Context, target string) error {
 		command, args = "open", []string{target}
 	case "linux", "freebsd", "openbsd", "netbsd":
 		command, args = "xdg-open", []string{target}
-	case "windows":
-		command, args = "rundll32", []string{"url.dll,FileProtocolHandler", target}
 	default:
 		return fmt.Errorf("opening attachments is unsupported on %s", runtime.GOOS)
 	}

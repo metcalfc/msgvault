@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,10 +27,7 @@ func TestImportMaildirPreservesRawAndMergesFolders(t *testing.T) {
 	maildirFixture(t, filepath.Join(root, ".Archive"))
 	raw := []byte("From: alice@example.com\r\nTo: bob@example.com\r\nSubject: Maildir message\r\nMessage-ID: <one@example.com>\r\n\r\nArchive me.\r\n")
 	seenName := "one:2,S"
-	if runtime.GOOS == "windows" {
-		// Colons select alternate data streams on Windows, not regular files.
-		seenName = "one-seen"
-	}
+
 	for _, path := range []string{"new/one", filepath.Join(".Archive", "cur", seenName)} {
 		require.NoError(os.WriteFile(filepath.Join(root, path), raw, 0600))
 	}
@@ -160,9 +156,7 @@ func TestImportMaildirFolderNamedLikeFlagLabel(t *testing.T) {
 	maildirFixture(t, root)
 	maildirFixture(t, filepath.Join(root, ".TRASH"))
 	trashedName := "one:2,T"
-	if runtime.GOOS == "windows" {
-		trashedName = "one-trashed"
-	}
+
 	raw := []byte("From: alice@example.com\r\nSubject: trashed\r\n\r\nbody\r\n")
 	require.NoError(os.WriteFile(filepath.Join(root, ".TRASH", "cur", trashedName), raw, 0600))
 	summary, err := ImportMaildir(t.Context(), st, root, MaildirImportOptions{Identifier: "alice@example.com"})

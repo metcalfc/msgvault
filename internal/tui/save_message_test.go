@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -37,9 +36,9 @@ func TestSaveMessageKeyWritesRawEmailWithoutOverwriting(t *testing.T) {
 	assert.Equal("keep me", string(original))
 	info, err := os.Stat("message-42_1.eml")
 	require.NoError(err)
-	if runtime.GOOS != "windows" {
-		assert.Equal(os.FileMode(0o600), info.Mode().Perm())
-	}
+
+	assert.Equal(os.FileMode(0o600), info.Mode().Perm())
+
 	finished, _ := updated.Update(result)
 	saved := asModel(t, finished)
 	assert.False(saved.loading)

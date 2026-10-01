@@ -998,10 +998,7 @@ func (execCommandStarter) Start(
 	command := exec.Command(executable.verifiedPath, args...) //nolint:gosec // The gate owns this absolute private snapshot.
 	command.Env = slices.Clone(env)
 	command.Dir = dir
-	processTree, err := newCodexAppServerProcessTree(command)
-	if err != nil {
-		return nil, err
-	}
+	processTree := newCodexAppServerProcessTree(command)
 	processTreeOwned := true
 	defer func() {
 		if processTreeOwned {

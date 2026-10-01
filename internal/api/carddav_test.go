@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -73,11 +72,11 @@ func TestCardDAVAccountSaveDiscoversBeforePublishingConfigAndCredential(t *testi
 	password, err := carddav.LoadPassword(cfg.TokensDir())
 	require.NoError(err)
 	assert.Equal("synthetic-password", password)
-	if runtime.GOOS != "windows" {
-		info, statErr := os.Stat(filepath.Join(cfg.TokensDir(), "carddav.json"))
-		require.NoError(statErr)
-		assert.Equal(os.FileMode(0o600), info.Mode().Perm())
-	}
+
+	info, statErr := os.Stat(filepath.Join(cfg.TokensDir(), "carddav.json"))
+	require.NoError(statErr)
+	assert.Equal(os.FileMode(0o600), info.Mode().Perm())
+
 	assert.NoFileExists(filepath.Join(home, "tokens", "carddav.json"))
 	content, err := os.ReadFile(cfg.ConfigFilePath())
 	require.NoError(err)
@@ -526,9 +525,8 @@ func TestCardDAVControllerMigratesLegacyPasswordWhenDurableIdentityMatches(t *te
 	after, err := os.Stat(tokenPath)
 	require.NoError(err)
 	assert.Equal(before.Mode().Perm(), after.Mode().Perm())
-	if runtime.GOOS != "windows" {
-		assert.Equal(os.FileMode(0o600), after.Mode().Perm())
-	}
+
+	assert.Equal(os.FileMode(0o600), after.Mode().Perm())
 }
 
 func TestCardDAVControllerLeavesLegacyPasswordUnboundWhenIdentityDoesNotMatch(t *testing.T) {

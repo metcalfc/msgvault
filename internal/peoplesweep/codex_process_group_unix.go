@@ -12,9 +12,9 @@ import (
 
 type codexAppServerProcessTree struct{}
 
-func newCodexAppServerProcessTree(command *exec.Cmd) (*codexAppServerProcessTree, error) {
+func newCodexAppServerProcessTree(command *exec.Cmd) *codexAppServerProcessTree {
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	return &codexAppServerProcessTree{}, nil
+	return &codexAppServerProcessTree{}
 }
 
 func (*codexAppServerProcessTree) attach(*exec.Cmd) error { return nil }

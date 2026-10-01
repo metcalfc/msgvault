@@ -199,8 +199,6 @@ func TestRestoreConfigPinsExpectedPublishedIdentityAtFinalBoundary(t *testing.T)
 				require.NoError(t, os.Remove(path))
 				require.NoError(t, os.Symlink(target, path))
 			},
-			// Windows rejects the reparse point outright instead of resolving
-			// it; see expectedFinalBoundarySymlinkSwapError.
 			wantErr: expectedFinalBoundarySymlinkSwapError(),
 		},
 		{
@@ -381,14 +379,11 @@ func TestEditConfigSynthesizesOnlyRequestedTables(t *testing.T) {
 	require.NoError(err)
 	assert.True(after.Exists)
 	assert.Equal("[web]\ntheme = \"dark\"\n\n[integrations.tasks]\nenabled = true\n", string(after.Content))
-	if runtime.GOOS != "windows" {
-		// Unix permission enforcement. Windows security lives in the DACL,
-		// which the Windows-specific tests verify via verifyConfigOwnerOnly;
-		// Stat mode bits there are synthetic.
-		info, err := os.Stat(path)
-		require.NoError(err)
-		assert.Equal(os.FileMode(0o600), info.Mode().Perm())
-	}
+
+	// Config files must remain private to the current user.
+	info, err := os.Stat(path)
+	require.NoError(err)
+	assert.Equal(os.FileMode(0o600), info.Mode().Perm())
 }
 
 func TestEditConfigTracksArrayTableBoundaries(t *testing.T) {
@@ -547,9 +542,7 @@ answer = 42
 	checks.Contains(string(added.Content), before)
 	checks.Contains(string(added.Content), "[people.sweep.providers.beta]\n")
 	checks.Contains(string(added.Content), "credential = \"stored\"\n")
-	// Windows reports only the read-only attribute (0666 for writable files)
-	// while Unix reports the exact requested mode, so the published mode is
-	// asserted through the platform-aware sameConfigModePerm convention.
+	// Publication preserves the requested file mode.
 	checks.True(sameConfigModePerm(fs.FileMode(0o640), added.Mode),
 		"published config mode must stay 0640-equivalent, got %v", added.Mode)
 
@@ -1167,9 +1160,6 @@ func TestEditConfigMissingFileRejectsParentDirectorySwap(t *testing.T) {
 }
 
 func TestEditConfigDetectsSymlinkRetargetRace(t *testing.T) {
-	if runtime.GOOS == windowsOS {
-		t.Skip("symlink semantics differ on Windows")
-	}
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
@@ -1202,9 +1192,6 @@ func TestEditConfigDetectsSymlinkRetargetRace(t *testing.T) {
 }
 
 func TestEditConfigReleasesAuthorityAfterSuccessfulConflictRollback(t *testing.T) {
-	if runtime.GOOS == windowsOS {
-		t.Skip("symlink semantics differ on Windows")
-	}
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
@@ -1354,13 +1341,9 @@ func TestEditConfigReportsChangedWhenRollbackDirectorySyncFails(t *testing.T) {
 }
 
 func TestSameConfigModePermKeepsStrictUnixEquality(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("windows reports only the read-only attribute; see edit_mode_windows.go")
-	}
 	// Unix platforms observe real permission bits, so mode verification must
 	// stay exact there: a published 0666 config must never verify against a
-	// 0600 expectation. Windows reports only the read-only attribute and uses
-	// the equivalence in edit_mode_windows.go instead.
+	// 0600 expectation.
 	assert.False(t, sameConfigModePerm(fs.FileMode(0o600), fs.FileMode(0o666)))
 	assert.True(t, sameConfigModePerm(fs.FileMode(0o600), fs.FileMode(0o600)))
 	assert.False(t, sameConfigModePerm(fs.FileMode(0o600), fs.FileMode(0o444)))
@@ -1441,9 +1424,7 @@ func TestEditConfigPreservesDisplacedArtifactWhenConflictRollbackFails(t *testin
 
 	_, err = editConfigFile(path, snapshot.ETag, []Edit{{Key: "web.theme", Value: "dark"}}, ops)
 	require.ErrorIs(err, ErrConfigChanged)
-	// The displaced artifact keeps the candidate name on darwin/linux (native
-	// exchange) and gains a ".displaced" suffix on Windows (ReplaceFileW
-	// backup), so match both spellings.
+	// Native exchange keeps the displaced artifact at the candidate path.
 	artifacts, globErr := filepath.Glob(filepath.Join(dir, ".config-edit-*.toml.tmp*"))
 	require.NoError(globErr)
 	require.Len(artifacts, 1, "the displaced operator file must remain recoverable")
@@ -1463,8 +1444,7 @@ func TestConditionalReplaceRollbackPreservesLaterWriter(t *testing.T) {
 	require.NoError(os.WriteFile(target, beforeText, 0o600))
 	before, err := readConfigFileForEdit(target)
 	require.NoError(err)
-	// Windows snapshots do not retain a descriptor; only Unix ones must be
-	// closed here.
+	// Release the descriptor retained by the snapshot.
 	if before.retained != nil {
 		t.Cleanup(func() { require.NoError(before.retained.Close()) })
 	}
@@ -1492,8 +1472,7 @@ func TestConditionalReplaceRollbackPreservesLaterWriter(t *testing.T) {
 
 	replacement, err := conditionalReplace(target, candidate, before, replace, ReadConfigFile)
 	// Production callers release through editConfigFile's defer; calling
-	// conditionalReplace directly means releasing here, or the retained
-	// directory pins block TempDir cleanup on Windows.
+	// conditionalReplace directly means releasing the retained directory here.
 	if replacement.release != nil {
 		t.Cleanup(func() { _ = replacement.release() })
 	}
@@ -1796,9 +1775,6 @@ func TestResolveConfigTargetFailsClosedWhenOwnershipCannotBeVerified(t *testing.
 }
 
 func TestResolveConfigTargetVerifiesParentDirectorySymlinkOwnership(t *testing.T) {
-	if runtime.GOOS == windowsOS {
-		t.Skip("Unix ownership semantics")
-	}
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
@@ -1823,9 +1799,6 @@ func TestResolveConfigTargetVerifiesParentDirectorySymlinkOwnership(t *testing.T
 }
 
 func TestResolveConfigTargetAllowsVerifiedRootOwnedSystemHop(t *testing.T) {
-	if runtime.GOOS == windowsOS {
-		t.Skip("Unix ownership semantics")
-	}
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
@@ -1851,7 +1824,7 @@ func TestResolveConfigTargetAllowsVerifiedRootOwnedSystemHop(t *testing.T) {
 }
 
 func TestResolveConfigTargetRejectsIntermediateSymlinkSwapDuringInspection(t *testing.T) {
-	if runtime.GOOS == windowsOS || runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		t.Skip("path-based fallback is not used on platforms with pinned resolvers")
 	}
 	require := require.New(t)
@@ -1884,9 +1857,6 @@ func TestResolveConfigTargetRejectsIntermediateSymlinkSwapDuringInspection(t *te
 }
 
 func TestFallbackResolverRejectsRemovedSymlinkAfterReadlink(t *testing.T) {
-	if runtime.GOOS == windowsOS {
-		t.Skip("Unix symlink semantics")
-	}
 	require := require.New(t)
 	dir := t.TempDir()
 	targetDir := filepath.Join(dir, "target")
@@ -2022,9 +1992,6 @@ func TestEditConfigRejectsInvalidNotionMeetingsSchedule(t *testing.T) {
 }
 
 func TestEditConfigPreservesModeAndExistingSymlink(t *testing.T) {
-	if runtime.GOOS == windowsOS {
-		t.Skip("symlink permission semantics differ on Windows")
-	}
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
@@ -2059,9 +2026,6 @@ func TestEditConfigPreservesModeAndExistingSymlink(t *testing.T) {
 }
 
 func TestReadConfigFileRejectsUnsafeTargets(t *testing.T) {
-	if runtime.GOOS == windowsOS {
-		t.Skip("symlink semantics differ on Windows")
-	}
 	dir := t.TempDir()
 
 	t.Run("dangling symlink", func(t *testing.T) {
@@ -2094,9 +2058,6 @@ func TestLoadConfigFileParsesSnapshotBytes(t *testing.T) {
 }
 
 func TestLoadConfigFileUsesLogicalSymlinkPathForRelativeDefaults(t *testing.T) {
-	if runtime.GOOS == windowsOS {
-		t.Skip("symlink creation requires optional Windows privileges")
-	}
 	assert := assert.New(t)
 	require := require.New(t)
 	root := t.TempDir()

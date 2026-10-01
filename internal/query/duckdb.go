@@ -10,7 +10,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -40,12 +39,8 @@ func duckDBDateParam(value time.Time) string {
 // DuckDBEngine implements Engine using DuckDB for fast Parquet queries.
 // It uses a hybrid approach:
 //   - DuckDB with Parquet for fast aggregate queries
-//   - DuckDB's sqlite_scan for list queries (ListMessages, ListAccounts) — non-Windows only
+//   - DuckDB's sqlite_scan for list queries (ListMessages, ListAccounts) when the extension is available
 //   - Direct SQLite for FTS search and message body retrieval (sqlite_scan can't use FTS5)
-//
-// On Windows, the sqlite_scanner extension is not available (DuckDB's extension
-// repository does not publish MinGW builds). All SQLite queries route through
-// sqliteEngine instead.
 //
 // Deletion handling: The Python ETL excludes deleted messages (deleted_from_source_at IS NOT NULL)
 // when building Parquet files. However, messages deleted AFTER the Parquet build will still
@@ -118,7 +113,7 @@ type DuckDBEngine struct {
 type DuckDBOptions struct {
 	// DisableSQLiteScanner prevents loading the sqlite_scanner extension even
 	// on platforms where it would normally be available. This forces all SQLite
-	// queries to route through sqliteEngine, matching the Windows code path.
+	// queries to route through sqliteEngine, matching the offline fallback.
 	// Useful for testing the non-scanner code path on Linux/macOS.
 	DisableSQLiteScanner bool
 	// TempDirectory is the absolute path DuckDB may use for bounded spill.
@@ -219,12 +214,10 @@ func newDuckDBEngine(ctx context.Context, analyticsDir string, sqlitePath string
 	}
 
 	// Install and load SQLite extension if we have a SQLite path.
-	// On Windows, the sqlite_scanner extension is not available for MinGW
-	// builds — all detail queries route through sqliteEngine instead.
 	// DisableSQLiteScanner forces the same fallback on any platform (for testing).
-	// On other platforms, try to load but fall back gracefully (e.g. no internet).
+	// Fall back gracefully if the extension cannot load (e.g. no internet).
 	var hasSQLiteScanner bool
-	if sqlitePath != "" && runtime.GOOS != "windows" && !opt.DisableSQLiteScanner {
+	if sqlitePath != "" && !opt.DisableSQLiteScanner {
 		if _, err := db.ExecContext(ctx, "INSTALL sqlite; LOAD sqlite;"); err != nil {
 			log.Printf("[warn] sqlite_scanner extension unavailable, falling back to direct SQLite: %v", err)
 		} else {
@@ -557,7 +550,7 @@ func (e *DuckDBEngine) cacheValidationHitLocked(marker []byte, statSig string) b
 }
 
 // hasSQLite returns true if DuckDB's sqlite_scanner extension is loaded,
-// allowing sqlite_db.* queries. On Windows this is always false.
+// allowing sqlite_db.* queries.
 func (e *DuckDBEngine) hasSQLite() bool {
 	return e.hasSQLiteScanner
 }
@@ -2164,7 +2157,7 @@ func (e *DuckDBEngine) fetchLabelsForMessages(ctx context.Context, messages []Me
 		return nil
 	}
 
-	// Prefer direct SQLite (works on all platforms including Windows)
+	// Prefer direct SQLite when a connection is available.
 	if e.sqliteEngine != nil {
 		return e.sqliteEngine.fetchLabelsForMessages(ctx, messages)
 	}

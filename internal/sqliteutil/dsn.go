@@ -4,10 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 )
 
@@ -80,9 +78,7 @@ func ResolveDSN(dsn string) (normalizedDSN, filesystemPath string, err error) {
 	}
 
 	path = filepath.FromSlash(path)
-	if runtime.GOOS == "windows" && len(path) >= 3 && os.IsPathSeparator(path[0]) && path[2] == ':' {
-		path = path[1:]
-	}
+
 	return dsn, path, nil
 }
 

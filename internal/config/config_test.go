@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -955,11 +954,9 @@ func TestExpandPath(t *testing.T) {
 	require.NoError(t, err, "failed to get user home dir")
 
 	tests := []struct {
-		name        string
-		input       string
-		expected    string
-		unixOnly    bool // skip on Windows (uses Unix-style absolute paths)
-		windowsOnly bool // skip on non-Windows (quote stripping is Windows-only)
+		name     string
+		input    string
+		expected string
 	}{
 		{
 			name:     "empty string",
@@ -992,27 +989,9 @@ func TestExpandPath(t *testing.T) {
 			expected: filepath.Join(home, "foo"),
 		},
 		{
-			name:        "single-quoted path (Windows CMD)",
-			input:       `'C:\Users\wesmc\testing'`,
-			expected:    `C:\Users\wesmc\testing`,
-			windowsOnly: true,
-		},
-		{
-			name:        "double-quoted path (Windows CMD)",
-			input:       `"C:\Users\wesmc\testing"`,
-			expected:    `C:\Users\wesmc\testing`,
-			windowsOnly: true,
-		},
-		{
-			name:        "single-quoted tilde path",
-			input:       "'~/custom-data'",
-			expected:    filepath.Join(home, "custom-data"),
-			windowsOnly: true,
-		},
-		{
 			name:     "mismatched quotes not stripped",
-			input:    `'C:\Users\wesmc"`,
-			expected: `'C:\Users\wesmc"`,
+			input:    `'C:\Users\example"`,
+			expected: `'C:\Users\example"`,
 		},
 		{
 			name:     "single char not stripped",
@@ -1023,7 +1002,6 @@ func TestExpandPath(t *testing.T) {
 			name:     "absolute path unchanged",
 			input:    "/var/log/test",
 			expected: "/var/log/test",
-			unixOnly: true,
 		},
 		{
 			name:     "relative path unchanged",
@@ -1034,7 +1012,6 @@ func TestExpandPath(t *testing.T) {
 			name:     "tilde in middle not expanded",
 			input:    "/home/~user/foo",
 			expected: "/home/~user/foo",
-			unixOnly: true,
 		},
 		{
 			name:     "nested path after tilde",
@@ -1045,12 +1022,6 @@ func TestExpandPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.unixOnly && runtime.GOOS == "windows" {
-				t.Skip("skipping Unix-specific path test on Windows")
-			}
-			if tt.windowsOnly && runtime.GOOS != "windows" {
-				t.Skip("skipping Windows-specific path test on non-Windows")
-			}
 			assert.Equal(t, tt.expected, expandPath(tt.input), "expandPath(%q)", tt.input)
 		})
 	}
@@ -1201,7 +1172,7 @@ data_dir = "` + filepath.ToSlash(customDataDir) + `"
 	// HomeDir should be config file's directory
 	assert.Equal(tmpDir, cfg.HomeDir)
 	// DataDir should be the explicit override from config.
-	// Normalize both sides since TOML preserves forward slashes on Windows.
+	// Compare normalized filesystem paths.
 	assert.Equal(filepath.Clean(customDataDir), filepath.Clean(cfg.Data.DataDir))
 }
 
@@ -1282,9 +1253,7 @@ func TestDefaultHomeExpandsTilde(t *testing.T) {
 // permissive than 0700. This is umask-tolerant (stricter is fine).
 func assertTempDirSecured(t *testing.T, dir string) {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		return // Windows uses DACLs, not Unix permission bits
-	}
+
 	info, err := os.Stat(dir)
 	require.NoError(t, err, "Stat temp dir")
 	got := info.Mode().Perm()
@@ -1332,10 +1301,6 @@ func TestMkTempDir(t *testing.T) {
 	})
 
 	t.Run("falls back to msgvault home when system temp is unavailable", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("cannot make system temp dir unwritable on Windows")
-		}
-
 		// Create a restricted temp dir so os.MkdirTemp("", ...) fails
 		restrictedTmp := t.TempDir()
 		require.NoError(t, os.Chmod(restrictedTmp, 0o500), "chmod failed")
@@ -1382,7 +1347,7 @@ func TestLoadBackslashErrorHint(t *testing.T) {
 		{
 			name: "unicode escape (backslash U)",
 			// \U is a TOML Unicode escape expecting 8 hex digits → "hexadecimal digits" error
-			content: "[data]\ndata_dir = \"C:\\Users\\wesmc\\msgvault\"\n",
+			content: "[data]\ndata_dir = \"C:\\Users\\example\\msgvault\"\n",
 		},
 	}
 
@@ -1583,10 +1548,8 @@ func TestConfigFileModeOnSave(t *testing.T) {
 	require.NoError(t, err, "Stat config")
 
 	// The config may contain provider API tokens, so its Unix mode must be exact.
-	// Windows doesn't support Unix file permissions.
-	if runtime.GOOS != "windows" {
-		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
-	}
+
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }
 
 func TestSaveCreatesMissingCustomConfigDirectories(t *testing.T) {
@@ -1603,9 +1566,6 @@ func TestSaveCreatesMissingCustomConfigDirectories(t *testing.T) {
 
 func TestSave_TightensWeakPermissions(t *testing.T) {
 	require := require.New(t)
-	if runtime.GOOS == "windows" {
-		t.Skip("Unix file permissions not supported on Windows")
-	}
 
 	tmpDir := t.TempDir()
 	cfg := NewDefaultConfig()
@@ -1623,10 +1583,6 @@ func TestSave_TightensWeakPermissions(t *testing.T) {
 }
 
 func TestSave_FollowsSymlink(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlinks require elevated privileges on Windows")
-	}
-
 	t.Run("absolute target", func(t *testing.T) {
 		require := require.New(t)
 		assert := assert.New(t)
@@ -1686,9 +1642,6 @@ func TestSave_FollowsSymlink(t *testing.T) {
 func TestSave_FailurePreservesExisting(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	if runtime.GOOS == "windows" {
-		t.Skip("cannot make directory unwritable on Windows")
-	}
 
 	tmpDir := t.TempDir()
 

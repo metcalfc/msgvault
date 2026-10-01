@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -2097,9 +2096,7 @@ func TestDaemonCLIRunCannotUseServerRemoteDeleteConfigOrEnvironment(t *testing.T
 	repoRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
 	require.NoError(err)
 	binaryName := "msgvault"
-	if runtime.GOOS == "windows" {
-		binaryName += ".exe"
-	}
+
 	binaryPath := filepath.Join(t.TempDir(), binaryName)
 	build := exec.Command("go", "build", "-tags", "fts5 sqlite_vec", "-o", binaryPath, "./cmd/msgvault")
 	build.Dir = repoRoot

@@ -188,7 +188,7 @@ func snapshotCodexExecutable(sourcePath string) (_ *verifiedCodexExecutable, _ s
 	if err != nil {
 		return nil, "", errors.New("create verified codex executable root")
 	}
-	verified := &verifiedCodexExecutable{root: root, path: filepath.Join(root, codexSnapshotFilename(sourcePath))}
+	verified := &verifiedCodexExecutable{root: root, path: filepath.Join(root, "codex")}
 	keep := false
 	defer func() {
 		if !keep {
@@ -225,13 +225,6 @@ func validReleasedCodexAttestation(key CodexReleaseKey, released CodexAttestatio
 		safeCodexVersion(released.Version) &&
 		released.ExecutionBoundary != "" && released.ExecutionBoundary == key.ExecutionBoundary &&
 		released.LaunchArtifact == CodexLaunchArtifactNativeStandaloneV1
-}
-
-func codexSnapshotFilename(sourcePath string) string {
-	if strings.EqualFold(filepath.Ext(sourcePath), ".exe") {
-		return "codex.exe"
-	}
-	return "codex"
 }
 
 func resolveCodexExecutable(executable string) (string, error) {

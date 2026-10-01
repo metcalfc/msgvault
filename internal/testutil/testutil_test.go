@@ -2,7 +2,6 @@ package testutil
 
 import (
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -36,9 +35,9 @@ func validRelativePaths() []string {
 	}
 	// "…." (four dots) is valid on Unix but Windows strips trailing dots,
 	// treating it like ".." which escapes the directory.
-	if runtime.GOOS != "windows" {
-		paths = append(paths, "....") // four dots - valid filename, not parent escape
-	}
+
+	paths = append(paths, "....") // four dots - valid filename, not parent escape
+
 	return paths
 }
 

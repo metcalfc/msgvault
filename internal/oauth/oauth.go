@@ -1147,8 +1147,6 @@ func openBrowser(ctx context.Context, rawURL string) error {
 		cmd = exec.CommandContext(ctx, "open", rawURL) //nolint:gosec // rawURL passed validateBrowserURL above
 	case "linux":
 		cmd = exec.CommandContext(ctx, "xdg-open", rawURL) //nolint:gosec // rawURL passed validateBrowserURL above
-	case "windows":
-		cmd = exec.CommandContext(ctx, "rundll32", "url.dll,FileProtocolHandler", rawURL) //nolint:gosec // rawURL passed validateBrowserURL above
 	default:
 		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}

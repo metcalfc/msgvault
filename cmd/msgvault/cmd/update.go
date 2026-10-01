@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -238,8 +237,5 @@ func restartDaemonAfterUpdate(c *config.Config, result updateDaemonStopResult, e
 }
 
 func updateExecutableName() string {
-	if runtime.GOOS == "windows" {
-		return "msgvault.exe"
-	}
 	return daemonService
 }

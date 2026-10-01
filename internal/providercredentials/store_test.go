@@ -3,7 +3,6 @@ package providercredentials
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -23,14 +22,13 @@ func TestStoreUsesOwnerOnlyAtomicPublicationAndSeparateETag(t *testing.T) {
 		"https://embeddings.example.test/v1", "stored-secret")
 	requirements.NoError(err)
 	assertions.NotEqual(empty.ETag, written.ETag)
-	if runtime.GOOS != "windows" {
-		dirInfo, statErr := os.Stat(dir)
-		requirements.NoError(statErr)
-		assertions.Equal(os.FileMode(0o700), dirInfo.Mode().Perm())
-		fileInfo, statErr := os.Stat(filepath.Join(dir, Filename))
-		requirements.NoError(statErr)
-		assertions.Equal(os.FileMode(0o600), fileInfo.Mode().Perm())
-	}
+
+	dirInfo, statErr := os.Stat(dir)
+	requirements.NoError(statErr)
+	assertions.Equal(os.FileMode(0o700), dirInfo.Mode().Perm())
+	fileInfo, statErr := os.Stat(filepath.Join(dir, Filename))
+	requirements.NoError(statErr)
+	assertions.Equal(os.FileMode(0o600), fileInfo.Mode().Perm())
 
 	loaded, err := Read(dir)
 	requirements.NoError(err)
@@ -129,9 +127,6 @@ func TestEndpointOriginRejectsMalformedURLWithoutPanicking(t *testing.T) {
 }
 
 func TestStoreRejectsCorruptOrUnsafePublicationWithoutEnvironmentFallback(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows DACL rejection is covered by the native permission backend tests")
-	}
 	tests := []struct {
 		name    string
 		content string
@@ -158,9 +153,6 @@ func TestStoreRejectsCorruptOrUnsafePublicationWithoutEnvironmentFallback(t *tes
 }
 
 func TestStoreRejectsSymlinkAndWrongOwner(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows reparse-point and owner checks use the native DACL backend")
-	}
 	t.Run("symlink", func(t *testing.T) {
 		requirements := require.New(t)
 		dir := filepath.Join(t.TempDir(), "tokens")

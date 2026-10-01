@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -179,10 +178,7 @@ func TestImportIMazingCSVReportsLocalTimezoneResolutionFailure(t *testing.T) {
 	assert.ErrorContains(t, err, "--timezone")
 }
 
-// The omitted-timezone default is a Unix-only capability: Windows exposes no
-// dependable IANA name for the system timezone, so the resolver must refuse
-// there instead of advertising a local-IANA default it cannot honor. A
-// concrete TZ keeps the Unix branch deterministic on any host.
+// A concrete TZ makes local IANA timezone resolution deterministic.
 func TestResolveLocalTimezonePlatformContract(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -190,19 +186,11 @@ func TestResolveLocalTimezonePlatformContract(t *testing.T) {
 
 	zone, err := ResolveLocalTimezone()
 
-	if runtime.GOOS == "windows" {
-		require.Error(err)
-		require.ErrorContains(err, "Windows")
-		return
-	}
 	require.NoError(err)
 	assert.Equal("Europe/Berlin", zone)
 }
 
-// Omitted --timezone resolves the local IANA zone on Unix and is rejected on
-// Windows. Both branches are behavioral: the Unix branch runs a full import
-// with the resolved zone, and the Windows branch must fail before any
-// source, sync, or message is created.
+// Omitted --timezone resolves the local IANA zone before importing.
 func TestImportIMazingCSVOmittedTimezonePlatformContract(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -221,21 +209,6 @@ func TestImportIMazingCSVOmittedTimezonePlatformContract(t *testing.T) {
 	command.SetOut(&output)
 	command.SetErr(&output)
 	command.SetArgs([]string{"import-imazing-csv", exportDir, "--me", "+15550000001"})
-
-	if runtime.GOOS == "windows" {
-		err := command.Execute()
-		require.Error(err)
-		require.ErrorContains(err, "--timezone")
-		require.ErrorContains(err, "Windows")
-		// The omitted-timezone rejection happens before any store
-		// initialization, so proving the database file was never created is
-		// both the strictest check and free of the handle-leak and empty-
-		// schema pitfalls of opening a store just to count rows.
-		dbPath, err := cfg.DatabasePath()
-		require.NoError(err)
-		require.NoFileExists(dbPath, "a rejected timezone must fail before the database is created")
-		return
-	}
 
 	t.Setenv("TZ", "Europe/Berlin")
 	require.NoError(command.Execute())

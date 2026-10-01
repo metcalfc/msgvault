@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -72,7 +71,6 @@ const (
 	WebThemeDark          = "dark"
 	WebDensityCompact     = "compact"
 	WebDensityComfortable = "comfortable"
-	windowsOS             = "windows"
 )
 
 // WebConfig stores browser-owned defaults that do not affect the CLI or TUI.
@@ -897,7 +895,7 @@ func Load(path, homeDir string) (*Config, error) {
 		path = filepath.Join(cfg.HomeDir, "config.toml")
 	} else {
 		// Expand ~ for explicit paths (e.g. --config "~/.msgvault/config.toml"
-		// where the shell didn't expand it, or on Windows where ~ is never expanded).
+		// where the shell didn't expand it).
 		path = expandPath(path)
 	}
 
@@ -966,8 +964,8 @@ func decodeConfig(cfg *Config, path string, explicit, homeOverride bool, content
 	if err != nil {
 		if strings.Contains(err.Error(), "invalid escape") ||
 			strings.Contains(err.Error(), "hexadecimal digits after") {
-			return nil, fmt.Errorf("decode config: %w -- hint: Windows paths in TOML must use "+
-				"forward slashes (C:/Games/msgvault) or single quotes ('C:\\Games\\msgvault')", err)
+			return nil, fmt.Errorf("decode config: %w -- hint: paths in TOML must use "+
+				"forward slashes or single quotes for literal strings", err)
 		}
 		return nil, fmt.Errorf("decode config: %w", err)
 	}
@@ -1305,13 +1303,7 @@ func (c *Config) saveWithHooks(hooks configSaveHooks) error {
 	if err := ensureConfigParentDirectories(c.ConfigFilePath()); err != nil {
 		return err
 	}
-	path, pathRelease, err := prepareConfigSavePath(c.ConfigFilePath())
-	if err != nil {
-		return fmt.Errorf("validate config path: %w", err)
-	}
-	if pathRelease != nil {
-		defer func() { _ = pathRelease() }()
-	}
+	path := prepareConfigSavePath(c.ConfigFilePath())
 
 	dir := filepath.Dir(path)
 	created, err := createConfigCandidate(dir)
@@ -1922,7 +1914,7 @@ func (c *Config) ScheduledSynctechSMSSources() []SynctechSMSSource {
 }
 
 // MkTempDir creates a temporary directory with fallback logic for restricted
-// environments (e.g. Windows where %TEMP% may be inaccessible due to
+// environments (e.g. where the system temp directory is inaccessible due to
 // permissions, antivirus, or group policy).
 //
 // It tries the following locations in order:
@@ -1966,8 +1958,7 @@ func MkTempDir(pattern string, preferredDirs ...string) (string, error) {
 }
 
 // secureTempDir applies owner-only permissions to a temp directory created by
-// os.MkdirTemp, which uses default permissions. On Windows, this also sets an
-// owner-only DACL. Failures are logged but non-fatal.
+// os.MkdirTemp. Failures are logged but non-fatal.
 func secureTempDir(dir string) {
 	if err := fileutil.SecureChmod(dir, 0700); err != nil {
 		slog.Warn("failed to secure temp directory permissions", "path", dir, "err", err)
@@ -1985,20 +1976,11 @@ func resolveRelative(path, base string) string {
 
 // expandPath expands ~ to the user's home directory.
 // Only expands paths that are exactly "~" or start with "~/".
-// It also strips surrounding single or double quotes, which Windows CMD
-// passes through literally (unlike Unix shells which strip them).
 func expandPath(path string) string {
 	if path == "" {
 		return path
 	}
-	// Strip surrounding quotes left by Windows CMD (e.g. --home 'C:\Users\foo').
-	// Only on Windows — Unix shells strip quotes before the process sees them,
-	// and literal quote characters in Unix paths are valid (if unusual).
-	if runtime.GOOS == windowsOS && len(path) >= 2 &&
-		((path[0] == '\'' && path[len(path)-1] == '\'') ||
-			(path[0] == '"' && path[len(path)-1] == '"')) {
-		path = path[1 : len(path)-1]
-	}
+
 	if path == "~" || strings.HasPrefix(path, "~"+string(os.PathSeparator)) || strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {

@@ -1,12 +1,6 @@
 //go:build !windows
 
-// Reverse-index disk persistence is only supported where cache files can be
-// secured with Unix permission and ownership semantics; on Windows every
-// persistence path fails closed with ErrDiskCacheSecurityUnsupported (see
-// index_security_windows.go). These tests assert persistence round-trips,
-// persistence-derived status reasons, and Unix file modes, so they run on
-// Unix lanes only; index_security_windows_test.go covers the Windows
-// contract.
+// These tests exercise reverse-index persistence and Unix file security.
 
 package tasklinks
 

@@ -2065,9 +2065,9 @@ func identityColumns(columns ...string) map[string]bool {
 
 func openCacheSourceSnapshot(duckDB *sql.DB, dbPath string) (*cacheSourceSnapshot, error) {
 	// MSGVAULT_FORCE_CSV_SNAPSHOT lets tests exercise the CSV fallback that
-	// Windows and macOS always use, so drift between the COPY queries and the
-	// CSV views fails on every platform instead of only on Windows CI.
-	if cacheSnapshotGOOS != "windows" && cacheSnapshotGOOS != "darwin" &&
+	// macOS always uses, so drift between the COPY queries and CSV views
+	// fails on every platform.
+	if cacheSnapshotGOOS != "darwin" &&
 		os.Getenv("MSGVAULT_FORCE_CSV_SNAPSHOT") == "" {
 		// Try sqlite_scanner; fall back to CSV when the extension is unavailable
 		// (for example in an air-gapped installation). Parallel scanner workers
@@ -2236,7 +2236,7 @@ func (s *cacheSourceSnapshot) tables() []cacheSnapshotTable {
 		// deleted_at is exported so the main COPY query can apply the
 		// `deleted_at IS NULL` filter on this path the same way it does
 		// on the sqlite_scanner path; otherwise DuckDB binds against a
-		// CSV view that lacks the column and the export fails on Windows.
+		// CSV view that lacks the column and the fallback export fails.
 		{tableMessages, "SELECT " + messageColumns + " FROM messages WHERE sent_at IS NOT NULL", messageTypes, identityColumns("source_message_id", "rfc822_message_id", "list_id")},
 		{"message_recipients", "SELECT message_id, participant_id, recipient_type, display_name, " + recipientEnvelopeColumn + ", " + recipientEnvelopePresence + " FROM message_recipients",
 			"types={'message_id': 'BIGINT', 'participant_id': 'BIGINT', 'recipient_type': 'VARCHAR', 'display_name': 'VARCHAR', 'email_address': 'VARCHAR', 'envelope_present': 'BOOLEAN'}",

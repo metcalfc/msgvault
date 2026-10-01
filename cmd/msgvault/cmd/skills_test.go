@@ -12,15 +12,11 @@ import (
 	"go.kenn.io/msgvault/internal/skills"
 )
 
-// setTestHome points os.UserHomeDir() at home for the duration of the
-// test. HOME is read on Unix; USERPROFILE is read on Windows. Setting
-// both keeps these tests platform-independent and prevents accidental
-// writes to (or deletion of) a real user's home directory when run on
-// Windows without USERPROFILE set.
+// setTestHome points os.UserHomeDir() at a temporary home so tests cannot
+// modify the user's real home directory.
 func setTestHome(t *testing.T, home string) {
 	t.Helper()
 	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
 }
 
 func TestRunSkillsInstall_DetectsAgents(t *testing.T) {

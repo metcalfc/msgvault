@@ -12,7 +12,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -3769,10 +3768,8 @@ func TestAttachmentFilePermissions(t *testing.T) {
 	require.NoError(err, "Stat(%s)", attachmentPath)
 
 	// File should have 0600 permissions (owner read/write only)
-	// Windows does not support Unix permissions.
-	if runtime.GOOS != "windows" {
-		assert.Equal(t, os.FileMode(0600), info.Mode().Perm(), "attachment file permissions")
-	}
+
+	assert.Equal(t, os.FileMode(0600), info.Mode().Perm(), "attachment file permissions")
 }
 
 // TestIncrementalSyncLabelAddAndRemoveOnExisting verifies that adding and removing

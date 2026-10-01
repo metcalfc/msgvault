@@ -10,7 +10,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -500,10 +499,6 @@ func TestResolveMboxExport_Zip_ReturnsAbsolutePathsWhenImportsDirRelative(t *tes
 }
 
 func TestResolveMboxExport_Zip_RejectsSymlinkedImportsDir(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires symlink support")
-	}
-
 	tmp := t.TempDir()
 
 	zipPath := filepath.Join(tmp, "export.zip")
@@ -536,10 +531,6 @@ func TestResolveMboxExport_RejectsNonRegularFile(t *testing.T) {
 }
 
 func TestExtractMboxFromZip_RejectsSymlinkExtractDir(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires symlink support")
-	}
-
 	tmp := t.TempDir()
 
 	zipPath := filepath.Join(tmp, "export.zip")
@@ -561,9 +552,6 @@ func TestExtractMboxFromZip_RejectsSymlinkExtractDir(t *testing.T) {
 func TestExtractMboxFromZip_DoesNotWriteThroughPreExistingSymlink(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	if runtime.GOOS == "windows" {
-		t.Skip("requires symlink support")
-	}
 
 	tmp := t.TempDir()
 
@@ -602,9 +590,6 @@ func TestExtractMboxFromZip_DoesNotWriteThroughPreExistingSymlink(t *testing.T) 
 func TestExtractMboxFromZip_CachedExtractionRejectsSymlinkedFiles(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	if runtime.GOOS == "windows" {
-		t.Skip("requires symlink support")
-	}
 
 	tmp := t.TempDir()
 

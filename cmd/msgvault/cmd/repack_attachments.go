@@ -35,7 +35,7 @@ func newRepackAttachmentsCmd() *cobra.Command {
 
 This command always runs in the msgvault daemon so it can atomically swap live
 blob mappings and retire the daemon's shared pack readers before deleting old
-files. It is safe to retry after interruption or a Windows file-sharing error.`,
+files. It is safe to retry after interruption or a file-access error.`,
 		Args: cobra.NoArgs,
 		RunE: runDaemonCLICommandHTTPFromCobra,
 	}

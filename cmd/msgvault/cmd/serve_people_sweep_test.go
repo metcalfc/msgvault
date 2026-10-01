@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -49,18 +48,14 @@ func TestProductionPersonSweepCodexUsesReleasedIsolationGate(t *testing.T) {
 	must := require.New(t)
 	var marker string
 	var executable string
-	if runtime.GOOS == "windows" {
-		var err error
-		executable, err = os.Executable()
-		must.NoError(err)
-	} else {
-		marker = filepath.Join(t.TempDir(), "app-server-started")
-		executable = filepath.Join(t.TempDir(), "codex-production-fixture")
-		must.NoError(os.WriteFile(executable, []byte(
-			"#!/bin/sh\nif test \"$1\" = '--version'; then printf 'codex-cli 0.149.0\\n'; exit 0; fi\n"+
-				"printf started > '"+marker+"'\n",
-		), 0o700))
-	}
+
+	marker = filepath.Join(t.TempDir(), "app-server-started")
+	executable = filepath.Join(t.TempDir(), "codex-production-fixture")
+	must.NoError(os.WriteFile(executable, []byte(
+		"#!/bin/sh\nif test \"$1\" = '--version'; then printf 'codex-cli 0.149.0\\n'; exit 0; fi\n"+
+			"printf started > '"+marker+"'\n",
+	), 0o700))
+
 	config := commandCodexConfig()
 	mutateConfiguredPersonProvider(&config, func(provider *peoplesweep.ProviderConfig) {
 		provider.Executable = executable

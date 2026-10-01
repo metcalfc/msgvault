@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -346,12 +345,9 @@ func TestAttachmentsToDir_FilePermissions(t *testing.T) {
 	result := AttachmentsToDir(outputDir, attachDir, inputs)
 	require.Len(t, result.Files, 1, "expected 1 file")
 
-	// Windows does not support Unix permissions.
-	if runtime.GOOS != "windows" {
-		info, err := os.Stat(result.Files[0].Path)
-		require.NoError(t, err)
-		assert.Equal(t, os.FileMode(0600), info.Mode().Perm(), "file permissions")
-	}
+	info, err := os.Stat(result.Files[0].Path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0600), info.Mode().Perm(), "file permissions")
 }
 
 func TestAttachmentsToDir_DiskConflict(t *testing.T) {
@@ -387,11 +383,9 @@ func TestCreateExclusiveFile(t *testing.T) {
 		require.NoError(t, err)
 		_ = f.Close()
 		assert.Equal(t, p, path, "path")
-		// Windows does not support Unix permissions.
-		if runtime.GOOS != "windows" {
-			info, _ := os.Stat(path)
-			assert.Equal(t, os.FileMode(0600), info.Mode().Perm(), "permissions")
-		}
+
+		info, _ := os.Stat(path)
+		assert.Equal(t, os.FileMode(0600), info.Mode().Perm(), "permissions")
 	})
 
 	t.Run("conflict appends suffix", func(t *testing.T) {

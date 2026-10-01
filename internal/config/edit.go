@@ -383,8 +383,8 @@ func editConfigWithMatch(
 	}
 	before, err := readInitial(path)
 	if err != nil && configParentIsMissing(path) {
-		// Windows cannot snapshot a missing final parent. Do not create it
-		// until the caller has proved knowledge of the empty snapshot ETag.
+		// Do not create a missing parent until the caller has proved knowledge
+		// of the empty snapshot ETag.
 		if ifMatch == "" || ifMatch != configETag(nil) {
 			return ConfigFile{}, fmt.Errorf("%w: current ETag is %s", ErrConfigConflict, configETag(nil))
 		}

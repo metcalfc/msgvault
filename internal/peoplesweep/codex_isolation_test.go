@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -80,9 +79,7 @@ func buildCodexIsolationExecutableFixture(
 ) (string, []byte) {
 	t.Helper()
 	filename := "codex-fixture"
-	if runtime.GOOS == "windows" {
-		filename += ".exe"
-	}
+
 	path := filepath.Join(t.TempDir(), filename)
 	linkerValues := []string{
 		"-X=main.versionBase64=" + base64.StdEncoding.EncodeToString([]byte(fixture.version)),
@@ -193,9 +190,6 @@ func TestCodexRegistryCheckPrecedesVersionExecution(t *testing.T) {
 // blessing a shebang, shim, or other launcher whose interpreter/resources are
 // outside the verified snapshot.
 func TestCodexRegisteredScriptIsNotAReleasableArtifact(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows has no native shebang execution contract")
-	}
 	marker := filepath.Join(t.TempDir(), "registered-script-ran")
 	executable, contents := writeCodexIsolationFixture(t,
 		"printf invoked > '"+marker+"'\nprintf 'codex-cli 0.149.0\\n'\n")
@@ -441,9 +435,7 @@ func TestCodexProxySeamDeniesBeforeProcessStart(t *testing.T) {
 func TestCodexLauncherRejectsUntrustedAuthHome(t *testing.T) {
 	assertChecks := assert.New(t)
 	requireChecks := require.New(t)
-	if runtime.GOOS == "windows" {
-		t.Skip("codex auth home permission gates require Unix permission bits")
-	}
+
 	executable, contents := buildCodexIsolationExecutableFixture(t, codexIsolationExecutableFixture{
 		version: codexIsolationFixtureVersion,
 	})

@@ -1,9 +1,6 @@
 //go:build !windows
 
-// Descriptor discovery is only supported where descriptor files can be
-// verified with Unix permission and ownership semantics; on Windows
-// descriptorFileSecurityCheck fails closed (see discovery_windows.go), so
-// these tests exercise Unix-only behavior.
+// These tests exercise descriptor discovery with Unix file security.
 
 package taskclient
 

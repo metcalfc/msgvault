@@ -218,7 +218,7 @@ linters:
 
   exclusions:
     rules:
-      # Workspace varies in Linux enrollment tests excluded from Windows builds.
+      # Workspace varies in Linux enrollment tests.
       - linters: [unparam]
         path: internal/peoplesweep/codex_app_server_test\.go
         text: "syntheticCodexAuth - workspace"

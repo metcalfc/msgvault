@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -52,9 +51,6 @@ func TestCardDAVCredentialsRoundTripInPrivateTokenFile(t *testing.T) {
 	password, err := LoadPassword(testCredentialTokenDir(home))
 	require.NoError(err)
 	assert.Equal("replacement-secret", password)
-	if runtime.GOOS == "windows" {
-		return
-	}
 
 	path := filepath.Join(home, "tokens", "carddav.json")
 	info, err := os.Stat(path)
@@ -120,9 +116,6 @@ func TestCardDAVCredentialsRejectExposedTokenFile(t *testing.T) {
 }
 
 func TestCardDAVCredentialsRequireUnixTokenMode0600(t *testing.T) {
-	if os.PathSeparator == '\\' {
-		t.Skip("Windows token privacy is verified from the DACL")
-	}
 	home := t.TempDir()
 	require.NoError(t, SavePassword(testCredentialTokenDir(home), "secret"))
 	path := filepath.Join(home, "tokens", cardDAVTokenFilename)

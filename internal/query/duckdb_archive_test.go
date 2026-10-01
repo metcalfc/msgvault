@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -107,9 +106,7 @@ func TestArchiveDuckDBEngineRestrictsSQLToAnalytics(t *testing.T) {
 		for _, target := range []string{outside, filepath.Dir(outside)} {
 			link := filepath.Join(dir, filepath.Base(target)+"-link")
 			err := os.Symlink(target, link)
-			if err != nil && runtime.GOOS == "windows" {
-				t.Skipf("symlink creation unavailable: %v", err)
-			}
+
 			require.NoError(t, err)
 			if target != outside {
 				link = filepath.Join(link, filepath.Base(outside))

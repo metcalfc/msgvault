@@ -14,7 +14,7 @@ output. Inferred compile or test failures are not findings. If the concern
 is only based on reasoning from the diff, describe the underlying behavior
 risk instead of claiming the build is broken.
 
-The Windows CSV fallback path uses \\N as a NULL sentinel (PostgreSQL
+The CSV fallback path uses \\N as a NULL sentinel (PostgreSQL
 convention) with DuckDB's nullstr option. This is an accepted design
 choice — do not flag it as a concern.
 
