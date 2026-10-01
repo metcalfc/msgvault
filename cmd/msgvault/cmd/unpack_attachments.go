@@ -14,9 +14,9 @@ import (
 var unpackAttachmentsAfterDaemonLock func()
 
 // refuseUnpackWithLiveDaemon rejects unpack while any responding daemon owns
-// the archive. A daemon's blob store holds pack files open, which blocks their
-// deletion on Windows. Any responding daemon counts, compatible with this
-// client or not. openWritableStoreAndInit takes the SQLite write lock next.
+// the archive. A daemon's blob store caches open pack readers and would keep
+// serving from packs this command removes. Any responding daemon counts,
+// compatible with this client or not. openWritableStoreAndInit takes the SQLite write lock next.
 func refuseUnpackWithLiveDaemon(dataDir string) error {
 	if findAnyDaemonRuntime(dataDir) != nil {
 		return errors.New(

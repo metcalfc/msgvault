@@ -141,9 +141,8 @@ func TestSaveMessageKeyReportsWriteFailure(t *testing.T) {
 	_, cmd := m.Update(key('s'))
 	require.NotNil(cmd)
 	// Move the destination after queuing the save, before its I/O runs. Leave
-	// with os.Chdir: t.Chdir would hold dir open, which blocks the rename on
-	// Windows. The first t.Chdir already restores the original directory.
-	require.NoError(os.Chdir(parent)) //nolint:usetesting // t.Chdir pins dir open
+	// with os.Chdir: the first t.Chdir already restores the original directory.
+	require.NoError(os.Chdir(parent)) //nolint:usetesting // first t.Chdir restores the original directory
 	moved := dir + "-moved"
 	require.NoError(os.Rename(dir, moved))
 	t.Cleanup(func() { require.NoError(os.Rename(moved, dir)) })

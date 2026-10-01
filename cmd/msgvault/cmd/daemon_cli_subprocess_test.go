@@ -16,7 +16,7 @@ import (
 
 // TestHelperProcess is a cross-platform subprocess used by the classify tests.
 // It re-execs the test binary rather than depending on an external shell (sh),
-// which may be absent on minimal Linux images and on Windows.
+// which may be absent on minimal Linux images.
 func TestHelperProcess(t *testing.T) {
 	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
 		return
@@ -71,8 +71,7 @@ func TestClassifyDaemonCLIWaitErrExitStatus(t *testing.T) {
 // TestClassifyDaemonCLIWaitErrSignalTerminated verifies a signal-terminated
 // subprocess (which also surfaces as *exec.ExitError) stays wrapped with
 // context rather than collapsing to the silent sentinel — nothing was streamed
-// to the caller for a killed process. Unix-only: Windows lacks signal exits
-// (TerminateProcess reports a normal exit code).
+// to the caller for a killed process.
 func TestClassifyDaemonCLIWaitErrSignalTerminated(t *testing.T) {
 	require := require.New(t)
 

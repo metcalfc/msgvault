@@ -5,8 +5,7 @@ description: Build, test, lint, and code conventions.
 
 ## Build
 
-This fork supports macOS and Linux. Native Windows builds and CI are no longer
-maintained.
+This fork supports macOS and Linux.
 
 The macOS and Linux builds require Go 1.27+, Bun 1.3.14+, Node.js (20.19+ on
 20.x, 22.13+ on 22.x, or 24+), and a C/C++ compiler. The Make targets install

@@ -1,5 +1,3 @@
-//go:build !windows
-
 // These tests exercise descriptor discovery with Unix file security.
 
 package taskclient

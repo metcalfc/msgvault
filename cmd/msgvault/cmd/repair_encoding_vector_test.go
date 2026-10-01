@@ -69,8 +69,7 @@ func TestRepairResetEmbeddings_OpensBackendBeforeResettingEmbedGen(t *testing.T)
 		err, "store.Open")
 
 	// Close the store LAST (registered first → LIFO) so the backend that
-	// borrows s.DB() closes before it, and the open msgvault.db handle does not
-	// block t.TempDir() cleanup on Windows.
+	// borrows s.DB() closes before it.
 	t.Cleanup(func() { _ = s.Close() })
 	require.NoError(
 		s.InitSchema(), "InitSchema")

@@ -1264,8 +1264,6 @@ func TestBuildCache_IncrementalExport(t *testing.T) {
 
 	countRows := func(pattern string) int64 {
 		var count int64
-		// Use forward slashes for DuckDB glob patterns (backslashes fail on Windows)
-		pattern = filepath.ToSlash(pattern)
 		require.NoError(duckdb.QueryRow("SELECT COUNT(*) FROM read_parquet('"+pattern+"')").Scan(&count), "count %s", pattern)
 		return count
 	}

@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -155,17 +154,9 @@ func TestRestoreCompatFixture(t *testing.T) {
 	assert.Zero(res.LooseAttachmentBlobs)
 	assert.Positive(res.AttachmentPacks)
 
-	// Mirror the engine's sqliteURIDSN shape: absolute, slash-separated,
-	// slash-rooted — a raw Windows drive-letter path would otherwise be
-	// misparsed as a URI authority.
-	dbURIPath := res.DBPath
-	if abs, err := filepath.Abs(dbURIPath); err == nil {
-		dbURIPath = abs
-	}
-	dbURIPath = filepath.ToSlash(dbURIPath)
-	if !strings.HasPrefix(dbURIPath, "/") {
-		dbURIPath = "/" + dbURIPath
-	}
+	// Mirror the engine's sqliteURIDSN shape: an absolute path.
+	dbURIPath, err := filepath.Abs(res.DBPath)
+	require.NoError(err)
 	dsn := (&url.URL{
 		Scheme:   "file",
 		Path:     dbURIPath,

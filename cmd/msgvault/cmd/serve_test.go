@@ -253,9 +253,8 @@ func TestStoreAPIAdapterDeletePersonRejectsRecordedAttemptKeyMismatch(t *testing
 // serveLifecycleTestTimeout bounds waits for daemon-startup milestones (API
 // seam entered, analytics build started, health ready). Every use is a
 // positive wait, so the value only stretches the failure path — passing runs
-// are unaffected. It must absorb a full InitSchema on the slowest CI
-// environment: the sharded Windows runner has been observed taking over two
-// minutes to execute schema.sql under filesystem load.
+// are unaffected. It must absorb a full InitSchema on a CI runner under heavy
+// filesystem load, where executing schema.sql can take minutes.
 const serveLifecycleTestTimeout = 180 * time.Second
 
 func TestServeConfigParsing(t *testing.T) {
@@ -517,8 +516,8 @@ func TestRunServeAutoSelectsAPIPortWhenUnconfigured(t *testing.T) {
 
 	// Discover the auto-selected port the same way clients do: through the
 	// daemon runtime record, not the configured port (which is 0).
-	// A fresh Windows runner can need more than 15 seconds to initialize the
-	// full schema while the CLI package shards compete for CPU and disk I/O.
+	// A loaded CI runner can need more than 15 seconds to initialize the full
+	// schema while the CLI package shards compete for CPU and disk I/O.
 	// This test checks port discovery, not startup performance.
 	rt, ready, err := waitForDaemonRuntime(ctx, dataDir, 45*time.Second, daemonRuntimeReady, errCh)
 	require.NoError(err, "wait for daemon runtime record")

@@ -1,5 +1,3 @@
-//go:build !windows
-
 // Package fileutil provides file helpers with explicit permission modes.
 // Secure* helpers are thin wrappers over os.* and do not add symlink
 // traversal or TOCTOU protections.

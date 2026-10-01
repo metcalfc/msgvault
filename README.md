@@ -67,7 +67,7 @@ brew install msgvault
 
 The installer detects your OS and architecture, downloads the latest release from [GitHub Releases](https://github.com/kenn-io/msgvault/releases), verifies the SHA-256 checksum, and installs the binary. You can review the script ([bash](https://msgvault.io/install.sh)) before running, or download a release binary directly from GitHub.
 
-This fork supports macOS and Linux; native Windows support has been removed.
+This fork supports macOS and Linux.
 The installers above fetch upstream releases. To build this fork from source instead (requires **Go 1.27+**, **Bun
 1.3.14+**, **Node.js 20.19+ on 20.x, 22.13+ on 22.x, or 24+**, and a C/C++
 compiler for CGO and to statically link DuckDB; on Debian/Ubuntu also install

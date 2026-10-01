@@ -1823,39 +1823,6 @@ func TestResolveConfigTargetAllowsVerifiedRootOwnedSystemHop(t *testing.T) {
 	assert.True(exists)
 }
 
-func TestResolveConfigTargetRejectsIntermediateSymlinkSwapDuringInspection(t *testing.T) {
-	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
-		t.Skip("path-based fallback is not used on platforms with pinned resolvers")
-	}
-	require := require.New(t)
-	dir := t.TempDir()
-	firstDir := filepath.Join(dir, "first")
-	secondDir := filepath.Join(dir, "second")
-	require.NoError(os.Mkdir(firstDir, 0o700))
-	require.NoError(os.Mkdir(secondDir, 0o700))
-	first := filepath.Join(firstDir, "config.toml")
-	second := filepath.Join(secondDir, "config.toml")
-	require.NoError(os.WriteFile(first, []byte("[web]\ntheme = \"system\"\n"), 0o600))
-	require.NoError(os.WriteFile(second, []byte("[web]\ntheme = \"light\"\n"), 0o600))
-	link := filepath.Join(dir, "active")
-	require.NoError(os.Symlink("first", link))
-	euid, supported := effectiveUserID()
-	require.True(supported)
-
-	_, err := resolveOwnedSymlinksWithReadlink(filepath.Join(link, "config.toml"), func(fs.FileInfo) (uint64, bool) {
-		return euid, true
-	}, func(path string) (string, error) {
-		if filepath.Base(path) == "active" {
-			require.NoError(os.Remove(link))
-			require.NoError(os.Symlink("second", link))
-		}
-		return os.Readlink(path)
-	})
-	require.ErrorIs(err, ErrUnsafeConfigTarget)
-	assert.Equal(t, "[web]\ntheme = \"system\"\n", string(mustReadFile(t, first)))
-	assert.Equal(t, "[web]\ntheme = \"light\"\n", string(mustReadFile(t, second)))
-}
-
 func TestFallbackResolverRejectsRemovedSymlinkAfterReadlink(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()

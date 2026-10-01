@@ -963,8 +963,6 @@ func resolveConfigTargetWithOwner(path string, owner func(fs.FileInfo) (uint64, 
 
 // The resolved-path result is consumed on fallback platforms; native pinned
 // resolver builds retain this helper for identical regression coverage.
-//
-//nolint:unparam
 func resolveOwnedSymlinksWithReadlink(
 	path string,
 	owner func(fs.FileInfo) (uint64, bool),

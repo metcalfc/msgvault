@@ -23,8 +23,8 @@ func TestQuickstartConfigDoesNotEnableRemoteDeletion(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			require := require.New(t)
 			// Embedded files preserve the checkout's exact bytes. Normalize the
-			// documentation before locating its Markdown fences so Windows and
-			// Unix checkouts exercise the same real config parser path.
+			// documentation before locating its Markdown fences so LF and CRLF
+			// checkouts exercise the same real config parser path.
 			doc := strings.ReplaceAll(tc.doc, "\r\n", "\n")
 			_, fenced, found := strings.Cut(doc, "### Configuration")
 			require.True(found, "quickstart must contain a Configuration section")

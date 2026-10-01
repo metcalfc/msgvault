@@ -956,9 +956,8 @@ func finishCodexProcess(
 
 func scrubCodexEnvironment(environment []string) []string {
 	allowed := map[string]struct{}{
-		"PATH": {}, "HOME": {}, "USERPROFILE": {}, "CODEX_HOME": {}, "XDG_CONFIG_HOME": {},
-		"TMPDIR": {}, "TMP": {}, "TEMP": {}, "SystemRoot": {}, "SYSTEMROOT": {},
-		"WINDIR": {}, "COMSPEC": {}, "PATHEXT": {},
+		"PATH": {}, "HOME": {}, "CODEX_HOME": {}, "XDG_CONFIG_HOME": {},
+		"TMPDIR": {}, "TMP": {}, "TEMP": {},
 	}
 	result := make([]string, 0, len(allowed))
 	seen := make(map[string]struct{}, len(allowed))

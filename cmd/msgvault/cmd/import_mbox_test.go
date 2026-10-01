@@ -128,7 +128,8 @@ func TestResolveMboxExport_ZipExtractsAndCaches(t *testing.T) {
 	require := require.New(t)
 	tmp := t.TempDir()
 
-	// Resolve symlinks / 8.3 short names so path comparisons work on Windows.
+	// Resolve symlinks (macOS temp dirs live under /var -> /private/var) so
+	// path comparisons match the extracted paths.
 	evalTmp, err := filepath.EvalSymlinks(tmp)
 	require.NoError(err, "eval symlinks")
 
@@ -489,9 +490,7 @@ func TestResolveMboxExport_Zip_ReturnsAbsolutePathsWhenImportsDirRelative(t *tes
 	wd, err := os.Getwd()
 	require.NoError(err, "getwd")
 	importsRel, err := filepath.Rel(wd, tmp)
-	if err != nil {
-		t.Skipf("cannot make relative path (cross-drive on Windows): %v", err)
-	}
+	require.NoError(err, "relative imports path")
 	files, err := mboxzip.ResolveMboxExport(zipPath, importsRel, nil)
 	require.NoError(err, "resolveMboxExport")
 	require.Len(files, 1)

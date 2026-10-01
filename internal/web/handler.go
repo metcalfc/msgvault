@@ -30,10 +30,9 @@ const (
 )
 
 // assetContentTypes pins Content-Type headers for the embedded asset
-// extensions. mime.TypeByExtension consults OS-level tables (the registry on
-// Windows), so relying on it would let the host system change what the
-// handler serves. Values match Go's built-in table so behavior is unchanged
-// on Linux and macOS.
+// extensions. mime.TypeByExtension consults OS-level tables (such as
+// /etc/mime.types), so relying on it would let the host system change what the
+// handler serves. Values match Go's built-in table.
 var assetContentTypes = map[string]string{
 	".css":   "text/css; charset=utf-8",
 	".html":  "text/html; charset=utf-8",

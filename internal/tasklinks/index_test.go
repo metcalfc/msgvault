@@ -1,5 +1,3 @@
-//go:build !windows
-
 // These tests exercise reverse-index persistence and Unix file security.
 
 package tasklinks

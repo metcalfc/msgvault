@@ -207,8 +207,7 @@ func TestBackfillEmbedGen_PreservesActiveGenPendingReembedSignal(t *testing.T) {
 
 	// Real main DB with two live messages. Close the store via t.Cleanup
 	// (registered before the backend's, so LIFO closes the store LAST, after
-	// the backend that borrows s.DB()) — otherwise the open msgvault.db handle
-	// blocks t.TempDir() cleanup on Windows.
+	// the backend that borrows s.DB()).
 	s, err := store.Open(mainPath)
 	require.NoError(
 		err, "store.Open (rw)")

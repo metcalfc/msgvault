@@ -729,8 +729,8 @@ func TestExecutor_Execute_ResumeRetryStillFailing(t *testing.T) {
 //
 // The crash window is simulated by occupying the manifest's destination path
 // in completed/ with a directory, which fails the rename on every OS at
-// exactly the point a crash would interrupt it (unlike chmod, which does not
-// make a directory unwritable on Windows). The durable record must still hold
+// exactly the point a crash would interrupt it (unlike chmod, which a root
+// test runner bypasses). The durable record must still hold
 // the final state: with the write ordered after the move, the interrupted
 // manifest would be left serialized as in_progress with no CompletedAt.
 func TestExecutor_Finalize_TerminalFileCarriesFinalState(t *testing.T) {
@@ -801,8 +801,7 @@ func (p *onStartProgress) OnComplete(succeeded, failed int)            {}
 //
 // The write is failed by replacing the claimed in_progress file with a
 // directory once execution is under way, which defeats the atomic writer's
-// final rename on every OS (chmod does not make a directory unwritable on
-// Windows).
+// final rename on every OS (chmod would not stop a root test runner).
 func TestExecutor_Finalize_PropagatesPersistFailure(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

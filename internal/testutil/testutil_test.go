@@ -23,7 +23,7 @@ func TestNewTestStore(t *testing.T) {
 // validation and be writable. Used by TestValidateRelativePath and
 // TestWriteFileWithValidPaths.
 func validRelativePaths() []string {
-	paths := []string{
+	return []string{
 		"simple.txt",
 		"subdir/file.txt",
 		"a/b/c/deep.txt",
@@ -32,13 +32,8 @@ func validRelativePaths() []string {
 		// Paths that look like ".." but are actually valid filenames
 		"..foo",           // starts with dots but is a valid filename
 		"subdir/..hidden", // hidden-style name in subdir
+		"....",            // four dots - valid filename, not parent escape
 	}
-	// "…." (four dots) is valid on Unix but Windows strips trailing dots,
-	// treating it like ".." which escapes the directory.
-
-	paths = append(paths, "....") // four dots - valid filename, not parent escape
-
-	return paths
 }
 
 func TestWriteFileAndReadBack(t *testing.T) {

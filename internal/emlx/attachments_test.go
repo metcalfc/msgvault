@@ -269,8 +269,8 @@ func TestParseFile_PreservesCRLF(t *testing.T) {
 
 func TestParseFile_PicksSingleFileWhenNameDiffers(t *testing.T) {
 	// Apple may decode the filename differently than the raw header spells
-	// it. The encoded spelling can be invalid on Windows or exceed the
-	// filesystem's filename limit even when the decoded name is valid.
+	// it. The encoded spelling can exceed the filesystem's filename limit
+	// even when the decoded name is valid.
 	for _, tt := range []struct{ name, encoded, cached string }{
 		{"encoded", "=?utf-8?Q?Rechnung=5F1.pdf?=", "Rechnung_1.pdf"},
 		{"long_encoded", "=?utf-8?Q?" + strings.Repeat("=61", 100) + ".pdf?=", strings.Repeat("a", 100) + ".pdf"},

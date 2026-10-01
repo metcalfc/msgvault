@@ -87,11 +87,11 @@ For repositories on spinning disks or NAS shares, `--jobs 1` reads packs strictl
 Materializes a snapshot (the latest by default) into `--target` as a complete archive home — `msgvault.db`, the attachment store, and any captured extras (deletions manifests, config, tokens) at their original relative paths with their recorded file modes. Point msgvault at the restored directory, or swap it into place, to use it.
 
 By default, compatible immutable repository packs are copied directly into the
-attachment store. This avoids creating thousands of individual files,
-without skipping content verification: restore reads
-and SHA-256 verifies every selected attachment before granting the restored
-database authority to read it from a pack. An attachment is restored as a
-loose file when it exceeds the target store's configured maintenance limit, or
+attachment store, which avoids creating thousands of individual files. Content
+is still verified: restore reads and SHA-256 verifies every selected attachment
+before granting the restored database authority to read it from a pack. An
+attachment is restored as a loose file when it exceeds the target store's
+configured maintenance limit, or
 when its repository pack is structurally valid but uses an incompatible
 representation. The completed archive may therefore be packed or mixed; the
 command summary reports packed and loose counts plus aggregate fallback

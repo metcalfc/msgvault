@@ -2288,9 +2288,7 @@ func TestLoadWithBackupConfig(t *testing.T) {
 			wantZstdLevel: 0,
 		},
 		{
-			// {{REPO}} is substituted with a platform-absolute path at run
-			// time: a Unix-style "/mnt/..." literal is not absolute on
-			// Windows and would be resolved relative to the home directory.
+			// {{REPO}} is substituted with an absolute temp path at run time.
 			name: "valid populated",
 			configContent: `
 [backup]

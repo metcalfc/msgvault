@@ -276,9 +276,7 @@ func TestTokenPath_SymlinkEscape(t *testing.T) {
 	// Create a symlink inside tokensDir that points outside
 	symlinkPath := filepath.Join(tokensDir, "evil.json")
 	outsideTarget := filepath.Join(outsideDir, "evil.json")
-	if err := os.Symlink(outsideTarget, symlinkPath); err != nil {
-		t.Skipf("cannot create symlink (may require admin on Windows): %v", err)
-	}
+	require.NoError(os.Symlink(outsideTarget, symlinkPath))
 
 	mgr := &Manager{
 		config:    &oauth2.Config{Scopes: Scopes},

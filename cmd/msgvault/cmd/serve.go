@@ -317,7 +317,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	idleTracker := newDaemonIdleTracker(cfg, cancel, logger)
 	operationGate := api.NewSerialOperationGate()
 	// Closed on shutdown so cached pack readers don't hold attachment pack
-	// files open past the daemon's lifetime (blocks deletion on Windows).
+	// files open past the daemon's lifetime.
 	attachmentMaint, err := newAttachmentMaintenance(
 		s, cfg.AttachmentsDir(), logger, !cfg.Data.LooseAttachments,
 	)

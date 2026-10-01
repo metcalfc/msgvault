@@ -2649,7 +2649,6 @@ func TestExportAttachment(t *testing.T) {
 	t.Run("default destination is ~/Downloads", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
-		t.Setenv("USERPROFILE", home)
 		downloads := filepath.Join(home, "Downloads")
 		require.NoError(t, os.Mkdir(downloads, 0755), "Mkdir Downloads")
 

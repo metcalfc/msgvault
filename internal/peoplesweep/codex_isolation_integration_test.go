@@ -168,7 +168,6 @@ func TestCodexIsolationTestEnvironmentUsesOnlyDedicatedCredentialRoot(t *testing
 	ordinaryCodexHome := t.TempDir()
 	ordinaryXDGHome := t.TempDir()
 	t.Setenv("HOME", ordinaryHome)
-	t.Setenv("USERPROFILE", ordinaryHome)
 	t.Setenv("CODEX_HOME", ordinaryCodexHome)
 	t.Setenv("XDG_CONFIG_HOME", ordinaryXDGHome)
 	lookup := func(name string) (string, bool) {
@@ -181,7 +180,7 @@ func TestCodexIsolationTestEnvironmentUsesOnlyDedicatedCredentialRoot(t *testing
 	must.NoError(err)
 	configureCodexIsolationTestCredentialEnvironment(t, validated)
 	joined := strings.Join(scrubCodexEnvironment(os.Environ()), "\n")
-	for _, name := range []string{"HOME", "USERPROFILE", "CODEX_HOME", "XDG_CONFIG_HOME"} {
+	for _, name := range []string{"HOME", "CODEX_HOME", "XDG_CONFIG_HOME"} {
 		checks.Contains(joined, name+"="+validated)
 	}
 	checks.NotContains(joined, ordinaryHome)
@@ -270,7 +269,7 @@ func codexIsolationTestAuthRoot(lookup func(string) (string, bool)) (string, err
 	if err != nil || !info.IsDir() {
 		return "", errors.New("live Codex containment test auth root must be a directory")
 	}
-	for _, name := range []string{"HOME", "USERPROFILE", "CODEX_HOME", "XDG_CONFIG_HOME"} {
+	for _, name := range []string{"HOME", "CODEX_HOME", "XDG_CONFIG_HOME"} {
 		ordinary, present := lookup(name)
 		if !present || strings.TrimSpace(ordinary) == "" || !filepath.IsAbs(ordinary) {
 			continue
@@ -295,7 +294,7 @@ func pathWithinCodexIsolationRoot(path, root string) bool {
 
 func configureCodexIsolationTestCredentialEnvironment(t *testing.T, authRoot string) {
 	t.Helper()
-	for _, name := range []string{"HOME", "USERPROFILE", "CODEX_HOME", "XDG_CONFIG_HOME"} {
+	for _, name := range []string{"HOME", "CODEX_HOME", "XDG_CONFIG_HOME"} {
 		t.Setenv(name, authRoot)
 	}
 }

@@ -3436,8 +3436,8 @@ func TestCLIAttachmentServesPackedBlob(t *testing.T) {
 
 	bs, err := attachmentstore.New(store.NewPackCatalog(st), attachmentsDir)
 	require.NoError(t, err)
-	// Close cached pack readers before t.TempDir cleanup; Windows cannot
-	// delete the .mvpack file while a reader holds it open.
+	// Close cached pack readers before t.TempDir cleanup so no .mvpack file
+	// handle outlives the test.
 	t.Cleanup(func() { assert.NoError(t, bs.Close(), "close blob store") })
 
 	srv := NewServerWithOptions(ServerOptions{

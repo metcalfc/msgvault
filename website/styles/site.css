@@ -389,10 +389,6 @@ h3 {
   content: "$ ";
 }
 
-.install-row code.ps::before {
-  content: "> ";
-}
-
 .install-hint {
   margin-top: 0.75rem;
 }

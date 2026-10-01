@@ -15,8 +15,7 @@ opening an existing archive with a newer build.
 ## Install Release
 
 This fork supports macOS and Linux. The commands below install upstream
-releases; build from your fork checkout to use its changes. Native Windows
-support has been removed from this fork.
+releases; build from your fork checkout to use its changes.
 
 **macOS / Linux:**
 ```bash
