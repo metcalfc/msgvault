@@ -99,6 +99,32 @@ describe('PersonContactList', () => {
     expect(screen.queryByRole('button', { name: 'Not Ana Example — detach ana@example.com' })).toBeNull();
   });
 
+  it('never detaches a participant whose identity backs an address-book row', () => {
+    // Participant 5 has the phone the address book holds and a WhatsApp
+    // identifier; detaching the WhatsApp row would unbind the phone too.
+    setup({
+      points: [point(2, 'phone', '+1 555 010 0100')],
+      identifiers: [
+        identifier(5, 'phone', '+15550100100'),
+        { ...identifier(5, 'whatsapp', 'beeper:wa-key'), service_slug: 'whatsapp' },
+        identifier(6, 'email', 'alerts@example.com')
+      ]
+    });
+    expect(screen.getByRole('button', { name: 'Retire +1 555 010 0100 — stops syncing, keeps history' })).toBeDefined();
+    expect(screen.getAllByRole('listitem')).toHaveLength(3);
+    const detaches = screen.getAllByRole('button', { name: /^Not Ana Example — detach/ });
+    expect(detaches.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Not Ana Example — detach alerts@example.com'
+    ]);
+  });
+
+  it('names every value a detach takes with it', () => {
+    setup({ identifiers: [identifier(5, 'email', 'alerts@example.com'), identifier(5, 'email', 'builds@example.com')] });
+    expect(screen.getByRole('button', {
+      name: 'Not Ana Example — detach alerts@example.com with builds@example.com'
+    })).toBeDefined();
+  });
+
   it('offers no detach for a linked identity the person does not hold', () => {
     setup({ identifiers: [identifier(5, 'email', 'alerts@example.com'), identifier(8, 'email', 'other@example.com')] });
     expect(screen.getByRole('button', { name: 'Not Ana Example — detach alerts@example.com' })).toBeDefined();
@@ -107,7 +133,9 @@ describe('PersonContactList', () => {
   });
 
   it('retires a contact point in one click and undo adds it back with its kind, label, and type', async () => {
-    const retired = point(2, 'phone', '+1 555 010 0100', { type_label: 'cell', type_tokens: ['cell', 'voice'], pref: 1 });
+    const retired = point(2, 'phone', '+1 555 010 0100', {
+      type_label: 'cell', type_tokens: ['cell', 'voice'], pref: 1, ordinal: 3, active_from: '2025-06-01T00:00:00Z'
+    });
     const { writes, onAnnounce } = setup({ points: [retired] });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Retire +1 555 010 0100 — stops syncing, keeps history' }));
@@ -118,7 +146,7 @@ describe('PersonContactList', () => {
     });
     expect(await screen.findByRole('status')).toHaveProperty('textContent',
       'Retired +1 555 010 0100. It no longer syncs and stays under Former.');
-    expect(onAnnounce).toHaveBeenCalledWith('Retired +1 555 010 0100. It no longer syncs and stays under Former.');
+    expect(onAnnounce).not.toHaveBeenCalled();
 
     await fireEvent.click(screen.getByRole('button', { name: 'Undo: restore +1 555 010 0100' }));
     await waitFor(() => expect(writes()).toHaveLength(2));
@@ -126,7 +154,7 @@ describe('PersonContactList', () => {
       method: 'PATCH', path: '/api/v1/people/7/profile', ifMatch: '"person-7-r3"',
       body: { contact_points: { add: [{
         address_kind: 'phone', original_value: '+1 555 010 0100',
-        envelope: { source: 'carddav_import', pref: 1, type_label: 'cell', type_tokens: ['cell', 'voice'] }
+        envelope: { source: 'carddav_import', ordinal: 3, active_from: '2025-06-01T00:00:00Z', pref: 1, type_label: 'cell', type_tokens: ['cell', 'voice'] }
       }] } }
     });
     expect(await screen.findByText('Restored +1 555 010 0100.')).toBeDefined();

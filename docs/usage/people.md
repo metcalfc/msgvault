@@ -155,6 +155,11 @@ What the **×** does depends on where the row comes from:
 A row that is both an address-book value and an archive identity is retired,
 not detached, because that identity's messages belong to the person.
 
+Detaching works on whole archive identities. When one identity carries
+several values, such as a phone number and a WhatsApp account, the label
+names every value that leaves with it. An identity that also carries an
+address-book value has no detach **×**.
+
 ### Retire a value
 
 Retiring supersedes the contact point instead of deleting it:

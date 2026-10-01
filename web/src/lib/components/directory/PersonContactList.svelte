@@ -75,18 +75,29 @@
   let error = $state<string | null>(null);
   let last = $state<LastAction>();
 
+  // Participants behind an address-book row: their identity belongs to the
+  // person, so no other row may detach them.
+  const retireParticipantIDs = $derived(
+    new Set(split.current.filter((entry) => entry.contactPointIDs?.length).flatMap((entry) => entry.participantIDs)),
+  );
+
   /** A row backed by a current contact point is retired; a row that is
    * only archive identities is detached. A row with both is retired: its
-   * message history belongs to the person. */
+   * message history belongs to the person. Detach acts on whole
+   * participants, so a row whose participant also carries an address-book
+   * value gets no ×, and the label names every other value that leaves. */
   function rowAction(entry: ReachEntry): RowAction | undefined {
     if (!profileController) return undefined;
     if (entry.contactPointIDs?.length) {
       return { kind: 'retire', label: `Retire ${entry.label} — stops syncing, keeps history` };
     }
-    if (detachableIDs(entry).length > 0) {
-      return { kind: 'detach', label: `Not ${displayName} — detach ${entry.label}` };
-    }
-    return undefined;
+    const ids = detachableIDs(entry);
+    if (ids.length === 0 || ids.some((id) => retireParticipantIDs.has(id))) return undefined;
+    const alongside = [...split.current, ...split.former]
+      .filter((other) => other.key !== entry.key && other.participantIDs.some((id) => ids.includes(id)))
+      .map((other) => other.label);
+    const values = alongside.length > 0 ? `${entry.label} with ${alongside.join(', ')}` : entry.label;
+    return { kind: 'detach', label: `Not ${displayName} — detach ${values}` };
   }
 
   /** The row's participants that are bound to this person. A linked
@@ -96,10 +107,11 @@
     return entry.participantIDs.filter((id) => bound.has(id));
   }
 
+  // The status line is the one live announcement: it also holds Undo, so
+  // the page-level announcer is not used for these messages.
   function report(message: string): void {
     status = message;
     error = null;
-    onAnnounce(message);
   }
 
   function fail(message: string): void {
@@ -155,6 +167,8 @@
       ...(point.uri ? { uri: point.uri } : {}),
       envelope: {
         source: envelope.source,
+        ordinal: envelope.ordinal,
+        ...(envelope.active_from ? { active_from: envelope.active_from } : {}),
         ...(envelope.pref !== undefined ? { pref: envelope.pref } : {}),
         ...(envelope.type_label ? { type_label: envelope.type_label } : {}),
         ...(envelope.type_tokens?.length ? { type_tokens: envelope.type_tokens } : {}),
