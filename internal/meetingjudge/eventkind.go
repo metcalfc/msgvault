@@ -73,10 +73,11 @@ func EventKindFeature() jev.FeatureSpec {
 		Purpose: "Decide whether a calendar series is a one-on-one, a small working meeting, a large " +
 			"group or all-hands, an outside webinar, a personal hold, or a social event, so relationship " +
 			"rankings count a real meeting with someone more than an all-hands or a webinar they also " +
-			"attended. Series the invite list settles are decided on this machine and never sent: one " +
-			"you organized with no one else invited is a personal hold, and a timed one you organized " +
-			"with exactly one other person is a one-on-one. Email addresses and phone numbers in titles " +
-			"are replaced with [email] and [phone] before sending.",
+			"attended. Series whose invite lists settle the kind are decided on this machine and never " +
+			"sent: one where you organized every event with no one else invited is a personal hold, and " +
+			"one where every event is a timed meeting you organized with exactly one other person is a " +
+			"one-on-one. Email addresses and phone numbers in titles are replaced with [email] and " +
+			"[phone] before sending.",
 		Questions: questions,
 		StateFields: []string{
 			"events[].title",
@@ -132,8 +133,9 @@ type EventKindOptions struct {
 type EventKindReport struct {
 	Candidates  int `json:"candidates"`
 	NotMeetings int `json:"not_meetings"`
-	// Settled counts series whose invite list decided the kind locally
-	// (see StructuralKind); they are never sent.
+	// Settled counts series whose invite lists decided the kind locally
+	// (see StructuralKind); they are never sent and do not change meeting
+	// weights.
 	Settled  int                        `json:"settled"`
 	Requests int                        `json:"requests"`
 	Judged   int                        `json:"judged"`
@@ -157,33 +159,51 @@ func isStoreError(err error) bool {
 	return errors.As(err, &target)
 }
 
-// StructuralKind decides a series' kind from its invite list alone, when
-// that list leaves only one kind possible, and reports false otherwise. It
-// reads only fields calendar sync records and sends nothing.
+// StructuralKind decides a series' kind from its invite lists alone, when
+// they leave only one kind possible, and reports false otherwise. Every
+// event in the series that is not cancelled must satisfy the same rule, so
+// one edited instance never decides for the rest. It reads only fields
+// calendar sync records and sends nothing.
 //
-//   - You organized it and no one else is invited (no attendee list, or you
-//     alone): personal_hold_or_logistics. Every other kind needs another
-//     person present.
-//   - You organized a timed event, you are invited, and exactly one other
-//     person is: one_on_one. With two people it is neither a group nor a
-//     broadcast, and a hold or reminder needs no one else. A social event
-//     for two weighs the same as a one-on-one (meetingweight.Weight).
+//   - You organized every event and no one but you is invited (no attendee
+//     list, or only your own addresses): personal_hold_or_logistics. Every
+//     other kind needs another person present.
+//   - You organized every event, each is timed, you are invited, and so is
+//     exactly one other address that the archive has not classified as a
+//     mailing list, shared mailbox, automated sender, or organization:
+//     one_on_one. With two people it is neither a group nor a broadcast,
+//     and a hold or reminder needs no one else. A social event for two
+//     weighs the same as a one-on-one (meetingweight.Weight).
 //
 // An invite someone else sent is left to Jev: a webinar or marketing invite
 // can list only you and its host. So is an all-day event, which for two
-// people is as often a trip or a hold as a meeting.
+// people is as often a trip or a hold as a meeting. An unclassified list
+// address counts as one person.
 func StructuralKind(candidate store.CalendarEventKindCandidate) (meetingweight.Kind, bool) {
-	if candidate.NotAMeeting || !candidate.OrganizedByOwner {
+	if candidate.NotAMeeting || len(candidate.Shapes) == 0 {
 		return "", false
 	}
-	switch {
-	case candidate.AttendeeCount == 0,
-		candidate.AttendeeCount == 1 && candidate.OwnerInvited:
+	if everyShape(candidate.Shapes, func(shape store.CalendarEventShape) bool {
+		return shape.OrganizedByOwner && shape.Others == 0
+	}) {
 		return meetingweight.KindPersonalHoldLogistics, true
-	case candidate.AttendeeCount == meetingweight.OneOnOneAttendees && candidate.OwnerInvited && !candidate.AllDay:
+	}
+	if everyShape(candidate.Shapes, func(shape store.CalendarEventShape) bool {
+		return shape.OrganizedByOwner && !shape.AllDay && shape.OwnerInvited &&
+			shape.Others == meetingweight.OneOnOneAttendees-1 && !shape.OtherNotAPerson
+	}) {
 		return meetingweight.KindOneOnOne, true
 	}
 	return "", false
+}
+
+func everyShape(shapes []store.CalendarEventShape, rule func(store.CalendarEventShape) bool) bool {
+	for _, shape := range shapes {
+		if !rule(shape) {
+			return false
+		}
+	}
+	return true
 }
 
 // RunEventKinds classifies calendar series that have no kind yet. A series

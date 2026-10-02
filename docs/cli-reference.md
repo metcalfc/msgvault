@@ -90,9 +90,11 @@ feature is enabled, an API key resolves, and its consent is active.
    standalone event) that have no kind yet, most recent first. A series none
    of whose events is a meeting (cancelled, declined by you, an out-of-office,
    focus-time, or working-location block, or marked free) is recorded as not a
-   meeting and never sent. A series whose invite list settles its kind (you
-   organized it and are alone, or invited exactly one other person to a timed
-   event) is recorded without Jev too. With
+   meeting and never sent. A series whose invite lists settle its kind (you
+   organized every event and no one else is invited, or every event is a timed
+   meeting you organized for you and exactly one other person) is recorded
+   without Jev too; calendar sync clears that decision when the series changes.
+   These rules run even when the Jev feature is off. With
    [`[jev.meeting_event_kind]`](configuration.md#jevmeeting_event_kind) and
    `msgvault jev consent meeting_event_kind`, the rest are sent to Jev ten
    series per request. Each series is asked once.

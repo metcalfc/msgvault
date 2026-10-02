@@ -6,13 +6,17 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/meetingweight"
 )
 
-// Calendar event kind sources.
+// Calendar event kind sources. Meeting weights read only Jev kinds; a rule
+// kind marks a series as decided so it is not sent, and calendar sync
+// clears it whenever the series' events change.
 const (
 	CalendarEventKindSourceJev  = "jev"
 	CalendarEventKindSourceRule = "rule"
@@ -40,9 +44,30 @@ type CalendarEventKindCandidate struct {
 	AttendeeCount         int
 	ExternalAttendeeCount int
 	OrganizedByOwner      bool
-	// OwnerInvited reports that you are on the attendee list. It decides
-	// structural rules locally and is never sent.
+	// Shapes describes the invite list of every event in the series that is
+	// not cancelled, for rules decided locally. It is never sent.
+	Shapes []CalendarEventShape
+}
+
+// CalendarEventShape is one event's invite list, without addresses.
+type CalendarEventShape struct {
+	AllDay           bool
+	OrganizedByOwner bool
+	// OwnerInvited reports that one of your addresses is an attendee.
 	OwnerInvited bool
+	// Others counts attendees that are not one of your addresses.
+	Others int
+	// OtherNotAPerson reports that an other attendee's identity is
+	// classified as a mailing list, shared mailbox, automated sender, or
+	// organization.
+	OtherNotAPerson bool
+}
+
+// notOnePersonKinds are correspondent kinds whose address stands for more
+// than, or other than, one person.
+var notOnePersonKinds = []correspondentkind.Kind{
+	correspondentkind.MailingList, correspondentkind.SharedMailbox,
+	correspondentkind.Automated, correspondentkind.Organization,
 }
 
 // CalendarEventKind is one decided kind to store.
@@ -94,12 +119,142 @@ func (s *Store) CalendarEventKindCandidatesContext(ctx context.Context, limit in
 	if err := rows.Close(); err != nil {
 		return nil, fmt.Errorf("close calendar kind candidates: %w", err)
 	}
+	if len(candidates) == 0 {
+		return candidates, nil
+	}
+	owner, err := s.OwnerEmailAddressesContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	notOnePerson, err := s.participantsByEffectiveKindContext(ctx, func(kind correspondentkind.Kind) bool {
+		return slices.Contains(notOnePersonKinds, kind)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read correspondent kinds for calendar kinds: %w", err)
+	}
 	for i := range candidates {
 		if err := s.describeCalendarKindCandidate(ctx, &candidates[i]); err != nil {
 			return nil, err
 		}
+		if candidates[i].NotAMeeting {
+			continue
+		}
+		if err := s.shapeCalendarKindCandidate(ctx, &candidates[i], owner, notOnePerson); err != nil {
+			return nil, err
+		}
 	}
 	return candidates, nil
+}
+
+// shapeCalendarKindCandidate records the invite list of every event in the
+// series that is not cancelled. owner holds your addresses; each event's
+// calendar account address counts as yours too.
+func (s *Store) shapeCalendarKindCandidate(
+	ctx context.Context, candidate *CalendarEventKindCandidate,
+	owner map[string]struct{}, notOnePerson map[int64]correspondentkind.Kind,
+) error {
+	type eventRow struct {
+		shape   CalendarEventShape
+		account string
+	}
+	events := map[int64]*eventRow{}
+	var order []int64
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT m.id, m.metadata, m.is_from_me
+		FROM messages m
+		WHERE m.conversation_id = ? AND m.message_type = ? AND m.deleted_at IS NULL
+		ORDER BY m.id`, candidate.ConversationID, calendarEventMessageType)
+	if err != nil {
+		return fmt.Errorf("read calendar kind series events: %w", err)
+	}
+	for rows.Next() {
+		var id int64
+		var metadata sql.NullString
+		var fromMe bool
+		if err := rows.Scan(&id, &metadata, &fromMe); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan calendar kind series event: %w", err)
+		}
+		var facts calendarEventFacts
+		if metadata.Valid && strings.TrimSpace(metadata.String) != "" {
+			if json.Unmarshal([]byte(metadata.String), &facts) != nil {
+				facts = calendarEventFacts{}
+			}
+		}
+		if strings.EqualFold(strings.TrimSpace(facts.Status), "cancelled") {
+			continue
+		}
+		events[id] = &eventRow{
+			shape: CalendarEventShape{
+				AllDay: facts.AllDay, OrganizedByOwner: fromMe,
+				OwnerInvited: strings.TrimSpace(facts.OwnerResponseStatus) != "",
+			},
+			account: strings.ToLower(strings.TrimSpace(facts.AccountEmail)),
+		}
+		order = append(order, id)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("iterate calendar kind series events: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close calendar kind series events: %w", err)
+	}
+	attendees, err := s.db.QueryContext(ctx, `
+		SELECT r.message_id, p.id, COALESCE(p.email_address, '')
+		FROM message_recipients r
+		JOIN participants p ON p.id = r.participant_id
+		WHERE r.recipient_type = 'to' AND r.message_id IN (
+			SELECT m.id FROM messages m
+			WHERE m.conversation_id = ? AND m.message_type = ? AND m.deleted_at IS NULL
+		)`, candidate.ConversationID, calendarEventMessageType)
+	if err != nil {
+		return fmt.Errorf("read calendar kind series attendees: %w", err)
+	}
+	defer func() { _ = attendees.Close() }()
+	for attendees.Next() {
+		var messageID, participantID int64
+		var address string
+		if err := attendees.Scan(&messageID, &participantID, &address); err != nil {
+			return fmt.Errorf("scan calendar kind series attendee: %w", err)
+		}
+		event, ok := events[messageID]
+		if !ok {
+			continue
+		}
+		address = strings.ToLower(strings.TrimSpace(address))
+		_, yours := owner[address]
+		if yours || (address != "" && address == event.account) {
+			event.shape.OwnerInvited = true
+			continue
+		}
+		event.shape.Others++
+		if _, kinded := notOnePerson[participantID]; kinded {
+			event.shape.OtherNotAPerson = true
+		}
+	}
+	if err := attendees.Err(); err != nil {
+		return fmt.Errorf("iterate calendar kind series attendees: %w", err)
+	}
+	candidate.Shapes = make([]CalendarEventShape, 0, len(order))
+	for _, id := range order {
+		candidate.Shapes = append(candidate.Shapes, events[id].shape)
+	}
+	return nil
+}
+
+// ClearCalendarRuleKindContext forgets the rule kind of the series an event
+// belongs to, so the next event kind run decides the series again from its
+// current events. Calendar sync calls it whenever it writes an event. A Jev
+// kind is never cleared.
+func (s *Store) ClearCalendarRuleKindContext(ctx context.Context, messageID int64) error {
+	if _, err := s.db.ExecContext(ctx, `
+		DELETE FROM calendar_event_kinds
+		WHERE source = ? AND conversation_id = (SELECT conversation_id FROM messages WHERE id = ?)`,
+		CalendarEventKindSourceRule, messageID); err != nil {
+		return fmt.Errorf("clear calendar rule kind: %w", err)
+	}
+	return nil
 }
 
 type calendarEventFacts struct {
@@ -162,7 +317,6 @@ func (s *Store) describeCalendarKindCandidate(ctx context.Context, candidate *Ca
 		return nil
 	}
 	candidate.AllDay = facts.AllDay
-	candidate.OwnerInvited = strings.TrimSpace(facts.OwnerResponseStatus) != ""
 	candidate.Recurring = len(facts.Recurrence) > 0 || facts.RecurringEventID != "" || candidate.Occurrences > 1
 	if !facts.AllDay {
 		start, startErr := time.Parse(time.RFC3339, facts.Start)
@@ -208,8 +362,9 @@ func (s *Store) countCalendarKindAttendees(
 
 // WriteCalendarEventKindsContext stores kinds for conversations that have
 // none. A conversation is decided once: an existing row is never replaced.
-// It returns how many rows were written and bumps the meeting weight
-// revision when any were.
+// It returns how many rows were written. A Jev kind can change meeting
+// weights, so writing one requeues the series' activity and bumps the
+// meeting weight revision; a rule kind changes neither.
 func (s *Store) WriteCalendarEventKindsContext(ctx context.Context, kinds []CalendarEventKind) (int, error) {
 	for _, kind := range kinds {
 		if (kind.Source != CalendarEventKindSourceJev && kind.Source != CalendarEventKindSourceRule) ||
@@ -220,7 +375,7 @@ func (s *Store) WriteCalendarEventKindsContext(ctx context.Context, kinds []Cale
 	if len(kinds) == 0 {
 		return 0, nil
 	}
-	written := 0
+	written, weighed := 0, 0
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
 		for _, kind := range kinds {
 			probabilities := kind.Probabilities
@@ -252,9 +407,10 @@ func (s *Store) WriteCalendarEventKindsContext(ctx context.Context, kinds []Cale
 				return fmt.Errorf("count calendar event kind write: %w", err)
 			}
 			written += int(affected)
-			if affected == 0 {
+			if affected == 0 || kind.Source != CalendarEventKindSourceJev {
 				continue
 			}
+			weighed++
 			// The kind can make the series' events no contact at all, so
 			// requeue them for the activity projection.
 			if _, err := tx.ExecContext(ctx, `
@@ -266,7 +422,7 @@ func (s *Store) WriteCalendarEventKindsContext(ctx context.Context, kinds []Cale
 				return fmt.Errorf("requeue calendar series activity: %w", err)
 			}
 		}
-		if written == 0 {
+		if weighed == 0 {
 			return nil
 		}
 		return s.bumpMeetingWeightRevisionTx(ctx, tx)

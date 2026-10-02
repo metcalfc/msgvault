@@ -179,6 +179,11 @@ func (s *Syncer) ingestEvent(ctx context.Context, sourceID int64, cal gcal.Calen
 	if err := s.store.ReplaceMessageRecipientsContext(ctx, msgID, "to", attendeeIDs, attendeeNames); err != nil {
 		return 0, fmt.Errorf("replace to recipients: %w", err)
 	}
+	// The series' invite list may have changed, so a kind a rule decided
+	// from it is decided again.
+	if err := s.store.ClearCalendarRuleKindContext(ctx, msgID); err != nil {
+		return 0, err
+	}
 
 	// FTS: raw attendee emails go ONLY through the toAddrs column, never the
 	// body, so BM25/ts_rank doesn't double-count them and embeddings see only
@@ -212,6 +217,9 @@ func (s *Syncer) flagCancelled(ctx context.Context, sourceID int64, cal gcal.Cal
 		}
 		if err := s.store.SetMessageMetadataContext(ctx, id, merged); err != nil {
 			return 0, false, fmt.Errorf("flag cancelled metadata: %w", err)
+		}
+		if err := s.store.ClearCalendarRuleKindContext(ctx, id); err != nil {
+			return 0, false, err
 		}
 		return id, false, nil
 	}

@@ -69,8 +69,7 @@ type activityCandidateRow struct {
 	deletedAt           *time.Time
 	deletedFromSourceAt *time.Time
 	metadata            sql.NullString
-	// eventKind is the series' event kind, from Jev at or above the threshold
-	// or from a rule.
+	// eventKind is the series' Jev event kind at or above the threshold.
 	eventKind sql.NullString
 }
 
@@ -116,9 +115,9 @@ const activityCandidateStateCTE = `
 	)`
 
 // activityCandidateColumns reads, beside a calendar event, its series'
-// event kind, confident from Jev or decided by rule (calendar_event_kinds,
-// one row per conversation by primary key), so an event judged to weigh
-// nothing is no contact. Other message types never evaluate the lookup.
+// confident Jev event kind (calendar_event_kinds, one row per conversation
+// by primary key), so an event judged to weigh nothing is no contact. Other
+// message types never evaluate the lookup.
 var activityCandidateColumns = `
 	m.id, m.source_id, m.conversation_id,
 	COALESCE(c.conversation_type, ''), COALESCE(m.message_type, ''),
@@ -126,7 +125,7 @@ var activityCandidateColumns = `
 	m.deleted_at, m.deleted_from_source_at, m.metadata,
 	CASE WHEN m.message_type = '` + calendarEventMessageType + `' THEN
 	  (SELECT k.kind FROM calendar_event_kinds k
-	    WHERE k.conversation_id = m.conversation_id AND k.source IN ('jev', 'rule')
+	    WHERE k.conversation_id = m.conversation_id AND k.source = 'jev'
 	      AND k.confidence >= ` + strconv.FormatFloat(meetingweight.KindThreshold, 'f', -1, 64) + `)
 	END,
 	COALESCE(m.source_is_from_me, FALSE),

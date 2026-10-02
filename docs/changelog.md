@@ -8,12 +8,16 @@ All notable changes to msgvault, grouped by release.
 
 ## Unreleased
 
-- Meeting event kind decides a calendar series in code when its invite list
-  leaves only one kind, and never sends it to Jev: a series you organized
-  with no one else invited is a personal hold, and a timed one you organized
-  for you and exactly one other person is a one-on-one. These rules also run
-  without Jev, and their kinds set meeting weights like a confident Jev
-  judgment. Existing consent stays valid. See
+- Meeting event kind decides a calendar series in code when the invite
+  lists of all its events leave only one kind, and never sends it to Jev:
+  you organized every event with no one else invited (a personal hold), or
+  every event is a timed meeting you organized for you and exactly one other
+  person (a one-on-one). The rules run whenever `msgvault meetings judge`
+  runs, with or without Jev, and before an analytics cache build only when a
+  meeting feature is enabled with `automatic = true`. Calendar sync clears a
+  rule's decision when it writes one of the series' events, so the next run
+  decides from current data. Rule kinds do not change meeting weights. Existing
+  consent stays valid. See
   [meeting event kind](/docs/usage/jev-judgments/#feature-meeting-event-kind).
 
 - Archive storage now supports SQLite only. PostgreSQL and pgvector runtime

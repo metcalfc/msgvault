@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/gcal"
 	"go.kenn.io/msgvault/internal/meetingjudge"
 	"go.kenn.io/msgvault/internal/meetingweight"
@@ -147,7 +148,8 @@ func TestEventKindsWithoutConsentSendNothing(t *testing.T) {
 }
 
 // Without Jev the rules still decide: a non-meeting and a series the invite
-// list settles are recorded, and the rest keep the attendee-count weight.
+// lists settle are recorded. Rule kinds leave meeting weights to the
+// exclusions and the attendee count.
 func TestEventKindsWithoutJevRecordOnlyRuleKinds(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -158,7 +160,7 @@ func TestEventKindsWithoutJevRecordOnlyRuleKinds(t *testing.T) {
 		calendarEvent("hold", "Errands", 60),
 		calendarEvent("pair", "Catch up", 30, "casey@example.com"),
 		calendarEvent("crowd", "Town hall", 60, manyAttendees(19, "example.com")...))
-	_, err := st.DB().ExecContext(t.Context(), `UPDATE activity_projection_queue SET processed_revision = revision`)
+	before, err := st.MeetingWeightRevisionContext(t.Context())
 	require.NoError(err)
 
 	report, err := meetingjudge.RunEventKinds(t.Context(), st, meetingjudge.EventKindOptions{})
@@ -173,6 +175,9 @@ func TestEventKindsWithoutJevRecordOnlyRuleKinds(t *testing.T) {
 		"Catch up": {string(meetingweight.KindOneOnOne), store.CalendarEventKindSourceRule},
 	}, kindsByTitle(t, st))
 
+	after, err := st.MeetingWeightRevisionContext(t.Context())
+	require.NoError(err)
+	assert.Equal(before, after, "rule kinds do not change meeting weights")
 	weights := map[string]float64{}
 	rows, err := st.MeetingWeightExportRowsContext(t.Context())
 	require.NoError(err)
@@ -180,17 +185,7 @@ func TestEventKindsWithoutJevRecordOnlyRuleKinds(t *testing.T) {
 	for _, row := range rows {
 		weights[subjects[row.MessageID]] = row.Weight
 	}
-	assert.Equal(map[string]float64{"Focus": 0, "Errands": 0, "Town hall": 0.5}, weights,
-		"a settled hold weighs nothing, a settled one-on-one weighs 1, and the rest keep the attendee-count weight")
-
-	queued, err := st.LoadQueuedActivityCandidatesContext(t.Context(), 10)
-	require.NoError(err)
-	eligible := map[string]bool{}
-	for _, candidate := range queued {
-		eligible[subjects[candidate.MessageID]] = candidate.Eligible
-	}
-	assert.Equal(map[string]bool{"Focus": false, "Errands": false, "Catch up": true}, eligible,
-		"every recorded series is requeued, and a hold is no contact")
+	assert.Equal(map[string]float64{"Focus": 0, "Town hall": 0.5}, weights)
 
 	candidates, err := st.CalendarEventKindCandidatesContext(t.Context(), 0)
 	require.NoError(err)
@@ -204,45 +199,61 @@ func TestEventKindsWithoutJevRecordOnlyRuleKinds(t *testing.T) {
 	assert.Zero(written)
 }
 
-// Each structural rule settles its series without a request; a series the
-// invite list leaves open reaches Jev.
+// Each structural rule settles its series without a request only when
+// every event that is not cancelled satisfies it; any other series reaches
+// Jev.
 func TestEventKindsStructuralRules(t *testing.T) {
 	alone := calendarEvent("alone", "Deep work", 90)
 	noList := calendarEvent("nolist", "Dentist", 60)
 	noList.Attendees = nil
+	aloneAllDay := allDay(calendarEvent("aloneallday", "Vacation", 0))
 	pair := calendarEvent("pair", "Catch up", 30, "casey@example.com")
 	pairByOther := calendarEvent("pairbyother", "Product tour", 30, "host@example.org")
 	pairByOther.Organizer = gcal.Person{Email: "host@example.org"}
-	pairAllDay := calendarEvent("pairallday", "Offsite", 0, "casey@example.com")
-	pairAllDay.Start = gcal.EventDateTime{Date: "2026-05-04"}
-	pairAllDay.End = gcal.EventDateTime{Date: "2026-05-05"}
-	aloneAllDay := calendarEvent("aloneallday", "Vacation", 0)
-	aloneAllDay.Start = gcal.EventDateTime{Date: "2026-05-04"}
-	aloneAllDay.End = gcal.EventDateTime{Date: "2026-05-05"}
+	pairAllDay := allDay(calendarEvent("pairallday", "Offsite", 0, "casey@example.com"))
 	aloneByOther := calendarEvent("alonebyother", "Registration confirmed", 60)
 	aloneByOther.Organizer = gcal.Person{Email: "events@example.net"}
 	trio := calendarEvent("trio", "Design review", 45, "casey@example.com", "riley@example.com")
+	ownAlias := calendarEvent("alias", "Inbox zero", 30, "owner.alias@example.com")
+	list := calendarEvent("list", "Standup", 15, "team-list@example.com")
+
+	weeklyPair := series("weekly", "Weekly one-on-one",
+		[]string{"casey@example.com"}, []string{"casey@example.com"}, []string{"casey@example.com"})
+	droppedNewest := series("dropped", "Weekly one-on-one", []string{"casey@example.com"}, []string{})
+	cancelledCrowd := series("cancelled", "Weekly one-on-one",
+		[]string{"casey@example.com"}, []string{"casey@example.com", "riley@example.com"})
+	cancelledCrowd[1].Status = gcal.StatusCancelled
 
 	tests := []struct {
-		name  string
-		event gcal.Event
-		want  meetingweight.Kind // empty: sent to Jev
+		name   string
+		events []gcal.Event
+		setup  func(t *testing.T, st *store.Store)
+		want   meetingweight.Kind // empty: sent to Jev
 	}{
-		{"you alone, organized by you", alone, meetingweight.KindPersonalHoldLogistics},
-		{"no attendee list, organized by you", noList, meetingweight.KindPersonalHoldLogistics},
-		{"you alone, all day", aloneAllDay, meetingweight.KindPersonalHoldLogistics},
-		{"you and one other, organized by you", pair, meetingweight.KindOneOnOne},
-		{"you and one other, organized by them", pairByOther, ""},
-		{"you and one other, all day", pairAllDay, ""},
-		{"you alone, organized by someone else", aloneByOther, ""},
-		{"three people", trio, ""},
+		{"you alone, organized by you", []gcal.Event{alone}, nil, meetingweight.KindPersonalHoldLogistics},
+		{"no attendee list, organized by you", []gcal.Event{noList}, nil, meetingweight.KindPersonalHoldLogistics},
+		{"you alone, all day", []gcal.Event{aloneAllDay}, nil, meetingweight.KindPersonalHoldLogistics},
+		{"you and your own other address", []gcal.Event{ownAlias}, addOwnerAlias, meetingweight.KindPersonalHoldLogistics},
+		{"you and one other, organized by you", []gcal.Event{pair}, nil, meetingweight.KindOneOnOne},
+		{"weekly, every instance you and one other", weeklyPair, nil, meetingweight.KindOneOnOne},
+		{"a cancelled instance does not count", cancelledCrowd, nil, meetingweight.KindOneOnOne},
+		{"you and one other, organized by them", []gcal.Event{pairByOther}, nil, ""},
+		{"you and one other, all day", []gcal.Event{pairAllDay}, nil, ""},
+		{"you alone, organized by someone else", []gcal.Event{aloneByOther}, nil, ""},
+		{"three people", []gcal.Event{trio}, nil, ""},
+		{"newest instance drops the other person", droppedNewest, nil, ""},
+		{"the other invitee is a classified list", []gcal.Event{list}, classifyList, ""},
+		{"an unclassified list counts as one person", []gcal.Event{list}, nil, meetingweight.KindOneOnOne},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
 			st := newStore(t)
-			syncCalendar(t, st, test.event)
+			syncCalendar(t, st, test.events...)
+			if test.setup != nil {
+				test.setup(t, st)
+			}
 			fake := &fakeJev{answer: eventKindByTitle}
 			server := fake.server(t)
 			service, cfg := jevService(t, server.URL, st)
@@ -251,18 +262,108 @@ func TestEventKindsStructuralRules(t *testing.T) {
 			report, err := meetingjudge.RunEventKinds(t.Context(), st, meetingjudge.EventKindOptions{Judge: service})
 			require.NoError(err)
 			kinds := kindsByTitle(t, st)
+			require.Len(kinds, 1)
+			var got storedKind
+			for _, kind := range kinds {
+				got = kind
+			}
 			if test.want == "" {
 				assert.Zero(report.Settled)
 				require.Len(fake.requests(), 1, "an open series is asked")
-				assert.Equal(store.CalendarEventKindSourceJev, kinds[test.event.Summary].Source)
+				assert.Equal(store.CalendarEventKindSourceJev, got.Source)
 				return
 			}
 			assert.Equal(1, report.Settled)
 			assert.Zero(report.Requests)
 			assert.Empty(fake.requests(), "a settled series is never sent")
-			assert.Equal(storedKind{string(test.want), store.CalendarEventKindSourceRule}, kinds[test.event.Summary])
+			assert.Equal(storedKind{string(test.want), store.CalendarEventKindSourceRule}, got)
 		})
 	}
+}
+
+// A rule kind follows the series: when sync writes a changed event, the
+// rule kind is cleared and the next run decides again from current data.
+// A Jev kind stays.
+func TestEventKindsRuleKindFollowsSeriesChanges(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := newStore(t)
+	syncCalendar(t, st, calendarEvent("coffee", "Coffee", 30), calendarEvent("crowd", "Planning", 30,
+		"casey@example.com", "riley@example.com"))
+	fake := &fakeJev{answer: eventKindByTitle}
+	server := fake.server(t)
+	service, cfg := jevService(t, server.URL, st)
+	grantConsent(t, st, cfg, meetingjudge.EventKindFeature())
+
+	_, err := meetingjudge.RunEventKinds(t.Context(), st, meetingjudge.EventKindOptions{Judge: service})
+	require.NoError(err)
+	assert.Equal(map[string]storedKind{
+		"Coffee":   {string(meetingweight.KindPersonalHoldLogistics), store.CalendarEventKindSourceRule},
+		"Planning": {string(meetingweight.KindSmallWorkingMeeting), store.CalendarEventKindSourceJev},
+	}, kindsByTitle(t, st))
+
+	syncCalendar(t, st,
+		calendarEvent("coffee", "Coffee", 30, "casey@example.com", "riley@example.com"),
+		calendarEvent("crowd", "Planning", 30, "casey@example.com", "riley@example.com"))
+	assert.Equal(map[string]storedKind{
+		"Planning": {string(meetingweight.KindSmallWorkingMeeting), store.CalendarEventKindSourceJev},
+	}, kindsByTitle(t, st), "the stale rule kind is gone; the Jev kind stays")
+
+	report, err := meetingjudge.RunEventKinds(t.Context(), st, meetingjudge.EventKindOptions{Judge: service})
+	require.NoError(err)
+	assert.Zero(report.Settled)
+	assert.Equal(1, report.Judged)
+	requests := fake.requests()
+	require.Len(requests, 2)
+	events := asState[meetingjudge.EventKindState](requests[1]["state"]).Events
+	require.Len(events, 1)
+	assert.Equal("Coffee", events[0].Title)
+	assert.Equal(3, events[0].AttendeeCount)
+}
+
+// series is a weekly series you organize: a master and later instances,
+// one per attendee list.
+func series(id, title string, attendeeLists ...[]string) []gcal.Event {
+	events := make([]gcal.Event, 0, len(attendeeLists))
+	for i, attendees := range attendeeLists {
+		event := calendarEvent(id, title, 30, attendees...)
+		if i == 0 {
+			event.Recurrence = []string{"RRULE:FREQ=WEEKLY"}
+		} else {
+			start := eventStart.AddDate(0, 0, 7*i)
+			event.ID = fmt.Sprintf("%s_%d", id, i)
+			event.RecurringEventID = id
+			event.OriginalStartTime = gcal.EventDateTime{DateTime: start}
+			event.Start = gcal.EventDateTime{DateTime: start, TimeZone: "UTC"}
+			event.End = gcal.EventDateTime{DateTime: start.Add(30 * time.Minute)}
+		}
+		events = append(events, event)
+	}
+	return events
+}
+
+func allDay(event gcal.Event) gcal.Event {
+	event.Start = gcal.EventDateTime{Date: "2026-05-04"}
+	event.End = gcal.EventDateTime{Date: "2026-05-05"}
+	return event
+}
+
+func addOwnerAlias(t *testing.T, st *store.Store) {
+	t.Helper()
+	var sourceID int64
+	require.NoError(t, st.DB().QueryRowContext(t.Context(),
+		`SELECT source_id FROM messages WHERE message_type = 'calendar_event' LIMIT 1`).Scan(&sourceID))
+	require.NoError(t, st.AddAccountIdentityContext(t.Context(), sourceID, "owner.alias@example.com", "manual"))
+}
+
+func classifyList(t *testing.T, st *store.Store) {
+	t.Helper()
+	participantID, err := st.EnsureParticipantContext(t.Context(), "team-list@example.com", "", "example.com")
+	require.NoError(t, err)
+	_, err = st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: participantID, Kind: correspondentkind.MailingList, Actor: "test",
+	})
+	require.NoError(t, err)
 }
 
 // In a mixed run only the series no rule settles are sent, and batching

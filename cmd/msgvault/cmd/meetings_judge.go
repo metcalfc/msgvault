@@ -36,13 +36,21 @@ func newMeetingsJudgeCommand() *cobra.Command {
 		Use:   "judge",
 		Short: "Ask Jev what kind of meeting each calendar series is and who owns action items",
 		Long: `Event kinds: visits calendar series (a recurring series or a standalone event)
-that have no kind yet. A series none of whose events is a meeting (cancelled,
-declined, out of office, focus time, working location, or marked free) is
-recorded without asking anyone. When [jev] and [jev.meeting_event_kind] are
-enabled, an API key resolves, and 'msgvault jev consent meeting_event_kind'
-has been given, the rest are sent to Jev ten series per request, each asked
-once. A kind at or above 0.60 sets how much the series counts as a meeting in
-relationship rankings; below it the attendee count does.
+that have no kind yet. Two rules record a series without asking anyone,
+whether or not Jev is enabled:
+
+  - None of its events is a meeting (cancelled, declined, out of office,
+    focus time, working location, or marked free).
+  - Its invite lists settle the kind: you organized every event and no one
+    else is invited (a personal hold), or every event is a timed meeting you
+    organized for you and exactly one other person (a one-on-one).
+
+A rule kind is decided again after calendar sync changes the series. When
+[jev] and [jev.meeting_event_kind] are enabled, an API key resolves, and
+'msgvault jev consent meeting_event_kind' has been given, the rest are sent
+to Jev ten series per request, each asked once. A Jev kind at or above 0.60
+sets how much the series counts as a meeting in relationship rankings;
+otherwise the attendee count does.
 
 Action item assignees: when [jev.meeting_action_assignee] is enabled and
 consented, meeting action items the meeting tool left without an assignee

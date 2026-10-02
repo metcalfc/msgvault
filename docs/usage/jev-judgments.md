@@ -47,7 +47,7 @@ of it. The table below says what each feature does without Jev.
 | [`correspondent_kind`](#feature-correspondent-kind) | Person, shared mailbox, list, automated, or marketing | `kinds build`; cache builds with `automatic` (up to 200) | Display name, up to 5 addresses split into local part and domain, counts, header counts, up to 8 subjects of 160 characters. No bodies | Rules only; the rest stay unclassified and rank as people |
 | [`cleanup_suggestions`](#feature-cleanup-suggestions) | Impersonation, pressure, and mail category | `suggest-cleanup` only; never automatic | Sender name and domains, up to 10 link hosts, SPF/DKIM/DMARC results, subject (200 characters), **first 500 characters of the body** | No suggestions |
 | [`search_rerank`](#feature-hybrid-search-reranking) | Whether each leading result answers the query | Hybrid searches that request it; never automatic. Not recommended yet | Query (4 KiB); per result, up to 2 KiB of subject, sender, date, and **cleaned body**; up to 30 results | Fused hybrid order |
-| [`meeting_event_kind`](#feature-meeting-event-kind) | What kind of event a calendar series is, unless its invite list settles it | `meetings judge`; cache builds with `automatic` (up to 200) | Redacted title (160 characters), duration, recurrence, attendee counts. No names | Invite-list rules, then the attendee-count weight |
+| [`meeting_event_kind`](#feature-meeting-event-kind) | What kind of event a calendar series is, unless the invite lists of its events settle it | `meetings judge`; cache builds with `automatic` (up to 200) | Redacted title (160 characters), duration, recurrence, attendee counts. No names | Attendee-count weight |
 | [`meeting_action_assignee`](#feature-meeting-action-assignee) | Which attendee owns an action item | `meetings judge`; cache builds with `automatic` (up to 200 meetings) | Meeting title, attendee labels without addresses, item title (200) and description (500), redacted | No inferred assignee |
 | [`query_understanding`](#feature-explore-query-understanding) | Which filters a typed search asks for | Web UI searches you type; never automatic | Redacted query, candidate date windows, people-index names, account labels | No chips; the search is unchanged |
 | [`sweep_claim_grounding`](#feature-people-sweep-claim-grounding) | Whether cited excerpts state a claim and it is still current | Manual sweeps and briefs; scheduled with `automatic` | Fact, relation, value (500 characters); **up to 3 cited excerpts of 1,000 characters**, redacted | The chat model's own confidence |
@@ -713,26 +713,35 @@ this feature asks Jev what kind of event a calendar series is:
 1. **Rules, no Jev.** A series none of whose recent events is a meeting
    (cancelled, declined by you, out of office, focus time, working location,
    or marked free) is recorded as not a meeting and never sent.
-2. **Invite-list rules, no Jev.** A series whose invite list leaves only
-   one kind is decided in code and never sent. The newest event that is a
-   meeting describes the series:
+2. **Invite-list rules, no Jev.** A series is decided in code and never
+   sent when every one of its events that is not cancelled satisfies the
+   same rule:
 
-   | Invite list | Kind |
+   | Every event | Kind |
    |---|---|
-   | You organized it and no one else is invited | `personal_hold_or_logistics` |
-   | You organized a timed event for you and exactly one other person | `one_on_one` |
+   | You organized it, and no one but you is invited (no attendee list, or only your own addresses) | `personal_hold_or_logistics` |
+   | A timed event you organized, with you and exactly one other address invited | `one_on_one` |
 
-   An invite someone else sent stays with Jev, because a webinar or
-   marketing invite can list only you and its host. So does an all-day
-   event for two, which is as often a trip or a hold as a meeting. Events
-   synced before calendar sync recorded your RSVP do not show you as
-   invited, so their two-person series also go to Jev.
+   One edited instance is enough to send the series to Jev instead. An
+   invite someone else sent stays with Jev, because a webinar or marketing
+   invite can list only you and its host. So does an all-day event for two,
+   which is as often a trip or a hold as a meeting. An other address the
+   archive classifies as a mailing list, shared mailbox, automated sender,
+   or organization is not one person, so that series goes to Jev; a list
+   address that is not classified counts as one person.
 3. **Jev, only with consent.** Every other series is asked one Choice, ten
    series per request. A recurring series is one question, asked once; a
-   standalone event is its own series.
+   standalone event is its own series. The newest event that is a meeting
+   describes the series.
 
-Code maps a rule's kind, or Jev's answer when its probability is at least
-0.60:
+The rules run whenever `msgvault meetings judge` runs, whether or not Jev is
+enabled, and before an analytics cache build only when a meeting feature is
+enabled with `automatic = true`. A rule's decision only keeps the series from
+being sent. Calendar sync clears it whenever it writes one of the series'
+events, so the next run decides again from current data; until then the
+series is an ordinary candidate.
+
+Code maps Jev's answer when its probability is at least 0.60:
 
 | Answer | Meeting weight |
 |---|---|
@@ -743,14 +752,16 @@ Code maps a rule's kind, or Jev's answer when its probability is at least
 | `external_webinar_or_marketing` | 0 |
 | `personal_hold_or_logistics` | 0 |
 
-Below 0.60, and for every series Jev has not judged, the attendee-count
-weight stays. Without Jev the invite-list rules still apply. A series weighed
-0 this way also stops counting as contact in last-contact dates; its events
-are re-projected when the kind is stored. The kind is stored per series
-(`calendar_event_kinds`, with its probabilities and the model) and never
-revisited, and the next analytics cache build publishes the new weights.
-`meetings judge` runs by hand. With `automatic = true`, each analytics cache
-build also judges up to 200 new series first.
+Below 0.60, and for a series a rule decided or Jev has not judged, the
+attendee-count weight stays. A rule's kind needs no weight of its own: a
+two-person event already weighs 1, and a hold has no one else to count. A
+series weighed 0 by Jev also stops counting as contact in last-contact
+dates; its events are re-projected when the judgment is stored. A Jev
+judgment is stored per series (`calendar_event_kinds`, with its
+probabilities and the model) and never revisited, and the next analytics
+cache build publishes the new weights. `meetings judge` runs by hand. With
+`automatic = true`, each analytics cache build also judges up to 200 new
+series first.
 
 ### What leaves the machine
 
@@ -1276,8 +1287,9 @@ probabilities and outcomes, not the compared values.
 - Hybrid search reranking has not passed its evaluation gate. Its cached
   orders live in the daemon's memory, so a restart judges the next page of a
   search again.
-- Meeting event kind asks each calendar series once. A series whose nature
-  changes later keeps its first kind.
+- Meeting event kind asks Jev about each calendar series once. A series
+  whose nature changes later keeps its first Jev kind; only a rule's
+  decision is made again after the series changes.
 - Query understanding reads English date phrases and type words only, and
   its from:/to: chips match email, not chats. A search whose 800 ms budget
   runs out simply shows no chips.

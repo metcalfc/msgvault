@@ -4668,10 +4668,14 @@ CREATE TABLE IF NOT EXISTS cleanup_suggestions (
 CREATE INDEX IF NOT EXISTS idx_cleanup_suggestions_score ON cleanup_suggestions(score);
 
 -- The kind of one calendar conversation (a recurring series or a standalone
--- event), decided once. Source 'jev' is the meeting_event_kind judgment with
--- the probability of its kind as confidence; source 'rule' marks a series
--- whose events are none of them meetings (kind 'not_a_meeting'), so it is
--- never sent. Meeting weights read this table; see internal/meetingweight.
+-- event). Source 'jev' is the meeting_event_kind judgment with the
+-- probability of its kind as confidence, decided once. Source 'rule' marks a
+-- series decided locally so it is never sent: kind 'not_a_meeting' when none
+-- of its events is a meeting, or a kind its invite lists settle
+-- ('personal_hold_or_logistics', 'one_on_one'). Calendar sync deletes a
+-- series' rule row whenever it writes one of its events, so the next run
+-- decides again. Meeting weights read only 'jev' rows; see
+-- internal/meetingweight.
 CREATE TABLE IF NOT EXISTS calendar_event_kinds (
     conversation_id    INTEGER PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
     kind               TEXT NOT NULL,

@@ -137,7 +137,7 @@ meeting counts for less than a small one:
 | Event | Weight |
 |---|---|
 | Cancelled, declined by you (under any of your addresses), out of office, focus time, working location, or marked free (transparent) | 0: no contact at all, in rankings and in last-contact dates |
-| A series Jev judged with probability 0.60 or more, or whose invite list settles its kind (you alone: personal hold; you and one other person you invited: one-on-one) | By kind: one-on-one and small working meeting 1, social 0.5 (1 when only you and one other person are invited), large group or all-hands 0.25, outside webinar and personal hold 0 |
+| A series Jev judged with probability 0.60 or more | By kind: one-on-one and small working meeting 1, social 0.5 (1 when only you and one other person are invited), large group or all-hands 0.25, outside webinar and personal hold 0 |
 | Anything else | 1 up to 10 attendees, then 10 divided by the attendee count |
 
 Rooms and equipment are never attendees. Calendar sync records your RSVP and
