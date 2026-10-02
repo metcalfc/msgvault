@@ -57,7 +57,6 @@ describe('AppShell pending reviews dot', () => {
     expect(pendingChecks).toHaveLength(1);
 
     await focusAndClick(await screen.findByRole('button', { name: 'Keep separate' }));
-    await focusAndClick(screen.getByRole('dialog', { name: 'Keep separate' }).querySelector('button.kit-button--solid')!);
 
     // The decision forces a check at once, inside the one-minute floor.
     await waitFor(() => expect(within(nav).getByRole('button', { name: 'Reviews' })).toBeDefined());

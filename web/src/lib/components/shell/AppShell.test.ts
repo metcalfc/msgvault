@@ -908,7 +908,6 @@ describe('AppShell', () => {
 
     const firstCard = await screen.findByRole('article', { name: 'Identity match 17' });
     await focusAndClick(within(firstCard).getByRole('button', { name: 'Link identities' }));
-    await focusAndClick(screen.getByRole('dialog', { name: 'Link identities' }).querySelector('button.kit-button--solid')!);
 
     const nextCard = await screen.findByRole('article', { name: 'Identity match 18' });
     await waitFor(() => expect(document.activeElement).toBe(nextCard));

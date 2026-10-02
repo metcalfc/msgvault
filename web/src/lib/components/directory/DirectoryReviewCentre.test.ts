@@ -138,7 +138,6 @@ describe('DirectoryReviewCentre', () => {
     });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Link identities' }));
-    await fireEvent.click(screen.getByRole('dialog', { name: 'Link identities' }).querySelector('button.kit-button--solid')!);
 
     await waitFor(() => expect(onAnnounce).toHaveBeenCalledWith(
       "People merged into Synthetic One. Undo it from Synthetic One's merge history."
@@ -168,11 +167,9 @@ describe('DirectoryReviewCentre', () => {
     renderReview(controller);
 
     await fireEvent.click(screen.getByRole('button', { name: 'Link identities' }));
-    await fireEvent.click(screen.getByRole('dialog', { name: 'Link identities' }).querySelector('button.kit-button--solid')!);
 
     const merge = await screen.findByRole('dialog', { name: 'Resolve person merge' });
     expect(within(merge).getByRole('alert').textContent).toContain('Unpublish first');
-    expect(screen.queryByRole('dialog', { name: 'Link identities' })).toBeNull();
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
     expect(requests.filter((request) => new URL(request.url).pathname.endsWith('/accept'))).toHaveLength(1);
     expect(requests.filter((request) => new URL(request.url).pathname.endsWith('/merge'))).toHaveLength(1);
@@ -320,56 +317,52 @@ describe('DirectoryReviewCentre', () => {
     expect(offsets).toEqual([100, 0]);
   });
 
-  it.each([
-    {
-      name: 'identity review to fact review',
-      target: { reviewKind: 'fact' as const, identityState: 'candidate' as const },
-      focusHeading: 'Fact review'
-    },
-    {
-      name: 'candidate review to conflict review',
-      target: { reviewKind: 'identity' as const, identityState: 'conflict' as const },
-      focusHeading: 'Identity matches'
-    },
-    {
-      name: 'the same visible candidate state with a new history generation',
-      target: { reviewKind: 'identity' as const, identityState: 'candidate' as const },
-      focusHeading: 'Identity matches'
-    }
-  ])('invalidates an open decision across $name', async ({ target, focusHeading }) => {
+  it('decides from the card in one click and sends no notes when none were added', async () => {
     const requests: Request[] = [];
-    const current = candidate(17);
-    const accepted = candidate(17, 'accepted');
     const fetchFn = vi.fn<typeof fetch>(async (input) => {
       const request = requestOf(input);
       requests.push(request);
       if (request.method === 'POST') {
-        return Response.json({ candidate: accepted, identity_revision: 4, cache_state: 'stale' });
+        return Response.json({ candidate: candidate(17, 'accepted'), identity_revision: 4, cache_state: 'ready' });
       }
-      const state = new URL(request.url).searchParams.get('state') ?? 'candidate';
-      return page([candidate(state === 'conflict' ? 88 : 17, state)]);
+      return page([]);
     });
-    const apiClient = createAPIClient(withEntityLabels(fetchFn, syntheticNames));
-    const controller = new DirectoryReviewController(apiClient);
-    const factController = new FactLedgerController(apiClient);
-    controller.rows = [current];
-    render(DirectoryReviewCentre, {
-      controller,
-      relationshipController: new RelationshipReviewController(apiClient),
-      factController,
-      directoryPersonID: null
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
+    controller.rows = [candidate(17)];
+    renderReview(controller);
+
+    expect(within(card(17)).queryByRole('textbox')).toBeNull();
+    await fireEvent.click(within(card(17)).getByRole('button', { name: 'Link identities' }));
+
+    await waitFor(() => expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const post = requests.find((request) => request.method === 'POST')!;
+    expect(new URL(post.url).pathname).toBe('/api/v1/identity/match-candidates/17/accept');
+    await expect(post.clone().json()).resolves.toEqual({});
+  });
+
+  it('keeps the failed row and its own draft visible without automatically retrying', async () => {
+    const requests: Request[] = [];
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = requestOf(input);
+      requests.push(request);
+      return Response.json({ error: 'unavailable', message: 'Decision unavailable' }, { status: 503 });
     });
+    const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)));
+    controller.rows = [candidate(17), candidate(18)];
+    controller.setDecisionDraft(17, 'Keep row 17 note');
+    controller.setDecisionDraft(18, 'Other row note');
+    renderReview(controller);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Link identities' }));
-    controller.applyURLState(target, true);
+    const notes = within(card(17)).getByRole('textbox', { name: 'Decision notes for identity match 17' });
+    await fireEvent.click(within(card(17)).getByRole('button', { name: 'Keep separate' }));
 
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Link identities' })).toBeNull());
-    const heading = screen.getByRole('heading', { name: focusHeading });
-    await waitFor(() => expect(document.activeElement).toBe(heading));
-    expect(document.activeElement?.isConnected).toBe(true);
-    expect(controller.reviewKind).toBe(target.reviewKind);
-    expect(controller.identityState).toBe(target.identityState);
-    expect(requests.filter((request) => request.method === 'POST')).toHaveLength(0);
+    expect((await screen.findByRole('alert')).textContent).toContain('Decision unavailable');
+    expect((notes as HTMLTextAreaElement).value).toBe('Keep row 17 note');
+    expect(controller.getDecisionDraft(17)).toBe('Keep row 17 note');
+    expect(controller.getDecisionDraft(18)).toBe('Other row note');
+    expect(controller.rows).toHaveLength(2);
+    expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
   });
 
   it.each([
@@ -392,14 +385,13 @@ describe('DirectoryReviewCentre', () => {
     const onOpenPerson = vi.fn();
     renderReview(controller, onOpenPerson);
 
+    await focusAndClick(within(card(19)).getByRole('button', { name: 'Add a note to identity match 19' }));
+    const notes = within(card(19)).getByRole('textbox', { name: 'Decision notes for identity match 19' });
+    expect(document.activeElement).toBe(notes);
+    await fireEvent.input(notes, { target: { value: '  Confirmed by synthetic fixture  ' } });
     await focusAndClick(within(card(19)).getByRole('button', { name: decision }));
-    await focusAndClick(screen.getByRole('button', { name: 'Add a note' }));
-    await fireEvent.input(screen.getByRole('textbox', { name: 'Decision notes' }), {
-      target: { value: 'Confirmed by synthetic fixture' }
-    });
-    await focusAndClick(screen.getByRole('dialog', { name: decision }).querySelector('button.kit-button--solid')!);
 
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: decision })).toBeNull());
+    expect(screen.queryByRole('dialog')).toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(card(20)));
     expect(screen.queryByRole('article', { name: 'Identity match 19' })).toBeNull();
     expect(screen.getByRole('status').textContent).toContain(status);
@@ -502,10 +494,8 @@ describe('DirectoryReviewCentre', () => {
     trigger.focus();
 
     await fireEvent.click(trigger);
-    await fireEvent.click(screen.getByRole('dialog', { name: 'Link identities' }).querySelector('button.kit-button--solid')!);
 
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Link identities' })).toBeNull());
-    expect(screen.getByText('No identity matches in this queue.')).toBeDefined();
+    expect(await screen.findByText('No identity matches in this queue.')).toBeDefined();
     const heading = screen.getByRole('heading', { name: 'Identity matches' });
     await waitFor(() => expect(document.activeElement).toBe(heading));
     expect(document.activeElement?.isConnected).toBe(true);
@@ -526,13 +516,11 @@ describe('DirectoryReviewCentre', () => {
     renderReview(controller);
 
     await fireEvent.click(screen.getByRole('button', { name: 'Link identities' }));
-    await fireEvent.click(screen.getByRole('dialog', { name: 'Link identities' }).querySelector('button.kit-button--solid')!);
 
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Link identities' })).toBeNull());
+    expect((await screen.findByRole('alert')).textContent).toContain('Reload failed');
     const row = screen.getByRole('article', { name: 'Identity match 17' });
     expect(row.textContent).toContain('accepted');
     expect(screen.getByRole('status').textContent).toContain('Identity match accepted.');
-    expect(screen.getByRole('alert').textContent).toContain('Reload failed');
     await waitFor(() => expect(document.activeElement).toBe(row));
   });
 });

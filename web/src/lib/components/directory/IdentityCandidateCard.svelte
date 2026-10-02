@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button, Card, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@kenn-io/kit-ui';
   import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+  import { tick, untrack } from 'svelte';
 
   import type {
     ContactMatchStatus,
@@ -26,6 +27,9 @@
     left?: IdentityMatchEndpointSummary;
     right?: IdentityMatchEndpointSummary;
     contactMatch?: ContactMatchStatus;
+    /** The optional note sent with the decision. */
+    note?: string;
+    onNoteInput?: (value: string) => void;
     onAccept: () => void;
     onReject: () => void;
     /** Marks one of the candidate's archive identities as not a person. */
@@ -35,8 +39,8 @@
   }
 
   let {
-    candidate, names, pending, left = undefined, right = undefined, contactMatch = undefined, onAccept, onReject,
-    onNotAPerson = undefined, onIsPerson = undefined
+    candidate, names, pending, left = undefined, right = undefined, contactMatch = undefined, note = '', onNoteInput = undefined,
+    onAccept, onReject, onNotAPerson = undefined, onIsPerson = undefined
   }: Props = $props();
   const headingID = $derived(`identity-match-${candidate.id}-heading`);
   const evidence = $derived(candidate.evidence ?? []);
@@ -50,6 +54,15 @@
   const participants = $derived(endpoints.filter((endpoint) => endpoint.kind === 'participant'));
   const sharedMailbox = $derived(contactMatch?.classification === 'shared_mailbox' ? contactMatch.shared_mailbox : undefined);
   const open = $derived(candidate.state === 'candidate' || candidate.state === 'conflict');
+  // Notes are optional, so the field stays folded away unless a draft exists.
+  let notesOpen = $state(untrack(() => note !== ''));
+  let notesField = $state<HTMLTextAreaElement>();
+
+  async function openNotes(): Promise<void> {
+    notesOpen = true;
+    await tick();
+    notesField?.focus();
+  }
 </script>
 
 <Card level="default" padding="md">
@@ -133,8 +146,26 @@
       {/if}
     </section>
 
+    {#if candidate.state === 'candidate' && onNoteInput && notesOpen}
+      <label class="notes">
+        <span>Decision notes <small>(optional)</small></span>
+        <textarea
+          bind:this={notesField}
+          aria-label={`Decision notes for identity match ${candidate.id}`}
+          rows="2"
+          value={note}
+          disabled={pending}
+          oninput={(event) => onNoteInput?.(event.currentTarget.value)}
+        ></textarea>
+      </label>
+    {/if}
+
     {#if open && (candidate.state === 'candidate' || (onNotAPerson && participants.length > 0))}
       <div class="actions">
+        {#if candidate.state === 'candidate' && onNoteInput && !notesOpen}
+          <Button size="sm" surface="soft" label="Add a note" ariaLabel={`Add a note to identity match ${candidate.id}`}
+            ariaExpanded={false} disabled={pending} onclick={() => void openNotes()} />
+        {/if}
         {#if onNotAPerson && participants.length > 0}
           <Menu align="end">
             <MenuTrigger class={sharedMailbox ? 'not-a-person-trigger prominent' : 'not-a-person-trigger'}
@@ -188,6 +219,11 @@
   li { display: grid; gap: var(--space-2); padding: var(--space-3); border-left: 2px solid var(--border-default); background: var(--bg-inset); }
   li dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-2) var(--space-4); }
   .empty-evidence { color: var(--text-muted); font-size: var(--font-size-sm); }
+  .notes { display: grid; gap: var(--space-2); color: var(--text-secondary); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium, 500); }
+  .notes small { color: var(--text-muted); font-weight: normal; }
+  .notes textarea { box-sizing: border-box; width: 100%; resize: vertical; padding: var(--space-3); border: var(--border-width) solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-inset); color: var(--text-primary); font: inherit; line-height: 1.45; }
+  .notes textarea:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset, 2px); }
+  .notes textarea:disabled { opacity: var(--opacity-disabled); }
   .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); width: 100%; }
   .shared-hint {
     display: grid;

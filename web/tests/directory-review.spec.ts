@@ -23,11 +23,8 @@ async function startMerge(page: Page) {
   const card = page.getByRole('article', { name: 'Identity match 19' });
   await card.getByRole('button', { name: 'Link identities' }).focus();
   await page.keyboard.press('Enter');
-  const decision = page.getByRole('dialog', { name: 'Link identities' });
-  await decision.getByRole('button', { name: 'Link identities' }).focus();
-  await page.keyboard.press('Enter');
-  // Accepting hands straight to the merge; there is no extra step.
-  await expect(decision).toHaveCount(0);
+  // Accepting applies at once and hands straight to the merge.
+  await expect(page.getByRole('dialog', { name: 'Link identities' })).toHaveCount(0);
 }
 
 /** Makes the automatic merge fail so the choice between both profiles shows. */
@@ -92,13 +89,9 @@ test('contacts that match the archive are named, explained, and linked from thei
   await expect(endpoints).toContainText('+15550100100');
   await expect(card).toContainText('Accepting links this archive identity to the profile.');
 
-  await card.getByRole('button', { name: 'Link identities' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Link identities' });
-  await expect(dialog).toContainText('Ada Sender');
-  await expect(dialog).toContainText('Ada Contact');
   const accepted = page.waitForRequest((request) =>
     request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/25/accept'));
-  await dialog.getByRole('button', { name: 'Link identities' }).click();
+  await card.getByRole('button', { name: 'Link identities' }).click();
   await accepted;
   await expect(card).toBeHidden();
 });
@@ -171,41 +164,29 @@ test('ordinary accept and reject keep keyboard focus connected as rows leave the
   await page.goto(reviewURL());
 
   const acceptCard = page.getByRole('article', { name: 'Identity match 17' });
-  const acceptTrigger = acceptCard.getByRole('button', { name: 'Link identities' });
-  await acceptTrigger.focus();
-  await page.keyboard.press('Enter');
-  await expect(page.getByRole('dialog', { name: 'Link identities' })).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(acceptTrigger).toBeFocused();
-
-  await page.keyboard.press('Enter');
-  const acceptDialog = page.getByRole('dialog', { name: 'Link identities' });
-  await expect(acceptDialog.getByLabel('Decision notes')).toHaveCount(0);
-  await acceptDialog.getByRole('button', { name: 'Add a note' }).click();
-  await expect(acceptDialog.getByLabel('Decision notes')).toBeFocused();
-  await acceptDialog.getByLabel('Decision notes').fill('Synthetic provider IDs match.');
+  await expect(acceptCard.getByLabel('Decision notes')).toHaveCount(0);
+  await acceptCard.getByRole('button', { name: 'Add a note' }).click();
+  await expect(acceptCard.getByLabel('Decision notes')).toBeFocused();
+  await acceptCard.getByLabel('Decision notes').fill('Synthetic provider IDs match.');
   const acceptedRequest = page.waitForRequest((request) =>
     request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/17/accept'));
-  const acceptSubmit = acceptDialog.getByRole('button', { name: 'Link identities' });
-  await acceptSubmit.focus();
-  await expect(acceptSubmit).toBeFocused();
+  const acceptTrigger = acceptCard.getByRole('button', { name: 'Link identities' });
+  await acceptTrigger.focus();
+  await expect(acceptTrigger).toBeFocused();
+  // One keypress decides; there is no confirmation dialog.
   await page.keyboard.press('Enter');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   expect((await acceptedRequest).postDataJSON()).toEqual({ notes: 'Synthetic provider IDs match.' });
   await expect(acceptCard).toBeHidden();
   const rejectCard = page.getByRole('article', { name: 'Identity match 18' });
   await expect(rejectCard).toBeFocused();
+  await rejectCard.getByRole('button', { name: 'Add a note' }).click();
+  await rejectCard.getByLabel('Decision notes').fill('Synthetic endpoints belong to different people.');
+  const rejectedRequest = page.waitForRequest((request) =>
+    request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/18/reject'));
   const rejectTrigger = rejectCard.getByRole('button', { name: 'Keep separate' });
   await rejectTrigger.focus();
   await expect(rejectTrigger).toBeFocused();
-  await page.keyboard.press('Enter');
-  const rejectDialog = page.getByRole('dialog', { name: 'Keep separate' });
-  await rejectDialog.getByRole('button', { name: 'Add a note' }).click();
-  await rejectDialog.getByLabel('Decision notes').fill('Synthetic endpoints belong to different people.');
-  const rejectedRequest = page.waitForRequest((request) =>
-    request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/18/reject'));
-  const rejectSubmit = rejectDialog.getByRole('button', { name: 'Keep separate' });
-  await rejectSubmit.focus();
-  await expect(rejectSubmit).toBeFocused();
   await page.keyboard.press('Enter');
   expect((await rejectedRequest).postDataJSON()).toEqual({ notes: 'Synthetic endpoints belong to different people.' });
   await expect(rejectCard).toBeHidden();
@@ -233,7 +214,7 @@ test('ordinary accept and reject keep keyboard focus connected as rows leave the
   await expect(page).toHaveURL(/identityState%22%3A%22rejected/);
 });
 
-test('pending decisions block Escape and global shortcuts, while failure retains an explicit retry', async ({ page }) => {
+test('a pending decision disables its card, while failure retains an explicit retry', async ({ page }) => {
   const fixture = await installDirectoryReviewArchive(page);
   const releaseAccept = fixture.holdNextDecision(17);
   await page.goto(reviewURL());
@@ -243,46 +224,32 @@ test('pending decisions block Escape and global shortcuts, while failure retains
   await acceptTrigger.focus();
   await expect(acceptTrigger).toBeFocused();
   await page.keyboard.press('Enter');
-  const acceptDialog = page.getByRole('dialog', { name: 'Link identities' });
-  const acceptSubmit = acceptDialog.getByRole('button', { name: 'Link identities' });
-  await acceptSubmit.focus();
-  await expect(acceptSubmit).toBeFocused();
-  await page.keyboard.press('Enter');
   await expect.poll(() => fixture.requests.filter((request) =>
     request.method === 'POST' && request.path.endsWith('/17/accept')).length).toBe(1);
-  await expect(acceptDialog.getByRole('button', { name: 'Cancel' })).toBeDisabled();
-  await expect(acceptDialog.getByRole('button', { name: 'Close identity decision' })).toHaveCount(0);
-
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('Shift+/');
-  await expect(acceptDialog).toBeVisible();
-  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toHaveCount(0);
+  await expect(acceptCard).toContainText('Decision pending…');
+  await expect(acceptTrigger).toBeDisabled();
+  await expect(acceptCard.getByRole('button', { name: 'Keep separate' })).toBeDisabled();
   releaseAccept();
   await expect(acceptCard).toBeHidden();
   await expect(page.getByRole('article', { name: 'Identity match 18' })).toBeFocused();
 
   fixture.failNextDecision(18, 'Synthetic decision service unavailable.');
   const rejectCard = page.getByRole('article', { name: 'Identity match 18' });
+  await rejectCard.getByRole('button', { name: 'Add a note' }).click();
+  const notes = rejectCard.getByLabel('Decision notes');
+  await notes.fill('Retain this synthetic review note.');
   const rejectTrigger = rejectCard.getByRole('button', { name: 'Keep separate' });
   await rejectTrigger.focus();
   await expect(rejectTrigger).toBeFocused();
   await page.keyboard.press('Enter');
-  const rejectDialog = page.getByRole('dialog', { name: 'Keep separate' });
-  await rejectDialog.getByRole('button', { name: 'Add a note' }).click();
-  const notes = rejectDialog.getByLabel('Decision notes');
-  await notes.fill('Retain this synthetic review note.');
-  const rejectSubmit = rejectDialog.getByRole('button', { name: 'Keep separate' });
-  await rejectSubmit.focus();
-  await expect(rejectSubmit).toBeFocused();
-  await page.keyboard.press('Enter');
 
-  await expect(rejectDialog.getByRole('alert')).toContainText('Synthetic decision service unavailable.');
+  await expect(page.getByRole('alert')).toContainText('Synthetic decision service unavailable.');
   await expect(notes).toHaveValue('Retain this synthetic review note.');
   expect(fixture.requests.filter((request) =>
     request.method === 'POST' && request.path.endsWith('/18/reject'))).toHaveLength(1);
 
-  await rejectSubmit.focus();
-  await expect(rejectSubmit).toBeFocused();
+  await rejectTrigger.focus();
+  await expect(rejectTrigger).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(rejectCard).toBeHidden();
   expect(fixture.requests.filter((request) =>

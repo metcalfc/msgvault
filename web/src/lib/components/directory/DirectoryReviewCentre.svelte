@@ -15,7 +15,6 @@
     IdentityMatchCandidate
   } from '../../directory/review-controller.svelte';
   import IdentityCandidateCard from './IdentityCandidateCard.svelte';
-  import IdentityDecisionModal from './IdentityDecisionModal.svelte';
   import FactReviewPanel from './FactReviewPanel.svelte';
   import RelationshipReviewQueue from './RelationshipReviewQueue.svelte';
   import type { RelationshipReviewController } from '../../directory/relationship-review-controller.svelte';
@@ -54,11 +53,10 @@
     onAnnounce = () => undefined,
     onDecided = () => undefined
   }: Props = $props();
-  // position: where the candidate sat when its decision opened, taken
-  // before anything is sent because the queue reloads before it returns.
+  // position: where the candidate sat when it was decided, taken before
+  // anything is sent because the queue reloads before it returns.
   type ActiveModal =
-    | { kind: 'decision'; candidate: IdentityMatchCandidate; decision: 'accept' | 'reject'; context: DirectoryReviewContextSnapshot; position: ReviewPosition<number> }
-    | { kind: 'merge'; candidate: IdentityMatchCandidate; context: DirectoryReviewContextSnapshot; conflict: ValidatedPersonMergeRequired; position: ReviewPosition<number> };
+    { kind: 'merge'; candidate: IdentityMatchCandidate; context: DirectoryReviewContextSnapshot; conflict: ValidatedPersonMergeRequired; position: ReviewPosition<number> };
   const names = $derived(entityNames(controller.apiClient));
   let activeDecision = $state<ActiveModal>();
   // svelte-ignore state_referenced_locally
@@ -120,11 +118,24 @@
     controller.setIdentityOrigin(value as IdentityReviewOrigin);
   }
 
-  function openDecision(candidate: IdentityMatchCandidate, decision: 'accept' | 'reject'): void {
+  // The card's button names the decision, so it applies at once. Only an
+  // accept that needs the two people merged opens a dialog.
+  async function decide(candidate: IdentityMatchCandidate, decision: 'accept' | 'reject'): Promise<void> {
+    if (activeDecision || controller.isDecisionPending(candidate.id)) return;
     mergedSurvivor = undefined;
-    activeDecision = {
-      kind: 'decision', candidate, decision, context: controller.reviewContextSnapshot(), position: positionOf(candidate.id)
-    };
+    notAPersonError = null;
+    const context = controller.reviewContextSnapshot();
+    const position = positionOf(candidate.id);
+    const result = decision === 'accept'
+      ? await controller.acceptIdentity(candidate.id, undefined, context)
+      : await controller.rejectIdentity(candidate.id, undefined, context);
+    if (!controller.isReviewContextCurrent(context)) return;
+    if (result.ok) {
+      onDecided();
+      await focusAfterDecision(candidate.id, position);
+    } else if (result.kind === 'merge_required') {
+      activeDecision = { kind: 'merge', candidate, context, conflict: result.conflict, position };
+    }
   }
 
   /** Deciding stays in the queue: focus moves to the next candidate
@@ -174,16 +185,8 @@
     await focusReviewCard(candidateList, 0, identityReviewHeading);
   }
 
-  function resolveMerge(conflict: ValidatedPersonMergeRequired): void {
-    if (!activeDecision || activeDecision.kind !== 'decision') return;
-    activeDecision = {
-      kind: 'merge', candidate: activeDecision.candidate, context: activeDecision.context, conflict,
-      position: activeDecision.position
-    };
-  }
-
   async function completeMerge(success: PersonMergeSuccess): Promise<void> {
-    if (!activeDecision || activeDecision.kind !== 'merge') return;
+    if (!activeDecision) return;
     const origin = activeDecision;
     const completion = controller.completePersonMerge(origin.candidate.id, origin.context, success);
     activeDecision = undefined;
@@ -194,14 +197,6 @@
     await completion;
     onDecided();
     await focusAfterDecision(origin.candidate.id, origin.position);
-  }
-
-  async function completeDecision(): Promise<void> {
-    const decided = activeDecision;
-    if (!decided) return;
-    activeDecision = undefined;
-    onDecided();
-    await focusAfterDecision(decided.candidate.id, decided.position);
   }
 
   function mergedName(success: PersonMergeSuccess): Promise<string> {
@@ -237,9 +232,8 @@
     if (!closed) return;
     await tick();
     const card = document.getElementById(`identity-match-${closed.candidate.id}-card`);
-    const label = closed.kind === 'decision' && closed.decision === 'reject' ? 'Keep separate' : 'Link identities';
     const action = Array.from(card?.querySelectorAll<HTMLButtonElement>('button') ?? [])
-      .find((button) => button.textContent?.trim() === label);
+      .find((button) => button.textContent?.trim() === 'Link identities');
     const target = action ?? card;
     if (target?.isConnected) {
       target.focus();
@@ -322,6 +316,9 @@
       {#if notAPersonError}
         <p class="decision-error" role="alert">{notAPersonError}</p>
       {/if}
+      {#if controller.decisionError}
+        <p class="decision-error" role="alert">{controller.decisionError}</p>
+      {/if}
 
       {#if controller.loading && controller.rows.length === 0}
         <p class="loading">
@@ -361,8 +358,10 @@
                   right={controller.endpointFor(row.right_kind, row.right_id)}
                   contactMatch={controller.contactMatchFor(row.id)}
                   pending={controller.isDecisionPending(row.id)}
-                  onAccept={() => openDecision(row, 'accept')}
-                  onReject={() => openDecision(row, 'reject')}
+                  note={controller.getDecisionDraft(row.id)}
+                  onNoteInput={(value) => controller.setDecisionDraft(row.id, value)}
+                  onAccept={() => void decide(row, 'accept')}
+                  onReject={() => void decide(row, 'reject')}
                   onNotAPerson={(participantID, notAPersonKind) => void markNotAPerson(row, participantID, notAPersonKind)}
                   onIsPerson={(participantID) => {
                     mergedSurvivor = undefined;
@@ -409,18 +408,7 @@
   {/if}
 </main>
 
-{#if activeDecision?.kind === 'decision'}
-  <IdentityDecisionModal
-    {controller}
-    candidate={activeDecision.candidate}
-    decision={activeDecision.decision}
-    reviewContext={activeDecision.context}
-    onClose={() => void closeDecision()}
-    onDecided={() => void completeDecision()}
-    onContextInvalidated={() => void invalidateDecision()}
-    onResolveMerge={resolveMerge}
-  />
-{:else if activeDecision?.kind === 'merge'}
+{#if activeDecision}
   <PersonBindingConflictModal
     client={controller.apiClient}
     conflict={activeDecision.conflict}

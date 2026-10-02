@@ -276,12 +276,10 @@ test('Directory review, merge, split, and honest Fact gate have no axe violation
   await page.getByRole('radio', { name: 'Identity matches' }).click();
   await expect(page.getByRole('article', { name: 'Identity match 17' })).toBeVisible();
 
-  await page.getByRole('article', { name: 'Identity match 17' })
-    .getByRole('button', { name: 'Keep separate' }).click();
-  const decision = page.getByRole('dialog', { name: 'Keep separate' });
-  await expect(decision).toBeVisible();
-  await assertNoViolations(page, 'Directory identity decision');
-  await page.keyboard.press('Escape');
+  const noted = page.getByRole('article', { name: 'Identity match 17' });
+  await noted.getByRole('button', { name: 'Add a note' }).click();
+  await expect(noted.getByRole('textbox', { name: 'Decision notes' })).toBeFocused();
+  await assertNoViolations(page, 'Directory identity decision notes');
 
   await page.getByRole('radio', { name: 'Contacts that match your archive' }).click();
   const shared = page.getByRole('article', { name: 'Identity match 26' });
@@ -307,8 +305,6 @@ test('Directory review, merge, split, and honest Fact gate have no axe violation
   }));
   await page.getByRole('article', { name: 'Identity match 19' })
     .getByRole('button', { name: 'Link identities' }).click();
-  const linkDecision = page.getByRole('dialog', { name: 'Link identities' });
-  await linkDecision.getByRole('button', { name: 'Link identities' }).click();
   // Accepting hands straight to the merge, which runs on its own; a failed
   // one falls back to the choice.
   const merge = page.getByRole('dialog', { name: 'Resolve person merge' });
