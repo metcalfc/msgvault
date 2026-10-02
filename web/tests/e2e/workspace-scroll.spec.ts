@@ -156,6 +156,9 @@ test.describe('every routed workspace scrolls content taller than the viewport',
   }
 
   test('Operations', async ({ page }) => {
+    // The fixture's page fits in 1024x600 with Linux CI fonts, so a shorter
+    // viewport guarantees overflow regardless of font metrics.
+    await page.setViewportSize({ width: SMALL.width, height: 420 });
     await installOperations(page);
     await page.goto('/activity/operations');
     await expect(page.getByRole('button', { name: 'Open Document extraction run' })).toBeVisible();
