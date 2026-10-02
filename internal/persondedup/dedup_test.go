@@ -111,7 +111,7 @@ func TestRunSendsAddressKindsAndASharedOrganizationDomainOnly(t *testing.T) {
 	require := require.New(t)
 	st := testutil.NewTestStore(t)
 	work := participant(t, st, "quinn@mail.example.com", "Quinn Example")
-	_, err := st.LinkParticipants(work, participant(t, st, "qe.home@gmail.com", "Quinn Example"))
+	_, err := st.LinkParticipants(work, participant(t, st, "quinn.example@gmail.com", "Quinn Example"))
 	require.NoError(err)
 	participant(t, st, "qe@example.com", "Quinn Example")
 
@@ -359,4 +359,56 @@ func TestRunNeverSendsANameThatIsALocalPart(t *testing.T) {
 	pair, _ := pairs["pair_1"].(map[string]any)
 	first, _ := pair["first"].(map[string]any)
 	assert.Equal([]any{"Quinn, Avery R"}, first["names"], "the name that only repeats the address is dropped")
+}
+
+func TestRunSendsASpacedNameThatMatchesTheAddress(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	participant(t, st, "john.smith@example.com", "John Smith")
+	participant(t, st, "js@gmail.com", "John Smith")
+
+	server := jevtest.NewServer(t, samePersonWhenBothSidesHaveNames)
+	service, cfg := server.Service(t, st, enabled)
+	jevtest.GrantConsent(t, st, cfg, persondedup.Feature())
+	report, err := persondedup.Run(t.Context(), st, persondedup.Options{Judge: service})
+	require.NoError(err)
+	assert.Equal(persondedup.Report{Proposals: 1, Requests: 1, Judged: 1, Candidates: 1}, report)
+
+	requests := server.Requests()
+	require.Len(requests, 1)
+	state, _ := requests[0]["state"].(map[string]any)
+	pairs, _ := state["pairs"].(map[string]any)
+	pair, _ := pairs["pair_1"].(map[string]any)
+	first, _ := pair["first"].(map[string]any)
+	second, _ := pair["second"].(map[string]any)
+	assert.Equal([]any{"John Smith"}, first["names"], "a spaced name is a name, not a local part")
+	assert.Equal([]any{"John Smith"}, second["names"])
+}
+
+func TestRunTakesUpAOneSidedNamePairAgainWhenTheOtherSideGainsAName(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	left := participant(t, st, "jordan.lee@example.com", "jordan.lee")
+	participant(t, st, "jordan.lee@example.org", "Jordan Lee")
+
+	server := jevtest.NewServer(t, samePersonWhenBothSidesHaveNames)
+	service, cfg := server.Service(t, st, enabled)
+	jevtest.GrantConsent(t, st, cfg, persondedup.Feature())
+	report, err := persondedup.Run(t.Context(), st, persondedup.Options{Judge: service})
+	require.NoError(err)
+	assert.Equal(persondedup.Report{Proposals: 1, OneSided: 1}, report,
+		"the address-token name is dropped, leaving a name on one side only")
+	assert.Empty(server.Requests())
+
+	again, err := persondedup.Run(t.Context(), st, persondedup.Options{Judge: service})
+	require.NoError(err)
+	assert.Equal(persondedup.Report{Proposals: 1, OneSided: 1}, again, "a one-sided pair is not frozen")
+
+	_, err = st.LinkParticipants(left, participant(t, st, "jlee@example.com", "Jordan R Lee"))
+	require.NoError(err)
+	report, err = persondedup.Run(t.Context(), st, persondedup.Options{Judge: service})
+	require.NoError(err)
+	assert.Equal(1, report.Requests, "once both sides have a name the pair is judged")
 }

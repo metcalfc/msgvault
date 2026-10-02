@@ -132,10 +132,14 @@ type Report struct {
 	// Matched counts pairs that share a mailbox, phone number, or provider
 	// account. They are decided in code, never sent to Jev.
 	Matched int `json:"matched"`
-	// Unnamed counts name pairs never sent because a side has no display
-	// name to judge. They are remembered and proposed again only when a
-	// side changes.
-	Unnamed  int `json:"unnamed"`
+	// Unnamed counts name pairs never sent because neither side has a
+	// display name to judge. They are remembered and proposed again only
+	// when a side changes.
+	Unnamed int `json:"unnamed"`
+	// OneSided counts name pairs not sent because only one side has a
+	// display name. They are not remembered, so a later run takes them up
+	// again when the other side gains a name.
+	OneSided int `json:"one_sided"`
 	Requests int `json:"requests"`
 	Judged   int `json:"judged"`
 	// Candidates counts new review candidates, from code and from Jev.
@@ -190,10 +194,18 @@ func Run(ctx context.Context, st Store, options Options) (Report, error) {
 			continue
 		}
 		pair := pairState(proposal)
-		if len(pair.First.Names) == 0 || len(pair.Second.Names) == 0 {
-			// Without a name on both sides there is nothing to judge.
+		if len(pair.First.Names) == 0 && len(pair.Second.Names) == 0 {
+			// Without any name there is nothing to judge. The pair is
+			// remembered; a name on either side changes its fingerprint,
+			// so it is proposed again then.
 			report.Unnamed++
 			ruled = append(ruled, proposal)
+			continue
+		}
+		if len(pair.First.Names) == 0 || len(pair.Second.Names) == 0 {
+			// A name on one side only is not sent and not remembered, so
+			// the pair is taken up again once the other side has a name.
+			report.OneSided++
 			continue
 		}
 		if options.Limit > 0 && len(named) >= options.Limit {
@@ -306,7 +318,10 @@ func pairState(proposal store.PersonDuplicateProposal) PairState {
 }
 
 // identityState keeps names that carry no address or phone number and are
-// not just one of the side's local parts, and only the kind of each address.
+// not an address token, and only the kind of each address. An address token
+// is a name without whitespace that equals one of the side's local parts
+// ignoring case and separators ("john.smith", "JSmith"); a spaced name such
+// as "John Smith" is a name and is sent.
 func identityState(identity store.PersonDuplicateIdentity) IdentityState {
 	state := IdentityState{Names: []string{}, AddressKinds: []string{}}
 	localParts := map[string]struct{}{}
@@ -320,7 +335,7 @@ func identityState(identity store.PersonDuplicateIdentity) IdentityState {
 		if name == "" || meetingjudge.RedactText(name) != name {
 			continue
 		}
-		if _, isLocalPart := localParts[nameKey(name)]; isLocalPart {
+		if _, isLocalPart := localParts[nameKey(name)]; isLocalPart && !strings.ContainsFunc(name, unicode.IsSpace) {
 			// "john.smith" as a name is the address, not a name.
 			continue
 		}

@@ -215,6 +215,9 @@ func (s *Store) splitPersonMergeOnce(
 			} else if moved != int64(len(request.ParticipantIDs)) {
 				return fmt.Errorf("%w: participant binding changed during split", ErrPersonSplitParticipants)
 			}
+			if err := s.rememberPersonSplitTx(ctx, tx, request.SourcePersonID, request.ParticipantIDs); err != nil {
+				return err
+			}
 		}
 
 		unrestored := []PersonMergeRowRef{}
@@ -691,13 +694,49 @@ func (s *Store) deletePersonSplitCrossingLinksTx(
 	}
 	args := append(personMergeSnapshotIDArgs(selected), personMergeSnapshotIDArgs(selected)...)
 	placeholders := personMergeSnapshotPlaceholders(len(selected))
-	if _, err := tx.ExecContext(ctx, `DELETE FROM participant_links
-		WHERE (participant_a IN (`+placeholders+`) AND participant_b NOT IN (`+placeholders+`))
-		   OR (participant_b IN (`+placeholders+`) AND participant_a NOT IN (`+placeholders+`))`,
+	crossing := `(participant_a IN (` + placeholders + `) AND participant_b NOT IN (` + placeholders + `))
+		   OR (participant_b IN (` + placeholders + `) AND participant_a NOT IN (` + placeholders + `))`
+	rows, err := tx.QueryContext(ctx, `SELECT participant_a, participant_b FROM participant_links
+		WHERE `+crossing, append(args, args...)...)
+	if err != nil {
+		return fmt.Errorf("load split identity links: %w", err)
+	}
+	cut, err := scanLinkEdges(rows)
+	if err != nil {
+		return fmt.Errorf("scan split identity links: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM participant_links WHERE `+crossing,
 		append(args, args...)...); err != nil {
 		return fmt.Errorf("cut split identity links: %w", err)
 	}
+	// The split is the user's statement that the halves are not one
+	// person; remember it so duplicate detection never rejoins them.
+	for _, edge := range cut {
+		if err := s.rememberUserSeparationTx(ctx, tx, edge.a, edge.b, personSplitNote); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// rememberPersonSplitTx records the split as the user's decision that the
+// identities moved to the new person and those left on the source person
+// are not one person, so duplicate detection never proposes them as one,
+// whether or not a link joined them.
+func (s *Store) rememberPersonSplitTx(
+	ctx context.Context, tx *loggedTx, sourcePersonID int64, selected []int64,
+) error {
+	args := append([]any{sourcePersonID}, personMergeSnapshotIDArgs(selected)...)
+	var remaining sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT MIN(participant_id) FROM person_participants
+		WHERE person_id = ? AND participant_id NOT IN (`+
+		personMergeSnapshotPlaceholders(len(selected))+`)`, args...).Scan(&remaining); err != nil {
+		return fmt.Errorf("find participants left by split: %w", err)
+	}
+	if !remaining.Valid {
+		return nil
+	}
+	return s.rememberUserSeparationTx(ctx, tx, slices.Min(selected), remaining.Int64, personSplitNote)
 }
 
 func (s *Store) restorePersonSplitRowsTx(

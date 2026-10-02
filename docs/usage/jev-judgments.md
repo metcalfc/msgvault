@@ -1107,8 +1107,12 @@ two sets of names belong to one person.
    pairs already bound to one person; pairs with any existing identity match
    candidate, including one you rejected; and a pair where one side was
    rejected for, or detached from, the other side's person. Unlinking two
-   identities, including ones you linked by hand, records a rejected match
-   between them, so an unlinked pair is never proposed again. These rules
+   identities, including ones you linked by hand, and splitting a merged
+   person each record a rejected match between the two halves, so they are
+   never proposed again. Your earlier rejections follow each half of a
+   later split: after unlinking A from B-C and then B from C, A stays apart
+   from C as well. Rejections the system restores on its own, such as those
+   a "not a person" mark made, do not count as your decision. These rules
    apply to every pair, so an exact match never overrides your earlier "not
    the same person".
 3. **Exact matches, in code.** A pair that shares a mailbox, phone number, or
@@ -1120,8 +1124,10 @@ two sets of names belong to one person.
    `same_provider_id`).
 4. **Names, Jev only with consent.** The remaining pairs share only a name or
    a local part. A pair is sent only when both sides have a display name to
-   judge; a pair without one is remembered and not proposed again until a
-   side changes. Twenty pairs per request, one Noul each. `--limit` and the
+   judge. A pair with no name on either side is remembered and proposed
+   again when a side changes (the remembered inputs include each side's
+   names). A pair with a name on one side only is not remembered, so it is
+   taken up again as soon as the other side has a name. Twenty pairs per request, one Noul each. `--limit` and the
    cache-build cap count only these pairs.
 5. **Code decides what you see.** A name pair judged 0.30 or more likely to
    be one person becomes a reviewable identity match candidate: basis
@@ -1146,9 +1152,10 @@ Per name pair, under `pairs.pair_N`:
 
 - `first.names[]` and `second.names[]`: up to three display names each side
   uses, cut to 120 characters. A name containing an email address or phone
-  number is not sent, and neither is a name that only repeats one of that
-  side's local parts (compared ignoring case and separators, so
-  `john.smith` and "John Smith" both repeat `john.smith@`).
+  number is not sent, and neither is an address token: a name with no
+  spaces that equals one of that side's local parts ignoring case and
+  separators, such as `john.smith` or `JSmith` for `john.smith@` or
+  `jsmith@`. A spaced name such as "John Smith" is a name and is sent.
 - `first.address_kinds[]` and `second.address_kinds[]`: `personal` (a
   consumer mail provider such as gmail.com) and/or `organization` (any other
   domain), for up to five addresses each side uses.

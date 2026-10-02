@@ -673,3 +673,108 @@ func TestPersonDuplicateMatchIsNeverAcceptedBySystem(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(t, store.IdentityMatchStateAccepted, accepted.State)
 }
+
+func sharePhoneNumber(t *testing.T, st *store.Store, ids ...int64) {
+	t.Helper()
+	kinds := []string{"phone", "whatsapp", "imessage", "sms"}
+	for i, id := range ids {
+		require.NoError(t, st.SetParticipantIdentifier(id, kinds[i], "+1 555 555 0100"))
+	}
+}
+
+func TestUnlinkMemorySurvivesARestoredNotAPersonRejection(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	left := duplicateParticipant(t, st, "lee@example.com", "")
+	right := duplicateParticipant(t, st, "lee.other@example.net", "")
+	value := "lee"
+	_, _, err := st.UpsertIdentityMatchCandidateContext(t.Context(), store.IdentityMatchCandidateInput{
+		LeftKind: store.IdentityMatchParticipant, LeftID: left,
+		RightKind: store.IdentityMatchParticipant, RightID: right,
+		Basis: store.IdentityMatchDisplayName, NormalizedValue: &value,
+		State: store.IdentityMatchStateCandidate, Source: store.ProvenanceArchiveObservation,
+	})
+	require.NoError(err)
+	_, err = st.LinkParticipants(left, right)
+	require.NoError(err)
+	// Marking one side as not a person rejects the open candidate, but only
+	// until the mark is cleared.
+	_, err = st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: left, Kind: correspondentkind.Organization,
+	})
+	require.NoError(err)
+	_, err = st.UnlinkParticipants(left, right)
+	require.NoError(err)
+	_, err = st.SetCorrespondentKindContext(t.Context(), store.SetCorrespondentKindInput{
+		ParticipantID: left, Kind: correspondentkind.Person,
+	})
+	require.NoError(err)
+	sharePhoneNumber(t, st, left, right)
+
+	candidates, err := st.ListIdentityMatchCandidatesContext(t.Context(), nil, 100, 0)
+	require.NoError(err)
+	unlinks := 0
+	for _, candidate := range candidates {
+		if candidate.SourceRef != nil && *candidate.SourceRef == "participant_unlink" {
+			unlinks++
+			assert.Equal(store.IdentityMatchStateRejected, candidate.State)
+		}
+	}
+	assert.Equal(1, unlinks, "the unlink is recorded despite the restorable rejection")
+	proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	assert.Empty(proposals)
+}
+
+func TestUnlinkMemorySurvivesALaterSplitOfTheOtherSide(t *testing.T) {
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	a := duplicateParticipant(t, st, "ash@example.com", "")
+	b := duplicateParticipant(t, st, "bay@example.net", "")
+	c := duplicateParticipant(t, st, "cam@example.org", "")
+	_, err := st.LinkParticipants(a, b)
+	require.NoError(err)
+	_, err = st.LinkParticipants(b, c)
+	require.NoError(err)
+	_, err = st.UnlinkParticipants(a, b)
+	require.NoError(err, "A is not the BC identity")
+	_, err = st.UnlinkParticipants(b, c)
+	require.NoError(err, "B and C are not one identity either")
+	sharePhoneNumber(t, st, a, b, c)
+
+	proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	assert.Empty(t, proposalPairs(proposals), "A stays apart from C as well as B")
+}
+
+func TestPersonSplitIsRememberedAsNotTheSamePerson(t *testing.T) {
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	left := duplicateParticipant(t, st, "lee@example.com", "")
+	right := duplicateParticipant(t, st, "lee.other@example.net", "")
+	survivor, _, err := st.CreatePersonFromParticipant(left)
+	require.NoError(err)
+	absorbed, _, err := st.CreatePersonFromParticipant(right)
+	require.NoError(err)
+	merged, err := st.MergePersonsContext(t.Context(), store.PersonMergeRequest{
+		SurvivorID: survivor.ID, AbsorbedID: absorbed.ID,
+		ExpectedSurvivorRevision: survivor.Revision, ExpectedAbsorbedRevision: absorbed.Revision,
+		IdempotencyKey: "merge-lee", Actor: "user",
+	})
+	require.NoError(err)
+	_, err = st.LinkParticipants(left, right)
+	require.NoError(err)
+	person, err := st.GetPersonContext(t.Context(), survivor.ID)
+	require.NoError(err)
+	_, err = st.SplitPersonMergeContext(t.Context(), store.PersonSplitRequest{
+		SourcePersonID: survivor.ID, MergeID: merged.Merge.ID, ParticipantIDs: []int64{right},
+		ExpectedSourceRevision: person.Revision, IdempotencyKey: "split-lee", Actor: "user",
+	})
+	require.NoError(err)
+	sharePhoneNumber(t, st, left, right)
+
+	proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	assert.Empty(t, proposals, "the split halves are never proposed as one person")
+}

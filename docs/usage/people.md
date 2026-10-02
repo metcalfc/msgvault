@@ -149,7 +149,7 @@ profile's participant bindings. Linking two clusters that already belong to
 different profiles reports a conflict instead of silently merging curated
 data. Unlinking two identities, even ones you linked by hand, records your
 decision as a rejected match, so duplicate detection never proposes the pair
-again. Unlinking evidence does not move or delete profile bindings; to take an
+again; splitting a merged person does the same for its two halves. Unlinking evidence does not move or delete profile bindings; to take an
 identity away from a person, detach it as described in
 [Clean up a person's contact methods](#clean-up-a-persons-contact-methods).
 
@@ -502,7 +502,10 @@ An exact reversal restores the two pre-merge profiles when their lineage and
 dependencies are still intact. A partial split moves participant-attributable
 data instead of guessing; use `--json` to inspect ambiguous or unrestored rows.
 An active merge prevents deletion of its current person; complete the split
-first.
+first. A split also records that the identities you moved and the ones left
+behind are not one person, so
+[duplicate people](jev-judgments.md#feature-duplicate-people) never proposes
+them as one again.
 
 Profiles with an active CardDAV publication cannot be merged. This prevents a
 local merge from silently reassigning a UID that an external address book is
