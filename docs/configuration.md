@@ -1328,7 +1328,7 @@ Organization resolution and job title equivalence (feature
 
 | Key | Default | Description |
 |---|---|---|
-| `enabled` | `false` | Ask Jev whether an organization name that matches no existing organization exactly is one of a few similar ones, and whether two job titles at one organization are the same role. `person enrichment run` and `person sweep` may send once consent is active. |
+| `enabled` | `false` | Ask Jev whether an organization name that matches no existing organization exactly is one of a few similar ones, and whether two job titles at one organization are the same role. `person enrichment run` and `person sweep` may send once consent is active. A name whose domain shares the registrable domain of exactly one similar organization resolves in code whatever this setting. |
 | `automatic` | `false` | Also let the daemon's scheduled enrichment and people sweep runs send. |
 
 #### `[jev.correspondent_kind]`

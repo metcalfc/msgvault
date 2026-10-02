@@ -1,8 +1,11 @@
-// Package orgresolution asks Jev whether an organization name that missed
-// the exact lookup is one of a few existing organizations, and whether two
-// job titles at one organization name the same role. It stores each
-// confident answer as an alias the deterministic lookup and employment
-// projection read, so replays never depend on a live call.
+// Package orgresolution resolves an organization name that missed the exact
+// lookup. When exactly one shortlisted organization shares the name's
+// registrable domain, code decides and Jev is not asked. Otherwise it asks
+// Jev whether the name is one of a few existing organizations, and in both
+// cases whether two job titles at one organization name the same role. It
+// stores each decision and confident answer as an alias the deterministic
+// lookup and employment projection read, so replays never depend on a live
+// call.
 package orgresolution
 
 import (

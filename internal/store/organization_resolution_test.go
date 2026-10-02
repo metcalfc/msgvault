@@ -210,3 +210,95 @@ func TestOrganizationMatchReviewAcceptMergesAndRejectKeepsTheOrganizationOffTheS
 	require.NoError(err)
 	assert.Empty(reviews)
 }
+
+func TestSharesRegistrableDomain(t *testing.T) {
+	tests := []struct {
+		name   string
+		domain string
+		others []string
+		want   bool
+	}{
+		{"same host", "example.com", []string{"example.com"}, true},
+		{"subdomain of the other", "mail.example.com", []string{"example.com"}, true},
+		{"sibling subdomains", "eu.example.com", []string{"us.example.com"}, true},
+		{"any of several", "example.com", []string{"other.example", "www.example.com"}, true},
+		{"different registrable domain", "example.com", []string{"example.org"}, false},
+		{"public suffix subdomain", "mail.example.co.uk", []string{"example.co.uk"}, true},
+		{"only the public suffix is shared", "example.co.uk", []string{"other.co.uk"}, false},
+		{"consumer mail domain", "gmail.com", []string{"gmail.com"}, false},
+		{"no domain", "", []string{"example.com"}, false},
+		{"no others", "example.com", nil, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.want, store.SharesRegistrableDomain(test.domain, test.others))
+		})
+	}
+}
+
+func TestOrganizationDomainAliasIsARuleAliasThatSurvivesMerges(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	labs := createShortlistOrganization(t, st, "Example Labs", "example.com")
+	ref := personfacts.OrganizationReference{Name: "Example Labs Europe", Domain: "eu.example.com"}
+
+	input := store.OrganizationDomainAliasInput{OrganizationID: labs.ID, Name: ref.Name, Domain: ref.Domain}
+	added, err := st.RecordOrganizationDomainAliasContext(t.Context(), input)
+	require.NoError(err)
+	assert.Equal(store.OrganizationAliasResult{NameAdded: true, DomainAdded: true}, added)
+	again, err := st.RecordOrganizationDomainAliasContext(t.Context(), input)
+	require.NoError(err)
+	assert.Equal(store.OrganizationAliasResult{}, again, "the same alias twice writes nothing")
+
+	lookup, err := st.OrganizationShortlistContext(t.Context(), ref)
+	require.NoError(err)
+	assert.Equal(store.OrganizationReused, lookup.Status)
+	assert.Equal([]int64{labs.ID}, lookup.MatchedIDs)
+
+	profile, err := st.GetOrganizationProfileContext(t.Context(), labs.ID, false)
+	require.NoError(err)
+	require.Len(profile.Names, 1)
+	assert.Equal(store.ProvenanceSystem, profile.Names[0].Envelope.Source)
+	require.NotNil(profile.Names[0].Envelope.SourceRef)
+	assert.Equal(store.OrganizationDomainRuleSourceRef, *profile.Names[0].Envelope.SourceRef)
+	assert.Nil(profile.Names[0].Envelope.Confidence, "a rule has no probability")
+
+	survivor := createShortlistOrganization(t, st, "Example Holdings", "")
+	reloaded, err := st.GetOrganizationContext(t.Context(), labs.ID)
+	require.NoError(err)
+	_, err = st.MergeOrganizationsContext(t.Context(), survivor.ID, survivor.Revision, reloaded.ID, reloaded.Revision)
+	require.NoError(err)
+	merged, err := st.OrganizationShortlistContext(t.Context(), ref)
+	require.NoError(err)
+	assert.Equal([]int64{survivor.ID}, merged.MatchedIDs, "the rule alias is carried to the survivor")
+}
+
+func TestOrganizationDomainAliasRefusesADomainTheOrganizationDoesNotShare(t *testing.T) {
+	tests := []struct {
+		name               string
+		organizationDomain string
+		domain             string
+	}{
+		{"different registrable domain", "example.com", "example.org"},
+		{"only the public suffix is shared", "other.co.uk", "example.co.uk"},
+		{"consumer mail domain", "gmail.com", "gmail.com"},
+		{"organization without a domain", "", "example.com"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			st := testutil.NewTestStore(t)
+			labs := createShortlistOrganization(t, st, "Example Labs", test.organizationDomain)
+
+			_, err := st.RecordOrganizationDomainAliasContext(t.Context(), store.OrganizationDomainAliasInput{
+				OrganizationID: labs.ID, Name: "Example Labs Europe", Domain: test.domain,
+			})
+			require.ErrorIs(err, store.ErrOrganizationInvalid)
+			profile, err := st.GetOrganizationProfileContext(t.Context(), labs.ID, false)
+			require.NoError(err)
+			assert.Empty(profile.Names, "nothing is written")
+		})
+	}
+}

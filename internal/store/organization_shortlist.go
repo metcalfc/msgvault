@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode"
 
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/personfacts"
 	"golang.org/x/net/publicsuffix"
 )
@@ -416,6 +417,24 @@ func trigrams(value string) map[string]struct{} {
 		}
 	}
 	return grams
+}
+
+// SharesRegistrableDomain reports whether domain and any of others have the
+// same registrable domain (eTLD+1, by the public suffix list), so
+// eu.example.com shares example.com but example.co.uk never shares
+// other.co.uk. A consumer mail domain such as gmail.com says nothing about
+// an organization and never shares. Inputs are normalized hosts.
+func SharesRegistrableDomain(domain string, others []string) bool {
+	base := registrableDomain(domain)
+	if base == "" || correspondentkind.IsFreemailDomain(base) {
+		return false
+	}
+	for _, other := range others {
+		if registrableDomain(other) == base {
+			return true
+		}
+	}
+	return false
 }
 
 // registrableDomain reduces a normalized host to its registrable domain

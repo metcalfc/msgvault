@@ -195,13 +195,15 @@ func retargetOrganizationMatchReviewsTx(
 }
 
 // carryResolutionAliasesTx copies the lookup keys organization resolution
-// wrote on the losing organization (judgment aliases and accepted reviews)
+// wrote on the losing organization (judgment and registrable-domain aliases
+// and accepted reviews)
 // to the survivor before the merge supersedes the losing organization's
 // names, so a name that resolved before the merge still resolves after it.
 func carryResolutionAliasesTx(
 	ctx context.Context, tx *loggedTx, survivorID, losingID int64,
 ) error {
 	const resolutionSource = `(source_ref LIKE 'jev:organization_resolution:%' OR
+		source_ref LIKE 'rule:organization_resolution:%' OR
 		source_ref LIKE 'organization-match-review:%')`
 	if _, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO organization_names (

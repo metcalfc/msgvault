@@ -545,7 +545,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("configure Jev identity judge: %w", err)
 	}
-	organizationPreparer, err := newJevOrganizationPreparer(cfg, s, true)
+	organizationPreparer, err := newOrganizationPreparer(cfg, s, true)
 	if err != nil {
 		return fmt.Errorf("configure Jev organization resolution: %w", err)
 	}

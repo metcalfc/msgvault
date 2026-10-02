@@ -108,21 +108,27 @@ type jevOrganizationStore interface {
 	orgresolution.Store
 }
 
-// newJevOrganizationPreparer wires organization resolution, or returns nil
-// when Jev or the feature is off in the startup configuration so the exact
-// organization lookup alone applies until the daemon restarts with them on.
-// automatic marks unattended callers such as scheduled runs.
-func newJevOrganizationPreparer(
+// newOrganizationPreparer wires organization resolution. A reference whose
+// domain shares exactly one shortlisted organization's registrable domain is
+// resolved in code whatever the configuration. Jev is wired only when it and
+// the feature are on in the startup configuration; otherwise every reference
+// that would need a judgment keeps the exact lookup alone until the daemon
+// restarts with them on. automatic marks unattended callers such as
+// scheduled runs.
+func newOrganizationPreparer(
 	cfg *config.Config, st jevOrganizationStore, automatic bool,
 ) (personfacts.OrganizationPreparer, error) {
-	if cfg == nil || !cfg.Jev.Enabled || !cfg.Jev.OrganizationResolution.Enabled {
-		return nil, nil //nolint:nilnil // nil means "no preparer"; claims keep the exact lookup.
+	var judge orgresolution.Judge
+	if cfg != nil && cfg.Jev.Enabled && cfg.Jev.OrganizationResolution.Enabled {
+		service, err := newJevService(cfg, st)
+		if err != nil {
+			return nil, err
+		}
+		if service != nil {
+			judge = service
+		}
 	}
-	service, err := newJevService(cfg, st)
-	if err != nil || service == nil {
-		return nil, err
-	}
-	return orgresolution.NewPreparer(service, st, automatic, nil), nil
+	return orgresolution.NewPreparer(judge, st, automatic, nil), nil
 }
 
 // newJevEventKindJudge wires the meeting event kind judgment's Jev door, or

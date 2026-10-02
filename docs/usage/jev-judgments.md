@@ -43,7 +43,7 @@ of it. The table below says what each feature does without Jev.
 | Feature | What Jev decides | When it runs (all opt-in) | What leaves the machine | Without Jev |
 |---|---|---|---|---|
 | [`enrichment_identity`](#feature-enrichment-identity-check) | Whether a returned profile whose name or company did not match exactly is the requested person | Manual enrichment; scheduled with `automatic` | Requested name, company, and email domain; returned name parts, location, up to 5 current roles, up to 10 past companies, profile URL host. No messages or addresses | Exact name-and-company rule; partial matches are rejected |
-| [`organization_resolution`](#feature-organization-resolution) | Which of up to 8 shortlisted organizations a name is; whether two titles are one role | Manual enrichment and sweeps; scheduled with `automatic` | Organization names, up to 5 domains and 5 other names per candidate, up to 4 title pairs | Exact lookup; a new organization is created and titles stay separate |
+| [`organization_resolution`](#feature-organization-resolution) | Which of up to 8 shortlisted organizations a name is, when no single one shares its registrable domain; whether two titles are one role | Manual enrichment and sweeps; scheduled with `automatic` | Organization names, up to 5 domains and 5 other names per candidate, up to 4 title pairs | A single candidate sharing the registrable domain still resolves in code; otherwise exact lookup, a new organization is created, and titles stay separate |
 | [`correspondent_kind`](#feature-correspondent-kind) | Person, shared mailbox, list, automated, or marketing | `kinds build`; cache builds with `automatic` (up to 200) | Display name, up to 5 addresses split into local part and domain, counts, header counts, up to 8 subjects of 160 characters. No bodies | Rules only; the rest stay unclassified and rank as people |
 | [`cleanup_suggestions`](#feature-cleanup-suggestions) | Impersonation, pressure, and mail category | `suggest-cleanup` only; never automatic | Sender name and domains, up to 10 link hosts, SPF/DKIM/DMARC results, subject (200 characters), **first 500 characters of the body** | No suggestions |
 | [`search_rerank`](#feature-hybrid-search-reranking) | Whether each leading result answers the query | Hybrid searches that request it; never automatic. Not recommended yet | Query (4 KiB); per result, up to 2 KiB of subject, sender, date, and **cleaned body**; up to 30 results | Fused hybrid order |
@@ -309,12 +309,25 @@ otherwise. The steps are:
    letter patterns with it, or whose domain shares its registrable domain
    (`eu.example.com` and `example.com`). No shortlist means the organization
    is created as before, and nothing is sent.
-3. **One request.** Jev picks which shortlisted organization, if any, the
-   name is, and answers one yes/no question per job-title pair (at most four)
-   that the person already has at the organizations involved.
+3. **Shared domain, no Jev.** When exactly one shortlisted organization has a
+   domain with the same registrable domain as the fact's domain, code decides
+   that the fact names it. The registrable domain comes from the public suffix
+   list, so `mail.example.com` meets `example.com` and `mail.example.co.uk`
+   meets `example.co.uk`, but `example.co.uk` never meets `other.co.uk`. A
+   consumer mail domain such as `gmail.com` settles nothing. This runs even
+   when Jev is off or not consented.
+4. **One request.** Otherwise Jev picks which shortlisted organization, if
+   any, the name is. When two or more shortlisted organizations share the
+   registrable domain, the domain cannot tell them apart, so the whole
+   shortlist is asked about exactly as when none does. In both cases Jev also
+   answers one yes/no question per job-title pair (at most four) that the
+   person already has at the organizations involved. After a shared-domain
+   decision, the request carries only the title pairs at that organization,
+   and no request is made when there are none.
 
 | Result | Condition | Outcome |
 |---|---|---|
+| Domain alias | exactly one candidate shares the registrable domain | The name, and its domain when the organization lacks it, become lookup keys of that organization. Source `system`, source_ref `rule:organization_resolution:registrable_domain`, no confidence. |
 | Alias | best candidate ≥ 0.85 | The name, and its domain when the organization lacks it, become lookup keys of that organization. Source `system`, source_ref `jev:organization_resolution:<model>`, the probability as confidence. |
 | Review | best candidate ≥ 0.50 | The organization is created as before, and an organization match review asks you whether the two are the same. |
 | New organization | otherwise, or Jev unavailable | Exactly today's behavior. |
@@ -370,7 +383,8 @@ Only organization names, domains, and job titles:
 
 No message content, no people's names, no addresses, no identifiers. A
 request carries only the questions it needs: `org_ref` when the lookup
-missed, and one `title_same_role_N` per title pair.
+missed and a shared domain did not settle it, and one `title_same_role_N` per
+title pair. A shared-domain decision sends no `reference` or `candidates`.
 
 ### The questions, exactly as sent
 
@@ -392,10 +406,6 @@ missed, and one `title_same_role_N` per title pair.
 `msgvault jev consent organization_resolution` prints the same disclosure.
 At most eight organizations are asked about per saved set of facts, within one
 minute; the rest resolve as before.
-
-**Planned:** a candidate that shares the fact's registrable domain will be
-decided in code, so only name matches without a shared domain and title pairs
-are sent to Jev.
 
 ## Feature: correspondent kind
 

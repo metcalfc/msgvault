@@ -31,6 +31,7 @@ type Store interface {
 	GetOrganizationContext(ctx context.Context, id int64) (*store.Organization, error)
 	PersonOrganizationTitlesContext(ctx context.Context, personID, organizationID int64) ([]string, error)
 	RecordOrganizationResolutionAliasContext(ctx context.Context, input store.OrganizationAliasInput) (store.OrganizationAliasResult, error)
+	RecordOrganizationDomainAliasContext(ctx context.Context, input store.OrganizationDomainAliasInput) (store.OrganizationAliasResult, error)
 	RecordOrganizationMatchReviewContext(ctx context.Context, input store.OrganizationMatchReviewInput) (bool, error)
 	RecordEmploymentTitleAliasContext(ctx context.Context, input store.EmploymentTitleAliasInput) (bool, error)
 	EmploymentTitleCanonicalContext(ctx context.Context, organizationID int64, titles []string) (map[string]string, error)
@@ -52,10 +53,12 @@ type Preparer struct {
 	logger    *slog.Logger
 }
 
-// NewPreparer wires a preparer; a nil judge or store means no preparer, and
-// callers then keep the exact lookup alone.
+// NewPreparer wires a preparer; a nil store means no preparer, and callers
+// then keep the exact lookup alone. A nil judge means Jev is off: references
+// whose domain settles them still resolve in code, and everything that would
+// need a judgment is skipped as "disabled", exactly as without a preparer.
 func NewPreparer(judge Judge, st Store, automatic bool, logger *slog.Logger) *Preparer {
-	if judge == nil || st == nil {
+	if st == nil {
 		return nil
 	}
 	if logger == nil {
@@ -73,9 +76,13 @@ const (
 	OutcomeAmbiguous Outcome = "ambiguous"
 	OutcomeNoMatch   Outcome = "no_candidates"
 	OutcomeAlias     Outcome = "alias"
-	OutcomeReview    Outcome = "review"
-	OutcomeNew       Outcome = "new_organization"
-	OutcomeSkipped   Outcome = "skipped"
+	// OutcomeDomain means exactly one shortlisted organization shares the
+	// reference's registrable domain, so code aliased the name to it
+	// without asking Jev.
+	OutcomeDomain  Outcome = "registrable_domain"
+	OutcomeReview  Outcome = "review"
+	OutcomeNew     Outcome = "new_organization"
+	OutcomeSkipped Outcome = "skipped"
 )
 
 // ReferenceResult reports one reference's outcome with numbers only.
@@ -100,8 +107,9 @@ func (p *Preparer) PrepareEmploymentOrganizations(
 }
 
 // Prepare resolves every distinct organization the claims name without an
-// ID. A failure to ask is not an error: the reference keeps today's exact
-// lookup. Only a store failure is returned, after the references before it
+// ID. A reference whose domain settles it is aliased in code; the rest are
+// asked about. A failure to ask is not an error: the reference keeps
+// today's exact lookup. Only a store failure is returned, after the references before it
 // were handled.
 func (p *Preparer) Prepare(
 	ctx context.Context, personID int64, claims []personfacts.ProposedClaim, fence *personfacts.WriteFence,
@@ -214,10 +222,66 @@ func (p *Preparer) resolve(
 		if len(shortlist.Candidates) == 0 {
 			return ReferenceResult{Outcome: OutcomeNoMatch}, nil
 		}
+		if organizationID, ok := domainMatch(shortlist); ok {
+			return p.settleByDomain(ctx, personID, reference, shortlist, organizationID, deadline, fence)
+		}
 		return p.askOrganization(ctx, personID, reference, shortlist, deadline, fence)
 	default:
 		return ReferenceResult{}, fmt.Errorf("unknown organization lookup status %q", shortlist.Status)
 	}
+}
+
+// domainMatch reports the one shortlisted organization that shares the
+// reference's registrable domain. None, or more than one, is no match: two
+// organizations on one registrable domain are exactly what the domain cannot
+// tell apart, and the shortlist's order ranks name similarity, not identity,
+// so that reference goes to Jev with its whole shortlist as before.
+func domainMatch(shortlist *store.OrganizationShortlist) (int64, bool) {
+	var matched []int64
+	for _, candidate := range shortlist.Candidates {
+		if store.SharesRegistrableDomain(shortlist.Reference.Domain, candidate.Domains) {
+			matched = append(matched, candidate.OrganizationID)
+		}
+	}
+	if len(matched) != 1 {
+		return 0, false
+	}
+	return matched[0], true
+}
+
+// settleByDomain aliases the reference to the organization its domain
+// settles, without a judgment, then asks only about title pairs there.
+func (p *Preparer) settleByDomain(
+	ctx context.Context, personID int64, reference employmentReference, shortlist *store.OrganizationShortlist,
+	organizationID int64, deadline time.Time, fence *personfacts.WriteFence,
+) (ReferenceResult, error) {
+	if _, err := p.store.RecordOrganizationDomainAliasContext(ctx, store.OrganizationDomainAliasInput{
+		OrganizationID: organizationID, Name: shortlist.Reference.Name, Domain: shortlist.Reference.Domain,
+		Fence: fence,
+	}); err != nil {
+		return ReferenceResult{}, err
+	}
+	result := ReferenceResult{Outcome: OutcomeDomain, OrganizationID: organizationID}
+	pairs, err := p.titlePairs(ctx, personID, organizationID, reference.titles, nil)
+	if err != nil {
+		return ReferenceResult{}, err
+	}
+	if len(pairs) == 0 {
+		p.logger.Debug("organization resolved by registrable domain",
+			"feature", jev.FeatureOrganizationResolution, "outcome", string(result.Outcome))
+		return result, nil
+	}
+	return p.askTitlesOnly(ctx, result, pairs, deadline, fence)
+}
+
+// judgeQuestions asks Jev, or reports it disabled when no judge is wired.
+func (p *Preparer) judgeQuestions(
+	ctx context.Context, state State, questions []string, deadline time.Time,
+) (jev.Response, error) {
+	if p.judge == nil {
+		return jev.Response{}, jev.ErrDisabled
+	}
+	return p.judge.JudgeQuestions(ctx, Feature(), p.automatic, state, questions, deadline)
 }
 
 // titlePairs pairs each claimed title with every distinct title already
@@ -280,7 +344,7 @@ func (p *Preparer) askTitlesOnly(
 	state := State{TitlePairs: make(map[string]TitlePairState, len(pairs))}
 	names := map[int64]string{result.OrganizationID: organizationName}
 	questions := addTitlePairs(&state, pairs, names)
-	response, err := p.judge.JudgeQuestions(ctx, Feature(), p.automatic, state, questions, deadline)
+	response, err := p.judgeQuestions(ctx, state, questions, deadline)
 	if err != nil {
 		result.Skipped = jev.Skipped(err)
 		p.logSkipped(result.Skipped)
@@ -342,7 +406,7 @@ func (p *Preparer) askOrganization(
 	if len(pairs) == 0 {
 		state.TitlePairs = nil
 	}
-	response, err := p.judge.JudgeQuestions(ctx, Feature(), p.automatic, state, questions, deadline)
+	response, err := p.judgeQuestions(ctx, state, questions, deadline)
 	if err != nil {
 		result := ReferenceResult{Outcome: OutcomeSkipped, Skipped: jev.Skipped(err)}
 		p.logSkipped(result.Skipped)

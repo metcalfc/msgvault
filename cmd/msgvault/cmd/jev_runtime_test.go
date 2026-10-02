@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -8,7 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/config"
 	"go.kenn.io/msgvault/internal/jev"
+	"go.kenn.io/msgvault/internal/orgresolution"
+	"go.kenn.io/msgvault/internal/personfacts"
 	"go.kenn.io/msgvault/internal/providercredentials"
+	"go.kenn.io/msgvault/internal/store"
 	"go.kenn.io/msgvault/internal/testutil"
 )
 
@@ -129,27 +133,59 @@ func TestNewJevEventKindJudgeIsNilUntilJevAndTheFeatureAreOn(t *testing.T) {
 	assert.NotNil(assignee)
 }
 
-func TestNewJevOrganizationPreparerIsNilUntilJevAndTheFeatureAreOn(t *testing.T) {
+func TestNewOrganizationPreparerAsksJevOnlyWhenJevAndTheFeatureAreOn(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	st := testutil.NewTestStore(t)
 	cfg := config.NewDefaultConfig()
 	cfg.HomeDir = t.TempDir()
 	cfg.Data.DataDir = cfg.HomeDir
-
-	preparer, err := newJevOrganizationPreparer(cfg, st, true)
+	catalog, err := st.BuildPersonFactCatalogContext(t.Context(), true)
 	require.NoError(err)
-	assert.Nil(preparer, "everything off means the exact organization lookup alone")
+	var target personfacts.TargetDescriptor
+	for _, candidate := range catalog.Targets {
+		if candidate.Kind == personfacts.TargetEmployment {
+			target = candidate
+		}
+	}
+	require.Equal(personfacts.TargetEmployment, target.Kind)
+	labsDomain := "labs.example"
+	_, err = st.CreateOrganizationContext(t.Context(), store.OrganizationInput{
+		Name: "Example Labs", Kind: store.OrganizationKindCompany, PrimaryDomain: &labsDomain,
+	})
+	require.NoError(err)
+	claim := func(organization string) personfacts.ProposedClaim {
+		return personfacts.ProposedClaim{
+			Target: target, Relation: personfacts.RelationSupport,
+			SubmittedValue: json.RawMessage(`{"organization":` + organization + `,"title":"Engineer"}`),
+		}
+	}
+	prepare := func(organization string) orgresolution.ReferenceResult {
+		t.Helper()
+		organizations, err := newOrganizationPreparer(cfg, st, false)
+		require.NoError(err)
+		preparer, ok := organizations.(*orgresolution.Preparer)
+		require.True(ok)
+		require.NotNil(preparer, "a preparer is wired whatever the configuration")
+		results, err := preparer.Prepare(t.Context(), 1, []personfacts.ProposedClaim{claim(organization)}, nil)
+		require.NoError(err)
+		require.Len(results, 1)
+		return results[0]
+	}
 
+	nameOnly := `{"name":"Example Labs, Inc."}`
+	assert.Equal("disabled", prepare(nameOnly).Skipped, "everything off: no judge, the exact lookup alone")
 	cfg.Jev.Enabled = true
-	preparer, err = newJevOrganizationPreparer(cfg, st, true)
-	require.NoError(err)
-	assert.Nil(preparer, "the feature switch is separate from the [jev] switch")
-
+	assert.Equal("disabled", prepare(nameOnly).Skipped, "the feature switch is separate from the [jev] switch")
 	cfg.Jev.OrganizationResolution.Enabled = true
-	preparer, err = newJevOrganizationPreparer(cfg, st, true)
-	require.NoError(err)
-	assert.NotNil(preparer)
+	wired := prepare(nameOnly)
+	assert.Equal(orgresolution.OutcomeSkipped, wired.Outcome, "no key or consent in a test home")
+	assert.NotEqual("disabled", wired.Skipped, "both on: the Jev service is wired and runs its own gates")
+
+	cfg.Jev.Enabled = false
+	settled := prepare(`{"name":"Example Labs Europe","domain":"eu.labs.example"}`)
+	assert.Equal(orgresolution.OutcomeDomain, settled.Outcome, "a shared registrable domain resolves with Jev off")
+	assert.Empty(settled.Skipped)
 }
 
 func TestJevCredentialRevisionTracksTheStoreFile(t *testing.T) {

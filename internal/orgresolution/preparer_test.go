@@ -50,13 +50,13 @@ func TestPreparerSendsTheConsentedWording(t *testing.T) {
 	require.NoError(err)
 
 	_, err = f.preparer().Prepare(t.Context(), f.personID, []personfacts.ProposedClaim{
-		f.claim(`{"name":"Example Labs, Inc.","domain":"eu.labs.example"}`, "General Partner", "wording"),
+		f.claim(`{"name":"Example Labs, Inc.","domain":"examplelabs.example"}`, "General Partner", "wording"),
 	}, nil)
 	require.NoError(err)
 	requests := fake.requests()
 	require.Len(requests, 1)
 	assert.Equal(map[string]any{
-		"reference": map[string]any{"name": "Example Labs, Inc.", "domain": "eu.labs.example"},
+		"reference": map[string]any{"name": "Example Labs, Inc.", "domain": "examplelabs.example"},
 		"candidates": map[string]any{"candidate_1": map[string]any{
 			"name": "Example Labs", "domains": []any{"labs.example"},
 		}},
@@ -201,9 +201,7 @@ func TestPreparerAliasWriteIsIdempotentAndLaterLookupsNeedNoJudgment(t *testing.
 	fake := newFakeJev(t, map[string]float64{"candidate_1": 0.97}, 0)
 	f := newFixture(t, fake)
 	labs := f.organization(t, "Example Labs", "labs.example")
-	claims := []personfacts.ProposedClaim{
-		f.claim(`{"name":"Example Labs, Inc.","domain":"labs.example"}`, "Engineer", "first"),
-	}
+	claims := []personfacts.ProposedClaim{f.claim(`{"name":"Example Labs, Inc."}`, "Engineer", "first")}
 
 	first, err := f.preparer().Prepare(t.Context(), f.personID, claims, nil)
 	require.NoError(err)
@@ -219,5 +217,5 @@ func TestPreparerAliasWriteIsIdempotentAndLaterLookupsNeedNoJudgment(t *testing.
 	profile, err := f.store.GetOrganizationProfileContext(t.Context(), labs.ID, false)
 	require.NoError(err)
 	assert.Len(profile.Names, 1)
-	assert.Empty(profile.Identifiers, "the domain already matched the primary domain")
+	assert.Empty(profile.Identifiers, "a name without a domain adds no domain")
 }

@@ -75,7 +75,7 @@ func defaultPersonEnrichmentCommandDeps(contexts ...context.Context) personEnric
 				if err != nil {
 					return nil, err
 				}
-				organizations, err := newJevOrganizationPreparer(currentCfg, st, false)
+				organizations, err := newOrganizationPreparer(currentCfg, st, false)
 				if err != nil {
 					return nil, err
 				}

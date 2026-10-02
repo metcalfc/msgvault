@@ -104,7 +104,7 @@ func newProductionPersonSweepWorker(
 	if err != nil {
 		return nil, err
 	}
-	organizations, err := newJevOrganizationPreparer(cfg, st, automatic)
+	organizations, err := newOrganizationPreparer(cfg, st, automatic)
 	if err != nil {
 		return nil, err
 	}

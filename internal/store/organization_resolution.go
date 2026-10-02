@@ -37,6 +37,11 @@ const (
 // organization_resolution judgment. The model version follows it.
 const organizationResolutionSourceRefPrefix = "jev:organization_resolution:"
 
+// OrganizationDomainRuleSourceRef marks alias rows organization resolution
+// wrote because the name's domain shares the organization's registrable
+// domain: a rule decided them, not a judgment.
+const OrganizationDomainRuleSourceRef = "rule:organization_resolution:registrable_domain"
+
 // maxPersonOrganizationTitles bounds the known titles returned for one
 // person at one organization.
 const maxPersonOrganizationTitles = 20
@@ -93,6 +98,71 @@ func (s *Store) RecordOrganizationResolutionAliasContext(
 				result, addErr = s.addOrganizationLookupAliasTx(ctx, tx, input.OrganizationID,
 					input.Name, input.Domain, ProvenanceSystem,
 					OrganizationResolutionSourceRef(input.Model), &confidence)
+				return addErr
+			})
+			return &result, err
+		})
+	if err != nil {
+		return OrganizationAliasResult{}, err
+	}
+	return *result, nil
+}
+
+// OrganizationDomainAliasInput records that a missed organization name and
+// its domain name an existing organization because the domain shares that
+// organization's registrable domain. No judgment is involved.
+type OrganizationDomainAliasInput struct {
+	OrganizationID int64
+	Name           string
+	Domain         string
+	// Fence, when set, is checked inside the write's transaction; the write
+	// is refused with ErrOrganizationWriteFenced when that lease is lost.
+	Fence *personfacts.WriteFence
+}
+
+// RecordOrganizationDomainAliasContext makes the deterministic lookup
+// resolve a name and domain to the organization whose own domain shares the
+// domain's registrable domain (SharesRegistrableDomain). It writes the same
+// lookup keys as a judgment alias, with source 'system', source_ref
+// OrganizationDomainRuleSourceRef, and no confidence, because a rule decided
+// it. It refuses an organization that does not share the registrable domain
+// or a consumer mail domain. Writing the same alias again changes nothing.
+func (s *Store) RecordOrganizationDomainAliasContext(
+	ctx context.Context, input OrganizationDomainAliasInput,
+) (OrganizationAliasResult, error) {
+	domain := NormalizeDomain(input.Domain)
+	if input.OrganizationID <= 0 || domain == "" {
+		return OrganizationAliasResult{}, fmt.Errorf("%w: organization domain alias input is incomplete",
+			ErrOrganizationInvalid)
+	}
+	result, err := retryContendedWrite(ctx, s, "record organization domain alias",
+		func() (*OrganizationAliasResult, error) {
+			var result OrganizationAliasResult
+			err := s.withTxContext(ctx, func(tx *loggedTx) error {
+				if err := s.checkOrganizationWriteFenceTx(ctx, tx, input.Fence); err != nil {
+					return err
+				}
+				organization, err := s.canonicalOrganizationForWriteTx(ctx, tx, input.OrganizationID)
+				if err != nil {
+					return err
+				}
+				domains, err := queryOrganizationShortlistStrings(ctx, tx, `
+					SELECT normalized_value FROM organization_identifiers
+					WHERE organization_id = ? AND identifier_kind = 'domain'
+					  AND active_until IS NULL AND superseded_at IS NULL`, organization.ID)
+				if err != nil {
+					return err
+				}
+				if organization.PrimaryDomain != nil {
+					domains = append(domains, *organization.PrimaryDomain)
+				}
+				if !SharesRegistrableDomain(domain, domains) {
+					return fmt.Errorf("%w: organization %d does not share the registrable domain of %s",
+						ErrOrganizationInvalid, organization.ID, domain)
+				}
+				var addErr error
+				result, addErr = s.addOrganizationLookupAliasTx(ctx, tx, organization.ID,
+					input.Name, domain, ProvenanceSystem, OrganizationDomainRuleSourceRef, nil)
 				return addErr
 			})
 			return &result, err
