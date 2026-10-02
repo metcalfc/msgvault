@@ -104,19 +104,32 @@ func mergeWithValues(
 	t *testing.T, st *store.Store, slug, key, survivorValue, absorbedValue string,
 ) *store.PersonMergeResult {
 	t.Helper()
+	return mergeTyped(t, st, slug, key, textValue(survivorValue), textValue(absorbedValue),
+		store.ProvenanceExtraction, store.ProvenanceExtraction)
+}
+
+func textValue(text string) store.AttributeValue {
+	return store.AttributeValue{Type: store.AttributeValueText, Text: &text}
+}
+
+// mergeTyped gives a survivor and an absorbed person one value each of the
+// slug's attribute, from the given sources, and merges them.
+func mergeTyped(
+	t *testing.T, st *store.Store, slug, key string, survivorValue, absorbedValue store.AttributeValue,
+	survivorSource, absorbedSource store.Provenance,
+) *store.PersonMergeResult {
+	t.Helper()
 	require := require.New(t)
 	ctx := context.Background()
 	survivor := promoted(t, st, key+"-survivor@example.com", "Survivor "+key)
 	absorbed := promoted(t, st, key+"-absorbed@example.com", "Absorbed "+key)
 	for _, entry := range []struct {
 		personID int64
-		value    string
-	}{{survivor.ID, survivorValue}, {absorbed.ID, absorbedValue}} {
-		value := entry.value
+		value    store.AttributeValue
+		source   store.Provenance
+	}{{survivor.ID, survivorValue, survivorSource}, {absorbed.ID, absorbedValue, absorbedSource}} {
 		_, err := st.SetPersonAttributeValueContext(ctx, store.PersonAttributeValueInput{
-			PersonID: entry.personID, DefinitionSlug: slug,
-			Value:  store.AttributeValue{Type: store.AttributeValueText, Text: &value},
-			Source: store.ProvenanceExtraction,
+			PersonID: entry.personID, DefinitionSlug: slug, Value: entry.value, Source: entry.source,
 		})
 		require.NoError(err)
 	}
@@ -130,6 +143,7 @@ func mergeWithValues(
 		IdempotencyKey: key + "-merge", Actor: "test",
 	})
 	require.NoError(err)
+	require.Len(merged.ReviewCandidates, 1, "the merge leaves one conflict")
 	return merged
 }
 

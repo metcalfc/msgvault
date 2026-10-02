@@ -3,12 +3,13 @@
 // current roles is a person's primary one, which of several names a newly
 // promoted person goes by, and whether two conflicting values left by a
 // person merge state the same fact. Code applies each answer only above a
-// fixed threshold and never over a user's value or pin.
+// fixed threshold and never over a user's value or pin. Options and values
+// equal after normalization are settled in code and never sent; see
+// classifyConflict and foldText.
 package profilejudge
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -108,7 +109,8 @@ func Feature() jev.FeatureSpec {
 		Purpose: "Settle three small profile questions: which of a person's current roles is primary when " +
 			"several were found automatically, which name a newly saved person should show when their " +
 			"addresses use different names, and whether two values left in conflict by a person merge say " +
-			"the same thing. Nothing you set or pinned is ever changed.",
+			"the same thing. Roles, names, and values that are equal after normalization are settled " +
+			"without asking. Nothing you set or pinned is ever changed.",
 		Questions: questions,
 		StateFields: []string{
 			"roles.role_N.organization, .title, and .start: each current role's organization name, job " +
@@ -138,6 +140,7 @@ type Store interface {
 	ApplyDisplayNameJudgmentContext(ctx context.Context, judgment store.DisplayNameJudgment) (bool, error)
 	MergeConflictCandidatesContext(ctx context.Context, limit int) ([]store.MergeConflictCandidate, error)
 	ApplyMergeConflictJudgmentContext(ctx context.Context, judgment store.MergeConflictJudgment) (bool, error)
+	SettleEqualMergeConflictContext(ctx context.Context, settlement store.MergeConflictSettlement) (bool, error)
 }
 
 // Options configure one run.
@@ -145,7 +148,8 @@ type Options struct {
 	// Limit caps how many people and how many conflicts one run judges;
 	// zero means no cap.
 	Limit int
-	// Judge is nil when Jev is off; the run then does nothing.
+	// Judge is nil when Jev is off; the run then only settles in code what
+	// normalization decides.
 	Judge     Judge
 	Automatic bool
 	Logger    *slog.Logger
@@ -153,14 +157,17 @@ type Options struct {
 
 // Report summarizes a run. It never contains names, titles, or values.
 type Report struct {
-	Requests         int    `json:"requests"`
-	PrimaryRoles     int    `json:"primary_roles"`
-	PrimaryRolesSet  int    `json:"primary_roles_set"`
-	DisplayNames     int    `json:"display_names"`
-	DisplayNamesSet  int    `json:"display_names_set"`
-	MergeConflicts   int    `json:"merge_conflicts"`
-	ConflictsSettled int    `json:"conflicts_settled"`
-	Skipped          string `json:"skipped,omitempty"`
+	Requests         int `json:"requests"`
+	PrimaryRoles     int `json:"primary_roles"`
+	PrimaryRolesSet  int `json:"primary_roles_set"`
+	DisplayNames     int `json:"display_names"`
+	DisplayNamesSet  int `json:"display_names_set"`
+	MergeConflicts   int `json:"merge_conflicts"`
+	ConflictsSettled int `json:"conflicts_settled"`
+	// SettledInCode counts roles, names, and merge conflicts decided without
+	// Jev because their options or values are equal after normalization.
+	SettledInCode int    `json:"settled_in_code"`
+	Skipped       string `json:"skipped,omitempty"`
 }
 
 // RoleState is one role as sent.
@@ -189,45 +196,39 @@ type conflictRequest struct {
 	Conflicts map[string]ConflictState `json:"conflicts"`
 }
 
-// stopError marks a Jev failure that stops the run's remaining requests.
-type stopError struct{ err error }
-
-func (e stopError) Error() string { return e.err.Error() }
-func (e stopError) Unwrap() error { return e.err }
-
-// Run asks every question that has candidates. Any gate, budget, or
-// provider failure stops Jev for the rest of the run and leaves the rest
-// for a later run; only a store failure fails the run.
+// Run settles in code what normalization decides, then asks Jev the rest.
+// A primary-role or display-name question whose options are all equal
+// after normalization needs no judgment: the rule's choice stays. A merge
+// conflict whose values are equal after normalization is closed in code,
+// keeping the user-declared value, else the survivor's. This code part runs
+// even when Jev is off. Any gate, budget, or provider failure stops Jev for
+// the rest of the run, leaving the remaining questions for a later run;
+// only a store failure fails the run.
 func Run(ctx context.Context, st Store, options Options) (Report, error) {
 	if options.Logger == nil {
 		options.Logger = slog.Default()
 	}
 	var report Report
-	if options.Judge == nil {
-		return report, nil
-	}
-	for _, step := range []func(context.Context, Store, Options, *Report) error{
-		runPrimaryRoles, runDisplayNames, runMergeConflicts,
-	} {
-		err := step(ctx, st, options, &report)
-		if stop, ok := errors.AsType[stopError](err); ok {
-			report.Skipped = jev.Skipped(stop.err)
-			options.Logger.Info("person profile choices: jev skipped",
-				"feature", jev.FeaturePersonProfileChoices, "category", report.Skipped)
-			return report, nil
-		}
-		if err != nil {
+	r := &runner{st: st, options: options, report: &report}
+	for _, step := range []func(context.Context) error{r.primaryRoles, r.displayNames, r.mergeConflicts} {
+		if err := step(ctx); err != nil {
 			return report, err
 		}
 	}
 	return report, nil
 }
 
-func ask(
-	ctx context.Context, options Options, report *Report, state any, ids []string,
-) (jev.Response, error) {
-	response, err := options.Judge.JudgeQuestions(ctx, Feature(), options.Automatic, state, ids, time.Time{})
-	report.Requests++
+type runner struct {
+	st      Store
+	options Options
+	report  *Report
+}
+
+// ask sends one request. On any Jev failure it records the skip category,
+// turns Jev off for the rest of the run, and reports false.
+func (r *runner) ask(ctx context.Context, state any, ids []string) (jev.Response, bool) {
+	response, err := r.options.Judge.JudgeQuestions(ctx, Feature(), r.options.Automatic, state, ids, time.Time{})
+	r.report.Requests++
 	if err == nil && strings.TrimSpace(response.Model) == "" {
 		err = fmt.Errorf("%w: no model", jev.ErrInvalidResponse)
 	}
@@ -240,118 +241,206 @@ func ask(
 		}
 	}
 	if err != nil {
-		return jev.Response{}, stopError{err}
+		r.report.Skipped = jev.Skipped(err)
+		r.options.Logger.Info("person profile choices: jev skipped",
+			"feature", jev.FeaturePersonProfileChoices, "category", r.report.Skipped)
+		r.options.Judge = nil
+		return jev.Response{}, false
 	}
-	return response, nil
+	return response, true
 }
 
-func runPrimaryRoles(ctx context.Context, st Store, options Options, report *Report) error {
-	candidates, err := st.PrimaryRoleCandidatesContext(ctx, options.Limit)
+// group is one set of options equal after normalization, represented by
+// one of them.
+type group struct {
+	key            string
+	representative int
+}
+
+// groupOptions groups option indexes by key in first-appearance order. The
+// representative is the first preferred member, else the first member: the
+// rule's current primary role, or the rule's own spelling of a name, so
+// choosing that group changes nothing.
+func groupOptions(count int, key func(int) string, preferred func(int) bool) []group {
+	groups := []group{}
+	index := map[string]int{}
+	for i := range count {
+		k := key(i)
+		at, ok := index[k]
+		if !ok {
+			index[k] = len(groups)
+			groups = append(groups, group{key: k, representative: i})
+			continue
+		}
+		if preferred(i) && !preferred(groups[at].representative) {
+			groups[at].representative = i
+		}
+	}
+	return groups
+}
+
+func (r *runner) primaryRoles(ctx context.Context) error {
+	candidates, err := r.st.PrimaryRoleCandidatesContext(ctx, r.options.Limit)
 	if err != nil {
 		return fmt.Errorf("list primary role candidates: %w", err)
 	}
 	for _, candidate := range candidates {
-		state := roleRequest{Roles: make(map[string]RoleState, len(candidate.Roles))}
-		for i, role := range candidate.Roles {
+		roles := candidate.Roles
+		groups := groupOptions(len(roles),
+			func(i int) string { return roleKey(roles[i]) },
+			func(i int) bool { return roles[i].IsPrimary })
+		judgment := store.PrimaryRoleJudgment{PersonID: candidate.PersonID, Fingerprint: candidate.Fingerprint}
+		if len(groups) == 1 {
+			// Every role is the same organization and title: the rule's
+			// primary role stays and nothing is asked.
+			judgment.Confidence, judgment.Model = 1, normalizedModel
+			if _, err := r.st.ApplyPrimaryRoleJudgmentContext(ctx, judgment); err != nil {
+				return fmt.Errorf("record equal primary roles: %w", err)
+			}
+			r.report.SettledInCode++
+			continue
+		}
+		if r.options.Judge == nil {
+			continue
+		}
+		state := roleRequest{Roles: make(map[string]RoleState, len(groups))}
+		for i, entry := range groups {
+			role := roles[entry.representative]
 			state.Roles[RoleKey(i)] = RoleState{
 				Organization: truncateRunes(meetingjudge.RedactText(role.Organization), maxLabelRunes),
 				Title:        truncateRunes(meetingjudge.RedactText(role.Title), maxLabelRunes), Start: role.Start,
 			}
 		}
-		response, err := ask(ctx, options, report, state, []string{PrimaryRoleQuestionID})
-		if err != nil {
-			return err
+		response, ok := r.ask(ctx, state, []string{PrimaryRoleQuestionID})
+		if !ok {
+			return nil
 		}
 		answer := response.Answers[PrimaryRoleQuestionID]
-		confidence := clamp(answer.Probabilities[answer.Choice])
-		judgment := store.PrimaryRoleJudgment{
-			PersonID: candidate.PersonID, Fingerprint: candidate.Fingerprint,
-			Confidence: confidence, Probabilities: answer.Probabilities, Model: response.Model,
-		}
-		if confidence >= ChoiceThreshold {
-			for i, role := range candidate.Roles {
+		judgment.Confidence = clamp(answer.Probabilities[answer.Choice])
+		judgment.Probabilities, judgment.Model = answer.Probabilities, response.Model
+		if judgment.Confidence >= ChoiceThreshold {
+			for i, entry := range groups {
 				if answer.Choice == RoleKey(i) {
-					id := role.EmploymentID
+					id := roles[entry.representative].EmploymentID
 					judgment.EmploymentID = &id
 				}
 			}
 		}
-		changed, err := st.ApplyPrimaryRoleJudgmentContext(ctx, judgment)
+		changed, err := r.st.ApplyPrimaryRoleJudgmentContext(ctx, judgment)
 		if err != nil {
 			return fmt.Errorf("apply primary role judgment: %w", err)
 		}
-		report.PrimaryRoles++
+		r.report.PrimaryRoles++
 		if changed {
-			report.PrimaryRolesSet++
+			r.report.PrimaryRolesSet++
 		}
 	}
 	return nil
 }
 
-func runDisplayNames(ctx context.Context, st Store, options Options, report *Report) error {
-	candidates, err := st.DisplayNameCandidatesContext(ctx, options.Limit)
+func (r *runner) displayNames(ctx context.Context) error {
+	candidates, err := r.st.DisplayNameCandidatesContext(ctx, r.options.Limit)
 	if err != nil {
 		return fmt.Errorf("list display name candidates: %w", err)
 	}
 	for _, candidate := range candidates {
-		state := nameRequest{Names: map[string]string{}}
-		keys := map[string]string{}
-		for i, name := range candidate.Names {
-			if meetingjudge.RedactText(name) != strings.TrimSpace(name) {
-				continue
+		judgment := store.DisplayNameJudgment{PersonID: candidate.PersonID, Fingerprint: candidate.Fingerprint}
+		all := groupOptions(len(candidate.Names),
+			func(i int) string { return foldText(candidate.Names[i]) },
+			func(int) bool { return false })
+		if len(all) == 1 {
+			// Every name is the same after normalization: the rule's name
+			// stays and nothing is asked.
+			judgment.Confidence, judgment.Model = 1, normalizedModel
+			if _, err := r.st.ApplyDisplayNameJudgmentContext(ctx, judgment); err != nil {
+				return fmt.Errorf("record equal display names: %w", err)
 			}
-			key := NameKey(len(keys))
-			keys[key] = candidate.Names[i]
-			state.Names[key] = truncateRunes(name, maxLabelRunes)
-		}
-		if len(keys) < 2 {
+			r.report.SettledInCode++
 			continue
 		}
-		response, err := ask(ctx, options, report, state, []string{DisplayNameQuestionID})
-		if err != nil {
-			return err
+		if r.options.Judge == nil {
+			continue
+		}
+		names := []string{}
+		for _, name := range candidate.Names {
+			if meetingjudge.RedactText(name) == strings.TrimSpace(name) {
+				names = append(names, name)
+			}
+		}
+		groups := groupOptions(len(names),
+			func(i int) string { return foldText(names[i]) },
+			func(i int) bool { return names[i] == candidate.Current })
+		if len(groups) < 2 {
+			continue
+		}
+		state := nameRequest{Names: make(map[string]string, len(groups))}
+		keys := make(map[string]string, len(groups))
+		for i, entry := range groups {
+			name := names[entry.representative]
+			keys[NameKey(i)] = name
+			state.Names[NameKey(i)] = truncateRunes(name, maxLabelRunes)
+		}
+		response, ok := r.ask(ctx, state, []string{DisplayNameQuestionID})
+		if !ok {
+			return nil
 		}
 		answer := response.Answers[DisplayNameQuestionID]
-		confidence := clamp(answer.Probabilities[answer.Choice])
-		judgment := store.DisplayNameJudgment{
-			PersonID: candidate.PersonID, Fingerprint: candidate.Fingerprint,
-			Confidence: confidence, Probabilities: answer.Probabilities, Model: response.Model,
-		}
-		if name, ok := keys[answer.Choice]; ok && confidence >= ChoiceThreshold {
+		judgment.Confidence = clamp(answer.Probabilities[answer.Choice])
+		judgment.Probabilities, judgment.Model = answer.Probabilities, response.Model
+		if name, ok := keys[answer.Choice]; ok && judgment.Confidence >= ChoiceThreshold {
 			judgment.Name = &name
 		}
-		changed, err := st.ApplyDisplayNameJudgmentContext(ctx, judgment)
+		changed, err := r.st.ApplyDisplayNameJudgmentContext(ctx, judgment)
 		if err != nil {
 			return fmt.Errorf("apply display name judgment: %w", err)
 		}
-		report.DisplayNames++
+		r.report.DisplayNames++
 		if changed {
-			report.DisplayNamesSet++
+			r.report.DisplayNamesSet++
 		}
 	}
 	return nil
 }
 
-func runMergeConflicts(ctx context.Context, st Store, options Options, report *Report) error {
-	candidates, err := st.MergeConflictCandidatesContext(ctx, options.Limit)
+func (r *runner) mergeConflicts(ctx context.Context) error {
+	candidates, err := r.st.MergeConflictCandidatesContext(ctx, r.options.Limit)
 	if err != nil {
 		return fmt.Errorf("list merge conflict candidates: %w", err)
 	}
-	sendable := candidates[:0]
+	sendable := []store.MergeConflictCandidate{}
 	for _, candidate := range candidates {
-		if conflictSendable(candidate) {
-			sendable = append(sendable, candidate)
+		switch classifyConflict(candidate) {
+		case conflictEqual:
+			settled, err := r.st.SettleEqualMergeConflictContext(ctx, store.MergeConflictSettlement{
+				CandidateID: candidate.CandidateID, PersonID: candidate.PersonID,
+				KeepAbsorbed: keepAbsorbed(candidate),
+			})
+			if err != nil {
+				return fmt.Errorf("settle equal merge conflict: %w", err)
+			}
+			if settled {
+				r.report.SettledInCode++
+			}
 			continue
+		case conflictAsk:
+			if !candidate.AbsorbedSource.IsDeclared() && conflictSendable(candidate) {
+				if r.options.Judge != nil {
+					sendable = append(sendable, candidate)
+				}
+				continue
+			}
+		case conflictDifferent:
 		}
-		// Never sent: recorded so it is not listed again, and left pending
-		// for the user.
-		if _, err := st.ApplyMergeConflictJudgmentContext(ctx, store.MergeConflictJudgment{
+		// Never sent: two different typed values, a user-declared absorbed
+		// value, or a value that cannot be sent whole. Recorded so it is not
+		// listed again, and left pending for the user.
+		if _, err := r.st.ApplyMergeConflictJudgmentContext(ctx, store.MergeConflictJudgment{
 			CandidateID: candidate.CandidateID, PersonID: candidate.PersonID, Model: notSentModel,
 		}); err != nil {
 			return fmt.Errorf("record unsent merge conflict: %w", err)
 		}
 	}
-	for start := 0; start < len(sendable); start += ConflictsPerRequest {
+	for start := 0; start < len(sendable) && r.options.Judge != nil; start += ConflictsPerRequest {
 		chunk := sendable[start:min(start+ConflictsPerRequest, len(sendable))]
 		state := conflictRequest{Conflicts: make(map[string]ConflictState, len(chunk))}
 		ids := make([]string, len(chunk))
@@ -363,13 +452,13 @@ func runMergeConflicts(ctx context.Context, st Store, options Options, report *R
 			}
 			ids[i] = SameValueQuestionID(i)
 		}
-		response, err := ask(ctx, options, report, state, ids)
-		if err != nil {
-			return err
+		response, ok := r.ask(ctx, state, ids)
+		if !ok {
+			return nil
 		}
 		for i, candidate := range chunk {
 			probability := clamp(response.Answers[SameValueQuestionID(i)].Noul)
-			resolved, err := st.ApplyMergeConflictJudgmentContext(ctx, store.MergeConflictJudgment{
+			resolved, err := r.st.ApplyMergeConflictJudgmentContext(ctx, store.MergeConflictJudgment{
 				CandidateID: candidate.CandidateID, PersonID: candidate.PersonID,
 				Probability: probability, Model: response.Model,
 				Resolve: probability >= SameValueThreshold,
@@ -377,14 +466,18 @@ func runMergeConflicts(ctx context.Context, st Store, options Options, report *R
 			if err != nil {
 				return fmt.Errorf("apply merge conflict judgment: %w", err)
 			}
-			report.MergeConflicts++
+			r.report.MergeConflicts++
 			if resolved {
-				report.ConflictsSettled++
+				r.report.ConflictsSettled++
 			}
 		}
 	}
 	return nil
 }
+
+// normalizedModel marks a profile choice recorded without asking Jev
+// because its options are equal after normalization.
+const normalizedModel = store.PersonMergeConflictNormalizedActor
 
 // notSentModel marks a merge conflict recorded without asking Jev.
 const notSentModel = "rule:not_sent"

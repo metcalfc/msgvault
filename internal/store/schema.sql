@@ -4767,6 +4767,10 @@ CREATE TABLE IF NOT EXISTS person_display_name_seeds (
 -- One person_profile_choices judgment of a pending merge attribute
 -- conflict: the probability that both values state the same fact. resolved
 -- records that the survivor's value was kept (probability at least 0.95).
+-- Model 'rule:normalized' marks a conflict code closed because both values
+-- are equal after normalization (probability 1; the kept value may be the
+-- absorbed one when only it was user-declared). Model 'rule:not_sent' marks
+-- a conflict left pending for the user without asking.
 CREATE TABLE IF NOT EXISTS person_merge_conflict_judgments (
     candidate_id INTEGER PRIMARY KEY REFERENCES person_merge_review_candidates(id) ON DELETE CASCADE,
     probability  REAL NOT NULL CHECK (probability >= 0 AND probability <= 1),

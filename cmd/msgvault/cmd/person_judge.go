@@ -46,8 +46,13 @@ judged at least 0.30 likely to be one person becomes a candidate under
 Reviews > Possible duplicate people; nothing is linked or merged until you
 accept it. Each pair is asked once until either side changes.
 
-Profile choices: when [jev.person_profile_choices] is enabled and consented,
-three small questions are asked. A person with two to six current roles, all
+Profile choices: code first settles what normalization decides, with or
+without Jev. Roles that are all the same organization and title, or names
+that are all the same apart from case, spacing, and punctuation, keep the
+rule's choice. A pending attribute conflict left by a person merge whose two
+values are equal after the field's normalization is closed, keeping your
+value if only the absorbed one is yours, else the survivor's. When
+[jev.person_profile_choices] is enabled and consented, the rest is asked. A person with two to six current roles, all
 found automatically and none pinned, is asked which role is primary; a
 person promoted from identities that use two to six different names, whose
 name has not changed since, is asked which name to show; and a pending
@@ -144,16 +149,16 @@ func writePersonJudgeReport(w io.Writer, report personJudgeReport) {
 	profiles := report.Profiles
 	switch {
 	case !report.ProfilesJev:
-		_, _ = fmt.Fprintln(w, "Profile choices: Jev off")
+		_, _ = fmt.Fprintf(w, "Profile choices: Jev off; %d settled in code\n", profiles.SettledInCode)
 	default:
 		skipped := ""
 		if profiles.Skipped != "" {
 			skipped = " (skipped:" + profiles.Skipped + ")"
 		}
 		_, _ = fmt.Fprintf(w,
-			"Profile choices: %d request(s)%s; primary roles %d judged, %d set; display names %d judged, %d set; "+
-				"merge conflicts %d judged, %d settled\n",
-			profiles.Requests, skipped, profiles.PrimaryRoles, profiles.PrimaryRolesSet,
+			"Profile choices: %d settled in code; %d request(s)%s; primary roles %d judged, %d set; "+
+				"display names %d judged, %d set; merge conflicts %d judged, %d settled\n",
+			profiles.SettledInCode, profiles.Requests, skipped, profiles.PrimaryRoles, profiles.PrimaryRolesSet,
 			profiles.DisplayNames, profiles.DisplayNamesSet, profiles.MergeConflicts, profiles.ConflictsSettled)
 	}
 }

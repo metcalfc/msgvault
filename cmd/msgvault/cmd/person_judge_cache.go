@@ -40,6 +40,7 @@ func judgePeopleForCacheBuild(ctx context.Context, cfg *config.Config, dbPath st
 		"duplicate_candidates", report.Duplicates.Candidates, "duplicate_skipped", report.Duplicates.Skipped,
 		"profile_requests", report.Profiles.Requests, "primary_roles_set", report.Profiles.PrimaryRolesSet,
 		"display_names_set", report.Profiles.DisplayNamesSet, "conflicts_settled", report.Profiles.ConflictsSettled,
+		"profile_settled_in_code", report.Profiles.SettledInCode,
 		"profile_skipped", report.Profiles.Skipped)
 }
 

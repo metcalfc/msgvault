@@ -32,7 +32,7 @@ func TestRunPersonJudgeWithJevOffOnlyCountsProposals(t *testing.T) {
 
 	var out bytes.Buffer
 	writePersonJudgeReport(&out, report)
-	assert.Equal("Possible duplicate pairs: 1\nDuplicate people: Jev off\nProfile choices: Jev off\n", out.String())
+	assert.Equal("Possible duplicate pairs: 1\nDuplicate people: Jev off\nProfile choices: Jev off; 0 settled in code\n", out.String())
 
 	cfg.Jev.Enabled = true
 	cfg.Jev.PersonProfileChoices.Enabled = true

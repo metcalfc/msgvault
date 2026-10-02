@@ -52,7 +52,7 @@ of it. The table below says what each feature does without Jev.
 | [`query_understanding`](#feature-explore-query-understanding) | Which filters a typed search asks for | Web UI searches you type; never automatic | Redacted query, candidate date windows, people-index names, account labels | No chips; the search is unchanged |
 | [`sweep_claim_grounding`](#feature-people-sweep-claim-grounding) | Whether cited excerpts state a claim and it is still current | Manual sweeps and briefs; scheduled with `automatic` | Fact, relation, value (500 characters); **up to 3 cited excerpts of 1,000 characters**, redacted | The chat model's own confidence |
 | [`person_duplicates`](#feature-duplicate-people) | Whether two identity clusters are one human | `person judge`; cache builds with `automatic` (up to 200 pairs) | Up to 3 names and **up to 5 full email addresses per side** | No duplicate candidates are proposed |
-| [`person_profile_choices`](#feature-person-profile-choices) | Primary role, display name, and whether two merged values are the same fact | `person judge`; cache builds with `automatic` (up to 200 of each) | Roles (organization, title, start month), names (160 characters), conflict values (300 characters) | The rule's choice stays; conflicts wait for you |
+| [`person_profile_choices`](#feature-person-profile-choices) | Primary role, display name, and whether two merged free-text or URL values are the same fact, when normalization leaves a real choice | `person judge`; cache builds with `automatic` (up to 200 of each) | Roles (organization, title, start month), names (160 characters), conflict values (300 characters) | The current primary role and the promotion name stay; merge conflicts equal after normalization close in code, the rest wait for you |
 
 Each feature's section below is the full contract: its questions as sent,
 thresholds, and exact fields. This is `main` functionality; check the
@@ -1116,21 +1116,68 @@ Feature name: `person_profile_choices`. Setting:
 `[jev.person_profile_choices]`. Command:
 [`msgvault person judge`](../cli-reference.md#person-judge).
 
-Three small profile questions have a plain rule that is often wrong. This
-feature asks Jev instead, and code writes an answer only above a fixed
-threshold and never over anything you set:
+Three small profile questions have a plain rule that is often wrong. Code
+settles what normalization can decide, then asks Jev only the choices that
+remain. Code writes an answer only above a fixed threshold and never over
+anything you set:
 
 | Question | Asked when | Written when | Otherwise |
 |---|---|---|---|
-| Primary current role | A person has two to six current employments, every one found automatically (none you entered or imported from contacts), and you have not pinned employment | A role scores 0.80 or more: it becomes the primary employment | The first role found stays primary |
-| Display name | A person was promoted from identities that use two to six different names, and the name has not changed since promotion | A name scores 0.80 or more: the person is renamed to it | The rule's name (the first-created identity's) stays |
-| Merge conflict | A person merge left two values of a non-sensitive, single-value field in conflict, and the absorbed value was not set by you | Both are 0.95 or more likely the same fact: the survivor's value is kept and the conflict closes, reviewed by `jev` | The conflict stays pending for you |
+| Primary current role | A person has two to six current employments, every one found automatically (none you entered or imported from contacts), and you have not pinned employment | A role scores 0.80 or more: it becomes the primary employment | The primary role stays as the rule left it: the first current role saved while none was primary. If that role ends, no role is primary until another current role is saved or you choose one |
+| Display name | A person was promoted from identities that use two to six different names, and the name has not changed since promotion | A name scores 0.80 or more: the person is renamed to it | The promotion name stays: the name of the lowest-numbered (first recorded) identity |
+| Merge conflict | A person merge left two values of a non-sensitive, single-value field in conflict, the absorbed value was not set by you, and both are free text or URLs | Both are 0.95 or more likely the same fact: the survivor's value is kept and the conflict closes, reviewed by `jev` | The survivor's value stays current and the conflict stays pending for you |
 
 Setting the primary role yourself pins employment, and renaming a person
 ends the display-name question; neither is ever replaced. Each person is
 asked again only when their roles or names change, and each conflict once.
 `person judge` runs by hand; with `automatic = true`, each analytics cache
 build makes up to 200 of each first.
+
+### Settled in code first
+
+These steps run on every `person judge`, with or without Jev, and send
+nothing:
+
+- **Primary role.** When every current role has the same organization name
+  and title after text folding (below), there is nothing to choose: the
+  current primary role stays and the person is not asked. Roles that fold to
+  the same organization and title are offered once, as the current primary
+  role if it is one of them.
+- **Display name.** When every name folds to the same text, the promotion
+  name stays and the person is not asked. Names that fold to the same text
+  are offered once, in the promotion name's spelling if it is one of them.
+- **Merge conflict.** Two values that are equal under the field's rule close
+  the conflict, reviewed by `rule:normalized`. The kept value is yours when
+  only the absorbed value was set by you (entered, or imported from
+  contacts); otherwise the survivor's value is kept, so a value you set on
+  the survivor is never replaced.
+
+Each field type has its own rule:
+
+| Field | Equal when | Kept apart |
+|---|---|---|
+| Text and text area | Text folding matches | Accents, digits, symbols, and meaningful punctuation |
+| Email | The trimmed, lower-cased addresses match | Any other difference; an address is never sent to Jev |
+| Phone | Both parse to the same E.164 number | Different numbers; a phone number is never sent to Jev |
+| URL | Both reduce to the same canonical `http`/`https` URL: scheme and host case, default port, `.` and `..` path segments, trailing slash, fragment, and tracking parameters such as `utm_*` are ignored | Path and other query differences, including letter case |
+| Select | The option values match exactly | Different options; never sent to Jev |
+| Number, yes/no, date, timestamp | The stored values match exactly | Different values; never sent to Jev |
+
+Text folding applies Unicode compatibility forms (so full-width letters read
+as plain ones), ignores letter case, treats separating punctuation as a
+space, and collapses runs of spaces. Separating punctuation is the period,
+comma, semicolon, colon, question and exclamation marks, quotes and
+apostrophes, brackets, the ellipsis, and dashes between words. Everything
+else is kept: `50%` and `50`, `José` and `Jose`, and `-5` and `5` stay
+different. A phone or URL value that does not parse as one is
+compared with text folding.
+
+Without Jev, roles, names, and conflicts that normalization does not settle
+keep the rule's choice or stay pending, and are offered to Jev on a later run
+once it is on. A conflict that can never be sent (a number, yes/no, date,
+timestamp, or select difference, an absorbed value you set, or a value the
+next section excludes) is recorded so it is not listed again and stays
+pending for you.
 
 ### What leaves the machine
 
@@ -1147,7 +1194,8 @@ Each request carries only one question's state:
   characters, or with an email address or phone number, is never sent and
   stays pending for you: a cut value could hide the difference.
 
-No addresses, messages, or other profile fields, and nothing about you.
+Options and values settled in code are never sent. No addresses, messages,
+or other profile fields, and nothing about you.
 
 ### The questions, exactly as sent
 
@@ -1168,10 +1216,6 @@ No addresses, messages, or other profile fields, and nothing about you.
   contradicts the other."
 
 `msgvault jev consent person_profile_choices` prints the same disclosure.
-
-**Planned:** merge-conflict values that are equal after normalization (case,
-whitespace, punctuation, and formatting) will be settled in code; only the
-conflicts that remain will be sent.
 
 ## Turn it off
 

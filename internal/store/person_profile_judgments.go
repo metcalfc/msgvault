@@ -36,6 +36,11 @@ const (
 // person_profile_choices judgment resolved.
 const PersonMergeConflictJudgeActor = "jev"
 
+// PersonMergeConflictNormalizedActor is the reviewed_by of a merge conflict
+// code settled because both values are equal after normalization. It is
+// also the model recorded for that settlement.
+const PersonMergeConflictNormalizedActor = "rule:normalized"
+
 // ErrPersonProfileJudgmentInvalid reports a malformed profile judgment.
 var ErrPersonProfileJudgmentInvalid = errors.New("invalid person profile judgment")
 
@@ -93,13 +98,28 @@ type DisplayNameJudgment struct {
 
 // MergeConflictCandidate is a pending attribute conflict left by a person
 // merge whose two values can be compared: scalar values of a non-sensitive
-// attribute, the absorbed value not user-declared.
+// attribute. The absorbed value may be user-declared; such a conflict may
+// only be settled in code, never judged by Jev.
 type MergeConflictCandidate struct {
 	CandidateID int64
 	PersonID    int64
 	Field       string
+	FieldType   AttributeFieldType
+	ValueType   AttributeValueType
 	Survivor    string
 	Absorbed    string
+	// SurvivorSource and AbsorbedSource are the two values' provenance.
+	SurvivorSource Provenance
+	AbsorbedSource Provenance
+}
+
+// MergeConflictSettlement closes a merge conflict whose two values code
+// found equal after normalization. KeepAbsorbed accepts the absorbed value
+// in place of the survivor's; otherwise the survivor's value is kept.
+type MergeConflictSettlement struct {
+	CandidateID  int64
+	PersonID     int64
+	KeepAbsorbed bool
 }
 
 // MergeConflictJudgment records one merge-conflict judgment. Resolve keeps
@@ -598,7 +618,7 @@ func (s *Store) MergeConflictCandidatesContext(ctx context.Context, limit int) (
 	candidates := []MergeConflictCandidate{}
 	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
 		rows, err := tx.QueryContext(ctx, `SELECT c.id, c.survivor_person_id, d.label,
-				c.survivor_value_id, c.absorbed_value_id
+				d.field_type, d.value_type, c.survivor_value_id, c.absorbed_value_id
 			FROM person_merge_review_candidates c
 			JOIN attribute_definitions d ON d.id = c.definition_id
 			WHERE c.state = 'pending' AND NOT (`+s.dialect.BoolTrueExpr("d.is_sensitive")+`)
@@ -615,7 +635,8 @@ func (s *Store) MergeConflictCandidatesContext(ctx context.Context, limit int) (
 		for rows.Next() {
 			var entry pending
 			if err := rows.Scan(&entry.candidate.CandidateID, &entry.candidate.PersonID,
-				&entry.candidate.Field, &entry.survivor, &entry.absorbed); err != nil {
+				&entry.candidate.Field, &entry.candidate.FieldType, &entry.candidate.ValueType,
+				&entry.survivor, &entry.absorbed); err != nil {
 				_ = rows.Close()
 				return fmt.Errorf("scan merge conflict candidate: %w", err)
 			}
@@ -636,7 +657,7 @@ func (s *Store) MergeConflictCandidatesContext(ctx context.Context, limit int) (
 			if err != nil {
 				return err
 			}
-			if survivor == nil || absorbed == nil || absorbed.Source.IsDeclared() {
+			if survivor == nil || absorbed == nil {
 				continue
 			}
 			left, leftErr := survivor.Value.CanonicalString()
@@ -645,6 +666,7 @@ func (s *Store) MergeConflictCandidatesContext(ctx context.Context, limit int) (
 				continue
 			}
 			entry.candidate.Survivor, entry.candidate.Absorbed = left, right
+			entry.candidate.SurvivorSource, entry.candidate.AbsorbedSource = survivor.Source, absorbed.Source
 			candidates = append(candidates, entry.candidate)
 		}
 		return nil
@@ -725,4 +747,61 @@ func (s *Store) ApplyMergeConflictJudgmentContext(ctx context.Context, judgment 
 		return resolved, fmt.Errorf("record merge conflict judgment: %w", err)
 	}
 	return resolved, nil
+}
+
+// SettleEqualMergeConflictContext closes a pending merge conflict whose two
+// values the caller found equal after normalization, with reviewer
+// PersonMergeConflictNormalizedActor, and records it so the conflict is not
+// listed again. KeepAbsorbed may never replace a user-declared survivor
+// value. A conflict decided in the meantime or a concurrent profile change
+// leaves it pending and unrecorded, for a later run. It reports whether the
+// conflict was closed.
+func (s *Store) SettleEqualMergeConflictContext(ctx context.Context, settlement MergeConflictSettlement) (bool, error) {
+	if settlement.CandidateID <= 0 || settlement.PersonID <= 0 {
+		return false, ErrPersonProfileJudgmentInvalid
+	}
+	var revision int64
+	var survivorSource string
+	err := s.db.QueryRowContext(ctx, `SELECT p.revision, v.source
+		FROM person_merge_review_candidates c
+		JOIN persons p ON p.id = c.survivor_person_id
+		JOIN person_attribute_values v ON v.id = c.survivor_value_id
+		WHERE c.id = ? AND c.survivor_person_id = ? AND c.state = 'pending'`,
+		settlement.CandidateID, settlement.PersonID).Scan(&revision, &survivorSource)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read merge conflict: %w", err)
+	}
+	decision := PersonMergeCandidateReject
+	if settlement.KeepAbsorbed {
+		if Provenance(survivorSource).IsDeclared() {
+			return false, fmt.Errorf("%w: a declared survivor value is never replaced", ErrPersonProfileJudgmentInvalid)
+		}
+		decision = PersonMergeCandidateAccept
+	}
+	_, err = s.DecidePersonMergeCandidateContext(ctx, PersonMergeCandidateDecisionRequest{
+		CandidateID: settlement.CandidateID, PersonID: settlement.PersonID,
+		ExpectedPersonRevision: revision, Decision: decision,
+		Actor: PersonMergeConflictNormalizedActor,
+	})
+	switch {
+	case err == nil:
+	case errors.Is(err, ErrPersonRevisionConflict), errors.Is(err, ErrPersonMergeCandidateState),
+		errors.Is(err, ErrPersonMergeCandidateNotFound), errors.Is(err, ErrPersonNotFound):
+		return false, nil
+	default:
+		return false, err
+	}
+	err = retryBusyWriteErr(ctx, s, "record merge conflict settlement", func() error {
+		_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO person_merge_conflict_judgments
+			(candidate_id, probability, model, resolved) VALUES (?, ?, ?, ?)`,
+			settlement.CandidateID, 1.0, PersonMergeConflictNormalizedActor, true)
+		return err
+	})
+	if err != nil {
+		return true, fmt.Errorf("record merge conflict settlement: %w", err)
+	}
+	return true, nil
 }

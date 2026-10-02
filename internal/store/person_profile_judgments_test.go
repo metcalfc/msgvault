@@ -191,6 +191,14 @@ func mergedWithConflict(
 	t *testing.T, st *store.Store, key, survivorValue, absorbedValue string, absorbedSource store.Provenance,
 ) (*store.PersonMergeResult, *store.Person) {
 	t.Helper()
+	return mergedWithSources(t, st, key, survivorValue, absorbedValue, store.ProvenanceExtraction, absorbedSource)
+}
+
+func mergedWithSources(
+	t *testing.T, st *store.Store, key, survivorValue, absorbedValue string,
+	survivorSource, absorbedSource store.Provenance,
+) (*store.PersonMergeResult, *store.Person) {
+	t.Helper()
 	require := require.New(t)
 	ctx := context.Background()
 	survivor := mustPromotedPerson(t, st, key+"-survivor@example.com", "Survivor "+key)
@@ -198,7 +206,7 @@ func mergedWithConflict(
 	_, err := st.SetPersonAttributeValueContext(ctx, store.PersonAttributeValueInput{
 		PersonID: survivor.ID, DefinitionSlug: store.AttributeSlugLocation,
 		Value:  store.AttributeValue{Type: store.AttributeValueText, Text: &survivorValue},
-		Source: store.ProvenanceExtraction,
+		Source: survivorSource,
 	})
 	require.NoError(err)
 	_, err = st.SetPersonAttributeValueContext(ctx, store.PersonAttributeValueInput{
@@ -227,11 +235,11 @@ func TestMergeConflictJudgmentKeepsTheSurvivorForTheSameFact(t *testing.T) {
 	st := testutil.NewTestStore(t)
 	same, samePerson := mergedWithConflict(t, st, "same", "San Francisco, CA", "San Francisco", store.ProvenanceExtraction)
 	different, _ := mergedWithConflict(t, st, "different", "Lisbon", "Porto", store.ProvenanceExtraction)
-	mergedWithConflict(t, st, "declared", "Oslo", "Oslo, Norway", store.ProvenanceUser)
+	declared, _ := mergedWithConflict(t, st, "declared", "Oslo", "Oslo, Norway", store.ProvenanceUser)
 
 	candidates, err := st.MergeConflictCandidatesContext(t.Context(), 0)
 	require.NoError(err)
-	require.Len(candidates, 2, "a user-declared absorbed value is never judged")
+	require.Len(candidates, 3)
 	byID := map[int64]store.MergeConflictCandidate{}
 	for _, candidate := range candidates {
 		byID[candidate.CandidateID] = candidate
@@ -240,6 +248,18 @@ func TestMergeConflictJudgmentKeepsTheSurvivorForTheSameFact(t *testing.T) {
 	assert.Equal("San Francisco, CA", sameCandidate.Survivor)
 	assert.Equal("San Francisco", sameCandidate.Absorbed)
 	assert.NotEmpty(sameCandidate.Field)
+	assert.Equal(store.AttributeValueText, sameCandidate.ValueType)
+	assert.Equal(store.AttributeFieldText, sameCandidate.FieldType)
+	assert.Equal(store.ProvenanceExtraction, sameCandidate.SurvivorSource)
+	declaredCandidate := byID[declared.ReviewCandidates[0].ID]
+	assert.Equal(store.ProvenanceUser, declaredCandidate.AbsorbedSource, "listed with its source for code to compare")
+
+	kept, err := st.ApplyMergeConflictJudgmentContext(t.Context(), store.MergeConflictJudgment{
+		CandidateID: declaredCandidate.CandidateID, PersonID: declaredCandidate.PersonID,
+		Probability: 0.99, Model: "jev-test", Resolve: true,
+	})
+	require.NoError(err)
+	assert.False(kept, "a judgment never rejects a user-declared absorbed value")
 
 	resolved, err := st.ApplyMergeConflictJudgmentContext(t.Context(), store.MergeConflictJudgment{
 		CandidateID: sameCandidate.CandidateID, PersonID: sameCandidate.PersonID,
@@ -269,4 +289,58 @@ func TestMergeConflictJudgmentKeepsTheSurvivorForTheSameFact(t *testing.T) {
 	remaining, err := st.MergeConflictCandidatesContext(t.Context(), 0)
 	require.NoError(err)
 	assert.Empty(remaining, "judged conflicts are not asked again")
+}
+
+func TestSettleEqualMergeConflictKeepsTheUsersValue(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	userAbsorbed, person := mergedWithConflict(t, st, "absorbed", "oslo", "Oslo", store.ProvenanceUser)
+	systemBoth, _ := mergedWithConflict(t, st, "system", "Oslo", "oslo", store.ProvenanceExtraction)
+
+	settled, err := st.SettleEqualMergeConflictContext(t.Context(), store.MergeConflictSettlement{
+		CandidateID: userAbsorbed.ReviewCandidates[0].ID, PersonID: person.ID, KeepAbsorbed: true,
+	})
+	require.NoError(err)
+	assert.True(settled)
+	values, err := st.ListPersonAttributeValuesContext(t.Context(), person.ID,
+		store.PersonAttributeQuery{DefinitionSlug: store.AttributeSlugLocation})
+	require.NoError(err)
+	require.Len(values, 1)
+	require.NotNil(values[0].Value.Text)
+	assert.Equal("Oslo", *values[0].Value.Text)
+	assert.Equal(store.ProvenanceUser, values[0].Source)
+
+	settled, err = st.SettleEqualMergeConflictContext(t.Context(), store.MergeConflictSettlement{
+		CandidateID: systemBoth.ReviewCandidates[0].ID, PersonID: systemBoth.Person.ID,
+	})
+	require.NoError(err)
+	assert.True(settled)
+	detail, err := st.GetPersonMergeContext(t.Context(), systemBoth.Merge.ID)
+	require.NoError(err)
+	require.Len(detail.ReviewCandidates, 1)
+	assert.Equal("rejected", detail.ReviewCandidates[0].State)
+	require.NotNil(detail.ReviewCandidates[0].ReviewedBy)
+	assert.Equal(store.PersonMergeConflictNormalizedActor, *detail.ReviewCandidates[0].ReviewedBy)
+
+	remaining, err := st.MergeConflictCandidatesContext(t.Context(), 0)
+	require.NoError(err)
+	assert.Empty(remaining, "settled conflicts are not listed again")
+}
+
+func TestSettleEqualMergeConflictNeverReplacesADeclaredSurvivorValue(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	merged, person := mergedWithSources(t, st, "declared", "Oslo", "oslo",
+		store.ProvenanceUser, store.ProvenanceVCardImport)
+
+	settled, err := st.SettleEqualMergeConflictContext(t.Context(), store.MergeConflictSettlement{
+		CandidateID: merged.ReviewCandidates[0].ID, PersonID: person.ID, KeepAbsorbed: true,
+	})
+	require.ErrorIs(err, store.ErrPersonProfileJudgmentInvalid)
+	assert.False(settled)
+	detail, err := st.GetPersonMergeContext(t.Context(), merged.Merge.ID)
+	require.NoError(err)
+	assert.Equal("pending", detail.ReviewCandidates[0].State)
 }

@@ -2363,12 +2363,18 @@ feature is enabled, an API key resolves, and its consent is active.
   request with their display names and email addresses. A pair at 0.30 or
   more becomes a candidate under **Reviews → Possible duplicate people**;
   nothing is linked or merged until you accept it.
-- **Profile choices.** With
+- **Profile choices.** Code first settles what normalization decides, with
+  or without Jev: roles that are all the same organization and title, and
+  names that differ only in case, spacing, or punctuation, keep the rule's
+  choice; a merge conflict whose two values are equal under the field's rule
+  closes, keeping your value when only the absorbed one is yours, else the
+  survivor's. With
   [`[jev.person_profile_choices]`](configuration.md#jevperson_profile_choices)
-  and `msgvault jev consent person_profile_choices`, asks which of two to six
-  automatically found current roles is a person's primary one, which of two
-  to six names a newly promoted person should show, and whether two values a
-  person merge left in conflict say the same thing. A role or name at 0.80
+  and `msgvault jev consent person_profile_choices`, it then asks which of
+  two to six automatically found current roles is a person's primary one,
+  which of two to six names a newly promoted person should show, and whether
+  two free-text or URL values a person merge left in conflict say the same
+  thing. A role or name at 0.80
   or more is written; two values at 0.95 or more keep the survivor's value.
   Your own values, choices, and pins are never changed.
 
@@ -2379,7 +2385,7 @@ msgvault person judge [--limit N] [--json]
 | Flag | Contract |
 |---|---|
 | `--limit` | Judge at most this many pairs, people per profile question, and merge conflicts; `0` (default) means all |
-| `--json` | Structured report per judgment: counts, Jev requests, what was written, and the skip category |
+| `--json` | Structured report per judgment: counts, Jev requests, what was written, what code settled (`settled_in_code`), and the skip category |
 
 Each pair, person, and conflict is asked once until its inputs change. See
 [duplicate people](usage/jev-judgments.md#feature-duplicate-people) and
