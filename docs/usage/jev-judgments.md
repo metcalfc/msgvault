@@ -30,7 +30,8 @@ It requires `--doc-key=message`, `--rerank-cost-stop-usd`,
 `--rerank-input-usd-per-million`, and `--rerank-output-usd-per-million`, and
 reads the key from `TYPESAFE_API_KEY`. For each topic it sends the query (at
 most 4 KiB) and up to `--rerank-top` (at most 30) retrieved messages, each as
-subject, sender name, date, and cleaned body text capped at 2 KiB, under
+subject, sender (the display name, or the address when there is no name),
+date, and cleaned body text capped at 2 KiB, under
 `--rerank-max-requests` (default 1000) requests per run.
 
 When Jev is off, over budget, slow, or failing, a feature falls back to its
