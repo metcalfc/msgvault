@@ -1,17 +1,62 @@
 # Jev judgments
 
-Jev judgments let a few narrow decisions that used to be string matching ask
-TypeSafe's System One model (Jev) a handful of typed yes/no questions instead.
-Your code keeps every workflow, threshold, and side effect; Jev only returns
-probabilities. Nothing leaves your machine until you enable Jev, enable the
-feature, store an API key, and record consent for the feature's exact policy.
-Every Jev-backed path falls back to today's behavior when Jev is off, over
-budget, slow, or wrong.
+Jev is TypeSafe's System One model. msgvault asks it narrow, typed questions:
+a yes/no question (a Noul), a pick from fixed options (a Choice), or a Score.
+Jev returns only probabilities. msgvault's code keeps every workflow,
+threshold, and side effect.
 
-This page covers what each feature sends, the thresholds code applies, how
-consent and budgets work, and how to turn everything off. This is `main`
-functionality; check the [changelog](../changelog.md) for the release it ships
-in.
+## When msgvault uses Jev
+
+msgvault uses Jev only where a judgment is genuinely needed, such as whether
+two differently written names are one person, what kind of correspondent an
+address is, or whether an excerpt states a claim. Deterministic checks belong
+in code: equal email addresses, equal phone numbers, exact domain matches, and
+normalized identifiers. Similarity and text generation belong to embeddings
+and local chat models through Ollama. Some features below still ask Jev about
+things code could decide; their sections describe today's behavior and end
+with a **Planned** note.
+
+## What leaves the machine, and when
+
+Every feature is off by default. A feature sends nothing until you enable
+`[jev]`, enable the feature, provide an API key, and record consent for the
+feature's exact policy. Scheduled and other unattended runs also need the
+feature's `automatic = true`.
+
+One developer command is the exception. [`msgvault eval --rerank-jev`](../cli-reference.md#optional-jev-reranking)
+does not read `[jev]`, the key stored in Settings, recorded consent, or the
+daily budgets. Naming a shape on its command line is the opt-in for that run.
+It requires `--doc-key=message`, `--rerank-cost-stop-usd`,
+`--rerank-input-usd-per-million`, and `--rerank-output-usd-per-million`, and
+reads the key from `TYPESAFE_API_KEY`. For each topic it sends the query (at
+most 4 KiB) and up to `--rerank-top` (at most 30) retrieved messages, each as
+subject, sender name, date, and cleaned body text capped at 2 KiB, under
+`--rerank-max-requests` (default 1000) requests per run.
+
+When Jev is off, over budget, slow, or failing, a feature falls back to its
+rules or does nothing. No command, search, sync, or daemon job fails because
+of it. The table below says what each feature does without Jev.
+
+## Features at a glance
+
+| Feature | What Jev decides | When it runs (all opt-in) | What leaves the machine | Without Jev |
+|---|---|---|---|---|
+| [`enrichment_identity`](#feature-enrichment-identity-check) | Whether a returned profile whose name or company did not match exactly is the requested person | Manual enrichment; scheduled with `automatic` | Requested name, company, and email domain; returned name parts, location, up to 5 current roles, up to 10 past companies, profile URL host. No messages or addresses | Exact name-and-company rule; partial matches are rejected |
+| [`organization_resolution`](#feature-organization-resolution) | Which of up to 8 shortlisted organizations a name is; whether two titles are one role | Manual enrichment and sweeps; scheduled with `automatic` | Organization names, up to 5 domains and 5 other names per candidate, up to 4 title pairs | Exact lookup; a new organization is created and titles stay separate |
+| [`correspondent_kind`](#feature-correspondent-kind) | Person, shared mailbox, list, automated, or marketing | `kinds build`; cache builds with `automatic` (up to 200) | Display name, up to 5 addresses split into local part and domain, counts, header counts, up to 8 subjects of 160 characters. No bodies | Rules only; the rest stay unclassified and rank as people |
+| [`cleanup_suggestions`](#feature-cleanup-suggestions) | Impersonation, pressure, and mail category | `suggest-cleanup` only; never automatic | Sender name and domains, up to 10 link hosts, SPF/DKIM/DMARC results, subject (200 characters), **first 500 characters of the body** | No suggestions |
+| [`search_rerank`](#feature-hybrid-search-reranking) | Whether each leading result answers the query | Hybrid searches that request it; never automatic. Not recommended yet | Query (4 KiB); per result, up to 2 KiB of subject, sender, date, and **cleaned body**; up to 30 results | Fused hybrid order |
+| [`meeting_event_kind`](#feature-meeting-event-kind) | What kind of event a calendar series is | `meetings judge`; cache builds with `automatic` (up to 200) | Redacted title (160 characters), duration, recurrence, attendee counts. No names | Attendee-count weight |
+| [`meeting_action_assignee`](#feature-meeting-action-assignee) | Which attendee owns an action item | `meetings judge`; cache builds with `automatic` (up to 200 meetings) | Meeting title, attendee labels without addresses, item title (200) and description (500), redacted | No inferred assignee |
+| [`query_understanding`](#feature-explore-query-understanding) | Which filters a typed search asks for | Web UI searches you type; never automatic | Redacted query, candidate date windows, people-index names, account labels | No chips; the search is unchanged |
+| [`sweep_evidence_rerank`](#feature-people-sweep-evidence-relevance) | Whether retrieved older messages bear on a fact | Manual sweeps and briefs; scheduled with `automatic` | Fact description; per message, its date and **up to 2 KiB the person wrote**, redacted; up to 30 per request | Every retrieved message is kept |
+| [`sweep_claim_grounding`](#feature-people-sweep-claim-grounding) | Whether cited excerpts state a claim and it is still current | Manual sweeps and briefs; scheduled with `automatic` | Fact, relation, value (500 characters); **up to 3 cited excerpts of 1,000 characters**, redacted | The chat model's own confidence |
+| [`person_duplicates`](#feature-duplicate-people) | Whether two identity clusters are one human | `person judge`; cache builds with `automatic` (up to 200 pairs) | Up to 3 names and **up to 5 full email addresses per side** | No duplicate candidates are proposed |
+| [`person_profile_choices`](#feature-person-profile-choices) | Primary role, display name, and whether two merged values are the same fact | `person judge`; cache builds with `automatic` (up to 200 of each) | Roles (organization, title, start month), names (160 characters), conflict values (300 characters) | The rule's choice stays; conflicts wait for you |
+
+Each feature's section below is the full contract: its questions as sent,
+thresholds, and exact fields. This is `main` functionality; check the
+[changelog](../changelog.md) for the release it ships in.
 
 ## How a judgment works
 
@@ -352,6 +397,10 @@ missed, and one `title_same_role_N` per title pair.
 `msgvault jev consent organization_resolution` prints the same disclosure.
 At most eight organizations are asked about per saved set of facts, within one
 minute; the rest resolve as before.
+
+**Planned:** a candidate that shares the fact's registrable domain will be
+decided in code, so only name matches without a shared domain and title pairs
+are sent to Jev.
 
 ## Feature: correspondent kind
 
@@ -702,6 +751,10 @@ length, recurrence, and attendee counts." The options are:
 
 `msgvault jev consent meeting_event_kind` prints the same disclosure.
 
+**Planned:** series whose structured fields settle the kind, such as an
+event where you are the only attendee or exactly two people are invited, will
+be decided in code; only the rest will be sent.
+
 ## Feature: meeting action assignee
 
 Feature name: `meeting_action_assignee`. Setting:
@@ -942,6 +995,9 @@ only topically similar or does not contain the needed evidence." A request
 asks only as many as it has messages.
 `msgvault jev consent sweep_evidence_rerank` prints the same disclosure.
 
+**Planned:** relevance filtering is a similarity task, so it is planned to
+move to local embeddings, and excerpts will no longer be sent to Jev for it.
+
 ## Feature: people sweep claim grounding
 
 Feature name: `sweep_claim_grounding`. Setting:
@@ -1068,6 +1124,10 @@ service address, or not enough to tell." A request with fewer than twenty
 pairs sends only their questions.
 `msgvault jev consent person_duplicates` prints the same disclosure.
 
+**Planned:** exact checks on addresses, phone numbers, and normalized
+identifiers will move into code, and Jev will receive only what the name
+judgment needs instead of full email addresses.
+
 ## Feature: person profile choices
 
 Feature name: `person_profile_choices`. Setting:
@@ -1127,6 +1187,10 @@ No addresses, messages, or other profile fields, and nothing about you.
 
 `msgvault jev consent person_profile_choices` prints the same disclosure.
 
+**Planned:** merge-conflict values that are equal after normalization (case,
+whitespace, punctuation, and formatting) will be settled in code; only the
+conflicts that remain will be sent.
+
 ## Turn it off
 
 - `msgvault jev revoke --all` stops every feature at the next request without
@@ -1134,8 +1198,8 @@ No addresses, messages, or other profile fields, and nothing about you.
 - Delete the stored key in Settings, or unset the environment variable and
   restart, to make the credential check fail closed at the next request.
 - `enabled = false` under `[jev]` or under a feature section turns the gate
-  off once the daemon restarts; the exact rules then apply exactly as before
-  Jev existed.
+  off once the daemon restarts; each feature then behaves as the
+  [Without Jev](#features-at-a-glance) column says.
 
 Stored judgments and counters stay in the archive for audit; they hold
 probabilities and outcomes, not the compared values.

@@ -1292,8 +1292,11 @@ off by default; a feature sends nothing until `[jev] enabled`, its own
 section's `enabled`, a resolvable API key, and `msgvault jev consent
 <feature> --yes` all hold. The daemon reads this section at startup, so
 changes take effect after a restart; consent and the stored key are checked
-on every request. See [Jev judgments](/docs/usage/jev-judgments/) for what
-each feature sends, thresholds, and budgets.
+on every request. The developer command `msgvault eval --rerank-jev` is the
+exception: it reads none of this section and sends only with its own
+command-line opt-in; see [Optional Jev reranking](/docs/cli-reference/#optional-jev-reranking).
+See [Jev judgments](/docs/usage/jev-judgments/) for what each feature sends,
+thresholds, and budgets.
 
 | Key | Default | Description |
 |---|---|---|

@@ -3092,7 +3092,10 @@ generation.
 `--rerank-jev` adds an evaluation arm after retrieval. It sends the topic query
 and up to 30 message candidates to TypeSafe's fixed Jev endpoint. The command
 uses `TYPESAFE_API_KEY` from the process environment. Selecting a shape is the
-per-invocation consent to send that archived text. The reranked arms accept
+per-invocation consent to send that archived text. It does not read `[jev]`,
+the key stored in Settings, consent recorded with `msgvault jev consent`, or
+the daily Jev budgets; `--rerank-max-requests` and the cost stop bound the run
+instead. The reranked arms accept
 `--doc-key=message` because TREC judgments identify messages. Conversation
 judgments remain available for the baseline run.
 

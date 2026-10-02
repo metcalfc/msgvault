@@ -37,12 +37,10 @@ Windows support, a provider-neutral model setup, and the upstream Web UI, use
 ### How this fork differs
 
 - **A different Web UI.**
-- **Deeper use of Jev**, TypeSafe's judgment model, for narrow yes/no and
-  choice questions, such as identity and organization matching during enrichment,
-  duplicate people, correspondent and meeting types, and evidence checks in
-  profile sweeps. Each feature is off until you enable it and consent, and
-  falls back to plain rules or skips when Jev is unavailable. See
-  [Jev judgments](docs/usage/jev-judgments.md).
+- **Jev only where a judgment is needed.** Jev, TypeSafe's judgment model,
+  answers narrow questions such as whether two differently written names are
+  one person; exact checks belong in code. Every Jev feature is opt-in and
+  consent-gated. See [Jev judgments](docs/usage/jev-judgments.md).
 - **macOS and Linux only.** Native Windows support has been removed.
 - **A narrower set of model providers.** The fork focuses on local
   models through Ollama for embeddings and people inference, Exa for public
