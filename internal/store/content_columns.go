@@ -89,7 +89,6 @@ var MessagesNonContentColumns = []string{
 	"last_modified",       // the other watermark
 	"content_changed_at",  // itself
 	"embed_gen",           // embedding watermark -- the whole reason this list exists
-	"search_fts",          // Legacy PostgreSQL column classification; absent from SQLite schemas
 }
 
 // contentChangedTriggerColumnList renders MessagesContentColumns for a

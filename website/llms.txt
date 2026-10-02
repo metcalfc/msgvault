@@ -81,7 +81,6 @@ below, or replace a page's trailing slash with `.md`: `/docs/setup/` becomes
 
 - [Overview](https://msgvault.io/docs/architecture/overview.md): design decisions
 - [Data Storage](https://msgvault.io/docs/architecture/storage.md)
-- [PostgreSQL support removal](https://msgvault.io/docs/architecture/postgresql.md)
 - [Search Ranking](https://msgvault.io/docs/architecture/search-ranking.md)
 - [Backup Repository Format](https://msgvault.io/docs/architecture/backup-format.md)
 

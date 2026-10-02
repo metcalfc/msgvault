@@ -215,8 +215,8 @@ func TestStore_ApplyRFC822IDBackfillSQLiteReservesWriterBeforeValidation(t *test
 			_ = execManualSQL(context.Background(), connA, "ROLLBACK")
 		}
 	})
-	_, err = connA.ExecContext(t.Context(), identityRebind(
-		`UPDATE messages SET rfc822_message_id = ? WHERE id = ?`), "stale@example.com", secondID)
+	_, err = connA.ExecContext(t.Context(),
+		`UPDATE messages SET rfc822_message_id = ? WHERE id = ?`, "stale@example.com", secondID)
 	require.NoError(err)
 
 	type applyResult struct {
@@ -280,7 +280,7 @@ func newRFC822IDBackfillSQLiteGateStore(
 	db.SetMaxOpenConns(2)
 	db.SetMaxIdleConns(2)
 	dialect := &SQLiteDialect{}
-	st := &Store{db: newLoggedDB(db, identityRebind), dbPath: base.dsn, dialect: dialect}
+	st := &Store{db: newLoggedDB(db), dbPath: base.dsn, dialect: dialect}
 	t.Cleanup(func() { _ = st.Close() })
 	return st
 }
@@ -314,8 +314,8 @@ func newInternalRFC822IDBackfillPlan(
 func internalStoredRFC822ID(t *testing.T, st *Store, messageID int64) string {
 	t.Helper()
 	var value sql.NullString
-	require.NoError(t, st.db.QueryRowContext(t.Context(), identityRebind(
-		`SELECT rfc822_message_id FROM messages WHERE id = ?`), messageID).Scan(&value))
+	require.NoError(t, st.db.QueryRowContext(t.Context(),
+		`SELECT rfc822_message_id FROM messages WHERE id = ?`, messageID).Scan(&value))
 	return value.String
 }
 

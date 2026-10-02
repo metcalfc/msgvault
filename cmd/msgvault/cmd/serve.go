@@ -361,7 +361,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// backend open/migrate/backfill runs in the background after the API
 	// server is listening (startVectorInit below), so the TUI and other
 	// clients are not blocked by vector maintenance.
-	if err := precheckVectorFeatures(dbPath, cfg); err != nil {
+	if err := precheckVectorFeatures(cfg); err != nil {
 		return fmt.Errorf("vector features: %w", err)
 	}
 	if !cfg.Vector.AnyLaneEnabled() {

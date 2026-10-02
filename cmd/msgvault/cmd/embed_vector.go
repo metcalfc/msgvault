@@ -65,10 +65,6 @@ func runEmbed(cmd *cobra.Command, flags embeddingCommandOptions) error {
 		backend   vector.Backend
 		vectorsDB *sql.DB
 		closeFn   func() error
-		// lastModifiedExpr reads the embed worker's last_modified CAS token
-		// as text, avoiding go-sqlite3's DATETIME-to-time.Time coercion so
-		// the value preserves exact equality when bound back into the update.
-		lastModifiedExpr = "CAST(m.last_modified AS TEXT)"
 	)
 
 	{
@@ -153,11 +149,10 @@ func runEmbed(cmd *cobra.Command, flags embeddingCommandOptions) error {
 
 	runtime, err := newEmbeddingRuntime(cfg.Vector, embeddingRuntimeDeps{
 		Backend: backend, VectorsDB: vectorsDB, MainDB: s.DB(), Store: s,
-		LastModifiedExpr: lastModifiedExpr,
-		TotalPending:     totalPending,
-		Progress:         newProgressPrinter(errOut, totalPending, cfg.Vector.Embeddings.ETAWindow),
-		PersonGate:       personGate,
-		APIKey:           embeddingAPIKey,
+		TotalPending: totalPending,
+		Progress:     newProgressPrinter(errOut, totalPending, cfg.Vector.Embeddings.ETAWindow),
+		PersonGate:   personGate,
+		APIKey:       embeddingAPIKey,
 	})
 	if err != nil {
 		return fmt.Errorf("configure embedding runtime: %w", err)

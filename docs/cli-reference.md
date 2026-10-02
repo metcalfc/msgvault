@@ -3813,7 +3813,7 @@ and [backup](usage/backup.md) before applying.
 Fix UTF-8 encoding issues in existing messages through the configured remote
 server or local daemon. The command streams the daemon's stdout/stderr back to
 the terminal, and the daemon serializes the repair with other archive mutations.
-For SQLite archives, it also rebuilds the analytics cache.
+It also rebuilds the analytics cache.
 It reports invalid RFC 822 Message-ID values and leaves their original bytes
 unchanged to avoid making distinct identifiers collide. The analytics cache
 exports these IDs as NULL. Recover the original values separately from a
@@ -3839,8 +3839,8 @@ plausible `Date` header, the oldest plausible `Received` timestamp, or stored
 source metadata, in that order.
 
 The default is a read-only report. Pass `--apply` to update the archive and
-write a JSON audit ledger under the data directory. SQLite archives also
-rebuild the Parquet analytics cache.
+write a JSON audit ledger under the data directory. Applying also rebuilds the
+Parquet analytics cache.
 Original source files and remote servers are never modified.
 
 ```bash

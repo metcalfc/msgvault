@@ -146,17 +146,9 @@ const sqliteSenderJoin = `LEFT JOIN message_recipients mr_from ON mr_from.id = (
 		)
 		LEFT JOIN participants p_sender ON p_sender.id = COALESCE(mr_from.participant_id, m.sender_id)`
 
-// rebindFunc transforms queries written with ? placeholders. SQLite and
-// DuckDB accept them natively, so their callers pass noopRebind.
-type rebindFunc func(string) string
-
-// noopRebind passes the query through unchanged.
-func noopRebind(q string) string { return q }
-
 // fetchLabelsForMessageList adds labels to message summaries using a batch query.
 // tablePrefix is "" for direct SQLite or "sqlite_db." for DuckDB's sqlite_scan.
-// rebind rewrites the ? placeholders for the driver in use.
-func fetchLabelsForMessageList(ctx context.Context, db *sql.DB, rebind rebindFunc, tablePrefix string, messages []MessageSummary) error {
+func fetchLabelsForMessageList(ctx context.Context, db *sql.DB, tablePrefix string, messages []MessageSummary) error {
 	if len(messages) == 0 {
 		return nil
 	}
@@ -177,7 +169,7 @@ func fetchLabelsForMessageList(ctx context.Context, db *sql.DB, rebind rebindFun
 		WHERE ml.message_id IN (%s)
 	`, tablePrefix, tablePrefix, strings.Join(placeholders, ","))
 
-	rows, err := db.QueryContext(ctx, rebind(query), ids...)
+	rows, err := db.QueryContext(ctx, query, ids...)
 	if err != nil {
 		return err
 	}
@@ -199,8 +191,7 @@ func fetchLabelsForMessageList(ctx context.Context, db *sql.DB, rebind rebindFun
 
 // fetchParticipantsForMessageList adds recipients to message summaries using a batch query.
 // tablePrefix is "" for direct SQLite or "sqlite_db." for DuckDB's sqlite_scan.
-// rebind rewrites the ? placeholders for the driver in use.
-func fetchParticipantsForMessageList(ctx context.Context, db *sql.DB, rebind rebindFunc, tablePrefix string, messages []MessageSummary) error {
+func fetchParticipantsForMessageList(ctx context.Context, db *sql.DB, tablePrefix string, messages []MessageSummary) error {
 	if len(messages) == 0 {
 		return nil
 	}
@@ -214,7 +205,7 @@ func fetchParticipantsForMessageList(ctx context.Context, db *sql.DB, rebind reb
 		idToIndex[msg.ID] = i
 	}
 
-	rows, err := db.QueryContext(ctx, rebind(fmt.Sprintf(`
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT mr.message_id,
 		       mr.recipient_type,
 		       COALESCE(NULLIF(p.email_address, ''), NULLIF(p.phone_number, ''), ''),
@@ -224,7 +215,7 @@ func fetchParticipantsForMessageList(ctx context.Context, db *sql.DB, rebind reb
 		WHERE mr.message_id IN (%s)
 		  AND mr.recipient_type IN ('to', 'cc', 'bcc')
 		ORDER BY mr.message_id, mr.id
-	`, recipientNameExpr("mr", "p"), tablePrefix, tablePrefix, strings.Join(placeholders, ","))), ids...)
+	`, recipientNameExpr("mr", "p"), tablePrefix, tablePrefix, strings.Join(placeholders, ",")), ids...)
 	if err != nil {
 		return err
 	}
@@ -259,14 +250,13 @@ func appendSummaryRecipient(msg *MessageSummary, recipType string, addr Address)
 
 // fetchMessageLabelsDetail fetches labels for a single message detail.
 // tablePrefix is "" for direct SQLite or "sqlite_db." for DuckDB's sqlite_scan.
-// rebind rewrites the ? placeholders for the driver in use.
-func fetchMessageLabelsDetail(ctx context.Context, db *sql.DB, rebind rebindFunc, tablePrefix string, msg *MessageDetail) error {
-	rows, err := db.QueryContext(ctx, rebind(fmt.Sprintf(`
+func fetchMessageLabelsDetail(ctx context.Context, db *sql.DB, tablePrefix string, msg *MessageDetail) error {
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT l.name
 		FROM %smessage_labels ml
 		JOIN %slabels l ON l.id = ml.label_id
 		WHERE ml.message_id = ?
-	`, tablePrefix, tablePrefix)), msg.ID)
+	`, tablePrefix, tablePrefix), msg.ID)
 	if err != nil {
 		return err
 	}
@@ -285,9 +275,8 @@ func fetchMessageLabelsDetail(ctx context.Context, db *sql.DB, rebind rebindFunc
 
 // fetchParticipantsShared fetches participants for a single message detail.
 // tablePrefix is "" for direct SQLite or "sqlite_db." for DuckDB's sqlite_scan.
-// rebind rewrites the ? placeholders for the driver in use.
-func fetchParticipantsShared(ctx context.Context, db *sql.DB, rebind rebindFunc, tablePrefix string, msg *MessageDetail) error {
-	rows, err := db.QueryContext(ctx, rebind(fmt.Sprintf(`
+func fetchParticipantsShared(ctx context.Context, db *sql.DB, tablePrefix string, msg *MessageDetail) error {
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT mr.recipient_type,
 		       COALESCE(NULLIF(p.email_address, ''), NULLIF(p.phone_number, ''), ''),
 		       %s
@@ -311,7 +300,7 @@ func fetchParticipantsShared(ctx context.Context, db *sql.DB, rebind rebindFunc,
 	`,
 		recipientNameExpr("mr", "p"), tablePrefix, tablePrefix,
 		participantNameExpr("p"), tablePrefix, tablePrefix, tablePrefix,
-	)), msg.ID, msg.ID)
+	), msg.ID, msg.ID)
 	if err != nil {
 		return err
 	}
@@ -340,13 +329,12 @@ func fetchParticipantsShared(ctx context.Context, db *sql.DB, rebind rebindFunc,
 
 // fetchAttachmentsShared fetches attachments for a single message detail.
 // tablePrefix is "" for direct SQLite or "sqlite_db." for DuckDB's sqlite_scan.
-// rebind rewrites the ? placeholders for the driver in use.
-func fetchAttachmentsShared(ctx context.Context, db *sql.DB, rebind rebindFunc, tablePrefix string, msg *MessageDetail) error {
-	rows, err := db.QueryContext(ctx, rebind(fmt.Sprintf(`
+func fetchAttachmentsShared(ctx context.Context, db *sql.DB, tablePrefix string, msg *MessageDetail) error {
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, COALESCE(filename, ''), COALESCE(mime_type, ''), COALESCE(size, 0), COALESCE(content_hash, ''), COALESCE(storage_path, '')
 		FROM %sattachments
 		WHERE message_id = ?
-	`, tablePrefix)), msg.ID)
+	`, tablePrefix), msg.ID)
 	if err != nil {
 		return err
 	}
@@ -402,14 +390,13 @@ func attachmentCASPath(contentHash string) string {
 
 // extractBodyFromRawShared extracts text body from compressed MIME data.
 // tablePrefix is "" for direct SQLite or "sqlite_db." for DuckDB's sqlite_scan.
-// rebind rewrites the ? placeholders for the driver in use.
-func extractBodyFromRawShared(ctx context.Context, db *sql.DB, rebind rebindFunc, tablePrefix string, messageID int64) (string, error) {
+func extractBodyFromRawShared(ctx context.Context, db *sql.DB, tablePrefix string, messageID int64) (string, error) {
 	var compressed []byte
 	var compression sql.NullString
 
-	err := db.QueryRowContext(ctx, rebind(fmt.Sprintf(`
+	err := db.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT raw_data, compression FROM %smessage_raw WHERE message_id = ?
-	`, tablePrefix)), messageID).Scan(&compressed, &compression)
+	`, tablePrefix), messageID).Scan(&compressed, &compression)
 	if err != nil {
 		return "", err
 	}
@@ -441,16 +428,16 @@ func extractBodyFromRawShared(ctx context.Context, db *sql.DB, rebind rebindFunc
 // Returns nil, nil if no raw data is stored or if the message is an internal
 // deduplication loser (deleted_at). Source-deleted rows remain archive data and
 // are available to raw MIME consumers.
-func getMessageRawShared(ctx context.Context, db *sql.DB, rebind rebindFunc, tablePrefix string, messageID int64) ([]byte, error) {
+func getMessageRawShared(ctx context.Context, db *sql.DB, tablePrefix string, messageID int64) ([]byte, error) {
 	var compressed []byte
 	var compression sql.NullString
 
-	err := db.QueryRowContext(ctx, rebind(fmt.Sprintf(`
+	err := db.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT mr.raw_data, mr.compression
 		FROM %smessage_raw mr
 		JOIN %smessages m ON m.id = mr.message_id
 		WHERE mr.message_id = ? AND %s
-	`, tablePrefix, tablePrefix, store.LiveMessagesWhere("m", false))), messageID).Scan(&compressed, &compression)
+	`, tablePrefix, tablePrefix, store.LiveMessagesWhere("m", false)), messageID).Scan(&compressed, &compression)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -476,9 +463,7 @@ func getMessageRawShared(ctx context.Context, db *sql.DB, rebind rebindFunc, tab
 
 // getMessageByQueryShared retrieves a full message detail by an arbitrary WHERE clause.
 // tablePrefix is "" for direct SQLite or "sqlite_db." for DuckDB's sqlite_scan.
-// rebind rewrites the ? placeholders for the driver in use; it is applied
-// to every sub-query this function dispatches.
-func getMessageByQueryShared(ctx context.Context, db *sql.DB, rebind rebindFunc, tablePrefix string, whereClause string, args ...any) (*MessageDetail, error) {
+func getMessageByQueryShared(ctx context.Context, db *sql.DB, tablePrefix string, whereClause string, args ...any) (*MessageDetail, error) {
 	query := fmt.Sprintf(`
 		SELECT
 			m.id,
@@ -504,7 +489,7 @@ func getMessageByQueryShared(ctx context.Context, db *sql.DB, rebind rebindFunc,
 
 	var msg MessageDetail
 	var sentAt, receivedAt, deletedAt sql.NullTime
-	err := db.QueryRowContext(ctx, rebind(query), args...).Scan(
+	err := db.QueryRowContext(ctx, query, args...).Scan(
 		&msg.ID,
 		&msg.SourceID,
 		&msg.SourceMessageID,
@@ -543,9 +528,9 @@ func getMessageByQueryShared(ctx context.Context, db *sql.DB, rebind rebindFunc,
 
 	// Fetch body from separate table (PK lookup, avoids scanning large body B-tree)
 	var bodyText, bodyHTML sql.NullString
-	err = db.QueryRowContext(ctx, rebind(fmt.Sprintf(`
+	err = db.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT body_text, body_html FROM %smessage_bodies WHERE message_id = ?
-	`, tablePrefix)), msg.ID).Scan(&bodyText, &bodyHTML)
+	`, tablePrefix), msg.ID).Scan(&bodyText, &bodyHTML)
 	if err == nil {
 		if bodyText.Valid {
 			msg.BodyText = bodyText.String
@@ -559,23 +544,23 @@ func getMessageByQueryShared(ctx context.Context, db *sql.DB, rebind rebindFunc,
 
 	// If body is empty, try to extract from raw MIME
 	if msg.BodyText == "" && msg.BodyHTML == "" {
-		if body, err := extractBodyFromRawShared(ctx, db, rebind, tablePrefix, msg.ID); err == nil && body != "" {
+		if body, err := extractBodyFromRawShared(ctx, db, tablePrefix, msg.ID); err == nil && body != "" {
 			msg.BodyText = body
 		}
 	}
 
 	// Fetch participants
-	if err := fetchParticipantsShared(ctx, db, rebind, tablePrefix, &msg); err != nil {
+	if err := fetchParticipantsShared(ctx, db, tablePrefix, &msg); err != nil {
 		return nil, fmt.Errorf("fetch participants: %w", err)
 	}
 
 	// Fetch labels
-	if err := fetchMessageLabelsDetail(ctx, db, rebind, tablePrefix, &msg); err != nil {
+	if err := fetchMessageLabelsDetail(ctx, db, tablePrefix, &msg); err != nil {
 		return nil, fmt.Errorf("fetch labels: %w", err)
 	}
 
 	// Fetch attachments
-	if err := fetchAttachmentsShared(ctx, db, rebind, tablePrefix, &msg); err != nil {
+	if err := fetchAttachmentsShared(ctx, db, tablePrefix, &msg); err != nil {
 		return nil, fmt.Errorf("fetch attachments: %w", err)
 	}
 

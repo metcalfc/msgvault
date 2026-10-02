@@ -29,7 +29,6 @@ DOCS_ROUTES = [
     "/docs/",
     "/docs/api-server/",
     "/docs/architecture/overview/",
-    "/docs/architecture/postgresql/",
     "/docs/architecture/search-ranking/",
     "/docs/architecture/storage/",
     "/docs/changelog/",

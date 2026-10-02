@@ -77,7 +77,6 @@ type AssemblyConversation struct {
 type sourceSnapshotState struct {
 	mu             sync.RWMutex
 	tx             *sql.Tx
-	rebind         func(string) string
 	lastModified   string
 	sourceSequence int64
 	closed         bool
@@ -110,7 +109,7 @@ func BeginSourceSnapshot(ctx context.Context, st *store.Store) (SourceSnapshot, 
 		return SourceSnapshot{}, fmt.Errorf("pin embedding source sequence: %w", err)
 	}
 	return SourceSnapshot{state: &sourceSnapshotState{
-		tx: tx, rebind: st.Rebind, lastModified: lastModified,
+		tx: tx, lastModified: lastModified,
 		sourceSequence: sequence,
 	}}, nil
 }
@@ -151,7 +150,7 @@ func (s SourceSnapshot) Message(ctx context.Context, id int64) (AssemblyMessage,
 	if s.state.closed {
 		return AssemblyMessage{}, false, ErrSourceSnapshotClosed
 	}
-	query := s.state.rebind(s.state.messageSelectSQL(`m.id = ?`))
+	query := s.state.messageSelectSQL(`m.id = ?`)
 	row, err := scanAssemblyMessage(s.state.tx.QueryRowContext(ctx, query, id), s.state.sourceSequence)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AssemblyMessage{}, false, nil
@@ -176,12 +175,12 @@ func (s SourceSnapshot) MessageMeta(ctx context.Context, id int64) (AssemblyMess
 	if s.state.closed {
 		return AssemblyMessage{}, false, ErrSourceSnapshotClosed
 	}
-	query := s.state.rebind(`
+	query := `
 		SELECT m.id, m.conversation_id, m.source_id, COALESCE(m.message_type, ''),
 		       m.sent_at, m.received_at, m.internal_date
 		FROM messages m
 		WHERE m.id = ? AND m.deleted_at IS NULL
-		  AND m.deleted_from_source_at IS NULL`)
+		  AND m.deleted_from_source_at IS NULL`
 	var row AssemblyMessage
 	var sentAt, receivedAt, internalDate sql.NullTime
 	err := s.state.tx.QueryRowContext(ctx, query, id).Scan(
@@ -211,7 +210,7 @@ func (s SourceSnapshot) ConversationSourceID(ctx context.Context, conversationID
 	}
 	var sourceID int64
 	err := s.state.tx.QueryRowContext(ctx,
-		s.state.rebind(`SELECT source_id FROM conversations WHERE id = ?`), conversationID).Scan(&sourceID)
+		`SELECT source_id FROM conversations WHERE id = ?`, conversationID).Scan(&sourceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil
 	}
@@ -234,7 +233,7 @@ func (s SourceSnapshot) Messages(ctx context.Context, scope AffectedScope) ([]As
 		return nil, ErrSourceSnapshotClosed
 	}
 	if scope.MessageID != 0 {
-		query := s.state.rebind(s.state.messageSelectSQL(`m.id = ?`))
+		query := s.state.messageSelectSQL(`m.id = ?`)
 		row, err := scanAssemblyMessage(s.state.tx.QueryRowContext(ctx, query, scope.MessageID), s.state.sourceSequence)
 		if errors.Is(err, sql.ErrNoRows) {
 			return []AssemblyMessage{}, nil
@@ -250,8 +249,8 @@ func (s SourceSnapshot) Messages(ctx context.Context, scope AffectedScope) ([]As
 	where := []string{`m.conversation_id = ?`}
 	args := []any{scope.ConversationID}
 	where, args, canonicalTime := s.state.scopeRange(scope, where, args)
-	query := s.state.rebind(s.state.messageSelectSQL(strings.Join(where, " AND ")) +
-		` ORDER BY ` + canonicalTime + `, m.id`)
+	query := s.state.messageSelectSQL(strings.Join(where, " AND ")) +
+		` ORDER BY ` + canonicalTime + `, m.id`
 	return s.state.scanMessages(ctx, query, args, scope.ConversationID, false)
 }
 
@@ -272,8 +271,8 @@ func (s SourceSnapshot) ChatMessages(ctx context.Context, scope AffectedScope) (
 	where := []string{`m.conversation_id = ?`}
 	args := []any{scope.ConversationID}
 	where, args, canonicalTime := s.state.scopeRange(scope, where, args)
-	query := s.state.rebind(s.state.chatMessageSelectSQL(strings.Join(where, " AND ")) +
-		` ORDER BY ` + canonicalTime + `, m.id`)
+	query := s.state.chatMessageSelectSQL(strings.Join(where, " AND ")) +
+		` ORDER BY ` + canonicalTime + `, m.id`
 	return s.state.scanMessages(ctx, query, args, scope.ConversationID, true)
 }
 
@@ -287,14 +286,14 @@ func (s SourceSnapshot) latestChatMessageID(ctx context.Context, conversationID 
 		return 0, false, ErrSourceSnapshotClosed
 	}
 	var id sql.NullInt64
-	err := s.state.tx.QueryRowContext(ctx, s.state.rebind(`
+	err := s.state.tx.QueryRowContext(ctx, `
 		SELECT MAX(m.id)
 		  FROM messages m
 		  JOIN message_bodies mb ON mb.message_id = m.id
 		 WHERE m.conversation_id = ?
 		   AND m.message_type = 'beeper'
 		   AND m.deleted_at IS NULL
-		   AND m.deleted_from_source_at IS NULL`), conversationID).Scan(&id)
+		   AND m.deleted_from_source_at IS NULL`, conversationID).Scan(&id)
 	if err != nil {
 		return 0, false, fmt.Errorf("read latest embedding chat message %d: %w", conversationID, err)
 	}
@@ -329,8 +328,8 @@ func (s SourceSnapshot) MessageVersions(ctx context.Context, scope AffectedScope
 		args = append(args, scope.ConversationID)
 		where, args, _ = s.state.scopeRange(scope, where, args)
 	}
-	query := s.state.rebind(fmt.Sprintf(`SELECT m.id, %s FROM messages m WHERE %s ORDER BY m.id`,
-		s.state.lastModified, strings.Join(where, " AND ")))
+	query := fmt.Sprintf(`SELECT m.id, %s FROM messages m WHERE %s ORDER BY m.id`,
+		s.state.lastModified, strings.Join(where, " AND "))
 	rows, err := s.state.tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read embedding source versions: %w", err)
@@ -422,8 +421,8 @@ func (s SourceSnapshot) Conversation(ctx context.Context, id int64) (AssemblyCon
 		return AssemblyConversation{}, false, ErrSourceSnapshotClosed
 	}
 	var conversation AssemblyConversation
-	err := s.state.tx.QueryRowContext(ctx, s.state.rebind(
-		`SELECT id, COALESCE(title, '') FROM conversations WHERE id = ?`), id).
+	err := s.state.tx.QueryRowContext(ctx,
+		`SELECT id, COALESCE(title, '') FROM conversations WHERE id = ?`, id).
 		Scan(&conversation.ID, &conversation.Title)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AssemblyConversation{}, false, nil
@@ -432,7 +431,7 @@ func (s SourceSnapshot) Conversation(ctx context.Context, id int64) (AssemblyCon
 		return AssemblyConversation{}, false, fmt.Errorf("read embedding conversation %d: %w", id, err)
 	}
 	participantRevision := store.ParticipantRevisionSQLite
-	query := s.state.rebind(fmt.Sprintf(`
+	query := fmt.Sprintf(`
 		SELECT cp.participant_id, COALESCE(cp.role, ''),
 		       COALESCE(NULLIF(TRIM(p.display_name), ''),
 		                NULLIF(p.email_address, ''), NULLIF(p.phone_number, ''), ''),
@@ -440,7 +439,7 @@ func (s SourceSnapshot) Conversation(ctx context.Context, id int64) (AssemblyCon
 		FROM conversation_participants cp
 		JOIN participants p ON p.id = cp.participant_id
 		WHERE cp.conversation_id = ?
-		ORDER BY cp.participant_id`, participantRevision))
+		ORDER BY cp.participant_id`, participantRevision)
 	rows, err := s.state.tx.QueryContext(ctx, query, id)
 	if err != nil {
 		return AssemblyConversation{}, false, fmt.Errorf("read embedding conversation participants %d: %w", id, err)

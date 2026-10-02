@@ -352,7 +352,7 @@ an existing installation.
   schema changes run on writable open. Keep the
   [backup repository](usage/backup.md) outside your archive home. PostgreSQL
   users need their own database backup; see
-  [backend limits](architecture/postgresql.md).
+  [archive storage](architecture/storage.md#archive-database).
 - **Upgrade clients and daemon together.** The API crossed the 1.x/2.x
   compatibility boundary; the current schema is **2.26.0**. Analytical
   `/api/v1/people/*` routes moved to `/api/v1/participants/*`. Durable profiles

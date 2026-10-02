@@ -493,7 +493,7 @@ func newDirectorySnapshotGateStore(t *testing.T, path string, gate *directorySna
 	db.SetMaxOpenConns(4)
 	dialect := &SQLiteDialect{}
 	st := &Store{
-		db: newLoggedDB(db, identityRebind), dbPath: path, dialect: dialect,
+		db: newLoggedDB(db), dbPath: path, dialect: dialect,
 		readOnly: readOnly, directoryProjectionReady: true,
 	}
 	t.Cleanup(func() { assert.NoError(t, st.Close()) })

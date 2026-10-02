@@ -2350,8 +2350,8 @@ func (s *cacheSourceSnapshot) Close() error {
 const csvNullStr = `\N`
 
 // exportToCSV exports the results of a SQL query to a CSV file.
-// NULL values are written as \N (PostgreSQL convention). Invalid UTF-8 in
-// identity columns is also written as NULL so attribution keys cannot
+// NULL values are written as \N, the sentinel DuckDB reads via nullstr.
+// Invalid UTF-8 in identity columns is also written as NULL so attribution keys cannot
 // collide after repair; every other invalid value is repaired to U+FFFD and
 // marked for counting only when its output column is exported.
 func exportToCSV(db sqlRunner, query string, dest string, identityCols map[string]bool) error {

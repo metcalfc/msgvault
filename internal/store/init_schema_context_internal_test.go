@@ -123,9 +123,9 @@ func TestInitSchemaAddsVersionToLegacyLedger(t *testing.T) {
 }
 
 // cancelAtStatement cancels the initialisation the moment a chosen statement is
-// about to be issued, by intercepting the store's placeholder-rebind step —
-// which every statement passes through on its way to the driver, whichever
-// helper issued it.
+// about to be issued, through the store's beforeStatement hook — which every
+// statement passes through on its way to the driver, whichever helper issued
+// it.
 //
 // It is the only seam that can name an INDIVIDUAL statement inside
 // InitSchemaContext. The dialect wrappers below can only name the steps the
@@ -149,13 +149,12 @@ type cancelAtStatement struct {
 	fired  bool
 }
 
-// install replaces the store's rebind step with one that cancels at the chosen
-// statement. loggedDB captures the rebind func at Open, so swapping s.dialect
-// afterwards would not reach it; this writes the field the transaction helpers
-// actually call.
+// install sets the store's beforeStatement hook to cancel at the chosen
+// statement. Transactions copy the hook from loggedDB when they begin, so it
+// reaches the transaction helpers too.
 func (c *cancelAtStatement) install(db *loggedDB) {
-	next := db.rebind
-	db.rebind = func(query string) string {
+	next := db.beforeStatement
+	db.beforeStatement = func(query string) {
 		switch {
 		case c.fired:
 		case !c.armed:
@@ -166,7 +165,7 @@ func (c *cancelAtStatement) install(db *loggedDB) {
 			c.fired = true
 			c.cancel()
 		}
-		return next(query)
+		observeStatement(next, query)
 	}
 }
 
@@ -405,35 +404,6 @@ type cancelAtDialectStepDialect struct {
 	beforeFTS     bool
 }
 
-// cancelDuringFTSIndexDialect cancels the initialisation the moment the FTS
-// index build begins, then issues a statement through the querier it was handed
-// and records what that statement did.
-//
-// The recorded error, not InitSchemaContext's, is the assertion: runMaintenance
-// re-checks the context after the callback returns, so the method reports
-// cancellation either way. Only the statement's own error says whether the
-// querier the call site handed the dialect was bound to the context.
-type cancelDuringFTSIndexDialect struct {
-	Dialect
-
-	cancel func()
-	probe  error
-	probed bool
-}
-
-func (d *cancelDuringFTSIndexDialect) EnsureFTSIndex(q querier) error {
-	d.cancel()
-	// SQLite's EnsureFTSIndex is normally a no-op. This real index statement
-	// makes cancellation observable at the same production call boundary.
-	d.probed = true
-	_, d.probe = q.Exec(
-		`CREATE INDEX IF NOT EXISTS idx_messages_fts_index_probe ON messages(id)`)
-	if d.probe != nil {
-		return d.probe
-	}
-	return d.Dialect.EnsureFTSIndex(q)
-}
-
 // cancelDuringFTSProbeDialect cancels the initialisation the moment the FTS
 // availability probe begins, then delegates to the real probe.
 type cancelDuringFTSProbeDialect struct {
@@ -447,34 +417,6 @@ func (d cancelDuringFTSProbeDialect) FTSAvailable(
 ) (bool, error) {
 	d.cancel()
 	return d.Dialect.FTSAvailable(ctx, db)
-}
-
-// TestInitSchemaContext_FTSIndexBuildRunsOnTheBoundTransaction verifies that
-// the index hook receives a context-bound querier. A test dialect adds real
-// SQLite DDL to the normally empty hook to observe cancellation at that seam.
-func TestInitSchemaContext_FTSIndexBuildRunsOnTheBoundTransaction(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-
-	st, err := Open(filepath.Join(t.TempDir(), "fts-index.db"))
-	require.NoError(err, "open store")
-	t.Cleanup(func() { _ = st.Close() })
-
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	wrapped := &cancelDuringFTSIndexDialect{Dialect: st.dialect, cancel: cancel}
-	st.dialect = wrapped
-
-	err = st.InitSchemaContext(ctx)
-
-	require.True(wrapped.probed, "the FTS index build was never reached")
-	require.Error(wrapped.probe,
-		"the index build must observe the cancellation itself; a nil error means the "+
-			"call site handed the dialect a querier that substitutes context.Background(), "+
-			"so on PostgreSQL a build waiting on a table lock is unreachable by a signal")
-	require.ErrorIs(wrapped.probe, context.Canceled, "and observe it as cancellation")
-	require.Error(err, "a cancelled initialisation must report failure")
-	assert.Contains(err.Error(), "ensure FTS index", "reported as the step that stopped")
 }
 
 // TestInitSchemaContext_FTSAvailabilityProbeStopsWhenTheContextIsCancelled
@@ -544,9 +486,8 @@ func TestInitSchemaContext_DDLStopsWhenTheContextIsCancelled(t *testing.T) {
 			name:    "the schema scripts",
 			step:    func(d *cancelAtDialectStepDialect) { d.beforeSchema = true },
 			wantMsg: "execute",
-			because: "the schema scripts are the first statements of the upgrade, and on " +
-				"PostgreSQL their CREATE TABLE/INDEX statements wait on whatever holds " +
-				"the table",
+			because: "the schema scripts are the first statements of the upgrade, and " +
+				"their CREATE TABLE/INDEX statements wait for the SQLite write lock",
 		},
 		{
 			name:    "the legacy ADD COLUMN migrations",

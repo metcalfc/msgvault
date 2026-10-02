@@ -90,6 +90,16 @@
       "source": "/search/:path(.*)",
       "destination": "/docs/search/:path*",
       "permanent": true
+    },
+    {
+      "source": "/docs/architecture/postgresql/:path(.*)",
+      "destination": "/docs/architecture/storage/",
+      "permanent": true
+    },
+    {
+      "source": "/docs/architecture/postgresql.md",
+      "destination": "/docs/architecture/storage.md",
+      "permanent": true
     }
   ]
 }

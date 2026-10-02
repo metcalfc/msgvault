@@ -25,7 +25,6 @@ PUBLIC_MARKDOWN = {
     "api-server.md",
     "architecture/backup-format.md",
     "architecture/overview.md",
-    "architecture/postgresql.md",
     "architecture/search-ranking.md",
     "architecture/storage.md",
     "changelog.md",

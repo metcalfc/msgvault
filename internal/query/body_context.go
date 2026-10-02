@@ -120,12 +120,7 @@ func (e *SQLiteEngine) searchableBodyContextTerms(
 	ctx context.Context,
 	terms []string,
 ) ([]string, error) {
-	switch e.dialect.messageBodyContextBackend() {
-	case messageBodyContextSQLite:
-		return sqliteSearchableBodyContextTerms(ctx, terms)
-	default:
-		return nil, errors.New("message body context is unavailable for this query dialect")
-	}
+	return sqliteSearchableBodyContextTerms(ctx, terms)
 }
 
 // sqliteSearchableBodyContextTerms asks unicode61 itself which term groups
@@ -267,13 +262,7 @@ func (e *SQLiteEngine) attachMessageBodySearchContexts(
 		chunksByID[chunk.id] = chunk
 	}
 
-	var raw []rawBodyContext
-	switch e.dialect.messageBodyContextBackend() {
-	case messageBodyContextSQLite:
-		raw, err = e.sqliteBodyContexts(ctx, chunks, contextTerms, markers)
-	default:
-		return errors.New("message body context is unavailable for this query dialect")
-	}
+	raw, err := e.sqliteBodyContexts(ctx, chunks, contextTerms, markers)
 	if err != nil {
 		return err
 	}
@@ -437,33 +426,26 @@ func (e *SQLiteEngine) loadBodyContextChunks(
 	scanBytes int,
 ) (map[int64]bodyContextSourceState, []bodyContextChunk, map[int64]string, error) {
 	idPlaceholders, idArgs := bodyContextIDPlaceholders(ids)
-	var args []any
-	var querySQL string
-	switch e.dialect.messageBodyContextBackend() {
-	case messageBodyContextSQLite:
-		// SQLite materializes an entire TEXT cell before evaluating substr(),
-		// even when only a tiny prefix is requested. octet_length() is served
-		// from record metadata, so CASE can reject an oversized cell before it
-		// is loaded. Eligible values sum to the request-wide scan budget (plus
-		// one UTF-8 guard per result); oversized values become explicitly
-		// truncated with no misleading fallback context.
-		limit := scanBytes + utf8.UTFMax
-		args = append([]any{limit, limit}, idArgs...)
-		querySQL = fmt.Sprintf(`
-			SELECT mb.message_id,
-				CASE
-					WHEN COALESCE(octet_length(mb.body_text), 0) <= ?
-					THEN CAST(COALESCE(mb.body_text, '') AS BLOB)
-					ELSE X''
-				END,
-				COALESCE(octet_length(mb.body_text), 0) > ?
-			FROM message_bodies mb
-			WHERE mb.message_id IN (%s)
-			ORDER BY mb.message_id
-		`, idPlaceholders)
-	default:
-		return nil, nil, nil, errors.New("message body context is unavailable for this query dialect")
-	}
+	// SQLite materializes an entire TEXT cell before evaluating substr(),
+	// even when only a tiny prefix is requested. octet_length() is served
+	// from record metadata, so CASE can reject an oversized cell before it
+	// is loaded. Eligible values sum to the request-wide scan budget (plus
+	// one UTF-8 guard per result); oversized values become explicitly
+	// truncated with no misleading fallback context.
+	limit := scanBytes + utf8.UTFMax
+	args := append([]any{limit, limit}, idArgs...)
+	querySQL := fmt.Sprintf(`
+		SELECT mb.message_id,
+			CASE
+				WHEN COALESCE(octet_length(mb.body_text), 0) <= ?
+				THEN CAST(COALESCE(mb.body_text, '') AS BLOB)
+				ELSE X''
+			END,
+			COALESCE(octet_length(mb.body_text), 0) > ?
+		FROM message_bodies mb
+		WHERE mb.message_id IN (%s)
+		ORDER BY mb.message_id
+	`, idPlaceholders)
 	rows, err := e.queryContext(ctx, querySQL, args...)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("load bounded message body prefixes: %w", err)
@@ -521,51 +503,47 @@ func (e *SQLiteEngine) canonicalBodyContextMatches(
 		return matches, nil
 	}
 
-	if e.dialect.messageBodyContextBackend() == messageBodyContextSQLite {
-		scratch, err := sql.Open(sqliteutil.DriverName(), ":memory:")
-		if err != nil {
-			return nil, fmt.Errorf("open SQLite canonical body-context probe: %w", err)
-		}
-		scratch.SetMaxOpenConns(1)
-		defer func() { _ = scratch.Close() }()
-		if _, err := scratch.ExecContext(ctx, `CREATE VIRTUAL TABLE canonical_bodies USING fts5(
-			message_id UNINDEXED,
-			body,
-			tokenize='unicode61 remove_diacritics 1'
-		)`); err != nil {
-			return nil, fmt.Errorf("create SQLite canonical body-context probe: %w", err)
-		}
-		values := make([]string, len(ids))
-		args := make([]any, 0, 3*len(ids))
-		for i, messageID := range ids {
-			values[i] = "(?, ?, ?)"
-			args = append(args, i+1, messageID, bodies[messageID])
-		}
-		if _, err := scratch.ExecContext(ctx, fmt.Sprintf(`
-			INSERT INTO canonical_bodies(rowid, message_id, body) VALUES %s
-		`, strings.Join(values, ", ")), args...); err != nil {
-			return nil, fmt.Errorf("populate SQLite canonical body-context probe: %w", err)
-		}
-		parts := make([]string, len(terms))
-		args = args[:0]
-		for group, term := range terms {
-			_, queryArg := e.dialect.BuildFTSBodyTerm([]string{term})
-			parts[group] = fmt.Sprintf(`
-				SELECT message_id, %d AS group_id
-				FROM canonical_bodies
-				WHERE canonical_bodies MATCH ?
-			`, group)
-			args = append(args, queryArg)
-		}
-		rows, err := scratch.QueryContext(ctx, strings.Join(parts, " UNION ALL "), args...)
-		if err != nil {
-			return nil, fmt.Errorf("query SQLite canonical body-context probe: %w", err)
-		}
-		defer func() { _ = rows.Close() }()
-		return scanCanonicalBodyContextMatches(rows)
+	scratch, err := sql.Open(sqliteutil.DriverName(), ":memory:")
+	if err != nil {
+		return nil, fmt.Errorf("open SQLite canonical body-context probe: %w", err)
 	}
-
-	return nil, errors.New("message body context is unavailable for this query dialect")
+	scratch.SetMaxOpenConns(1)
+	defer func() { _ = scratch.Close() }()
+	if _, err := scratch.ExecContext(ctx, `CREATE VIRTUAL TABLE canonical_bodies USING fts5(
+		message_id UNINDEXED,
+		body,
+		tokenize='unicode61 remove_diacritics 1'
+	)`); err != nil {
+		return nil, fmt.Errorf("create SQLite canonical body-context probe: %w", err)
+	}
+	values := make([]string, len(ids))
+	args := make([]any, 0, 3*len(ids))
+	for i, messageID := range ids {
+		values[i] = "(?, ?, ?)"
+		args = append(args, i+1, messageID, bodies[messageID])
+	}
+	if _, err := scratch.ExecContext(ctx, fmt.Sprintf(`
+		INSERT INTO canonical_bodies(rowid, message_id, body) VALUES %s
+	`, strings.Join(values, ", ")), args...); err != nil {
+		return nil, fmt.Errorf("populate SQLite canonical body-context probe: %w", err)
+	}
+	parts := make([]string, len(terms))
+	args = args[:0]
+	for group, term := range terms {
+		_, queryArg := e.dialect.BuildFTSBodyTerm([]string{term})
+		parts[group] = fmt.Sprintf(`
+			SELECT message_id, %d AS group_id
+			FROM canonical_bodies
+			WHERE canonical_bodies MATCH ?
+		`, group)
+		args = append(args, queryArg)
+	}
+	rows, err := scratch.QueryContext(ctx, strings.Join(parts, " UNION ALL "), args...)
+	if err != nil {
+		return nil, fmt.Errorf("query SQLite canonical body-context probe: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanCanonicalBodyContextMatches(rows)
 }
 
 func scanCanonicalBodyContextMatches(rows *sql.Rows) (map[bodyContextGroupKey]struct{}, error) {

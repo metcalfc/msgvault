@@ -43,18 +43,16 @@ type embeddingRuntime struct {
 }
 
 type embeddingRuntimeDeps struct {
-	Backend          vector.Backend
-	VectorsDB        *sql.DB
-	MainDB           *sql.DB
-	Store            *store.Store
-	Rebind           func(string) string
-	LastModifiedExpr string
-	TotalPending     int
-	Progress         func(embed.ProgressReport)
-	Log              *slog.Logger
-	PersonGate       vector.SemanticPersonEmbeddingGate
-	DocumentGate     embed.BeforeRequestFunc
-	QueryGate        embed.BeforeRequestFunc
+	Backend      vector.Backend
+	VectorsDB    *sql.DB
+	MainDB       *sql.DB
+	Store        *store.Store
+	TotalPending int
+	Progress     func(embed.ProgressReport)
+	Log          *slog.Logger
+	PersonGate   vector.SemanticPersonEmbeddingGate
+	DocumentGate embed.BeforeRequestFunc
+	QueryGate    embed.BeforeRequestFunc
 	// APIKey is the text embedding credential resolved once from the provider
 	// credential store (or its environment fallback) at runtime start.
 	APIKey string
@@ -267,7 +265,6 @@ func newEmbeddingRuntime(vectorCfg vector.Config, deps embeddingRuntimeDeps) (*e
 			Store: deps.Store, Client: messageClient, Preprocess: embeddingPreprocessConfig(vectorCfg),
 			MaxInputChars: vectorCfg.Embeddings.MaxInputChars,
 			BatchSize:     vectorCfg.Embeddings.BatchSize, BuildScope: vectorCfg.Embed.Scope.BuildScope(),
-			Rebind: deps.Rebind, LastModifiedExpr: deps.LastModifiedExpr,
 			TotalPending: deps.TotalPending, Progress: deps.Progress, Log: deps.Log,
 			Recorder: deps.Store,
 		})
@@ -421,7 +418,7 @@ func newConvergenceChecker(
 
 // precheckVectorFeatures validates vector configuration before the daemon starts
 // expensive background initialization. SQLite vector support needs sqlite_vec.
-func precheckVectorFeatures(mainPath string, cfg *config.Config) error {
+func precheckVectorFeatures(cfg *config.Config) error {
 	if cfg == nil {
 		return errors.New("configuration is unavailable")
 	}
@@ -506,11 +503,6 @@ func setupVectorFeatures(ctx context.Context, mainStore *store.Store, mainPath s
 	}
 	mainDB := mainStore.DB()
 
-	// lastModifiedExpr reads the embed worker's last_modified CAS token as text.
-	// The CAST avoids go-sqlite3's DATETIME-to-time.Time coercion, preserving
-	// exact equality when the token is bound back into the update.
-	lastModifiedExpr := "CAST(m.last_modified AS TEXT)"
-
 	var (
 		backend         vector.Backend
 		documentBackend vectordocument.Backend
@@ -559,7 +551,7 @@ func setupVectorFeatures(ctx context.Context, mainStore *store.Store, mainPath s
 		)
 		runtime, err := newEmbeddingRuntime(vecCfg, embeddingRuntimeDeps{
 			Backend: backend, VectorsDB: vectorsDB, MainDB: mainDB, Store: mainStore,
-			LastModifiedExpr: lastModifiedExpr, Log: logger,
+			Log:          logger,
 			PersonGate:   personGate,
 			DocumentGate: documentVectorRequestGate(mainStore, vecCfg, "document_embedding"),
 			QueryGate:    documentVectorRequestGate(mainStore, vecCfg, "query_embedding"),

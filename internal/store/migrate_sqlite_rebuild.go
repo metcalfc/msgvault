@@ -73,7 +73,7 @@ func (s *Store) rebuildSQLiteTable(ctx context.Context, rebuild sqliteTableRebui
 		}
 	}()
 	if rebuild.Validate != nil {
-		if err := rebuild.Validate(ctx, &loggedTx{Tx: tx, rebind: s.Rebind}); err != nil {
+		if err := rebuild.Validate(ctx, &loggedTx{Tx: tx}); err != nil {
 			return err
 		}
 	}

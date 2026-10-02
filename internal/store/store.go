@@ -231,7 +231,7 @@ func openSQLiteContext(ctx context.Context, dbPath, params string) (*Store, erro
 	}
 
 	s := &Store{
-		db:                   newLoggedDB(db, identityRebind),
+		db:                   newLoggedDB(db),
 		dbPath:               dbPath,
 		sqliteFilesystemPath: filesystemPath,
 		dialect:              dialect,
@@ -326,7 +326,7 @@ func OpenReadOnlyContext(ctx context.Context, dbPath string) (*Store, error) {
 	dialect := &SQLiteDialect{}
 
 	s := &Store{
-		db:                   newLoggedDB(db, identityRebind),
+		db:                   newLoggedDB(db),
 		dbPath:               dbPath,
 		sqliteFilesystemPath: filesystemPath,
 		dialect:              dialect,
@@ -1545,14 +1545,6 @@ func (s *Store) InitSchemaContext(ctx context.Context) error {
 		return err
 	}); err != nil {
 		return fmt.Errorf("create content_changed_at index: %w", err)
-	}
-
-	// Keep FTS setup inside the context-bound maintenance contract. SQLite
-	// creates its virtual table through SchemaFTS, so EnsureFTSIndex is a no-op.
-	if err := s.runMaintenance(ctx, func(ctx context.Context, tx *loggedTx) error {
-		return s.dialect.EnsureFTSIndex(boundQuerier{ctx: ctx, q: tx})
-	}); err != nil {
-		return fmt.Errorf("ensure FTS index: %w", err)
 	}
 
 	// Drop the obsolete partial index over messages needing embedding. It was

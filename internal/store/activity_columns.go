@@ -9,7 +9,7 @@ import "strings"
 // event, so only these fire trg_activity_queue_messages_update.
 //
 // Every other column stays out on purpose. Bookkeeping such as embed_gen,
-// search_fts, indexing_version, and last_modified is rewritten archive-wide by
+// indexing_version, and last_modified is rewritten archive-wide by
 // embedding and FTS backfills; content the projector never reads (subject,
 // snippet, attachment counters, read/delivery flags) is re-stamped by every
 // sync. A blanket trigger turned each of those sweeps into a full re-projection

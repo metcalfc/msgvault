@@ -29,16 +29,10 @@ import (
 // Caller is responsible for any additional filter fields that do not
 // derive from the query string (e.g. a SourceID coming from an HTTP
 // account parameter) — just set them on the returned Filter.
-//
-// rebind transforms the participant/label lookup queries. Pass nil
-// to preserve their native ? placeholders.
-func BuildFilter(ctx context.Context, db *sql.DB, rebind func(string) string, q *search.Query) (vector.Filter, error) {
+func BuildFilter(ctx context.Context, db *sql.DB, q *search.Query) (vector.Filter, error) {
 	var f vector.Filter
 	if q == nil {
 		return f, nil
-	}
-	if rebind == nil {
-		rebind = identityRebind
 	}
 
 	groupFilters := []struct {
@@ -54,7 +48,7 @@ func BuildFilter(ctx context.Context, db *sql.DB, rebind func(string) string, q 
 		if len(gf.addrs) == 0 {
 			continue
 		}
-		groups, err := resolveAddressGroups(ctx, db, rebind, gf.addrs)
+		groups, err := resolveAddressGroups(ctx, db, gf.addrs)
 		if err != nil {
 			return f, err
 		}
@@ -62,7 +56,7 @@ func BuildFilter(ctx context.Context, db *sql.DB, rebind func(string) string, q 
 	}
 
 	if len(q.Labels) > 0 {
-		groups, err := resolveLabelGroups(ctx, db, rebind, q.Labels)
+		groups, err := resolveLabelGroups(ctx, db, q.Labels)
 		if err != nil {
 			return f, err
 		}
@@ -123,13 +117,9 @@ func BuildFilter(ctx context.Context, db *sql.DB, rebind func(string) string, q 
 func ApplyMessageFilter(
 	ctx context.Context,
 	db *sql.DB,
-	rebind func(string) string,
 	f *vector.Filter,
 	structured query.MessageFilter,
 ) error {
-	if rebind == nil {
-		rebind = identityRebind
-	}
 	if period := structured.TimeRange.Period; period != "" {
 		if _, _, ok := query.ParseTimePeriodBounds(period); !ok {
 			return fmt.Errorf("invalid time_period %q: expected YYYY, YYYY-MM, or YYYY-MM-DD", period)
@@ -161,7 +151,7 @@ func ApplyMessageFilter(
 	}
 
 	if structured.Sender != "" {
-		group, err := resolveExactParticipantIDs(ctx, db, rebind,
+		group, err := resolveExactParticipantIDs(ctx, db,
 			"email_address = ? OR phone_number = ?", structured.Sender, structured.Sender)
 		if err != nil {
 			return err
@@ -169,7 +159,7 @@ func ApplyMessageFilter(
 		f.SenderExactGroups = append(f.SenderExactGroups, noMatchGroup(group))
 	}
 	if structured.Recipient != "" {
-		group, err := resolveExactParticipantIDs(ctx, db, rebind,
+		group, err := resolveExactParticipantIDs(ctx, db,
 			"email_address = ?", structured.Recipient)
 		if err != nil {
 			return err
@@ -177,7 +167,7 @@ func ApplyMessageFilter(
 		f.RecipientAnyGroups = append(f.RecipientAnyGroups, noMatchGroup(group))
 	}
 	if structured.Domain != "" {
-		group, err := resolveExactParticipantIDs(ctx, db, rebind, "domain = ?", structured.Domain)
+		group, err := resolveExactParticipantIDs(ctx, db, "domain = ?", structured.Domain)
 		if err != nil {
 			return err
 		}
@@ -186,7 +176,7 @@ func ApplyMessageFilter(
 		f.SenderGroups = append(f.SenderGroups, noMatchGroup(group))
 	}
 	if structured.Label != "" {
-		group, err := resolveExactLabelIDs(ctx, db, rebind, structured.Label)
+		group, err := resolveExactLabelIDs(ctx, db, structured.Label)
 		if err != nil {
 			return err
 		}
@@ -266,11 +256,10 @@ func intersectMessageTypes(existing, exact []string) []string {
 func resolveExactParticipantIDs(
 	ctx context.Context,
 	db *sql.DB,
-	rebind func(string) string,
 	where string,
 	args ...any,
 ) ([]int64, error) {
-	rows, err := db.QueryContext(ctx, rebind("SELECT id FROM participants WHERE "+where), args...)
+	rows, err := db.QueryContext(ctx, "SELECT id FROM participants WHERE "+where, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query exact participants: %w", err)
 	}
@@ -289,8 +278,8 @@ func resolveExactParticipantIDs(
 	return ids, nil
 }
 
-func resolveExactLabelIDs(ctx context.Context, db *sql.DB, rebind func(string) string, label string) ([]int64, error) {
-	rows, err := db.QueryContext(ctx, rebind("SELECT id FROM labels WHERE LOWER(name) = LOWER(?)"), label)
+func resolveExactLabelIDs(ctx context.Context, db *sql.DB, label string) ([]int64, error) {
+	rows, err := db.QueryContext(ctx, "SELECT id FROM labels WHERE LOWER(name) = LOWER(?)", label)
 	if err != nil {
 		return nil, fmt.Errorf("query exact labels: %w", err)
 	}
@@ -323,10 +312,10 @@ func noMatchGroup(ids []int64) []int64 {
 // group, which makes the per-group EXISTS check fail and returns zero
 // hits overall — preserving the SQLite path's "any unknown token
 // poisons the whole field" semantic.
-func resolveAddressGroups(ctx context.Context, db *sql.DB, rebind func(string) string, addrs []string) ([][]int64, error) {
+func resolveAddressGroups(ctx context.Context, db *sql.DB, addrs []string) ([][]int64, error) {
 	groups := make([][]int64, 0, len(addrs))
 	for _, a := range addrs {
-		ids, err := resolveParticipantIDs(ctx, db, rebind, []string{a})
+		ids, err := resolveParticipantIDs(ctx, db, []string{a})
 		if err != nil {
 			return nil, err
 		}
@@ -340,10 +329,10 @@ func resolveAddressGroups(ctx context.Context, db *sql.DB, rebind func(string) s
 
 // resolveLabelGroups is the label-side counterpart of
 // resolveAddressGroups.
-func resolveLabelGroups(ctx context.Context, db *sql.DB, rebind func(string) string, labels []string) ([][]int64, error) {
+func resolveLabelGroups(ctx context.Context, db *sql.DB, labels []string) ([][]int64, error) {
 	groups := make([][]int64, 0, len(labels))
 	for _, l := range labels {
-		ids, err := resolveLabelIDs(ctx, db, rebind, []string{l})
+		ids, err := resolveLabelIDs(ctx, db, []string{l})
 		if err != nil {
 			return nil, err
 		}
@@ -359,7 +348,7 @@ func resolveLabelGroups(ctx context.Context, db *sql.DB, rebind func(string) str
 // contains any of the supplied tokens as a substring. Mirrors the
 // `from:` / `to:` behavior in internal/store/api.go so vector/hybrid
 // search agrees with the FTS path.
-func resolveParticipantIDs(ctx context.Context, db *sql.DB, rebind func(string) string, addrs []string) ([]int64, error) {
+func resolveParticipantIDs(ctx context.Context, db *sql.DB, addrs []string) ([]int64, error) {
 	if len(addrs) == 0 {
 		return nil, nil
 	}
@@ -369,7 +358,7 @@ func resolveParticipantIDs(ctx context.Context, db *sql.DB, rebind func(string) 
 		parts = append(parts, `LOWER(email_address) LIKE ? ESCAPE '\'`)
 		args = append(args, "%"+escapeLike(strings.ToLower(a))+"%")
 	}
-	q := rebind("SELECT id FROM participants WHERE " + strings.Join(parts, " OR "))
+	q := "SELECT id FROM participants WHERE " + strings.Join(parts, " OR ")
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query participants: %w", err)
@@ -394,7 +383,7 @@ func resolveParticipantIDs(ctx context.Context, db *sql.DB, rebind func(string) 
 // `label:` behavior in internal/store/api.go (LOWER(l.name) LIKE
 // '%token%' ESCAPE '\') so vector/hybrid search agrees with the FTS
 // path on which label matches a user-supplied token.
-func resolveLabelIDs(ctx context.Context, db *sql.DB, rebind func(string) string, labels []string) ([]int64, error) {
+func resolveLabelIDs(ctx context.Context, db *sql.DB, labels []string) ([]int64, error) {
 	if len(labels) == 0 {
 		return nil, nil
 	}
@@ -404,7 +393,7 @@ func resolveLabelIDs(ctx context.Context, db *sql.DB, rebind func(string) string
 		parts = append(parts, `LOWER(name) LIKE ? ESCAPE '\'`)
 		args = append(args, "%"+escapeLike(strings.ToLower(l))+"%")
 	}
-	q := rebind("SELECT id FROM labels WHERE " + strings.Join(parts, " OR "))
+	q := "SELECT id FROM labels WHERE " + strings.Join(parts, " OR ")
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query labels: %w", err)
@@ -431,11 +420,6 @@ func resolveLabelIDs(ctx context.Context, db *sql.DB, rebind func(string) string
 // backend IN (...) check returns zero rows instead of degrading
 // back to "unrestricted".
 const noMatchSentinel int64 = -1
-
-// identityRebind leaves a query unchanged. Used as the SQLite default
-// when BuildFilter is called with a nil rebind (SQLite's ? placeholders
-// are already native, so no rewrite is needed).
-func identityRebind(q string) string { return q }
 
 // escapeLike escapes SQL LIKE special characters (%, _, \) so they
 // are matched literally. Used with ESCAPE '\'. Mirrors escapeLike in

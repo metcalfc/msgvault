@@ -190,7 +190,7 @@ func newGmailAuditSnapshotSQLiteStore(
 	db.SetMaxOpenConns(4)
 	db.SetMaxIdleConns(4)
 	dialect := &SQLiteDialect{}
-	st := &Store{db: newLoggedDB(db, identityRebind), dbPath: base.dsn, dialect: dialect}
+	st := &Store{db: newLoggedDB(db), dbPath: base.dsn, dialect: dialect}
 	t.Cleanup(func() { _ = st.Close() })
 	require.NoError(st.InitSchemaContext(t.Context()))
 	return st

@@ -47,5 +47,5 @@ func TestInitSchema_TriggerReplacementStopsWhenTheContextIsCancelled(t *testing.
 	assert.Contains(err.Error(), "ensure message watermark triggers",
 		"the cancellation has to stop trigger replacement itself: an error raised by a "+
 			"LATER step means the DROP/CREATE ran to completion with the context "+
-			"already cancelled, which on PostgreSQL is an unbounded wait on a table lock")
+			"already cancelled")
 }

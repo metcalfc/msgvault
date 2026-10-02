@@ -25,6 +25,12 @@ Message metadata, bodies, labels, participants, raw payloads, and curated
 profiles live in the configured archive database. Attachment bytes are stored
 separately. SQLite stores the archive at `~/.msgvault/msgvault.db`. Set `[data].database_url` to use a different SQLite file path.
 
+SQLite is the only supported archive database. msgvault rejects PostgreSQL
+connection strings and `pgvector` settings when it loads the configuration,
+instead of opening a database or falling back to an empty SQLite archive. It
+does not convert or delete an existing PostgreSQL archive, and there is no
+built-in migration command.
+
 ### Core Tables
 
 **sources** -- Accounts and import sources with sync state.
@@ -185,9 +191,9 @@ sources ─┬─< conversations ─< messages ─┬─< message_recipients ─
 ## Parquet (Analytics Cache)
 
 The Web UI and TUI need to aggregate across your entire archive and return
-results instantly as you group and drill down. On the default SQLite backend, msgvault exports denormalized metadata to
-Parquet so DuckDB can group and filter it without repeatedly joining the
-normalized archive tables.
+results instantly as you group and drill down. msgvault exports denormalized
+metadata to Parquet so DuckDB can group and filter it without repeatedly joining
+the normalized archive tables.
 
 Ungrouped Inbox and Files listings page a scalar message or attachment
 population before resolving participant lists for the returned rows. Exact

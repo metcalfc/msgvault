@@ -11,17 +11,11 @@ import (
 	"go.kenn.io/msgvault/internal/sqliteutil"
 )
 
-type messageBodyContextBackend uint8
-
 const queryTimestampLayout = "2006-01-02 15:04:05.999999999"
 
 func queryTimeUTC(value time.Time) time.Time {
 	return value.UTC()
 }
-
-const (
-	messageBodyContextSQLite messageBodyContextBackend = iota
-)
 
 // Dialect groups SQL generation and search behavior for the query engine.
 type Dialect interface {
@@ -67,12 +61,6 @@ type Dialect interface {
 	// SQLite scopes the FTS5 query to its body column.
 	BuildFTSBodyTerm(terms []string) (expr string, arg string)
 
-	// FTSBodySearchReadinessSQL returns a query that yields true when the
-	// backend's body-search layout is ready, or "" when no version probe is
-	// needed. SQLite's FTS5 table has a durable body column and needs no
-	// separate version watermark.
-	FTSBodySearchReadinessSQL() string
-
 	// SanitizeFTSQuery converts a raw user search string to a form safe to
 	// pass to FTSSearchExpression. Returns "" if the result is empty after
 	// sanitization (caller should treat as no-match).
@@ -95,10 +83,6 @@ type Dialect interface {
 	// placeholder. SQLite parses both operands as instants because archives can
 	// contain mixed textual offsets.
 	DateComparison(column, operator string) string
-
-	// messageBodyContextBackend selects the backend-native highlighter used to
-	// extract exact context for body-index hits.
-	messageBodyContextBackend() messageBodyContextBackend
 }
 
 // SQLiteQueryDialect implements Dialect for SQLite.
@@ -116,10 +100,6 @@ func (SQLiteQueryDialect) DateParam(value time.Time) any {
 
 func (SQLiteQueryDialect) DateComparison(column, operator string) string {
 	return fmt.Sprintf("julianday(%s) %s julianday(?)", column, operator)
-}
-
-func (SQLiteQueryDialect) messageBodyContextBackend() messageBodyContextBackend {
-	return messageBodyContextSQLite
 }
 
 func (SQLiteQueryDialect) TimeTruncExpression(column string, granularity string) string {
@@ -184,8 +164,6 @@ func (d SQLiteQueryDialect) BuildFTSBodyTerm(terms []string) (expr string, arg s
 	}
 	return expr, "body : (" + arg + ")"
 }
-
-func (SQLiteQueryDialect) FTSBodySearchReadinessSQL() string { return "" }
 
 // SanitizeFTSQuery strips FTS5 metacharacters from a single query string
 // and wraps it in quotes for literal phrase interpretation with prefix match.

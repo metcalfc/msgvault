@@ -1232,9 +1232,8 @@ func (c *Config) DatabaseDSN() string {
 // operations (VACUUM INTO, copies). It accepts the plain filesystem
 // path and the SQLite "file:" URI form, decoding any percent-encoded
 // bytes (e.g. "file:/var/lib/my%20vault.db" -> "/var/lib/my vault.db")
-// and dropping the URI query string. Returns an error for non-file
-// DSNs (e.g. "postgres://..."), which the SQLite-only backup helpers
-// cannot operate on.
+// and dropping the URI query string. Returns an error for server
+// database URLs, which msgvault rejects (see sqliteutil.ResolveDSN).
 func (c *Config) DatabasePath() (string, error) {
 	dsn := c.DatabaseDSN()
 	_, path, err := sqliteutil.ResolveDSN(dsn)

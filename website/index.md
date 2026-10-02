@@ -143,7 +143,7 @@ to Trash or permanently delete it.
   to moving messages to Trash; permanent deletion requires explicit opt-in.
   Archived messages and attachments remain available; msgvault records their
   deletion from their source.
-- **Restore:** back up SQLite archives with snapshots of the database and
+- **Restore:** back up your archive with snapshots of the database and
   attachments. New snapshots leave earlier ones intact, and you can verify
   them before restoring. Restoring does not require the original providers.
 

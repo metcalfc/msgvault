@@ -207,8 +207,7 @@ END;`)
 	worker := embed.NewWorker(embed.WorkerDeps{
 		Backend: backend, VectorsDB: vecDB, MainDB: mainDB,
 		Store: ws, Client: &e2eClient{dim: 4}, BatchSize: 8,
-		LastModifiedExpr: "CAST(m.last_modified AS TEXT)",
-		Recorder:         testutil.NewTestStore(t),
+		Recorder: testutil.NewTestStore(t),
 	})
 
 	// Drain the corpus fully via the worker so every message is embedded +

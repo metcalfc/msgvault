@@ -106,7 +106,7 @@ func TestStartSyncContextRollbackOutlivesRequestCancellation(t *testing.T) {
 		require.NoError(db.Close())
 	})
 	st := &Store{
-		db:      newLoggedDB(db, identityRebind),
+		db:      newLoggedDB(db),
 		dialect: &SQLiteDialect{},
 	}
 

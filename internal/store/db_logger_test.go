@@ -41,7 +41,7 @@ func openLoggedMem(t *testing.T) *loggedDB {
 		"CREATE TABLE t(id INTEGER PRIMARY KEY, val TEXT)",
 	)
 	require.NoError(t, err, "create table")
-	return newLoggedDB(db, nil)
+	return newLoggedDB(db)
 }
 
 // TestLoggedDB_RequestIDFromContext proves the request id stashed via

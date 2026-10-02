@@ -32,7 +32,7 @@ func TestPersonBriefSchemaParity(t *testing.T) {
 
 	requirements.NoError(st.DB().QueryRowContext(t.Context(), indexQuery,
 		"idx_person_briefs_current").Scan(&count))
-	checks.Equal(1, count, "both backends need the one-current partial unique index")
+	checks.Equal(1, count, "the one-current partial unique index must exist")
 
 	first := insertPersonBriefSchemaVersion(t, st, personID, generationID, 1, "current")
 	_, err := insertPersonBriefSchemaVersionErr(t, st, personID, generationID, 2, "current")

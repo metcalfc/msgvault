@@ -70,7 +70,7 @@ func TestDailyNoteDatabaseDateChecksAreASCIIOnly(t *testing.T) {
 	}
 	_, err := f.Store.DB().ExecContext(t.Context(),
 		`INSERT INTO daily_note_day_sequences (local_date, last_ordinal) VALUES (NULL, 1)`)
-	require.Error(err, "allocator dates must have SQLite/PostgreSQL NOT NULL parity")
+	require.Error(err, "allocator dates must be NOT NULL")
 }
 
 func TestDailyNoteOrderingTargetsPaginationAndDeletion(t *testing.T) {

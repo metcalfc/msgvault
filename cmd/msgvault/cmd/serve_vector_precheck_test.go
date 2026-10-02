@@ -19,7 +19,7 @@ func TestPrecheckVectorFeaturesDisabled(t *testing.T) {
 	testCtx := withTestConfig(t, c)
 	_ = testCtx
 
-	assert.NoError(t, precheckVectorFeatures(precheckTestMainPath, c))
+	assert.NoError(t, precheckVectorFeatures(c))
 }
 
 // TestPrecheckVectorFeaturesRejectsBadCron verifies the precheck validates
@@ -35,7 +35,7 @@ func TestPrecheckVectorFeaturesRejectsBadCron(t *testing.T) {
 	testCtx := withTestConfig(t, c)
 	_ = testCtx
 
-	err := precheckVectorFeatures(precheckTestMainPath, c)
+	err := precheckVectorFeatures(c)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cron")
 }
@@ -51,7 +51,7 @@ func TestPrecheckVectorFeaturesRejectsInvalidConfig(t *testing.T) {
 	testCtx := withTestConfig(t, c)
 	_ = testCtx
 
-	assert.Error(t, precheckVectorFeatures(precheckTestMainPath, c))
+	assert.Error(t, precheckVectorFeatures(c))
 }
 
 // TestPrecheckVectorFeaturesAcceptsValidConfig verifies the precheck
@@ -65,5 +65,5 @@ func TestPrecheckVectorFeaturesAcceptsValidConfig(t *testing.T) {
 	testCtx := withTestConfig(t, c)
 	_ = testCtx
 
-	assert.NoError(t, precheckVectorFeatures(precheckTestMainPath, c))
+	assert.NoError(t, precheckVectorFeatures(c))
 }

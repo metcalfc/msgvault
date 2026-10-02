@@ -24,7 +24,7 @@ inference without making a model provider the system of record.
   separately configured embedding, extraction, inference, or enrichment services.
 - The daemon serves the Web UI and versioned HTTP API, schedules work, and
   coordinates mutations. CLI, TUI, and MCP clients can use a local or remote daemon.
-- SQLite archives have Parquet analytics, packed attachment storage, and
+- The SQLite archive has Parquet analytics, packed attachment storage, and
   verifiable backup repositories.
 
 ## Current boundaries
@@ -59,7 +59,7 @@ records. Attachments are addressed by their SHA-256 content hash so occurrences
 can share the same stored bytes. Repeated imports and syncs use source identity
 to update or skip records according to that provider's rules.
 
-On SQLite, analytics exports message metadata to Parquet. DuckDB queries those
+Analytics exports message metadata to Parquet. DuckDB queries those
 files for grouping and drill-down without scanning message bodies. FTS5 indexes
 message text for keyword search. Semantic search stores vectors in a separate
 SQLite index with sqlite-vec.

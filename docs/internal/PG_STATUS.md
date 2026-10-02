@@ -1,10 +1,15 @@
 # PostgreSQL backend: historical implementation tracker
 
+> **Superseded:** PostgreSQL and pgvector support has been removed. SQLite is
+> the only supported archive database, and PostgreSQL connection strings and
+> `pgvector` settings are rejected. See
+> [archive storage](../architecture/storage.md#archive-database) for current
+> behavior. The code paths, Make targets, and test commands named below no
+> longer exist.
+
 This record preserves the original PostgreSQL implementation scope and follow-up
 ideas. Its delivery notes and future-work list are historical, not current
-release status. Use [PostgreSQL setup and limits](../architecture/postgresql.md),
-[search ranking](../architecture/search-ranking.md), and the
-[TUI guide](../usage/tui.md) for current behavior.
+release status.
 
 ## State recorded during implementation
 

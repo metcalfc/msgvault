@@ -1045,7 +1045,7 @@ func (e *SQLiteEngine) ListMessages(ctx context.Context, filter MessageFilter) (
 
 	// Fetch labels for each message (batch would be more efficient but this is simpler)
 	if len(results) > 0 {
-		if err := fetchParticipantsForMessageList(ctx, e.db, noopRebind, "", results); err != nil {
+		if err := fetchParticipantsForMessageList(ctx, e.db, "", results); err != nil {
 			return nil, fmt.Errorf("fetch participants: %w", err)
 		}
 		if err := e.fetchLabelsForMessages(ctx, results); err != nil {
@@ -1181,7 +1181,7 @@ func (e *SQLiteEngine) fetchMessageSummariesByIDsInto(
 }
 
 func (e *SQLiteEngine) fetchLabelsForMessages(ctx context.Context, messages []MessageSummary) error {
-	return fetchLabelsForMessageList(ctx, e.db, noopRebind, "", messages)
+	return fetchLabelsForMessageList(ctx, e.db, "", messages)
 }
 
 // GetMessage retrieves a full message by internal ID.
@@ -1203,7 +1203,7 @@ func (e *SQLiteEngine) GetMessageBySourceID(ctx context.Context, sourceMessageID
 }
 
 func (e *SQLiteEngine) getMessageByQuery(ctx context.Context, whereClause string, args ...any) (*MessageDetail, error) {
-	return getMessageByQueryShared(ctx, e.db, noopRebind, "", whereClause, args...)
+	return getMessageByQueryShared(ctx, e.db, "", whereClause, args...)
 }
 
 // GetAttachment retrieves attachment metadata by ID.
@@ -1267,7 +1267,7 @@ func (e *SQLiteEngine) GetAttachmentsByHash(ctx context.Context, contentHash str
 
 // GetMessageRaw returns the decompressed raw MIME data for a message.
 func (e *SQLiteEngine) GetMessageRaw(ctx context.Context, id int64) ([]byte, error) {
-	return getMessageRawShared(ctx, e.db, noopRebind, "", id)
+	return getMessageRawShared(ctx, e.db, "", id)
 }
 
 // ListAccounts returns all source accounts.
@@ -2052,15 +2052,6 @@ func (e *SQLiteEngine) SearchMessageBodies(ctx context.Context, q *search.Query,
 	}
 	if !e.hasFTSTable(ctx) {
 		return nil, fmt.Errorf("%w: run 'msgvault rebuild-fts' with an FTS-enabled build", ErrMessageBodySearchUnavailable)
-	}
-	if readinessSQL := e.dialect.FTSBodySearchReadinessSQL(); readinessSQL != "" {
-		var ready bool
-		if err := e.queryRowContext(ctx, readinessSQL).Scan(&ready); err != nil {
-			return nil, fmt.Errorf("check message body search index readiness: %w", err)
-		}
-		if !ready {
-			return nil, fmt.Errorf("%w: run 'msgvault rebuild-fts' or complete the FTS backfill, then retry", ErrMessageBodySearchIndexStale)
-		}
 	}
 
 	structured := *q

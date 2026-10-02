@@ -34,6 +34,10 @@ PERMANENT = {
     "/assets/static/:path(.*)": "/docs/assets/static/:path*",
     "/assets/generated/:path(.*)": "/docs/assets/generated/:path*",
     "/search/:path(.*)": "/docs/search/:path*",
+    # Removed pages keep published links resolving to the page that now owns
+    # their content.
+    "/docs/architecture/postgresql/:path(.*)": "/docs/architecture/storage/",
+    "/docs/architecture/postgresql.md": "/docs/architecture/storage.md",
 }
 
 

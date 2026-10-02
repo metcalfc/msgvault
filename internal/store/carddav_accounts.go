@@ -110,12 +110,12 @@ func (s *Store) ReplaceCardDAVDiscoveryContext(
 			_ = tx.Rollback()
 		}
 	}()
-	logged := &loggedTx{Tx: tx, rebind: s.Rebind}
-	if err := lockCardDAVDiscoveryReplacement(ctx, tx, s.Rebind); err != nil {
+	logged := &loggedTx{Tx: tx}
+	if err := lockCardDAVDiscoveryReplacement(ctx, tx); err != nil {
 		return nil, nil, err
 	}
 
-	account, err := getCardDAVAccountForUpdateFrom(ctx, tx, s.Rebind, "")
+	account, err := getCardDAVAccountForUpdateFrom(ctx, tx, "")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -126,7 +126,7 @@ func (s *Store) ReplaceCardDAVDiscoveryContext(
 			return nil, nil, err
 		}
 	}
-	existing, err := listCardDAVBooksFrom(ctx, tx, s.Rebind)
+	existing, err := listCardDAVBooksFrom(ctx, tx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -258,7 +258,7 @@ func (s *Store) ReplaceCardDAVDiscoveryContext(
 			); err != nil {
 				return nil, nil, fmt.Errorf("update discovered CardDAV address book: %w", err)
 			}
-			if err := insertCardDAVBookURLIdentities(ctx, tx, s.Rebind,
+			if err := insertCardDAVBookURLIdentities(ctx, tx,
 				account.ID, matched.ID, canonicalURL, aliasURL); err != nil {
 				return nil, nil, err
 			}
@@ -287,7 +287,7 @@ func (s *Store) ReplaceCardDAVDiscoveryContext(
 		).Scan(&bookID); err != nil {
 			return nil, nil, fmt.Errorf("insert discovered CardDAV address book: %w", err)
 		}
-		if err := insertCardDAVBookURLIdentities(ctx, tx, s.Rebind,
+		if err := insertCardDAVBookURLIdentities(ctx, tx,
 			account.ID, bookID, discovered.CanonicalURL, discovered.DiscoveryAliasURL); err != nil {
 			return nil, nil, err
 		}
@@ -319,7 +319,7 @@ func (s *Store) ReplaceCardDAVDiscoveryContext(
 			return nil, nil, fmt.Errorf("prune unseen CardDAV address book: %w", err)
 		}
 	}
-	books, err := listCardDAVBooksFrom(ctx, tx, s.Rebind)
+	books, err := listCardDAVBooksFrom(ctx, tx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -400,17 +400,17 @@ func cardDAVBookHasProtectedStateTx(
 }
 
 func lockCardDAVDiscoveryReplacement(
-	ctx context.Context, tx *sql.Tx, rebind func(string) string,
+	ctx context.Context, tx *sql.Tx,
 ) error {
-	if _, err := tx.ExecContext(ctx, rebind(
-		`UPDATE carddav_discovery_lock SET singleton = singleton WHERE singleton = ?`), 1); err != nil {
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE carddav_discovery_lock SET singleton = singleton WHERE singleton = ?`, 1); err != nil {
 		return fmt.Errorf("lock CardDAV discovery replacement: %w", err)
 	}
 	return nil
 }
 
 func insertCardDAVBookURLIdentities(
-	ctx context.Context, tx *sql.Tx, rebind func(string) string,
+	ctx context.Context, tx *sql.Tx,
 	accountID, bookID int64, canonicalURL, aliasURL string,
 ) error {
 	for _, identity := range []struct {
@@ -423,10 +423,10 @@ func insertCardDAVBookURLIdentities(
 		if err != nil {
 			return fmt.Errorf("normalize CardDAV %s URL identity: %w", identity.role, err)
 		}
-		if _, err := tx.ExecContext(ctx, rebind(`
+		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO carddav_address_book_urls (
 				account_id, address_book_id, url_role, normalized_url
-			) VALUES (?, ?, ?, ?)`), accountID, bookID, identity.role, normalized); err != nil {
+			) VALUES (?, ?, ?, ?)`, accountID, bookID, identity.role, normalized); err != nil {
 			return fmt.Errorf("save CardDAV %s URL identity: %w", identity.role, err)
 		}
 	}
@@ -434,11 +434,11 @@ func insertCardDAVBookURLIdentities(
 }
 
 func (s *Store) GetCardDAVAccountContext(ctx context.Context) (*CardDAVAccount, error) {
-	return getCardDAVAccountFrom(ctx, s.db.DB, s.Rebind)
+	return getCardDAVAccountFrom(ctx, s.db.DB)
 }
 
 func (s *Store) ListCardDAVAddressBooksContext(ctx context.Context) ([]CardDAVAddressBook, error) {
-	return listCardDAVBooksFrom(ctx, s.db.DB, s.Rebind)
+	return listCardDAVBooksFrom(ctx, s.db.DB)
 }
 
 // SetCardDAVBookRolesContext applies one complete role state. The account row
@@ -571,19 +571,19 @@ type cardDAVQueryer interface {
 }
 
 func getCardDAVAccountFrom(
-	ctx context.Context, queryer cardDAVQueryer, rebind func(string) string,
+	ctx context.Context, queryer cardDAVQueryer,
 ) (*CardDAVAccount, error) {
-	return getCardDAVAccountForUpdateFrom(ctx, queryer, rebind, "")
+	return getCardDAVAccountForUpdateFrom(ctx, queryer, "")
 }
 
 func getCardDAVAccountForUpdateFrom(
-	ctx context.Context, queryer cardDAVQueryer, rebind func(string) string, suffix string,
+	ctx context.Context, queryer cardDAVQueryer, suffix string,
 ) (*CardDAVAccount, error) {
 	var account CardDAVAccount
-	err := queryer.QueryRowContext(ctx, rebind(`
+	err := queryer.QueryRowContext(ctx, `
 		SELECT id, base_url, username, principal_url, home_url,
 		       connection_generation, discovery_revision
-		FROM carddav_accounts WHERE id = 1`)+suffix).Scan(
+		FROM carddav_accounts WHERE id = 1`+suffix).Scan(
 		&account.ID, &account.BaseURL, &account.Username, &account.PrincipalURL,
 		&account.HomeURL, &account.ConnectionGeneration, &account.DiscoveryRevision,
 	)
@@ -593,9 +593,9 @@ func getCardDAVAccountForUpdateFrom(
 	if err != nil {
 		return nil, fmt.Errorf("get CardDAV account: %w", err)
 	}
-	rows, err := queryer.QueryContext(ctx, rebind(`
+	rows, err := queryer.QueryContext(ctx, `
 		SELECT home_url FROM carddav_account_home_urls
-		WHERE account_id = ? ORDER BY discovery_index`), account.ID)
+		WHERE account_id = ? ORDER BY discovery_index`, account.ID)
 	if err != nil {
 		return nil, fmt.Errorf("list CardDAV account home URLs: %w", err)
 	}
@@ -617,16 +617,16 @@ func getCardDAVAccountForUpdateFrom(
 }
 
 func listCardDAVBooksFrom(
-	ctx context.Context, queryer cardDAVQueryer, rebind func(string) string,
+	ctx context.Context, queryer cardDAVQueryer,
 ) ([]CardDAVAddressBook, error) {
-	rows, err := queryer.QueryContext(ctx, rebind(`
+	rows, err := queryer.QueryContext(ctx, `
 		SELECT id, account_id, canonical_url, discovery_alias_url, display_name,
 		       discovery_index, supports_sync_collection, supports_multiget,
 		       supported_vcard_versions, can_create, can_update, can_delete,
 		       is_write_target, is_subscribed, is_lookup_source,
 		       sync_token, sync_revision, needs_full_reconcile, last_seen_revision
 		FROM carddav_address_books
-		ORDER BY discovery_index, id`))
+		ORDER BY discovery_index, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list CardDAV address books: %w", err)
 	}

@@ -34,7 +34,7 @@ func TestRestorePackCatalogCreatesOnlyPackSchema(t *testing.T) {
 
 func TestLooseMetadataClearDoesNotCreatePackSchema(t *testing.T) {
 	db := openHistoricalRestoreDB(t)
-	st := &Store{db: newLoggedDB(db, nil), dialect: &SQLiteDialect{}}
+	st := &Store{db: newLoggedDB(db), dialect: &SQLiteDialect{}}
 
 	require.NoError(t, st.ClearAttachmentPackMetadata())
 

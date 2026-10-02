@@ -19,7 +19,7 @@ For maintenance rules, see the [documentation contributor guide](../README.md).
 | People and relationships | [Relationship index](relationship-list-index-design.md), [merge reversal](person-merge-reversal.md), [conversation brief](last-time-we-talked-design.md) | [People and profiles](../usage/people.md) |
 | Served address book (CardDAV server, fork-local) | [Design](carddav-server-design.md) | [People and CardDAV](../usage/people-carddav.md) |
 | Daemon command routing | [CLI audit](daemon-cli-request-audit.md) | [Daemon guide](../guides/daemon-migration.md) |
-| PostgreSQL | [Original implementation tracker](PG_STATUS.md) | [PostgreSQL backend](../architecture/postgresql.md) |
+| PostgreSQL (removed) | [Original implementation tracker](PG_STATUS.md), superseded | [Archive storage](../architecture/storage.md#archive-database) |
 | Recovery | [Recovery notes](recovery.md) | [Backup](../usage/backup.md) and [troubleshooting](../troubleshooting.md) |
 | Jev judgments | [Implementation plan](jev-judgments-plan.md) | pending |
 

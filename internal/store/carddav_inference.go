@@ -454,7 +454,7 @@ func (s *Store) loadCardDAVPublicationReviewSourceTx(
 		return nil, err
 	}
 	source.Publication = publication
-	account, err := getCardDAVAccountFrom(ctx, tx.Tx, s.Rebind)
+	account, err := getCardDAVAccountFrom(ctx, tx.Tx)
 	if err != nil {
 		return nil, err
 	}
@@ -462,7 +462,7 @@ func (s *Store) loadCardDAVPublicationReviewSourceTx(
 		return nil, ErrCardDAVNoWriteTarget
 	}
 	source.ConnectionGeneration = account.ConnectionGeneration
-	books, err := listCardDAVBooksFrom(ctx, tx.Tx, s.Rebind)
+	books, err := listCardDAVBooksFrom(ctx, tx.Tx)
 	if err != nil {
 		return nil, err
 	}
@@ -604,7 +604,7 @@ func (s *Store) loadCardDAVPublicationReviewRequiredTx(ctx context.Context, tx *
 	if err != nil {
 		return err
 	}
-	account, err := getCardDAVAccountFrom(ctx, tx.Tx, s.Rebind)
+	account, err := getCardDAVAccountFrom(ctx, tx.Tx)
 	if err != nil {
 		return err
 	}

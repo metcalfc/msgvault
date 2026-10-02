@@ -95,7 +95,7 @@ func TestRunMaintenancePreservesCanceledContextAfterAsyncRollback(t *testing.T) 
 		require.NoError(t, db.Close())
 	})
 	st := &Store{
-		db:      newLoggedDB(db, identityRebind),
+		db:      newLoggedDB(db),
 		dialect: &SQLiteDialect{},
 	}
 
@@ -130,7 +130,7 @@ func TestRunMaintenancePreservesCommitErrorWhenContextIsCanceledDuringCommit(t *
 		require.NoError(t, db.Close())
 	})
 	st := &Store{
-		db:      newLoggedDB(db, identityRebind),
+		db:      newLoggedDB(db),
 		dialect: &SQLiteDialect{},
 	}
 

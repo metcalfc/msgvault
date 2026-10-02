@@ -371,7 +371,7 @@ them in [Web Settings](/docs/web-ui/#settings-and-restart-behavior).
 
 ## Performance
 
-The default SQLite archive path uses DuckDB over Parquet metadata exports for
+The TUI uses DuckDB over Parquet metadata exports for
 aggregate views. This avoids repeated joins over the full archive when grouping
 by sender, domain, label, or date. Message bodies stay in the archive and are
 loaded for detail views and full-text search. Configure `[analytics].engine`

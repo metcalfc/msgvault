@@ -274,7 +274,7 @@ There is no dedicated cancellation endpoint for these jobs.
 Send one read-only SQL statement as `{"sql":"SELECT 1"}`. Set `fresh` to
 `true` in the JSON body or as `?fresh=true` to request a background cache
 refresh. Conflicting body and query values are rejected.
-For SQLite archives, this endpoint queries published Parquet through DuckDB.
+This endpoint queries published Parquet through DuckDB.
 The `[analytics].engine` setting selects the engine for aggregate views; it
 does not change this raw SQL endpoint.
 
@@ -840,9 +840,9 @@ Refresh those on your own schedule.
 | `cursor` | string | — | The `next_cursor` of the previous response, sent back verbatim. Omit — or send it empty — to start from the beginning of the archive |
 | `limit` | int | `100` | Maximum rows to return; capped at 500. Values below 1 fall back to the default |
 
-> **Polling cost — the feed takes the SQLite write lock.** On the SQLite backend
-> each request briefly acquires the database's single write lock to establish how
-> far writes have committed, so unlike an ordinary read it competes with an
+> **Polling cost — the feed takes the SQLite write lock.** Each request
+> briefly acquires the database's single write lock to establish how far
+> writes have committed, so unlike an ordinary read it competes with an
 > in-progress import. Measured on one machine against three concurrent writers:
 > eight clients paging the feed in a tight loop cut writer throughput to **15%**
 > of the unloaded rate, where eight clients running an equivalent plain `SELECT`
@@ -910,7 +910,7 @@ key as "empty" and overwrite whatever you had cached for it. Always present:
 `attachment_count`, `content_changed_at`. `messages` is always an array, never
 `null`.
 
-`server_time` is the database server's clock at the moment the page was read,
+`server_time` is the database clock at the moment the page was read,
 not the client's and not the daemon process's. `has_more` reports whether more
 rows are already waiting; when it is `true`, request the next page immediately
 instead of waiting for the next poll.
@@ -1141,7 +1141,7 @@ promptly, and there are surfaces it cannot see at all:
   the first bound reading. A clock stepped backwards leaves you holding a cursor
   above the clock too and looks identical, but what it strands is stamped *below*
   your cursor, where no bound will ever bring it back — that is the next bullet,
-  and it is a loss rather than a wait. On SQLite the column can also hold a value
+  and it is a loss rather than a wait. The column can also hold a value
   no bound will ever reach, and there the wait never ends and the change really is
   lost; that is case 2 below.
 * **A database clock that steps backwards loses the changes committed below your
@@ -1151,11 +1151,11 @@ promptly, and there are surfaces it cannot see at all:
   migrated VM, a restore onto a host whose clock is behind — the writes that
   follow the step are stamped in clock time your walk has already passed, and
   every one of them stamped below the cursor you hold fails the keyset comparison
-  on that poll and on every poll after it. Both backends stamp from the database
-  server's own wall clock, so both are affected. **This is a loss, not a delay** —
-  the row is not waiting for anything, and nothing on the wire distinguishes it
-  from a healthy feed. It is bounded by the size of the step: what is lost is the
-  changes committed during the stretch of clock time the step re-runs, and normal
+  on that poll and on every poll after it. SQLite stamps each row from the
+  host's wall clock. **This is a loss, not a delay** — the row is not waiting
+  for anything, and nothing on the wire distinguishes it from a healthy feed.
+  It is bounded by the size of the step: what is lost is the changes committed
+  during the stretch of clock time the step re-runs, and normal
   delivery resumes once the clock passes your cursor again. Moving a cursor that
   stands above the clock narrows the window but cannot close it, and does not
   happen at all for a consumer that polls late enough for the clock to have
@@ -1187,7 +1187,7 @@ promptly, and there are surfaces it cannot see at all:
   indistinguishable from a hard deletion — see the reconciliation note at the end
   of this list. **After restoring an archive from a snapshot, restart your
   consumers from an empty cursor.**
-* **A `NULL` watermark is invisible to the feed, on either backend.** The page
+* **A `NULL` watermark is invisible to the feed.** The page
   compares `content_changed_at` against both of its bounds and a `NULL` satisfies
   neither, so the row is not returned from any cursor. No write path produces one
   — every writer stamps the column and the first-run backfill fills in a database

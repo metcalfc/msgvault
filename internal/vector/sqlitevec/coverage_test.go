@@ -41,10 +41,8 @@ func TestCoverageSplit_EmbeddedBlankMissing(t *testing.T) {
 	assert := assert.New(t)
 	ctx := context.Background()
 
-	// A sqlitevec test must use a SQLite main store regardless of
-	// MSGVAULT_TEST_DB: the backend's Open-time probes run SQLite-dialect SQL
-	// (sqlite_master) against this handle, and in production sqlitevec is only
-	// ever paired with a SQLite main store.
+	// The backend's Open-time probes run SQLite SQL (sqlite_master) against
+	// the main store handle.
 	st := testutil.NewSQLiteTestStore(t)
 
 	// Open a sqlitevec backend over the SAME main DB handle. MainPath is
@@ -141,8 +139,6 @@ func TestCoverageSplit_NonLiveEmbeddedHoldsInvariant(t *testing.T) {
 	assert := assert.New(t)
 	ctx := context.Background()
 
-	// See TestCoverageSplit_EmbeddedBlankMissing: a sqlitevec test must use a
-	// SQLite main store regardless of MSGVAULT_TEST_DB.
 	st := testutil.NewSQLiteTestStore(t)
 	b, err := Open(ctx, Options{
 		Path:      filepath.Join(t.TempDir(), "vectors.db"),

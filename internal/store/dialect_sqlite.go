@@ -405,11 +405,10 @@ func (d *SQLiteDialect) FTSUpsert(q querier, doc FTSDoc) error {
 // SQLite's bm25() also applies document-length normalization, so a very long
 // document with a subject hit can rank below a short document with a body hit.
 // See docs/architecture/search-ranking.md for the ranking model.
-func (d *SQLiteDialect) FTSSearchClause() (join, where, orderBy string, orderArgCount int) {
+func (d *SQLiteDialect) FTSSearchClause() (join, where, orderBy string) {
 	return "JOIN messages_fts ON messages_fts.rowid = m.id",
 		"messages_fts MATCH ?",
-		"bm25(messages_fts, 1.0, 10.0, 1.0, 4.0, 1.0, 1.0)",
-		0
+		"bm25(messages_fts, 1.0, 10.0, 1.0, 4.0, 1.0, 1.0)"
 }
 
 // FTSDeleteSQL returns the SQL to delete a message's FTS5 entry.
@@ -539,11 +538,6 @@ func (d *SQLiteDialect) FTSRebuildSchema(ctx context.Context, q contextQuerier) 
 	}
 	return nil
 }
-
-// EnsureFTSIndex is a no-op for SQLite: its messages_fts virtual table (and
-// the index it implies) is created via the SchemaFTS file during InitSchema,
-// not a post-migration step (cr2-10).
-func (d *SQLiteDialect) EnsureFTSIndex(querier) error { return nil }
 
 func (d *SQLiteDialect) ValidateMessageWatermarks(q querier) error {
 	_, err := d.contentChangedAtDefaultStamps(q)

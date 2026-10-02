@@ -193,7 +193,7 @@ func copyQuoted(dst *strings.Builder, runes []rune, i int, quote rune) int {
 	return i
 }
 
-// copyDollarQuoted handles PostgreSQL/DuckDB dollar-quoted strings ($tag$...$tag$
+// copyDollarQuoted handles DuckDB dollar-quoted strings ($tag$...$tag$
 // or $$...$$). It returns the index past the closing tag and true when a valid
 // opening tag begins at i, otherwise false (the caller treats $ literally).
 func copyDollarQuoted(dst *strings.Builder, runes []rune, i int) (int, bool) {

@@ -14,9 +14,9 @@ output. Inferred compile or test failures are not findings. If the concern
 is only based on reasoning from the diff, describe the underlying behavior
 risk instead of claiming the build is broken.
 
-The CSV fallback path uses \\N as a NULL sentinel (PostgreSQL
-convention) with DuckDB's nullstr option. This is an accepted design
-choice — do not flag it as a concern.
+The CSV fallback path uses \\N as a NULL sentinel with DuckDB's
+nullstr option. This is an accepted design choice — do not flag it as a
+concern.
 
 HTTP remote defaults, plaintext key display in interactive CLI,
 enabled=true override on account creation, and page-aligned pagination

@@ -52,9 +52,6 @@ func TestMessagesColumnClassificationIsExhaustive(t *testing.T) {
 		actualSet[col] = true
 	}
 	for col := range classified {
-		if col == "search_fts" {
-			continue // Legacy classifier entry absent from the SQLite schema.
-		}
 		assert.True(actualSet[col], "%q is classified but is not a column of messages", col)
 	}
 }

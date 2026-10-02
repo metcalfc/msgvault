@@ -69,7 +69,6 @@ func testMCPStartupCatalog(t *testing.T, analyticsEngine string) {
 	cmd.Env = append(os.Environ(),
 		mcpStartupChildEnv+"=1",
 		mcpStartupHomeEnv+"="+home,
-		"MSGVAULT_TEST_DB=",
 	)
 	stdin, err := cmd.StdinPipe()
 	require.NoError(err)

@@ -13,7 +13,7 @@ import (
 )
 
 // MaxPersonParticipantDetachIDs bounds one detach request so its IN lists
-// stay well under SQLite and PostgreSQL bind-parameter limits.
+// stay well under SQLite bind-parameter limits.
 const MaxPersonParticipantDetachIDs = 200
 
 // PersonDetachmentNote is the decision note on every identity match

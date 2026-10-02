@@ -117,11 +117,7 @@ type Config struct {
 	RRFK                int
 	KPerSignal          int
 	SubjectBoost        float64
-	// Rebind transforms the participant/label lookup queries run by
-	// BuildFilter against mainDB. A nil function preserves
-	// SQLite's native ? placeholders.
-	Rebind     func(string) string
-	BuildScope vector.BuildScope
+	BuildScope          vector.BuildScope
 }
 
 // Engine orchestrates the generation check, query embedding, and fusion
@@ -182,12 +178,12 @@ func (e *Engine) BuildFilter(
 	q *search.Query,
 	structured ...query.MessageFilter,
 ) (vector.Filter, error) {
-	filter, err := BuildFilter(ctx, e.mainDB, e.cfg.Rebind, q)
+	filter, err := BuildFilter(ctx, e.mainDB, q)
 	if err != nil {
 		return vector.Filter{}, err
 	}
 	for _, exact := range structured {
-		if err := ApplyMessageFilter(ctx, e.mainDB, e.cfg.Rebind, &filter, exact); err != nil {
+		if err := ApplyMessageFilter(ctx, e.mainDB, &filter, exact); err != nil {
 			return vector.Filter{}, err
 		}
 	}

@@ -92,10 +92,7 @@ func TestRunUnpackAttachmentsLocalRejectsConfiguredRemote(t *testing.T) {
 func TestRunUnpackAttachmentsLocalReportsHeldDaemonLease(t *testing.T) {
 	require := require.New(t)
 	dataDir := t.TempDir()
-	cfg := &config.Config{Data: config.DataConfig{
-		DataDir:     dataDir,
-		DatabaseURL: "postgres://user:pass@example.com:5432/msgvault",
-	}}
+	cfg := &config.Config{Data: config.DataConfig{DataDir: dataDir}}
 	testCtx := testInvocationContext(t.Context(), cfg, invocationOptions{})
 	owner, err := tryAcquireDaemonOwnerLock(dataDir)
 	require.NoError(err)

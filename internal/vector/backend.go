@@ -385,8 +385,8 @@ type Backend interface {
 // result length. Exact backends may omit this optional capability.
 type SearchMetadata struct {
 	PoolSaturated bool
-	// Accelerator identifies the SQLite retrieval path: vec1_ivf_opq,
-	// exact-filter, exact, or exact-fallback. Other backends leave it empty.
+	// Accelerator identifies the sqlite-vec retrieval path: vec1_ivf_opq,
+	// exact-filter, exact, or exact-fallback. Test doubles may leave it empty.
 	Accelerator string
 	// LexicalHits is how many messages the BM25 leg of a fused search
 	// matched (up to KPerSignal+1), counted before subject boosting or

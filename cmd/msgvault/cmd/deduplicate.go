@@ -60,8 +60,8 @@ func runDeduplicate(cmd *cobra.Command, _ []string) error {
 	defer cleanup()
 
 	// dbPath is the on-disk filesystem path used by VACUUM INTO
-	// backup; resolving it now also rejects non-file DSNs (e.g.
-	// postgres://) up-front rather than at the first backup attempt.
+	// backup; resolving it now also rejects server database URLs
+	// up-front rather than at the first backup attempt.
 	dbPath, err := cfg.DatabasePath()
 	if err != nil {
 		return fmt.Errorf("resolve database path: %w", err)

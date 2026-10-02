@@ -1455,7 +1455,7 @@ func (s SourceSnapshot) embeddingChanges(ctx context.Context, after int64, limit
 	if s.state.closed {
 		return nil, ErrSourceSnapshotClosed
 	}
-	rows, err := s.state.tx.QueryContext(ctx, s.state.rebind(`SELECT sequence, kind, message_id, old_message_type, new_message_type, old_conversation_id, new_conversation_id, old_sent_at, new_sent_at, participant_id FROM embedding_changes WHERE sequence > ? ORDER BY sequence LIMIT ?`), after, limit)
+	rows, err := s.state.tx.QueryContext(ctx, `SELECT sequence, kind, message_id, old_message_type, new_message_type, old_conversation_id, new_conversation_id, old_sent_at, new_sent_at, participant_id FROM embedding_changes WHERE sequence > ? ORDER BY sequence LIMIT ?`, after, limit)
 	if err != nil {
 		return nil, fmt.Errorf("scan embedding changes in source snapshot: %w", err)
 	}
@@ -1570,7 +1570,7 @@ func (s SourceSnapshot) latestChatBlockScopes(
 	if conversationID == 0 || blockLimit <= 0 {
 		return nil, nil
 	}
-	rows, err := s.state.tx.QueryContext(ctx, s.state.rebind(`
+	rows, err := s.state.tx.QueryContext(ctx, `
 		SELECT m.id, COALESCE(m.sent_at, m.received_at, m.internal_date)
 		  FROM messages m
 		  JOIN message_bodies mb ON mb.message_id = m.id
@@ -1579,7 +1579,7 @@ func (s SourceSnapshot) latestChatBlockScopes(
 		   AND m.deleted_at IS NULL
 		   AND m.deleted_from_source_at IS NULL
 		 ORDER BY m.id DESC
-		 LIMIT ?`), conversationID, blockLimit*chatScopeMaxMessages)
+		 LIMIT ?`, conversationID, blockLimit*chatScopeMaxMessages)
 	if err != nil {
 		return nil, fmt.Errorf("read latest chat blocks for conversation %d: %w", conversationID, err)
 	}
@@ -1931,7 +1931,7 @@ func (s SourceSnapshot) query(ctx context.Context, query string, args ...any) (*
 	if s.state.closed {
 		return nil, ErrSourceSnapshotClosed
 	}
-	return s.state.tx.QueryContext(ctx, s.state.rebind(query), args...) //nolint:sqlclosecheck // The caller owns the returned rows.
+	return s.state.tx.QueryContext(ctx, query, args...) //nolint:sqlclosecheck // The caller owns the returned rows.
 }
 
 func (s SourceSnapshot) sourceScopesAfter(

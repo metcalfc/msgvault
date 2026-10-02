@@ -43,10 +43,10 @@ func TestPrecheckVectorFeatures_Stub(t *testing.T) {
 	testCtx := withTestConfig(t, c)
 	_ = testCtx
 
-	assert.NoError(t, precheckVectorFeatures("/tmp/x.db", c), "disabled: precheck should be a no-op")
+	assert.NoError(t, precheckVectorFeatures(c), "disabled: precheck should be a no-op")
 
 	c.Vector.Enabled = true
-	err := precheckVectorFeatures("/tmp/x.db", c)
+	err := precheckVectorFeatures(c)
 	require.Error(t, err, "enabled without vector build tags")
 	assert.Contains(t, err.Error(), "sqlite_vec")
 }

@@ -14,7 +14,7 @@ import (
 	"go.kenn.io/msgvault/internal/vector/sqlitevec"
 )
 
-// openVectorBackendForRepair opens the dialect-selected vector backend the same
+// openVectorBackendForRepair opens the sqlite-vec backend the same
 // way the embed/serve commands do and returns it together with a close func.
 //
 // Opening a writable backend runs the one-time upgrade backfill

@@ -885,7 +885,6 @@ func TestSearchMessageBodies_RealEngineFTSNormalizedContext(t *testing.T) {
 		body        string
 		wantContext string
 		reject      string
-		sqliteOnly  bool
 	}{
 		{
 			name:        "punctuation becomes token boundary",
@@ -898,24 +897,21 @@ func TestSearchMessageBodies_RealEngineFTSNormalizedContext(t *testing.T) {
 			query:       "cafe",
 			body:        "café notes",
 			wantContext: "café",
-			sqliteOnly:  true,
 		},
 		{
 			name:        "decomposed diacritic continues token",
 			query:       "cafeteria",
 			body:        "cafe\u0301teria notes",
 			wantContext: "cafe\u0301teria",
-			sqliteOnly:  true,
 		},
 		{
 			name:        "full case fold matches Greek final sigma",
 			query:       "σ",
 			body:        "ς notes",
 			wantContext: "ς",
-			sqliteOnly:  true,
 		},
 		{
-			name:        "ASCII case is folded by both backends",
+			name:        "ASCII case is folded",
 			query:       "resume",
 			body:        "RESUME notes",
 			wantContext: "RESUME",
@@ -925,7 +921,6 @@ func TestSearchMessageBodies_RealEngineFTSNormalizedContext(t *testing.T) {
 			query:       "b",
 			body:        "a\u0903b notes",
 			wantContext: "b notes",
-			sqliteOnly:  true,
 		},
 		{
 			name:        "one-character token prefix ignores interior character",

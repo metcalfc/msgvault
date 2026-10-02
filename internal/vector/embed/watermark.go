@@ -18,18 +18,13 @@ import (
 // from ID 0; the embed_gen predicate and idempotent Upsert prevent duplicate
 // work from changing results. The full-scan backstop ignores it entirely.
 type Watermark struct {
-	db     *sql.DB
-	rebind func(string) string
+	db *sql.DB
 }
 
 // NewWatermark returns a Watermark bound to the generation database.
-// The caller retains ownership of db. Pass nil or an identity rebind
-// callback to retain SQLite's ? placeholders.
-func NewWatermark(db *sql.DB, rebind func(string) string) *Watermark {
-	if rebind == nil {
-		rebind = func(q string) string { return q }
-	}
-	return &Watermark{db: db, rebind: rebind}
+// The caller retains ownership of db.
+func NewWatermark(db *sql.DB) *Watermark {
+	return &Watermark{db: db}
 }
 
 // GetWatermark returns the stored watermark for gen, or 0 when no row
@@ -41,7 +36,7 @@ func (w *Watermark) GetWatermark(ctx context.Context, gen vector.GenerationID) (
 	}
 	var id int64
 	err := w.db.QueryRowContext(ctx,
-		w.rebind(`SELECT watermark_id FROM embed_watermark WHERE generation_id = ?`),
+		`SELECT watermark_id FROM embed_watermark WHERE generation_id = ?`,
 		int64(gen)).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
@@ -62,7 +57,7 @@ func (w *Watermark) SetWatermark(ctx context.Context, gen vector.GenerationID, i
 	}
 	stmt := `INSERT INTO embed_watermark (generation_id, watermark_id) VALUES (?, ?)
 	         ON CONFLICT (generation_id) DO UPDATE SET watermark_id = excluded.watermark_id`
-	if _, err := w.db.ExecContext(ctx, w.rebind(stmt), int64(gen), id); err != nil {
+	if _, err := w.db.ExecContext(ctx, stmt, int64(gen), id); err != nil {
 		return fmt.Errorf("set watermark: %w", err)
 	}
 	return nil

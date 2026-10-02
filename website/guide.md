@@ -76,8 +76,8 @@ the selected mode can find.
 
 See which people, domains, labels, and periods account for your messages and
 storage. Drill down from a group to individual messages in the terminal or
-browser. SQLite archives use a separate analytics cache so these summaries do
-not scan message bodies.
+browser. A separate analytics cache keeps these summaries from scanning message
+bodies.
 
 [Analytics and stats](/docs/usage/analytics/)
 
@@ -94,8 +94,8 @@ available unless you separately purge it locally.
 ## Own
 
 Run msgvault on your laptop or your own server. One binary provides the browser
-interface, API, scheduled work, and tools for assistants. For SQLite archives,
-backup snapshots include the database and attachments and restore without
+interface, API, scheduled work, and tools for assistants. Backup snapshots
+include the database and attachments and restore without
 contacting the original providers.
 
 [Backup and restore](/docs/usage/backup/)

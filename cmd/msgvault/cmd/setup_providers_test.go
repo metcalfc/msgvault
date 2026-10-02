@@ -596,26 +596,21 @@ func TestSetupStatusConfiguredVectorLanesRequireCompiledBackend(t *testing.T) {
 	output, err := fixture.run(t, "providers", "--yes")
 	require.NoError(err, output)
 	loaded := fixture.load(t)
-	for _, dsn := range []string{"", "postgres://localhost/setup_test"} {
-		t.Run(dsn, func(t *testing.T) {
-			assert := assert.New(t)
-			loaded.Data.DatabaseURL = dsn
-			report := buildLaneReport(loaded, setupEnvironment{
-				lookupEnv: fixture.lookupEnv, fileExists: func(path string) bool { return fixture.files[path] },
-				consent: &setupConsentState{Documents: true, Visual: true, PersonSemantic: true, DocumentEmbedding: true, QueryEmbedding: true},
-			})
-			startupErr := precheckVectorFeatures(loaded.DatabaseDSN(), loaded)
-			for _, name := range []string{laneTextSearch, lanePersonSearch, laneVisualSearch, laneDocumentVectors} {
-				lane := findLane(t, report, name)
-				if startupErr != nil {
-					assert.Equal(laneStatePending, lane.State, name)
-					assert.Contains(lane.Reason, "not compiled in", name)
-					assert.Contains(lane.Reason, "rebuild", name)
-				} else {
-					assert.Equal(laneStateOn, lane.State, name)
-				}
-			}
-		})
+	assert := assert.New(t)
+	report := buildLaneReport(loaded, setupEnvironment{
+		lookupEnv: fixture.lookupEnv, fileExists: func(path string) bool { return fixture.files[path] },
+		consent: &setupConsentState{Documents: true, Visual: true, PersonSemantic: true, DocumentEmbedding: true, QueryEmbedding: true},
+	})
+	startupErr := precheckVectorFeatures(loaded)
+	for _, name := range []string{laneTextSearch, lanePersonSearch, laneVisualSearch, laneDocumentVectors} {
+		lane := findLane(t, report, name)
+		if startupErr != nil {
+			assert.Equal(laneStatePending, lane.State, name)
+			assert.Contains(lane.Reason, "not compiled in", name)
+			assert.Contains(lane.Reason, "rebuild", name)
+		} else {
+			assert.Equal(laneStateOn, lane.State, name)
+		}
 	}
 }
 

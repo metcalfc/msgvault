@@ -201,14 +201,14 @@ func (s *Store) loadCardDAVConflictReviewSourceTx(ctx context.Context, tx *logge
 	if err != nil {
 		return nil, err
 	}
-	account, err := getCardDAVAccountFrom(ctx, tx.Tx, s.Rebind)
+	account, err := getCardDAVAccountFrom(ctx, tx.Tx)
 	if err != nil {
 		return nil, err
 	}
 	if account == nil {
 		return nil, ErrCardDAVConflictStale
 	}
-	books, err := listCardDAVBooksFrom(ctx, tx.Tx, s.Rebind)
+	books, err := listCardDAVBooksFrom(ctx, tx.Tx)
 	if err != nil {
 		return nil, err
 	}

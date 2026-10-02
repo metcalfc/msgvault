@@ -429,7 +429,7 @@ func kPerSignalSuffix(k int) string {
 // chronological order with no relevance component at all, so scoring it as a
 // *ranking* measures the archive's date distribution rather than its retrieval
 // quality. Store.SearchMessagesQueryContext is the path /api/v1/search?mode=fts
-// serves, ordering by the dialect's BM25 expression (subject-weighted) before
+// serves, ordering by the SQLite FTS5 BM25 expression (subject-weighted) before
 // falling back to recency — the same messages_fts index and the same weights
 // the hybrid engine's BM25 leg fuses. It also matches production on the two
 // semantics that silently move scores: it honours search.DeletionScope
@@ -608,8 +608,8 @@ func (e *evaluator) rankedVector(mode, qstr string, q *search.Query) ([]string, 
 	if len(q.TextTerms) == 0 {
 		return nil, fmt.Errorf("%w: %q parsed to filters only", errNoFreeText, qstr)
 	}
-	// Use the engine method rather than the package function: it supplies the
-	// dialect's placeholder rebind, which the package function now requires.
+	// Use the engine method so the filter resolves against the engine's main
+	// database handle.
 	filter, err := e.heng.BuildFilter(e.ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("build filter: %w", err)

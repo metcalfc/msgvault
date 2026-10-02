@@ -533,7 +533,6 @@ func (s *Store) searchMessagesQueryImpl(
 	// Enable FTS only when the index is available and the query has text terms.
 	ftsEnabled := len(q.TextTerms) > 0 && ftsAvailable
 	var ftsJoin, ftsOrder, ftsExpr string
-	var ftsOrderArgCount int
 	if ftsEnabled {
 		ftsExpr = s.dialect.BuildFTSArg(q.TextTerms)
 		if ftsExpr == "" {
@@ -546,10 +545,9 @@ func (s *Store) searchMessagesQueryImpl(
 			conditions = append(conditions, "FALSE")
 			ftsEnabled = false
 		} else {
-			join, where, orderBy, orderArgCount := s.dialect.FTSSearchClause()
+			join, where, orderBy := s.dialect.FTSSearchClause()
 			ftsJoin = join
 			ftsOrder = orderBy
-			ftsOrderArgCount = orderArgCount
 			conditions = append(conditions, where)
 			args = append(args, ftsExpr)
 		}
@@ -830,14 +828,8 @@ func (s *Store) searchMessagesQueryImpl(
 		LIMIT ? OFFSET ?
 	`, participantSummarySenderSQL, ftsJoin, whereClause, orderBy)
 
-	// If the dialect's order-by fragment has ? placeholders, bind the FTS
-	// expression that many extra times — right after the WHERE args and
-	// before LIMIT/OFFSET so Rebind assigns them the correct positions.
-	resultArgs := make([]any, 0, len(args)+ftsOrderArgCount+2)
+	resultArgs := make([]any, 0, len(args)+2)
 	resultArgs = append(resultArgs, args...)
-	for range ftsOrderArgCount {
-		resultArgs = append(resultArgs, ftsExpr)
-	}
 	resultArgs = append(resultArgs, limit, offset)
 	rows, err := s.db.QueryContext(ctx, searchSQL, resultArgs...)
 	if err != nil {

@@ -11,7 +11,7 @@ none of the query words appear in the result. msgvault builds that
 capability on top of keyword search. An embedding is a numeric representation
 of text that lets msgvault rank related content. Msgvault sends text to an
 embedding endpoint you configure, then stores the vectors in your archive.
-SQLite archives store vectors in `vectors.db`.
+Vectors are stored in `vectors.db`.
 
 When vector search is enabled, the `search` command and HTTP
 `/api/v1/search` endpoint accept `mode=vector` (pure semantic) and
@@ -298,7 +298,7 @@ retries from dominating the displayed rate.
 
 ## Optimize SQLite Search
 
-Large SQLite archives should build the local search accelerator after the
+Large archives should build the local search accelerator after the
 embedding generation is active:
 
 ```bash

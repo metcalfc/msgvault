@@ -84,10 +84,10 @@ type Dialect interface {
 	FTSUpsert(q querier, doc FTSDoc) error
 
 	// FTSSearchClause returns the join, predicate, and ordering fragments for
-	// full-text search with ? placeholders. orderArgCount is zero for FTS5
-	// because rank is an implicit column. Callers compose the fragments into
+	// full-text search. The predicate takes one ? placeholder for the MATCH
+	// argument; the ordering takes none. Callers compose the fragments into
 	// the final query.
-	FTSSearchClause() (join, where, orderBy string, orderArgCount int)
+	FTSSearchClause() (join, where, orderBy string)
 
 	// FTSDeleteSQL returns the SQL to remove FTS entries for messages belonging to
 	// a given source. Takes one parameter: source_id.
@@ -130,11 +130,6 @@ type Dialect interface {
 	// an in-place rebuild cannot clear. The querier binds the operation to the
 	// maintenance transaction and its cancellation context.
 	FTSRebuildSchema(ctx context.Context, q contextQuerier) error
-
-	// EnsureFTSIndex is a no-op for SQLite: SchemaFTS creates messages_fts.
-	// InitSchema calls this after legacy column migrations with a querier
-	// bound to its cancellation context.
-	EnsureFTSIndex(q querier) error
 
 	// ValidateMessageWatermarks checks inexpensive watermark invariants that
 	// must hold on every open even when the versioned trigger migration is

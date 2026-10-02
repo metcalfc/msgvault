@@ -16,22 +16,21 @@ import (
 func newConvergenceChecker(
 	vector.Config, *store.Store, vector.Backend, vector.SemanticPersonEmbeddingGate,
 ) (scheduler.ConvergenceChecker, error) {
-	return nil, errVectorBuildUnsupported("")
+	return nil, errVectorBuildUnsupported()
 }
 
 func convergenceError(vector.GenerationID, scheduler.ConvergenceResult) error {
-	return errVectorBuildUnsupported("")
+	return errVectorBuildUnsupported()
 }
 
 func manualConvergenceError(vector.GenerationID, scheduler.ConvergenceResult) error {
-	return errVectorBuildUnsupported("")
+	return errVectorBuildUnsupported()
 }
 
 // errVectorBuildUnsupported reports that vector search is enabled in
-// config but this binary was built without the vector backend needed for
-// mainPath's dialect. Shared by setupVectorFeatures and
+// config but this binary was built without the sqlite-vec backend. Shared by setupVectorFeatures and
 // precheckVectorFeatures so both surface the identical rebuild guidance.
-func errVectorBuildUnsupported(mainPath string) error {
+func errVectorBuildUnsupported() error {
 	return errors.New("vector search is enabled in config but this binary was built without -tags sqlite_vec; " +
 		"rebuild with `make build` (or `go build -tags \"fts5 sqlite_vec\"`) " +
 		"or set [vector] enabled = false")
@@ -41,34 +40,34 @@ func errVectorBuildUnsupported(mainPath string) error {
 // (nil, nil) when vector search is disabled, and a descriptive error
 // when the user enabled vector search in config but built the binary
 // without -tags sqlite_vec.
-func setupVectorFeatures(ctx context.Context, _ *store.Store, mainPath string, _ bool, _ ...visual.StreamOpener) (*vectorFeatures, error) {
+func setupVectorFeatures(ctx context.Context, _ *store.Store, _ string, _ bool, _ ...visual.StreamOpener) (*vectorFeatures, error) {
 	state := invocationFromContext(ctx)
 	if state == nil {
 		return nil, errors.New("configuration is unavailable")
 	}
-	return setupVectorFeaturesWithConfig(mainPath, state.cfg)
+	return setupVectorFeaturesWithConfig(state.cfg)
 }
 
-func setupVectorFeaturesWithConfig(mainPath string, cfg *config.Config) (*vectorFeatures, error) {
+func setupVectorFeaturesWithConfig(cfg *config.Config) (*vectorFeatures, error) {
 	if cfg == nil {
 		return nil, errors.New("configuration is unavailable")
 	}
 	if !cfg.Vector.AnyLaneEnabled() {
 		return nil, nil //nolint:nilnil // vector disabled: callers nil-check vf; (nil, nil) means "no features, no error"
 	}
-	return nil, errVectorBuildUnsupported(mainPath)
+	return nil, errVectorBuildUnsupported()
 }
 
 // precheckVectorFeatures is the no-sqlite-vec fallback's cheap precheck.
 // It mirrors setupVectorFeatures's enabled/disabled gate without the
 // backend construction, since the stub build never has a backend to
 // build.
-func precheckVectorFeatures(mainPath string, cfg *config.Config) error {
+func precheckVectorFeatures(cfg *config.Config) error {
 	if cfg == nil {
 		return errors.New("configuration is unavailable")
 	}
 	if !cfg.Vector.AnyLaneEnabled() {
 		return nil
 	}
-	return errVectorBuildUnsupported(mainPath)
+	return errVectorBuildUnsupported()
 }

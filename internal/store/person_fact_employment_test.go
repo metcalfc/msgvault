@@ -1967,7 +1967,7 @@ func newPersonFactEmploymentSQLiteGateStore(
 	db.SetMaxIdleConns(4)
 	dialect := &SQLiteDialect{}
 	st := &Store{
-		db: newLoggedDB(db, identityRebind), dbPath: base.dsn, dialect: dialect,
+		db: newLoggedDB(db), dbPath: base.dsn, dialect: dialect,
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	require.NoError(st.InitSchemaContext(t.Context()))

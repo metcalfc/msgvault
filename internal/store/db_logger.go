@@ -98,24 +98,27 @@ func ConfigureSQLLogging(opts SQLLogOptions) {
 // compile against the sql.DB method surface — the Query/Exec
 // overrides below shadow the embedded ones.
 //
-// loggedDB also owns the dialect's placeholder-rebind step: every
-// SQL string passed to Query/Exec/QueryRow is run through rebind
-// before reaching the driver. SQLite's rebind function preserves the
-// caller's `?` placeholders unchanged.
+// Every SQL string passed to Query/Exec/QueryRow, including those issued
+// inside a transaction from BeginTx, passes through beforeStatement on its
+// way to the driver. Production leaves it nil; tests set it to act at an
+// exact statement, such as cancelling a context or committing a concurrent
+// write before that statement runs.
 type loggedDB struct {
 	*sql.DB
 
-	rebind func(string) string
+	beforeStatement func(query string)
 }
 
-func newLoggedDB(db *sql.DB, rebind func(string) string) *loggedDB {
-	if rebind == nil {
-		rebind = identityRebind
+func newLoggedDB(db *sql.DB) *loggedDB {
+	return &loggedDB{DB: db}
+}
+
+// observeStatement runs the beforeStatement hook, if one is installed.
+func observeStatement(hook func(string), query string) {
+	if hook != nil {
+		hook(query)
 	}
-	return &loggedDB{DB: db, rebind: rebind}
 }
-
-func identityRebind(q string) string { return q }
 
 // Query logs the statement via logStmt and delegates to the
 // embedded sql.DB. Uses a background context to match the
@@ -135,7 +138,7 @@ func (d *loggedDB) Query(
 func (d *loggedDB) QueryContext(
 	ctx context.Context, query string, args ...any,
 ) (*loggedRows, error) {
-	query = d.rebind(query)
+	observeStatement(d.beforeStatement, query)
 	reqID := RequestIDFromContext(ctx)
 	start := time.Now()
 	rows, err := d.DB.QueryContext(ctx, query, args...) //nolint:rowserrcheck // caller owns rows.Err
@@ -164,7 +167,7 @@ func (d *loggedDB) QueryRow(
 func (d *loggedDB) QueryRowContext(
 	ctx context.Context, query string, args ...any,
 ) *sql.Row {
-	query = d.rebind(query)
+	observeStatement(d.beforeStatement, query)
 	start := time.Now()
 	row := d.DB.QueryRowContext(ctx, query, args...)
 	logStmtWith("queryrow", RequestIDFromContext(ctx), query, args, nil, time.Since(start))
@@ -183,7 +186,7 @@ func (d *loggedDB) Exec(
 func (d *loggedDB) ExecContext(
 	ctx context.Context, query string, args ...any,
 ) (sql.Result, error) {
-	query = d.rebind(query)
+	observeStatement(d.beforeStatement, query)
 	start := time.Now()
 	res, err := d.DB.ExecContext(ctx, query, args...)
 	elapsed := time.Since(start)
@@ -199,10 +202,8 @@ func (d *loggedDB) ExecContext(
 	return res, err
 }
 
-// Begin returns a *loggedTx that inherits the rebind function, so
-// statements issued inside the transaction are also rebound before
-// reaching the driver. Wrapping Begin (not just Exec/Query) is what
-// keeps the auto-rebind promise intact across transactional code.
+// Begin returns a *loggedTx that inherits the beforeStatement hook, so
+// statements issued inside the transaction pass through it too.
 func (d *loggedDB) Begin() (*loggedTx, error) {
 	return d.BeginTx(context.Background(), nil)
 }
@@ -215,19 +216,19 @@ func (d *loggedDB) BeginTx(
 	if err != nil {
 		return nil, err
 	}
-	return &loggedTx{Tx: tx, rebind: d.rebind}, nil
+	return &loggedTx{Tx: tx, beforeStatement: d.beforeStatement}, nil
 }
 
 // loggedTx mirrors loggedDB for *sql.Tx: it embeds the raw
-// transaction and rebinds every query before dispatching. Store
-// code that previously took *sql.Tx takes *loggedTx instead.
+// transaction and runs the beforeStatement hook for every query before
+// dispatching. Store code that previously took *sql.Tx takes *loggedTx instead.
 type loggedTx struct {
 	*sql.Tx
 
-	rebind func(string) string
+	beforeStatement func(query string)
 }
 
-// Exec rebinds before delegating. Transaction-scoped queries are
+// Exec delegates to ExecContext. Transaction-scoped queries are
 // not individually logged — the per-tx duration from Store.withTx
 // gives enough signal.
 func (t *loggedTx) Exec(
@@ -236,14 +237,15 @@ func (t *loggedTx) Exec(
 	return t.ExecContext(context.Background(), query, args...)
 }
 
-// ExecContext rebinds before delegating.
+// ExecContext runs the statement hook before delegating.
 func (t *loggedTx) ExecContext(
 	ctx context.Context, query string, args ...any,
 ) (sql.Result, error) {
-	return t.Tx.ExecContext(ctx, t.rebind(query), args...)
+	observeStatement(t.beforeStatement, query)
+	return t.Tx.ExecContext(ctx, query, args...)
 }
 
-// Query rebinds and returns *loggedRows so transactional
+// Query returns *loggedRows so transactional
 // queries also get accurate scan-close timing. The wrapper
 // only logs on Close; if Query itself fails we surface the
 // error without a wrapper since there are no rows to scan.
@@ -253,11 +255,11 @@ func (t *loggedTx) Query(
 	return t.QueryContext(context.Background(), query, args...)
 }
 
-// QueryContext rebinds and returns *loggedRows.
+// QueryContext runs the statement hook and returns *loggedRows.
 func (t *loggedTx) QueryContext(
 	ctx context.Context, query string, args ...any,
 ) (*loggedRows, error) {
-	query = t.rebind(query)
+	observeStatement(t.beforeStatement, query)
 	reqID := RequestIDFromContext(ctx)
 	start := time.Now()
 	rows, err := t.Tx.QueryContext(ctx, query, args...) //nolint:rowserrcheck // caller owns rows.Err
@@ -274,18 +276,19 @@ func (t *loggedTx) QueryContext(
 	}, nil
 }
 
-// QueryRow rebinds before delegating.
+// QueryRow delegates to QueryRowContext.
 func (t *loggedTx) QueryRow(
 	query string, args ...any,
 ) *sql.Row {
 	return t.QueryRowContext(context.Background(), query, args...)
 }
 
-// QueryRowContext rebinds before delegating.
+// QueryRowContext runs the statement hook before delegating.
 func (t *loggedTx) QueryRowContext(
 	ctx context.Context, query string, args ...any,
 ) *sql.Row {
-	return t.Tx.QueryRowContext(ctx, t.rebind(query), args...)
+	observeStatement(t.beforeStatement, query)
+	return t.Tx.QueryRowContext(ctx, query, args...)
 }
 
 // loggedRows wraps *sql.Rows so the timing log emitted for a

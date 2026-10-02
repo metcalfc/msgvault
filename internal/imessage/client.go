@@ -688,8 +688,7 @@ func (c *Client) buildGroupTitle(
 	`), convID).Scan(&totalCount)
 
 	// Get first few names for display. The literal '?' in COALESCE is
-	// inside single quotes, so Rebind (which only converts ? outside
-	// quoted strings) leaves it intact.
+	// inside single quotes, so SQLite reads it as text, not a placeholder.
 	rows, err := s.DB().QueryContext(ctx, s.Rebind(`
 		SELECT COALESCE(
 			NULLIF(p.display_name, ''),

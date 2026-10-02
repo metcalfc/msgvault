@@ -125,16 +125,16 @@ func TestInferenceExportDefinitionExposureRetriesConcurrentWrite(t *testing.T) {
 
 	// Commit on another connection after the update's projection reads, before
 	// its first write. This exercises a real stale SQLite snapshot.
-	rebind := st.db.rebind
-	t.Cleanup(func() { st.db.rebind = rebind })
+	previous := st.db.beforeStatement
+	t.Cleanup(func() { st.db.beforeStatement = previous })
 	interleaved := false
-	st.db.rebind = func(query string) string {
+	st.db.beforeStatement = func(query string) {
 		if !interleaved && strings.Contains(query, "UPDATE attribute_definitions") {
 			interleaved = true
 			_, writeErr := writer.EnsureParticipant("concurrent@example.com", "Concurrent Example", "example.com")
 			require.NoError(writeErr)
 		}
-		return rebind(query)
+		observeStatement(previous, query)
 	}
 	updated, err := st.UpdateAttributeDefinitionContext(t.Context(), definition.ID, definition.Revision,
 		AttributeDefinitionUpdate{IsActive: new(false)})

@@ -75,15 +75,7 @@ type WorkerDeps struct {
 	// and returns an error. A successful batch resets the counter.
 	// Default 5.
 	MaxConsecutiveFailures int
-	// Rebind transforms query placeholders. Nil preserves SQLite's native
-	// ? placeholders in embed_runs, watermark, and body-fetch statements.
-	Rebind func(string) string
-	// LastModifiedExpr reads the message last_modified CAS token. It must
-	// round-trip by exact equality when bound into WHERE last_modified = ?.
-	// The default CAST(m.last_modified AS TEXT) avoids go-sqlite3's
-	// DATETIME-to-time.Time coercion; the worker binds the same string back.
-	LastModifiedExpr string
-	Log              *slog.Logger
+	Log                    *slog.Logger
 	// TotalPending is the work depth at run start, used by a Progress
 	// callback (if any) to report percent done and ETA. Zero disables
 	// the denominator — Progress still fires but leaves ETA empty.
@@ -118,17 +110,9 @@ type ProgressReport struct {
 // upserts the vectors, then stamps embed_gen so they drop out of the next
 // scan. A single Worker is safe for sequential use.
 type Worker struct {
-	deps WorkerDeps
-	wm   *Watermark
-	// rebind translates ?-placeholders to the driver's native form for
-	// queries the worker issues directly against MainDB (embedBatch's
-	// IN-clause). nil is normalized to the identity.
-	rebind func(string) string
-	// lastModifiedExpr is the SELECT expression for the last_modified CAS
-	// token (see WorkerDeps.LastModifiedExpr). Normalized to the SQLite CAST
-	// form when the dep is empty.
-	lastModifiedExpr string
-	runStart         time.Time // valid only during a RunOnce call
+	deps     WorkerDeps
+	wm       *Watermark
+	runStart time.Time // valid only during a RunOnce call
 }
 
 // NewWorker constructs a Worker, applying defaults for BatchSize (32),
@@ -143,16 +127,7 @@ func NewWorker(d WorkerDeps) *Worker {
 	if d.MaxConsecutiveFailures == 0 {
 		d.MaxConsecutiveFailures = 5
 	}
-	rebind := d.Rebind
-	if rebind == nil {
-		rebind = func(q string) string { return q }
-	}
-	lmExpr := d.LastModifiedExpr
-	if lmExpr == "" {
-		// Read the SQLite CAS token as text to preserve exact equality.
-		lmExpr = "CAST(m.last_modified AS TEXT)"
-	}
-	return &Worker{deps: d, wm: NewWatermark(d.VectorsDB, rebind), rebind: rebind, lastModifiedExpr: lmExpr}
+	return &Worker{deps: d, wm: NewWatermark(d.VectorsDB)}
 }
 
 // RunResult summarizes the outcome of RunOnce.
@@ -212,7 +187,7 @@ func (w *Worker) startEmbedRun(ctx context.Context, gen vector.GenerationID, now
 	}
 	var id int64
 	err := w.deps.VectorsDB.QueryRowContext(ctx,
-		w.rebind(`INSERT INTO embed_runs (generation_id, started_at) VALUES (?, ?) RETURNING id`),
+		`INSERT INTO embed_runs (generation_id, started_at) VALUES (?, ?) RETURNING id`,
 		int64(gen), now).Scan(&id)
 	if err != nil {
 		if jobctx.YieldedToWaiter(ctx) {
@@ -236,9 +211,9 @@ func (w *Worker) finalizeEmbedRun(ctx context.Context, runID int64, res RunResul
 		errText = &s
 	}
 	_, err := w.deps.VectorsDB.ExecContext(ctx,
-		w.rebind(`UPDATE embed_runs
+		`UPDATE embed_runs
 		             SET ended_at = ?, claimed = ?, succeeded = ?, failed = ?, truncated = ?, error = ?
-		           WHERE id = ?`),
+		           WHERE id = ?`,
 		now, res.Claimed, res.Succeeded, res.Failed, res.Truncated, errText, runID)
 	if err != nil {
 		w.deps.Log.Warn("embed_runs: finalize update failed", "error", err)
@@ -685,11 +660,15 @@ func (w *Worker) embedBatch(ctx context.Context, ids []int64) (embedBatchResult,
 		placeholders[i] = "?"
 		args[i] = id
 	}
-	query := w.rebind(fmt.Sprintf(`
-        SELECT m.id, COALESCE(m.subject, ''), COALESCE(mb.body_text, ''), COALESCE(mb.body_html, ''), %s
+	// last_modified is the CAS token for the later embed_gen stamp. Read it as
+	// text so go-sqlite3 does not coerce DATETIME to time.Time; the stamp binds
+	// the same string back into WHERE last_modified = ?.
+	query := fmt.Sprintf(`
+        SELECT m.id, COALESCE(m.subject, ''), COALESCE(mb.body_text, ''), COALESCE(mb.body_html, ''),
+               CAST(m.last_modified AS TEXT)
           FROM messages m
           LEFT JOIN message_bodies mb ON mb.message_id = m.id
-         WHERE m.id IN (%s)`, w.lastModifiedExpr, strings.Join(placeholders, ",")))
+         WHERE m.id IN (%s)`, strings.Join(placeholders, ","))
 
 	rows, err := w.deps.MainDB.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -1200,7 +1179,7 @@ func (w *Worker) stampSkipped(ctx context.Context, gen vector.GenerationID, ids 
 	for _, id := range ids {
 		if tok, ok := lm[id]; ok {
 			res, err := tx.ExecContext(ctx,
-				w.rebind(`UPDATE messages SET embed_gen = ? WHERE id = ? AND last_modified = ?`),
+				`UPDATE messages SET embed_gen = ? WHERE id = ? AND last_modified = ?`,
 				int64(gen), id, tok)
 			if err != nil {
 				return nil, fmt.Errorf("set skipped embed_gen if unchanged (id=%d): %w", id, err)
@@ -1218,7 +1197,7 @@ func (w *Worker) stampSkipped(ctx context.Context, gen vector.GenerationID, ids 
 		}
 
 		if _, err := tx.ExecContext(ctx,
-			w.rebind(`UPDATE messages SET embed_gen = ? WHERE id = ?`),
+			`UPDATE messages SET embed_gen = ? WHERE id = ?`,
 			int64(gen), id); err != nil {
 			return nil, fmt.Errorf("set skipped embed_gen (id=%d): %w", id, err)
 		}
