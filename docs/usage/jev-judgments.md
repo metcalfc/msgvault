@@ -12,9 +12,7 @@ two differently written names are one person, what kind of correspondent an
 address is, or whether an excerpt states a claim. Deterministic checks belong
 in code: equal email addresses, equal phone numbers, exact domain matches, and
 normalized identifiers. Similarity and text generation belong to embeddings
-and local chat models through Ollama. Some features below still ask Jev about
-things code could decide; their sections describe today's behavior and end
-with a **Planned** note.
+and local chat models through Ollama.
 
 ## What leaves the machine, and when
 
