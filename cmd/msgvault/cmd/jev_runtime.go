@@ -108,13 +108,13 @@ type jevOrganizationStore interface {
 	orgresolution.Store
 }
 
-// newOrganizationPreparer wires organization resolution. A reference whose
-// domain shares exactly one shortlisted organization's registrable domain is
-// resolved in code whatever the configuration. Jev is wired only when it and
-// the feature are on in the startup configuration; otherwise every reference
-// that would need a judgment keeps the exact lookup alone until the daemon
-// restarts with them on. automatic marks unattended callers such as
-// scheduled runs.
+// newOrganizationPreparer wires organization resolution. Whatever the
+// configuration, a reference whose name matches the only organization on its
+// registrable domain is resolved in code (store.OrganizationDomainSettlementContext).
+// Jev is wired only when it and the feature are on in the startup
+// configuration; otherwise every reference that would need a judgment keeps
+// the exact lookup alone until the daemon restarts with them on. automatic
+// marks unattended callers such as scheduled runs.
 func newOrganizationPreparer(
 	cfg *config.Config, st jevOrganizationStore, automatic bool,
 ) (personfacts.OrganizationPreparer, error) {

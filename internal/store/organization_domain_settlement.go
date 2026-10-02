@@ -25,6 +25,8 @@ var organizationPlatformDomains = map[string]struct{}{
 	"notion.site": {}, "substack.com": {}, "wordpress.com": {},
 	"blogspot.com": {}, "wixsite.com": {}, "squarespace.com": {},
 	"linktr.ee": {}, "crunchbase.com": {}, "angel.co": {}, "wellfound.com": {},
+	"gitlab.com": {}, "bitbucket.org": {}, "about.me": {}, "wikipedia.org": {},
+	"lnkd.in": {}, "bit.ly": {}, "greenhouse.io": {}, "lever.co": {},
 }
 
 // settlementRegistrableDomain is the registrable domain (eTLD+1, by the
@@ -67,7 +69,8 @@ func organizationNameCore(name string) string {
 //   - that organization's name or an active alternate name equals the
 //     reference name once case, punctuation, and legal-entity words are
 //     removed;
-//   - the user has not rejected that name for that organization.
+//   - the user has not rejected that name, under the same comparison, for
+//     that organization.
 //
 // Anything else, including a shared domain under a different name, is a
 // judgment and is not settled here.
@@ -126,15 +129,18 @@ func organizationDomainSettlementTx(
 	if !named {
 		return 0, false, nil
 	}
-	var rejected bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
-		SELECT 1 FROM organization_match_reviews
-		WHERE organization_id = ? AND proposed_name_normalized = ? AND status = 'rejected'
-	)`, id, NormalizeOrganizationName(name)).Scan(&rejected); err != nil {
-		return 0, false, fmt.Errorf("check rejected organization match: %w", err)
+	// A rejection covers every spelling the settlement itself would treat
+	// as the same name, so "Acme Inc" rejected also refuses "Acme, Inc.".
+	rejected, err := queryOrganizationShortlistStrings(ctx, tx, `
+		SELECT proposed_name FROM organization_match_reviews
+		WHERE organization_id = ? AND status = 'rejected'`, id)
+	if err != nil {
+		return 0, false, err
 	}
-	if rejected {
-		return 0, false, nil
+	for _, proposed := range rejected {
+		if organizationNameCore(proposed) == core {
+			return 0, false, nil
+		}
 	}
 	return id, true, nil
 }

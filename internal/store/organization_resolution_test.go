@@ -327,3 +327,78 @@ func TestOrganizationDomainAliasRefusesWhatTheRuleDoesNotSettle(t *testing.T) {
 		})
 	}
 }
+
+func TestOrganizationDomainSettlementRespectsARejectionInAnySpelling(t *testing.T) {
+	for _, settling := range []string{"Acme Inc", "Acme, Inc.", "ACME"} {
+		t.Run(settling, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			st := testutil.NewTestStore(t)
+			acme := createShortlistOrganization(t, st, "Acme", "acme.example")
+			ref := personfacts.OrganizationReference{Name: settling, Domain: "eu.acme.example"}
+			_, ok, err := st.OrganizationDomainSettlementContext(t.Context(), ref)
+			require.NoError(err)
+			require.True(ok, "settles before the rejection")
+
+			_, err = st.RecordOrganizationMatchReviewContext(t.Context(), store.OrganizationMatchReviewInput{
+				OrganizationID: acme.ID, Name: "Acme Inc", Domain: "acme.example",
+				Model: "fixture", Probability: 0.6,
+			})
+			require.NoError(err)
+			reviews, err := st.ListOrganizationMatchReviewsContext(t.Context(), 10)
+			require.NoError(err)
+			require.Len(reviews, 1)
+			_, err = st.RejectOrganizationMatchReviewContext(t.Context(), reviews[0].ID, "user")
+			require.NoError(err)
+
+			_, ok, err = st.OrganizationDomainSettlementContext(t.Context(), ref)
+			require.NoError(err)
+			assert.False(ok, "rejecting \"Acme Inc\" refuses every spelling of that name")
+			_, err = st.RecordOrganizationDomainAliasContext(t.Context(), store.OrganizationDomainAliasInput{
+				OrganizationID: acme.ID, Name: ref.Name, Domain: ref.Domain,
+			})
+			require.ErrorIs(err, store.ErrOrganizationInvalid)
+		})
+	}
+}
+
+func TestOrganizationDomainSettlementCountsOnlyActiveCompanies(t *testing.T) {
+	tests := []struct {
+		name   string
+		retire func(*testing.T, *store.Store, *store.Organization)
+	}{
+		{"retired sharer", func(t *testing.T, st *store.Store, other *store.Organization) {
+			t.Helper()
+			domain := "ventures.example.com"
+			_, err := st.ReplaceOrganizationContext(t.Context(), other.ID, other.Revision, store.OrganizationInput{
+				Name: other.Name, Kind: store.OrganizationKindCompany, PrimaryDomain: &domain,
+			}, true)
+			require.NoError(t, err)
+		}},
+		{"merged sharer", func(t *testing.T, st *store.Store, other *store.Organization) {
+			t.Helper()
+			survivor := createShortlistOrganization(t, st, "Northwind Traders", "northwind.example")
+			_, err := st.MergeOrganizationsContext(t.Context(), survivor.ID, survivor.Revision, other.ID, other.Revision)
+			require.NoError(t, err)
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			st := testutil.NewTestStore(t)
+			labs := createShortlistOrganization(t, st, "Example Labs", "example.com")
+			other := createShortlistOrganization(t, st, "Example Ventures", "ventures.example.com")
+			ref := personfacts.OrganizationReference{Name: "Example Labs", Domain: "eu.example.com"}
+			_, ok, err := st.OrganizationDomainSettlementContext(t.Context(), ref)
+			require.NoError(err)
+			require.False(ok, "two active companies share the domain")
+
+			test.retire(t, st, other)
+			id, ok, err := st.OrganizationDomainSettlementContext(t.Context(), ref)
+			require.NoError(err)
+			assert.True(ok, "only active companies count")
+			assert.Equal(labs.ID, id)
+		})
+	}
+}

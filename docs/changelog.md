@@ -126,7 +126,11 @@ All notable changes to msgvault, grouped by release.
   the only one on the same registrable domain, such as "Example Labs, Inc."
   at `eu.example.com` for "Example Labs" at `example.com`. Consumer mail and
   platform domains such as `linkedin.com` never settle a name; everything
-  else goes to Jev.
+  else goes to Jev. The consumer mail list now also covers regional and ISP
+  providers such as `yahoo.co.uk`, `gmx.de`, `qq.com`, and `comcast.net`.
+  Correspondent classification shares it, so Gmail's Promotions rule no
+  longer marks senders on those domains as automated, and an organization
+  created for such a sender gets no primary domain.
   Requires API schema 2.38.0.
 - Act on contact facts from the Web UI. Email addresses, E.164 phone numbers,
   and profile handles on person pages, identity reviews, and the file viewer

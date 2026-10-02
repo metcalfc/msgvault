@@ -307,8 +307,7 @@ otherwise. The steps are:
 2. **Shortlist in code, no Jev.** On a miss, code picks at most eight existing
    organizations whose name or alternate name shares words, a prefix, or
    letter patterns with it, or whose domain shares its registrable domain
-   (`eu.example.com` and `example.com`). No shortlist means the organization
-   is created as before, and nothing is sent.
+   (`eu.example.com` and `example.com`).
 3. **Same name on the same registrable domain, no Jev.** Code settles the
    fact only when all of these hold; everything else goes to Jev:
    - The fact's domain has a registrable domain from the public suffix list,
@@ -316,22 +315,30 @@ otherwise. The steps are:
      `example.co.uk`, but `example.co.uk` never matches `other.co.uk`.
    - That registrable domain is not a consumer mail domain (`gmail.com`,
      `yahoo.co.uk`, `gmx.de`, ISP mail, and similar) or a platform that hosts
-     many organizations (`linkedin.com`, `medium.com`, `github.io`,
-     `substack.com`, and similar). A profile URL such as
-     `https://www.linkedin.com/company/example` never settles anything.
-   - Exactly one active organization has any domain on it, counting every
-     organization and every domain, including ones the shortlist leaves out
-     and ones you rejected in a review.
+     many organizations (`linkedin.com`, `google.com`, `github.com`,
+     `github.io`, `gitlab.com`, `medium.com`, `substack.com`, `wikipedia.org`,
+     `bit.ly`, and similar). A profile URL such as
+     `https://www.linkedin.com/company/example` never settles anything, and
+     the companies that own those domains, such as Google, LinkedIn, or
+     GitHub, are never settled in code either; Jev decides them.
+   - Exactly one active company organization (not retired, not merged into
+     another) has any domain on it, counting every such organization and
+     every active domain, including ones the shortlist leaves out and ones you
+     rejected in a review.
    - The fact's name equals that organization's name or one of its alternate
-     names once case, punctuation, and legal-entity words such as "Inc." are
-     removed. A shared domain under a different name is a judgment and goes
-     to Jev.
-   - You have not rejected that name for that organization.
+     names once case, punctuation, and these words are removed: `inc`,
+     `incorporated`, `llc`, `llp`, `lp`, `ltd`, `limited`, `corp`,
+     `corporation`, `co`, `company`, `plc`, `gmbh`, `ag`, `sa`, `sas`, `bv`,
+     `nv`, `pty`, `srl`, `oy`, `ab`, `the`, `and`, `of`. A shared domain under
+     a different name is a judgment and goes to Jev.
+   - You have not rejected that name, compared the same way, for that
+     organization.
 
    This catches what the exact lookup misses: "Example Labs, Inc." at
    `example.com`, or "Example Labs" at `eu.example.com`, when "Example Labs"
    is known at `example.com`. It runs even when Jev is off or not consented.
-4. **One request.** Otherwise Jev picks which shortlisted organization, if
+4. **One request.** Otherwise, when the shortlist is empty, the organization
+   is created as before and nothing is sent. When it is not, Jev picks which shortlisted organization, if
    any, the name is, with the whole shortlist exactly as before. Jev also
    answers one yes/no question per job-title pair (at most four) that the
    person already has at the organizations involved. After code settled the
