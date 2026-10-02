@@ -45,7 +45,8 @@ whether or not Jev is enabled:
     else is invited (a personal hold), or every event is a timed meeting you
     organized for you and exactly one other person (a one-on-one).
 
-A rule kind is decided again after calendar sync changes the series. When
+A rule kind is decided again after calendar sync changes the series, and
+each run first reopens any stored rule kind that no longer holds. When
 [jev] and [jev.meeting_event_kind] are enabled, an API key resolves, and
 'msgvault jev consent meeting_event_kind' has been given, the rest are sent
 to Jev ten series per request, each asked once. A Jev kind at or above 0.60
@@ -135,6 +136,7 @@ func writeMeetingsJudgeReport(w io.Writer, report meetingsJudgeReport) {
 	_, _ = fmt.Fprintf(w, "Calendar series visited: %d\n", kinds.Candidates)
 	_, _ = fmt.Fprintf(w, "Not meetings (recorded without Jev): %d\n", kinds.NotMeetings)
 	_, _ = fmt.Fprintf(w, "Settled by invite list (recorded without Jev): %d\n", kinds.Settled)
+	_, _ = fmt.Fprintf(w, "Rule kinds reopened (no longer held): %d\n", kinds.Reopened)
 	switch {
 	case !report.EventKindJev:
 		_, _ = fmt.Fprintln(w, "Event kinds: Jev off")

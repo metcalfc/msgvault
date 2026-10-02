@@ -44,7 +44,7 @@ func judgeMeetingsForCacheBuild(ctx context.Context, cfg *config.Config, dbPath 
 	}
 	logger.Info("meeting judgments before cache build",
 		"series", report.EventKinds.Candidates, "not_meetings", report.EventKinds.NotMeetings,
-		"settled", report.EventKinds.Settled,
+		"settled", report.EventKinds.Settled, "reopened", report.EventKinds.Reopened,
 		"jev_judged", report.EventKinds.Judged, "jev_requests", report.EventKinds.Requests,
 		"jev_skipped", report.EventKinds.Skipped,
 		"assignee_meetings", report.Assignees.Meetings, "assignee_requests", report.Assignees.Requests,

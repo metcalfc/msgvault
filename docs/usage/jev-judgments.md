@@ -737,9 +737,13 @@ this feature asks Jev what kind of event a calendar series is:
 The rules run whenever `msgvault meetings judge` runs, whether or not Jev is
 enabled, and before an analytics cache build only when a meeting feature is
 enabled with `automatic = true`. A rule's decision only keeps the series from
-being sent. Calendar sync clears it whenever it writes one of the series'
-events, so the next run decides again from current data; until then the
-series is an ordinary candidate.
+being sent. Calendar sync clears it whenever it writes or cancels one of the
+series' events. Each run also starts by checking every stored rule decision
+against current data (the series' events, your addresses, and correspondent
+kinds) and reopens any that no longer hold, so their series are decided again
+in that run. A rule decision written while a sync was changing the series is
+corrected the same way on the next run. A series a rule settled as a personal
+hold keeps the attendee-count weight: rule kinds never change weights.
 
 Code maps Jev's answer when its probability is at least 0.60:
 

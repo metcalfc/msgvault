@@ -119,31 +119,117 @@ func (s *Store) CalendarEventKindCandidatesContext(ctx context.Context, limit in
 	if err := rows.Close(); err != nil {
 		return nil, fmt.Errorf("close calendar kind candidates: %w", err)
 	}
+	if err := s.describeCalendarKindCandidates(ctx, candidates); err != nil {
+		return nil, err
+	}
+	return candidates, nil
+}
+
+// describeCalendarKindCandidates fills candidates that carry only their
+// conversation and occurrence count from the series' current events.
+func (s *Store) describeCalendarKindCandidates(ctx context.Context, candidates []CalendarEventKindCandidate) error {
 	if len(candidates) == 0 {
-		return candidates, nil
+		return nil
 	}
 	owner, err := s.OwnerEmailAddressesContext(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	notOnePerson, err := s.participantsByEffectiveKindContext(ctx, func(kind correspondentkind.Kind) bool {
 		return slices.Contains(notOnePersonKinds, kind)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("read correspondent kinds for calendar kinds: %w", err)
+		return fmt.Errorf("read correspondent kinds for calendar kinds: %w", err)
 	}
 	for i := range candidates {
 		if err := s.describeCalendarKindCandidate(ctx, &candidates[i]); err != nil {
-			return nil, err
+			return err
 		}
 		if candidates[i].NotAMeeting {
 			continue
 		}
 		if err := s.shapeCalendarKindCandidate(ctx, &candidates[i], owner, notOnePerson); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return candidates, nil
+	return nil
+}
+
+// CalendarRuleKind is a stored rule kind with its series described from
+// current data, so the rule can be checked again.
+type CalendarRuleKind struct {
+	Kind      string
+	Candidate CalendarEventKindCandidate
+}
+
+// CalendarRuleKindsContext lists every stored rule kind with its series
+// described exactly as a candidate would be.
+func (s *Store) CalendarRuleKindsContext(ctx context.Context) ([]CalendarRuleKind, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT k.conversation_id, k.kind,
+		       (SELECT COUNT(*) FROM messages m
+		         WHERE m.conversation_id = k.conversation_id AND m.message_type = ? AND m.deleted_at IS NULL)
+		FROM calendar_event_kinds k
+		WHERE k.source = ?
+		ORDER BY k.conversation_id`, calendarEventMessageType, CalendarEventKindSourceRule)
+	if err != nil {
+		return nil, fmt.Errorf("list calendar rule kinds: %w", err)
+	}
+	var kinds []string
+	var candidates []CalendarEventKindCandidate
+	for rows.Next() {
+		var candidate CalendarEventKindCandidate
+		var kind string
+		if err := rows.Scan(&candidate.ConversationID, &kind, &candidate.Occurrences); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("scan calendar rule kind: %w", err)
+		}
+		kinds = append(kinds, kind)
+		candidates = append(candidates, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, fmt.Errorf("iterate calendar rule kinds: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close calendar rule kinds: %w", err)
+	}
+	if err := s.describeCalendarKindCandidates(ctx, candidates); err != nil {
+		return nil, err
+	}
+	result := make([]CalendarRuleKind, len(candidates))
+	for i := range candidates {
+		result[i] = CalendarRuleKind{Kind: kinds[i], Candidate: candidates[i]}
+	}
+	return result, nil
+}
+
+// DeleteCalendarRuleKindsContext deletes stored rule kinds that no longer
+// hold. A row is deleted only while it still has the kind that was checked,
+// and a Jev kind is never deleted. It returns how many rows were deleted.
+func (s *Store) DeleteCalendarRuleKindsContext(ctx context.Context, kinds []CalendarEventKind) (int, error) {
+	deleted := 0
+	err := s.withTxContext(ctx, func(tx *loggedTx) error {
+		for _, kind := range kinds {
+			result, err := tx.ExecContext(ctx, `
+				DELETE FROM calendar_event_kinds
+				WHERE conversation_id = ? AND kind = ? AND source = ?`,
+				kind.ConversationID, kind.Kind, CalendarEventKindSourceRule)
+			if err != nil {
+				return fmt.Errorf("delete calendar rule kind: %w", err)
+			}
+			affected, err := result.RowsAffected()
+			if err != nil {
+				return fmt.Errorf("count calendar rule kind delete: %w", err)
+			}
+			deleted += int(affected)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return deleted, nil
 }
 
 // shapeCalendarKindCandidate records the invite list of every event in the

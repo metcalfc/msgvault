@@ -93,7 +93,8 @@ feature is enabled, an API key resolves, and its consent is active.
    meeting and never sent. A series whose invite lists settle its kind (you
    organized every event and no one else is invited, or every event is a timed
    meeting you organized for you and exactly one other person) is recorded
-   without Jev too; calendar sync clears that decision when the series changes.
+   without Jev too; calendar sync clears that decision when the series changes,
+   and each run first reopens any rule decision that no longer holds.
    These rules run even when the Jev feature is off. With
    [`[jev.meeting_event_kind]`](configuration.md#jevmeeting_event_kind) and
    `msgvault jev consent meeting_event_kind`, the rest are sent to Jev ten

@@ -217,10 +217,10 @@ func TestEventKindsStructuralRules(t *testing.T) {
 	ownAlias := calendarEvent("alias", "Inbox zero", 30, "owner.alias@example.com")
 	list := calendarEvent("list", "Standup", 15, "team-list@example.com")
 
-	weeklyPair := series("weekly", "Weekly one-on-one",
+	weeklyPair := series("weekly",
 		[]string{"casey@example.com"}, []string{"casey@example.com"}, []string{"casey@example.com"})
-	droppedNewest := series("dropped", "Weekly one-on-one", []string{"casey@example.com"}, []string{})
-	cancelledCrowd := series("cancelled", "Weekly one-on-one",
+	droppedNewest := series("dropped", []string{"casey@example.com"}, []string{})
+	cancelledCrowd := series("cancelled",
 		[]string{"casey@example.com"}, []string{"casey@example.com", "riley@example.com"})
 	cancelledCrowd[1].Status = gcal.StatusCancelled
 
@@ -321,12 +321,86 @@ func TestEventKindsRuleKindFollowsSeriesChanges(t *testing.T) {
 	assert.Equal(3, events[0].AttendeeCount)
 }
 
-// series is a weekly series you organize: a master and later instances,
+// Each run checks stored rule kinds against current data first, so a
+// change sync does not make still reopens the series in that run.
+func TestEventKindsReopenRuleKindsThatNoLongerHold(t *testing.T) {
+	t.Run("the other invitee becomes a classified list", func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
+		st := newStore(t)
+		syncCalendar(t, st, calendarEvent("list", "Standup", 15, "team-list@example.com"))
+		fake := &fakeJev{answer: eventKindByTitle}
+		server := fake.server(t)
+		service, cfg := jevService(t, server.URL, st)
+		grantConsent(t, st, cfg, meetingjudge.EventKindFeature())
+		_, err := meetingjudge.RunEventKinds(t.Context(), st, meetingjudge.EventKindOptions{Judge: service})
+		require.NoError(err)
+		require.Equal(map[string]storedKind{
+			"Standup": {string(meetingweight.KindOneOnOne), store.CalendarEventKindSourceRule},
+		}, kindsByTitle(t, st))
+		require.Empty(fake.requests())
+
+		classifyList(t, st)
+		report, err := meetingjudge.RunEventKinds(t.Context(), st, meetingjudge.EventKindOptions{Judge: service})
+		require.NoError(err)
+		assert.Equal(1, report.Reopened)
+		assert.Zero(report.Settled)
+		requests := fake.requests()
+		require.Len(requests, 1, "the reopened series is sent in the same run")
+		events := asState[meetingjudge.EventKindState](requests[0]["state"]).Events
+		require.Len(events, 1)
+		assert.Equal("Standup", events[0].Title)
+		assert.Equal(store.CalendarEventKindSourceJev, kindsByTitle(t, st)["Standup"].Source)
+	})
+	t.Run("the other invitee becomes one of your addresses", func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
+		st := newStore(t)
+		syncCalendar(t, st, calendarEvent("alias", "Inbox zero", 30, "owner.alias@example.com"))
+		fake := &fakeJev{answer: eventKindByTitle}
+		server := fake.server(t)
+		service, cfg := jevService(t, server.URL, st)
+		grantConsent(t, st, cfg, meetingjudge.EventKindFeature())
+		_, err := meetingjudge.RunEventKinds(t.Context(), st, meetingjudge.EventKindOptions{Judge: service})
+		require.NoError(err)
+		require.Equal(storedKind{string(meetingweight.KindOneOnOne), store.CalendarEventKindSourceRule},
+			kindsByTitle(t, st)["Inbox zero"])
+
+		addOwnerAlias(t, st)
+		report, err := meetingjudge.RunEventKinds(t.Context(), st, meetingjudge.EventKindOptions{Judge: service})
+		require.NoError(err)
+		assert.Equal(1, report.Reopened)
+		assert.Equal(1, report.Settled)
+		assert.Equal(storedKind{string(meetingweight.KindPersonalHoldLogistics), store.CalendarEventKindSourceRule},
+			kindsByTitle(t, st)["Inbox zero"])
+		assert.Empty(fake.requests(), "a corrected rule kind is still never sent")
+	})
+}
+
+// Sync cancelling an event of a series clears the series' rule kind too.
+func TestEventKindsCancellationClearsRuleKind(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := newStore(t)
+	weekly := series("weekly", []string{"casey@example.com"}, []string{"casey@example.com"})
+	syncCalendar(t, st, weekly...)
+	_, err := meetingjudge.RunEventKinds(t.Context(), st, meetingjudge.EventKindOptions{})
+	require.NoError(err)
+	require.Equal(storedKind{string(meetingweight.KindOneOnOne), store.CalendarEventKindSourceRule},
+		kindsByTitle(t, st)["Weekly one-on-one"])
+
+	cancelled := weekly[1]
+	cancelled.Status = gcal.StatusCancelled
+	syncCalendar(t, st, cancelled)
+	assert.Empty(kindsByTitle(t, st), "the cancellation cleared the rule kind")
+}
+
+// series is a weekly "Weekly one-on-one" you organize: a master and later instances,
 // one per attendee list.
-func series(id, title string, attendeeLists ...[]string) []gcal.Event {
+func series(id string, attendeeLists ...[]string) []gcal.Event {
 	events := make([]gcal.Event, 0, len(attendeeLists))
 	for i, attendees := range attendeeLists {
-		event := calendarEvent(id, title, 30, attendees...)
+		event := calendarEvent(id, "Weekly one-on-one", 30, attendees...)
 		if i == 0 {
 			event.Recurrence = []string{"RRULE:FREQ=WEEKLY"}
 		} else {

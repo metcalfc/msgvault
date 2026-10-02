@@ -15,8 +15,10 @@ All notable changes to msgvault, grouped by release.
   person (a one-on-one). The rules run whenever `msgvault meetings judge`
   runs, with or without Jev, and before an analytics cache build only when a
   meeting feature is enabled with `automatic = true`. Calendar sync clears a
-  rule's decision when it writes one of the series' events, so the next run
-  decides from current data. Rule kinds do not change meeting weights. Existing
+  rule's decision when it writes or cancels one of the series' events, and
+  each run reopens any rule decision that no longer holds (for example after
+  you add an address or classify an attendee as a list). Rule kinds do not
+  change meeting weights. Existing
   consent stays valid. See
   [meeting event kind](/docs/usage/jev-judgments/#feature-meeting-event-kind).
 

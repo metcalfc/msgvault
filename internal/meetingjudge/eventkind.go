@@ -114,6 +114,8 @@ type EventKindState struct {
 // *store.Store implements it.
 type EventKindStore interface {
 	CalendarEventKindCandidatesContext(ctx context.Context, limit int) ([]store.CalendarEventKindCandidate, error)
+	CalendarRuleKindsContext(ctx context.Context) ([]store.CalendarRuleKind, error)
+	DeleteCalendarRuleKindsContext(ctx context.Context, kinds []store.CalendarEventKind) (int, error)
 	WriteCalendarEventKindsContext(ctx context.Context, kinds []store.CalendarEventKind) (int, error)
 }
 
@@ -131,6 +133,9 @@ type EventKindOptions struct {
 
 // EventKindReport summarizes an event kind run. It never contains state.
 type EventKindReport struct {
+	// Reopened counts stored rule kinds that no longer held and were
+	// deleted, so their series became candidates again.
+	Reopened    int `json:"reopened"`
 	Candidates  int `json:"candidates"`
 	NotMeetings int `json:"not_meetings"`
 	// Settled counts series whose invite lists decided the kind locally
@@ -208,7 +213,8 @@ func everyShape(shapes []store.CalendarEventShape, rule func(store.CalendarEvent
 
 // RunEventKinds classifies calendar series that have no kind yet. A series
 // with no event that is a meeting is recorded by rule and never sent, and so
-// is a series StructuralKind settles. The rest are asked of Jev ten per
+// is a series StructuralKind settles. Stored rule kinds that no longer hold
+// are deleted first, so those series are candidates again. The rest are asked of Jev ten per
 // request when a Judge is present; any gate, budget, or provider failure
 // stops Jev for the rest of the run and leaves those series for a later run.
 // Only a store failure fails the run.
@@ -217,6 +223,11 @@ func RunEventKinds(ctx context.Context, st EventKindStore, options EventKindOpti
 		options.Logger = slog.Default()
 	}
 	report := EventKindReport{Kinds: map[meetingweight.Kind]int{}}
+	reopened, err := reopenStaleRuleKinds(ctx, st)
+	if err != nil {
+		return report, err
+	}
+	report.Reopened = reopened
 	candidates, err := st.CalendarEventKindCandidatesContext(ctx, options.Limit)
 	if err != nil {
 		return report, fmt.Errorf("list calendar event kind candidates: %w", err)
@@ -267,6 +278,44 @@ func RunEventKinds(ctx context.Context, st EventKindStore, options EventKindOpti
 		}
 	}
 	return report, nil
+}
+
+// ruleKind is the kind a rule gives a series from its current events, or
+// false when no rule decides it.
+func ruleKind(candidate store.CalendarEventKindCandidate) (string, bool) {
+	if candidate.NotAMeeting {
+		return store.CalendarEventKindNotAMeeting, true
+	}
+	kind, ok := StructuralKind(candidate)
+	return string(kind), ok
+}
+
+// reopenStaleRuleKinds checks every stored rule kind against the series'
+// current events, owner addresses, and correspondent kinds, and deletes the
+// ones whose rule no longer gives that kind. Sync clears a rule kind when it
+// writes an event; this also catches changes sync does not make (a new
+// owner address, an attendee classified as a list, a deleted event) and a
+// rule kind written from events a concurrent sync had just changed.
+func reopenStaleRuleKinds(ctx context.Context, st EventKindStore) (int, error) {
+	stored, err := st.CalendarRuleKindsContext(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("list calendar rule kinds: %w", err)
+	}
+	var stale []store.CalendarEventKind
+	for _, row := range stored {
+		if kind, ok := ruleKind(row.Candidate); ok && kind == row.Kind {
+			continue
+		}
+		stale = append(stale, store.CalendarEventKind{ConversationID: row.Candidate.ConversationID, Kind: row.Kind})
+	}
+	if len(stale) == 0 {
+		return 0, nil
+	}
+	deleted, err := st.DeleteCalendarRuleKindsContext(ctx, stale)
+	if err != nil {
+		return 0, fmt.Errorf("delete stale calendar rule kinds: %w", err)
+	}
+	return deleted, nil
 }
 
 // judgeEventBatch asks about one batch and stores the answers. A batch the
