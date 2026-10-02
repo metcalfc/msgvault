@@ -722,21 +722,69 @@ func (s *Store) deletePersonSplitCrossingLinksTx(
 // rememberPersonSplitTx records the split as the user's decision that the
 // identities moved to the new person and those left on the source person
 // are not one person, so duplicate detection never proposes them as one,
-// whether or not a link joined them.
+// whether or not a link joined them. A merged person can hold several
+// unlinked identity clusters, and duplicate detection compares clusters, so
+// one rejection is recorded per moved cluster and remaining cluster.
 func (s *Store) rememberPersonSplitTx(
 	ctx context.Context, tx *loggedTx, sourcePersonID int64, selected []int64,
 ) error {
 	args := append([]any{sourcePersonID}, personMergeSnapshotIDArgs(selected)...)
-	var remaining sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `SELECT MIN(participant_id) FROM person_participants
+	rows, err := tx.QueryContext(ctx, `SELECT participant_id FROM person_participants
 		WHERE person_id = ? AND participant_id NOT IN (`+
-		personMergeSnapshotPlaceholders(len(selected))+`)`, args...).Scan(&remaining); err != nil {
+		personMergeSnapshotPlaceholders(len(selected))+`)`, args...)
+	if err != nil {
 		return fmt.Errorf("find participants left by split: %w", err)
 	}
-	if !remaining.Valid {
+	remaining := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan participant left by split: %w", err)
+		}
+		remaining = append(remaining, id)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("iterate participants left by split: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close participants left by split: %w", err)
+	}
+	if len(remaining) == 0 {
 		return nil
 	}
-	return s.rememberUserSeparationTx(ctx, tx, slices.Min(selected), remaining.Int64, personSplitNote)
+	edges, err := s.loadLinkEdgesTxContext(ctx, tx)
+	if err != nil {
+		return err
+	}
+	roots := clustersFromEdges(edges)
+	representatives := func(ids []int64) []int64 {
+		lowest := map[int64]int64{}
+		for _, id := range ids {
+			root, ok := roots[id]
+			if !ok {
+				root = id
+			}
+			if current, seen := lowest[root]; !seen || id < current {
+				lowest[root] = id
+			}
+		}
+		reps := make([]int64, 0, len(lowest))
+		for _, id := range lowest {
+			reps = append(reps, id)
+		}
+		slices.Sort(reps)
+		return reps
+	}
+	for _, moved := range representatives(selected) {
+		for _, kept := range representatives(remaining) {
+			if err := s.rememberUserSeparationTx(ctx, tx, moved, kept, personSplitNote); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Store) restorePersonSplitRowsTx(

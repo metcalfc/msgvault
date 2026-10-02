@@ -778,3 +778,139 @@ func TestPersonSplitIsRememberedAsNotTheSamePerson(t *testing.T) {
 	require.NoError(err)
 	assert.Empty(t, proposals, "the split halves are never proposed as one person")
 }
+
+func separations(t *testing.T, st *store.Store) map[string][][2]int64 {
+	t.Helper()
+	candidates, err := st.ListIdentityMatchCandidatesContext(t.Context(), nil, 100, 0)
+	require.NoError(t, err)
+	found := map[string][][2]int64{}
+	for _, candidate := range candidates {
+		if candidate.SourceRef == nil || candidate.State != store.IdentityMatchStateRejected {
+			continue
+		}
+		ref := *candidate.SourceRef
+		if ref == "participant_unlink" || ref == "participant_unlink_inherited" {
+			found[ref] = append(found[ref], [2]int64{candidate.LeftID, candidate.RightID})
+		}
+	}
+	return found
+}
+
+func TestUnlinkMemoryMarksInheritedRejections(t *testing.T) {
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	a := duplicateParticipant(t, st, "ash@example.com", "")
+	b := duplicateParticipant(t, st, "bay@example.net", "")
+	c := duplicateParticipant(t, st, "cam@example.org", "")
+	_, err := st.LinkParticipants(a, b)
+	require.NoError(err)
+	_, err = st.LinkParticipants(b, c)
+	require.NoError(err)
+	_, err = st.UnlinkParticipants(a, b)
+	require.NoError(err)
+	_, err = st.UnlinkParticipants(b, c)
+	require.NoError(err)
+
+	assert.Equal(t, map[string][][2]int64{
+		"participant_unlink":           {{a, b}, {b, c}},
+		"participant_unlink_inherited": {{a, c}},
+	}, separations(t, st))
+}
+
+func TestPersonSplitRemembersEveryClusterOfAThreeWayMerge(t *testing.T) {
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	a := duplicateParticipant(t, st, "ash@example.com", "")
+	b := duplicateParticipant(t, st, "bay@example.net", "")
+	c := duplicateParticipant(t, st, "cam@example.org", "")
+	persons := map[int64]*store.Person{}
+	for _, id := range []int64{a, b, c} {
+		person, _, err := st.CreatePersonFromParticipant(id)
+		require.NoError(err)
+		persons[id] = person
+	}
+	merge := func(absorbed int64, key string) int64 {
+		survivor, err := st.GetPersonContext(t.Context(), persons[a].ID)
+		require.NoError(err)
+		merged, err := st.MergePersonsContext(t.Context(), store.PersonMergeRequest{
+			SurvivorID: survivor.ID, AbsorbedID: persons[absorbed].ID,
+			ExpectedSurvivorRevision: survivor.Revision, ExpectedAbsorbedRevision: persons[absorbed].Revision,
+			IdempotencyKey: key, Actor: "user",
+		})
+		require.NoError(err)
+		return merged.Merge.ID
+	}
+	merge(b, "merge-b")
+	mergeC := merge(c, "merge-c")
+	survivor, err := st.GetPersonContext(t.Context(), persons[a].ID)
+	require.NoError(err)
+	_, err = st.SplitPersonMergeContext(t.Context(), store.PersonSplitRequest{
+		SourcePersonID: survivor.ID, MergeID: mergeC, ParticipantIDs: []int64{c},
+		ExpectedSourceRevision: survivor.Revision, IdempotencyKey: "split-c", Actor: "user",
+	})
+	require.NoError(err)
+	sharePhoneNumber(t, st, a, b, c)
+
+	proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	assert.Empty(t, proposalPairs(proposals), "c stays apart from both clusters it was split from")
+	assert.ElementsMatch(t, [][2]int64{{a, c}, {b, c}}, separations(t, st)["participant_unlink"])
+}
+
+func TestAnExplicitLinkOrMergeClearsEarlierSeparations(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	a := duplicateParticipant(t, st, "ash@example.com", "")
+	b := duplicateParticipant(t, st, "bay@example.net", "")
+	_, err := st.LinkParticipants(a, b)
+	require.NoError(err)
+	_, err = st.UnlinkParticipants(a, b)
+	require.NoError(err)
+	require.Len(separations(t, st)["participant_unlink"], 1)
+	_, err = st.LinkParticipants(a, b)
+	require.NoError(err, "linking again by hand")
+	assert.Empty(separations(t, st), "the user's link wins")
+
+	_, err = st.UnlinkParticipants(a, b)
+	require.NoError(err)
+	require.Len(separations(t, st)["participant_unlink"], 1)
+	left, _, err := st.CreatePersonFromParticipant(a)
+	require.NoError(err)
+	right, _, err := st.CreatePersonFromParticipant(b)
+	require.NoError(err)
+	_, err = st.MergePersonsContext(t.Context(), store.PersonMergeRequest{
+		SurvivorID: left.ID, AbsorbedID: right.ID,
+		ExpectedSurvivorRevision: left.Revision, ExpectedAbsorbedRevision: right.Revision,
+		IdempotencyKey: "merge-ab", Actor: "user",
+	})
+	require.NoError(err)
+	assert.Empty(separations(t, st), "the user's merge wins")
+}
+
+func TestUnlinkRejectsAnOpenCandidateForThePairInPlace(t *testing.T) {
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	a := duplicateParticipant(t, st, "ash@example.com", "")
+	b := duplicateParticipant(t, st, "bay@example.net", "")
+	value := "ash"
+	open, _, err := st.UpsertIdentityMatchCandidateContext(t.Context(), store.IdentityMatchCandidateInput{
+		LeftKind: store.IdentityMatchParticipant, LeftID: a,
+		RightKind: store.IdentityMatchParticipant, RightID: b,
+		Basis: store.IdentityMatchDisplayName, NormalizedValue: &value,
+		State: store.IdentityMatchStateCandidate, Source: store.ProvenanceArchiveObservation,
+	})
+	require.NoError(err)
+	_, err = st.LinkParticipants(a, b)
+	require.NoError(err)
+	_, err = st.UnlinkParticipants(a, b)
+	require.NoError(err)
+
+	candidates, err := st.ListIdentityMatchCandidatesContext(t.Context(), nil, 100, 0)
+	require.NoError(err)
+	require.Len(candidates, 1, "no rejected row beside the open one")
+	assert.Equal(t, open.ID, candidates[0].ID)
+	assert.Equal(t, store.IdentityMatchStateRejected, candidates[0].State)
+	require.NotNil(candidates[0].DecidedBy)
+	assert.Equal(t, "user", *candidates[0].DecidedBy)
+}

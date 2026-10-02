@@ -1107,14 +1107,24 @@ two sets of names belong to one person.
    pairs already bound to one person; pairs with any existing identity match
    candidate, including one you rejected; and a pair where one side was
    rejected for, or detached from, the other side's person. Unlinking two
-   identities, including ones you linked by hand, and splitting a merged
-   person each record a rejected match between the two halves, so they are
-   never proposed again. Your earlier rejections follow each half of a
-   later split: after unlinking A from B-C and then B from C, A stays apart
-   from C as well. Rejections the system restores on its own, such as those
-   a "not a person" mark made, do not count as your decision. These rules
-   apply to every pair, so an exact match never overrides your earlier "not
-   the same person".
+   identities, including ones you linked by hand, records a rejected match
+   between them (`source_ref` `participant_unlink`). Splitting a merged
+   person records one for every pair of identity clusters across the split,
+   so the halves are never proposed again. An open suggestion for the same
+   pair is rejected rather than left beside the record.
+   - Your earlier rejections follow each half of a later split: after
+     unlinking A from B-C and then B from C, A stays apart from C as well.
+     Copied rejections have `source_ref` `participant_unlink_inherited` and
+     the note "carried from an earlier unlink", so Reviews does not show
+     them as unlinks you made.
+   - Linking two identities by hand, or merging their people, clears the
+     unlink and split records between them: your latest explicit decision
+     wins.
+   - Rejections the system restores on its own, such as those a "not a
+     person" mark made, do not count as your decision.
+
+   These rules apply to every pair, so an exact match never overrides your
+   earlier "not the same person".
 3. **Exact matches, in code.** A pair that shares a mailbox, phone number, or
    provider account becomes a reviewable candidate without asking Jev, even
    when Jev is off or cannot answer, and however many name pairs are waiting:
@@ -1127,8 +1137,9 @@ two sets of names belong to one person.
    judge. A pair with no name on either side is remembered and proposed
    again when a side changes (the remembered inputs include each side's
    names). A pair with a name on one side only is not remembered, so it is
-   taken up again as soon as the other side has a name. Twenty pairs per request, one Noul each. `--limit` and the
-   cache-build cap count only these pairs.
+   taken up again as soon as the other side has a name. Twenty pairs per
+   request, one Noul each. `--limit` and the cache-build cap count only
+   these pairs.
 5. **Code decides what you see.** A name pair judged 0.30 or more likely to
    be one person becomes a reviewable identity match candidate: basis
    `display_name`, the probability as confidence. Below 0.30 the judgment is

@@ -411,6 +411,11 @@ func (s *Store) mergePersonsTx(
 		); err != nil {
 			return err
 		}
+		// Merging is the user's statement that the two are one person, so
+		// an earlier unlink or split between them no longer stands.
+		if err := s.clearPersonSeparationsTx(ctx, tx, survivor.ID, absorbed.ID); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE person_participants SET person_id = ? WHERE person_id = ?`,
 			survivor.ID, absorbed.ID); err != nil {

@@ -11,9 +11,17 @@ import (
 // unlink, or a person split.
 const participantUnlinkSourceRef = "participant_unlink"
 
+// participantUnlinkInheritedSourceRef marks a rejection copied from an
+// earlier unlink or split onto the other half of a later split. It is as
+// durable as the original but was not itself an action the user took.
+const participantUnlinkInheritedSourceRef = "participant_unlink_inherited"
+
 // personSplitNote is the decision note on the rejection a person split
 // records between its two halves.
 const personSplitNote = "split apart by the user"
+
+// inheritedSeparationNote is the decision note on an inherited rejection.
+const inheritedSeparationNote = "carried from an earlier unlink"
 
 // durableUserRejectionSQL selects rejected participant pairs that stand for
 // a user's own decision and are never restored by the system: it leaves out
@@ -120,7 +128,8 @@ func (s *Store) rememberUserSeparationTx(
 			if outside[other][side] {
 				continue
 			}
-			if err := s.insertUserSeparationTx(ctx, tx, other, representative[side], note); err != nil {
+			if err := s.insertUserSeparationTx(ctx, tx, other, representative[side],
+				participantUnlinkInheritedSourceRef, inheritedSeparationNote); err != nil {
 				return err
 			}
 		}
@@ -128,7 +137,7 @@ func (s *Store) rememberUserSeparationTx(
 	if crossing {
 		return nil
 	}
-	return s.insertUserSeparationTx(ctx, tx, a, b, note)
+	return s.insertUserSeparationTx(ctx, tx, a, b, participantUnlinkSourceRef, note)
 }
 
 func minMember(members map[int64]struct{}) int64 {
@@ -141,8 +150,28 @@ func minMember(members map[int64]struct{}) int64 {
 	return lowest
 }
 
-func (s *Store) insertUserSeparationTx(ctx context.Context, tx *loggedTx, a, b int64, note string) error {
+// insertUserSeparationTx records a durable user rejection between a and b.
+// An open candidate for the same pair is rejected in place rather than left
+// open beside a new row.
+func (s *Store) insertUserSeparationTx(
+	ctx context.Context, tx *loggedTx, a, b int64, sourceRef, note string,
+) error {
 	lo, hi := normalizeEdge(a, b)
+	result, err := tx.ExecContext(ctx, `UPDATE identity_match_candidates SET
+		state = ?, decided_by = ?, decided_at = `+s.dialect.Now()+`, notes = ?,
+		pre_conflict_state = NULL, application_pending = FALSE,
+		updated_at = `+s.dialect.Now()+`
+		WHERE left_kind = ? AND left_id = ? AND right_kind = ? AND right_id = ? AND state = ?`,
+		IdentityMatchStateRejected, string(ProvenanceUser), note,
+		IdentityMatchParticipant, lo, IdentityMatchParticipant, hi, IdentityMatchStateCandidate)
+	if err != nil {
+		return fmt.Errorf("reject open candidate for separated pair: %w", err)
+	}
+	if resolved, err := result.RowsAffected(); err != nil {
+		return fmt.Errorf("count rejected open candidates: %w", err)
+	} else if resolved > 0 {
+		return nil
+	}
 	basis, normalized, err := participantTombstoneBasisTx(ctx, tx, lo)
 	if err != nil {
 		return err
@@ -155,10 +184,80 @@ func (s *Store) insertUserSeparationTx(ctx context.Context, tx *loggedTx, a, b i
 		`+s.dialect.Now()+`, `+s.dialect.Now()+`)`,
 		IdentityMatchParticipant, lo, IdentityMatchParticipant, hi,
 		basis, normalized, IdentityMatchStateRejected,
-		ProvenanceUser, participantUnlinkSourceRef, note,
+		ProvenanceUser, sourceRef, note,
 		string(ProvenanceUser),
 	); err != nil {
 		return fmt.Errorf("record separated identity pair: %w", err)
 	}
 	return nil
+}
+
+// clearUserSeparationsTx deletes the unlink and split records (direct and
+// inherited) between two sets of participants that the user has just joined
+// by hand. Other rejections stay as they are.
+func (s *Store) clearUserSeparationsTx(
+	ctx context.Context, tx *loggedTx, left, right map[int64]struct{},
+) error {
+	rows, err := tx.QueryContext(ctx, `SELECT id, left_id, right_id FROM identity_match_candidates
+		WHERE left_kind = ? AND right_kind = ? AND source_ref IN (?, ?)`,
+		IdentityMatchParticipant, IdentityMatchParticipant,
+		participantUnlinkSourceRef, participantUnlinkInheritedSourceRef)
+	if err != nil {
+		return fmt.Errorf("load identity separations: %w", err)
+	}
+	stale := []int64{}
+	for rows.Next() {
+		var id, leftID, rightID int64
+		if err := rows.Scan(&id, &leftID, &rightID); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan identity separation: %w", err)
+		}
+		_, leftInLeft := left[leftID]
+		_, leftInRight := right[leftID]
+		_, rightInLeft := left[rightID]
+		_, rightInRight := right[rightID]
+		if leftInLeft && rightInRight || leftInRight && rightInLeft {
+			stale = append(stale, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("iterate identity separations: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close identity separations: %w", err)
+	}
+	for _, id := range stale {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM identity_match_candidates WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("clear identity separation %d: %w", id, err)
+		}
+	}
+	return nil
+}
+
+// clearPersonSeparationsTx clears unlink and split records between the
+// participants of two people the user is merging.
+func (s *Store) clearPersonSeparationsTx(ctx context.Context, tx *loggedTx, survivorID, absorbedID int64) error {
+	sides := map[int64]map[int64]struct{}{survivorID: {}, absorbedID: {}}
+	rows, err := tx.QueryContext(ctx, `SELECT person_id, participant_id FROM person_participants
+		WHERE person_id IN (?, ?)`, survivorID, absorbedID)
+	if err != nil {
+		return fmt.Errorf("load merged person participants: %w", err)
+	}
+	for rows.Next() {
+		var personID, participantID int64
+		if err := rows.Scan(&personID, &participantID); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan merged person participant: %w", err)
+		}
+		sides[personID][participantID] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("iterate merged person participants: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close merged person participants: %w", err)
+	}
+	return s.clearUserSeparationsTx(ctx, tx, sides[survivorID], sides[absorbedID])
 }

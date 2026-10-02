@@ -421,6 +421,14 @@ func (s *Store) linkParticipantsContextGuardedOwned(
 		if insertErr != nil {
 			return fmt.Errorf("insert participant link: %w", insertErr)
 		}
+		if ownerCandidateID == 0 {
+			// A link made by hand is the user's statement that the two
+			// identities are one; an earlier unlink or split no longer stands.
+			if err := s.clearUserSeparationsTx(ctx, tx,
+				componentOf(lo, edges), componentOf(hi, edges)); err != nil {
+				return err
+			}
+		}
 		if personID != 0 {
 			if err := extendActivePersonMergeLineageTx(
 				ctx, tx, personID, lo, hi, edges,
