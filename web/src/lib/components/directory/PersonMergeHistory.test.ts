@@ -175,7 +175,11 @@ describe('PersonMergeHistory', () => {
     await waitFor(() => expect(within(candidates).getByText('Nickname')).toBeDefined());
 
     for (const table of [history, participants, rows, splits]) {
-      expect(table.textContent).not.toMatch(/Person \d|\b(7|9|12|19|701|702)\b/);
+      // Rendered timestamps vary with the runner's time zone ("12:00 AM" in
+      // UTC), so only the non-time text is checked for leaked IDs.
+      const withoutTimes = table.cloneNode(true) as HTMLElement;
+      withoutTimes.querySelectorAll('time').forEach((time) => time.remove());
+      expect(withoutTimes.textContent).not.toMatch(/Person \d|\b(7|9|12|19|701|702)\b/);
     }
     const labelRequests = requests.filter((request) => new URL(request.url).pathname === '/api/v1/entity-labels');
     expect(labelRequests.length).toBeLessThanOrEqual(2);
