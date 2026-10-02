@@ -381,8 +381,6 @@ var settingsCatalog = []settingDefinition{
 	boolSetting("jev.meeting_event_kind.automatic", settingsGroupJev, func(c *config.Config) bool { return c.Jev.MeetingEventKind.Automatic }),
 	boolSetting("jev.meeting_action_assignee.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.MeetingActionAssignee.Enabled }),
 	boolSetting("jev.meeting_action_assignee.automatic", settingsGroupJev, func(c *config.Config) bool { return c.Jev.MeetingActionAssignee.Automatic }),
-	boolSetting("jev.sweep_evidence_rerank.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.SweepEvidenceRerank.Enabled }),
-	boolSetting("jev.sweep_evidence_rerank.automatic", settingsGroupJev, func(c *config.Config) bool { return c.Jev.SweepEvidenceRerank.Automatic }),
 	boolSetting("jev.sweep_claim_grounding.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.SweepClaimGrounding.Enabled }),
 	boolSetting("jev.sweep_claim_grounding.automatic", settingsGroupJev, func(c *config.Config) bool { return c.Jev.SweepClaimGrounding.Automatic }),
 	boolSetting("jev.person_duplicates.enabled", settingsGroupJev, func(c *config.Config) bool { return c.Jev.PersonDuplicates.Enabled }),

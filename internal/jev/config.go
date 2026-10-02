@@ -57,10 +57,6 @@ type Config struct {
 	// which attendee owns a meeting action item the meeting tool left
 	// unassigned.
 	MeetingActionAssignee FeatureConfig `toml:"meeting_action_assignee"`
-	// SweepEvidenceRerank is [jev.sweep_evidence_rerank]: asking which
-	// retrieved messages bear on a fact before the people sweep sends them
-	// to its chat model. Automatic covers the daemon's scheduled sweeps.
-	SweepEvidenceRerank FeatureConfig `toml:"sweep_evidence_rerank"`
 	// SweepClaimGrounding is [jev.sweep_claim_grounding]: asking whether
 	// the messages a people sweep claim cites state it and whether it is
 	// still current, as the claim's confidence. Automatic covers the

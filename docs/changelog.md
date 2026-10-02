@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-30"
+last_edited: "2026-10-01"
 title: Changelog
 description: Release history for msgvault
 ---
@@ -80,12 +80,14 @@ All notable changes to msgvault, grouped by release.
   saved person shows when their addresses use different names, and whether
   two values left by a person merge say the same thing. Your own values,
   choices, and pins are never changed.
-- The people sweep can ask Jev which retrieved older messages bear on a fact
-  before its chat model reads them (`[jev.sweep_evidence_rerank]`), and can
-  score each proposed fact by whether the cited messages state it and whether
-  it is still current instead of trusting the chat model's own confidence
-  (`[jev.sweep_claim_grounding]`). Both send excerpts of messages the person
-  wrote. The sweep also keeps the signature block of the person's own
+- The people sweep leaves out retrieved older messages that do not bear on a
+  fact before its chat model reads them, scoring them by embedding similarity
+  against your message vector index. Only each fact's catalog description is
+  embedded; no excerpt is sent anywhere for it. The sweep can also score each
+  proposed fact by whether the cited messages state it and whether it is
+  still current instead of trusting the chat model's own confidence
+  (`[jev.sweep_claim_grounding]`), which sends excerpts of messages the person
+  wrote to Jev. The sweep also keeps the signature block of the person's own
   messages as evidence, where titles and employers are usually stated.
 - Optionally rerank the leading results of your own hybrid searches with Jev.
   With `[jev.rerank]` enabled and `search_rerank` consent recorded, up to 30

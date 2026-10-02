@@ -50,7 +50,6 @@ of it. The table below says what each feature does without Jev.
 | [`meeting_event_kind`](#feature-meeting-event-kind) | What kind of event a calendar series is | `meetings judge`; cache builds with `automatic` (up to 200) | Redacted title (160 characters), duration, recurrence, attendee counts. No names | Attendee-count weight |
 | [`meeting_action_assignee`](#feature-meeting-action-assignee) | Which attendee owns an action item | `meetings judge`; cache builds with `automatic` (up to 200 meetings) | Meeting title, attendee labels without addresses, item title (200) and description (500), redacted | No inferred assignee |
 | [`query_understanding`](#feature-explore-query-understanding) | Which filters a typed search asks for | Web UI searches you type; never automatic | Redacted query, candidate date windows, people-index names, account labels | No chips; the search is unchanged |
-| [`sweep_evidence_rerank`](#feature-people-sweep-evidence-relevance) | Whether retrieved older messages bear on a fact | Manual sweeps and briefs; scheduled with `automatic` | Fact description; per message, its date and **up to 2 KiB the person wrote**, redacted; up to 30 per request | Every retrieved message is kept |
 | [`sweep_claim_grounding`](#feature-people-sweep-claim-grounding) | Whether cited excerpts state a claim and it is still current | Manual sweeps and briefs; scheduled with `automatic` | Fact, relation, value (500 characters); **up to 3 cited excerpts of 1,000 characters**, redacted | The chat model's own confidence |
 | [`person_duplicates`](#feature-duplicate-people) | Whether two identity clusters are one human | `person judge`; cache builds with `automatic` (up to 200 pairs) | Up to 3 names and **up to 5 full email addresses per side** | No duplicate candidates are proposed |
 | [`person_profile_choices`](#feature-person-profile-choices) | Primary role, display name, and whether two merged values are the same fact | `person judge`; cache builds with `automatic` (up to 200 of each) | Roles (organization, title, start month), names (160 characters), conflict values (300 characters) | The rule's choice stays; conflicts wait for you |
@@ -122,10 +121,6 @@ new `msgvault jev consent`.
    [jev.query_understanding]
    enabled = true      # searches you type in the Web UI only; never automatic
 
-   [jev.sweep_evidence_rerank]   # sends message excerpts the person wrote
-   enabled = true
-   # automatic = true   # also judge during the daemon's scheduled people sweeps
-
    [jev.sweep_claim_grounding]   # sends message excerpts the person wrote
    enabled = true
    # automatic = true   # also ground claims during scheduled people sweeps
@@ -154,7 +149,7 @@ new `msgvault jev consent`.
 Consent is per feature: run the same two `consent` commands with
 `organization_resolution`, `correspondent_kind`, `cleanup_suggestions`,
 `search_rerank`, `meeting_event_kind`, `meeting_action_assignee`,
-`query_understanding`, `sweep_evidence_rerank`, `sweep_claim_grounding`,
+`query_understanding`, `sweep_claim_grounding`,
 `person_duplicates`, or `person_profile_choices` for those features.
 `msgvault jev revoke enrichment_identity`
 or `msgvault jev revoke --all` stops the next request immediately.
@@ -181,8 +176,7 @@ or `msgvault jev revoke --all` stops the next request immediately.
   four bytes. Before sending, every request must estimate at most 30,000
   tokens of state plus longest question and 60,000 tokens overall.
 - **Packing.** Features that put several items in one request (search
-  reranking's batched shape, people sweep evidence relevance and claim
-  grounding, duplicate people, meeting action assignee, correspondent kind,
+  reranking's batched shape, people sweep claim grounding, duplicate people, meeting action assignee, correspondent kind,
   meeting event kind, and cleanup suggestions) send fewer items per request
   when the items are dense, instead of failing. If TypeSafe still answers
   `max_tokens_exceeded`, the request is split once more and resent; a
@@ -942,62 +936,19 @@ No messages, bodies, participant IDs, or addresses leave the machine.
 
 `msgvault jev consent query_understanding` prints the same disclosure.
 
-## Feature: people sweep evidence relevance
+## Retired: people sweep evidence relevance
 
-Feature name: `sweep_evidence_rerank`. Setting:
-`[jev.sweep_evidence_rerank]`. Runs inside the
-[people sweep](people-automation.md#run-and-inspect-a-sweep).
+The `sweep_evidence_rerank` feature asked Jev which retrieved older messages
+bear on each fact before the people sweep's chat model read them. Choosing
+relevant messages is a similarity task, so the sweep now does it with local
+embeddings and no longer sends excerpts to Jev for it. See
+[evidence relevance](people-automation.md#evidence-relevance) for how it
+works and what leaves the machine.
 
-For each fact it looks for (each target in the fact catalog, such as
-employment), the people sweep retrieves up to `context_per_target` older
-messages the person wrote and sends them to its chat model next to the newly
-changed messages. Many retrieved messages say nothing about the fact. This
-feature asks Jev, before the chat model sees them, which ones bear on it:
-
-1. **Newly changed messages are never judged.** They are always sent, so the
-   sweep's progress over the archive is unchanged.
-2. **One request per target** that retrieved context, up to 30 messages per
-   request, using the same question as
-   [hybrid search reranking](#feature-hybrid-search-reranking). A sensitive
-   target's context is never judged.
-3. **Code drops a message below 0.20** for every target that retrieved it. A
-   message some target kept, or could not judge, stays.
-4. **When a packet must shrink** to fit the sweep's request limit, the least
-   relevant context leaves first; without judgments it shrinks from the end,
-   as before.
-
-Any gate, budget, or provider failure keeps every retrieved message, exactly
-as without the feature. A manual `msgvault person sweep run` or brief request
-may ask; the daemon's scheduled sweeps ask only with `automatic = true`.
-
-### What leaves the machine
-
-Per request:
-
-- `query`: the fact's catalog description, such as "Current and historical
-  employment, including organization, title, role, department, location, and
-  partial start and end dates". Never a name or an address.
-- `candidates[]`: **for each retrieved message, its date and up to 2 KiB of
-  excerpt text** from a message the person sent on a source that
-  authenticates its sender (the same messages the sweep admits as the
-  person's own evidence). Email addresses become `[email]` and phone numbers
-  `[phone]`.
-
-The excerpts are message text the person wrote. Your own identities, the
-person's name, and their addresses are never sent as fields, and nothing from
-messages other people wrote is sent.
-
-### The question, exactly as sent
-
-`candidate_0` to `candidate_29` (Noul): "Could `candidates[i]` be the best
-answer to `query`?" Yes means "The `candidates[i]` contains the specific
-information needed to answer the query." No means "The `candidates[i]` is
-only topically similar or does not contain the needed evidence." A request
-asks only as many as it has messages.
-`msgvault jev consent sweep_evidence_rerank` prints the same disclosure.
-
-**Planned:** relevance filtering is a similarity task, so it is planned to
-move to local embeddings, and excerpts will no longer be sent to Jev for it.
+- An existing `[jev.sweep_evidence_rerank]` section still loads but has no
+  effect. You can delete it.
+- A consent recorded for `sweep_evidence_rerank` no longer authorizes any
+  request. `msgvault jev revoke sweep_evidence_rerank` clears it.
 
 ## Feature: people sweep claim grounding
 
@@ -1210,8 +1161,8 @@ probabilities and outcomes, not the compared values.
 - Only the enrichment identity check, organization resolution,
   correspondent kind, cleanup suggestions, hybrid search reranking, meeting
   event kind, meeting action assignee, Explore query understanding, people
-  sweep evidence relevance, people sweep claim grounding, duplicate people,
-  and person profile choices exist today. The other features in
+  sweep claim grounding, duplicate people, and person profile choices exist
+  today. The other features in
   the engineering record `docs/internal/jev-judgments-plan.md` are proposals.
 - Hybrid search reranking has not passed its evaluation gate. Its cached
   orders live in the daemon's memory, so a restart judges the next page of a

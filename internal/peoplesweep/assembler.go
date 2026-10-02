@@ -344,8 +344,9 @@ cursorLoop:
 
 // judgeTargetContext asks the judge about one target's retrieved context.
 // An item at or above ContextRelevanceFloor records its best score in
-// relevance; one below it is noted in judgedOut; a failed or skipped
-// judgment leaves every item in unjudged, which keeps it.
+// relevance; one below it is noted in judgedOut; an item scored
+// ContextNotJudged, or every item of a failed or skipped judgment, is left
+// in unjudged, which keeps it.
 func (a Assembler) judgeTargetContext(
 	ctx context.Context, target personfacts.TargetDescriptor, items []EvidenceItem,
 	relevance map[string]float64, judgedOut, unjudged map[string]struct{},
@@ -366,6 +367,10 @@ func (a Assembler) judgeTargetContext(
 	}
 	for i, item := range items {
 		id := packetEvidenceID(item)
+		if scores[i] < 0 {
+			unjudged[id] = struct{}{}
+			continue
+		}
 		if scores[i] < ContextRelevanceFloor {
 			judgedOut[id] = struct{}{}
 			continue

@@ -266,6 +266,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	var analyticsInit *daemonAnalyticsInitHandle
 	var vectorInit *vectorInitHandle
+	// The people sweep scores retrieved context against the message vector
+	// index once its background initialization finishes.
+	sweepSimilarity := &daemonSweepSimilarity{}
 	resourceCleanupSafe := true
 	defer func() {
 		if !resourceCleanupSafe {
@@ -534,7 +537,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if err := addPeopleSweepJob(
-		sched, cfg.People.Sweep, newPeopleSweepScheduledRun(cfg, s),
+		sched, cfg.People.Sweep, newPeopleSweepScheduledRun(cfg, s, sweepSimilarity.source),
 	); err != nil {
 		return fmt.Errorf("schedule people sweep: %w", err)
 	}
@@ -769,7 +772,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		// The daemon owns the people sweep worker, so it owns manual brief
 		// generation: POST /api/v1/people/{id}/brief/generate reports
 		// unavailable in every process that does not.
-		apiServer.SetPersonBriefGenerator(newPersonBriefManualRun(cfg, s))
+		apiServer.SetPersonBriefGenerator(newPersonBriefManualRun(cfg, s, sweepSimilarity.source))
 	}
 
 	// Start API server in goroutine
@@ -824,6 +827,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 			combineWorkTrackers(idleTracker, labelWorkTracker(operationGate, "background embedding work")),
 			apiServer, sched, blobStore,
 		)
+		sweepSimilarity.attach(vectorInit)
 
 		fmt.Printf("msgvault daemon started\n")
 		fmt.Printf("  API server: http://%s\n", apiAddr)

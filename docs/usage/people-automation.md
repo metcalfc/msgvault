@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-15"
+last_edited: "2026-10-01"
 title: Profile Automation
 description: Maintain tracked people's profile facts from archive evidence and inspect why a value changed.
 ---
@@ -196,18 +196,63 @@ automation considers supported. The sweep retains earlier evidence and records
 its current support status. It also revisits older material in bounded passes;
 `person sweep run --backstop --limit 5` explicitly requests that path.
 
-With the optional
-[evidence relevance](jev-judgments.md#feature-people-sweep-evidence-relevance)
-Jev judgment, the sweep leaves out retrieved older messages that do not bear
-on a fact before the chat model reads them. Newly changed messages are always
-sent. With
-[claim grounding](jev-judgments.md#feature-people-sweep-claim-grounding),
-each proposed fact's confidence comes from whether the cited messages state
-it and whether it is still current, instead of from the chat model.
+With [evidence relevance](#evidence-relevance), the sweep leaves out
+retrieved older messages that do not bear on a fact before the chat model
+reads them. With the optional
+[claim grounding](jev-judgments.md#feature-people-sweep-claim-grounding)
+Jev judgment, each proposed fact's confidence comes from whether the cited
+messages state it and whether it is still current, instead of from the chat
+model.
 
 Status and history are redacted operational records. Use them to inspect
 progress, failures, and usage without printing message packets. A failed
 provider call does not authorize a switch to another provider.
+
+### Evidence relevance
+
+For each fact it looks for, such as employment, the sweep retrieves up to
+`context_per_target` older messages the person wrote and sends them to its
+chat model next to the newly changed messages. When
+[message vector search](vector-search.md) is enabled and its index is
+built, the sweep first scores each retrieved message against the fact:
+
+1. **Newly changed messages are never scored.** They are always sent, so the
+   sweep's progress over the archive is unchanged.
+2. **The fact's catalog description is embedded once per run** with your
+   configured `[vector.embeddings]` endpoint, as a search query would be. A
+   sensitive fact is never scored.
+3. **Each retrieved message is scored from the vectors already in the
+   index.** Its score is the best cosine similarity between the description
+   and any of the message's indexed chunks. No excerpt is embedded again.
+4. **A message scoring below 0.20 is left out** when every fact that
+   retrieved it scored it that low. A message some fact kept, or could not
+   score, stays.
+5. **When a packet must shrink** to fit the sweep's request limit, the least
+   relevant context leaves first. Without scores it shrinks from the end.
+
+A message the index cannot score keeps its place: one not embedded yet, one
+outside a [scoped generation](vector-search.md#scoped-generations), and
+attachment or document text, whose message vectors describe other text.
+The 0.20 floor is low on purpose: dropping a relevant message loses a fact,
+while keeping an unrelated one only costs tokens. On models that score
+unrelated text near zero, the floor drops plainly unrelated context. On
+models that score most text higher, it drops little, and the scores mainly
+decide what leaves first when a packet must shrink. Any error keeps every retrieved message, exactly as without an index: vector
+search disabled, the index still building or initializing, an index built
+by a different model than the configured one, a model that does not return
+unit-length vectors, or an endpoint failure.
+
+What leaves the machine for evidence relevance:
+
+| Configuration | What is sent |
+|---|---|
+| `[vector]` disabled, or the index not built | Nothing. Every retrieved message is kept. |
+| Local `[vector.embeddings]` endpoint, such as Ollama | Nothing leaves the machine. |
+| Hosted `[vector.embeddings]` endpoint | Each fact's catalog description (at most 400 characters), such as "Current and historical employment, including organization and title", once per sweep run. Never a message excerpt, a name, or an address. |
+
+As with search queries, enabling `[vector]` is the opt-in for this request;
+there is no separate consent. Message excerpts are never sent to Jev for
+relevance.
 
 ## Understand and correct automatic facts
 

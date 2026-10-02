@@ -197,22 +197,6 @@ func newJevQueryUnderstandingJudge(cfg *config.Config, st jevRuntimeStore) (quer
 	return service, nil
 }
 
-// newJevSweepContextJudge wires the people sweep's context relevance
-// judgment, or returns nil when Jev or the feature is off so the sweep keeps
-// every retrieved item. automatic marks the daemon's scheduled sweeps.
-func newJevSweepContextJudge(
-	cfg *config.Config, st jevRuntimeStore, automatic bool,
-) (peoplesweep.ContextJudge, error) {
-	if cfg == nil || !cfg.Jev.Enabled || !cfg.Jev.SweepEvidenceRerank.Enabled {
-		return nil, nil //nolint:nilnil // nil means "no judgment".
-	}
-	service, err := newJevService(cfg, st)
-	if err != nil || service == nil {
-		return nil, err
-	}
-	return sweepjudge.NewContextJudge(service, automatic, nil), nil
-}
-
 // newJevSweepGrounder wires the people sweep's claim grounding, or returns
 // nil when Jev or the feature is off so claims keep the chat model's
 // reported confidence. automatic marks the daemon's scheduled sweeps.

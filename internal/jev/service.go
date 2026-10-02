@@ -38,10 +38,6 @@ const FeatureMeetingActionAssignee = "meeting_action_assignee"
 // FeatureQueryUnderstanding is the Explore query understanding feature.
 const FeatureQueryUnderstanding = "query_understanding"
 
-// FeatureSweepEvidenceRerank is the people sweep context relevance feature.
-// It sends message excerpts, so its consent disclosure says so.
-const FeatureSweepEvidenceRerank = "sweep_evidence_rerank"
-
 // FeatureSweepClaimGrounding is the people sweep claim grounding feature. It
 // sends message excerpts, so its consent disclosure says so.
 const FeatureSweepClaimGrounding = "sweep_claim_grounding"
@@ -90,8 +86,6 @@ func (c Config) FeatureConfigFor(name string) (FeatureConfig, bool) {
 		// Only a person's own typed Explore search asks, so there is no
 		// automatic use.
 		return FeatureConfig{Enabled: c.QueryUnderstanding.Enabled}, true
-	case FeatureSweepEvidenceRerank:
-		return c.SweepEvidenceRerank, true
 	case FeatureSweepClaimGrounding:
 		return c.SweepClaimGrounding, true
 	case FeatureDuplicatePeople:

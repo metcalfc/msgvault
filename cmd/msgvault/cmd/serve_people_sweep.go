@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/msgvault/internal/peoplesweep"
 	"go.kenn.io/msgvault/internal/scheduler"
 	"go.kenn.io/msgvault/internal/store"
+	"go.kenn.io/msgvault/internal/sweepjudge"
 )
 
 const peopleSweepJobName = "people-sweep"
@@ -30,10 +31,10 @@ func addPeopleSweepJob(
 }
 
 func newPeopleSweepScheduledRun(
-	cfg *config.Config, st *store.Store,
+	cfg *config.Config, st *store.Store, similarity sweepjudge.SimilaritySource,
 ) func(context.Context) error {
 	return func(ctx context.Context) error {
-		worker, err := newProductionPersonSweepWorker(cfg, st, true)
+		worker, err := newProductionPersonSweepWorker(cfg, st, true, similarity)
 		if err != nil {
 			return err
 		}
@@ -50,10 +51,10 @@ func newPeopleSweepScheduledRun(
 // uses. It still requires enrollment, consent, and budget; it bypasses only the
 // minimum interval and the new-activity check.
 func newPersonBriefManualRun(
-	cfg *config.Config, st *store.Store,
+	cfg *config.Config, st *store.Store, similarity sweepjudge.SimilaritySource,
 ) func(context.Context, int64) (api.PersonBriefRun, error) {
 	return func(ctx context.Context, personID int64) (api.PersonBriefRun, error) {
-		worker, err := newProductionPersonSweepWorker(cfg, st, false)
+		worker, err := newProductionPersonSweepWorker(cfg, st, false, similarity)
 		if err != nil {
 			return api.PersonBriefRun{}, err
 		}
@@ -88,9 +89,10 @@ func personBriefRunResult(
 
 // newProductionPersonSweepWorker builds the sweep worker. automatic marks the
 // daemon's scheduled runs, which may ask Jev only when the feature allows
-// automatic use.
+// automatic use. similarity is the message vector index that scores
+// retrieved context; nil keeps every retrieved item.
 func newProductionPersonSweepWorker(
-	cfg *config.Config, st *store.Store, automatic bool,
+	cfg *config.Config, st *store.Store, automatic bool, similarity sweepjudge.SimilaritySource,
 ) (*peoplesweep.Worker, error) {
 	if cfg == nil {
 		return nil, errors.New("people sweep production config is unavailable")
@@ -106,10 +108,6 @@ func newProductionPersonSweepWorker(
 	if err != nil {
 		return nil, err
 	}
-	contextJudge, err := newJevSweepContextJudge(cfg, st, automatic)
-	if err != nil {
-		return nil, err
-	}
 	grounder, err := newJevSweepGrounder(cfg, st, automatic)
 	if err != nil {
 		return nil, err
@@ -119,7 +117,7 @@ func newProductionPersonSweepWorker(
 		Config: sweepConfig, Store: st, Source: st,
 		Context: peoplesweep.NewContextRetriever(st), Sink: st,
 		Runner: runner, Catalog: st, Brief: st, Archive: st,
-		Organizations: organizations, ContextJudge: contextJudge, Grounder: grounder,
+		Organizations: organizations, ContextJudge: newSweepContextJudge(similarity), Grounder: grounder,
 		Clock: time.Now, NewID: uuid.NewString,
 		WorkerID: peopleSweepJobName + "-" + uuid.NewString(),
 	}, nil

@@ -16,7 +16,7 @@ func TestJevFeatureRegistryListsEveryFeature(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	specs := jevFeatureSpecs()
-	require.Len(specs, 12)
+	require.Len(specs, 11)
 	assert.Equal(jev.FeatureEnrichmentIdentity, specs[0].Name)
 	assert.Equal(jev.FeatureOrganizationResolution, specs[1].Name)
 	assert.Equal(jev.FeatureCorrespondentKind, specs[2].Name)
@@ -25,10 +25,9 @@ func TestJevFeatureRegistryListsEveryFeature(t *testing.T) {
 	assert.Equal(jev.FeatureMeetingEventKind, specs[5].Name)
 	assert.Equal(jev.FeatureMeetingActionAssignee, specs[6].Name)
 	assert.Equal(jev.FeatureQueryUnderstanding, specs[7].Name)
-	assert.Equal(jev.FeatureSweepEvidenceRerank, specs[8].Name)
-	assert.Equal(jev.FeatureSweepClaimGrounding, specs[9].Name)
-	assert.Equal(jev.FeatureDuplicatePeople, specs[10].Name)
-	assert.Equal(jev.FeaturePersonProfileChoices, specs[11].Name)
+	assert.Equal(jev.FeatureSweepClaimGrounding, specs[8].Name)
+	assert.Equal(jev.FeatureDuplicatePeople, specs[9].Name)
+	assert.Equal(jev.FeaturePersonProfileChoices, specs[10].Name)
 	cfg := config.NewDefaultConfig()
 	for _, spec := range specs {
 		require.NoError(spec.Validate())
@@ -221,18 +220,7 @@ func TestNewJevSweepJudgesAreNilUntilJevAndTheFeatureAreOn(t *testing.T) {
 	cfg.HomeDir = t.TempDir()
 	cfg.Data.DataDir = cfg.HomeDir
 
-	contextJudge, err := newJevSweepContextJudge(cfg, st, true)
-	require.NoError(err)
-	assert.Nil(contextJudge, "everything off keeps every retrieved item")
 	cfg.Jev.Enabled = true
-	contextJudge, err = newJevSweepContextJudge(cfg, st, true)
-	require.NoError(err)
-	assert.Nil(contextJudge, "the feature switch is separate from the [jev] switch")
-	cfg.Jev.SweepEvidenceRerank.Enabled = true
-	contextJudge, err = newJevSweepContextJudge(cfg, st, true)
-	require.NoError(err)
-	assert.NotNil(contextJudge)
-
 	grounder, err := newJevSweepGrounder(cfg, st, true)
 	require.NoError(err)
 	assert.Nil(grounder, "each sweep feature has its own switch")

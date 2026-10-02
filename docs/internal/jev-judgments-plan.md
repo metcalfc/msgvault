@@ -540,6 +540,12 @@ bar.
   > are not stored: they only shape what the chat model reads, like the
   > model call itself, and replays resolve from the stored generation
   > (claims, cited evidence, reported scores), never from live judgments.
+  >
+  > **Superseded:** the feature is retired. `sweepjudge.ContextScorer` now
+  > scores retrieved context by cosine similarity between the embedded
+  > target description and the message's indexed chunk vectors, under the
+  > same 0.20 floor and shrink order; no excerpt is sent to Jev. See
+  > [evidence relevance](../usage/people-automation.md#evidence-relevance).
 - [x] **Task 8.2 Claim grounding.** Nouls `stated` and `current` per claim
   replace the chat LLM's self-reported confidence as `ReportedScore`.
   > Feature `sweep_claim_grounding` (`internal/sweepjudge`), wired into the

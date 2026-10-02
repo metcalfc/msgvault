@@ -111,6 +111,20 @@ func TestAssemblerDropsContextJudgedIrrelevantToEveryTarget(t *testing.T) {
 	}
 }
 
+func TestAssemblerKeepsContextItemsTheJudgeCouldNotScore(t *testing.T) {
+	judge := &scoringContextJudge{scores: map[string]map[string]float64{
+		"target:food": {"ramen": 0.9, "weather": 0.1, "unindexed": ContextNotJudged},
+		"target:role": {"ramen": 0.1, "weather": 0.1, "unindexed": ContextNotJudged},
+	}}
+	result := judgedAssembly(t, judge, 10, 0,
+		packetTestEvidence(91, SourceConversationText, "context about ramen"),
+		packetTestEvidence(92, SourceConversationText, "context about the weather"),
+		packetTestEvidence(93, SourceConversationText, "unindexed context"),
+	)
+	assert.ElementsMatch(t, []string{"context about ramen", "unindexed context"},
+		contextExcerpts(result.Packet.Context), "an item no target could score is kept")
+}
+
 func TestAssemblerKeepsEveryContextItemWhenTheJudgmentFails(t *testing.T) {
 	judge := &scoringContextJudge{err: errors.New("jev skipped")}
 	result := judgedAssembly(t, judge, 10, 0,

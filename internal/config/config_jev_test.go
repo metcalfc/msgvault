@@ -34,7 +34,6 @@ func TestLoadJevSectionDefaultsAndOverrides(t *testing.T) {
 	assert.False(cfg.Jev.MeetingEventKind.Enabled)
 	assert.False(cfg.Jev.MeetingEventKind.Automatic)
 	assert.False(cfg.Jev.MeetingActionAssignee.Enabled)
-	assert.False(cfg.Jev.SweepEvidenceRerank.Enabled)
 	assert.False(cfg.Jev.SweepClaimGrounding.Enabled)
 	assert.False(cfg.Jev.PersonDuplicates.Enabled)
 	assert.False(cfg.Jev.PersonProfileChoices.Enabled)
@@ -71,6 +70,9 @@ enabled = true
 
 [jev.query_understanding]
 enabled = true
+
+# Retired: evidence relevance now uses local embeddings. An existing
+# section must still load.
 [jev.sweep_evidence_rerank]
 enabled = true
 automatic = true
@@ -105,8 +107,8 @@ enabled = true
 	assert.True(cfg.Jev.MeetingActionAssignee.Enabled)
 	assert.False(cfg.Jev.MeetingActionAssignee.Automatic)
 	assert.True(cfg.Jev.QueryUnderstanding.Enabled)
-	assert.True(cfg.Jev.SweepEvidenceRerank.Enabled)
-	assert.True(cfg.Jev.SweepEvidenceRerank.Automatic)
+	_, known := cfg.Jev.FeatureConfigFor("sweep_evidence_rerank")
+	assert.False(known, "the retired section loads but gates nothing")
 	assert.True(cfg.Jev.SweepClaimGrounding.Enabled)
 	assert.False(cfg.Jev.SweepClaimGrounding.Automatic)
 	assert.True(cfg.Jev.PersonDuplicates.Enabled)

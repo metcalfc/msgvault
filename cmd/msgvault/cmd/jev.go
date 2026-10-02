@@ -39,7 +39,7 @@ var jevFeatureSpecs = func() []jev.FeatureSpec {
 		rerank.JevFeature(),
 		meetingjudge.EventKindFeature(), meetingjudge.AssigneeFeature(),
 		queryunderstand.JevFeature(),
-		sweepjudge.EvidenceRerankFeature(), sweepjudge.ClaimGroundingFeature(),
+		sweepjudge.ClaimGroundingFeature(),
 		persondedup.Feature(), profilejudge.Feature(),
 	}
 }

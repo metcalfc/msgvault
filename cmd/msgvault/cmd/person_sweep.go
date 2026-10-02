@@ -143,7 +143,12 @@ func defaultPersonSweepCommandDeps() personSweepCommandDeps {
 				}
 				productionConfig := *currentCfg
 				productionConfig.People.Sweep = sweepConfig
-				return newProductionPersonSweepWorker(&productionConfig, st, false)
+				similarity := &lazySweepSimilarity{ctx: ctx, st: st, mainPath: currentCfg.DatabaseDSN()}
+				worker, err := newProductionPersonSweepWorker(&productionConfig, st, false, similarity.source)
+				if err != nil {
+					return nil, err
+				}
+				return closingPersonSweepRunner{personSweepRunner: worker, release: similarity.close}, nil
 			}
 			deps.openStore = func() (personSweepCommandStore, func(), error) {
 				return openWritableStoreAndInitForInvocation(state)

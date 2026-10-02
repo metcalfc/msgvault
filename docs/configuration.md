@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-30"
+last_edited: "2026-10-01"
 title: Configuration
 description: Configuration file reference, environment variables, and file locations.
 ---
@@ -1394,16 +1394,6 @@ Explore query understanding (feature `query_understanding`). See
 | Key | Default | Description |
 |---|---|---|
 | `enabled` | `false` | Let the Web UI ask Jev which filters (time period, person, message type, account) a search you typed means, and whether it reads as a question, within 800 ms and beside the search. Only the query and candidate labels are sent. There is no `automatic` key. |
-
-#### `[jev.sweep_evidence_rerank]`
-
-People sweep evidence relevance (feature `sweep_evidence_rerank`). See
-[the feature description](/docs/usage/jev-judgments/#feature-people-sweep-evidence-relevance).
-
-| Key | Default | Description |
-|---|---|---|
-| `enabled` | `false` | Let manual people sweep runs ask Jev which retrieved older messages bear on each fact before the chat model reads them. Sends message excerpts the person wrote. Without it, every retrieved message is sent to the chat model. |
-| `automatic` | `false` | Also judge evidence during the daemon's scheduled people sweeps. |
 
 #### `[jev.sweep_claim_grounding]`
 

@@ -1,143 +1,178 @@
-// Package sweepjudge holds the Jev judgments the people sweep asks around its
+// Package sweepjudge holds the judgments the people sweep makes around its
 // chat model: which retrieved messages bear on a fact before extraction
-// (sweep_evidence_rerank), and whether each extracted claim is stated and
-// still current (sweep_claim_grounding). Both send message excerpts the
-// person wrote on a source that authenticates its sender, and nothing else
-// about the person or the archive owner.
+// (local embedding similarity against the message vector index), and
+// whether each extracted claim is stated and still current (the Jev feature
+// sweep_claim_grounding).
 package sweepjudge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
-	"time"
+	"sync"
 	"unicode/utf8"
 
-	"go.kenn.io/msgvault/internal/jev"
-	"go.kenn.io/msgvault/internal/meetingjudge"
 	"go.kenn.io/msgvault/internal/peoplesweep"
 	"go.kenn.io/msgvault/internal/personfacts"
-	"go.kenn.io/msgvault/internal/vector/rerank"
+	"go.kenn.io/msgvault/internal/vector"
 )
 
-// Judge is the shared Jev door. *jev.Service implements it.
-type Judge interface {
-	JudgeQuestions(
-		ctx context.Context, spec jev.FeatureSpec, automatic bool, state any, questionIDs []string, deadline time.Time,
-	) (jev.Response, error)
-}
-
-// Candidate and query bounds for the context judgment.
 const (
-	// ContextCandidatesPerRequest is how many context items one request
-	// asks about: the shared reranker's batched limit.
-	ContextCandidatesPerRequest = rerank.MaxCandidates
-	// MaxContextCandidateBytes bounds one candidate's text, date included.
-	MaxContextCandidateBytes = rerank.MaxCandidateBytes
-	maxContextQueryRunes     = 400
+	maxContextQueryRunes = 400
+	// unitNormTolerance bounds how far a query vector's length may stray
+	// from 1 before its scores are not read as cosine similarity.
+	unitNormTolerance = 0.01
 )
 
-// EvidenceRerankFeature is the exact policy the sweep_evidence_rerank
-// feature consents to: the shared search reranker's batched Noul wording
-// over the fact being looked for and the retrieved excerpts.
-func EvidenceRerankFeature() jev.FeatureSpec {
-	return jev.FeatureSpec{
-		Name:  jev.FeatureSweepEvidenceRerank,
-		Title: "People sweep evidence relevance",
-		Purpose: "Before the people sweep sends a person's older messages to its chat model, ask Jev " +
-			"which of them bear on each fact it looks for (for example employment), and leave out the " +
-			"ones that do not, so the chat model reads less and cites better evidence. Newly changed " +
-			"messages are always sent to the chat model; only retrieved older context is judged.",
-		Questions: rerank.BatchedQuestions(),
-		StateFields: []string{
-			"query: the catalog description of the fact being looked for, such as \"Current and historical " +
-				"employment\"; never a name or an address",
-			"candidates[]: for each retrieved message, its date and up to 2 KiB of excerpt text from a " +
-				"message the person sent on a source that authenticates its sender, with email addresses " +
-				"and phone numbers replaced by placeholders; at most 30 per request",
-		},
-		BodyNotice: "each judged message sends up to 2 KiB of excerpt text the person wrote, and its date. " +
-			"Your own identities, the person's name, and their addresses are never sent as fields.",
-	}
+// QueryEmbedder embeds one query with the configured provider's query role.
+// The hybrid search engine implements it.
+type QueryEmbedder interface {
+	EmbedQuery(ctx context.Context, text string) ([]float32, error)
 }
 
-// ContextJudge implements peoplesweep.ContextJudge through the gated Jev
-// service. It never judges a sensitive target's context.
-type ContextJudge struct {
-	judge     Judge
-	automatic bool
-	logger    *slog.Logger
+// Similarity is the message vector index the context scorer reads: the
+// backend that holds the active generation's chunk vectors, the query
+// embedder for the same provider, and the configured generation
+// fingerprint, so a query is never compared with vectors from another model.
+type Similarity struct {
+	Backend     vector.ChunkScoringBackend
+	Embedder    QueryEmbedder
+	Fingerprint string
 }
 
-var _ peoplesweep.ContextJudge = (*ContextJudge)(nil)
+// SimilaritySource returns the message vector index when it is configured
+// and initialized; ok=false means there is none and every item is kept.
+type SimilaritySource func() (Similarity, bool)
 
-// NewContextJudge wires the context judgment. automatic marks the daemon's
-// scheduled sweeps, which the service admits only when the feature allows
-// automatic use.
-func NewContextJudge(judge Judge, automatic bool, logger *slog.Logger) *ContextJudge {
+// ContextScorer implements peoplesweep.ContextJudge with local embedding
+// similarity. Only the target's catalog description is embedded; each
+// item's message is scored from the chunk vectors the archive already
+// indexed, so no excerpt is sent anywhere to score it.
+type ContextScorer struct {
+	source SimilaritySource
+	logger *slog.Logger
+
+	mu      sync.Mutex
+	queries map[string][]float32
+}
+
+var _ peoplesweep.ContextJudge = (*ContextScorer)(nil)
+
+// NewContextScorer wires context relevance to the message vector index.
+func NewContextScorer(source SimilaritySource, logger *slog.Logger) *ContextScorer {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &ContextJudge{judge: judge, automatic: automatic, logger: logger}
+	return &ContextScorer{source: source, logger: logger, queries: make(map[string][]float32)}
 }
 
-type contextState struct {
-	Query      string   `json:"query"`
-	Candidates []string `json:"candidates"`
-}
+var errNoSimilarity = errors.New("message vector index is not available")
 
-// JudgeContext scores each item's relevance to the target, one request per
-// ContextCandidatesPerRequest items. Any gate, budget, or provider failure
-// returns an error, and the sweep keeps every item.
-func (j *ContextJudge) JudgeContext(
+// JudgeContext scores each item by the best cosine similarity between the
+// target's catalog description and any indexed chunk of the item's message.
+// An item the index cannot score (not embedded, outside the embedding
+// scope, or not message text) gets peoplesweep.ContextNotJudged and is
+// kept. A missing index, a stale or building generation, a sensitive
+// target, or a provider failure returns an error, and the sweep keeps every
+// item.
+func (s *ContextScorer) JudgeContext(
 	ctx context.Context, target personfacts.TargetDescriptor, items []peoplesweep.EvidenceItem,
 ) ([]float64, error) {
-	if j == nil || j.judge == nil {
-		return nil, fmt.Errorf("%w: no jev judge", jev.ErrPolicyUnavailable)
+	if s == nil || s.source == nil {
+		return nil, errNoSimilarity
 	}
 	if target.Sensitive {
-		return nil, fmt.Errorf("%w: sensitive targets are never judged", jev.ErrRequestBounds)
+		return nil, errors.New("sensitive targets are never scored")
 	}
 	query := contextQuery(target)
 	if query == "" {
-		return nil, fmt.Errorf("%w: target has no description", jev.ErrRequestBounds)
+		return nil, errors.New("target has no description")
 	}
-	spec := EvidenceRerankFeature()
-	candidates := make([]string, len(items))
-	for i, item := range items {
-		candidates[i] = contextCandidate(item)
+	similarity, ok := s.source()
+	if !ok || similarity.Backend == nil || similarity.Embedder == nil {
+		return nil, errNoSimilarity
 	}
-	build := func(start, end int) any {
-		return contextState{Query: query, Candidates: candidates[start:end]}
-	}
-	scores := make([]float64, len(items))
-	// Up to ContextCandidatesPerRequest per request, fewer when the excerpts
-	// are dense enough to overrun the shared Jev token budget.
-	err := jev.JudgeSpans(len(items), ContextCandidatesPerRequest, spec.Questions, build, func(span jev.Span) error {
-		ids := make([]string, span.Len())
-		for i := range ids {
-			ids[i] = rerank.BatchedQuestionID(i)
-		}
-		response, err := j.judge.JudgeQuestions(ctx, spec, j.automatic, build(span.Start, span.End), ids, time.Time{})
-		if err != nil {
-			return err
-		}
-		for i := range span.Len() {
-			answer, ok := response.Answers[rerank.BatchedQuestionID(i)]
-			if !ok {
-				return fmt.Errorf("%w: answer %d missing", jev.ErrInvalidResponse, i)
-			}
-			scores[span.Start+i] = min(1, max(0, answer.Noul))
-		}
-		return nil
-	})
+	scores, err := s.score(ctx, similarity, query, items)
 	if err != nil {
-		j.logger.Info("people sweep context relevance: jev skipped",
-			"feature", jev.FeatureSweepEvidenceRerank, "category", jev.Skipped(err))
+		s.logger.Info("people sweep context relevance: embedding similarity skipped",
+			"target", target.Key, "error", err)
 		return nil, err
 	}
 	return scores, nil
+}
+
+func (s *ContextScorer) score(
+	ctx context.Context, similarity Similarity, query string, items []peoplesweep.EvidenceItem,
+) ([]float64, error) {
+	active, err := vector.ResolveActiveForFingerprint(ctx, similarity.Backend, similarity.Fingerprint)
+	if err != nil {
+		return nil, fmt.Errorf("resolve message vector index: %w", err)
+	}
+	queryVec, err := s.queryVector(ctx, similarity, query)
+	if err != nil {
+		return nil, err
+	}
+	scores := make([]float64, len(items))
+	for i, item := range items {
+		scores[i] = peoplesweep.ContextNotJudged
+		if !scoredLane(item.Ref.SourceLane) || item.Ref.MessageID <= 0 {
+			continue
+		}
+		hits, err := similarity.Backend.ScoreMessageChunks(ctx, active.ID, item.Ref.MessageID, queryVec)
+		if err != nil {
+			return nil, fmt.Errorf("score message %d: %w", item.Ref.MessageID, err)
+		}
+		if len(hits) == 0 {
+			continue
+		}
+		// Hits are sorted best first.
+		scores[i] = cosineFromScore(hits[0].Score)
+	}
+	return scores, nil
+}
+
+// queryVector embeds the description once per scorer and checks that it is
+// unit length, which the score conversion relies on.
+func (s *ContextScorer) queryVector(ctx context.Context, similarity Similarity, query string) ([]float32, error) {
+	s.mu.Lock()
+	cached, ok := s.queries[query]
+	s.mu.Unlock()
+	if ok {
+		return cached, nil
+	}
+	queryVec, err := similarity.Embedder.EmbedQuery(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("embed target description: %w", err)
+	}
+	var sum float64
+	for _, value := range queryVec {
+		sum += float64(value) * float64(value)
+	}
+	if norm := math.Sqrt(sum); math.Abs(norm-1) > unitNormTolerance {
+		return nil, fmt.Errorf("embedding model returns vectors of length %.3f, not unit length", norm)
+	}
+	s.mu.Lock()
+	s.queries[query] = queryVec
+	s.mu.Unlock()
+	return queryVec, nil
+}
+
+// scoredLane reports whether an item's message body is what the message
+// vector index embedded. Attachment and document text is indexed apart from
+// its message, so scoring the message would judge the wrong text.
+func scoredLane(lane peoplesweep.SourceClass) bool {
+	return lane == peoplesweep.SourceConversationText || lane == peoplesweep.SourceMeetingText
+}
+
+// cosineFromScore converts the backend's chunk score (1 minus Euclidean
+// distance) to cosine similarity. For unit vectors the squared distance is
+// 2 - 2cos, so cos = 1 - d²/2. The result is clamped to [0, 1].
+func cosineFromScore(score float64) float64 {
+	distance := 1 - score
+	return min(1, max(0, 1-distance*distance/2))
 }
 
 // contextQuery is the target's catalog description, falling back to its slug.
@@ -147,16 +182,6 @@ func contextQuery(target personfacts.TargetDescriptor) string {
 		query = strings.ReplaceAll(strings.TrimSpace(target.Slug), "_", " ")
 	}
 	return truncateRunes(query, maxContextQueryRunes)
-}
-
-// contextCandidate renders one item as its date and redacted excerpt,
-// within MaxContextCandidateBytes.
-func contextCandidate(item peoplesweep.EvidenceItem) string {
-	header := "Date: "
-	if !item.EventTime.IsZero() {
-		header += item.EventTime.UTC().Format(time.DateOnly)
-	}
-	return rerank.TruncateUTF8Bytes(header+"\n\n"+meetingjudge.RedactText(item.Excerpt), MaxContextCandidateBytes)
 }
 
 func truncateRunes(value string, limit int) string {

@@ -14,11 +14,18 @@ import (
 // target that retrieved it is left out of the packet.
 const ContextRelevanceFloor = 0.20
 
+// ContextNotJudged is the score a ContextJudge gives an item it could not
+// score. The assembler keeps such an item exactly as it would without a
+// judge.
+const ContextNotJudged = -1.0
+
 // ContextJudge scores retrieved context for one catalog target before the
-// packet is assembled: how likely each item is to bear on the target. The
-// scores align with items and lie in [0, 1]. Any error means "not judged":
-// the assembler keeps every item exactly as it would without a judge. It
-// never sees seeds, which the cursor must cover regardless of relevance.
+// packet is assembled: how strongly each item bears on the target. The
+// scores align with items and lie in [0, 1], or are negative
+// (ContextNotJudged) for an item the judge could not score. Any error means
+// "not judged": the assembler keeps every item exactly as it would without
+// a judge. It never sees seeds, which the cursor must cover regardless of
+// relevance.
 type ContextJudge interface {
 	JudgeContext(ctx context.Context, target personfacts.TargetDescriptor, items []EvidenceItem) ([]float64, error)
 }

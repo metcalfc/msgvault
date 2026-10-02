@@ -18,6 +18,13 @@ import (
 	"go.kenn.io/msgvault/internal/personfacts"
 )
 
+// Judge is the shared Jev door. *jev.Service implements it.
+type Judge interface {
+	JudgeQuestions(
+		ctx context.Context, spec jev.FeatureSpec, automatic bool, state any, questionIDs []string, deadline time.Time,
+	) (jev.Response, error)
+}
+
 // Claim grounding bounds.
 const (
 	// ClaimsPerRequest is how many claims one grounding request asks about.
