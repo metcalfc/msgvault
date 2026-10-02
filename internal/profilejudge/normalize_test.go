@@ -357,16 +357,61 @@ func TestRunPrefersAMixedCaseSpellingOfTheSameName(t *testing.T) {
 		require.NoError(err)
 		return created
 	}
-	shouting := person("john", "JOHN SMITH", "John Smith")
-	lower := person("ann", "ann lee", "ANN LEE")
+	cases := map[string]struct {
+		names []string
+		want  string
+	}{
+		"a proper-case variant wins":          {[]string{"JOHN SMITH", "John Smith"}, "John Smith"},
+		"lower case without a variant stays":  {[]string{"ann lee", "ANN LEE"}, "ann lee"},
+		"inverted case does not qualify":      {[]string{"KIM PARK", "kIM pARK"}, "KIM PARK"},
+		"initials do not qualify":             {[]string{"MJ", "Mj"}, "MJ"},
+		"two differing proper-case spellings": {[]string{"ROB MCDONALD", "Rob McDonald", "Rob Mcdonald"}, "ROB MCDONALD"},
+	}
+	people := map[string]*store.Person{}
+	i := 0
+	for name, tc := range cases {
+		people[name] = person(fmt.Sprintf("case%d", i), tc.names...)
+		i++
+	}
 
 	report, err := profilejudge.Run(t.Context(), st, profilejudge.Options{})
 	require.NoError(err)
-	assert.Equal(profilejudge.Report{SettledInCode: 2}, report)
-	for want, original := range map[string]*store.Person{"John Smith": shouting, "ann lee": lower} {
-		current, err := st.GetPersonContext(t.Context(), original.ID)
+	assert.Equal(profilejudge.Report{SettledInCode: len(cases)}, report)
+	for name, tc := range cases {
+		current, err := st.GetPersonContext(t.Context(), people[name].ID)
 		require.NoError(err)
 		require.NotNil(current.DisplayName)
-		assert.Equal(want, *current.DisplayName, "a mixed-case spelling wins; otherwise the rule's name stays")
+		assert.Equal(tc.want, *current.DisplayName, name)
 	}
+}
+
+func TestRunCapsDisplayNameOptionsOnWhatJevSees(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	names := []string{"John Smith", "JOHN SMITH", "john smith", "Smith, John", "SMITH, JOHN", "J. Smith", "Johnny"}
+	ids := make([]int64, len(names))
+	for i, name := range names {
+		id, err := st.EnsureParticipant(fmt.Sprintf("john-%d@example.com", i), name, "example.com")
+		require.NoError(err)
+		ids[i] = id
+		if i > 0 {
+			_, err = st.LinkParticipants(ids[0], id)
+			require.NoError(err)
+		}
+	}
+	_, _, err := st.CreatePersonFromParticipantContext(t.Context(), ids[0])
+	require.NoError(err)
+
+	server := jevtest.NewServer(t, answerByContent)
+	service, cfg := server.Service(t, st, enabled)
+	jevtest.GrantConsent(t, st, cfg, profilejudge.Feature())
+	report, err := profilejudge.Run(t.Context(), st, profilejudge.Options{Judge: service})
+	require.NoError(err)
+	assert.Equal(1, report.DisplayNames, "seven spellings are four options, within the cap of six")
+	requests := server.Requests()
+	require.Len(requests, 1)
+	assert.Equal(map[string]any{"names": map[string]any{
+		"name_1": "John Smith", "name_2": "Smith, John", "name_3": "J. Smith", "name_4": "Johnny",
+	}}, requests[0]["state"])
 }

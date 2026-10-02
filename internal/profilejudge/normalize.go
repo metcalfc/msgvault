@@ -141,26 +141,53 @@ func nextToNumber(runes []rune, i int) bool {
 	return (i > 0 && unicode.IsNumber(runes[i-1])) || (i+1 < len(runes) && unicode.IsNumber(runes[i+1]))
 }
 
-// mixedCase reports whether a name has both upper- and lower-case letters.
-func mixedCase(name string) bool {
-	return strings.ContainsFunc(name, unicode.IsUpper) && strings.ContainsFunc(name, unicode.IsLower)
+// properCase reports whether a name is clearly written in proper case: it
+// has a word of three or more letters, and every such word starts with an
+// upper-case letter and has a lower-case one ("John Smith", "J. McDonald";
+// not "JOHN SMITH", "jOHN sMITH", or "Mj").
+func properCase(name string) bool {
+	long := false
+	for word := range strings.FieldsSeq(name) {
+		letters := []rune{}
+		for _, r := range word {
+			if unicode.IsLetter(r) {
+				letters = append(letters, r)
+			}
+		}
+		if len(letters) < 3 {
+			continue
+		}
+		long = true
+		if !unicode.IsUpper(letters[0]) || !strings.ContainsFunc(word, unicode.IsLower) {
+			return false
+		}
+	}
+	return long
 }
 
 // preferredSpelling picks a name's spelling among its case-only variants:
-// the given one when it is mixed case, else the first mixed-case variant
-// (so "John Smith" wins over "JOHN SMITH" or "john smith"), else the given
-// one.
+// the given one when it is in proper case; else the one proper-case
+// variant (so "John Smith" wins over "JOHN SMITH" or "john smith"); else,
+// with no such variant or with several that differ, the given one.
 func preferredSpelling(name string, variants []string) string {
-	if mixedCase(name) {
+	if properCase(name) {
 		return name
 	}
 	key := foldCase(strings.Join(strings.Fields(name), " "))
+	chosen := ""
 	for _, variant := range variants {
-		if mixedCase(variant) && foldCase(strings.Join(strings.Fields(variant), " ")) == key {
-			return variant
+		if !properCase(variant) || foldCase(strings.Join(strings.Fields(variant), " ")) != key {
+			continue
 		}
+		if chosen != "" && chosen != variant {
+			return name
+		}
+		chosen = variant
 	}
-	return name
+	if chosen == "" {
+		return name
+	}
+	return chosen
 }
 
 // keepAbsorbed reports which equal value survives: the user-declared one first,

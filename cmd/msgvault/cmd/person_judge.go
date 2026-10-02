@@ -50,8 +50,8 @@ Profile choices: code first settles what normalization decides, with or
 without Jev and over every eligible item; --limit caps only what is sent to
 Jev. Roles that are all the same organization and title, or names
 that are all the same apart from case, spacing, and punctuation, keep the
-rule's choice, preferring a mixed-case spelling over all capitals or all
-lower case. A pending attribute conflict left by a person merge whose two
+rule's choice, preferring a single proper-case spelling such as "John Smith"
+over "JOHN SMITH". A pending attribute conflict left by a person merge whose two
 values are equal after the field's normalization is closed, keeping your
 value if only the absorbed one is yours, else the survivor's. When
 [jev.person_profile_choices] is enabled and consented, the rest is asked. A person with two to six current roles, all

@@ -369,7 +369,7 @@ func (r *runner) displayNames(ctx context.Context) error {
 			func(i int) bool { return candidate.Names[i] == candidate.Current })
 		if len(all) == 1 {
 			// Every name is the same after normalization: nothing is asked.
-			// The rule's name stays unless it differs from a mixed-case
+			// The rule's name stays unless it differs from a proper-case
 			// spelling only by case.
 			judgment.Confidence, judgment.Model = 1, normalizedModel
 			if name := preferredSpelling(candidate.Current, candidate.Names); name != candidate.Current {
@@ -390,8 +390,8 @@ func (r *runner) displayNames(ctx context.Context) error {
 		groups := groupOptions(len(names),
 			func(i int) string { return foldText(names[i]) },
 			func(i int) bool { return names[i] == candidate.Current })
-		if len(groups) < 2 {
-			// Fewer than two names can be sent: record it so it is listed
+		if len(groups) < 2 || len(groups) > store.MaxDisplayNameOptions {
+			// Fewer than two names can be sent, or more than a request offers: record it so it is listed
 			// again only when the names change.
 			judgment.Model = store.MergeConflictNotSentModel
 			if _, err := r.st.ApplyDisplayNameJudgmentContext(ctx, judgment); err != nil {

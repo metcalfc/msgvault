@@ -2367,7 +2367,7 @@ feature is enabled, an API key resolves, and its consent is active.
   or without Jev, over every eligible item regardless of `--limit`: roles
   that are all the same organization and title, and names that differ only
   in case, spacing, or punctuation, keep the rule's choice (preferring a
-  mixed-case spelling over an all-capitals or all-lower-case one); a merge
+  single proper-case spelling such as `John Smith` over `JOHN SMITH`); a merge
   conflict whose two values are equal under the field's rule
   closes, keeping your value when only the absorbed one is yours, else the
   survivor's. With

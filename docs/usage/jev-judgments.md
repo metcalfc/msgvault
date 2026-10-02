@@ -1146,12 +1146,23 @@ to Jev, and a failed Jev request does not stop them.
   the same organization and title are offered once, as the current primary
   role if it is one of them.
 - **Display name.** When every name folds to the same text, the person is
-  not asked. The promotion name stays, unless it is all capitals or all
-  lower case and another of the names differs from it only in case and
-  mixes both: then the person is renamed to that spelling, so `John Smith`
-  replaces `JOHN SMITH`. Names that fold to the same text are offered once,
-  in the promotion name's spelling (or its mixed-case variant) if it is one
-  of them.
+  not asked. The promotion name stays unless it is not in proper case and
+  exactly one other name differs from it only in case and is: then the
+  person is renamed to that spelling, so `John Smith` replaces
+  `JOHN SMITH`. Proper case means the name has a word of three or more
+  letters, and every such word starts with a capital and has a lower-case
+  letter; `jOHN sMITH` and `Mj` are not. With two differing proper-case
+  spellings, the promotion name stays. Names that fold to the same text are
+  offered once, in the promotion name's spelling (or its proper-case
+  variant) if it is one of them, and the cap of six counts these offered
+  names, not every spelling.
+
+  Case variants only become a display-name question for people promoted
+  from this release on; earlier promotions whose names differed only in
+  case recorded no promotion name to revisit. People already judged whose
+  names include case variants are listed once more, because their names now
+  read differently; like every display-name question, at most `--limit` of
+  them (200 per cache build) are sent to Jev per run.
 - **Merge conflict.** Two values that are equal under the field's rule close
   the conflict, reviewed by `rule:normalized`. The kept value is yours when
   only the absorbed value was set by you (entered, or imported from

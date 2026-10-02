@@ -515,7 +515,7 @@ func (s *Store) DisplayNameCandidatesContext(ctx context.Context, limit int) ([]
 			if err != nil {
 				return err
 			}
-			if len(names) < 2 || len(names) > MaxDisplayNameOptions {
+			if len(names) < 2 || caseInsensitiveCount(names) > MaxDisplayNameOptions {
 				continue
 			}
 			fingerprint := displayNameFingerprint(names)
@@ -532,6 +532,17 @@ func (s *Store) DisplayNameCandidatesContext(ctx context.Context, limit int) ([]
 		return nil, err
 	}
 	return candidates, nil
+}
+
+// caseInsensitiveCount counts names that differ other than in case. The
+// option cap counts these, not raw spellings: case variants are offered to
+// Jev as one option.
+func caseInsensitiveCount(names []string) int {
+	seen := map[string]struct{}{}
+	for _, name := range names {
+		seen[strings.ToLower(name)] = struct{}{}
+	}
+	return len(seen)
 }
 
 func personDisplayNameOptionsTx(ctx context.Context, tx *loggedTx, personID int64) ([]string, error) {
