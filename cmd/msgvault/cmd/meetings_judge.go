@@ -126,6 +126,7 @@ func writeMeetingsJudgeReport(w io.Writer, report meetingsJudgeReport) {
 	kinds := report.EventKinds
 	_, _ = fmt.Fprintf(w, "Calendar series visited: %d\n", kinds.Candidates)
 	_, _ = fmt.Fprintf(w, "Not meetings (recorded without Jev): %d\n", kinds.NotMeetings)
+	_, _ = fmt.Fprintf(w, "Settled by invite list (recorded without Jev): %d\n", kinds.Settled)
 	switch {
 	case !report.EventKindJev:
 		_, _ = fmt.Fprintln(w, "Event kinds: Jev off")

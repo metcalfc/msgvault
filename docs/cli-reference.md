@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-30"
+last_edited: "2026-10-01"
 title: CLI Reference
 description: Complete command reference for all msgvault commands.
 ---
@@ -90,7 +90,9 @@ feature is enabled, an API key resolves, and its consent is active.
    standalone event) that have no kind yet, most recent first. A series none
    of whose events is a meeting (cancelled, declined by you, an out-of-office,
    focus-time, or working-location block, or marked free) is recorded as not a
-   meeting and never sent. With
+   meeting and never sent. A series whose invite list settles its kind (you
+   organized it and are alone, or invited exactly one other person to a timed
+   event) is recorded without Jev too. With
    [`[jev.meeting_event_kind]`](configuration.md#jevmeeting_event_kind) and
    `msgvault jev consent meeting_event_kind`, the rest are sent to Jev ten
    series per request. Each series is asked once.

@@ -40,6 +40,9 @@ type CalendarEventKindCandidate struct {
 	AttendeeCount         int
 	ExternalAttendeeCount int
 	OrganizedByOwner      bool
+	// OwnerInvited reports that you are on the attendee list. It decides
+	// structural rules locally and is never sent.
+	OwnerInvited bool
 }
 
 // CalendarEventKind is one decided kind to store.
@@ -159,6 +162,7 @@ func (s *Store) describeCalendarKindCandidate(ctx context.Context, candidate *Ca
 		return nil
 	}
 	candidate.AllDay = facts.AllDay
+	candidate.OwnerInvited = strings.TrimSpace(facts.OwnerResponseStatus) != ""
 	candidate.Recurring = len(facts.Recurrence) > 0 || facts.RecurringEventID != "" || candidate.Occurrences > 1
 	if !facts.AllDay {
 		start, startErr := time.Parse(time.RFC3339, facts.Start)

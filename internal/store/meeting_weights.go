@@ -42,7 +42,7 @@ func (s *Store) bumpMeetingWeightRevisionTx(ctx context.Context, tx *loggedTx) e
 // calendar event (see meetingweight.Weight) and returns those that differ
 // from 1. The attendee count comes from the event metadata, or from the
 // event's attendee recipients for events synced before sync recorded it.
-// Its series' Jev event kind, when there is one, is the judgment.
+// Its series' event kind, from Jev or a rule, when there is one, is the judgment.
 func (s *Store) MeetingWeightExportRowsContext(ctx context.Context) ([]MeetingWeightExportRow, error) {
 	result := []MeetingWeightExportRow{}
 	// An archive without calendar events has nothing to weigh; checking
@@ -62,7 +62,7 @@ func (s *Store) MeetingWeightExportRowsContext(ctx context.Context) ([]MeetingWe
 		       k.kind, k.confidence
 		FROM messages m
 		LEFT JOIN calendar_event_kinds k
-		  ON k.conversation_id = m.conversation_id AND k.source = 'jev'
+		  ON k.conversation_id = m.conversation_id AND k.source IN ('jev', 'rule')
 		WHERE m.message_type = ? AND m.deleted_at IS NULL
 		ORDER BY m.id`, calendarEventMessageType)
 	if err != nil {

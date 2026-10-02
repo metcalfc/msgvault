@@ -8,6 +8,14 @@ All notable changes to msgvault, grouped by release.
 
 ## Unreleased
 
+- Meeting event kind decides a calendar series in code when its invite list
+  leaves only one kind, and never sends it to Jev: a series you organized
+  with no one else invited is a personal hold, and a timed one you organized
+  for you and exactly one other person is a one-on-one. These rules also run
+  without Jev, and their kinds set meeting weights like a confident Jev
+  judgment. Existing consent stays valid. See
+  [meeting event kind](/docs/usage/jev-judgments/#feature-meeting-event-kind).
+
 - Archive storage now supports SQLite only. PostgreSQL and pgvector runtime
   support and their CI lanes have been removed. Existing PostgreSQL connection
   settings are rejected; archives are not converted automatically.

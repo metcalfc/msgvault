@@ -73,8 +73,10 @@ func EventKindFeature() jev.FeatureSpec {
 		Purpose: "Decide whether a calendar series is a one-on-one, a small working meeting, a large " +
 			"group or all-hands, an outside webinar, a personal hold, or a social event, so relationship " +
 			"rankings count a real meeting with someone more than an all-hands or a webinar they also " +
-			"attended. Email addresses and phone numbers in titles are replaced with [email] and [phone] " +
-			"before sending.",
+			"attended. Series the invite list settles are decided on this machine and never sent: one " +
+			"you organized with no one else invited is a personal hold, and a timed one you organized " +
+			"with exactly one other person is a one-on-one. Email addresses and phone numbers in titles " +
+			"are replaced with [email] and [phone] before sending.",
 		Questions: questions,
 		StateFields: []string{
 			"events[].title",
@@ -118,8 +120,8 @@ type EventKindStore interface {
 type EventKindOptions struct {
 	// Limit caps how many series one run visits; zero means no cap.
 	Limit int
-	// Judge is nil when Jev is off; the run then only records series that
-	// are not meetings.
+	// Judge is nil when Jev is off; the run then only records the series
+	// rules decide.
 	Judge Judge
 	// Automatic marks unattended callers such as the cache build.
 	Automatic bool
@@ -128,11 +130,14 @@ type EventKindOptions struct {
 
 // EventKindReport summarizes an event kind run. It never contains state.
 type EventKindReport struct {
-	Candidates  int                        `json:"candidates"`
-	NotMeetings int                        `json:"not_meetings"`
-	Requests    int                        `json:"requests"`
-	Judged      int                        `json:"judged"`
-	Kinds       map[meetingweight.Kind]int `json:"kinds"`
+	Candidates  int `json:"candidates"`
+	NotMeetings int `json:"not_meetings"`
+	// Settled counts series whose invite list decided the kind locally
+	// (see StructuralKind); they are never sent.
+	Settled  int                        `json:"settled"`
+	Requests int                        `json:"requests"`
+	Judged   int                        `json:"judged"`
+	Kinds    map[meetingweight.Kind]int `json:"kinds"`
 	// Confident counts judgments at or above meetingweight.KindThreshold,
 	// the ones that set a meeting weight.
 	Confident int `json:"confident"`
@@ -152,11 +157,41 @@ func isStoreError(err error) bool {
 	return errors.As(err, &target)
 }
 
+// StructuralKind decides a series' kind from its invite list alone, when
+// that list leaves only one kind possible, and reports false otherwise. It
+// reads only fields calendar sync records and sends nothing.
+//
+//   - You organized it and no one else is invited (no attendee list, or you
+//     alone): personal_hold_or_logistics. Every other kind needs another
+//     person present.
+//   - You organized a timed event, you are invited, and exactly one other
+//     person is: one_on_one. With two people it is neither a group nor a
+//     broadcast, and a hold or reminder needs no one else. A social event
+//     for two weighs the same as a one-on-one (meetingweight.Weight).
+//
+// An invite someone else sent is left to Jev: a webinar or marketing invite
+// can list only you and its host. So is an all-day event, which for two
+// people is as often a trip or a hold as a meeting.
+func StructuralKind(candidate store.CalendarEventKindCandidate) (meetingweight.Kind, bool) {
+	if candidate.NotAMeeting || !candidate.OrganizedByOwner {
+		return "", false
+	}
+	switch {
+	case candidate.AttendeeCount == 0,
+		candidate.AttendeeCount == 1 && candidate.OwnerInvited:
+		return meetingweight.KindPersonalHoldLogistics, true
+	case candidate.AttendeeCount == meetingweight.OneOnOneAttendees && candidate.OwnerInvited && !candidate.AllDay:
+		return meetingweight.KindOneOnOne, true
+	}
+	return "", false
+}
+
 // RunEventKinds classifies calendar series that have no kind yet. A series
-// with no event that is a meeting is recorded by rule and never sent. The
-// rest are asked of Jev ten per request when a Judge is present; any gate,
-// budget, or provider failure stops Jev for the rest of the run and leaves
-// those series for a later run. Only a store failure fails the run.
+// with no event that is a meeting is recorded by rule and never sent, and so
+// is a series StructuralKind settles. The rest are asked of Jev ten per
+// request when a Judge is present; any gate, budget, or provider failure
+// stops Jev for the rest of the run and leaves those series for a later run.
+// Only a store failure fails the run.
 func RunEventKinds(ctx context.Context, st EventKindStore, options EventKindOptions) (EventKindReport, error) {
 	if options.Logger == nil {
 		options.Logger = slog.Default()
@@ -167,23 +202,35 @@ func RunEventKinds(ctx context.Context, st EventKindStore, options EventKindOpti
 		return report, fmt.Errorf("list calendar event kind candidates: %w", err)
 	}
 	report.Candidates = len(candidates)
-	var rules []store.CalendarEventKind
+	var notMeetings, settled []store.CalendarEventKind
 	var meetings []store.CalendarEventKindCandidate
 	for _, candidate := range candidates {
 		if candidate.NotAMeeting {
-			rules = append(rules, store.CalendarEventKind{
+			notMeetings = append(notMeetings, store.CalendarEventKind{
 				ConversationID: candidate.ConversationID, Kind: store.CalendarEventKindNotAMeeting,
+				Source: store.CalendarEventKindSourceRule, Confidence: 1,
+			})
+			continue
+		}
+		if kind, ok := StructuralKind(candidate); ok {
+			settled = append(settled, store.CalendarEventKind{
+				ConversationID: candidate.ConversationID, Kind: string(kind),
 				Source: store.CalendarEventKindSourceRule, Confidence: 1,
 			})
 			continue
 		}
 		meetings = append(meetings, candidate)
 	}
-	written, err := st.WriteCalendarEventKindsContext(ctx, rules)
+	written, err := st.WriteCalendarEventKindsContext(ctx, notMeetings)
 	if err != nil {
 		return report, fmt.Errorf("write rule calendar event kinds: %w", err)
 	}
 	report.NotMeetings = written
+	written, err = st.WriteCalendarEventKindsContext(ctx, settled)
+	if err != nil {
+		return report, fmt.Errorf("write structural calendar event kinds: %w", err)
+	}
+	report.Settled = written
 	if options.Judge == nil {
 		return report, nil
 	}
