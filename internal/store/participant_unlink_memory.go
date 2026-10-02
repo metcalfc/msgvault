@@ -202,6 +202,10 @@ func (s *Store) clearUserSeparationsTx(
 		WHERE left_kind = ? AND right_kind = ? AND source_ref IN (?, ?)`,
 		IdentityMatchParticipant, IdentityMatchParticipant,
 		participantUnlinkSourceRef, participantUnlinkInheritedSourceRef)
+	if s.dialect.IsNoSuchTableError(err) {
+		// An archive without identity matches has no separations to clear.
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("load identity separations: %w", err)
 	}
