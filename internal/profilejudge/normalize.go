@@ -6,8 +6,8 @@ import (
 
 	"go.kenn.io/msgvault/internal/personenrichment"
 	"go.kenn.io/msgvault/internal/store"
-	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
+	"golang.org/x/text/width"
 )
 
 // conflictOutcome is what code decides about a merge conflict before Jev.
@@ -88,26 +88,44 @@ func exactOutcome(left, right string) conflictOutcome {
 	return conflictDifferent
 }
 
-// foldText is the comparison form of free text and names: Unicode
-// compatibility forms (NFKC, so full-width letters and ligatures read as
-// plain ones), case folded, separating punctuation (periods, commas,
-// semicolons, colons, question and exclamation marks, quotes, apostrophes,
-// brackets, ellipses, and dashes between words) treated as space, and runs
-// of space collapsed. Letters, digits, accents, symbols, and punctuation
-// that carries meaning (%, #, &, @, /, *, a leading minus or plus sign) are
-// kept, so "50%" and "50", "José" and "Jose", or "-5" and "5" stay
-// different.
+// foldText is the comparison form of free text and names:
+//
+//   - canonical composition (NFC) and width folding, so a full-width or
+//     half-width character reads as its ordinary form. Compatibility
+//     folding is not applied, so superscripts, subscripts, and ligatures
+//     stay themselves ("2⁵" is not "25");
+//   - simple case folding, one character for one, so "ß" is not "ss";
+//   - separating punctuation (period, comma, semicolon, colon, question and
+//     exclamation marks, quotes and apostrophes, brackets, ellipsis, middle
+//     dot, and dashes) read as a space, unless a number character is next
+//     to it, so "1.000" and "1,000", "3.14" and "3:14", "(5)" and "5", and
+//     "-5" and "5" stay different;
+//   - runs of space collapsed.
+//
+// Letters, digits, accents, symbols, and other punctuation (%, #, &, @, /,
+// *) are kept as they are.
 func foldText(value string) string {
-	runes := []rune(cases.Fold().String(norm.NFKC.String(value)))
+	runes := []rune(foldCase(width.Fold.String(norm.NFC.String(value))))
 	var folded strings.Builder
 	for i, r := range runes {
-		if separatorPunct(r) && !leadingSign(runes, i) {
+		if separatorPunct(r) && !nextToNumber(runes, i) {
 			folded.WriteRune(' ')
 			continue
 		}
 		folded.WriteRune(r)
 	}
 	return strings.Join(strings.Fields(folded.String()), " ")
+}
+
+// foldCase applies simple case folding rune by rune. Turkish dotted and
+// dotless I have no simple folding and stay as they are.
+func foldCase(value string) string {
+	return strings.Map(func(r rune) rune {
+		if r == 'ı' || r == 'İ' {
+			return r
+		}
+		return unicode.ToLower(unicode.ToUpper(r))
+	}, value)
 }
 
 func separatorPunct(r rune) bool {
@@ -117,13 +135,32 @@ func separatorPunct(r rune) bool {
 	return strings.ContainsRune(".,;:!?'\"`…·¿¡", r)
 }
 
-// leadingSign reports whether the dash at i is a sign: before a digit and
-// not after a letter or digit.
-func leadingSign(runes []rune, i int) bool {
-	if !unicode.Is(unicode.Pd, runes[i]) || i+1 >= len(runes) || !unicode.IsDigit(runes[i+1]) {
-		return false
+// nextToNumber reports whether a number character, superscripts included,
+// is on either side of runes[i].
+func nextToNumber(runes []rune, i int) bool {
+	return (i > 0 && unicode.IsNumber(runes[i-1])) || (i+1 < len(runes) && unicode.IsNumber(runes[i+1]))
+}
+
+// mixedCase reports whether a name has both upper- and lower-case letters.
+func mixedCase(name string) bool {
+	return strings.ContainsFunc(name, unicode.IsUpper) && strings.ContainsFunc(name, unicode.IsLower)
+}
+
+// preferredSpelling picks a name's spelling among its case-only variants:
+// the given one when it is mixed case, else the first mixed-case variant
+// (so "John Smith" wins over "JOHN SMITH" or "john smith"), else the given
+// one.
+func preferredSpelling(name string, variants []string) string {
+	if mixedCase(name) {
+		return name
 	}
-	return i == 0 || (!unicode.IsLetter(runes[i-1]) && !unicode.IsDigit(runes[i-1]))
+	key := foldCase(strings.Join(strings.Fields(name), " "))
+	for _, variant := range variants {
+		if mixedCase(variant) && foldCase(strings.Join(strings.Fields(variant), " ")) == key {
+			return variant
+		}
+	}
+	return name
 }
 
 // keepAbsorbed reports which equal value survives: the user-declared one first,

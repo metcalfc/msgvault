@@ -65,8 +65,11 @@ func TestRunSettlesValuesEqualAfterTheirFieldsNormalizationWithoutAsking(t *test
 		name, slug, survivor, absorbed string
 	}{
 		{"free text folds case and punctuation", store.AttributeSlugLocation, "San Francisco, CA", "san francisco  ca."},
-		{"free text folds compatibility forms", store.AttributeSlugLocation, "Ｌｉｓｂｏｎ", "Lisbon"},
+		{"free text folds full-width forms", store.AttributeSlugLocation, "Ｌｉｓｂｏｎ", "Lisbon"},
 		{"free text treats dashes between words as space", notes, "Long-time cyclist", "long time cyclist"},
+		{"free text treats a hyphenated name as two words", store.AttributeSlugLocation,
+			"Smith-Jones Farm", "Smith Jones Farm"},
+		{"free text drops an abbreviation's period", store.AttributeSlugLocation, "St. Louis", "St Louis"},
 		{"email compares as a lower-cased address", email, "Robin.Example@Example.COM", "robin.example@example.com"},
 		{"phone compares as E.164", phone, "(415) 555-0100", "+1 415 555 0100"},
 		{"url compares as a canonical public URL", url,
@@ -103,15 +106,24 @@ func TestRunKeepsMeaningfulDifferencesForJevOrTheUser(t *testing.T) {
 	url := fieldDefinition(t, st, "homepage", store.AttributeFieldURL)
 
 	// Sent: free text and URLs that still differ after normalization.
-	percent := mergeWithValues(t, st, store.AttributeSlugLocation, "percent", "Floor 50%", "Floor 50")
-	accent := mergeWithValues(t, st, store.AttributeSlugLocation, "accent", "José Street", "Jose Street")
-	sign := mergeWithValues(t, st, store.AttributeSlugLocation, "sign", "Level -5", "Level 5")
-	path := mergeWithValues(t, st, url, "path", "https://example.com/in/Robin", "https://example.com/in/robin")
-	// Never sent: typed values, select options, and email addresses.
-	frequency := mergeTyped(t, st, store.AttributeSlugContactFrequency, "frequency", intValue(30), intValue(31),
-		store.ProvenanceExtraction, store.ProvenanceExtraction)
-	channel := mergeWithValues(t, st, store.AttributeSlugPrimaryChannel, "channel", "email", "sms")
-	address := mergeWithValues(t, st, email, "address", "robin@example.com", "robin@example.org")
+	distinct := [][2]string{
+		{"Floor 50%", "Floor 50"}, {"José Street", "Jose Street"}, {"Level -5", "Level 5"},
+		{"Unit 1.000", "Unit 1,000"}, {"Unit 1.5", "Unit 1,5"}, {"Gate 3.14", "Gate 3:14"},
+		{"Box 2⁵", "Box 25"}, {"Lot (5)", "Lot 5"}, {"Weiß Street", "Weiss Street"},
+	}
+	kept := []*store.PersonMergeResult{}
+	for i, pair := range distinct {
+		kept = append(kept, mergeWithValues(t, st, store.AttributeSlugLocation, fmt.Sprintf("distinct%d", i),
+			pair[0], pair[1]))
+	}
+	kept = append(kept,
+		mergeWithValues(t, st, url, "path", "https://example.com/in/Robin", "https://example.com/in/robin"),
+		// Never sent: typed values, select options, and email addresses.
+		mergeTyped(t, st, store.AttributeSlugContactFrequency, "frequency", intValue(30), intValue(31),
+			store.ProvenanceExtraction, store.ProvenanceExtraction),
+		mergeWithValues(t, st, store.AttributeSlugPrimaryChannel, "channel", "email", "sms"),
+		mergeWithValues(t, st, email, "address", "robin@example.com", "robin@example.org"),
+	)
 
 	server := jevtest.NewServer(t, func(string, map[string]any, map[string]any) map[string]any {
 		return jevtest.Noul(0.5)
@@ -120,26 +132,27 @@ func TestRunKeepsMeaningfulDifferencesForJevOrTheUser(t *testing.T) {
 	jevtest.GrantConsent(t, st, cfg, profilejudge.Feature())
 	report, err := profilejudge.Run(t.Context(), st, profilejudge.Options{Judge: service})
 	require.NoError(t, err)
-	assert.Equal(t, profilejudge.Report{Requests: 1, MergeConflicts: 4}, report)
+	assert.Equal(t, profilejudge.Report{Requests: 2, MergeConflicts: 10}, report)
 
-	requests := server.Requests()
-	require.Len(t, requests, 1)
-	state, ok := requests[0]["state"].(map[string]any)
-	require.True(t, ok)
-	conflicts, ok := state["conflicts"].(map[string]any)
-	require.True(t, ok)
 	sent := []string{}
-	for _, conflict := range conflicts {
-		pair, ok := conflict.(map[string]any)
+	for _, request := range server.Requests() {
+		state, ok := request["state"].(map[string]any)
 		require.True(t, ok)
-		sent = append(sent, fmt.Sprint(pair["first"], " | ", pair["second"]))
+		conflicts, ok := state["conflicts"].(map[string]any)
+		require.True(t, ok)
+		for _, conflict := range conflicts {
+			pair, ok := conflict.(map[string]any)
+			require.True(t, ok)
+			sent = append(sent, fmt.Sprint(pair["first"], " | ", pair["second"]))
+		}
 	}
-	assert.ElementsMatch(t, []string{
-		"Floor 50% | Floor 50", "José Street | Jose Street", "Level -5 | Level 5",
-		"https://example.com/in/Robin | https://example.com/in/robin",
-	}, sent)
+	want := []string{"https://example.com/in/Robin | https://example.com/in/robin"}
+	for _, pair := range distinct {
+		want = append(want, pair[0]+" | "+pair[1])
+	}
+	assert.ElementsMatch(t, want, sent)
 
-	for _, merged := range []*store.PersonMergeResult{percent, accent, sign, path, frequency, channel, address} {
+	for _, merged := range kept {
 		assert.Equal(t, "pending", candidate(t, st, merged).State, "a real difference stays with the user")
 	}
 	remaining, err := st.MergeConflictCandidatesContext(t.Context(), 0)
@@ -266,4 +279,94 @@ func TestRunAsksNoChoiceBetweenOptionsEqualAfterNormalization(t *testing.T) {
 	again, err := profilejudge.Run(t.Context(), st, profilejudge.Options{Judge: service})
 	require.NoError(err)
 	assert.Equal(profilejudge.Report{}, again, "settled choices are not revisited")
+}
+
+func TestRunSettlesEqualItemsBeyondTheLimitAndAfterAJevFailure(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	// Items that need Jev come first in every listing.
+	waiting := []*store.PersonMergeResult{}
+	for i, pair := range [][2]string{{"Lisbon", "Porto"}, {"Oslo", "Bergen"}, {"Rome", "Milan"}} {
+		waiting = append(waiting, mergeWithLocations(t, st, fmt.Sprintf("waiting%d", i), pair[0], pair[1]))
+	}
+	for i := range 3 {
+		person := promoted(t, st, fmt.Sprintf("role%d@example.com", i), fmt.Sprintf("Role Person %d", i))
+		employment(t, st, person.ID, fmt.Sprintf("Example Foundation %d", i), "Board Member")
+		employment(t, st, person.ID, fmt.Sprintf("Example Labs %d", i), "CEO")
+	}
+	equal := mergeWithLocations(t, st, "equal", "Berlin, Germany", "berlin germany")
+	robin := promoted(t, st, "robin@example.com", "Robin Example")
+	first := employment(t, st, robin.ID, "Example Labs, Inc.", "CEO")
+	employment(t, st, robin.ID, "Example Labs Inc", "CEO")
+
+	// Jev fails on the first request: consent was never given.
+	server := jevtest.NewServer(t, alwaysSame)
+	service, _ := server.Service(t, st, enabled)
+	report, err := profilejudge.Run(t.Context(), st, profilejudge.Options{Judge: service, Limit: 2})
+	require.NoError(err)
+	assert.Equal("consent_required", report.Skipped)
+	assert.Equal(2, report.SettledInCode, "a limit of 2 and a failed request still settle the equal items")
+	assert.Equal("rejected", candidate(t, st, equal).State)
+	assert.Equal(first, primaryID(t, st, robin.ID))
+	for _, merged := range waiting {
+		assert.Equal("pending", candidate(t, st, merged).State)
+	}
+	assert.Empty(server.Requests())
+}
+
+func TestRunSettlesAConflictRecordedEarlierAsNeverSent(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	email := fieldDefinition(t, st, "work_email", store.AttributeFieldEmail)
+	merged := mergeWithValues(t, st, email, "unsent", "Bob@example.com", "bob@example.com")
+	// An earlier version recorded every conflict with an address as never
+	// sent, without comparing the values.
+	_, err := st.ApplyMergeConflictJudgmentContext(t.Context(), store.MergeConflictJudgment{
+		CandidateID: merged.ReviewCandidates[0].ID, PersonID: merged.Person.ID,
+		Model: store.MergeConflictNotSentModel,
+	})
+	require.NoError(err)
+
+	report, err := profilejudge.Run(t.Context(), st, profilejudge.Options{})
+	require.NoError(err)
+	assert.Equal(profilejudge.Report{SettledInCode: 1}, report)
+	assert.Equal("rejected", candidate(t, st, merged).State)
+	unsent, err := st.UnsentMergeConflictCandidatesContext(t.Context())
+	require.NoError(err)
+	assert.Empty(unsent, "the settlement replaces the never-sent record")
+}
+
+func TestRunPrefersAMixedCaseSpellingOfTheSameName(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	person := func(prefix string, names ...string) *store.Person {
+		ids := make([]int64, len(names))
+		for i, name := range names {
+			id, err := st.EnsureParticipant(fmt.Sprintf("%s-%d@example.com", prefix, i), name, "example.com")
+			require.NoError(err)
+			ids[i] = id
+			if i > 0 {
+				_, err = st.LinkParticipants(ids[0], id)
+				require.NoError(err)
+			}
+		}
+		created, _, err := st.CreatePersonFromParticipantContext(t.Context(), ids[0])
+		require.NoError(err)
+		return created
+	}
+	shouting := person("john", "JOHN SMITH", "John Smith")
+	lower := person("ann", "ann lee", "ANN LEE")
+
+	report, err := profilejudge.Run(t.Context(), st, profilejudge.Options{})
+	require.NoError(err)
+	assert.Equal(profilejudge.Report{SettledInCode: 2}, report)
+	for want, original := range map[string]*store.Person{"John Smith": shouting, "ann lee": lower} {
+		current, err := st.GetPersonContext(t.Context(), original.ID)
+		require.NoError(err)
+		require.NotNil(current.DisplayName)
+		assert.Equal(want, *current.DisplayName, "a mixed-case spelling wins; otherwise the rule's name stays")
+	}
 }

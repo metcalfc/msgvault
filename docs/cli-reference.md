@@ -2364,9 +2364,11 @@ feature is enabled, an API key resolves, and its consent is active.
   more becomes a candidate under **Reviews → Possible duplicate people**;
   nothing is linked or merged until you accept it.
 - **Profile choices.** Code first settles what normalization decides, with
-  or without Jev: roles that are all the same organization and title, and
-  names that differ only in case, spacing, or punctuation, keep the rule's
-  choice; a merge conflict whose two values are equal under the field's rule
+  or without Jev, over every eligible item regardless of `--limit`: roles
+  that are all the same organization and title, and names that differ only
+  in case, spacing, or punctuation, keep the rule's choice (preferring a
+  mixed-case spelling over an all-capitals or all-lower-case one); a merge
+  conflict whose two values are equal under the field's rule
   closes, keeping your value when only the absorbed one is yours, else the
   survivor's. With
   [`[jev.person_profile_choices]`](configuration.md#jevperson_profile_choices)
@@ -2384,7 +2386,7 @@ msgvault person judge [--limit N] [--json]
 
 | Flag | Contract |
 |---|---|
-| `--limit` | Judge at most this many pairs, people per profile question, and merge conflicts; `0` (default) means all |
+| `--limit` | Judge at most this many pairs, people per profile question, and merge conflicts; `0` (default) means all. Code settlement of profile choices is not capped |
 | `--json` | Structured report per judgment: counts, Jev requests, what was written, what code settled (`settled_in_code`), and the skip category |
 
 Each pair, person, and conflict is asked once until its inputs change. See

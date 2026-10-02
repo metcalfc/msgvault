@@ -441,8 +441,10 @@ func dropDisplayNameSeedTx(ctx context.Context, tx *loggedTx, personID int64) er
 }
 
 // clusterDistinctDisplayNamesTx returns the distinct display names of the
-// participants, compared case-insensitively, that could be a person's name:
-// with a letter and without an address. Order is by participant ID.
+// participants, compared after collapsing whitespace, that could be a
+// person's name: with a letter and without an address. Case variants stay
+// distinct so the display-name step can prefer a mixed-case spelling. Order
+// is by participant ID.
 func clusterDistinctDisplayNamesTx(ctx context.Context, tx *loggedTx, members []int64) ([]string, error) {
 	names := []string{}
 	seen := map[string]struct{}{}
@@ -459,11 +461,10 @@ func clusterDistinctDisplayNamesTx(ctx context.Context, tx *loggedTx, members []
 			if strings.Contains(name, "@") || !strings.ContainsFunc(name, unicode.IsLetter) {
 				return nil
 			}
-			key := strings.ToLower(name)
-			if _, ok := seen[key]; ok {
+			if _, ok := seen[name]; ok {
 				return nil
 			}
-			seen[key] = struct{}{}
+			seen[name] = struct{}{}
 			names = append(names, name)
 			return nil
 		}); err != nil {
@@ -611,10 +612,30 @@ func (s *Store) ApplyDisplayNameJudgmentContext(ctx context.Context, judgment Di
 	return true, nil
 }
 
+// MergeConflictNotSentModel is the model recorded for a merge conflict left
+// pending for the user without asking Jev.
+const MergeConflictNotSentModel = "rule:not_sent"
+
 // MergeConflictCandidatesContext lists pending merge attribute conflicts the
 // person_profile_choices judgment may compare and has not judged, at most
 // limit (0 means no cap).
 func (s *Store) MergeConflictCandidatesContext(ctx context.Context, limit int) ([]MergeConflictCandidate, error) {
+	return s.mergeConflictCandidatesContext(ctx, limit, `NOT EXISTS (SELECT 1
+		FROM person_merge_conflict_judgments j WHERE j.candidate_id = c.id)`)
+}
+
+// UnsentMergeConflictCandidatesContext lists pending merge attribute
+// conflicts recorded as never sent (MergeConflictNotSentModel), so code may
+// still settle those whose values are equal. They are never sent to Jev.
+func (s *Store) UnsentMergeConflictCandidatesContext(ctx context.Context) ([]MergeConflictCandidate, error) {
+	return s.mergeConflictCandidatesContext(ctx, 0, `EXISTS (SELECT 1
+		FROM person_merge_conflict_judgments j WHERE j.candidate_id = c.id AND j.model = '`+
+		MergeConflictNotSentModel+`')`)
+}
+
+func (s *Store) mergeConflictCandidatesContext(
+	ctx context.Context, limit int, judgedCondition string,
+) ([]MergeConflictCandidate, error) {
 	candidates := []MergeConflictCandidate{}
 	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
 		rows, err := tx.QueryContext(ctx, `SELECT c.id, c.survivor_person_id, d.label,
@@ -622,7 +643,7 @@ func (s *Store) MergeConflictCandidatesContext(ctx context.Context, limit int) (
 			FROM person_merge_review_candidates c
 			JOIN attribute_definitions d ON d.id = c.definition_id
 			WHERE c.state = 'pending' AND NOT (`+s.dialect.BoolTrueExpr("d.is_sensitive")+`)
-			  AND NOT EXISTS (SELECT 1 FROM person_merge_conflict_judgments j WHERE j.candidate_id = c.id)
+			  AND `+judgedCondition+`
 			ORDER BY c.id`)
 		if err != nil {
 			return fmt.Errorf("list merge conflict candidates: %w", err)
@@ -795,8 +816,12 @@ func (s *Store) SettleEqualMergeConflictContext(ctx context.Context, settlement 
 		return false, err
 	}
 	err = retryBusyWriteErr(ctx, s, "record merge conflict settlement", func() error {
-		_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO person_merge_conflict_judgments
-			(candidate_id, probability, model, resolved) VALUES (?, ?, ?, ?)`,
+		// A conflict recorded earlier as never sent is overwritten: it is
+		// now settled.
+		_, err := s.db.ExecContext(ctx, `INSERT INTO person_merge_conflict_judgments
+			(candidate_id, probability, model, resolved) VALUES (?, ?, ?, ?)
+			ON CONFLICT (candidate_id) DO UPDATE SET probability = excluded.probability,
+				model = excluded.model, resolved = excluded.resolved, judged_at = CURRENT_TIMESTAMP`,
 			settlement.CandidateID, 1.0, PersonMergeConflictNormalizedActor, true)
 		return err
 	})

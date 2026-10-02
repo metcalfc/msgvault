@@ -1136,48 +1136,61 @@ build makes up to 200 of each first.
 ### Settled in code first
 
 These steps run on every `person judge`, with or without Jev, and send
-nothing:
+nothing. They cover every eligible person and conflict on each run;
+`--limit` and the cache build's cap of 200 apply only to what is then sent
+to Jev, and a failed Jev request does not stop them.
 
 - **Primary role.** When every current role has the same organization name
   and title after text folding (below), there is nothing to choose: the
   current primary role stays and the person is not asked. Roles that fold to
   the same organization and title are offered once, as the current primary
   role if it is one of them.
-- **Display name.** When every name folds to the same text, the promotion
-  name stays and the person is not asked. Names that fold to the same text
-  are offered once, in the promotion name's spelling if it is one of them.
+- **Display name.** When every name folds to the same text, the person is
+  not asked. The promotion name stays, unless it is all capitals or all
+  lower case and another of the names differs from it only in case and
+  mixes both: then the person is renamed to that spelling, so `John Smith`
+  replaces `JOHN SMITH`. Names that fold to the same text are offered once,
+  in the promotion name's spelling (or its mixed-case variant) if it is one
+  of them.
 - **Merge conflict.** Two values that are equal under the field's rule close
   the conflict, reviewed by `rule:normalized`. The kept value is yours when
   only the absorbed value was set by you (entered, or imported from
   contacts); otherwise the survivor's value is kept, so a value you set on
-  the survivor is never replaced.
+  the survivor is never replaced. Conflicts an earlier version recorded as
+  never sent are compared too, and still never sent.
 
 Each field type has its own rule:
 
 | Field | Equal when | Kept apart |
 |---|---|---|
-| Text and text area | Text folding matches | Accents, digits, symbols, and meaningful punctuation |
+| Text and text area | Text folding matches | Accents, digits, symbols, superscripts, and punctuation next to a number |
 | Email | The trimmed, lower-cased addresses match | Any other difference; an address is never sent to Jev |
 | Phone | Both parse to the same E.164 number | Different numbers; a phone number is never sent to Jev |
 | URL | Both reduce to the same canonical `http`/`https` URL: scheme and host case, default port, `.` and `..` path segments, trailing slash, fragment, and tracking parameters such as `utm_*` are ignored | Path and other query differences, including letter case |
 | Select | The option values match exactly | Different options; never sent to Jev |
 | Number, yes/no, date, timestamp | The stored values match exactly | Different values; never sent to Jev |
 
-Text folding applies Unicode compatibility forms (so full-width letters read
-as plain ones), ignores letter case, treats separating punctuation as a
-space, and collapses runs of spaces. Separating punctuation is the period,
-comma, semicolon, colon, question and exclamation marks, quotes and
-apostrophes, brackets, the ellipsis, and dashes between words. Everything
-else is kept: `50%` and `50`, `José` and `Jose`, and `-5` and `5` stay
-different. A phone or URL value that does not parse as one is
-compared with text folding.
+Text folding does four things, and nothing else:
+
+| Step | Effect | Stays different |
+|---|---|---|
+| Composition and width | Composed and decomposed accents match; full-width and half-width characters read as ordinary ones (`Ｌｉｓｂｏｎ` is `Lisbon`) | Superscripts, subscripts, and ligatures: `2⁵` and `25` |
+| Simple case folding | Upper and lower case match, one character for one | `Weiß` and `Weiss` |
+| Separating punctuation as a space | Period, comma, semicolon, colon, question and exclamation marks, quotes and apostrophes, brackets, ellipsis, middle dot, and dashes: `Smith-Jones` is `Smith Jones`, `St.` is `St` | The same marks next to a number: `1.000` and `1,000`, `1.5` and `1,5`, `3.14` and `3:14`, `(5)` and `5`, `-5` and `5` |
+| Spaces | Runs of spaces collapse | |
+
+Letters, digits, accents, symbols, and other punctuation such as `%`, `#`,
+`&`, `@`, `/`, and `*` are kept: `50%` and `50`, and `José` and `Jose`, stay
+different. A phone or URL value that does not parse as one is compared with
+text folding.
 
 Without Jev, roles, names, and conflicts that normalization does not settle
 keep the rule's choice or stay pending, and are offered to Jev on a later run
 once it is on. A conflict that can never be sent (a number, yes/no, date,
 timestamp, or select difference, an absorbed value you set, or a value the
-next section excludes) is recorded so it is not listed again and stays
-pending for you.
+next section excludes) is recorded so it is not listed again for Jev and
+stays pending for you. So is a person with fewer than two names that can be
+sent, until their names change.
 
 ### What leaves the machine
 

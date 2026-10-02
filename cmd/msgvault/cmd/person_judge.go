@@ -47,9 +47,11 @@ Reviews > Possible duplicate people; nothing is linked or merged until you
 accept it. Each pair is asked once until either side changes.
 
 Profile choices: code first settles what normalization decides, with or
-without Jev. Roles that are all the same organization and title, or names
+without Jev and over every eligible item; --limit caps only what is sent to
+Jev. Roles that are all the same organization and title, or names
 that are all the same apart from case, spacing, and punctuation, keep the
-rule's choice. A pending attribute conflict left by a person merge whose two
+rule's choice, preferring a mixed-case spelling over all capitals or all
+lower case. A pending attribute conflict left by a person merge whose two
 values are equal after the field's normalization is closed, keeping your
 value if only the absorbed one is yours, else the survivor's. When
 [jev.person_profile_choices] is enabled and consented, the rest is asked. A person with two to six current roles, all
@@ -93,7 +95,7 @@ never changed.`,
 		},
 	}
 	command.Flags().IntVar(&limit, "limit", 0,
-		"Judge at most this many pairs, people per profile question, and merge conflicts (0 means all)")
+		"Judge at most this many pairs, people per profile question, and merge conflicts (0 means all; code settlement of profile choices is not capped)")
 	command.Flags().BoolVar(&jsonOutput, flagJSON, false, "Output structured JSON")
 	return command
 }
