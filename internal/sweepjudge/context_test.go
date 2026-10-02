@@ -3,7 +3,9 @@
 package sweepjudge_test
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"math"
 	"path/filepath"
 	"strings"
@@ -197,6 +199,36 @@ func TestContextScorerKeepsEverythingWithoutAUsableIndex(t *testing.T) {
 	_, err := sweepjudge.NewContextScorer(sourceFor(backend, embedder), nil).JudgeContext(t.Context(), sensitive, items)
 	require.Error(t, err)
 	assert.Len(embedder.Inputs(), before, "a sensitive target's description is never embedded")
+}
+
+func TestContextScorerWarnsOnceWhenTheModelDoesNotNormalize(t *testing.T) {
+	assert := assert.New(t)
+	stored := &fakeEmbedder{}
+	backend := indexedBackend(t, stored, map[int64]string{1: "I joined Example Labs as VP Product."})
+	unnormalized := &fakeEmbedder{scale: 3}
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	source := func() (sweepjudge.Similarity, bool) {
+		return sweepjudge.Similarity{
+			Backend: backend, Embedder: unnormalized, Fingerprint: fakeFingerprint, Model: fakeModel,
+		}, true
+	}
+	scorer := sweepjudge.NewContextScorer(source, logger)
+	items := []peoplesweep.EvidenceItem{
+		contextItem(1, peoplesweep.SourceConversationText, "I joined Example Labs as VP Product."),
+	}
+	other := employmentTarget()
+	other.Key, other.Description = "location", "Current city of residence"
+
+	for _, target := range []personfacts.TargetDescriptor{employmentTarget(), other, employmentTarget()} {
+		scores, err := scorer.JudgeContext(t.Context(), target, items)
+		require.Error(t, err, "every target keeps all of its context")
+		assert.Nil(scores)
+	}
+	assert.Equal(1, strings.Count(logs.String(), "level=WARN"), logs.String())
+	assert.Contains(logs.String(), "model="+fakeModel)
+	assert.Contains(logs.String(), "keeping all retrieved context")
+	assert.Len(unnormalized.Inputs(), 1, "the run stops embedding once the model is known not to normalize")
 }
 
 // TestRetiredEvidenceRerankFeatureCannotReachJev covers an archive that

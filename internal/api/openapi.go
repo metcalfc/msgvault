@@ -416,7 +416,12 @@ import (
 // 2.48.0 adds POST /identity/email-equivalence/link, which links participants
 // whose addresses deliver to the same mailbox, and the email_equivalence and
 // email_dot_variant identity match bases. Additive (minor bump).
-const APISchemaVersion = "2.48.0"
+// 2.49.0 removes the jev.sweep_evidence_rerank.enabled and .automatic keys
+// from the Settings catalog (GET and PATCH /settings): the people sweep now
+// scores evidence relevance with local embeddings, and the retired Jev
+// feature has no setting. The removal lands inside the unreleased 2.x line
+// that added the keys in 2.44.0, so it does not open a new major version.
+const APISchemaVersion = "2.49.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

@@ -237,10 +237,11 @@ The 0.20 floor is low on purpose: dropping a relevant message loses a fact,
 while keeping an unrelated one only costs tokens. On models that score
 unrelated text near zero, the floor drops plainly unrelated context. On
 models that score most text higher, it drops little, and the scores mainly
-decide what leaves first when a packet must shrink. Any error keeps every retrieved message, exactly as without an index: vector
-search disabled, the index still building or initializing, an index built
-by a different model than the configured one, a model that does not return
-unit-length vectors, or an endpoint failure.
+decide what leaves first when a packet must shrink. Any error keeps every
+retrieved message, exactly as without an index: vector search disabled, the
+index still building or initializing, an index built by a different model
+than the configured one, a model that does not return unit-length vectors,
+or an endpoint failure.
 
 What leaves the machine for evidence relevance:
 

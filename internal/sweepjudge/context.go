@@ -41,6 +41,8 @@ type Similarity struct {
 	Backend     vector.ChunkScoringBackend
 	Embedder    QueryEmbedder
 	Fingerprint string
+	// Model names the configured embedding model in log messages.
+	Model string
 }
 
 // SimilaritySource returns the message vector index when it is configured
@@ -57,6 +59,9 @@ type ContextScorer struct {
 
 	mu      sync.Mutex
 	queries map[string][]float32
+	// notUnit is set once the model is found not to return unit-length
+	// vectors; scoring stays off for the rest of the run.
+	notUnit error
 }
 
 var _ peoplesweep.ContextJudge = (*ContextScorer)(nil)
@@ -69,7 +74,10 @@ func NewContextScorer(source SimilaritySource, logger *slog.Logger) *ContextScor
 	return &ContextScorer{source: source, logger: logger, queries: make(map[string][]float32)}
 }
 
-var errNoSimilarity = errors.New("message vector index is not available")
+var (
+	errNoSimilarity  = errors.New("message vector index is not available")
+	errNotUnitLength = errors.New("embedding model does not return unit-length vectors")
+)
 
 // JudgeContext scores each item by the best cosine similarity between the
 // target's catalog description and any indexed chunk of the item's message.
@@ -91,11 +99,29 @@ func (s *ContextScorer) JudgeContext(
 	if query == "" {
 		return nil, errors.New("target has no description")
 	}
+	s.mu.Lock()
+	notUnit := s.notUnit
+	s.mu.Unlock()
+	if notUnit != nil {
+		return nil, notUnit
+	}
 	similarity, ok := s.source()
 	if !ok || similarity.Backend == nil || similarity.Embedder == nil {
 		return nil, errNoSimilarity
 	}
 	scores, err := s.score(ctx, similarity, query, items)
+	if errors.Is(err, errNotUnitLength) {
+		s.mu.Lock()
+		first := s.notUnit == nil
+		s.notUnit = err
+		s.mu.Unlock()
+		if first {
+			s.logger.Warn("people sweep context relevance is off for this run: the embedding model does not "+
+				"return unit-length vectors, so similarity scores cannot be read as cosine; keeping all "+
+				"retrieved context", "model", similarity.Model, "error", err)
+		}
+		return nil, err
+	}
 	if err != nil {
 		s.logger.Info("people sweep context relevance: embedding similarity skipped",
 			"target", target.Key, "error", err)
@@ -135,7 +161,10 @@ func (s *ContextScorer) score(
 }
 
 // queryVector embeds the description once per scorer and checks that it is
-// unit length, which the score conversion relies on.
+// unit length, which the score conversion relies on. The stored chunk
+// vectors are assumed to be unit length too: the same configured model
+// embeds both queries and indexed messages (the generation fingerprint
+// check guarantees it), so a model that normalizes one normalizes the other.
 func (s *ContextScorer) queryVector(ctx context.Context, similarity Similarity, query string) ([]float32, error) {
 	s.mu.Lock()
 	cached, ok := s.queries[query]
@@ -152,7 +181,7 @@ func (s *ContextScorer) queryVector(ctx context.Context, similarity Similarity, 
 		sum += float64(value) * float64(value)
 	}
 	if norm := math.Sqrt(sum); math.Abs(norm-1) > unitNormTolerance {
-		return nil, fmt.Errorf("embedding model returns vectors of length %.3f, not unit length", norm)
+		return nil, fmt.Errorf("%w: query vector length is %.3f", errNotUnitLength, norm)
 	}
 	s.mu.Lock()
 	s.queries[query] = queryVec
@@ -169,7 +198,10 @@ func scoredLane(lane peoplesweep.SourceClass) bool {
 
 // cosineFromScore converts the backend's chunk score (1 minus Euclidean
 // distance) to cosine similarity. For unit vectors the squared distance is
-// 2 - 2cos, so cos = 1 - d²/2. The result is clamped to [0, 1].
+// 2 - 2cos, so cos = 1 - d²/2. The result is clamped to [0, 1]. That
+// formula holds only for unit vectors, which queryVector checks for the
+// query and the shared model guarantees for stored chunks; without it the
+// clamp would quietly turn wrong scores into plausible-looking ones.
 func cosineFromScore(score float64) float64 {
 	distance := 1 - score
 	return min(1, max(0, 1-distance*distance/2))

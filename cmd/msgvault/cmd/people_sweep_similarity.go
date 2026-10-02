@@ -24,6 +24,7 @@ func sweepSimilarityFromFeatures(vf *vectorFeatures) (sweepjudge.Similarity, boo
 	}
 	return sweepjudge.Similarity{
 		Backend: backend, Embedder: vf.HybridEngine, Fingerprint: vf.Cfg.GenerationFingerprint(),
+		Model: vf.Cfg.Embeddings.Model,
 	}, true
 }
 
