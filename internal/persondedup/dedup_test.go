@@ -111,7 +111,7 @@ func TestRunSendsAddressKindsAndASharedOrganizationDomainOnly(t *testing.T) {
 	require := require.New(t)
 	st := testutil.NewTestStore(t)
 	work := participant(t, st, "quinn@mail.example.com", "Quinn Example")
-	_, err := st.LinkParticipants(work, participant(t, st, "quinn.example@gmail.com", "Quinn Example"))
+	_, err := st.LinkParticipants(work, participant(t, st, "qe.home@gmail.com", "Quinn Example"))
 	require.NoError(err)
 	participant(t, st, "qe@example.com", "Quinn Example")
 
@@ -303,4 +303,60 @@ func TestRunWithoutJevStillWritesMatchesDecidedInCode(t *testing.T) {
 	require.Len(candidates, 1)
 	assert.Equal(left, candidates[0].LeftID)
 	assert.Equal(store.IdentityMatchPhone, candidates[0].Basis)
+}
+
+func TestRunWritesExactMatchesPastTheJevLimit(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	// 201 name pairs with two signals each sort ahead of the one-signal
+	// exact pair.
+	for i := range 201 {
+		tag := fmt.Sprintf("%c%c", 'a'+rune(i/26), 'a'+rune(i%26))
+		name := "Kai" + tag + " Example"
+		participant(t, st, "kai"+tag+"x@example.com", name)
+		participant(t, st, "kai"+tag+"x@example.org", name)
+	}
+	left := participant(t, st, "sam@example.com", "")
+	right := participant(t, st, "srivera@example.net", "")
+	sharePhone(t, st, left, right)
+	// Jev is wired but cannot answer: no consent.
+	server := jevtest.NewServer(t, samePersonWhenBothSidesHaveNames)
+	service, _ := server.Service(t, st, enabled)
+
+	report, err := persondedup.Run(t.Context(), st, persondedup.Options{Judge: service, Limit: 200})
+	require.NoError(err)
+	assert.Equal("consent_required", report.Skipped)
+	assert.Equal(1, report.Matched)
+	assert.Equal(1, report.Candidates)
+	assert.Empty(server.Requests())
+	candidates, err := st.ListPersonDuplicateCandidatesContext(t.Context(), nil, 100, 0)
+	require.NoError(err)
+	require.Len(candidates, 1)
+	assert.Equal([2]int64{left, right}, [2]int64{candidates[0].LeftID, candidates[0].RightID})
+}
+
+func TestRunNeverSendsANameThatIsALocalPart(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	left := participant(t, st, "avery.quinn@example.com", "avery.quinn")
+	_, err := st.LinkParticipants(left, participant(t, st, "aq@example.com", "Quinn, Avery R"))
+	require.NoError(err)
+	participant(t, st, "aquinn@example.org", "Avery R Quinn")
+
+	server := jevtest.NewServer(t, samePersonWhenBothSidesHaveNames)
+	service, cfg := server.Service(t, st, enabled)
+	jevtest.GrantConsent(t, st, cfg, persondedup.Feature())
+	_, err = persondedup.Run(t.Context(), st, persondedup.Options{Judge: service})
+	require.NoError(err)
+
+	requests := server.Requests()
+	require.Len(requests, 1)
+	state, _ := requests[0]["state"].(map[string]any)
+	assert.NotContains(fmt.Sprint(state), "avery.quinn")
+	pairs, _ := state["pairs"].(map[string]any)
+	pair, _ := pairs["pair_1"].(map[string]any)
+	first, _ := pair["first"].(map[string]any)
+	assert.Equal([]any{"Quinn, Avery R"}, first["names"], "the name that only repeats the address is dropped")
 }

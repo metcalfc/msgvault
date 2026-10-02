@@ -794,11 +794,14 @@ func (s *Store) decideIdentityMatchCandidateContext(
 		}
 		// Only a stable-provider-id candidate that records which stable ID
 		// matched may be accepted without explicit user confirmation; the basis
-		// label alone is caller-supplied and proves nothing.
+		// label alone is caller-supplied and proves nothing. A duplicate-person
+		// candidate is a suggestion for review whatever its basis, so only a
+		// user ever accepts one.
 		if state == IdentityMatchStateAccepted && decidedBy != string(ProvenanceUser) &&
 			(current.Basis != IdentityMatchStableProviderID ||
 				current.NormalizedValue == nil ||
-				strings.TrimSpace(*current.NormalizedValue) == "") {
+				strings.TrimSpace(*current.NormalizedValue) == "" ||
+				(current.SourceRef != nil && *current.SourceRef == PersonDuplicateSourceRef)) {
 			return ErrIdentityMatchNotAcceptable
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE identity_match_candidates SET

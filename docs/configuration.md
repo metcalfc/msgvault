@@ -1413,7 +1413,7 @@ Duplicate people (feature `person_duplicates`). See
 | Key | Default | Description |
 |---|---|---|
 | `enabled` | `false` | Let `msgvault person judge` ask Jev whether correspondents who share a display name or address name are one person, sending their display names and whether each side's addresses are personal or at an organization, never the addresses. Likely pairs appear in Reviews. Without it, only pairs that share a mailbox, phone number, or provider account are proposed; they never need Jev. |
-| `automatic` | `false` | Also take up to 200 new pairs at each analytics cache build. |
+| `automatic` | `false` | Also run at each analytics cache build: every exact match is written and up to 200 new name pairs are sent. |
 
 #### `[jev.person_profile_choices]`
 

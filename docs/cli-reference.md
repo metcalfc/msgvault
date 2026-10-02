@@ -2396,7 +2396,7 @@ msgvault person judge [--limit N] [--json]
 
 | Flag | Contract |
 |---|---|
-| `--limit` | Judge at most this many pairs, people per profile question, and merge conflicts; `0` (default) means all. Code settlement of profile choices is not capped |
+| `--limit` | Send at most this many duplicate name pairs to Jev, and judge at most this many people per profile question and merge conflicts; `0` (default) means all. Exact duplicate matches and code settlement of profile choices are not capped |
 | `--json` | Structured report per judgment: counts, Jev requests, what was written, what code settled (`settled_in_code`), and the skip category |
 
 Each pair, person, and conflict is asked once until its inputs change. See

@@ -100,7 +100,8 @@ never changed.`,
 		},
 	}
 	command.Flags().IntVar(&limit, "limit", 0,
-		"Judge at most this many pairs, people per profile question, and merge conflicts (0 means all; code settlement of profile choices is not capped)")
+		"Send at most this many duplicate name pairs to Jev, and judge at most this many people per profile question "+
+			"and merge conflicts (0 means all; exact duplicate matches and code settlement of profile choices are not capped)")
 	command.Flags().BoolVar(&jsonOutput, flagJSON, false, "Output structured JSON")
 	return command
 }

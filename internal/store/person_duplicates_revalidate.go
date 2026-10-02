@@ -118,9 +118,13 @@ func (s *Store) revalidatePersonDuplicateTx(
 		return false, fmt.Errorf("load duplicate-person participants: %w", err)
 	}
 	if slices.ContainsFunc(proposal.Signals, PersonDuplicateSignal.Exact) {
-		if err := loadDuplicateExactKeysTx(ctx, tx, clusters); err != nil {
+		keys, err := loadDuplicateExactKeysTx(ctx, tx, exactKeyScope{
+			members: all, rootOf: func(id int64) int64 { return components[id] },
+		})
+		if err != nil {
 			return false, err
 		}
+		clusters[left].exact, clusters[right].exact = keys[left], keys[right]
 	}
 	for _, signal := range proposal.Signals {
 		value, ok := proposal.SignalValues[signal]

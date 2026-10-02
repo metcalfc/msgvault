@@ -1125,28 +1125,39 @@ func (s *Store) rememberSameMailboxSplitTx(ctx context.Context, tx *loggedTx, a,
 		ids = append(ids, id)
 	}
 	slices.Sort(ids)
-	addresses := make(map[int64]string, len(ids))
-	if err := queryInChunksContext(ctx, tx, ids, nil,
+	// A participant's own address and its email identifiers both name
+	// mailboxes the unlink separated.
+	addresses := make(map[int64][]string, len(ids))
+	for _, query := range []string{
 		`SELECT id, email_address FROM participants
 		 WHERE email_address IS NOT NULL AND id IN (%s)`,
-		func(rows *loggedRows) error {
+		`SELECT participant_id, identifier_value FROM participant_identifiers
+		 WHERE identifier_type = 'email' AND participant_id IN (%s)`,
+	} {
+		if err := queryInChunksContext(ctx, tx, ids, nil, query, func(rows *loggedRows) error {
 			var id int64
 			var address string
 			if err := rows.Scan(&id, &address); err != nil {
 				return fmt.Errorf("scan unlinked address: %w", err)
 			}
-			addresses[id] = address
+			addresses[id] = append(addresses[id], address)
 			return nil
 		}); err != nil {
-		return fmt.Errorf("load unlinked addresses: %w", err)
+			return fmt.Errorf("load unlinked addresses: %w", err)
+		}
 	}
 	pairFor := func(x, y int64) (emailEquivalencePair, bool) {
-		if emailaddr.Compare(addresses[x], addresses[y]) != emailaddr.SameMailbox {
-			return emailEquivalencePair{}, false
+		for _, left := range addresses[x] {
+			for _, right := range addresses[y] {
+				if emailaddr.Compare(left, right) != emailaddr.SameMailbox {
+					continue
+				}
+				key, _ := emailaddr.Mailbox(left)
+				lo, hi := normalizeEdge(x, y)
+				return emailEquivalencePair{basis: IdentityMatchEmailEquivalence, lo: lo, hi: hi, key: key}, true
+			}
 		}
-		key, _ := emailaddr.Mailbox(addresses[x])
-		lo, hi := normalizeEdge(x, y)
-		return emailEquivalencePair{basis: IdentityMatchEmailEquivalence, lo: lo, hi: hi, key: key}, true
+		return emailEquivalencePair{}, false
 	}
 	pair, found := pairFor(a, b)
 	if !found {
@@ -1155,23 +1166,28 @@ func (s *Store) rememberSameMailboxSplitTx(ctx context.Context, tx *loggedTx, a,
 			if _, inLeft := left[id]; !inLeft {
 				continue
 			}
-			if key, ok := emailaddr.Mailbox(addresses[id]); ok {
-				if _, seen := leftByMailbox[key]; !seen {
-					leftByMailbox[key] = id
+			for _, address := range addresses[id] {
+				if key, ok := emailaddr.Mailbox(address); ok {
+					if _, seen := leftByMailbox[key]; !seen {
+						leftByMailbox[key] = id
+					}
 				}
 			}
 		}
+	search:
 		for _, id := range ids {
 			if _, inRight := right[id]; !inRight {
 				continue
 			}
-			key, ok := emailaddr.Mailbox(addresses[id])
-			if !ok {
-				continue
-			}
-			if partner, shared := leftByMailbox[key]; shared {
-				if pair, found = pairFor(partner, id); found {
-					break
+			for _, address := range addresses[id] {
+				key, ok := emailaddr.Mailbox(address)
+				if !ok {
+					continue
+				}
+				if partner, shared := leftByMailbox[key]; shared {
+					if pair, found = pairFor(partner, id); found {
+						break search
+					}
 				}
 			}
 		}

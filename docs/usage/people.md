@@ -93,7 +93,8 @@ person so their messages and history appear together.
   match in Reviews. msgvault records that decision and never links that pair
   again. New tags still join the remaining identity, but no link on any
   mailbox pulls the address you split off back in. This also holds when you
-  unlink two addresses of one mailbox that you had linked by hand. Unlinks
+  unlink two addresses of one mailbox that you had linked by hand, including
+  an address recorded only as an email identifier. Unlinks
   made before upgrading to this release left no record, so the first run may
   link those addresses again; unlink them once more to keep them apart.
 - **Two saved profiles:** when the addresses already belong to two different
@@ -146,7 +147,9 @@ Repeating promotion returns the same profile. Archive observation alone does
 not promote people. Linking another cluster into a promoted one expands that
 profile's participant bindings. Linking two clusters that already belong to
 different profiles reports a conflict instead of silently merging curated
-data. Unlinking evidence does not move or delete profile bindings; to take an
+data. Unlinking two identities, even ones you linked by hand, records your
+decision as a rejected match, so duplicate detection never proposes the pair
+again. Unlinking evidence does not move or delete profile bindings; to take an
 identity away from a person, detach it as described in
 [Clean up a person's contact methods](#clean-up-a-persons-contact-methods).
 

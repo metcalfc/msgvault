@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/jev"
@@ -33,6 +34,9 @@ const (
 	// a reviewable candidate. Below it the judgment is only remembered.
 	CandidateThreshold = 0.30
 	maxNameRunes       = 120
+	// ruleBatch bounds how many pairs decided in code one write
+	// transaction records.
+	ruleBatch = 250
 )
 
 // Address kinds sent instead of addresses.
@@ -112,7 +116,8 @@ type Store interface {
 
 // Options configure one run.
 type Options struct {
-	// Limit caps how many pairs one run takes up; zero means no cap.
+	// Limit caps how many name pairs one run sends to Jev; zero means no
+	// cap. Pairs decided in code are always all written.
 	Limit int
 	// Judge is nil when Jev is off; the run then writes only the pairs
 	// decided in code.
@@ -169,7 +174,9 @@ func Run(ctx context.Context, st Store, options Options) (Report, error) {
 		options.Logger = slog.Default()
 	}
 	var report Report
-	proposals, err := st.PersonDuplicateProposalsContext(ctx, options.Limit)
+	// Every proposal is read: the limit bounds only what is sent to Jev, so
+	// name pairs that cannot be judged never starve the exact matches.
+	proposals, err := st.PersonDuplicateProposalsContext(ctx, 0)
 	if err != nil {
 		return report, fmt.Errorf("propose duplicate people: %w", err)
 	}
@@ -189,11 +196,14 @@ func Run(ctx context.Context, st Store, options Options) (Report, error) {
 			ruled = append(ruled, proposal)
 			continue
 		}
+		if options.Limit > 0 && len(named) >= options.Limit {
+			continue
+		}
 		named = append(named, proposal)
 		pairs = append(pairs, pair)
 	}
-	if len(ruled) > 0 {
-		written, err := st.RecordPersonDuplicateRulesContext(ctx, ruled)
+	for start := 0; start < len(ruled); start += ruleBatch {
+		written, err := st.RecordPersonDuplicateRulesContext(ctx, ruled[start:min(start+ruleBatch, len(ruled))])
 		if err != nil {
 			return report, fmt.Errorf("record duplicate people decided in code: %w", err)
 		}
@@ -295,13 +305,23 @@ func pairState(proposal store.PersonDuplicateProposal) PairState {
 	}
 }
 
-// identityState keeps names that carry no address or phone number, and only
-// the kind of each address.
+// identityState keeps names that carry no address or phone number and are
+// not just one of the side's local parts, and only the kind of each address.
 func identityState(identity store.PersonDuplicateIdentity) IdentityState {
 	state := IdentityState{Names: []string{}, AddressKinds: []string{}}
+	localParts := map[string]struct{}{}
+	for _, address := range identity.Addresses {
+		if local, _ := correspondentkind.SplitEmail(address); local != "" {
+			localParts[nameKey(local)] = struct{}{}
+		}
+	}
 	for _, name := range identity.Names {
 		name = strings.TrimSpace(name)
 		if name == "" || meetingjudge.RedactText(name) != name {
+			continue
+		}
+		if _, isLocalPart := localParts[nameKey(name)]; isLocalPart {
+			// "john.smith" as a name is the address, not a name.
 			continue
 		}
 		state.Names = append(state.Names, truncateRunes(name, maxNameRunes))
@@ -347,6 +367,18 @@ func sameOrganizationDomain(left, right []string) bool {
 		}
 	}
 	return false
+}
+
+// nameKey compares a name with a local part: lowercase letters and digits
+// only, so case and separators such as dots, dashes, underscores, and
+// spaces do not matter.
+func nameKey(value string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return unicode.ToLower(r)
+		}
+		return -1
+	}, value)
 }
 
 func truncateRunes(value string, limit int) string {

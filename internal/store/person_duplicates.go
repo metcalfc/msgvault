@@ -251,12 +251,19 @@ func (s *Store) personDuplicateProposalsTx(
 		// pair here spans different addresses.
 		addGroup(PersonDuplicateSameName, key, roots)
 	}
-	if err := loadDuplicateExactKeysTx(ctx, tx, clusters); err != nil {
+	// Exact keys are read for every cluster, so the five-cluster cap counts
+	// owner, non-person, and phone-only clusters that share the value too;
+	// only eligible clusters are paired.
+	allKeys, err := loadDuplicateExactKeysTx(ctx, tx, exactKeyScope{rootOf: index.rootOf})
+	if err != nil {
 		return nil, err
 	}
 	byExact := map[PersonDuplicateSignal]map[string][]int64{}
-	for root, cluster := range clusters {
-		for signal, values := range cluster.exact {
+	for root, keys := range allKeys {
+		if cluster, ok := clusters[root]; ok {
+			cluster.exact = keys
+		}
+		for signal, values := range keys {
 			if byExact[signal] == nil {
 				byExact[signal] = map[string][]int64{}
 			}
@@ -266,10 +273,17 @@ func (s *Store) personDuplicateProposalsTx(
 		}
 	}
 	for signal, groups := range byExact {
-		// A mailbox, phone number, or account shared by more than five
-		// clusters is a shared line or desk, not one person.
 		for value, roots := range groups {
-			addGroup(signal, value, roots)
+			// A mailbox, phone number, or account shared by more than five
+			// clusters is a shared line or desk, not one person.
+			if len(roots) > maxDuplicateGroupClusters {
+				continue
+			}
+			eligible := slices.DeleteFunc(roots, func(root int64) bool {
+				_, ok := clusters[root]
+				return !ok
+			})
+			addGroup(signal, value, eligible)
 		}
 	}
 	for local, rootDomains := range byLocal {

@@ -51,7 +51,7 @@ of it. The table below says what each feature does without Jev.
 | [`meeting_action_assignee`](#feature-meeting-action-assignee) | Which attendee owns an action item | `meetings judge`; cache builds with `automatic` (up to 200 meetings) | Meeting title, attendee labels without addresses, item title (200) and description (500), redacted | No inferred assignee |
 | [`query_understanding`](#feature-explore-query-understanding) | Which filters a typed search asks for | Web UI searches you type; never automatic | Redacted query, candidate date windows, people-index names, account labels | No chips; the search is unchanged |
 | [`sweep_claim_grounding`](#feature-people-sweep-claim-grounding) | Whether cited excerpts state a claim and it is still current | Manual sweeps and briefs; scheduled with `automatic` | Fact, relation, value (500 characters); **up to 3 cited excerpts of 1,000 characters**, redacted | The chat model's own confidence |
-| [`person_duplicates`](#feature-duplicate-people) | Whether the names on two identity clusters are one human. Shared mailboxes, phone numbers, and provider accounts are decided in code | `person judge`; cache builds with `automatic` (up to 200 pairs) | Up to 3 names per side, whether each side's addresses are personal or at an organization, and whether both share an organization domain. No addresses | Pairs that share a mailbox, phone number, or provider account still become candidates; name pairs are not proposed |
+| [`person_duplicates`](#feature-duplicate-people) | Whether the names on two identity clusters are one human. Shared mailboxes, phone numbers, and provider accounts are decided in code | `person judge`; cache builds with `automatic` (up to 200 name pairs) | Up to 3 names per side, whether each side's addresses are personal or at an organization, and whether both share an organization domain. No addresses | Pairs that share a mailbox, phone number, or provider account still become candidates; name pairs are not proposed |
 | [`person_profile_choices`](#feature-person-profile-choices) | Primary role, display name, and whether two merged free-text or URL values are the same fact, when normalization leaves a real choice | `person judge`; cache builds with `automatic` (up to 200 of each) | Roles (organization, title, start month), names (160 characters), conflict values (300 characters) | The current primary role and the promotion name stay; merge conflicts equal after normalization close in code, the rest wait for you |
 
 Each feature's section below is the full contract: its questions as sent,
@@ -1086,8 +1086,11 @@ two sets of names belong to one person.
      tags, Gmail dots, and googlemail.com). Participant addresses and email
      identifiers both count; relay and robot mailboxes such as
      `reply+<token>@` never do;
-   - a phone number, compared in E.164 form, from a participant's phone or
-     any phone-shaped identifier;
+   - a complete phone number, from a participant's phone or any
+     phone-shaped identifier, compared in E.164 form. Only a number written
+     with its country code (`+` or `00`, at least eight digits) or a
+     ten-digit North American number with valid area and exchange codes
+     counts; a local number such as `555-0100` never does;
    - a provider user ID observed on the same service and scope;
    - a display name (at least two words and five letters, compared ignoring
      case, punctuation, and word order) on different addresses;
@@ -1096,24 +1099,30 @@ two sets of names belong to one person.
 
    A value shared by more than five clusters is too common to mean one
    person and proposes nothing, and so does a name with a team or service
-   word such as "Support" or "via".
+   word such as "Support" or "via". For a mailbox, phone number, or provider
+   account the count includes every cluster that has it, including your own
+   identities, non-people, and identities without an email address.
 2. **Left out.** Your own identities; clusters classified as anything but a
    person (by you, a rule, or Jev); clusters that look like a shared mailbox;
    pairs already bound to one person; pairs with any existing identity match
-   candidate, including one you rejected or unlinked; and a pair where one
-   side was rejected for, or detached from, the other side's person. These
-   rules apply to every pair, so an exact match never overrides your earlier
-   "not the same person".
+   candidate, including one you rejected; and a pair where one side was
+   rejected for, or detached from, the other side's person. Unlinking two
+   identities, including ones you linked by hand, records a rejected match
+   between them, so an unlinked pair is never proposed again. These rules
+   apply to every pair, so an exact match never overrides your earlier "not
+   the same person".
 3. **Exact matches, in code.** A pair that shares a mailbox, phone number, or
    provider account becomes a reviewable candidate without asking Jev, even
-   when Jev is off: basis `email`, `phone`, or `stable_provider_id`, the
+   when Jev is off or cannot answer, and however many name pairs are waiting:
+   basis `email`, `phone`, or `stable_provider_id`, the
    shared value as its normalized value, confidence 1, and evidence that
    reads `decided in code: same_mailbox` (or `same_phone`,
    `same_provider_id`).
 4. **Names, Jev only with consent.** The remaining pairs share only a name or
    a local part. A pair is sent only when both sides have a display name to
    judge; a pair without one is remembered and not proposed again until a
-   side changes. Twenty pairs per request, one Noul each.
+   side changes. Twenty pairs per request, one Noul each. `--limit` and the
+   cache-build cap count only these pairs.
 5. **Code decides what you see.** A name pair judged 0.30 or more likely to
    be one person becomes a reviewable identity match candidate: basis
    `display_name`, the probability as confidence. Below 0.30 the judgment is
@@ -1126,9 +1135,10 @@ duplicate people** (API
 candidate links the two identities through the normal identity link path.
 When both already belong to different saved people, accepting offers the
 usual merge, where you choose the survivor. Rejecting keeps the decision, so
-the pair is never proposed again. The system never accepts a candidate.
+the pair is never proposed again. Only you can accept a duplicate-people
+candidate; msgvault refuses any automatic acceptance, whatever its basis.
 `person judge` runs by hand; with `automatic = true`, each analytics cache
-build takes up to 200 new pairs first.
+build first writes every exact match and sends up to 200 new name pairs.
 
 ### What leaves the machine
 
@@ -1136,7 +1146,9 @@ Per name pair, under `pairs.pair_N`:
 
 - `first.names[]` and `second.names[]`: up to three display names each side
   uses, cut to 120 characters. A name containing an email address or phone
-  number is not sent.
+  number is not sent, and neither is a name that only repeats one of that
+  side's local parts (compared ignoring case and separators, so
+  `john.smith` and "John Smith" both repeat `john.smith@`).
 - `first.address_kinds[]` and `second.address_kinds[]`: `personal` (a
   consumer mail provider such as gmail.com) and/or `organization` (any other
   domain), for up to five addresses each side uses.

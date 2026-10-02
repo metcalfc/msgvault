@@ -527,3 +527,149 @@ func TestRecordPersonDuplicateRulesDropAPairThatNoLongerSharesThePhone(t *testin
 	require.NoError(err)
 	assert.Equal(store.PersonDuplicateWriteResult{Dropped: 1}, result)
 }
+
+func TestPersonDuplicateProposalsNeverReturnAPairTheUserUnlinked(t *testing.T) {
+	tests := []struct {
+		name  string
+		share func(t *testing.T, st *store.Store, left, right int64)
+	}{
+		{"shared phone", func(t *testing.T, st *store.Store, left, right int64) {
+			t.Helper()
+			require.NoError(t, st.SetParticipantIdentifier(left, "phone", "+15555550100"))
+			require.NoError(t, st.SetParticipantIdentifier(right, "whatsapp", "+1 555 555 0100"))
+		}},
+		{"shared provider ID", func(t *testing.T, st *store.Store, left, right int64) {
+			t.Helper()
+			for id, username := range map[int64]string{left: "@lee", right: "@lee_other"} {
+				_, err := st.RecordContactObservationContext(t.Context(), id, store.ParticipantContactObservationInput{
+					AddressKind: store.ContactAddressUsername, ServiceSlug: new("x"),
+					ProviderUserID: new("x-2002"), OriginalValue: username,
+					Envelope: store.ValueEnvelopeInput{Source: store.ProvenanceArchiveObservation},
+				})
+				require.NoError(t, err)
+			}
+		}},
+		{"mailbox named only by an email identifier", func(t *testing.T, st *store.Store, _, right int64) {
+			t.Helper()
+			require.NoError(t, st.SetParticipantIdentifier(right, "email", "Lee+work@example.com"))
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			st := testutil.NewTestStore(t)
+			left := duplicateParticipant(t, st, "lee@example.com", "")
+			right := duplicateParticipant(t, st, "lee.other@example.net", "")
+			_, err := st.LinkParticipants(left, right)
+			require.NoError(err, "a link made by hand has no candidate")
+			_, err = st.UnlinkParticipants(left, right)
+			require.NoError(err)
+			tt.share(t, st, left, right)
+
+			proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+			require.NoError(err)
+			assert.Empty(t, proposals, "the user's unlink is final")
+		})
+	}
+}
+
+func TestUnlinkRemembersAMailboxSharedThroughAnEmailIdentifier(t *testing.T) {
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	left := duplicateParticipant(t, st, "lee@example.com", "")
+	right := duplicateParticipant(t, st, "lee.other@example.net", "")
+	require.NoError(st.SetParticipantIdentifier(right, "email", "Lee+work@example.com"))
+	_, err := st.LinkParticipants(left, right)
+	require.NoError(err)
+	_, err = st.UnlinkParticipants(left, right)
+	require.NoError(err)
+
+	candidates, err := st.ListIdentityMatchCandidatesContext(t.Context(), nil, 100, 0)
+	require.NoError(err)
+	require.Len(candidates, 1, "the same-mailbox record already says it; no second rejection")
+	assert.Equal(t, store.IdentityMatchEmailEquivalence, candidates[0].Basis)
+	assert.Equal(t, store.IdentityMatchStateRejected, candidates[0].State)
+	require.NotNil(candidates[0].NormalizedValue)
+	assert.Equal(t, "lee@example.com", *candidates[0].NormalizedValue)
+}
+
+func TestPersonDuplicateProposalsMatchOnlyCompletePhoneNumbers(t *testing.T) {
+	tests := []struct {
+		name        string
+		left, right string
+		match       bool
+	}{
+		{"ten-digit North American number", "(555) 555-0100", "+1 555 555 0100", true},
+		{"international number", "+44 20 7946 0958", "0044 20 7946 0958", true},
+		{"seven-digit local number", "555-0100", "555 0100", false},
+		{"invalid area code", "(055) 555-0100", "+1 055 555 0100", false},
+		{"no country code", "20 7946 0958 12", "20 7946 0958 12", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			st := testutil.NewTestStore(t)
+			left := duplicateParticipant(t, st, "sam@example.com", "")
+			right := duplicateParticipant(t, st, "srivera@example.net", "")
+			require.NoError(st.SetParticipantIdentifier(left, "phone", tt.left))
+			require.NoError(st.SetParticipantIdentifier(right, "sms", tt.right))
+			proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+			require.NoError(err)
+			if tt.match {
+				assert.Equal(t, [][2]int64{{left, right}}, proposalPairs(proposals))
+			} else {
+				assert.Empty(t, proposals)
+			}
+		})
+	}
+}
+
+func TestPersonDuplicateCapCountsEveryClusterThatSharesTheValue(t *testing.T) {
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	for i, kind := range []string{"phone", "whatsapp", "imessage", "sms", "google_voice"} {
+		id := duplicateParticipant(t, st, fmt.Sprintf("desk%d@example.com", i), "")
+		require.NoError(st.SetParticipantIdentifier(id, kind, "+1 (555) 555-0199"))
+	}
+	proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	require.Len(proposals, 10, "five email clusters pair up")
+
+	// A sixth cluster without an email address still counts.
+	_, err = st.EnsureParticipantByPhone("+15555550199", "Front Desk", "phone_call")
+	require.NoError(err)
+	proposals, err = st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	assert.Empty(t, proposals)
+}
+
+func TestPersonDuplicateMatchIsNeverAcceptedBySystem(t *testing.T) {
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	left := duplicateParticipant(t, st, "kit@example.com", "")
+	right := duplicateParticipant(t, st, "kit.work@example.org", "")
+	for id, username := range map[int64]string{left: "@kit", right: "@kit_work"} {
+		_, err := st.RecordContactObservationContext(t.Context(), id, store.ParticipantContactObservationInput{
+			AddressKind: store.ContactAddressUsername, ServiceSlug: new("x"),
+			ProviderUserID: new("x-1001"), OriginalValue: username,
+			Envelope: store.ValueEnvelopeInput{Source: store.ProvenanceArchiveObservation},
+		})
+		require.NoError(err)
+	}
+	proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	_, err = st.RecordPersonDuplicateRulesContext(t.Context(), proposals)
+	require.NoError(err)
+	candidates, err := st.ListPersonDuplicateCandidatesContext(t.Context(), nil, 100, 0)
+	require.NoError(err)
+	require.Len(candidates, 1)
+	require.Equal(store.IdentityMatchStableProviderID, candidates[0].Basis)
+
+	_, err = st.DecideIdentityMatchCandidateContext(t.Context(), candidates[0].ID,
+		store.IdentityMatchStateAccepted, string(store.ProvenanceSystem), nil)
+	require.ErrorIs(err, store.ErrIdentityMatchNotAcceptable)
+	accepted, err := st.DecideIdentityMatchCandidateContext(t.Context(), candidates[0].ID,
+		store.IdentityMatchStateAccepted, string(store.ProvenanceUser), nil)
+	require.NoError(err)
+	assert.Equal(t, store.IdentityMatchStateAccepted, accepted.State)
+}

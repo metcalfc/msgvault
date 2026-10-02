@@ -97,56 +97,95 @@ func duplicateMailboxKey(address string) (string, bool) {
 	return emailaddr.Mailbox(address)
 }
 
-// duplicatePhoneKey returns a phone number in E.164 form, or false when the
-// value is not shaped like a phone number.
+// duplicatePhoneKey returns a phone number in E.164 form when it is
+// complete enough to identify one line: written with a country code (a
+// leading "+" or "00") and 8 to 15 digits, or a North American number of
+// ten digits (optionally after a leading 1). A local number without its
+// country or area code is never a match. North American numbers must have
+// valid area and exchange codes.
 func duplicatePhoneKey(raw string) (string, bool) {
 	if !phoneShaped(raw) {
 		return "", false
 	}
 	normalized, err := textimport.NormalizePhone(raw)
-	return normalized, err == nil
+	if err != nil {
+		return "", false
+	}
+	digits := normalized[1:]
+	trimmed := strings.TrimSpace(raw)
+	international := strings.HasPrefix(trimmed, "+") || strings.HasPrefix(trimmed, "00")
+	switch {
+	case strings.HasPrefix(digits, "1"):
+		// NANP: +1 NXX NXX XXXX, whether written with +1, 1, or ten digits.
+		return normalized, len(digits) == 11 && digits[1] >= '2' && digits[4] >= '2'
+	case international:
+		return normalized, len(digits) >= 8
+	default:
+		return "", false
+	}
 }
 
-// loadDuplicateExactKeysTx fills each cluster's exact keys from all of its
-// members: mailboxes from participant addresses and email identifiers,
-// phone numbers from participant phones and phone-shaped identifiers, and
-// provider user IDs from current contact observations.
-func loadDuplicateExactKeysTx(
-	ctx context.Context, tx *loggedTx, clusters map[int64]*duplicateCluster,
-) error {
-	rootOf := map[int64]int64{}
-	members := []int64{}
-	for root, cluster := range clusters {
-		cluster.exact = duplicateExactKeys{}
-		for _, member := range cluster.members {
-			rootOf[member] = root
-			members = append(members, member)
-		}
-	}
-	slices.Sort(members)
-	keys := func(id int64) duplicateExactKeys { return clusters[rootOf[id]].exact }
+// exactKeyScope selects whose exact keys loadDuplicateExactKeysTx reads:
+// the listed participants, or every participant when members is nil.
+type exactKeyScope struct {
+	members []int64
+	rootOf  func(int64) int64
+}
 
-	if err := queryInChunksContext(ctx, tx, members, nil, `
-		SELECT id, COALESCE(email_address, ''), COALESCE(phone_number, '')
-		FROM participants WHERE id IN (%s)`, func(rows *loggedRows) error {
+// loadDuplicateExactKeysTx reads exact identity keys per cluster root:
+// mailboxes from participant addresses and email identifiers, phone numbers
+// from participant phones and phone-shaped identifiers, and provider user
+// IDs from current contact observations.
+func loadDuplicateExactKeysTx(
+	ctx context.Context, tx *loggedTx, scope exactKeyScope,
+) (map[int64]duplicateExactKeys, error) {
+	keys := map[int64]duplicateExactKeys{}
+	add := func(id int64, signal PersonDuplicateSignal, value string) {
+		root := scope.rootOf(id)
+		if keys[root] == nil {
+			keys[root] = duplicateExactKeys{}
+		}
+		keys[root].add(signal, value)
+	}
+	// Each query's %s is the participant filter: an IN list for a scope,
+	// or a tautology for the whole archive.
+	scan := func(template, column string, fn func(*loggedRows) error) error {
+		if scope.members == nil {
+			rows, err := tx.QueryContext(ctx, fmt.Sprintf(template, "1 = 1"))
+			if err != nil {
+				return err
+			}
+			defer func() { _ = rows.Close() }()
+			for rows.Next() {
+				if err := fn(rows); err != nil {
+					return err
+				}
+			}
+			return rows.Err()
+		}
+		return queryInChunksContext(ctx, tx, scope.members, nil,
+			fmt.Sprintf(template, column+" IN (%s)"), fn)
+	}
+
+	if err := scan(`SELECT id, COALESCE(email_address, ''), COALESCE(phone_number, '')
+		FROM participants WHERE %s`, "id", func(rows *loggedRows) error {
 		var id int64
 		var email, phone string
 		if err := rows.Scan(&id, &email, &phone); err != nil {
 			return fmt.Errorf("scan duplicate-person contact: %w", err)
 		}
 		if mailbox, ok := duplicateMailboxKey(email); ok {
-			keys(id).add(PersonDuplicateSameMailbox, mailbox)
+			add(id, PersonDuplicateSameMailbox, mailbox)
 		}
 		if normalized, ok := duplicatePhoneKey(phone); ok {
-			keys(id).add(PersonDuplicateSamePhone, normalized)
+			add(id, PersonDuplicateSamePhone, normalized)
 		}
 		return nil
 	}); err != nil {
-		return fmt.Errorf("load duplicate-person contacts: %w", err)
+		return nil, fmt.Errorf("load duplicate-person contacts: %w", err)
 	}
-	if err := queryInChunksContext(ctx, tx, members, nil, `
-		SELECT participant_id, identifier_type, identifier_value
-		FROM participant_identifiers WHERE participant_id IN (%s)`, func(rows *loggedRows) error {
+	if err := scan(`SELECT participant_id, identifier_type, identifier_value
+		FROM participant_identifiers WHERE %s`, "participant_id", func(rows *loggedRows) error {
 		var id int64
 		var kind, value string
 		if err := rows.Scan(&id, &kind, &value); err != nil {
@@ -154,38 +193,38 @@ func loadDuplicateExactKeysTx(
 		}
 		if kind == "email" {
 			if mailbox, ok := duplicateMailboxKey(value); ok {
-				keys(id).add(PersonDuplicateSameMailbox, mailbox)
+				add(id, PersonDuplicateSameMailbox, mailbox)
 			}
 			return nil
 		}
 		if normalized, ok := duplicatePhoneKey(value); ok {
-			keys(id).add(PersonDuplicateSamePhone, normalized)
+			add(id, PersonDuplicateSamePhone, normalized)
 		}
 		return nil
 	}); err != nil {
-		return fmt.Errorf("load duplicate-person identifiers: %w", err)
+		return nil, fmt.Errorf("load duplicate-person identifiers: %w", err)
 	}
-	if err := queryInChunksContext(ctx, tx, members, nil, `
-		SELECT o.participant_id, COALESCE(cs.slug, ''), COALESCE(o.scope_kind, ''),
+	if err := scan(`SELECT o.participant_id, COALESCE(cs.slug, ''), COALESCE(o.scope_kind, ''),
 			COALESCE(o.scope_value, ''), o.provider_user_id
 		FROM participant_contact_observations o
 		LEFT JOIN communication_services cs ON cs.id = o.service_id
-		WHERE o.participant_id IN (%s)
+		WHERE %s
 		  AND o.provider_user_id IS NOT NULL AND TRIM(o.provider_user_id) <> ''
-		  AND o.active_until IS NULL AND o.superseded_at IS NULL`, func(rows *loggedRows) error {
-		var id int64
-		var service, scopeKind, scopeValue string
-		var provider sql.NullString
-		if err := rows.Scan(&id, &service, &scopeKind, &scopeValue, &provider); err != nil {
-			return fmt.Errorf("scan duplicate-person provider identity: %w", err)
-		}
-		keys(id).add(PersonDuplicateSameProviderID,
-			duplicateProviderKey(service, scopeKind, scopeValue, provider.String))
-		return nil
-	}); err != nil {
-		return fmt.Errorf("load duplicate-person provider identities: %w", err)
+		  AND o.active_until IS NULL AND o.superseded_at IS NULL`, "o.participant_id",
+		func(rows *loggedRows) error {
+			var id int64
+			var service, scopeKind, scopeValue string
+			var provider sql.NullString
+			if err := rows.Scan(&id, &service, &scopeKind, &scopeValue, &provider); err != nil {
+				return fmt.Errorf("scan duplicate-person provider identity: %w", err)
+			}
+			add(id, PersonDuplicateSameProviderID,
+				duplicateProviderKey(service, scopeKind, scopeValue, provider.String))
+			return nil
+		}); err != nil {
+		return nil, fmt.Errorf("load duplicate-person provider identities: %w", err)
 	}
-	return nil
+	return keys, nil
 }
 
 // duplicateProviderKey scopes a provider user ID by its service and scope,
