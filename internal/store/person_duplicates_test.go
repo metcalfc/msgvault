@@ -402,3 +402,128 @@ func TestRecordPersonDuplicateJudgmentsRejectsMalformedInput(t *testing.T) {
 	}})
 	assert.ErrorIs(t, err, store.ErrPersonDuplicateInvalid)
 }
+
+func signalsByPair(proposals []store.PersonDuplicateProposal) map[[2]int64][]store.PersonDuplicateSignal {
+	signals := map[[2]int64][]store.PersonDuplicateSignal{}
+	for _, proposal := range proposals {
+		signals[[2]int64{proposal.Left.ParticipantID, proposal.Right.ParticipantID}] = proposal.Signals
+	}
+	return signals
+}
+
+func TestPersonDuplicateProposalsFindExactMailboxesAndPhones(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	// A plus tag on the same domain shares neither a name nor a local part
+	// at another domain; only the mailbox rule finds it.
+	tagged := duplicateParticipant(t, st, "lee+lists@example.com", "")
+	plain := duplicateParticipant(t, st, "lee@example.com", "")
+	// An email identifier on another participant names the same mailbox.
+	other := duplicateParticipant(t, st, "lee.other@example.net", "")
+	require.NoError(st.SetParticipantIdentifier(other, "email", "Lee@Example.com"))
+	// Relay mailboxes give every thread its own tag; they never match.
+	duplicateParticipant(t, st, "reply+abc123@example.org", "")
+	duplicateParticipant(t, st, "reply+def456@example.org", "")
+
+	proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	exact := store.PersonDuplicateSameMailbox
+	assert.Equal(map[[2]int64][]store.PersonDuplicateSignal{
+		{tagged, plain}: {exact}, {tagged, other}: {exact}, {plain, other}: {exact},
+	}, signalsByPair(proposals))
+	for _, proposal := range proposals {
+		signal, ok := proposal.ExactSignal()
+		assert.True(ok)
+		assert.Equal(exact, signal)
+		assert.Equal("lee@example.com", proposal.SignalValues[exact])
+	}
+}
+
+func TestPersonDuplicateProposalsLeaveOutASharedPhoneDesk(t *testing.T) {
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	// Each importer records the number under its own identifier type.
+	for i, kind := range []string{"phone", "whatsapp", "imessage", "sms", "google_voice", "signal"} {
+		id := duplicateParticipant(t, st, fmt.Sprintf("desk%d@example.com", i), "")
+		require.NoError(st.SetParticipantIdentifier(id, kind, "+1 (555) 555-0199"))
+	}
+	proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	assert.Empty(t, proposals, "a number shared by more than five clusters proposes nothing")
+}
+
+func TestPersonDuplicateMatchesHonorADetachment(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	primary := duplicateParticipant(t, st, "pat@example.com", "")
+	other := duplicateParticipant(t, st, "pat.other@example.org", "")
+	_, err := st.LinkParticipants(primary, other)
+	require.NoError(err)
+	person, _, err := st.CreatePersonFromParticipant(primary)
+	require.NoError(err)
+	_, err = st.DetachPersonParticipantsContext(t.Context(), store.PersonParticipantDetachRequest{
+		PersonID: person.ID, ParticipantIDs: []int64{other}, ExpectedRevision: person.Revision, Actor: "user",
+	})
+	require.NoError(err)
+	require.NoError(st.SetParticipantIdentifier(primary, "phone", "+15555550123"))
+	require.NoError(st.SetParticipantIdentifier(other, "sms", "555-555-0123"))
+
+	proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	assert.Empty(proposals, "a detached identity is never matched back to its person")
+}
+
+func TestRecordPersonDuplicateRulesWritesMatchesAndRemembersUnnamedPairs(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	left := duplicateParticipant(t, st, "sam@example.com", "")
+	right := duplicateParticipant(t, st, "srivera@example.net", "")
+	require.NoError(st.SetParticipantIdentifier(left, "phone", "+15555550100"))
+	require.NoError(st.SetParticipantIdentifier(right, "whatsapp", "+1 555 555 0100"))
+	duplicateParticipant(t, st, "robin.example@example.com", "")
+	duplicateParticipant(t, st, "robin.example@example.net", "")
+
+	proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	require.Len(proposals, 2)
+	_, err = st.RecordPersonDuplicateJudgmentsContext(t.Context(), []store.PersonDuplicateJudgment{{
+		Proposal: proposals[0], Probability: 0.9, Model: "jev-test", Propose: true,
+	}, {
+		Proposal: proposals[1], Probability: 0.9, Model: "jev-test", Propose: true,
+	}})
+	require.ErrorIs(err, store.ErrPersonDuplicateInvalid, "a Jev answer never decides an exact match")
+
+	result, err := st.RecordPersonDuplicateRulesContext(t.Context(), proposals)
+	require.NoError(err)
+	assert.Equal(store.PersonDuplicateWriteResult{Recorded: 2, Candidates: 1}, result)
+	candidates, err := st.ListPersonDuplicateCandidatesContext(t.Context(), nil, 100, 0)
+	require.NoError(err)
+	require.Len(candidates, 1)
+	assert.Equal([2]int64{left, right}, [2]int64{candidates[0].LeftID, candidates[0].RightID})
+	assert.Equal(store.IdentityMatchPhone, candidates[0].Basis)
+	again, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	assert.Empty(again, "both pairs are remembered")
+}
+
+func TestRecordPersonDuplicateRulesDropAPairThatNoLongerSharesThePhone(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	left := duplicateParticipant(t, st, "sam@example.com", "")
+	right := duplicateParticipant(t, st, "srivera@example.net", "")
+	require.NoError(st.SetParticipantIdentifier(left, "phone", "+15555550100"))
+	require.NoError(st.SetParticipantIdentifier(right, "whatsapp", "+15555550100"))
+	proposals, err := st.PersonDuplicateProposalsContext(t.Context(), 0)
+	require.NoError(err)
+	require.Len(proposals, 1)
+
+	require.NoError(st.SetParticipantIdentifier(left, "whatsapp", "+15555550100"),
+		"the number moves to the other side")
+	result, err := st.RecordPersonDuplicateRulesContext(t.Context(), proposals)
+	require.NoError(err)
+	assert.Equal(store.PersonDuplicateWriteResult{Dropped: 1}, result)
+}

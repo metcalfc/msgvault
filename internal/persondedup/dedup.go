@@ -1,8 +1,11 @@
-// Package persondedup proposes identity clusters that may be one person and
-// asks Jev (feature person_duplicates) whether each pair is the same human
-// being. Code proposes the pairs; Jev only returns a probability; a pair at
-// or above CandidateThreshold becomes a reviewable identity match candidate
-// that only a person's explicit accept ever applies.
+// Package persondedup proposes identity clusters that may be one person.
+// Pairs that share a mailbox, a phone number, or a provider account are
+// decided in code and become reviewable candidates without Jev. For pairs
+// that only share a display name or an address name, Jev (feature
+// person_duplicates) is asked whether the names belong to one human being;
+// it sees the names and coarse address context, never an address. A pair at
+// or above CandidateThreshold becomes a reviewable identity match candidate.
+// Only a person's explicit accept ever applies a candidate.
 package persondedup
 
 import (
@@ -10,13 +13,16 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"go.kenn.io/msgvault/internal/correspondentkind"
 	"go.kenn.io/msgvault/internal/jev"
 	"go.kenn.io/msgvault/internal/meetingjudge"
 	"go.kenn.io/msgvault/internal/store"
+	"golang.org/x/net/publicsuffix"
 )
 
 // Judgment bounds and threshold.
@@ -27,7 +33,14 @@ const (
 	// a reviewable candidate. Below it the judgment is only remembered.
 	CandidateThreshold = 0.30
 	maxNameRunes       = 120
-	maxAddressRunes    = 254
+)
+
+// Address kinds sent instead of addresses.
+const (
+	// AddressPersonal is an address at a consumer mail provider.
+	AddressPersonal = "personal"
+	// AddressOrganization is an address at any other domain.
+	AddressOrganization = "organization"
 )
 
 // PairKey is the state key of the i-th (zero-based) pair in a request.
@@ -45,29 +58,35 @@ func Feature() jev.FeatureSpec {
 		pair := "pairs." + PairKey(i)
 		questions[i] = jev.Question{
 			ID: QuestionID(i), Type: jev.QuestionNoul,
-			Instructions: fmt.Sprintf("Are `%s.first` and `%s.second` the same human being? `%s.signals` "+
-				"says what they share.", pair, pair, pair),
+			Instructions: fmt.Sprintf("Do the names in `%s.first` and `%s.second` belong to the same human being? "+
+				"`%s.signals` says what the two sides share, `address_kinds` says whether each side writes "+
+				"from a personal mail provider or an organization's domain, and "+
+				"`%s.same_organization_domain` says whether both sides use one organization's domain.",
+				pair, pair, pair, pair),
 			Criteria: jev.NoulCriteria{
-				True: "The names and addresses belong to one person, for example the same full name at a " +
-					"personal and a work address, or the same distinctive address name at two domains.",
-				False: "Different people who share a common name or address name, a person and a team, " +
-					"company, or service address, or not enough to tell.",
+				True: "The names belong to one person, for example the same full name at a personal and a work " +
+					"address, or a name and its initials or nickname on two addresses with the same " +
+					"distinctive address name.",
+				False: "Different people who share a common name, a person and a team, company, or service, " +
+					"or not enough to tell.",
 			},
 		}
 	}
 	return jev.FeatureSpec{
 		Name:  jev.FeatureDuplicatePeople,
 		Title: "Duplicate people",
-		Purpose: "Find correspondents who are probably one person writing from several addresses. Code " +
-			"proposes pairs that share a display name or a distinctive address name; Jev says how likely " +
-			"each pair is one person, and likely pairs appear in Reviews for you to accept or reject. " +
+		Purpose: "Find correspondents who are probably one person writing from several addresses. Pairs " +
+			"that share a mailbox, phone number, or provider account are decided in code and never sent. " +
+			"For pairs that only share a display name or a distinctive address name, Jev says how likely " +
+			"the names are one person, and likely pairs appear in Reviews for you to accept or reject. " +
 			"Nothing is linked or merged unless you accept it.",
 		Questions: questions,
 		StateFields: []string{
 			"pairs.pair_N.first.names[] and .second.names[]: up to three display names each side uses, " +
 				"cut to 120 characters; a name with an email address or phone number is not sent",
-			"pairs.pair_N.first.addresses[] and .second.addresses[]: up to five email addresses each side " +
-				"uses (the full addresses)",
+			"pairs.pair_N.first.address_kinds[] and .second.address_kinds[]: personal and/or organization, " +
+				"for up to five addresses each side uses; no address, local part, or domain is sent",
+			"pairs.pair_N.same_organization_domain: true when both sides use the same organization domain",
 			"pairs.pair_N.signals[]: same_display_name and/or same_local_part",
 		},
 	}
@@ -83,6 +102,9 @@ type Judge interface {
 // Store is the archive authority a run needs. *store.Store implements it.
 type Store interface {
 	PersonDuplicateProposalsContext(ctx context.Context, limit int) ([]store.PersonDuplicateProposal, error)
+	RecordPersonDuplicateRulesContext(
+		ctx context.Context, proposals []store.PersonDuplicateProposal,
+	) (store.PersonDuplicateWriteResult, error)
 	RecordPersonDuplicateJudgmentsContext(
 		ctx context.Context, judgments []store.PersonDuplicateJudgment,
 	) (store.PersonDuplicateWriteResult, error)
@@ -90,9 +112,10 @@ type Store interface {
 
 // Options configure one run.
 type Options struct {
-	// Limit caps how many pairs one run judges; zero means no cap.
+	// Limit caps how many pairs one run takes up; zero means no cap.
 	Limit int
-	// Judge is nil when Jev is off; the run then only counts proposals.
+	// Judge is nil when Jev is off; the run then writes only the pairs
+	// decided in code.
 	Judge     Judge
 	Automatic bool
 	Logger    *slog.Logger
@@ -100,36 +123,47 @@ type Options struct {
 
 // Report summarizes a run. It never contains names or addresses.
 type Report struct {
-	Proposals  int `json:"proposals"`
-	Requests   int `json:"requests"`
-	Judged     int `json:"judged"`
+	Proposals int `json:"proposals"`
+	// Matched counts pairs that share a mailbox, phone number, or provider
+	// account. They are decided in code, never sent to Jev.
+	Matched int `json:"matched"`
+	// Unnamed counts name pairs never sent because a side has no display
+	// name to judge. They are remembered and proposed again only when a
+	// side changes.
+	Unnamed  int `json:"unnamed"`
+	Requests int `json:"requests"`
+	Judged   int `json:"judged"`
+	// Candidates counts new review candidates, from code and from Jev.
 	Candidates int `json:"candidates"`
 	Existing   int `json:"existing"`
-	// Dropped counts judged pairs that no longer qualified when written.
+	// Dropped counts pairs that no longer qualified when written.
 	Dropped int    `json:"dropped"`
 	Skipped string `json:"skipped,omitempty"`
 }
 
-// IdentityState is one side of a pair as sent.
+// IdentityState is one side of a pair as sent: names and the kind of each
+// address, never the addresses.
 type IdentityState struct {
-	Names     []string `json:"names"`
-	Addresses []string `json:"addresses"`
+	Names        []string `json:"names"`
+	AddressKinds []string `json:"address_kinds"`
 }
 
 // PairState is one pair as sent.
 type PairState struct {
-	First   IdentityState `json:"first"`
-	Second  IdentityState `json:"second"`
-	Signals []string      `json:"signals"`
+	First                  IdentityState `json:"first"`
+	Second                 IdentityState `json:"second"`
+	SameOrganizationDomain bool          `json:"same_organization_domain"`
+	Signals                []string      `json:"signals"`
 }
 
 type requestState struct {
 	Pairs map[string]PairState `json:"pairs"`
 }
 
-// Run proposes pairs and judges them PairsPerRequest at a time. Any gate,
-// budget, or provider failure stops Jev for the rest of the run and leaves
-// the remaining pairs for a later run; only a store failure fails the run.
+// Run proposes pairs, writes the ones decided in code, and judges the name
+// pairs PairsPerRequest at a time. Any gate, budget, or provider failure
+// stops Jev for the rest of the run and leaves the remaining name pairs for
+// a later run; only a store failure fails the run.
 func Run(ctx context.Context, st Store, options Options) (Report, error) {
 	if options.Logger == nil {
 		options.Logger = slog.Default()
@@ -140,14 +174,35 @@ func Run(ctx context.Context, st Store, options Options) (Report, error) {
 		return report, fmt.Errorf("propose duplicate people: %w", err)
 	}
 	report.Proposals = len(proposals)
-	if options.Judge == nil {
+	var ruled, named []store.PersonDuplicateProposal
+	var pairs []PairState
+	for _, proposal := range proposals {
+		if _, exact := proposal.ExactSignal(); exact {
+			report.Matched++
+			ruled = append(ruled, proposal)
+			continue
+		}
+		pair := pairState(proposal)
+		if len(pair.First.Names) == 0 || len(pair.Second.Names) == 0 {
+			// Without a name on both sides there is nothing to judge.
+			report.Unnamed++
+			ruled = append(ruled, proposal)
+			continue
+		}
+		named = append(named, proposal)
+		pairs = append(pairs, pair)
+	}
+	if len(ruled) > 0 {
+		written, err := st.RecordPersonDuplicateRulesContext(ctx, ruled)
+		if err != nil {
+			return report, fmt.Errorf("record duplicate people decided in code: %w", err)
+		}
+		addWritten(&report, written)
+	}
+	if options.Judge == nil || len(named) == 0 {
 		return report, nil
 	}
 	spec := Feature()
-	pairs := make([]PairState, len(proposals))
-	for i, proposal := range proposals {
-		pairs[i] = pairState(proposal)
-	}
 	build := func(start, end int) any {
 		state := requestState{Pairs: make(map[string]PairState, end-start)}
 		for i, pair := range pairs[start:end] {
@@ -156,10 +211,10 @@ func Run(ctx context.Context, st Store, options Options) (Report, error) {
 		return state
 	}
 	// Up to PairsPerRequest pairs per request, fewer when identities carry
-	// enough names and addresses to overrun the shared Jev token budget.
+	// enough names to overrun the shared Jev token budget.
 	var storeErr error
-	jevErr := jev.JudgeSpans(len(proposals), PairsPerRequest, spec.Questions, build, func(span jev.Span) error {
-		chunk := proposals[span.Start:span.End]
+	jevErr := jev.JudgeSpans(len(named), PairsPerRequest, spec.Questions, build, func(span jev.Span) error {
+		chunk := named[span.Start:span.End]
 		ids := make([]string, len(chunk))
 		for i := range chunk {
 			ids[i] = QuestionID(i)
@@ -189,6 +244,12 @@ func Run(ctx context.Context, st Store, options Options) (Report, error) {
 	return report, nil
 }
 
+func addWritten(report *Report, written store.PersonDuplicateWriteResult) {
+	report.Candidates += written.Candidates
+	report.Existing += written.Existing
+	report.Dropped += written.Dropped
+}
+
 // recordJudgments stores one request's answers.
 func recordJudgments(
 	ctx context.Context, st Store, chunk []store.PersonDuplicateProposal, response jev.Response, report *Report,
@@ -206,9 +267,7 @@ func recordJudgments(
 		return fmt.Errorf("record duplicate people judgments: %w", err)
 	}
 	report.Judged += written.Recorded
-	report.Candidates += written.Candidates
-	report.Existing += written.Existing
-	report.Dropped += written.Dropped
+	addWritten(report, written)
 	return nil
 }
 
@@ -230,14 +289,16 @@ func pairState(proposal store.PersonDuplicateProposal) PairState {
 		signals[i] = string(signal)
 	}
 	return PairState{
-		First: identityState(proposal.Left), Second: identityState(proposal.Right), Signals: signals,
+		First: identityState(proposal.Left), Second: identityState(proposal.Right),
+		SameOrganizationDomain: sameOrganizationDomain(proposal.Left.Addresses, proposal.Right.Addresses),
+		Signals:                signals,
 	}
 }
 
-// identityState keeps names that carry no address or phone number, and the
-// email addresses themselves.
+// identityState keeps names that carry no address or phone number, and only
+// the kind of each address.
 func identityState(identity store.PersonDuplicateIdentity) IdentityState {
-	state := IdentityState{Names: []string{}, Addresses: []string{}}
+	state := IdentityState{Names: []string{}, AddressKinds: []string{}}
 	for _, name := range identity.Names {
 		name = strings.TrimSpace(name)
 		if name == "" || meetingjudge.RedactText(name) != name {
@@ -246,9 +307,46 @@ func identityState(identity store.PersonDuplicateIdentity) IdentityState {
 		state.Names = append(state.Names, truncateRunes(name, maxNameRunes))
 	}
 	for _, address := range identity.Addresses {
-		state.Addresses = append(state.Addresses, truncateRunes(address, maxAddressRunes))
+		_, domain := correspondentkind.SplitEmail(address)
+		if domain == "" {
+			continue
+		}
+		kind := AddressOrganization
+		if correspondentkind.IsFreemailDomain(domain) {
+			kind = AddressPersonal
+		}
+		if !slices.Contains(state.AddressKinds, kind) {
+			state.AddressKinds = append(state.AddressKinds, kind)
+		}
 	}
+	slices.Sort(state.AddressKinds)
 	return state
+}
+
+// sameOrganizationDomain reports whether both sides have an address at the
+// same registrable domain that is not a consumer mail provider.
+func sameOrganizationDomain(left, right []string) bool {
+	domains := func(addresses []string) map[string]struct{} {
+		result := map[string]struct{}{}
+		for _, address := range addresses {
+			_, domain := correspondentkind.SplitEmail(address)
+			if domain == "" || correspondentkind.IsFreemailDomain(domain) {
+				continue
+			}
+			if registrable, err := publicsuffix.EffectiveTLDPlusOne(domain); err == nil {
+				domain = registrable
+			}
+			result[domain] = struct{}{}
+		}
+		return result
+	}
+	rightDomains := domains(right)
+	for domain := range domains(left) {
+		if _, ok := rightDomains[domain]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func truncateRunes(value string, limit int) string {

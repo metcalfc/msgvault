@@ -82,13 +82,15 @@ All notable changes to msgvault, grouped by release.
 - MCP account arguments match ignoring case, and an unknown account's error
   lists the valid ones. The search operator documentation names
   `message_type:`.
-- Find people who write from several addresses. With
-  `[jev.person_duplicates]` enabled and consented, `msgvault person judge`
-  proposes identities that share a display name or a distinctive address
-  name and asks Jev how likely each pair is one person, sending their display
-  names and email addresses. Likely pairs appear under Reviews → Possible
-  duplicate people; nothing is linked or merged until you accept one.
-  Requires API schema 2.44.0.
+- Find people who write from several addresses. `msgvault person judge`
+  proposes identities that share a mailbox, phone number, or provider
+  account, and lists them for review without Jev. With
+  `[jev.person_duplicates]` enabled and consented, it also asks Jev whether
+  identities that share only a display name or a distinctive address name
+  are one person, sending their display names and whether each side's
+  addresses are personal or at an organization, never the addresses. Pairs
+  appear under Reviews → Possible duplicate people; nothing is linked or
+  merged until you accept one. Requires API schema 2.44.0.
 - Settle small profile choices with `[jev.person_profile_choices]`: which of
   several automatically found current roles is primary, which name a newly
   saved person shows when their addresses use different names, and whether

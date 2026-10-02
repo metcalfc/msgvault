@@ -34,17 +34,22 @@ func newPersonJudgeCommand() *cobra.Command {
 		Use:   "judge",
 		Short: "Ask Jev about duplicate people and small profile choices",
 		Long: `Duplicate people: code proposes pairs of identity clusters with an email
-address that share a display name (at least two words, in any order) on
-different addresses, or the same distinctive address name (the part before
-@) at different domains. Your own identities, clusters classified as anything
-but a person, shared mailboxes, pairs already bound to one person, and pairs
-with an existing identity match candidate or rejection are left out. When
-[jev] and [jev.person_duplicates] are enabled, an API key resolves, and
-'msgvault jev consent person_duplicates' has been given, the pairs are sent to
-Jev twenty per request with their display names and email addresses. A pair
-judged at least 0.30 likely to be one person becomes a candidate under
-Reviews > Possible duplicate people; nothing is linked or merged until you
-accept it. Each pair is asked once until either side changes.
+address that share an address delivering to the same mailbox, a phone number,
+or a provider account, a display name (at least two words, in any order) on
+different addresses, or the same distinctive address name (the part before @)
+at different domains. Your own identities, clusters classified as anything but
+a person, shared mailboxes, pairs already bound to one person, and pairs with
+an existing identity match candidate or rejection are left out. A pair that
+shares a mailbox, phone number, or provider account is decided in code: it
+becomes a candidate under Reviews > Possible duplicate people without asking
+Jev, whether or not Jev is on. For the other pairs, when [jev] and
+[jev.person_duplicates] are enabled, an API key resolves, and 'msgvault jev
+consent person_duplicates' has been given, pairs with a display name on both
+sides are sent to Jev twenty per request with their display names and whether
+each side's addresses are personal or at an organization, never the addresses.
+A pair judged at least 0.30 likely to be one person becomes a candidate.
+Nothing is linked or merged until you accept it. Each pair is taken up once
+until either side changes.
 
 Profile choices: code first settles what normalization decides, with or
 without Jev and over every eligible item; --limit caps only what is sent to
@@ -137,10 +142,10 @@ func runPersonJudge(
 
 func writePersonJudgeReport(w io.Writer, report personJudgeReport) {
 	duplicates := report.Duplicates
-	_, _ = fmt.Fprintf(w, "Possible duplicate pairs: %d\n", duplicates.Proposals)
+	_, _ = fmt.Fprintf(w, "Possible duplicate pairs: %d (%d decided in code)\n", duplicates.Proposals, duplicates.Matched)
 	switch {
 	case !report.DuplicatesJev:
-		_, _ = fmt.Fprintln(w, "Duplicate people: Jev off")
+		_, _ = fmt.Fprintf(w, "Duplicate people: Jev off; %d new candidate(s) for review\n", duplicates.Candidates)
 	case duplicates.Skipped != "":
 		_, _ = fmt.Fprintf(w, "Duplicate people: skipped:%s after %d request(s); judged %d, %d new candidate(s)\n",
 			duplicates.Skipped, duplicates.Requests, duplicates.Judged, duplicates.Candidates)

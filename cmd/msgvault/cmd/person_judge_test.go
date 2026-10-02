@@ -10,13 +10,17 @@ import (
 	"go.kenn.io/msgvault/internal/testutil"
 )
 
-func TestRunPersonJudgeWithJevOffOnlyCountsProposals(t *testing.T) {
+func TestRunPersonJudgeWithJevOffWritesOnlyMatchesDecidedInCode(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	st := testutil.NewTestStore(t)
 	_, err := st.EnsureParticipant("jane@example.com", "Jane Doe", "example.com")
 	require.NoError(err)
 	_, err = st.EnsureParticipant("jdoe@example.org", "Jane Doe", "example.org")
+	require.NoError(err)
+	_, err = st.EnsureParticipant("river.example@gmail.com", "River Example", "gmail.com")
+	require.NoError(err)
+	_, err = st.EnsureParticipant("riverexample@googlemail.com", "", "googlemail.com")
 	require.NoError(err)
 	cfg := config.NewDefaultConfig()
 	cfg.HomeDir = t.TempDir()
@@ -26,13 +30,17 @@ func TestRunPersonJudgeWithJevOffOnlyCountsProposals(t *testing.T) {
 	require.NoError(err)
 	assert.False(report.DuplicatesJev)
 	assert.False(report.ProfilesJev)
-	assert.Equal(1, report.Duplicates.Proposals)
+	assert.Equal(2, report.Duplicates.Proposals)
+	assert.Equal(1, report.Duplicates.Matched)
+	assert.Equal(1, report.Duplicates.Candidates, "the shared mailbox is decided in code")
 	assert.Zero(report.Duplicates.Requests)
 	assert.False(personJudgeAutomatic(cfg))
 
 	var out bytes.Buffer
 	writePersonJudgeReport(&out, report)
-	assert.Equal("Possible duplicate pairs: 1\nDuplicate people: Jev off\nProfile choices: Jev off; 0 settled in code\n", out.String())
+	assert.Equal("Possible duplicate pairs: 2 (1 decided in code)\n"+
+		"Duplicate people: Jev off; 1 new candidate(s) for review\n"+
+		"Profile choices: Jev off; 0 settled in code\n", out.String())
 
 	cfg.Jev.Enabled = true
 	cfg.Jev.PersonProfileChoices.Enabled = true

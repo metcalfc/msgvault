@@ -447,11 +447,14 @@ separate setup for looking up public information.
 
 ## Merge duplicate profiles and reverse a merge
 
-To find likely duplicates, the optional
-[duplicate people](jev-judgments.md#feature-duplicate-people) Jev judgment
-lists identities that share a display name or address name under **Reviews →
-Possible duplicate people**. Accepting one links the identities, or offers the
-merge below when both already belong to saved people.
+To find likely duplicates, run `msgvault person judge`. Identities that
+share a mailbox, phone number, or provider account are listed under
+**Reviews → Possible duplicate people** directly. With the optional
+[duplicate people](jev-judgments.md#feature-duplicate-people) Jev judgment,
+identities that share only a display name or address name are listed there
+too when Jev judges the names likely to be one person. Accepting one links
+the identities, or offers the merge below when both already belong to saved
+people.
 
 Merge two durable profiles only after reviewing both people. The first person
 survives with the same ID and vCard UID; the second person's participants and

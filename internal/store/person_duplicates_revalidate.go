@@ -117,6 +117,11 @@ func (s *Store) revalidatePersonDuplicateTx(
 	}); err != nil {
 		return false, fmt.Errorf("load duplicate-person participants: %w", err)
 	}
+	if slices.ContainsFunc(proposal.Signals, PersonDuplicateSignal.Exact) {
+		if err := loadDuplicateExactKeysTx(ctx, tx, clusters); err != nil {
+			return false, err
+		}
+	}
 	for _, signal := range proposal.Signals {
 		value, ok := proposal.SignalValues[signal]
 		if !ok || !stillShared(signal, value, clusters[left], clusters[right]) {
@@ -140,10 +145,13 @@ func (c *duplicateCluster) add(email, name string) {
 }
 
 // stillShared reports whether both clusters still carry the exact shared
-// value a signal was proposed on: the same normalized name, or the same
-// local part at different domains.
+// value a signal was proposed on: the same mailbox, phone number, or
+// provider account, the same normalized name, or the same local part at
+// different domains.
 func stillShared(signal PersonDuplicateSignal, value string, left, right *duplicateCluster) bool {
 	switch signal {
+	case PersonDuplicateSameMailbox, PersonDuplicateSamePhone, PersonDuplicateSameProviderID:
+		return left.exact.has(signal, value) && right.exact.has(signal, value)
 	case PersonDuplicateSameName:
 		_, inLeft := left.names[value]
 		_, inRight := right.names[value]

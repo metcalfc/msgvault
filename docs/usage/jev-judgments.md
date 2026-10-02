@@ -51,7 +51,7 @@ of it. The table below says what each feature does without Jev.
 | [`meeting_action_assignee`](#feature-meeting-action-assignee) | Which attendee owns an action item | `meetings judge`; cache builds with `automatic` (up to 200 meetings) | Meeting title, attendee labels without addresses, item title (200) and description (500), redacted | No inferred assignee |
 | [`query_understanding`](#feature-explore-query-understanding) | Which filters a typed search asks for | Web UI searches you type; never automatic | Redacted query, candidate date windows, people-index names, account labels | No chips; the search is unchanged |
 | [`sweep_claim_grounding`](#feature-people-sweep-claim-grounding) | Whether cited excerpts state a claim and it is still current | Manual sweeps and briefs; scheduled with `automatic` | Fact, relation, value (500 characters); **up to 3 cited excerpts of 1,000 characters**, redacted | The chat model's own confidence |
-| [`person_duplicates`](#feature-duplicate-people) | Whether two identity clusters are one human | `person judge`; cache builds with `automatic` (up to 200 pairs) | Up to 3 names and **up to 5 full email addresses per side** | No duplicate candidates are proposed |
+| [`person_duplicates`](#feature-duplicate-people) | Whether the names on two identity clusters are one human. Shared mailboxes, phone numbers, and provider accounts are decided in code | `person judge`; cache builds with `automatic` (up to 200 pairs) | Up to 3 names per side, whether each side's addresses are personal or at an organization, and whether both share an organization domain. No addresses | Pairs that share a mailbox, phone number, or provider account still become candidates; name pairs are not proposed |
 | [`person_profile_choices`](#feature-person-profile-choices) | Primary role, display name, and whether two merged free-text or URL values are the same fact, when normalization leaves a real choice | `person judge`; cache builds with `automatic` (up to 200 of each) | Roles (organization, title, start month), names (160 characters), conflict values (300 characters) | The current primary role and the promotion name stay; merge conflicts equal after normalization close in code, the rest wait for you |
 
 Each feature's section below is the full contract: its questions as sent,
@@ -125,7 +125,7 @@ new `msgvault jev consent`.
    enabled = true
    # automatic = true   # also ground claims during scheduled people sweeps
 
-   [jev.person_duplicates]   # sends display names and email addresses
+   [jev.person_duplicates]   # sends display names, never addresses
    enabled = true
    # automatic = true   # also judge new pairs at each cache build
 
@@ -1075,66 +1075,99 @@ Command: [`msgvault person judge`](../cli-reference.md#person-judge).
 
 The same person often writes from a personal and a work address, and each
 address becomes its own identity. This feature finds likely pairs and puts
-them in front of you; it never links or merges anything by itself.
+them in front of you; it never links or merges anything by itself. Code
+decides every pair that shares an exact identifier. Jev judges only whether
+two sets of names belong to one person.
 
 1. **Pairs, in code.** Two identity clusters with an email address are
-   proposed when they use the same display name (at least two words and five
-   letters, compared ignoring case, punctuation, and word order) on different
-   addresses, or share a distinctive local part (the part before `@`, at
-   least five characters, not a role, list, or no-reply address) at different
-   domains. A name or local part shared by more than five clusters is too
-   common and proposes nothing, and so does a name with a team or service
+   proposed when they share any of these:
+   - an address that delivers to the same mailbox, under the
+     [mailbox rule](people.md#addresses-that-share-a-mailbox) (case, plus
+     tags, Gmail dots, and googlemail.com). Participant addresses and email
+     identifiers both count; relay and robot mailboxes such as
+     `reply+<token>@` never do;
+   - a phone number, compared in E.164 form, from a participant's phone or
+     any phone-shaped identifier;
+   - a provider user ID observed on the same service and scope;
+   - a display name (at least two words and five letters, compared ignoring
+     case, punctuation, and word order) on different addresses;
+   - a distinctive local part (the part before `@`, at least five
+     characters, not a role, list, or no-reply address) at different domains.
+
+   A value shared by more than five clusters is too common to mean one
+   person and proposes nothing, and so does a name with a team or service
    word such as "Support" or "via".
 2. **Left out.** Your own identities; clusters classified as anything but a
    person (by you, a rule, or Jev); clusters that look like a shared mailbox;
    pairs already bound to one person; pairs with any existing identity match
-   candidate, including one you rejected; and a pair where one side was
-   rejected for the other side's person.
-3. **Jev, only with consent.** Twenty pairs per request, one Noul each.
-4. **Code decides what you see.** A pair judged 0.30 or more likely to be one
-   person becomes a reviewable identity match candidate: basis
-   `display_name`, source `system`, the probability as confidence, listed
-   under **Reviews → Possible duplicate people** (API
-   `GET /identity/match-candidates?origin=person_duplicate`). Below 0.30 the
-   judgment is only remembered. Either way the pair is not asked again until
-   one side's identities, names, or addresses change.
+   candidate, including one you rejected or unlinked; and a pair where one
+   side was rejected for, or detached from, the other side's person. These
+   rules apply to every pair, so an exact match never overrides your earlier
+   "not the same person".
+3. **Exact matches, in code.** A pair that shares a mailbox, phone number, or
+   provider account becomes a reviewable candidate without asking Jev, even
+   when Jev is off: basis `email`, `phone`, or `stable_provider_id`, the
+   shared value as its normalized value, confidence 1, and evidence that
+   reads `decided in code: same_mailbox` (or `same_phone`,
+   `same_provider_id`).
+4. **Names, Jev only with consent.** The remaining pairs share only a name or
+   a local part. A pair is sent only when both sides have a display name to
+   judge; a pair without one is remembered and not proposed again until a
+   side changes. Twenty pairs per request, one Noul each.
+5. **Code decides what you see.** A name pair judged 0.30 or more likely to
+   be one person becomes a reviewable identity match candidate: basis
+   `display_name`, the probability as confidence. Below 0.30 the judgment is
+   only remembered. Either way the pair is not asked again until one side's
+   identities, names, or addresses change.
 
-Accepting a candidate links the two identities through the normal identity
-link path. When both already belong to different saved people, accepting
-offers the usual merge, where you choose the survivor. Rejecting keeps the
-decision, so the pair is never proposed again. The system never accepts a
-display-name match. `person judge` runs by hand; with `automatic = true`, each
-analytics cache build judges up to 200 new pairs first.
+Every candidate has source `system` and is listed under **Reviews → Possible
+duplicate people** (API
+`GET /identity/match-candidates?origin=person_duplicate`). Accepting a
+candidate links the two identities through the normal identity link path.
+When both already belong to different saved people, accepting offers the
+usual merge, where you choose the survivor. Rejecting keeps the decision, so
+the pair is never proposed again. The system never accepts a candidate.
+`person judge` runs by hand; with `automatic = true`, each analytics cache
+build takes up to 200 new pairs first.
 
 ### What leaves the machine
 
-Per pair, under `pairs.pair_N`:
+Per name pair, under `pairs.pair_N`:
 
 - `first.names[]` and `second.names[]`: up to three display names each side
   uses, cut to 120 characters. A name containing an email address or phone
   number is not sent.
-- `first.addresses[]` and `second.addresses[]`: **up to five email addresses
-  each side uses, in full**.
+- `first.address_kinds[]` and `second.address_kinds[]`: `personal` (a
+  consumer mail provider such as gmail.com) and/or `organization` (any other
+  domain), for up to five addresses each side uses.
+- `same_organization_domain`: true when both sides have an address at the
+  same organization domain (compared by registrable domain, so
+  `mail.example.com` and `example.com` match).
 - `signals[]`: `same_display_name`, `same_local_part`, or both.
 
-No phone numbers, messages, subjects, or profile data. Your own identities
-are never proposed, so they are never sent.
+No email address, local part, domain, phone number, provider ID, message,
+subject, or profile data is sent. Pairs decided in code are never sent. Your
+own identities are never proposed, so they are never sent.
+
+The address kinds and the shared-domain flag are the context the name
+question needs: the same full name at a personal and a work address, or at
+two addresses of one organization, is usually one person. The domain itself
+would name the person's employer, so it stays on the machine.
 
 ### The question, exactly as sent
 
-`same_person_1` through `same_person_20` (Noul): "Are `pairs.pair_N.first`
-and `pairs.pair_N.second` the same human being? `pairs.pair_N.signals` says
-what they share." Yes means "The names and addresses belong to one person,
-for example the same full name at a personal and a work address, or the same
-distinctive address name at two domains." No means "Different people who
-share a common name or address name, a person and a team, company, or
-service address, or not enough to tell." A request with fewer than twenty
-pairs sends only their questions.
+`same_person_1` through `same_person_20` (Noul): "Do the names in
+`pairs.pair_N.first` and `pairs.pair_N.second` belong to the same human
+being? `pairs.pair_N.signals` says what the two sides share, `address_kinds`
+says whether each side writes from a personal mail provider or an
+organization's domain, and `pairs.pair_N.same_organization_domain` says
+whether both sides use one organization's domain." Yes means "The names
+belong to one person, for example the same full name at a personal and a work
+address, or a name and its initials or nickname on two addresses with the
+same distinctive address name." No means "Different people who share a
+common name, a person and a team, company, or service, or not enough to
+tell." A request with fewer than twenty pairs sends only their questions.
 `msgvault jev consent person_duplicates` prints the same disclosure.
-
-**Planned:** exact checks on addresses, phone numbers, and normalized
-identifiers will move into code, and Jev will receive only what the name
-judgment needs instead of full email addresses.
 
 ## Feature: person profile choices
 

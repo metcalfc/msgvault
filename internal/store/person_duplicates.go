@@ -73,7 +73,9 @@ type PersonDuplicateIdentity struct {
 type PersonDuplicateProposal struct {
 	Left, Right PersonDuplicateIdentity
 	Signals     []PersonDuplicateSignal
-	// SharedValue is the normalized shared name, else the shared local part.
+	// SharedValue is the value behind the first signal: the shared mailbox,
+	// phone number, or provider account, else the normalized shared name,
+	// else the shared local part.
 	SharedValue string
 	// SignalValues is the exact shared value behind each signal, as chosen
 	// with the whole archive in view. Revalidation checks these values are
@@ -115,11 +117,15 @@ type duplicateCluster struct {
 	members   []int64
 	names     map[string]string // normalized key -> first display form
 	addresses []string
+	exact     duplicateExactKeys
 }
 
 // PersonDuplicateProposalsContext proposes pairs of identity clusters that
-// may be one person: the same display name on different addresses, or the
-// same distinctive local part at different domains. Only clusters with an
+// may be one person: an address that delivers to the same mailbox, the same
+// phone number, or the same provider account (exact signals, decided in
+// code), or the same display name on different addresses, or the same
+// distinctive local part at different domains (judged by Jev). A value
+// shared by more than five clusters proposes nothing. Only clusters with an
 // email address take part. Owner clusters, clusters classified as anything
 // but a person (by any source), clusters that look like a shared mailbox,
 // pairs already bound to one person, pairs with any existing
@@ -245,6 +251,27 @@ func (s *Store) personDuplicateProposalsTx(
 		// pair here spans different addresses.
 		addGroup(PersonDuplicateSameName, key, roots)
 	}
+	if err := loadDuplicateExactKeysTx(ctx, tx, clusters); err != nil {
+		return nil, err
+	}
+	byExact := map[PersonDuplicateSignal]map[string][]int64{}
+	for root, cluster := range clusters {
+		for signal, values := range cluster.exact {
+			if byExact[signal] == nil {
+				byExact[signal] = map[string][]int64{}
+			}
+			for value := range values {
+				byExact[signal][value] = append(byExact[signal][value], root)
+			}
+		}
+	}
+	for signal, groups := range byExact {
+		// A mailbox, phone number, or account shared by more than five
+		// clusters is a shared line or desk, not one person.
+		for value, roots := range groups {
+			addGroup(signal, value, roots)
+		}
+	}
 	for local, rootDomains := range byLocal {
 		roots := make([]int64, 0, len(rootDomains))
 		for root := range rootDomains {
@@ -363,7 +390,7 @@ func buildDuplicateProposal(
 		Left:  duplicateIdentity(left, leftPersons),
 		Right: duplicateIdentity(right, rightPersons),
 	}
-	for _, signal := range []PersonDuplicateSignal{PersonDuplicateSameName, PersonDuplicateSameLocalPart} {
+	for _, signal := range proposalSignalOrder {
 		if value, ok := signals[signal]; ok {
 			proposal.Signals = append(proposal.Signals, signal)
 			if proposal.SharedValue == "" {
@@ -535,25 +562,69 @@ func personDuplicateJudgmentFingerprintsTx(
 // ErrPersonDuplicateInvalid reports a malformed duplicate-person judgment.
 var ErrPersonDuplicateInvalid = errors.New("invalid person duplicate judgment")
 
-// RecordPersonDuplicateJudgmentsContext remembers each judgment so the same
-// inputs are not asked again, and writes a reviewable
+// RecordPersonDuplicateJudgmentsContext remembers each Jev judgment so the
+// same inputs are not asked again, and writes a reviewable
 // participant-to-participant identity match candidate for every judgment
 // with Propose: basis display_name, source system with source_ref
 // person_duplicate, the probability as confidence, and the shared value as
 // normalized value, with the signals and the judgment as evidence. A pair
 // that already has a candidate (in any state) is left as it is. Nothing is
-// ever accepted: only a user decision applies a candidate.
+// ever accepted: only a user decision applies a candidate. A proposal with
+// an exact signal is decided in code (RecordPersonDuplicateRulesContext),
+// so a judgment for one is rejected as invalid.
 func (s *Store) RecordPersonDuplicateJudgmentsContext(
 	ctx context.Context, judgments []PersonDuplicateJudgment,
 ) (PersonDuplicateWriteResult, error) {
-	var result PersonDuplicateWriteResult
 	for _, judgment := range judgments {
-		left, right := judgment.Proposal.Left.ParticipantID, judgment.Proposal.Right.ParticipantID
-		if left <= 0 || right <= 0 || left >= right || judgment.Probability < 0 || judgment.Probability > 1 ||
-			judgment.Proposal.Fingerprint == "" || strings.TrimSpace(judgment.Model) == "" {
-			return result, ErrPersonDuplicateInvalid
+		if _, exact := judgment.Proposal.ExactSignal(); exact || !validPersonDuplicateJudgment(judgment) ||
+			judgment.Model == PersonDuplicateRuleModel {
+			return PersonDuplicateWriteResult{}, ErrPersonDuplicateInvalid
 		}
 	}
+	return s.recordPersonDuplicateJudgmentsContext(ctx, judgments)
+}
+
+// RecordPersonDuplicateRulesContext records pairs decided in code, without
+// any Jev judgment. A proposal with an exact signal becomes a reviewable
+// candidate: basis email, phone, or stable_provider_id after its first exact
+// signal, the shared mailbox, phone number, or provider account as
+// normalized value, confidence 1, source system with source_ref
+// person_duplicate, and the signals plus a "decided in code" note as
+// evidence. Any other proposal had no name to judge and is only remembered.
+// Both are remembered with model "rule" (probability 1 for a match, 0
+// otherwise) so the same inputs are not proposed again. Every exclusion is
+// rechecked first, exactly as for a Jev judgment, so a rejection, unlink, or
+// detachment recorded since the proposal was built still wins. Nothing is
+// ever accepted.
+func (s *Store) RecordPersonDuplicateRulesContext(
+	ctx context.Context, proposals []PersonDuplicateProposal,
+) (PersonDuplicateWriteResult, error) {
+	judgments := make([]PersonDuplicateJudgment, len(proposals))
+	for i, proposal := range proposals {
+		_, exact := proposal.ExactSignal()
+		judgments[i] = PersonDuplicateJudgment{
+			Proposal: proposal, Model: PersonDuplicateRuleModel, Propose: exact,
+		}
+		if exact {
+			judgments[i].Probability = 1
+		}
+		if !validPersonDuplicateJudgment(judgments[i]) {
+			return PersonDuplicateWriteResult{}, ErrPersonDuplicateInvalid
+		}
+	}
+	return s.recordPersonDuplicateJudgmentsContext(ctx, judgments)
+}
+
+func validPersonDuplicateJudgment(judgment PersonDuplicateJudgment) bool {
+	left, right := judgment.Proposal.Left.ParticipantID, judgment.Proposal.Right.ParticipantID
+	return left > 0 && right > 0 && left < right && judgment.Probability >= 0 && judgment.Probability <= 1 &&
+		judgment.Proposal.Fingerprint != "" && strings.TrimSpace(judgment.Model) != ""
+}
+
+func (s *Store) recordPersonDuplicateJudgmentsContext(
+	ctx context.Context, judgments []PersonDuplicateJudgment,
+) (PersonDuplicateWriteResult, error) {
+	var result PersonDuplicateWriteResult
 	if len(judgments) == 0 {
 		return result, nil
 	}
@@ -625,7 +696,13 @@ func (s *Store) recordPersonDuplicateJudgmentTx(
 	}
 	confidence := judgment.Probability
 	sourceRef := PersonDuplicateSourceRef
+	basis := IdentityMatchDisplayName
 	normalized := proposal.SharedValue
+	exactSignal, exact := proposal.ExactSignal()
+	if exact {
+		basis = identityMatchBasisForExactSignal(exactSignal)
+		normalized = proposal.SignalValues[exactSignal]
+	}
 	var normalizedValue *string
 	if strings.TrimSpace(normalized) != "" {
 		normalizedValue = &normalized
@@ -633,7 +710,7 @@ func (s *Store) recordPersonDuplicateJudgmentTx(
 	candidate, created, err := s.upsertIdentityMatchCandidateTx(ctx, tx, IdentityMatchCandidateInput{
 		LeftKind: IdentityMatchParticipant, LeftID: left,
 		RightKind: IdentityMatchParticipant, RightID: right,
-		Basis: IdentityMatchDisplayName, NormalizedValue: normalizedValue,
+		Basis: basis, NormalizedValue: normalizedValue,
 		State: IdentityMatchStateCandidate, Confidence: &confidence,
 		Source: ProvenanceSystem, SourceRef: &sourceRef,
 	}, IdentityMatchParticipant, left, IdentityMatchParticipant, right, nil, false)
@@ -649,7 +726,11 @@ func (s *Store) recordPersonDuplicateJudgmentTx(
 	for _, signal := range proposal.Signals {
 		details = append(details, string(signal))
 	}
-	details = append(details, fmt.Sprintf("jev same_person %.2f (%s)", judgment.Probability, judgment.Model))
+	if exact {
+		details = append(details, "decided in code: "+string(exactSignal)+", no Jev judgment")
+	} else {
+		details = append(details, fmt.Sprintf("jev same_person %.2f (%s)", judgment.Probability, judgment.Model))
+	}
 	for _, detail := range details {
 		if _, _, err := s.addIdentityMatchEvidenceTx(ctx, tx, candidate.ID, PersonDuplicateEvidenceKind,
 			IdentityMatchEvidenceInput{Detail: &detail, Source: ProvenanceSystem}); err != nil {

@@ -43,7 +43,8 @@ const FeatureQueryUnderstanding = "query_understanding"
 const FeatureSweepClaimGrounding = "sweep_claim_grounding"
 
 // FeatureDuplicatePeople is the duplicate-person candidate feature. It sends
-// display names and email addresses, so its consent disclosure says so.
+// display names and whether each side's addresses are personal or at an
+// organization, never the addresses themselves.
 const FeatureDuplicatePeople = "person_duplicates"
 
 // FeaturePersonProfileChoices is the person profile choices feature: the
