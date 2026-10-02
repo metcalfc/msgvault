@@ -140,14 +140,27 @@ func (s Source) Precedence() int {
 // and can be restored when the classification is cleared.
 const NotAPersonReason = "not_a_person"
 
-// freemailDomains are consumer mail providers whose domain says nothing about
-// an organization, so an organization is never given one as its domain.
+// freemailDomains are consumer mail providers, including regional and ISP
+// mail, whose domain says nothing about an organization, so an organization
+// is never given one as its domain. zoho.com stays listed for its consumer
+// mail even though Zoho is also a company.
 var freemailDomains = map[string]struct{}{
 	"gmail.com": {}, "googlemail.com": {}, "yahoo.com": {}, "ymail.com": {},
 	"outlook.com": {}, "hotmail.com": {}, "live.com": {}, "msn.com": {},
 	"icloud.com": {}, "me.com": {}, "mac.com": {}, "aol.com": {},
 	"proton.me": {}, "protonmail.com": {}, "fastmail.com": {}, "gmx.com": {},
 	"mail.com": {}, "zoho.com": {}, "yandex.com": {}, "hey.com": {},
+	// Regional consumer mail.
+	"yahoo.co.uk": {}, "yahoo.fr": {}, "yahoo.de": {}, "yahoo.co.jp": {},
+	"hotmail.co.uk": {}, "hotmail.fr": {}, "hotmail.de": {}, "hotmail.it": {},
+	"live.co.uk": {}, "live.fr": {}, "outlook.fr": {}, "outlook.de": {},
+	"gmx.de": {}, "gmx.net": {}, "web.de": {}, "t-online.de": {},
+	"pm.me": {}, "protonmail.ch": {}, "qq.com": {}, "163.com": {}, "126.com": {},
+	"mail.ru": {}, "yandex.ru": {}, "naver.com": {}, "daum.net": {},
+	"orange.fr": {}, "free.fr": {}, "libero.it": {}, "rediffmail.com": {},
+	// Internet service provider mail.
+	"comcast.net": {}, "att.net": {}, "verizon.net": {}, "sbcglobal.net": {},
+	"btinternet.com": {},
 }
 
 // IsFreemailDomain reports whether domain belongs to a consumer mail

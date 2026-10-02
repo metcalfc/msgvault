@@ -43,7 +43,7 @@ of it. The table below says what each feature does without Jev.
 | Feature | What Jev decides | When it runs (all opt-in) | What leaves the machine | Without Jev |
 |---|---|---|---|---|
 | [`enrichment_identity`](#feature-enrichment-identity-check) | Whether a returned profile whose name or company did not match exactly is the requested person | Manual enrichment; scheduled with `automatic` | Requested name, company, and email domain; returned name parts, location, up to 5 current roles, up to 10 past companies, profile URL host. No messages or addresses | Exact name-and-company rule; partial matches are rejected |
-| [`organization_resolution`](#feature-organization-resolution) | Which of up to 8 shortlisted organizations a name is, when no single one shares its registrable domain; whether two titles are one role | Manual enrichment and sweeps; scheduled with `automatic` | Organization names, up to 5 domains and 5 other names per candidate, up to 4 title pairs | A single candidate sharing the registrable domain still resolves in code; otherwise exact lookup, a new organization is created, and titles stay separate |
+| [`organization_resolution`](#feature-organization-resolution) | Which of up to 8 shortlisted organizations a name is, unless code settled it by an exact name on a unique registrable domain; whether two titles are one role | Manual enrichment and sweeps; scheduled with `automatic` | Organization names, up to 5 domains and 5 other names per candidate, up to 4 title pairs | An exact name on a unique registrable domain still resolves in code; otherwise exact lookup, a new organization is created, and titles stay separate |
 | [`correspondent_kind`](#feature-correspondent-kind) | Person, shared mailbox, list, automated, or marketing | `kinds build`; cache builds with `automatic` (up to 200) | Display name, up to 5 addresses split into local part and domain, counts, header counts, up to 8 subjects of 160 characters. No bodies | Rules only; the rest stay unclassified and rank as people |
 | [`cleanup_suggestions`](#feature-cleanup-suggestions) | Impersonation, pressure, and mail category | `suggest-cleanup` only; never automatic | Sender name and domains, up to 10 link hosts, SPF/DKIM/DMARC results, subject (200 characters), **first 500 characters of the body** | No suggestions |
 | [`search_rerank`](#feature-hybrid-search-reranking) | Whether each leading result answers the query | Hybrid searches that request it; never automatic. Not recommended yet | Query (4 KiB); per result, up to 2 KiB of subject, sender, date, and **cleaned body**; up to 30 results | Fused hybrid order |
@@ -309,25 +309,38 @@ otherwise. The steps are:
    letter patterns with it, or whose domain shares its registrable domain
    (`eu.example.com` and `example.com`). No shortlist means the organization
    is created as before, and nothing is sent.
-3. **Shared domain, no Jev.** When exactly one shortlisted organization has a
-   domain with the same registrable domain as the fact's domain, code decides
-   that the fact names it. The registrable domain comes from the public suffix
-   list, so `mail.example.com` meets `example.com` and `mail.example.co.uk`
-   meets `example.co.uk`, but `example.co.uk` never meets `other.co.uk`. A
-   consumer mail domain such as `gmail.com` settles nothing. This runs even
-   when Jev is off or not consented.
+3. **Same name on the same registrable domain, no Jev.** Code settles the
+   fact only when all of these hold; everything else goes to Jev:
+   - The fact's domain has a registrable domain from the public suffix list,
+     so `mail.example.com` counts as `example.com` and `mail.example.co.uk` as
+     `example.co.uk`, but `example.co.uk` never matches `other.co.uk`.
+   - That registrable domain is not a consumer mail domain (`gmail.com`,
+     `yahoo.co.uk`, `gmx.de`, ISP mail, and similar) or a platform that hosts
+     many organizations (`linkedin.com`, `medium.com`, `github.io`,
+     `substack.com`, and similar). A profile URL such as
+     `https://www.linkedin.com/company/example` never settles anything.
+   - Exactly one active organization has any domain on it, counting every
+     organization and every domain, including ones the shortlist leaves out
+     and ones you rejected in a review.
+   - The fact's name equals that organization's name or one of its alternate
+     names once case, punctuation, and legal-entity words such as "Inc." are
+     removed. A shared domain under a different name is a judgment and goes
+     to Jev.
+   - You have not rejected that name for that organization.
+
+   This catches what the exact lookup misses: "Example Labs, Inc." at
+   `example.com`, or "Example Labs" at `eu.example.com`, when "Example Labs"
+   is known at `example.com`. It runs even when Jev is off or not consented.
 4. **One request.** Otherwise Jev picks which shortlisted organization, if
-   any, the name is. When two or more shortlisted organizations share the
-   registrable domain, the domain cannot tell them apart, so the whole
-   shortlist is asked about exactly as when none does. In both cases Jev also
+   any, the name is, with the whole shortlist exactly as before. Jev also
    answers one yes/no question per job-title pair (at most four) that the
-   person already has at the organizations involved. After a shared-domain
-   decision, the request carries only the title pairs at that organization,
-   and no request is made when there are none.
+   person already has at the organizations involved. After code settled the
+   organization, the request carries only the title pairs there, and no
+   request is made when there are none.
 
 | Result | Condition | Outcome |
 |---|---|---|
-| Domain alias | exactly one candidate shares the registrable domain | The name, and its domain when the organization lacks it, become lookup keys of that organization. Source `system`, source_ref `rule:organization_resolution:registrable_domain`, no confidence. |
+| Domain alias | step 3 settled it | The name, and its domain when the organization lacks it, become lookup keys of that organization. Source `system`, source_ref `rule:organization_resolution:registrable_domain`, no confidence. |
 | Alias | best candidate ≥ 0.85 | The name, and its domain when the organization lacks it, become lookup keys of that organization. Source `system`, source_ref `jev:organization_resolution:<model>`, the probability as confidence. |
 | Review | best candidate ≥ 0.50 | The organization is created as before, and an organization match review asks you whether the two are the same. |
 | New organization | otherwise, or Jev unavailable | Exactly today's behavior. |

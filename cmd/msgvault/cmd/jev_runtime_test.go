@@ -183,8 +183,8 @@ func TestNewOrganizationPreparerAsksJevOnlyWhenJevAndTheFeatureAreOn(t *testing.
 	assert.NotEqual("disabled", wired.Skipped, "both on: the Jev service is wired and runs its own gates")
 
 	cfg.Jev.Enabled = false
-	settled := prepare(`{"name":"Example Labs Europe","domain":"eu.labs.example"}`)
-	assert.Equal(orgresolution.OutcomeDomain, settled.Outcome, "a shared registrable domain resolves with Jev off")
+	settled := prepare(`{"name":"Example Labs","domain":"eu.labs.example"}`)
+	assert.Equal(orgresolution.OutcomeDomain, settled.Outcome, "the same name on the only organization of its registrable domain resolves with Jev off")
 	assert.Empty(settled.Skipped)
 }
 

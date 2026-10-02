@@ -211,27 +211,48 @@ func TestOrganizationMatchReviewAcceptMergesAndRejectKeepsTheOrganizationOffTheS
 	assert.Empty(reviews)
 }
 
-func TestSharesRegistrableDomain(t *testing.T) {
+func TestOrganizationDomainSettlement(t *testing.T) {
 	tests := []struct {
-		name   string
-		domain string
-		others []string
-		want   bool
+		name               string
+		organizationName   string
+		organizationDomain string
+		ref                personfacts.OrganizationReference
+		settles            bool
 	}{
-		{"same host", "example.com", []string{"example.com"}, true},
-		{"subdomain of the other", "mail.example.com", []string{"example.com"}, true},
-		{"sibling subdomains", "eu.example.com", []string{"us.example.com"}, true},
-		{"any of several", "example.com", []string{"other.example", "www.example.com"}, true},
-		{"different registrable domain", "example.com", []string{"example.org"}, false},
-		{"public suffix subdomain", "mail.example.co.uk", []string{"example.co.uk"}, true},
-		{"only the public suffix is shared", "example.co.uk", []string{"other.co.uk"}, false},
-		{"consumer mail domain", "gmail.com", []string{"gmail.com"}, false},
-		{"no domain", "", []string{"example.com"}, false},
-		{"no others", "example.com", nil, false},
+		{"same name, subdomain", "Example Labs", "example.com",
+			personfacts.OrganizationReference{Name: "Example Labs", Domain: "mail.example.com"}, true},
+		{"legal suffix and punctuation", "Example Labs", "example.com",
+			personfacts.OrganizationReference{Name: "EXAMPLE LABS, LLC", Domain: "example.com"}, true},
+		{"multi-label public suffix", "Example Labs", "example.co.uk",
+			personfacts.OrganizationReference{Name: "Example Labs", Domain: "mail.example.co.uk"}, true},
+		{"different name", "Example Labs", "example.com",
+			personfacts.OrganizationReference{Name: "Example Labs Europe", Domain: "eu.example.com"}, false},
+		{"only the public suffix is shared", "Example Labs", "other.co.uk",
+			personfacts.OrganizationReference{Name: "Example Labs", Domain: "example.co.uk"}, false},
+		{"no registrable domain", "Example Labs", "co.uk",
+			personfacts.OrganizationReference{Name: "Example Labs", Domain: "co.uk"}, false},
+		{"consumer mail", "Example Labs", "gmx.de",
+			personfacts.OrganizationReference{Name: "Example Labs", Domain: "gmx.de"}, false},
+		{"platform", "Example Labs", "linkedin.com",
+			personfacts.OrganizationReference{Name: "Example Labs", Domain: "https://www.linkedin.com/company/example"}, false},
+		{"platform public suffix", "Example Labs", "example.github.io",
+			personfacts.OrganizationReference{Name: "Example Labs", Domain: "example.github.io"}, false},
+		{"no domain", "Example Labs", "example.com",
+			personfacts.OrganizationReference{Name: "Example Labs"}, false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			assert.Equal(t, test.want, store.SharesRegistrableDomain(test.domain, test.others))
+			assert := assert.New(t)
+			require := require.New(t)
+			st := testutil.NewTestStore(t)
+			labs := createShortlistOrganization(t, st, test.organizationName, test.organizationDomain)
+
+			id, ok, err := st.OrganizationDomainSettlementContext(t.Context(), test.ref)
+			require.NoError(err)
+			assert.Equal(test.settles, ok)
+			if test.settles {
+				assert.Equal(labs.ID, id)
+			}
 		})
 	}
 }
@@ -241,7 +262,7 @@ func TestOrganizationDomainAliasIsARuleAliasThatSurvivesMerges(t *testing.T) {
 	require := require.New(t)
 	st := testutil.NewTestStore(t)
 	labs := createShortlistOrganization(t, st, "Example Labs", "example.com")
-	ref := personfacts.OrganizationReference{Name: "Example Labs Europe", Domain: "eu.example.com"}
+	ref := personfacts.OrganizationReference{Name: "Example Labs, Inc.", Domain: "eu.example.com"}
 
 	input := store.OrganizationDomainAliasInput{OrganizationID: labs.ID, Name: ref.Name, Domain: ref.Domain}
 	added, err := st.RecordOrganizationDomainAliasContext(t.Context(), input)
@@ -274,16 +295,19 @@ func TestOrganizationDomainAliasIsARuleAliasThatSurvivesMerges(t *testing.T) {
 	assert.Equal([]int64{survivor.ID}, merged.MatchedIDs, "the rule alias is carried to the survivor")
 }
 
-func TestOrganizationDomainAliasRefusesADomainTheOrganizationDoesNotShare(t *testing.T) {
+func TestOrganizationDomainAliasRefusesWhatTheRuleDoesNotSettle(t *testing.T) {
 	tests := []struct {
 		name               string
 		organizationDomain string
+		aliasName          string
 		domain             string
 	}{
-		{"different registrable domain", "example.com", "example.org"},
-		{"only the public suffix is shared", "other.co.uk", "example.co.uk"},
-		{"consumer mail domain", "gmail.com", "gmail.com"},
-		{"organization without a domain", "", "example.com"},
+		{"different registrable domain", "example.com", "Example Labs", "example.org"},
+		{"different name", "example.com", "Example Labs Europe", "eu.example.com"},
+		{"only the public suffix is shared", "other.co.uk", "Example Labs", "example.co.uk"},
+		{"consumer mail domain", "gmail.com", "Example Labs", "gmail.com"},
+		{"platform subdomain", "other.medium.com", "Example Labs", "example.medium.com"},
+		{"organization without a domain", "", "Example Labs", "example.com"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -293,12 +317,13 @@ func TestOrganizationDomainAliasRefusesADomainTheOrganizationDoesNotShare(t *tes
 			labs := createShortlistOrganization(t, st, "Example Labs", test.organizationDomain)
 
 			_, err := st.RecordOrganizationDomainAliasContext(t.Context(), store.OrganizationDomainAliasInput{
-				OrganizationID: labs.ID, Name: "Example Labs Europe", Domain: test.domain,
+				OrganizationID: labs.ID, Name: test.aliasName, Domain: test.domain,
 			})
 			require.ErrorIs(err, store.ErrOrganizationInvalid)
 			profile, err := st.GetOrganizationProfileContext(t.Context(), labs.ID, false)
 			require.NoError(err)
 			assert.Empty(profile.Names, "nothing is written")
+			assert.Empty(profile.Identifiers, "nothing is written")
 		})
 	}
 }

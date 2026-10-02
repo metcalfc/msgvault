@@ -28,6 +28,7 @@ const maxPreparationTime = time.Minute
 // writes aliases and reviews to. *store.Store implements it.
 type Store interface {
 	OrganizationShortlistContext(ctx context.Context, ref personfacts.OrganizationReference) (*store.OrganizationShortlist, error)
+	OrganizationDomainSettlementContext(ctx context.Context, ref personfacts.OrganizationReference) (int64, bool, error)
 	GetOrganizationContext(ctx context.Context, id int64) (*store.Organization, error)
 	PersonOrganizationTitlesContext(ctx context.Context, personID, organizationID int64) ([]string, error)
 	RecordOrganizationResolutionAliasContext(ctx context.Context, input store.OrganizationAliasInput) (store.OrganizationAliasResult, error)
@@ -76,9 +77,8 @@ const (
 	OutcomeAmbiguous Outcome = "ambiguous"
 	OutcomeNoMatch   Outcome = "no_candidates"
 	OutcomeAlias     Outcome = "alias"
-	// OutcomeDomain means exactly one shortlisted organization shares the
-	// reference's registrable domain, so code aliased the name to it
-	// without asking Jev.
+	// OutcomeDomain means the reference's name matches the one organization
+	// on its registrable domain, so code aliased it without asking Jev.
 	OutcomeDomain  Outcome = "registrable_domain"
 	OutcomeReview  Outcome = "review"
 	OutcomeNew     Outcome = "new_organization"
@@ -219,11 +219,15 @@ func (p *Preparer) resolve(
 		}
 		return p.askTitlesOnly(ctx, result, pairs, deadline, fence)
 	case store.OrganizationCreated:
+		organizationID, settled, err := p.store.OrganizationDomainSettlementContext(ctx, shortlist.Reference)
+		if err != nil {
+			return ReferenceResult{}, err
+		}
+		if settled {
+			return p.settleByDomain(ctx, personID, reference, shortlist, organizationID, deadline, fence)
+		}
 		if len(shortlist.Candidates) == 0 {
 			return ReferenceResult{Outcome: OutcomeNoMatch}, nil
-		}
-		if organizationID, ok := domainMatch(shortlist); ok {
-			return p.settleByDomain(ctx, personID, reference, shortlist, organizationID, deadline, fence)
 		}
 		return p.askOrganization(ctx, personID, reference, shortlist, deadline, fence)
 	default:
@@ -231,26 +235,11 @@ func (p *Preparer) resolve(
 	}
 }
 
-// domainMatch reports the one shortlisted organization that shares the
-// reference's registrable domain. None, or more than one, is no match: two
-// organizations on one registrable domain are exactly what the domain cannot
-// tell apart, and the shortlist's order ranks name similarity, not identity,
-// so that reference goes to Jev with its whole shortlist as before.
-func domainMatch(shortlist *store.OrganizationShortlist) (int64, bool) {
-	var matched []int64
-	for _, candidate := range shortlist.Candidates {
-		if store.SharesRegistrableDomain(shortlist.Reference.Domain, candidate.Domains) {
-			matched = append(matched, candidate.OrganizationID)
-		}
-	}
-	if len(matched) != 1 {
-		return 0, false
-	}
-	return matched[0], true
-}
-
-// settleByDomain aliases the reference to the organization its domain
-// settles, without a judgment, then asks only about title pairs there.
+// settleByDomain aliases the reference to the organization its name and
+// registrable domain settle (store.OrganizationDomainSettlementContext),
+// without a judgment, then asks only about title pairs there. A shared
+// domain under a different name, or a domain several organizations share,
+// is not settled and goes to Jev with the whole shortlist as before.
 func (p *Preparer) settleByDomain(
 	ctx context.Context, personID int64, reference employmentReference, shortlist *store.OrganizationShortlist,
 	organizationID int64, deadline time.Time, fence *personfacts.WriteFence,

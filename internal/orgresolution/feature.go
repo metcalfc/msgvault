@@ -1,5 +1,5 @@
 // Package orgresolution resolves an organization name that missed the exact
-// lookup. When exactly one shortlisted organization shares the name's
+// lookup. When the name matches the only organization on the name's
 // registrable domain, code decides and Jev is not asked. Otherwise it asks
 // Jev whether the name is one of a few existing organizations, and in both
 // cases whether two job titles at one organization name the same role. It

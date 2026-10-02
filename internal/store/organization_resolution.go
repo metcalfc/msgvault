@@ -109,8 +109,8 @@ func (s *Store) RecordOrganizationResolutionAliasContext(
 }
 
 // OrganizationDomainAliasInput records that a missed organization name and
-// its domain name an existing organization because the domain shares that
-// organization's registrable domain. No judgment is involved.
+// its domain name an existing organization because they settle on it (see
+// OrganizationDomainSettlementContext). No judgment is involved.
 type OrganizationDomainAliasInput struct {
 	OrganizationID int64
 	Name           string
@@ -121,12 +121,12 @@ type OrganizationDomainAliasInput struct {
 }
 
 // RecordOrganizationDomainAliasContext makes the deterministic lookup
-// resolve a name and domain to the organization whose own domain shares the
-// domain's registrable domain (SharesRegistrableDomain). It writes the same
-// lookup keys as a judgment alias, with source 'system', source_ref
+// resolve a name and domain to the organization they settle on (see
+// OrganizationDomainSettlementContext). It writes the same lookup keys as a
+// judgment alias, with source 'system', source_ref
 // OrganizationDomainRuleSourceRef, and no confidence, because a rule decided
-// it. It refuses an organization that does not share the registrable domain
-// or a consumer mail domain. Writing the same alias again changes nothing.
+// it. It rechecks the rule inside its transaction and refuses any other
+// organization. Writing the same alias again changes nothing.
 func (s *Store) RecordOrganizationDomainAliasContext(
 	ctx context.Context, input OrganizationDomainAliasInput,
 ) (OrganizationAliasResult, error) {
@@ -146,19 +146,13 @@ func (s *Store) RecordOrganizationDomainAliasContext(
 				if err != nil {
 					return err
 				}
-				domains, err := queryOrganizationShortlistStrings(ctx, tx, `
-					SELECT normalized_value FROM organization_identifiers
-					WHERE organization_id = ? AND identifier_kind = 'domain'
-					  AND active_until IS NULL AND superseded_at IS NULL`, organization.ID)
+				settled, ok, err := organizationDomainSettlementTx(ctx, tx, input.Name, domain)
 				if err != nil {
 					return err
 				}
-				if organization.PrimaryDomain != nil {
-					domains = append(domains, *organization.PrimaryDomain)
-				}
-				if !SharesRegistrableDomain(domain, domains) {
-					return fmt.Errorf("%w: organization %d does not share the registrable domain of %s",
-						ErrOrganizationInvalid, organization.ID, domain)
+				if !ok || settled != organization.ID {
+					return fmt.Errorf("%w: %s at %s does not settle on organization %d",
+						ErrOrganizationInvalid, input.Name, domain, organization.ID)
 				}
 				var addErr error
 				result, addErr = s.addOrganizationLookupAliasTx(ctx, tx, organization.ID,

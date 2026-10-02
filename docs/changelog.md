@@ -120,9 +120,13 @@ All notable changes to msgvault, grouped by release.
   Organization matches, and anything else creates the organization as before.
   Job titles judged the same role at one organization, such as "Partner" and
   "General Partner", count as one employment. Only organization names,
-  domains, and job titles are sent. A name whose domain shares the registrable
-  domain of exactly one similar organization, such as `eu.example.com` and
-  `example.com`, is resolved in code without asking Jev, even with Jev off.
+  domains, and job titles are sent. Code resolves a name without asking Jev,
+  even with Jev off, only when it equals an existing organization's name
+  apart from case, punctuation, and legal suffixes, and that organization is
+  the only one on the same registrable domain, such as "Example Labs, Inc."
+  at `eu.example.com` for "Example Labs" at `example.com`. Consumer mail and
+  platform domains such as `linkedin.com` never settle a name; everything
+  else goes to Jev.
   Requires API schema 2.38.0.
 - Act on contact facts from the Web UI. Email addresses, E.164 phone numbers,
   and profile handles on person pages, identity reviews, and the file viewer
