@@ -462,7 +462,13 @@ export class DirectoryReviewController {
           return { ok: true, candidate: decidedCandidate, cacheState: response.data.cache_state };
         }
         this.rows = replaceByID(this.rows, decidedCandidate);
-        this.status = `Identity match ${decidedCandidate.state}.`;
+        // Rejecting a duplicate-person name also rejects the pending pairs
+        // that repeat it; the page reload below removes them.
+        const alsoRejectedIDs = 'also_rejected_ids' in response.data ? response.data.also_rejected_ids : undefined;
+        const alsoRejected = Array.isArray(alsoRejectedIDs) ? alsoRejectedIDs.length : 0;
+        this.status = alsoRejected > 0
+          ? `Identity match ${decidedCandidate.state}, with ${alsoRejected} other ${alsoRejected === 1 ? 'pair' : 'pairs'} sharing this name.`
+          : `Identity match ${decidedCandidate.state}.`;
         await this.loadIdentityPage(this.offset, this.identityState);
         return { ok: true, candidate: decidedCandidate, cacheState: response.data.cache_state };
       }

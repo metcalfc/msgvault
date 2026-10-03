@@ -32,19 +32,23 @@ const (
 	// least two words, compared case-, punctuation-, and order-insensitively)
 	// on different addresses.
 	PersonDuplicateSameName PersonDuplicateSignal = "same_display_name"
-	// PersonDuplicateSameLocalPart: both clusters have an address with the
-	// same distinctive local part at different domains.
+	// PersonDuplicateSameLocalPart: exactly two clusters have an address
+	// with the same personal-looking local part (first.last, first_last,
+	// jsmith42) at different domains.
 	PersonDuplicateSameLocalPart PersonDuplicateSignal = "same_local_part"
 )
 
-// Proposal bounds. A name or local part shared by more clusters than
-// maxDuplicateGroupClusters is too common to mean one person, so it proposes
-// nothing.
+// Proposal bounds. A name, mailbox, phone number, or provider account
+// shared by more clusters than maxDuplicateGroupClusters is too common to
+// mean one person, so it proposes nothing. A local part is held to
+// maxDuplicateLocalPartClusters: an address name like "michael" on three
+// clusters is a common name, never one person.
 const (
-	maxDuplicateGroupClusters = 5
-	minDuplicateLocalPartLen  = 5
-	maxDuplicateNames         = 3
-	maxDuplicateAddresses     = 5
+	maxDuplicateGroupClusters     = 5
+	maxDuplicateLocalPartClusters = 2
+	minDuplicateLocalPartLen      = 5
+	maxDuplicateNames             = 3
+	maxDuplicateAddresses         = 5
 )
 
 // duplicateNameStopwords are words that mark a display name as a team,
@@ -124,8 +128,9 @@ type duplicateCluster struct {
 // may be one person: an address that delivers to the same mailbox, the same
 // phone number, or the same provider account (exact signals, decided in
 // code), or the same display name on different addresses, or the same
-// distinctive local part at different domains (judged by Jev). A value
-// shared by more than five clusters proposes nothing. Only clusters with an
+// personal-looking local part at different domains (judged by Jev). A
+// value shared by more than five clusters proposes nothing, and a local
+// part shared by more than two clusters proposes nothing. Only clusters with an
 // email address take part. Owner clusters, clusters classified as anything
 // but a person (by any source), clusters that look like a shared mailbox,
 // pairs already bound to one person, pairs with any existing
@@ -151,159 +156,26 @@ func (s *Store) PersonDuplicateProposalsContext(
 	return proposals, nil
 }
 
+// duplicatePairKey is a pair of identity cluster roots, left < right.
+type duplicatePairKey struct{ left, right int64 }
+
+// duplicateSignalScan is every pair of eligible identity clusters the
+// signal rules pair, before any exclusion for decisions, bindings, shared
+// mailboxes, or earlier judgments.
+type duplicateSignalScan struct {
+	index    clusterIndex
+	clusters map[int64]*duplicateCluster
+	pairs    map[duplicatePairKey]map[PersonDuplicateSignal]string
+}
+
 func (s *Store) personDuplicateProposalsTx(
 	ctx context.Context, tx *loggedTx,
 ) ([]PersonDuplicateProposal, error) {
-	edges, err := s.loadLinkEdgesTxContext(ctx, tx)
+	scan, err := s.duplicateSignalPairsTx(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
-	index := newClusterIndex(edges)
-	owners, err := ownerParticipantIDsTx(ctx, tx)
-	if err != nil {
-		return nil, err
-	}
-	hidden, err := s.hiddenCorrespondentParticipantsTx(ctx, tx)
-	if err != nil {
-		return nil, err
-	}
-	excludedRoots := map[int64]struct{}{}
-	for id := range owners {
-		excludedRoots[index.rootOf(id)] = struct{}{}
-	}
-	for id := range hidden {
-		excludedRoots[index.rootOf(id)] = struct{}{}
-	}
-
-	clusters := map[int64]*duplicateCluster{}
-	rows, err := tx.QueryContext(ctx, `SELECT id, email_address, display_name FROM participants
-		WHERE email_address IS NOT NULL AND TRIM(email_address) <> '' ORDER BY id`)
-	if err != nil {
-		return nil, fmt.Errorf("load duplicate-person participants: %w", err)
-	}
-	for rows.Next() {
-		var id int64
-		var email string
-		var name sql.NullString
-		if err := rows.Scan(&id, &email, &name); err != nil {
-			_ = rows.Close()
-			return nil, fmt.Errorf("scan duplicate-person participant: %w", err)
-		}
-		root := index.rootOf(id)
-		if _, excluded := excludedRoots[root]; excluded {
-			continue
-		}
-		cluster, ok := clusters[root]
-		if !ok {
-			cluster = &duplicateCluster{root: root, members: index.membersOf(id), names: map[string]string{}}
-			clusters[root] = cluster
-		}
-		cluster.add(email, name.String)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, fmt.Errorf("close duplicate-person participants: %w", err)
-	}
-
-	type pairKey struct{ left, right int64 }
-	pairs := map[pairKey]map[PersonDuplicateSignal]string{}
-	addGroup := func(signal PersonDuplicateSignal, value string, roots []int64) {
-		slices.Sort(roots)
-		roots = slices.Compact(roots)
-		if len(roots) < 2 || len(roots) > maxDuplicateGroupClusters {
-			return
-		}
-		for i := range roots {
-			for j := i + 1; j < len(roots); j++ {
-				key := pairKey{roots[i], roots[j]}
-				if pairs[key] == nil {
-					pairs[key] = map[PersonDuplicateSignal]string{}
-				}
-				// The smallest shared value represents the signal, so the
-				// proposal does not depend on map iteration order.
-				if prior, seen := pairs[key][signal]; !seen || value < prior {
-					pairs[key][signal] = value
-				}
-			}
-		}
-	}
-	byName := map[string][]int64{}
-	byLocal := map[string]map[int64]map[string]struct{}{}
-	for root, cluster := range clusters {
-		for key := range cluster.names {
-			byName[key] = append(byName[key], root)
-		}
-		for _, address := range cluster.addresses {
-			local, domain, ok := duplicateLocalPart(address)
-			if !ok {
-				continue
-			}
-			if byLocal[local] == nil {
-				byLocal[local] = map[int64]map[string]struct{}{}
-			}
-			if byLocal[local][root] == nil {
-				byLocal[local][root] = map[string]struct{}{}
-			}
-			byLocal[local][root][domain] = struct{}{}
-		}
-	}
-	for key, roots := range byName {
-		// The same name on the same address cannot be two clusters, so every
-		// pair here spans different addresses.
-		addGroup(PersonDuplicateSameName, key, roots)
-	}
-	// Exact keys are read for every cluster, so the five-cluster cap counts
-	// owner, non-person, and phone-only clusters that share the value too;
-	// only eligible clusters are paired.
-	allKeys, err := loadDuplicateExactKeysTx(ctx, tx, exactKeyScope{rootOf: index.rootOf})
-	if err != nil {
-		return nil, err
-	}
-	byExact := map[PersonDuplicateSignal]map[string][]int64{}
-	for root, keys := range allKeys {
-		if cluster, ok := clusters[root]; ok {
-			cluster.exact = keys
-		}
-		for signal, values := range keys {
-			if byExact[signal] == nil {
-				byExact[signal] = map[string][]int64{}
-			}
-			for value := range values {
-				byExact[signal][value] = append(byExact[signal][value], root)
-			}
-		}
-	}
-	for signal, groups := range byExact {
-		for value, roots := range groups {
-			// A mailbox, phone number, or account shared by more than five
-			// clusters is a shared line or desk, not one person.
-			if len(roots) > maxDuplicateGroupClusters {
-				continue
-			}
-			eligible := slices.DeleteFunc(roots, func(root int64) bool {
-				_, ok := clusters[root]
-				return !ok
-			})
-			addGroup(signal, value, eligible)
-		}
-	}
-	for local, rootDomains := range byLocal {
-		roots := make([]int64, 0, len(rootDomains))
-		for root := range rootDomains {
-			roots = append(roots, root)
-		}
-		slices.Sort(roots)
-		if len(roots) < 2 || len(roots) > maxDuplicateGroupClusters {
-			continue
-		}
-		for i := range roots {
-			for j := i + 1; j < len(roots); j++ {
-				if !differentDomains(rootDomains[roots[i]], rootDomains[roots[j]]) {
-					continue
-				}
-				addGroup(PersonDuplicateSameLocalPart, local, []int64{roots[i], roots[j]})
-			}
-		}
-	}
+	index, clusters, pairs := scan.index, scan.clusters, scan.pairs
 	if len(pairs) == 0 {
 		return []PersonDuplicateProposal{}, nil
 	}
@@ -374,6 +246,163 @@ func (s *Store) personDuplicateProposalsTx(
 		return compareInt64(a.Right.ParticipantID, b.Right.ParticipantID)
 	})
 	return proposals, nil
+}
+
+// duplicateSignalPairsTx reads the whole archive and pairs eligible
+// identity clusters by the signal rules.
+func (s *Store) duplicateSignalPairsTx(ctx context.Context, tx *loggedTx) (duplicateSignalScan, error) {
+	edges, err := s.loadLinkEdgesTxContext(ctx, tx)
+	if err != nil {
+		return duplicateSignalScan{}, err
+	}
+	index := newClusterIndex(edges)
+	owners, err := ownerParticipantIDsTx(ctx, tx)
+	if err != nil {
+		return duplicateSignalScan{}, err
+	}
+	hidden, err := s.hiddenCorrespondentParticipantsTx(ctx, tx)
+	if err != nil {
+		return duplicateSignalScan{}, err
+	}
+	excludedRoots := map[int64]struct{}{}
+	for id := range owners {
+		excludedRoots[index.rootOf(id)] = struct{}{}
+	}
+	for id := range hidden {
+		excludedRoots[index.rootOf(id)] = struct{}{}
+	}
+
+	clusters := map[int64]*duplicateCluster{}
+	rows, err := tx.QueryContext(ctx, `SELECT id, email_address, display_name FROM participants
+		WHERE email_address IS NOT NULL AND TRIM(email_address) <> '' ORDER BY id`)
+	if err != nil {
+		return duplicateSignalScan{}, fmt.Errorf("load duplicate-person participants: %w", err)
+	}
+	for rows.Next() {
+		var id int64
+		var email string
+		var name sql.NullString
+		if err := rows.Scan(&id, &email, &name); err != nil {
+			_ = rows.Close()
+			return duplicateSignalScan{}, fmt.Errorf("scan duplicate-person participant: %w", err)
+		}
+		root := index.rootOf(id)
+		if _, excluded := excludedRoots[root]; excluded {
+			continue
+		}
+		cluster, ok := clusters[root]
+		if !ok {
+			cluster = &duplicateCluster{root: root, members: index.membersOf(id), names: map[string]string{}}
+			clusters[root] = cluster
+		}
+		cluster.add(email, name.String)
+	}
+	if err := rows.Close(); err != nil {
+		return duplicateSignalScan{}, fmt.Errorf("close duplicate-person participants: %w", err)
+	}
+
+	pairs := map[duplicatePairKey]map[PersonDuplicateSignal]string{}
+	addGroup := func(signal PersonDuplicateSignal, value string, roots []int64) {
+		slices.Sort(roots)
+		roots = slices.Compact(roots)
+		if len(roots) < 2 || len(roots) > maxDuplicateGroupClusters {
+			return
+		}
+		for i := range roots {
+			for j := i + 1; j < len(roots); j++ {
+				key := duplicatePairKey{roots[i], roots[j]}
+				if pairs[key] == nil {
+					pairs[key] = map[PersonDuplicateSignal]string{}
+				}
+				// The smallest shared value represents the signal, so the
+				// proposal does not depend on map iteration order.
+				if prior, seen := pairs[key][signal]; !seen || value < prior {
+					pairs[key][signal] = value
+				}
+			}
+		}
+	}
+	byName := map[string][]int64{}
+	byLocal := map[string]map[int64]map[string]struct{}{}
+	for root, cluster := range clusters {
+		for key := range cluster.names {
+			byName[key] = append(byName[key], root)
+		}
+		for _, address := range cluster.addresses {
+			local, domain, ok := duplicateLocalPart(address)
+			if !ok {
+				continue
+			}
+			if byLocal[local] == nil {
+				byLocal[local] = map[int64]map[string]struct{}{}
+			}
+			if byLocal[local][root] == nil {
+				byLocal[local][root] = map[string]struct{}{}
+			}
+			byLocal[local][root][domain] = struct{}{}
+		}
+	}
+	for key, roots := range byName {
+		// The same name on the same address cannot be two clusters, so every
+		// pair here spans different addresses.
+		addGroup(PersonDuplicateSameName, key, roots)
+	}
+	// Exact keys are read for every cluster, so the five-cluster cap counts
+	// owner, non-person, and phone-only clusters that share the value too;
+	// only eligible clusters are paired.
+	allKeys, err := loadDuplicateExactKeysTx(ctx, tx, exactKeyScope{rootOf: index.rootOf})
+	if err != nil {
+		return duplicateSignalScan{}, err
+	}
+	byExact := map[PersonDuplicateSignal]map[string][]int64{}
+	for root, keys := range allKeys {
+		if cluster, ok := clusters[root]; ok {
+			cluster.exact = keys
+		}
+		for signal, values := range keys {
+			if byExact[signal] == nil {
+				byExact[signal] = map[string][]int64{}
+			}
+			for value := range values {
+				byExact[signal][value] = append(byExact[signal][value], root)
+			}
+		}
+	}
+	for signal, groups := range byExact {
+		for value, roots := range groups {
+			// A mailbox, phone number, or account shared by more than five
+			// clusters is a shared line or desk, not one person.
+			if len(roots) > maxDuplicateGroupClusters {
+				continue
+			}
+			eligible := slices.DeleteFunc(roots, func(root int64) bool {
+				_, ok := clusters[root]
+				return !ok
+			})
+			addGroup(signal, value, eligible)
+		}
+	}
+	for local, rootDomains := range byLocal {
+		roots := make([]int64, 0, len(rootDomains))
+		for root := range rootDomains {
+			roots = append(roots, root)
+		}
+		slices.Sort(roots)
+		// An address name used by three or more clusters is a common name
+		// or a convention, not one person, so only a pair proposes.
+		if len(roots) != maxDuplicateLocalPartClusters {
+			continue
+		}
+		for i := range roots {
+			for j := i + 1; j < len(roots); j++ {
+				if !differentDomains(rootDomains[roots[i]], rootDomains[roots[j]]) {
+					continue
+				}
+				addGroup(PersonDuplicateSameLocalPart, local, []int64{roots[i], roots[j]})
+			}
+		}
+	}
+	return duplicateSignalScan{index: index, clusters: clusters, pairs: pairs}, nil
 }
 
 func rejectedAcross(root int64, persons []int64, rejected map[[2]int64]struct{}) bool {
@@ -497,8 +526,12 @@ func duplicateNameKey(raw string) (string, string, bool) {
 }
 
 // duplicateLocalPart returns an address's local part (without a +tag) and
-// domain when the local part is distinctive: at least five characters with
-// a letter, and not a role, list, or no-reply address.
+// domain when the local part looks personal: at least five characters, not
+// a role, list, or no-reply address, and either two or more parts with
+// letters separated by ".", "_", or "-" (first.last, j_smith) or letters
+// combined with digits (jsmith42). A single word such as "michael" or
+// "engineering" is a first name or a department as often as one person, so
+// it never counts, and no part may be a team or service word.
 func duplicateLocalPart(address string) (string, string, bool) {
 	local, domain := correspondentkind.SplitEmail(address)
 	if local == "" || domain == "" {
@@ -507,13 +540,32 @@ func duplicateLocalPart(address string) (string, string, bool) {
 	if plus := strings.IndexByte(local, '+'); plus > 0 {
 		local = local[:plus]
 	}
-	if len(local) < minDuplicateLocalPartLen || !strings.ContainsFunc(local, unicode.IsLetter) {
+	if len(local) < minDuplicateLocalPartLen || !personalLocalPart(local) {
 		return "", "", false
 	}
 	if correspondentkind.IsRoleAddress(address) || correspondentkind.IsNoReplyAddress(address) {
 		return "", "", false
 	}
 	return local, domain, true
+}
+
+// personalLocalPart reports whether a lowercased local part has the shape
+// of one person's address name rather than a bare word.
+func personalLocalPart(local string) bool {
+	parts := strings.FieldsFunc(local, func(r rune) bool { return r == '.' || r == '_' || r == '-' })
+	lettered := 0
+	for _, part := range parts {
+		if _, stop := duplicateNameStopwords[part]; stop {
+			return false
+		}
+		if strings.ContainsFunc(part, unicode.IsLetter) {
+			lettered++
+		}
+	}
+	if lettered >= 2 {
+		return true
+	}
+	return strings.ContainsFunc(local, unicode.IsLetter) && strings.ContainsFunc(local, unicode.IsDigit)
 }
 
 // existingDuplicatePairsTx maps every participant-to-participant candidate

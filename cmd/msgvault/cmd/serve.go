@@ -2771,11 +2771,10 @@ func (a *storeAPIAdapter) AcceptIdentityMatchCandidateContext(
 	return a.store.AcceptIdentityMatchCandidateContext(ctx, candidateID, decidedBy, notes)
 }
 
-func (a *storeAPIAdapter) DecideIdentityMatchCandidateContext(
-	ctx context.Context, candidateID int64, state store.IdentityMatchState,
-	decidedBy string, notes *string,
-) (*store.IdentityMatchCandidate, error) {
-	return a.store.DecideIdentityMatchCandidateContext(ctx, candidateID, state, decidedBy, notes)
+func (a *storeAPIAdapter) RejectIdentityMatchCandidateContext(
+	ctx context.Context, candidateID int64, decidedBy string, notes *string,
+) (store.IdentityMatchRejection, error) {
+	return a.store.RejectIdentityMatchCandidateContext(ctx, candidateID, decidedBy, notes)
 }
 
 func (a *storeAPIAdapter) CreatePersonFromParticipantContext(

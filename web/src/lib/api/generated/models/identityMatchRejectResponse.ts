@@ -5,6 +5,8 @@ import type { IdentityMatchCandidate } from "./identityMatchCandidate";
 import type { IdentityMatchRejectResponseCacheState } from "./identityMatchRejectResponseCacheState";
 
 export interface IdentityMatchRejectResponse {
+  /** Other pending duplicate-person candidates with the same shared name and an identity on either side, rejected in the same decision */
+  also_rejected_ids: number[];
   cache_state: IdentityMatchRejectResponseCacheState;
   candidate: IdentityMatchCandidate;
   identity_revision: number;

@@ -19,8 +19,10 @@ import (
 // exclusions still pass and both clusters still share the exact values the
 // proposal was built on; it does not choose values again. How many other
 // clusters share a name or local part is not rechecked: a group that grew
-// past the five-cluster cap after judging still writes its candidate, which
-// is acceptable because the candidate is only a suggestion the user reviews.
+// past its cap after judging still writes its candidate, which is
+// acceptable because the candidate is only a suggestion the user reviews,
+// and the next run's RetireStalePersonDuplicateCandidatesContext withdraws
+// it while it is still pending.
 func (s *Store) revalidatePersonDuplicateTx(
 	ctx context.Context, tx *loggedTx, proposal PersonDuplicateProposal,
 ) (bool, error) {

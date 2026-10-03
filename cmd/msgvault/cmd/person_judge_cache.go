@@ -37,7 +37,8 @@ func judgePeopleForCacheBuild(ctx context.Context, cfg *config.Config, dbPath st
 	}
 	logger.Info("person judgments before cache build",
 		"duplicate_proposals", report.Duplicates.Proposals, "duplicate_requests", report.Duplicates.Requests,
-		"duplicate_candidates", report.Duplicates.Candidates, "duplicate_skipped", report.Duplicates.Skipped,
+		"duplicate_candidates", report.Duplicates.Candidates, "duplicate_retired", report.Duplicates.Retired,
+		"duplicate_skipped", report.Duplicates.Skipped,
 		"profile_requests", report.Profiles.Requests, "primary_roles_set", report.Profiles.PrimaryRolesSet,
 		"display_names_set", report.Profiles.DisplayNamesSet, "conflicts_settled", report.Profiles.ConflictsSettled,
 		"profile_settled_in_code", report.Profiles.SettledInCode,

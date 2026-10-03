@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-10-01"
+last_edited: "2026-10-02"
 title: Changelog
 description: Release history for msgvault
 ---
@@ -7,6 +7,20 @@ description: Release history for msgvault
 All notable changes to msgvault, grouped by release.
 
 ## Unreleased
+
+- Duplicate-people review asks about a common name once. An address name
+  (the part before `@`) now pairs two identities only when it looks
+  personal, such as `first.last`, `first_last`, or `jsmith42`, and only two
+  identity clusters use it; a bare first name or department such as
+  `michael` or `engineering` no longer proposes anything. **Keep separate**
+  on a name suggestion also rejects the other pending suggestions with the
+  same name for either identity, and the reject response lists them in
+  `also_rejected_ids`. Each `msgvault person judge` run, including the one
+  before a cache build, first withdraws pending name suggestions the
+  current rules no longer propose, without recording them as your
+  rejections. A Jev name judgment now needs 0.50 instead of 0.30 to become
+  a suggestion. See
+  [duplicate people](/docs/usage/jev-judgments/#feature-duplicate-people).
 
 - Meeting event kind decides a calendar series in code when the invite
   lists of all its events leave only one kind, and never sends it to Jev:

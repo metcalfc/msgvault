@@ -45,10 +45,9 @@ type IdentityMatchStore interface {
 	AcceptIdentityMatchCandidateContext(
 		ctx context.Context, candidateID int64, decidedBy string, notes *string,
 	) (*store.IdentityMatchCandidate, int64, error)
-	DecideIdentityMatchCandidateContext(
-		ctx context.Context, candidateID int64, state store.IdentityMatchState,
-		decidedBy string, notes *string,
-	) (*store.IdentityMatchCandidate, error)
+	RejectIdentityMatchCandidateContext(
+		ctx context.Context, candidateID int64, decidedBy string, notes *string,
+	) (store.IdentityMatchRejection, error)
 	IdentityRevision() (int64, error)
 }
 
@@ -94,13 +93,18 @@ type IdentityMatchAcceptResponse struct {
 }
 
 // IdentityMatchRejectResponse reports the retained rejected candidate, the
-// post-mutation identity revision, and the synchronous cache state. A
-// rejection of an earlier system acceptance can remove an owned direct edge;
-// in that case the revision and cache state have the same contract as accept.
+// other candidates rejected with it, the post-mutation identity revision,
+// and the synchronous cache state. A rejection of an earlier system
+// acceptance can remove an owned direct edge; in that case the revision and
+// cache state have the same contract as accept.
 type IdentityMatchRejectResponse struct {
-	Candidate        store.IdentityMatchCandidate `json:"candidate"`
-	IdentityRevision int64                        `json:"identity_revision"`
-	CacheState       string                       `json:"cache_state" enum:"ready,stale"`
+	Candidate store.IdentityMatchCandidate `json:"candidate"`
+	// AlsoRejectedIDs lists pending duplicate-person candidates that shared
+	// the rejected candidate's name with either side and were rejected with
+	// it, so the same question is not asked again.
+	AlsoRejectedIDs  []int64 `json:"also_rejected_ids" doc:"Other pending duplicate-person candidates with the same shared name and an identity on either side, rejected in the same decision"`
+	IdentityRevision int64   `json:"identity_revision"`
+	CacheState       string  `json:"cache_state" enum:"ready,stale"`
 }
 
 func (s *Server) registerIdentityMatchRoutes(api huma.API) {
@@ -135,7 +139,10 @@ func (s *Server) registerIdentityMatchRoutes(api huma.API) {
 	reject := rawAPIV1Operation("rejectIdentityMatchCandidate", http.MethodPost,
 		"/identity/match-candidates/{id}/reject", "Reject an identity match candidate")
 	reject.Description = "A rejected suggestion is retained rather than deleted, so the same " +
-		"low-quality inference is not proposed again on the next import."
+		"low-quality inference is not proposed again on the next import. Rejecting a pending " +
+		"duplicate-person candidate proposed on a shared name also rejects the other pending " +
+		"duplicate-person candidates with the same name on either side; their IDs are returned " +
+		"in also_rejected_ids."
 	reject.RequestBody = jsonRequestBodyFor[DecideIdentityMatchRequest](api)
 	reject.RequestBody.Required = false
 	reject.Responses = jsonResponsesFor[IdentityMatchRejectResponse](api)
@@ -329,8 +336,7 @@ func (s *Server) handleRejectIdentityMatchCandidate(w http.ResponseWriter, r *ht
 		s.writeIdentityMatchError(w, err)
 		return
 	}
-	candidate, err := matches.DecideIdentityMatchCandidateContext(
-		r.Context(), id, store.IdentityMatchStateRejected, "user", request.Notes)
+	rejection, err := matches.RejectIdentityMatchCandidateContext(r.Context(), id, "user", request.Notes)
 	if err != nil {
 		s.writeIdentityMatchError(w, err)
 		return
@@ -341,8 +347,13 @@ func (s *Server) handleRejectIdentityMatchCandidate(w http.ResponseWriter, r *ht
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	alsoRejected := rejection.AlsoRejected
+	if alsoRejected == nil {
+		alsoRejected = []int64{}
+	}
 	writeJSON(w, http.StatusOK, IdentityMatchRejectResponse{
-		Candidate:        *candidate,
+		Candidate:        *rejection.Candidate,
+		AlsoRejectedIDs:  alsoRejected,
 		IdentityRevision: afterRevision,
 		// RefreshIdentityDatasets is staleness-aware and skips publication
 		// when the persisted cache already has this identity revision. Always

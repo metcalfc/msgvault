@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-30"
+last_edited: "2026-10-02"
 title: People and Profiles
 description: Find people across your archive, keep their details together, and understand your contact history.
 ---
@@ -457,9 +457,13 @@ share a mailbox, phone number, or provider account are listed under
 **Reviews → Possible duplicate people** directly. With the optional
 [duplicate people](jev-judgments.md#feature-duplicate-people) Jev judgment,
 identities that share only a display name or address name are listed there
-too when Jev judges the names likely to be one person. Accepting one links
-the identities, or offers the merge below when both already belong to saved
-people.
+too when Jev judges the names likely to be one person. An address name
+counts only when it looks personal, such as `first.last` or `jsmith42`, and
+only two identities use it; a bare first name such as `michael` never does.
+Accepting one links the identities, or offers the merge below when both
+already belong to saved people. **Keep separate** on a name suggestion also
+rejects the other pending suggestions with the same name for either
+identity, so the same name does not come back for review pair by pair.
 
 Merge two durable profiles only after reviewing both people. The first person
 survives with the same ID and vCard UID; the second person's participants and

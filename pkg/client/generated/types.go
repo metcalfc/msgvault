@@ -5332,6 +5332,8 @@ func (i IdentityMatchEvidence) Validate() error {
 }
 
 type IdentityMatchRejectResponse struct {
+	// AlsoRejectedIds Other pending duplicate-person candidates with the same shared name and an identity on either side, rejected in the same decision
+	AlsoRejectedIds  []int64                               `json:"also_rejected_ids" validate:"required"`
 	CacheState       IdentityMatchRejectResponseCacheState `json:"cache_state" validate:"required"`
 	Candidate        IdentityMatchCandidate                `json:"candidate"`
 	IdentityRevision int64                                 `json:"identity_revision"`
@@ -5339,6 +5341,9 @@ type IdentityMatchRejectResponse struct {
 
 func (i IdentityMatchRejectResponse) Validate() error {
 	var errors runtime.ValidationErrors
+	if err := typesValidator.Var(i.AlsoRejectedIds, "required"); err != nil {
+		errors = errors.Append("AlsoRejectedIds", err)
+	}
 	if v, ok := any(i.CacheState).(runtime.Validator); ok {
 		if err := v.Validate(); err != nil {
 			errors = errors.Append("CacheState", err)

@@ -32,7 +32,7 @@ const (
 	PairsPerRequest = 20
 	// CandidateThreshold is the lowest same-person probability that writes
 	// a reviewable candidate. Below it the judgment is only remembered.
-	CandidateThreshold = 0.30
+	CandidateThreshold = 0.50
 	maxNameRunes       = 120
 	// ruleBatch bounds how many pairs decided in code one write
 	// transaction records.
@@ -105,6 +105,7 @@ type Judge interface {
 
 // Store is the archive authority a run needs. *store.Store implements it.
 type Store interface {
+	RetireStalePersonDuplicateCandidatesContext(ctx context.Context) (int, error)
 	PersonDuplicateProposalsContext(ctx context.Context, limit int) ([]store.PersonDuplicateProposal, error)
 	RecordPersonDuplicateRulesContext(
 		ctx context.Context, proposals []store.PersonDuplicateProposal,
@@ -146,7 +147,11 @@ type Report struct {
 	Candidates int `json:"candidates"`
 	Existing   int `json:"existing"`
 	// Dropped counts pairs that no longer qualified when written.
-	Dropped int    `json:"dropped"`
+	Dropped int `json:"dropped"`
+	// Retired counts pending name candidates removed from review because
+	// the current rules no longer propose them, such as a bare first name
+	// shared as an address name.
+	Retired int    `json:"retired"`
 	Skipped string `json:"skipped,omitempty"`
 }
 
@@ -169,7 +174,8 @@ type requestState struct {
 	Pairs map[string]PairState `json:"pairs"`
 }
 
-// Run proposes pairs, writes the ones decided in code, and judges the name
+// Run retires pending name candidates the current rules no longer propose,
+// proposes pairs, writes the ones decided in code, and judges the name
 // pairs PairsPerRequest at a time. Any gate, budget, or provider failure
 // stops Jev for the rest of the run and leaves the remaining name pairs for
 // a later run; only a store failure fails the run.
@@ -178,6 +184,11 @@ func Run(ctx context.Context, st Store, options Options) (Report, error) {
 		options.Logger = slog.Default()
 	}
 	var report Report
+	retired, err := st.RetireStalePersonDuplicateCandidatesContext(ctx)
+	if err != nil {
+		return report, fmt.Errorf("retire stale duplicate people: %w", err)
+	}
+	report.Retired = retired
 	// Every proposal is read: the limit bounds only what is sent to Jev, so
 	// name pairs that cannot be judged never starve the exact matches.
 	proposals, err := st.PersonDuplicateProposalsContext(ctx, 0)

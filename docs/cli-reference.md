@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-10-01"
+last_edited: "2026-10-02"
 title: CLI Reference
 description: Complete command reference for all msgvault commands.
 ---
@@ -2361,7 +2361,9 @@ feature is enabled, an API key resolves, and its consent is active.
 - **Duplicate people.** Proposes pairs of identity clusters with an email
   address that share an address delivering to the same mailbox, a phone
   number, a provider account, a display name (in any word order) on
-  different addresses, or a distinctive local part at different domains,
+  different addresses, or a personal-looking local part (such as
+  `first.last` or `jsmith42`, never a single word such as `michael`) at
+  different domains on exactly two clusters,
   leaving out your own identities, non-people, shared mailboxes, pairs
   already bound to one person, and pairs with an existing identity match
   candidate, rejection, or detachment. A pair that shares a mailbox, phone
@@ -2370,9 +2372,10 @@ feature is enabled, an API key resolves, and its consent is active.
   and `msgvault jev consent person_duplicates`, the other pairs with a display
   name on both sides are sent twenty per request with their names and whether
   each side's addresses are personal or at an organization, never the
-  addresses. A name pair at 0.30 or more becomes a candidate. Candidates
-  appear under **Reviews → Possible duplicate people**; nothing is linked or
-  merged until you accept one.
+  addresses. A name pair at 0.50 or more becomes a candidate. Each run
+  first withdraws pending name candidates the current rules no longer
+  propose. Candidates appear under **Reviews → Possible duplicate people**;
+  nothing is linked or merged until you accept one.
 - **Profile choices.** Code first settles what normalization decides, with
   or without Jev, over every eligible item regardless of `--limit`: roles
   that are all the same organization and title, and names that differ only

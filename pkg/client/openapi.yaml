@@ -5829,6 +5829,12 @@ components:
       type: object
     IdentityMatchRejectResponse:
       properties:
+        also_rejected_ids:
+          description: Other pending duplicate-person candidates with the same shared name and an identity on either side, rejected in the same decision
+          items:
+            format: int64
+            type: integer
+          type: array
         cache_state:
           enum:
             - ready
@@ -5841,6 +5847,7 @@ components:
           type: integer
       required:
         - candidate
+        - also_rejected_ids
         - identity_revision
         - cache_state
       type: object
@@ -20096,7 +20103,7 @@ paths:
         - API
   /api/v1/identity/match-candidates/{id}/reject:
     post:
-      description: A rejected suggestion is retained rather than deleted, so the same low-quality inference is not proposed again on the next import.
+      description: A rejected suggestion is retained rather than deleted, so the same low-quality inference is not proposed again on the next import. Rejecting a pending duplicate-person candidate proposed on a shared name also rejects the other pending duplicate-person candidates with the same name on either side; their IDs are returned in also_rejected_ids.
       operationId: rejectIdentityMatchCandidate
       parameters:
         - description: Identity match candidate ID

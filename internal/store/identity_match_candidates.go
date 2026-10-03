@@ -716,9 +716,35 @@ func (s *Store) DecideIdentityMatchCandidateContext(
 	decidedBy string,
 	notes *string,
 ) (*IdentityMatchCandidate, error) {
-	candidate, _, err := s.decideIdentityMatchCandidateContext(
+	candidate, _, _, err := s.decideIdentityMatchCandidateWithGroupContext(
 		ctx, candidateID, state, decidedBy, notes)
 	return candidate, err
+}
+
+// IdentityMatchRejection is a rejected candidate and the other pending
+// duplicate-person candidates rejected with it because they asked the same
+// question again.
+type IdentityMatchRejection struct {
+	Candidate *IdentityMatchCandidate
+	// AlsoRejected lists the IDs of the other candidates rejected in the
+	// same transaction, in ascending order.
+	AlsoRejected []int64
+}
+
+// RejectIdentityMatchCandidateContext rejects a candidate exactly as
+// DecideIdentityMatchCandidateContext does. When a user rejects a pending
+// duplicate-person candidate proposed on a shared display name or address
+// name, every other pending duplicate-person candidate with the same shared
+// value and an endpoint in either rejected identity cluster is rejected in
+// the same transaction, decided by the user with a note naming the
+// candidate the user rejected: they are the same review again. Accepted
+// rows, decided rows, and candidates on other bases are never changed.
+func (s *Store) RejectIdentityMatchCandidateContext(
+	ctx context.Context, candidateID int64, decidedBy string, notes *string,
+) (IdentityMatchRejection, error) {
+	candidate, _, group, err := s.decideIdentityMatchCandidateWithGroupContext(
+		ctx, candidateID, IdentityMatchStateRejected, decidedBy, notes)
+	return IdentityMatchRejection{Candidate: candidate, AlsoRejected: group}, err
 }
 
 func (s *Store) decideIdentityMatchCandidateContext(
@@ -728,12 +754,26 @@ func (s *Store) decideIdentityMatchCandidateContext(
 	decidedBy string,
 	notes *string,
 ) (*IdentityMatchCandidate, *IdentityMatchCandidate, error) {
+	candidate, before, _, err := s.decideIdentityMatchCandidateWithGroupContext(
+		ctx, candidateID, state, decidedBy, notes)
+	return candidate, before, err
+}
+
+func (s *Store) decideIdentityMatchCandidateWithGroupContext(
+	ctx context.Context,
+	candidateID int64,
+	state IdentityMatchState,
+	decidedBy string,
+	notes *string,
+) (*IdentityMatchCandidate, *IdentityMatchCandidate, []int64, error) {
 	if !state.valid() {
-		return nil, nil, ErrInvalidIdentityMatchState
+		return nil, nil, nil, ErrInvalidIdentityMatchState
 	}
 	var candidate *IdentityMatchCandidate
 	var before *IdentityMatchCandidate
+	var group []int64
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
+		group = nil
 		if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
 			return err
 		}
@@ -819,10 +859,17 @@ func (s *Store) decideIdentityMatchCandidateContext(
 		if err := dropCandidateDecisionSnapshotTx(ctx, tx, candidateID); err != nil {
 			return err
 		}
+		if state == IdentityMatchStateRejected && decidedBy == string(ProvenanceUser) &&
+			current.State == IdentityMatchStateCandidate {
+			group, err = s.rejectPersonDuplicateGroupTx(ctx, tx, current)
+			if err != nil {
+				return err
+			}
+		}
 		candidate, err = getIdentityMatchCandidateTx(ctx, tx, candidateID)
 		return err
 	})
-	return candidate, before, err
+	return candidate, before, group, err
 }
 
 // rejectSystemAcceptedIdentityMatchTxContext withdraws the direct edge that

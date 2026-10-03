@@ -412,3 +412,54 @@ func TestRunTakesUpAOneSidedNamePairAgainWhenTheOtherSideGainsAName(t *testing.T
 	require.NoError(err)
 	assert.Equal(1, report.Requests, "once both sides have a name the pair is judged")
 }
+
+func TestRunWritesACandidateOnlyFromTheThreshold(t *testing.T) {
+	tests := []struct {
+		name        string
+		probability float64
+		candidates  int
+	}{
+		{"below the threshold", persondedup.CandidateThreshold - 0.01, 0},
+		{"at the threshold", persondedup.CandidateThreshold, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := testutil.NewTestStore(t)
+			participant(t, st, "jane@example.com", "Jane Doe")
+			participant(t, st, "jdoe@example.org", "Jane Doe")
+			server := jevtest.NewServer(t, func(string, map[string]any, map[string]any) map[string]any {
+				return jevtest.Noul(tt.probability)
+			})
+			service, cfg := server.Service(t, st, enabled)
+			jevtest.GrantConsent(t, st, cfg, persondedup.Feature())
+
+			report, err := persondedup.Run(t.Context(), st, persondedup.Options{Judge: service})
+			require.NoError(t, err)
+			assert.Equal(t, 1, report.Judged)
+			assert.Equal(t, tt.candidates, report.Candidates)
+		})
+	}
+}
+
+func TestRunWithdrawsPendingCandidatesTheRulesNoLongerPropose(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	left := participant(t, st, "michael@example.com", "Michael")
+	right := participant(t, st, "michael@example.net", "Michael")
+	sourceRef, value, confidence := store.PersonDuplicateSourceRef, "michael", 0.35
+	_, _, err := st.UpsertIdentityMatchCandidateContext(t.Context(), store.IdentityMatchCandidateInput{
+		LeftKind: store.IdentityMatchParticipant, LeftID: left,
+		RightKind: store.IdentityMatchParticipant, RightID: right,
+		Basis: store.IdentityMatchDisplayName, NormalizedValue: &value, State: store.IdentityMatchStateCandidate,
+		Confidence: &confidence, Source: store.ProvenanceSystem, SourceRef: &sourceRef,
+	})
+	require.NoError(err)
+
+	report, err := persondedup.Run(t.Context(), st, persondedup.Options{})
+	require.NoError(err)
+	assert.Equal(persondedup.Report{Retired: 1}, report, "a bare first name is neither kept nor proposed again")
+	candidates, err := st.ListPersonDuplicateCandidatesContext(t.Context(), nil, 100, 0)
+	require.NoError(err)
+	assert.Empty(candidates)
+}

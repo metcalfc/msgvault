@@ -345,6 +345,46 @@ func TestRejectIdentityMatchCandidateRetainsTheRow(t *testing.T) {
 	require.NoError(json.Unmarshal(listed.Body.Bytes(), &page), listed.Body.String())
 	assert.Len(page.Candidates, 1,
 		"a rejected suggestion is retained so the same inference is not repeated")
+	assert.Empty(rejected.AlsoRejectedIDs, "only a duplicate-person name rejection decides for others")
+}
+
+func TestRejectPersonDuplicateReportsTheSameNameRejectedWithIt(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, st := newIdentityLinkTestServer(t)
+	st.mustParticipant(t, "sam@example.com", "Sam Example", "example.com")
+	st.mustParticipant(t, "sam@example.net", "Sam Example", "example.net")
+	st.mustParticipant(t, "sam@example.org", "Sam Example", "example.org")
+	proposals, err := st.PersonDuplicateProposalsContext(context.Background(), 0)
+	require.NoError(err)
+	require.Len(proposals, 3)
+	judgments := make([]store.PersonDuplicateJudgment, len(proposals))
+	for i, proposal := range proposals {
+		judgments[i] = store.PersonDuplicateJudgment{
+			Proposal: proposal, Probability: 0.7, Model: "jev-test", Propose: true,
+		}
+	}
+	_, err = st.RecordPersonDuplicateJudgmentsContext(context.Background(), judgments)
+	require.NoError(err)
+	candidates, err := st.ListPersonDuplicateCandidatesContext(context.Background(), nil, 100, 0)
+	require.NoError(err)
+	require.Len(candidates, 3)
+
+	response := personRequest(t, srv, http.MethodPost, rejectPath(candidates[0].ID), nil, "")
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	var rejected IdentityMatchRejectResponse
+	require.NoError(json.Unmarshal(response.Body.Bytes(), &rejected), response.Body.String())
+	assert.Equal(store.IdentityMatchStateRejected, rejected.Candidate.State)
+	assert.ElementsMatch([]int64{candidates[1].ID, candidates[2].ID}, rejected.AlsoRejectedIDs,
+		"every pending pair with the same name shares a side with the rejected pair")
+
+	pending := personRequest(t, srv, http.MethodGet,
+		"/api/v1/identity/match-candidates?origin=person_duplicate&state=candidate", nil, "")
+	require.Equal(http.StatusOK, pending.Code, pending.Body.String())
+	var page IdentityMatchCandidatesResponse
+	require.NoError(json.Unmarshal(pending.Body.Bytes(), &page), pending.Body.String())
+	assert.Empty(page.Candidates, "the same review is not asked again")
 }
 
 func TestRejectAcceptedSystemIdentityMatchUnlinksAndRetainsRejection(t *testing.T) {

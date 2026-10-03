@@ -358,6 +358,31 @@ describe('DirectoryReviewController', () => {
     expect(controller.rows).toEqual([rejected]);
   });
 
+  it('drops the pairs rejected with a duplicate-person name and says how many', async () => {
+    let reads = 0;
+    const rejected = candidate(17, 'rejected');
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = requestOf(input);
+      if (request.method === 'POST') {
+        return Response.json({
+          candidate: rejected,
+          also_rejected_ids: [18, 19],
+          identity_revision: 6,
+          cache_state: 'ready'
+        });
+      }
+      reads += 1;
+      return reads === 1 ? page([candidate(17), candidate(18), candidate(19), candidate(20)]) : page([candidate(20)]);
+    });
+    const controller = new DirectoryReviewController(createAPIClient(fetchFn));
+    await controller.loadIdentityPage();
+
+    await expect(controller.rejectIdentity(17)).resolves.toMatchObject({ ok: true, candidate: rejected });
+
+    expect(controller.rows.map((row) => row.id)).toEqual([20]);
+    expect(controller.status).toBe('Identity match rejected, with 2 other pairs sharing this name.');
+  });
+
   it('reports a committed decision as successful when page reconciliation fails', async () => {
     let reads = 0;
     const accepted = candidate(17, 'accepted');

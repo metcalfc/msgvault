@@ -36,8 +36,9 @@ func newPersonJudgeCommand() *cobra.Command {
 		Long: `Duplicate people: code proposes pairs of identity clusters with an email
 address that share an address delivering to the same mailbox, a phone number,
 or a provider account, a display name (at least two words, in any order) on
-different addresses, or the same distinctive address name (the part before @)
-at different domains. Your own identities, clusters classified as anything but
+different addresses, or the same personal-looking address name (the part
+before @, such as first.last or jsmith42, never a single word such as
+"michael") at different domains on exactly two clusters. Your own identities, clusters classified as anything but
 a person, shared mailboxes, pairs already bound to one person, and pairs with
 an existing identity match candidate or rejection are left out. A pair that
 shares a mailbox, phone number, or provider account is decided in code: it
@@ -47,9 +48,11 @@ Jev, whether or not Jev is on. For the other pairs, when [jev] and
 consent person_duplicates' has been given, pairs with a display name on both
 sides are sent to Jev twenty per request with their display names and whether
 each side's addresses are personal or at an organization, never the addresses.
-A pair judged at least 0.30 likely to be one person becomes a candidate.
+A pair judged at least 0.50 likely to be one person becomes a candidate.
 Nothing is linked or merged until you accept it. Each pair is taken up once
-until either side changes.
+until either side changes. A pending name candidate the current rules no
+longer propose is withdrawn from review first, and rejecting one name
+candidate also rejects the pending ones with the same name on either side.
 
 Profile choices: code first settles what normalization decides, with or
 without Jev and over every eligible item; --limit caps only what is sent to
@@ -144,6 +147,9 @@ func runPersonJudge(
 func writePersonJudgeReport(w io.Writer, report personJudgeReport) {
 	duplicates := report.Duplicates
 	_, _ = fmt.Fprintf(w, "Possible duplicate pairs: %d (%d decided in code)\n", duplicates.Proposals, duplicates.Matched)
+	if duplicates.Retired > 0 {
+		_, _ = fmt.Fprintf(w, "Duplicate people: %d stale candidate(s) withdrawn from review\n", duplicates.Retired)
+	}
 	switch {
 	case !report.DuplicatesJev:
 		_, _ = fmt.Fprintf(w, "Duplicate people: Jev off; %d new candidate(s) for review\n", duplicates.Candidates)
