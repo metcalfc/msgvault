@@ -52,7 +52,8 @@ A pair judged at least 0.50 likely to be one person becomes a candidate.
 Nothing is linked or merged until you accept it. Each pair is taken up once
 until either side changes. A pending name candidate the current rules no
 longer propose is withdrawn from review first, and rejecting one name
-candidate also rejects the pending ones with the same name on either side.
+candidate also rejects the pending ones with the same name between the same
+two identity clusters.
 
 Profile choices: code first settles what normalization decides, with or
 without Jev and over every eligible item; --limit caps only what is sent to

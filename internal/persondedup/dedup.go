@@ -105,7 +105,7 @@ type Judge interface {
 
 // Store is the archive authority a run needs. *store.Store implements it.
 type Store interface {
-	RetireStalePersonDuplicateCandidatesContext(ctx context.Context) (int, error)
+	RetireStalePersonDuplicateCandidatesContext(ctx context.Context, minConfidence float64) (int, error)
 	PersonDuplicateProposalsContext(ctx context.Context, limit int) ([]store.PersonDuplicateProposal, error)
 	RecordPersonDuplicateRulesContext(
 		ctx context.Context, proposals []store.PersonDuplicateProposal,
@@ -149,8 +149,8 @@ type Report struct {
 	// Dropped counts pairs that no longer qualified when written.
 	Dropped int `json:"dropped"`
 	// Retired counts pending name candidates removed from review because
-	// the current rules no longer propose them, such as a bare first name
-	// shared as an address name.
+	// the current rules no longer propose them: a bare first name shared as
+	// an address name, or a probability below CandidateThreshold.
 	Retired int    `json:"retired"`
 	Skipped string `json:"skipped,omitempty"`
 }
@@ -184,7 +184,7 @@ func Run(ctx context.Context, st Store, options Options) (Report, error) {
 		options.Logger = slog.Default()
 	}
 	var report Report
-	retired, err := st.RetireStalePersonDuplicateCandidatesContext(ctx)
+	retired, err := st.RetireStalePersonDuplicateCandidatesContext(ctx, CandidateThreshold)
 	if err != nil {
 		return report, fmt.Errorf("retire stale duplicate people: %w", err)
 	}

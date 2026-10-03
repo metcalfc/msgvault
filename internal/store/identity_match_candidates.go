@@ -735,8 +735,8 @@ type IdentityMatchRejection struct {
 // DecideIdentityMatchCandidateContext does. When a user rejects a pending
 // duplicate-person candidate proposed on a shared display name or address
 // name, every other pending duplicate-person candidate with the same shared
-// value and an endpoint in either rejected identity cluster is rejected in
-// the same transaction, decided by the user with a note naming the
+// value between a member of one rejected identity cluster and a member of
+// the other is rejected in the same transaction, decided by the user with a note naming the
 // candidate the user rejected: they are the same review again. Accepted
 // rows, decided rows, and candidates on other bases are never changed.
 func (s *Store) RejectIdentityMatchCandidateContext(

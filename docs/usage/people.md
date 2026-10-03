@@ -462,8 +462,8 @@ counts only when it looks personal, such as `first.last` or `jsmith42`, and
 only two identities use it; a bare first name such as `michael` never does.
 Accepting one links the identities, or offers the merge below when both
 already belong to saved people. **Keep separate** on a name suggestion also
-rejects the other pending suggestions with the same name for either
-identity, so the same name does not come back for review pair by pair.
+rejects the other pending suggestions with the same name between the same
+two identity clusters, so that question does not come back pair by pair.
 
 Merge two durable profiles only after reviewing both people. The first person
 survives with the same ID and vCard UID; the second person's participants and

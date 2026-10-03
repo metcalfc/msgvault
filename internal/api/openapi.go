@@ -421,7 +421,11 @@ import (
 // scores evidence relevance with local embeddings, and the retired Jev
 // feature has no setting. The removal lands inside the unreleased 2.x line
 // that added the keys in 2.44.0, so it does not open a new major version.
-const APISchemaVersion = "2.49.0"
+// 2.50.0 adds optional also_rejected_ids to the identity match reject
+// response: the other pending duplicate-person candidates with the same
+// shared name between the same two identity clusters, rejected in the same
+// decision. Additive (minor bump).
+const APISchemaVersion = "2.50.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

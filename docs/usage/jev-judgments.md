@@ -1097,8 +1097,9 @@ two sets of names belong to one person.
      either two parts with letters separated by `.`, `_`, or `-` (such as
      `first.last` or `j_smith`) or letters with digits (such as `jsmith42`).
      A single word such as `michael` or `engineering` never counts, and
-     neither does a role, list, or no-reply address or a part that is a team
-     or service word.
+     neither does a role, list, or no-reply address or a part that is a team,
+     service, or machine word with or without a number (`sales2024`,
+     `support1`, `alerts`, `prod`).
 
    A local part on three or more clusters is a common name, not one person,
    and proposes nothing. Any other value shared by more than five clusters
@@ -1152,8 +1153,9 @@ two sets of names belong to one person.
    remembered. Either way the pair is not asked again until one side's
    identities, names, or addresses change.
 6. **Stale suggestions leave review.** Each run first withdraws pending name
-   candidates that these rules no longer propose, such as a pair proposed
-   on a bare first name before the local-part rule tightened. Only
+   candidates that these rules no longer propose: a pair proposed on a bare
+   first name before the local-part rule tightened, or one written with a
+   confidence below 0.50 under the old 0.30 threshold. Only
    undecided `display_name` candidates are withdrawn. They are deleted, not
    rejected, because you never decided them, and their judgment is
    forgotten so the pair is asked afresh if it qualifies again. Accepted,
@@ -1168,8 +1170,10 @@ When both already belong to different saved people, accepting offers the
 usual merge, where you choose the survivor. Rejecting keeps the decision, so
 the pair is never proposed again. Rejecting a name candidate also rejects
 every other pending duplicate-people candidate with the same shared name or
-local part where either side belongs to one of the two identities you
-rejected: they ask the same question again. Those rows are recorded as your
+local part between the same two identity clusters (any of their linked
+identities, either way round): they ask the same question again. A pair
+with a third identity stays pending, because you said only that these two
+are different people. Those rows are recorded as your
 decision with the note "Rejected with candidate N, which you rejected for
 the same shared name", and the reject response lists them in
 `also_rejected_ids`. Accepted and decided candidates, and candidates on

@@ -383,6 +383,33 @@ describe('DirectoryReviewController', () => {
     expect(controller.status).toBe('Identity match rejected, with 2 other pairs sharing this name.');
   });
 
+  it('treats a suggestion withdrawn meanwhile as gone, not as an error', async () => {
+    let reads = 0;
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = requestOf(input);
+      if (request.method === 'POST') {
+        return Response.json(
+          { error: 'identity_match_not_found', message: 'Identity match candidate not found' },
+          { status: 404 }
+        );
+      }
+      reads += 1;
+      return reads === 1 ? page([candidate(17), candidate(20)]) : page([candidate(20)]);
+    });
+    const controller = new DirectoryReviewController(createAPIClient(fetchFn));
+    await controller.loadIdentityPage();
+
+    await expect(controller.rejectIdentity(17, 'Different people')).resolves.toMatchObject({
+      ok: false,
+      status: 404
+    });
+
+    expect(controller.decisionError).toBeNull();
+    expect(controller.status).toBe('This suggestion was already withdrawn.');
+    expect(controller.rows.map((row) => row.id)).toEqual([20]);
+    expect(controller.getDecisionDraft(17)).toBe('');
+  });
+
   it('reports a committed decision as successful when page reconciliation fails', async () => {
     let reads = 0;
     const accepted = candidate(17, 'accepted');

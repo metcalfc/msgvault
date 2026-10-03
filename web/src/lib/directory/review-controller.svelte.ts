@@ -472,6 +472,18 @@ export class DirectoryReviewController {
         await this.loadIdentityPage(this.offset, this.identityState);
         return { ok: true, candidate: decidedCandidate, cacheState: response.data.cache_state };
       }
+      if (response.response.status === 404) {
+        // The suggestion left review meanwhile, for example withdrawn by a
+        // duplicate-people run or rejected with another pair. Nothing is
+        // wrong; show the current queue.
+        const message = 'This suggestion was already withdrawn.';
+        this.decisionDrafts.delete(candidateID);
+        if (this.ownsDecisionContext(context)) {
+          this.status = message;
+          await this.loadIdentityPage(this.offset, this.identityState);
+        }
+        return { ok: false, kind: 'error', status: 404, message };
+      }
       const mergeConflict =
         decision === 'accept' && response.response.status === 409 ? validatePersonMergeRequired(response.error) : null;
       if (mergeConflict) {

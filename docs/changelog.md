@@ -14,11 +14,12 @@ All notable changes to msgvault, grouped by release.
   identity clusters use it; a bare first name or department such as
   `michael` or `engineering` no longer proposes anything. **Keep separate**
   on a name suggestion also rejects the other pending suggestions with the
-  same name for either identity, and the reject response lists them in
+  same name between the same two identity clusters, and the reject
+  response lists them in
   `also_rejected_ids`. Each `msgvault person judge` run, including the one
   before a cache build, first withdraws pending name suggestions the
-  current rules no longer propose, without recording them as your
-  rejections. A Jev name judgment now needs 0.50 instead of 0.30 to become
+  current rules no longer propose, including ones below the new threshold,
+  without recording them as your rejections. A Jev name judgment now needs 0.50 instead of 0.30 to become
   a suggestion. See
   [duplicate people](/docs/usage/jev-judgments/#feature-duplicate-people).
 

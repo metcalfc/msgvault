@@ -99,10 +99,11 @@ type IdentityMatchAcceptResponse struct {
 // cache state have the same contract as accept.
 type IdentityMatchRejectResponse struct {
 	Candidate store.IdentityMatchCandidate `json:"candidate"`
-	// AlsoRejectedIDs lists pending duplicate-person candidates that shared
-	// the rejected candidate's name with either side and were rejected with
-	// it, so the same question is not asked again.
-	AlsoRejectedIDs  []int64 `json:"also_rejected_ids" doc:"Other pending duplicate-person candidates with the same shared name and an identity on either side, rejected in the same decision"`
+	// AlsoRejectedIDs lists other pending duplicate-person candidates with
+	// the rejected candidate's name between the same two identity clusters,
+	// rejected with it so the same question is not asked again. It is
+	// omitted when there are none, and a daemon before 2.50.0 never sends it.
+	AlsoRejectedIDs  []int64 `json:"also_rejected_ids,omitempty" doc:"Other pending duplicate-person candidates with the same shared name between the same two identity clusters, rejected in the same decision; omitted when there are none"`
 	IdentityRevision int64   `json:"identity_revision"`
 	CacheState       string  `json:"cache_state" enum:"ready,stale"`
 }
@@ -141,8 +142,8 @@ func (s *Server) registerIdentityMatchRoutes(api huma.API) {
 	reject.Description = "A rejected suggestion is retained rather than deleted, so the same " +
 		"low-quality inference is not proposed again on the next import. Rejecting a pending " +
 		"duplicate-person candidate proposed on a shared name also rejects the other pending " +
-		"duplicate-person candidates with the same name on either side; their IDs are returned " +
-		"in also_rejected_ids."
+		"duplicate-person candidates with the same name between the same two identity clusters; " +
+		"their IDs are returned in also_rejected_ids."
 	reject.RequestBody = jsonRequestBodyFor[DecideIdentityMatchRequest](api)
 	reject.RequestBody.Required = false
 	reject.Responses = jsonResponsesFor[IdentityMatchRejectResponse](api)
@@ -347,13 +348,9 @@ func (s *Server) handleRejectIdentityMatchCandidate(w http.ResponseWriter, r *ht
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	alsoRejected := rejection.AlsoRejected
-	if alsoRejected == nil {
-		alsoRejected = []int64{}
-	}
 	writeJSON(w, http.StatusOK, IdentityMatchRejectResponse{
 		Candidate:        *rejection.Candidate,
-		AlsoRejectedIDs:  alsoRejected,
+		AlsoRejectedIDs:  rejection.AlsoRejected,
 		IdentityRevision: afterRevision,
 		// RefreshIdentityDatasets is staleness-aware and skips publication
 		// when the persisted cache already has this identity revision. Always

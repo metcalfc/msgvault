@@ -463,3 +463,27 @@ func TestRunWithdrawsPendingCandidatesTheRulesNoLongerPropose(t *testing.T) {
 	require.NoError(err)
 	assert.Empty(candidates)
 }
+
+func TestRunWithdrawsPendingCandidatesBelowTheThreshold(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	st := testutil.NewTestStore(t)
+	left := participant(t, st, "jane@example.com", "Jane Doe")
+	right := participant(t, st, "jdoe@example.org", "Jane Doe")
+	sourceRef, value := store.PersonDuplicateSourceRef, "doe jane"
+	confidence := persondedup.CandidateThreshold - 0.05
+	_, _, err := st.UpsertIdentityMatchCandidateContext(t.Context(), store.IdentityMatchCandidateInput{
+		LeftKind: store.IdentityMatchParticipant, LeftID: left,
+		RightKind: store.IdentityMatchParticipant, RightID: right,
+		Basis: store.IdentityMatchDisplayName, NormalizedValue: &value, State: store.IdentityMatchStateCandidate,
+		Confidence: &confidence, Source: store.ProvenanceSystem, SourceRef: &sourceRef,
+	})
+	require.NoError(err)
+
+	report, err := persondedup.Run(t.Context(), st, persondedup.Options{})
+	require.NoError(err)
+	assert.Equal(1, report.Retired, "a candidate written under the old threshold leaves review")
+	candidates, err := st.ListPersonDuplicateCandidatesContext(t.Context(), nil, 100, 0)
+	require.NoError(err)
+	assert.Empty(candidates)
+}

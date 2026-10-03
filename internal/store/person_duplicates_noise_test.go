@@ -25,6 +25,11 @@ func TestPersonDuplicateProposalsRequireAPersonalLocalPart(t *testing.T) {
 		{"name with digits after a dot", "pat.12345", true},
 		{"hyphenated word with a dangling separator", "michael-", false},
 		{"team word part", "team.example", false},
+		{"team word with a year", "sales2024", false},
+		{"team word with a number", "support1", false},
+		{"short team word with a year", "hr2024", false},
+		{"machine word with a number", "alerts7", false},
+		{"machine words with a separator", "prod.ops", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -92,7 +97,7 @@ func duplicateCandidateByPair(
 	return store.IdentityMatchCandidate{}
 }
 
-func TestRejectPersonDuplicateCandidateRejectsTheSameNameOnEitherSide(t *testing.T) {
+func TestRejectPersonDuplicateCandidateLeavesPairsWithAThirdIdentityPending(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	st := testutil.NewTestStore(t)
@@ -100,11 +105,6 @@ func TestRejectPersonDuplicateCandidateRejectsTheSameNameOnEitherSide(t *testing
 	b := duplicateParticipant(t, st, "sam@example.net", "Sam Example")
 	c := duplicateParticipant(t, st, "sam@example.org", "Sam Example")
 	d := duplicateParticipant(t, st, "sam@example.edu", "Sam Example")
-	// A second name on a's cluster pairs it with another cluster.
-	aAlias := duplicateParticipant(t, st, "lee.other@example.com", "Lee Other")
-	_, err := st.LinkParticipants(a, aAlias)
-	require.NoError(err)
-	other := duplicateParticipant(t, st, "lee.other@example.net", "Lee Other")
 	recordNameCandidates(t, st)
 
 	rejected := duplicateCandidateByPair(t, st, a, b)
@@ -115,10 +115,39 @@ func TestRejectPersonDuplicateCandidateRejectsTheSameNameOnEitherSide(t *testing
 	assert.Equal(store.IdentityMatchStateRejected, rejection.Candidate.State)
 	require.NotNil(rejection.Candidate.Notes)
 	assert.Equal(notes, *rejection.Candidate.Notes, "the user's own note stays on the rejected row")
+	assert.Empty(rejection.AlsoRejected, "a said only that a and b are different people")
+
+	for _, pair := range [][2]int64{{a, c}, {a, d}, {b, c}, {b, d}, {c, d}} {
+		candidate := duplicateCandidateByPair(t, st, pair[0], pair[1])
+		assert.Equal(store.IdentityMatchStateCandidate, candidate.State, "pair %v", pair)
+		assert.Nil(candidate.DecidedBy, "pair %v", pair)
+	}
+}
+
+func TestRejectPersonDuplicateCandidateRejectsTheSameNameBetweenTheSameClusters(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	st := testutil.NewTestStore(t)
+	a := duplicateParticipant(t, st, "sam@example.com", "Sam Example")
+	b := duplicateParticipant(t, st, "sam@example.net", "Sam Example")
+	aWork := duplicateParticipant(t, st, "sam@example.org", "Sam Example")
+	bWork := duplicateParticipant(t, st, "sam@example.edu", "Sam Example")
+	recordNameCandidates(t, st)
+	// The identities were linked after the suggestions were written, so
+	// every a-member and b-member pair asks the same question.
+	_, err := st.LinkParticipants(a, aWork)
+	require.NoError(err)
+	_, err = st.LinkParticipants(b, bWork)
+	require.NoError(err)
+
+	rejected := duplicateCandidateByPair(t, st, a, b)
+	rejection, err := st.RejectIdentityMatchCandidateContext(t.Context(), rejected.ID, "user", nil)
+	require.NoError(err)
 
 	group := []store.IdentityMatchCandidate{
-		duplicateCandidateByPair(t, st, a, c), duplicateCandidateByPair(t, st, a, d),
-		duplicateCandidateByPair(t, st, b, c), duplicateCandidateByPair(t, st, b, d),
+		duplicateCandidateByPair(t, st, a, bWork),
+		duplicateCandidateByPair(t, st, b, aWork),
+		duplicateCandidateByPair(t, st, aWork, bWork),
 	}
 	wantIDs := make([]int64, len(group))
 	for i, candidate := range group {
@@ -130,12 +159,11 @@ func TestRejectPersonDuplicateCandidateRejectsTheSameNameOnEitherSide(t *testing
 		assert.Contains(*candidate.Notes, "same shared name")
 	}
 	assert.ElementsMatch(wantIDs, rejection.AlsoRejected)
-
-	untouched := duplicateCandidateByPair(t, st, c, d)
-	assert.Equal(store.IdentityMatchStateCandidate, untouched.State, "neither side was rejected")
-	assert.Nil(untouched.DecidedBy)
-	otherName := duplicateCandidateByPair(t, st, a, other)
-	assert.Equal(store.IdentityMatchStateCandidate, otherName.State, "a different name is a different question")
+	for _, pair := range [][2]int64{{a, aWork}, {b, bWork}} {
+		candidate := duplicateCandidateByPair(t, st, pair[0], pair[1])
+		assert.NotEqual(store.IdentityMatchStateRejected, candidate.State,
+			"a pair inside one cluster is not the question the user answered")
+	}
 }
 
 func TestRejectPersonDuplicateCandidateLeavesDecidedRowsAndSystemRejections(t *testing.T) {
@@ -172,7 +200,10 @@ func TestRetireStalePersonDuplicateCandidatesWithdrawsOnlyUndecidedNameCandidate
 	insert := func(left, right int64, basis store.IdentityMatchBasis, value string) store.IdentityMatchCandidate {
 		t.Helper()
 		sourceRef := store.PersonDuplicateSourceRef
-		confidence := 0.4
+		confidence := 0.8
+		if value == "doe weak" {
+			confidence = 0.35
+		}
 		candidate, _, err := st.UpsertIdentityMatchCandidateContext(t.Context(), store.IdentityMatchCandidateInput{
 			LeftKind: store.IdentityMatchParticipant, LeftID: left,
 			RightKind: store.IdentityMatchParticipant, RightID: right,
@@ -202,6 +233,11 @@ func TestRetireStalePersonDuplicateCandidatesWithdrawsOnlyUndecidedNameCandidate
 		duplicateParticipant(t, st, "jane@example.com", "Jane Doe"),
 		duplicateParticipant(t, st, "jdoe@example.org", "Jane Doe"),
 		store.IdentityMatchDisplayName, "doe jane")
+	// Still a qualifying name pair, judged below the current threshold.
+	weak := insert(
+		duplicateParticipant(t, st, "weak@example.com", "Weak Doe"),
+		duplicateParticipant(t, st, "wdoe@example.org", "Weak Doe"),
+		store.IdentityMatchDisplayName, "doe weak")
 	// Rejected by the user under the old rules.
 	decided := insert(
 		duplicateParticipant(t, st, "scott@example.com", ""),
@@ -215,9 +251,9 @@ func TestRetireStalePersonDuplicateCandidatesWithdrawsOnlyUndecidedNameCandidate
 		duplicateParticipant(t, st, "riley@example.net", ""),
 		store.IdentityMatchPhone, "+15555550100")
 
-	retired, err := st.RetireStalePersonDuplicateCandidatesContext(t.Context())
+	retired, err := st.RetireStalePersonDuplicateCandidatesContext(t.Context(), 0.5)
 	require.NoError(err)
-	assert.Equal(2, retired)
+	assert.Equal(3, retired)
 
 	candidates, err := st.ListPersonDuplicateCandidatesContext(t.Context(), nil, 100, 0)
 	require.NoError(err)
@@ -232,13 +268,14 @@ func TestRetireStalePersonDuplicateCandidatesWithdrawsOnlyUndecidedNameCandidate
 	}, states, "stale candidates leave review without becoming rejections")
 	assert.NotContains(states, stale.ID)
 	assert.NotContains(states, common.ID)
+	assert.NotContains(states, weak.ID, "a judgment below the threshold no longer reaches Reviews")
 
 	var judgments int
 	require.NoError(st.DB().QueryRow(`SELECT COUNT(*) FROM person_duplicate_judgments
-		WHERE left_participant_id IN (?, ?)`, stale.LeftID, common.LeftID).Scan(&judgments))
+		WHERE left_participant_id IN (?, ?, ?)`, stale.LeftID, common.LeftID, weak.LeftID).Scan(&judgments))
 	assert.Equal(0, judgments, "a retired pair is asked afresh if it qualifies again")
 
-	again, err := st.RetireStalePersonDuplicateCandidatesContext(t.Context())
+	again, err := st.RetireStalePersonDuplicateCandidatesContext(t.Context(), 0.5)
 	require.NoError(err)
 	assert.Equal(0, again)
 }

@@ -9,9 +9,10 @@ import (
 // rejectPersonDuplicateGroupTx rejects, for the user, the other pending
 // duplicate-person candidates that repeat a rejected one: the same shared
 // display name or address name (basis display_name, same normalized value)
-// with an endpoint in either of the rejected candidate's identity clusters.
-// The user said the two sides are different people, so asking about the
-// same name again for either side is the same review. Each sibling is
+// between a member of one rejected identity cluster and a member of the
+// other, in either orientation. The user said only that these two clusters
+// are different people, so a pair with a third cluster stays pending. Each
+// sibling is
 // decided by the user with a note naming the rejected candidate. Only
 // undecided rows change; accepted and decided rows, and candidates on other
 // bases or from other sources, are left as they are. The caller holds the
@@ -47,9 +48,10 @@ func (s *Store) rejectPersonDuplicateGroupTx(
 			_ = rows.Close()
 			return nil, fmt.Errorf("scan duplicate-person candidate sharing a rejected name: %w", err)
 		}
-		_, leftInGroup := components[left]
-		_, rightInGroup := components[right]
-		if leftInGroup || rightInGroup {
+		leftRoot, leftKnown := components[left]
+		rightRoot, rightKnown := components[right]
+		if leftKnown && rightKnown && leftRoot != rightRoot {
+			// Both endpoints are in the two rejected clusters, one in each.
 			siblings = append(siblings, id)
 		}
 	}

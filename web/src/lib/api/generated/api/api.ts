@@ -1839,7 +1839,7 @@ export const acceptIdentityMatchCandidate = (
   );
 };
 /**
- * A rejected suggestion is retained rather than deleted, so the same low-quality inference is not proposed again on the next import. Rejecting a pending duplicate-person candidate proposed on a shared name also rejects the other pending duplicate-person candidates with the same name on either side; their IDs are returned in also_rejected_ids.
+ * A rejected suggestion is retained rather than deleted, so the same low-quality inference is not proposed again on the next import. Rejecting a pending duplicate-person candidate proposed on a shared name also rejects the other pending duplicate-person candidates with the same name between the same two identity clusters; their IDs are returned in also_rejected_ids.
  * @summary Reject an identity match candidate
  */
 export const rejectIdentityMatchCandidate = (

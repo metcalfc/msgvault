@@ -59,6 +59,8 @@ var duplicateNameStopwords = map[string]struct{}{
 	"billing": {}, "help": {}, "via": {}, "newsletter": {}, "news": {},
 	"updates": {}, "marketing": {}, "customer": {}, "account": {}, "accounts": {},
 	"office": {}, "hr": {}, "careers": {}, "jobs": {}, "calendar": {},
+	"alert": {}, "alerts": {}, "prod": {}, "ops": {}, "invoice": {}, "invoices": {},
+	"donotreply": {}, "notify": {}, "mailer": {}, "bounce": {}, "bounces": {},
 }
 
 // PersonDuplicateIdentity is one side of a proposed pair: the identity
@@ -555,7 +557,9 @@ func personalLocalPart(local string) bool {
 	parts := strings.FieldsFunc(local, func(r rune) bool { return r == '.' || r == '_' || r == '-' })
 	lettered := 0
 	for _, part := range parts {
-		if _, stop := duplicateNameStopwords[part]; stop {
+		// "sales2024" and "support1" are the team word with a number.
+		word := strings.TrimFunc(part, unicode.IsDigit)
+		if _, stop := duplicateNameStopwords[word]; stop {
 			return false
 		}
 		if strings.ContainsFunc(part, unicode.IsLetter) {

@@ -346,6 +346,7 @@ func TestRejectIdentityMatchCandidateRetainsTheRow(t *testing.T) {
 	assert.Len(page.Candidates, 1,
 		"a rejected suggestion is retained so the same inference is not repeated")
 	assert.Empty(rejected.AlsoRejectedIDs, "only a duplicate-person name rejection decides for others")
+	assert.NotContains(response.Body.String(), "also_rejected_ids", "an empty list is omitted")
 }
 
 func TestRejectPersonDuplicateReportsTheSameNameRejectedWithIt(t *testing.T) {
@@ -353,9 +354,9 @@ func TestRejectPersonDuplicateReportsTheSameNameRejectedWithIt(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, st := newIdentityLinkTestServer(t)
-	st.mustParticipant(t, "sam@example.com", "Sam Example", "example.com")
-	st.mustParticipant(t, "sam@example.net", "Sam Example", "example.net")
-	st.mustParticipant(t, "sam@example.org", "Sam Example", "example.org")
+	a := st.mustParticipant(t, "sam@example.com", "Sam Example", "example.com")
+	b := st.mustParticipant(t, "sam@example.net", "Sam Example", "example.net")
+	aWork := st.mustParticipant(t, "sam@example.org", "Sam Example", "example.org")
 	proposals, err := st.PersonDuplicateProposalsContext(context.Background(), 0)
 	require.NoError(err)
 	require.Len(proposals, 3)
@@ -370,21 +371,33 @@ func TestRejectPersonDuplicateReportsTheSameNameRejectedWithIt(t *testing.T) {
 	candidates, err := st.ListPersonDuplicateCandidatesContext(context.Background(), nil, 100, 0)
 	require.NoError(err)
 	require.Len(candidates, 3)
+	byPair := map[[2]int64]int64{}
+	for _, candidate := range candidates {
+		byPair[[2]int64{candidate.LeftID, candidate.RightID}] = candidate.ID
+	}
+	// Linked after the suggestions were written: b against aWork asks the
+	// same question as b against a.
+	_, err = st.LinkParticipants(a, aWork)
+	require.NoError(err)
 
-	response := personRequest(t, srv, http.MethodPost, rejectPath(candidates[0].ID), nil, "")
+	response := personRequest(t, srv, http.MethodPost, rejectPath(byPair[[2]int64{a, b}]), nil, "")
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	var rejected IdentityMatchRejectResponse
 	require.NoError(json.Unmarshal(response.Body.Bytes(), &rejected), response.Body.String())
 	assert.Equal(store.IdentityMatchStateRejected, rejected.Candidate.State)
-	assert.ElementsMatch([]int64{candidates[1].ID, candidates[2].ID}, rejected.AlsoRejectedIDs,
-		"every pending pair with the same name shares a side with the rejected pair")
+	assert.Equal([]int64{byPair[[2]int64{b, aWork}]}, rejected.AlsoRejectedIDs,
+		"the same name between the same two clusters is the same review")
 
 	pending := personRequest(t, srv, http.MethodGet,
 		"/api/v1/identity/match-candidates?origin=person_duplicate&state=candidate", nil, "")
 	require.Equal(http.StatusOK, pending.Code, pending.Body.String())
 	var page IdentityMatchCandidatesResponse
 	require.NoError(json.Unmarshal(pending.Body.Bytes(), &page), pending.Body.String())
-	assert.Empty(page.Candidates, "the same review is not asked again")
+	pendingIDs := make([]int64, 0, len(page.Candidates))
+	for _, candidate := range page.Candidates {
+		pendingIDs = append(pendingIDs, candidate.ID)
+	}
+	assert.Equal([]int64{byPair[[2]int64{a, aWork}]}, pendingIDs, "only the pair inside one cluster stays pending")
 }
 
 func TestRejectAcceptedSystemIdentityMatchUnlinksAndRetainsRejection(t *testing.T) {
