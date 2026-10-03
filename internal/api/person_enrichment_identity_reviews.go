@@ -47,7 +47,8 @@ func (s *Server) registerPersonEnrichmentIdentityReviewRoutes(api huma.API) {
 
 	confirm := rawAPIV1Operation("confirmPersonEnrichmentIdentity", http.MethodPost,
 		"/person-enrichment/identity-reviews/{id}/confirm", "Confirm an enrichment identity")
-	confirm.Description = "The user confirms the returned identity is this person. The attempt's " +
+	confirm.Description = "The user confirms the returned identity is this person. The person is " +
+		"tracked if they are not already, without queuing another provider search. The attempt's " +
 		"stored claims are applied at the verified identity score, its provider person IDs are " +
 		"attached, and the attempt succeeds."
 	confirm.Responses = jsonResponsesFor[store.PersonEnrichmentIdentityDecision](api)

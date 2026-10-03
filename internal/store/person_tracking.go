@@ -90,6 +90,15 @@ func (s *Store) SetPersonTrackingContext(
 func (s *Store) setPersonTrackingTx(
 	ctx context.Context, tx *loggedTx, personID int64, tracked bool,
 ) (*PersonTracking, error) {
+	return s.setPersonTrackingWithEnrollmentTx(ctx, tx, personID, tracked, true)
+}
+
+// setPersonTrackingWithEnrollmentTx is setPersonTrackingTx with control over
+// the enrollment enrichment run. A caller that already holds a provider
+// result for the person passes false so tracking does not search again.
+func (s *Store) setPersonTrackingWithEnrollmentTx(
+	ctx context.Context, tx *loggedTx, personID int64, tracked, publishEnrollment bool,
+) (*PersonTracking, error) {
 	if s.personEnrichmentTxBarrier != nil {
 		s.personEnrichmentTxBarrier("tracking_before_authority_lock")
 	}
@@ -159,7 +168,7 @@ func (s *Store) setPersonTrackingTx(
 		return nil, fmt.Errorf("set person %d tracking to %t: %w", personID, tracked, err)
 	}
 	if tracked {
-		if trackingAdded {
+		if trackingAdded && publishEnrollment {
 			if err := s.publishPersonEnrichmentTx(ctx, tx, personID,
 				personenrichment.TriggerTracked, trackingGeneration,
 				s.personEnrichmentTime()); err != nil {

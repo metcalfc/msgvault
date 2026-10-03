@@ -3284,7 +3284,7 @@ export const listPersonEnrichmentIdentityReviews = (
   );
 };
 /**
- * The user confirms the returned identity is this person. The attempt's stored claims are applied at the verified identity score, its provider person IDs are attached, and the attempt succeeds.
+ * The user confirms the returned identity is this person. The person is tracked if they are not already, without queuing another provider search. The attempt's stored claims are applied at the verified identity score, its provider person IDs are attached, and the attempt succeeds.
  * @summary Confirm an enrichment identity
  */
 export const confirmPersonEnrichmentIdentity = (

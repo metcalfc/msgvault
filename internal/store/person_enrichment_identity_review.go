@@ -643,8 +643,11 @@ func confirmedEnrichmentGeneration(
 
 // ConfirmPersonEnrichmentIdentityContext is the user confirming that an
 // identity_uncertain attempt found the right person. In one transaction it
-// re-applies the attempt's stored claims at the verified identity score as a
-// new fact generation, attaches the returned provider person IDs at the
+// tracks the person if they are not tracked yet (confirming the research is
+// the user choosing to keep this profile; the attempt being confirmed is its
+// enrollment result, so no second provider search is queued), re-applies
+// the attempt's stored claims at the verified identity score as a new fact
+// generation, attaches the returned provider person IDs at the
 // verified confidence, moves the attempt to succeeded (only if it is still
 // identity_uncertain), records the decision with reason user_confirmed,
 // schedules the profile's refresh, and brings the run's counters up to date.
@@ -675,7 +678,8 @@ func (s *Store) confirmPersonEnrichmentIdentityTx(
 		return nil, err
 	}
 	attempt, profile := review.attempt, review.profile
-	if err := verifyTrackedPersonFactPersonTx(ctx, tx, attempt.PersonID); err != nil {
+	if _, err := s.setPersonTrackingWithEnrollmentTx(
+		ctx, tx, attempt.PersonID, true, false); err != nil {
 		return nil, err
 	}
 	if !attempt.FactGenerationKey.Valid {

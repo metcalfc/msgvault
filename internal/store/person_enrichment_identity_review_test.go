@@ -210,21 +210,37 @@ func TestConfirmPersonEnrichmentIdentityLosesARaceWithoutWriting(t *testing.T) {
 	checks.Equal("identity_uncertain", attempt.State)
 }
 
-func TestConfirmPersonEnrichmentIdentityRefusesUntrackedAndOwnedElsewhere(t *testing.T) {
+func TestConfirmPersonEnrichmentIdentityTracksAnUntrackedPersonWithoutSearchingAgain(t *testing.T) {
 	requirements := require.New(t)
+	checks := assert.New(t)
 	f := uncertainEnrichmentFixture(t)
 
 	_, err := f.store.SetPersonTrackingContext(t.Context(), f.person.ID, false)
 	requirements.NoError(err)
-	_, err = f.store.ConfirmPersonEnrichmentIdentityContext(t.Context(), f.attempt.ID, "user")
-	requirements.ErrorIs(err, ErrPersonFactPersonNotTracked)
-	_, err = f.store.SetPersonTrackingContext(t.Context(), f.person.ID, true)
+	decision, err := f.store.ConfirmPersonEnrichmentIdentityContext(t.Context(), f.attempt.ID, "user")
 	requirements.NoError(err)
+	checks.Equal("confirmed", decision.Decision)
+
+	tracking, err := f.store.GetPersonTrackingContext(t.Context(), f.person.ID)
+	requirements.NoError(err)
+	checks.True(tracking.Tracked)
+	// The confirmed attempt is the enrollment result: tracking queues no
+	// tracked-trigger search, only the profile's later refresh.
+	var trackedWork int64
+	requirements.NoError(f.store.DB().QueryRowContext(t.Context(), `SELECT COUNT(*)
+		FROM person_enrichment_work WHERE person_id = ? AND (trigger_mask & 1) <> 0`,
+		f.person.ID).Scan(&trackedWork))
+	checks.Equal(int64(0), trackedWork)
+}
+
+func TestConfirmPersonEnrichmentIdentityRefusesOwnedElsewhere(t *testing.T) {
+	requirements := require.New(t)
+	f := uncertainEnrichmentFixture(t)
 
 	var otherID int64
 	requirements.NoError(f.store.DB().QueryRowContext(t.Context(),
 		`INSERT INTO persons (vcard_uid) VALUES ('other-owner') RETURNING id`).Scan(&otherID))
-	_, err = f.store.DB().ExecContext(t.Context(), `INSERT INTO person_enrichment_provider_identities
+	_, err := f.store.DB().ExecContext(t.Context(), `INSERT INTO person_enrichment_provider_identities
 		(person_id, provider_namespace, provider_person_id, confidence, verified_at)
 		VALUES (?, ?, ?, 1000, ?)`, otherID, f.profile.ProviderNamespace,
 		"Opaque/Person:Case?part=1", f.now)
