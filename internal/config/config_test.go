@@ -2464,3 +2464,25 @@ trusted_imap_sent_mailboxes = { "imaps://alice@example.com@imap.example.com:993"
 	assert.Empty(cfg.Sync.TrustedIMAPSentMailboxes,
 		"unconfigured archives carry no explicit Sent-folder trust")
 }
+
+func TestLoadPeopleAutoMergeContactMatches(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{name: "unset", content: "", want: true},
+		{name: "true", content: "[people]\nauto_merge_contact_matches = true\n", want: true},
+		{name: "false", content: "[people]\nauto_merge_contact_matches = false\n", want: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			configPath := filepath.Join(t.TempDir(), "config.toml")
+			require.NoError(os.WriteFile(configPath, []byte(tt.content), 0o644), "WriteFile()")
+
+			cfg, err := Load(configPath, "")
+			require.NoError(err, "Load()")
+			assert.Equal(t, tt.want, cfg.People.ContactMatchAutoMergeEnabled())
+		})
+	}
+}

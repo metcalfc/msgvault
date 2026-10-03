@@ -2255,7 +2255,29 @@ type ConfidenceInputs struct {
 	ReportedScore int64 `json:"reported_score"`
 }
 
+type ContactMatchAutoAction struct {
+	Action          ContactMatchAutoActionAction `json:"action" validate:"required"`
+	CandidateID     int64                        `json:"candidate_id"`
+	ContactPersonID int64                        `json:"contact_person_id"`
+	ParticipantID   int64                        `json:"participant_id"`
+	PersonID        *int64                       `json:"person_id,omitempty"`
+}
+
+func (c ContactMatchAutoAction) Validate() error {
+	var errors runtime.ValidationErrors
+	if v, ok := any(c.Action).(runtime.Validator); ok {
+		if err := v.Validate(); err != nil {
+			errors = errors.Append("Action", err)
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
 type ContactMatchBuildResult struct {
+	Actions       []ContactMatchAutoAction           `json:"actions,omitempty"`
 	Ambiguous     int64                              `json:"ambiguous"`
 	AutoBound     int64                              `json:"auto_bound"`
 	AutoMerged    int64                              `json:"auto_merged"`
@@ -2263,6 +2285,7 @@ type ContactMatchBuildResult struct {
 	Blocked       int64                              `json:"blocked"`
 	CacheState    *ContactMatchBuildResultCacheState `json:"cache_state,omitempty"`
 	Created       int64                              `json:"created"`
+	DryRun        *bool                              `json:"dry_run,omitempty"`
 	EvidenceAdded int64                              `json:"evidence_added"`
 	Existing      int64                              `json:"existing"`
 	LeftForReview int64                              `json:"left_for_review"`
@@ -2275,6 +2298,13 @@ type ContactMatchBuildResult struct {
 
 func (c ContactMatchBuildResult) Validate() error {
 	var errors runtime.ValidationErrors
+	for i, item := range c.Actions {
+		if v, ok := any(item).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append(fmt.Sprintf("Actions[%d]", i), err)
+			}
+		}
+	}
 	if c.CacheState != nil {
 		if v, ok := any(c.CacheState).(runtime.Validator); ok {
 			if err := v.Validate(); err != nil {

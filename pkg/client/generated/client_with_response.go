@@ -9855,11 +9855,12 @@ func (c *Client) GetHealthWithResponse(ctx context.Context, reqEditors ...runtim
 }
 
 // BuildContactMatchCandidates Refresh contact-match candidates
-func (c *Client) BuildContactMatchCandidatesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*BuildContactMatchCandidatesResp, error) {
+func (c *Client) BuildContactMatchCandidatesWithResponse(ctx context.Context, options *BuildContactMatchCandidatesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*BuildContactMatchCandidatesResp, error) {
 	var err error
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/api/v1/identity/contact-matches/build",
 		Method:     "POST",
+		Options:    options,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)

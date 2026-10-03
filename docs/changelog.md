@@ -12,16 +12,23 @@ All notable changes to msgvault, grouped by release.
   contact's exact email is the archive identity of one person, and no other
   contact or identity cluster is involved, the contact is merged into that
   person (or the identity is linked to the contact when it has no person)
-  instead of waiting in **Reviews**. A CardDAV sync therefore ends with the
-  card on the person you already had. The merge uses the ordinary person
-  merge, shows **Merged automatically: same email `<address>`** in merge
-  history, and is undone with a split, which also stops the pair from being
-  merged or proposed again. Pending matches that were already linked are
-  closed. Phone-only matches, shared mailboxes, identities marked as not a
-  person, ambiguous or blocked matches, and earlier rejections still wait
-  for review. `msgvault person contact-matches build` and the build endpoint
-  report `auto_merged`, `auto_bound`, `linked_closed`, and
-  `left_for_review` (API schema 2.51.0). See
+  instead of waiting in **Reviews**. The CardDAV import still binds a card
+  to a profile that already lists one of its addresses and otherwise
+  creates a contact profile; the refresh after each successful sync then
+  merges that profile into the person you already had. The merge uses the
+  ordinary person merge, adopts the card's name when the person's name came
+  from message headers, shows **Merged automatically: same email
+  `<address>`** in merge history, and is undone with a split, which also
+  stops the pair from being merged or proposed again. Pending matches that
+  were already linked are closed. Phone-only matches, shared mailboxes,
+  identities marked as not a person, ambiguous or blocked matches, contact
+  profiles holding several cards or names (family cards sharing an
+  address), and earlier rejections and splits still wait for review.
+  `msgvault person contact-matches build` and the build endpoint report
+  `auto_merged`, `auto_bound`, `linked_closed`, `left_for_review`, and each
+  decision by IDs (API schema 2.51.0); `--dry-run` previews without
+  writing, and `[people] auto_merge_contact_matches = false` turns the
+  rule off. See
   [match imported contacts](/docs/usage/people/#match-imported-contacts-to-your-archive).
 
 - Duplicate-people review asks about a common name once. An address name

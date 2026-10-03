@@ -85,6 +85,15 @@ type ContactMatch struct {
 	Identifiers      []ContactMatchIdentifier   `json:"identifiers"`
 	// SharedMailbox explains a shared_mailbox classification.
 	SharedMailbox *correspondentkind.SharedMailboxSignal `json:"shared_mailbox,omitzero" nullable:"false"`
+
+	// The exact-match rule's one-to-one evidence, counted before the
+	// owner, rejection, and not-a-person filters drop any pair: the
+	// identity clusters the contact's emails hit, the contact profiles the
+	// cluster's emails hit, and whether a contact phone hits a cluster that
+	// belongs to a different person.
+	autoEmailClusters int
+	autoEmailContacts int
+	autoPhoneConflict bool
 }
 
 type contactMatchPoint struct {
@@ -185,6 +194,45 @@ func (s *Store) findContactMatchesTx(ctx context.Context, tx *loggedTx) ([]Conta
 		return nil, err
 	}
 
+	// Raw one-to-one evidence for the exact-match rule, from every pair
+	// before any filter below drops one.
+	emailRoots := map[int64]map[int64]struct{}{}
+	emailContacts := map[int64]map[int64]struct{}{}
+	phoneRoots := map[int64]map[int64]struct{}{}
+	addTo := func(target map[int64]map[int64]struct{}, key, value int64) {
+		if target[key] == nil {
+			target[key] = map[int64]struct{}{}
+		}
+		target[key][value] = struct{}{}
+	}
+	for _, key := range keys {
+		for _, identifier := range grouped[key] {
+			switch identifier.Basis {
+			case IdentityMatchEmail:
+				addTo(emailRoots, key.personID, key.root)
+				addTo(emailContacts, key.root, key.personID)
+			case IdentityMatchPhone:
+				addTo(phoneRoots, key.personID, key.root)
+			default:
+			}
+		}
+	}
+	phoneConflict := func(contactID, root int64, clusterPersons []int64) bool {
+		for other := range phoneRoots[contactID] {
+			if other == root {
+				continue
+			}
+			otherPersons := personsForMembers(clusterMembers(other), bindings)
+			if len(otherPersons) == 0 {
+				continue
+			}
+			if !slices.Equal(otherPersons, clusterPersons) {
+				return true
+			}
+		}
+		return false
+	}
+
 	matches := make([]ContactMatch, 0, len(keys))
 	personIDs := []int64{}
 	signalClusters := map[int64][]int64{}
@@ -219,6 +267,10 @@ func (s *Store) findContactMatchesTx(ctx context.Context, tx *loggedTx) ([]Conta
 			ClusterPersonIDs: clusterPersons,
 			Classification:   classifyContactMatch(key.personID, clusterPersons),
 			Identifiers:      found,
+
+			autoEmailClusters: len(emailRoots[key.personID]),
+			autoEmailContacts: len(emailContacts[key.root]),
+			autoPhoneConflict: phoneConflict(key.personID, key.root, clusterPersons),
 		}
 		matches = append(matches, match)
 		personIDs = append(personIDs, key.personID)
@@ -729,6 +781,12 @@ type ContactMatchBuildResult struct {
 	// LeftForReview counts contact-match candidates still waiting for a
 	// decision after this refresh.
 	LeftForReview int `json:"left_for_review"`
+	// DryRun marks a report of what a refresh would decide; nothing was
+	// written.
+	DryRun bool `json:"dry_run,omitzero"`
+	// Actions lists each automatic decision by IDs: merges, binds, and
+	// closed linked candidates.
+	Actions []ContactMatchAutoAction `json:"actions,omitempty"`
 	// CacheState is set by the HTTP endpoint after it refreshes the identity
 	// datasets for automatic merges or links; it is omitted when the refresh
 	// changed no person.
@@ -744,7 +802,7 @@ type ContactMatchBuildResult struct {
 // contact-match candidate for the profile, in any state, gains only new
 // evidence.
 //
-// Exact matches are then decided in code (see autoResolveContactMatchesTx):
+// Exact matches are then decided in code (see planContactMatchAutoTx):
 // a pending merge or bind supported by an exact email, between one contact
 // profile and one archive identity cluster with nothing blocking it, is
 // applied through the ordinary person merge path and recorded as accepted by
@@ -753,9 +811,24 @@ type ContactMatchBuildResult struct {
 func (s *Store) BuildContactMatchCandidatesContext(
 	ctx context.Context,
 ) (*ContactMatchBuildResult, error) {
+	return s.BuildContactMatchCandidatesWithOptionsContext(ctx, ContactMatchBuildOptions{})
+}
+
+// BuildContactMatchCandidatesWithOptionsContext is
+// BuildContactMatchCandidatesContext with a dry run. Candidates are written
+// in one transaction; the automatic resolutions follow in bounded batches,
+// each re-validated under the identity lock.
+func (s *Store) BuildContactMatchCandidatesWithOptionsContext(
+	ctx context.Context, options ContactMatchBuildOptions,
+) (*ContactMatchBuildResult, error) {
+	if options.DryRun {
+		return s.planContactMatchBuildContext(ctx)
+	}
 	result := &ContactMatchBuildResult{}
+	var plan []contactMatchAutoPlan
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
 		*result = ContactMatchBuildResult{}
+		plan = nil
 		if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
 			return err
 		}
@@ -768,7 +841,8 @@ func (s *Store) BuildContactMatchCandidatesContext(
 		if err != nil {
 			return err
 		}
-		result.LinkedClosed = closed
+		result.LinkedClosed = len(closed)
+		result.Actions = append(result.Actions, closed...)
 		matches, err := s.findContactMatchesTx(ctx, tx)
 		if err != nil {
 			return err
@@ -785,9 +859,17 @@ func (s *Store) BuildContactMatchCandidatesContext(
 			}
 			written = append(written, writtenContactMatch{match: match, candidateID: candidateID})
 		}
-		if err := s.autoResolveContactMatchesTx(ctx, tx, written, result); err != nil {
-			return err
-		}
+		plan, err = s.planContactMatchAutoTx(ctx, tx, written)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.applyContactMatchAutoPlanContext(ctx, plan, result); err != nil {
+		return nil, err
+	}
+	err = s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
+		var err error
 		result.LeftForReview, err = pendingContactMatchCountTx(ctx, tx)
 		return err
 	})
@@ -797,10 +879,7 @@ func (s *Store) BuildContactMatchCandidatesContext(
 	return result, nil
 }
 
-func (s *Store) writeContactMatchCandidateTx(
-	ctx context.Context, tx *loggedTx, match ContactMatch,
-	existing map[participantPersonPair]int64, result *ContactMatchBuildResult,
-) (int64, error) {
+func countContactMatchClassification(match ContactMatch, result *ContactMatchBuildResult) {
 	result.Matches++
 	switch match.Classification {
 	case ContactMatchBind:
@@ -816,6 +895,13 @@ func (s *Store) writeContactMatchCandidateTx(
 	if match.BlockedReason != nil {
 		result.Blocked++
 	}
+}
+
+func (s *Store) writeContactMatchCandidateTx(
+	ctx context.Context, tx *loggedTx, match ContactMatch,
+	existing map[participantPersonPair]int64, result *ContactMatchBuildResult,
+) (int64, error) {
+	countContactMatchClassification(match, result)
 	var candidateID int64
 	for _, member := range match.ClusterMembers {
 		if id, ok := existing[participantPersonPair{

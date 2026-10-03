@@ -295,7 +295,7 @@ func TestBuildContactMatchCandidatesReportsCounts(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, st := newIdentityLinkTestServer(t)
-	st.mustParticipant(t, "casey@example.com", "Contact", "example.com")
+	participantID := st.mustParticipant(t, "casey@example.com", "Contact", "example.com")
 	var personID int64
 	require.NoError(st.DB().QueryRow(
 		`INSERT INTO persons (vcard_uid) VALUES ('contact-build') RETURNING id`).Scan(&personID))
@@ -310,8 +310,13 @@ func TestBuildContactMatchCandidatesReportsCounts(t *testing.T) {
 	assert.Equal("no-store", response.Header().Get("Cache-Control"))
 	var result store.ContactMatchBuildResult
 	require.NoError(json.Unmarshal(response.Body.Bytes(), &result), response.Body.String())
+	require.Len(result.Actions, 1, "a real build lists what it resolved")
 	assert.Equal(store.ContactMatchBuildResult{
 		Matches: 1, Created: 1, EvidenceAdded: 1, Bind: 1, AutoBound: 1, CacheState: "ready",
+		Actions: []store.ContactMatchAutoAction{{
+			Action: "bind", CandidateID: result.Actions[0].CandidateID,
+			ContactPersonID: personID, ParticipantID: participantID,
+		}},
 	}, result, "an exact email is linked and the identity datasets are refreshed")
 
 	// The contact profile now owns the identity: nothing is left to match,

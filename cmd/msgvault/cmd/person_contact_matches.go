@@ -32,9 +32,12 @@ func newPersonContactMatchesCommand() *cobra.Command {
 			"already has that identity, or the identity is linked to the profile when it\n" +
 			"has no person. Merge history records the actor rule:contact_match:email:<address>,\n" +
 			"and person split undoes it for good.\n\n" +
-			"Everything else waits for review: shared mailboxes, phone-only matches,\n" +
-			"identities that are not a person, more than one profile or identity, blocked\n" +
-			"merges, and anything you rejected or split before. Accepting a bind links the\n" +
+			"Everything else waits for review: shared mailboxes, phone-only matches or a\n" +
+			"phone that belongs to someone else, identities that are not a person, more\n" +
+			"than one profile or identity, a profile holding several cards or names,\n" +
+			"blocked merges, and anything you rejected or split before. Set\n" +
+			"[people] auto_merge_contact_matches = false to review every match.\n\n" +
+			"Accepting a bind links the\n" +
 			"archive identity to the contact profile; a match whose identity belongs to\n" +
 			"another profile asks for an explicit person merge.",
 	}
@@ -285,14 +288,15 @@ func contactMatchConflictError(candidateID int64, body []byte) error {
 }
 
 func newPersonContactMatchesBuildCommand() *cobra.Command {
-	var jsonOutput bool
+	var jsonOutput, dryRun bool
 	command := &cobra.Command{
 		Use:   "build",
 		Short: "Refresh contact matches now",
 		Long: "Refresh contact matches now. The daemon also refreshes them after each\n" +
 			"successful CardDAV sync and in a daily contact-matches job. Each refresh\n" +
 			"merges or links the exact email matches it can decide, closes pending matches\n" +
-			"that are already linked, and leaves the rest for review.",
+			"that are already linked, and leaves the rest for review. --dry-run reports\n" +
+			"what it would decide, by candidate and person IDs, without writing.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, _, err := OpenHTTPStore(cmd.Context())
@@ -302,7 +306,11 @@ func newPersonContactMatchesBuildCommand() *cobra.Command {
 			defer func() { _ = client.Close() }()
 			resp, err := daemonclient.APIResponse(cmd.Context(), client,
 				func(api *apiclient.Client) (*generated.BuildContactMatchCandidatesResp, error) {
-					return api.BuildContactMatchCandidatesWithResponse(cmd.Context())
+					options := &generated.BuildContactMatchCandidatesRequestOptions{}
+					if dryRun {
+						options.Query = &generated.BuildContactMatchCandidatesQuery{DryRun: &dryRun}
+					}
+					return api.BuildContactMatchCandidatesWithResponse(cmd.Context(), options)
 				})
 			if err != nil {
 				return err
@@ -312,15 +320,28 @@ func newPersonContactMatchesBuildCommand() *cobra.Command {
 					json.Deterministic(true))
 			}
 			result := resp.JSON200
+			if result.DryRun != nil && *result.DryRun {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Dry run: nothing was written.")
+			}
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 				"Matches: %d (new %d, existing %d)\nRetired: %d\nBind: %d\nMerge: %d\nAmbiguous: %d\nBlocked: %d\nEvidence added: %d\n"+
 					"Merged automatically: %d\nLinked automatically: %d\nAlready linked, closed: %d\nLeft for review: %d\n",
 				result.Matches, result.Created, result.Existing, result.Retired, result.Bind, result.Merge,
 				result.Ambiguous, result.Blocked, result.EvidenceAdded,
 				result.AutoMerged, result.AutoBound, result.LinkedClosed, result.LeftForReview)
+			for _, action := range result.Actions {
+				line := fmt.Sprintf("  %s: candidate %d, contact person %d, participant %d",
+					action.Action, action.CandidateID, action.ContactPersonID, action.ParticipantID)
+				if action.PersonID != nil {
+					line += fmt.Sprintf(", into person %d", *action.PersonID)
+				}
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), line)
+			}
 			return nil
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, flagJSON, false, "Output as JSON")
+	command.Flags().BoolVar(&dryRun, "dry-run", false,
+		"Report what the refresh would merge, link, or close without writing")
 	return command
 }

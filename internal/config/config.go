@@ -591,6 +591,15 @@ type DeletionConfig struct {
 type PeopleConfig struct {
 	Sweep      peoplesweep.Config      `toml:"sweep"`
 	Enrichment personenrichment.Config `toml:"enrichment"`
+	// AutoMergeContactMatches lets contact matching merge or link exact
+	// email matches to one person without review; unset means true.
+	AutoMergeContactMatches *bool `toml:"auto_merge_contact_matches"`
+}
+
+// ContactMatchAutoMergeEnabled reports whether contact matching decides
+// exact email matches itself. It is on unless explicitly turned off.
+func (p PeopleConfig) ContactMatchAutoMergeEnabled() bool {
+	return p.AutoMergeContactMatches == nil || *p.AutoMergeContactMatches
 }
 
 // ActivityConfig controls dated activity projection and contact-state

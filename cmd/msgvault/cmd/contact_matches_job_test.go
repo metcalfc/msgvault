@@ -19,6 +19,11 @@ func TestRegisterContactMatchJobRefreshesCandidatesDaily(t *testing.T) {
 	participantID, err := st.EnsureParticipant("dee@example.test", "Dee Sender", "example.test")
 	require.NoError(err)
 	personID := contactProfile(t, st, "card-dee", "Dee Contact", store.ContactAddressEmail, "dee@example.test")
+	refreshes := 0
+	st.SetIdentityDatasetsRefresher(func(context.Context) error {
+		refreshes++
+		return nil
+	})
 
 	sched := scheduler.New(func(context.Context, string) error { return nil })
 	t.Cleanup(func() { <-sched.Stop().Done() })
@@ -42,4 +47,5 @@ func TestRegisterContactMatchJobRefreshesCandidatesDaily(t *testing.T) {
 	person, err := st.GetPersonContext(t.Context(), personID)
 	require.NoError(err)
 	assert.Equal([]int64{participantID}, person.ParticipantIDs)
+	assert.Equal(1, refreshes, "the automatic link refreshes identity analytics")
 }

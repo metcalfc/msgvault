@@ -429,7 +429,8 @@ import (
 // an exact email joining one contact profile to one person is merged or
 // linked through the person merge path and accepted by rule:contact_match.
 // ContactMatchBuildResult gains auto_merged, auto_bound, linked_closed,
-// left_for_review, and an optional cache_state. Additive (minor bump).
+// left_for_review, actions (each decision by IDs), dry_run, and an optional
+// cache_state, and the endpoint accepts dry_run=true. Additive (minor bump).
 const APISchemaVersion = "2.51.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration

@@ -1,6 +1,7 @@
 package carddav
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -321,6 +322,11 @@ func TestSyncPutsCardOfExistingArchivePersonOnThatPerson(t *testing.T) {
 	require.NoError(err)
 	archive, _, err := st.CreatePersonFromParticipantContext(t.Context(), participantID)
 	require.NoError(err)
+	refreshes := 0
+	st.SetIdentityDatasetsRefresher(func(context.Context) error {
+		refreshes++
+		return nil
+	})
 
 	_, err = service.Sync(t.Context(), SyncOptions{Full: true})
 	require.NoError(err)
@@ -333,9 +339,12 @@ func TestSyncPutsCardOfExistingArchivePersonOnThatPerson(t *testing.T) {
 	require.NoError(err)
 	assert.Len(people, 1, "no duplicate profile is left behind")
 
+	assert.Equal(1, refreshes, "the automatic merge refreshes identity analytics")
+
 	etag = `&quot;two&quot;`
 	_, err = service.Sync(t.Context(), SyncOptions{Full: true})
 	require.NoError(err)
+	assert.Equal(1, refreshes, "a sync that merges nothing does not refresh again")
 	resource, err = st.GetCardDAVResourceContext(t.Context(), book.ID, href)
 	require.NoError(err)
 	require.NotNil(resource.PersonID)
@@ -344,6 +353,53 @@ func TestSyncPutsCardOfExistingArchivePersonOnThatPerson(t *testing.T) {
 	people, err = st.ListPersonsContext(t.Context())
 	require.NoError(err)
 	assert.Len(people, 1)
+}
+
+// familyCard is a card for one member of a household that shares an email.
+func familyCard(href, uid, name, email string) string {
+	return cardResponseRaw(href, `"`+uid+`"`, "BEGIN:VCARD&#13;\nVERSION:4.0&#13;\nUID:"+uid+
+		"&#13;\nFN:"+name+"&#13;\nEMAIL:"+email+"&#13;\nEND:VCARD&#13;\n")
+}
+
+// Two family members' cards list the same address. Import binds both to one
+// contact profile, so the profile is not one person and stays for review
+// instead of being merged into the person who sends from that address.
+func TestSyncLeavesFamilyCardsSharingAnEmailForReview(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeDAVXML(t, w, syncResponse(
+			familyCard("/books/personal/robin.vcf", "robin", "Robin Lee", "robin.lee@example.test")+
+				familyCard("/books/personal/sam.vcf", "sam", "Sam Lee", "robin.lee@example.test"),
+			"token"))
+	}))
+	t.Cleanup(server.Close)
+	service, st, book := newPullService(t, server, true)
+	participantID, err := st.EnsureParticipant("robin.lee@example.test", "Robin Lee", "example.test")
+	require.NoError(err)
+	robin, _, err := st.CreatePersonFromParticipantContext(t.Context(), participantID)
+	require.NoError(err)
+
+	_, err = service.Sync(t.Context(), SyncOptions{Full: true})
+	require.NoError(err)
+
+	robinCard, err := st.GetCardDAVResourceContext(t.Context(), book.ID, server.URL+"/books/personal/robin.vcf")
+	require.NoError(err)
+	samCard, err := st.GetCardDAVResourceContext(t.Context(), book.ID, server.URL+"/books/personal/sam.vcf")
+	require.NoError(err)
+	require.NotNil(robinCard.PersonID)
+	require.NotNil(samCard.PersonID)
+	assert.Equal(*robinCard.PersonID, *samCard.PersonID, "import binds both cards to one profile")
+	assert.NotEqual(robin.ID, *samCard.PersonID, "Sam's card is not merged onto Robin")
+	person, err := st.GetPersonContext(t.Context(), robin.ID)
+	require.NoError(err)
+	require.NotNil(person.DisplayName)
+	assert.Equal("Robin Lee", *person.DisplayName)
+	candidates, err := st.ListContactMatchCandidatesContext(t.Context(), nil, 100, 0)
+	require.NoError(err)
+	require.Len(candidates, 1)
+	assert.Equal(store.IdentityMatchStateCandidate, candidates[0].State, "the match waits for review")
 }
 
 func TestSyncCanonicalizesEquivalentHrefSpellingsForUpdatesAndTombstones(t *testing.T) {

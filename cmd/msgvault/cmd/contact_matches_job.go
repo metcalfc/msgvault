@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"go.kenn.io/msgvault/internal/scheduler"
@@ -32,6 +33,13 @@ func registerContactMatchJob(sched *scheduler.Scheduler, s *store.Store) error {
 					"created", result.Created, "matches", result.Matches,
 					"auto_merged", result.AutoMerged, "auto_bound", result.AutoBound,
 					"linked_closed", result.LinkedClosed, "left_for_review", result.LeftForReview)
+			}
+			if result.AutoMerged > 0 || result.AutoBound > 0 {
+				// Automatic merges change people, so identity analytics are
+				// refreshed as after any other identity change.
+				if err := s.RefreshIdentityDatasetsAfterChange(ctx); err != nil {
+					return fmt.Errorf("refresh identity analytics after contact matches: %w", err)
+				}
 			}
 			return nil
 		},

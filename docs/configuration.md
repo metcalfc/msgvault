@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-10-01"
+last_edited: "2026-10-02"
 title: Configuration
 description: Configuration file reference, environment variables, and file locations.
 ---
@@ -395,6 +395,14 @@ calls. The older `export-discord` compatibility command has the same read-only
 provider behavior.
 
 When `service_account_key` is configured, `msgvault add-account <email>` validates the delegated Gmail profile and registers the account without storing a per-user refresh token. The service account key file must be owner-only on Unix-like systems, for example `chmod 600 /path/to/service-account.json`.
+
+### `[people]`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `auto_merge_contact_matches` | `true` | Let contact matching merge a contact into the one person who already has its exact email, or link an unclaimed identity to it, without review. `false` leaves every match in **Reviews**. See [match imported contacts](usage/people.md#match-imported-contacts-to-your-archive). |
+
+The daemon reads this key at startup.
 
 ### `[carddav]`
 

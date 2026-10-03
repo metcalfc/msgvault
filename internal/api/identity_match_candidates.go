@@ -53,7 +53,9 @@ type IdentityMatchStore interface {
 
 // ContactMatchBuilder refreshes contact-match candidates on demand.
 type ContactMatchBuilder interface {
-	BuildContactMatchCandidatesContext(ctx context.Context) (*store.ContactMatchBuildResult, error)
+	BuildContactMatchCandidatesWithOptionsContext(
+		ctx context.Context, options store.ContactMatchBuildOptions,
+	) (*store.ContactMatchBuildResult, error)
 }
 
 // IdentityMatchCandidatesResponse is a bounded page of candidates with their
@@ -162,10 +164,17 @@ func (s *Server) registerIdentityMatchRoutes(api huma.API) {
 		"belongs to one other person or to nobody, the profile is merged into that person " +
 		"(auto_merged) or the cluster is linked to the profile (auto_bound) through the " +
 		"ordinary person merge, recorded with actor rule:contact_match:email:<address> and " +
-		"reversible by a person split. A shared mailbox, a phone-only match, an identity that " +
-		"is not a person or belongs to the owner, more than one profile or cluster, a blocked " +
-		"merge, and any earlier rejection or split stay for review. Pending candidates that " +
-		"are already linked are accepted (linked_closed). Refreshing is idempotent."
+		"reversible by a person split. A shared mailbox, a phone-only match or a phone that " +
+		"points at another person, an identity that is not a person, more than one profile or " +
+		"cluster, a profile holding several cards or different names, a blocked merge, and any " +
+		"earlier rejection or split stay for review; owner identities are never matched. Pending candidates that " +
+		"are already linked are accepted (linked_closed). Each decision is listed by IDs in " +
+		"actions. Resolutions run in batches of 25 per transaction, each re-checked first. " +
+		"With dry_run=true nothing is written and the response reports what would be decided " +
+		"(retirement is not simulated). When [people] auto_merge_contact_matches is false the " +
+		"refresh only proposes candidates. Refreshing is idempotent."
+	build.Parameters = append(build.Parameters,
+		queryBooleanParam("dry_run", "Report what the refresh would decide without writing"))
 	build.Responses = jsonResponsesFor[store.ContactMatchBuildResult](api)
 	addErrorResponses(api, build.Responses, http.StatusServiceUnavailable)
 	registerRawHumaRoute(api, build, s.handleBuildContactMatchCandidates)
@@ -228,7 +237,13 @@ func (s *Server) handleBuildContactMatchCandidates(w http.ResponseWriter, r *htt
 			"Identity match review is unavailable")
 		return
 	}
-	result, err := builder.BuildContactMatchCandidatesContext(r.Context())
+	dryRun, _, err := queryBool(r, "dry_run")
+	if err != nil {
+		s.rejectBadParam(w, err)
+		return
+	}
+	result, err := builder.BuildContactMatchCandidatesWithOptionsContext(r.Context(),
+		store.ContactMatchBuildOptions{DryRun: dryRun})
 	if err != nil {
 		s.writeIdentityMatchError(w, err)
 		return

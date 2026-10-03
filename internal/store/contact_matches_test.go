@@ -151,8 +151,13 @@ func TestBuildContactMatchCandidatesWritesIdempotentSystemRowsWithEvidence(t *te
 
 	first, err := f.st.BuildContactMatchCandidatesContext(t.Context())
 	require.NoError(err)
+	require.Len(first.Actions, 1)
 	assert.Equal(store.ContactMatchBuildResult{
 		Matches: 1, Created: 1, EvidenceAdded: 1, Bind: 1, AutoBound: 1,
+		Actions: []store.ContactMatchAutoAction{{
+			Action: store.ContactMatchAutoActionBind, CandidateID: first.Actions[0].CandidateID,
+			ContactPersonID: people["card-cy"], ParticipantID: participant,
+		}},
 	}, *first, "an exact email to an unbound identity is linked without review")
 
 	candidates, err := f.st.ListIdentityMatchCandidatesContext(t.Context(), nil, 100, 0)

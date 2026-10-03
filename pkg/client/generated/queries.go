@@ -473,6 +473,11 @@ type GetEntityLabelsQuery struct {
 	Organization []int64 `json:"organization,omitempty"`
 }
 
+type BuildContactMatchCandidatesQuery struct {
+	// DryRun Report what the refresh would decide without writing
+	DryRun *bool `json:"dry_run,omitempty"`
+}
+
 type ListCorrespondentKindsQuery struct {
 	// Kind Only records of this kind; unclear lists Jev judgments awaiting review
 	Kind *ListCorrespondentKindsQueryKind `json:"kind,omitempty"`

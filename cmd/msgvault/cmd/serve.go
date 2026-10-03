@@ -717,6 +717,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 		personEnrichmentConfig: cfg.People.Enrichment,
 		lookupEnv:              personEnrichmentEnvironmentLookup(cfg),
 	}
+	// Exact contact matches are decided in code unless configuration turns
+	// it off; background merges refresh identity analytics the same way
+	// the HTTP endpoints do.
+	s.SetContactMatchAutoResolve(cfg.People.ContactMatchAutoMergeEnabled())
+	s.SetIdentityDatasetsRefresher(func(ctx context.Context) error {
+		_, err := storeAdapter.RefreshIdentityDatasets(ctx)
+		return err
+	})
 	schedAdapter := &schedulerAdapter{scheduler: sched, media: mediaSched}
 
 	// Create and start API server
@@ -2741,10 +2749,10 @@ func (a *storeAPIAdapter) RejectPersonEnrichmentIdentityContext(
 	return a.store.RejectPersonEnrichmentIdentityContext(ctx, attemptID, actor)
 }
 
-func (a *storeAPIAdapter) BuildContactMatchCandidatesContext(
-	ctx context.Context,
+func (a *storeAPIAdapter) BuildContactMatchCandidatesWithOptionsContext(
+	ctx context.Context, options store.ContactMatchBuildOptions,
 ) (*store.ContactMatchBuildResult, error) {
-	return a.store.BuildContactMatchCandidatesContext(ctx)
+	return a.store.BuildContactMatchCandidatesWithOptionsContext(ctx, options)
 }
 
 func (a *storeAPIAdapter) LinkEquivalentEmailAddressesContext(

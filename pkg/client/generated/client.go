@@ -492,8 +492,8 @@ type ClientInterface interface {
 	GetHealthWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetHealthResp, error)
 
 	// BuildContactMatchCandidates Refresh contact-match candidates
-	BuildContactMatchCandidates(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*BuildContactMatchCandidatesResponse, error)
-	BuildContactMatchCandidatesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*BuildContactMatchCandidatesResp, error)
+	BuildContactMatchCandidates(ctx context.Context, options *BuildContactMatchCandidatesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*BuildContactMatchCandidatesResponse, error)
+	BuildContactMatchCandidatesWithResponse(ctx context.Context, options *BuildContactMatchCandidatesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*BuildContactMatchCandidatesResp, error)
 
 	// ListCorrespondentKinds List identity clusters marked as not a person
 	ListCorrespondentKinds(ctx context.Context, options *ListCorrespondentKindsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListCorrespondentKindsResponse, error)
@@ -8154,11 +8154,12 @@ func (c *Client) GetHealth(ctx context.Context, reqEditors ...runtime.RequestEdi
 }
 
 // BuildContactMatchCandidates Refresh contact-match candidates
-func (c *Client) BuildContactMatchCandidates(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*BuildContactMatchCandidatesResponse, error) {
+func (c *Client) BuildContactMatchCandidates(ctx context.Context, options *BuildContactMatchCandidatesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*BuildContactMatchCandidatesResponse, error) {
 	var err error
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/api/v1/identity/contact-matches/build",
 		Method:     "POST",
+		Options:    options,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)

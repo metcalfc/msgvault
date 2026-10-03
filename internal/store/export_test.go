@@ -214,6 +214,13 @@ func (s *Store) SetContactMatchBindAfterPromoteHookForTest(fn func()) func() {
 	return func() { s.contactMatchBindAfterPromoteHook = nil }
 }
 
+// SetContactMatchAutoResolveHookForTest runs at the start of each automatic
+// contact match resolution; a returned error fails that resolution.
+func (s *Store) SetContactMatchAutoResolveHookForTest(fn func() error) func() {
+	s.contactMatchAutoResolveHook = fn
+	return func() { s.contactMatchAutoResolveHook = nil }
+}
+
 // SetPersonOperationBeforeIdentityLockHookForTest installs a per-Store barrier
 // immediately before merge and split transactions acquire the identity lock.
 // Concurrency tests use it to prove every competing transaction is open and at

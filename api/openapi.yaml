@@ -2477,9 +2477,40 @@ components:
       required:
         - reported_score
       type: object
+    ContactMatchAutoAction:
+      additionalProperties: true
+      properties:
+        action:
+          enum:
+            - merge
+            - bind
+            - close_linked
+          type: string
+        candidate_id:
+          format: int64
+          type: integer
+        contact_person_id:
+          format: int64
+          type: integer
+        participant_id:
+          format: int64
+          type: integer
+        person_id:
+          format: int64
+          type: integer
+      required:
+        - action
+        - candidate_id
+        - contact_person_id
+        - participant_id
+      type: object
     ContactMatchBuildResult:
       additionalProperties: true
       properties:
+        actions:
+          items:
+            $ref: "#/components/schemas/ContactMatchAutoAction"
+          type: array
         ambiguous:
           format: int64
           type: integer
@@ -2503,6 +2534,8 @@ components:
         created:
           format: int64
           type: integer
+        dry_run:
+          type: boolean
         evidence_added:
           format: int64
           type: integer
@@ -20048,8 +20081,14 @@ paths:
         - API
   /api/v1/identity/contact-matches/build:
     post:
-      description: "Matches the exact email and phone contact points of profiles with no archive identity (for example, imported contacts) against archive participants and writes one candidate per matched identity cluster. Exact matches are decided in code: when an exact email joins one contact profile to one identity cluster, and the cluster belongs to one other person or to nobody, the profile is merged into that person (auto_merged) or the cluster is linked to the profile (auto_bound) through the ordinary person merge, recorded with actor rule:contact_match:email:<address> and reversible by a person split. A shared mailbox, a phone-only match, an identity that is not a person or belongs to the owner, more than one profile or cluster, a blocked merge, and any earlier rejection or split stay for review. Pending candidates that are already linked are accepted (linked_closed). Refreshing is idempotent."
+      description: "Matches the exact email and phone contact points of profiles with no archive identity (for example, imported contacts) against archive participants and writes one candidate per matched identity cluster. Exact matches are decided in code: when an exact email joins one contact profile to one identity cluster, and the cluster belongs to one other person or to nobody, the profile is merged into that person (auto_merged) or the cluster is linked to the profile (auto_bound) through the ordinary person merge, recorded with actor rule:contact_match:email:<address> and reversible by a person split. A shared mailbox, a phone-only match or a phone that points at another person, an identity that is not a person, more than one profile or cluster, a profile holding several cards or different names, a blocked merge, and any earlier rejection or split stay for review; owner identities are never matched. Pending candidates that are already linked are accepted (linked_closed). Each decision is listed by IDs in actions. Resolutions run in batches of 25 per transaction, each re-checked first. With dry_run=true nothing is written and the response reports what would be decided (retirement is not simulated). When [people] auto_merge_contact_matches is false the refresh only proposes candidates. Refreshing is idempotent."
       operationId: buildContactMatchCandidates
+      parameters:
+        - description: Report what the refresh would decide without writing
+          in: query
+          name: dry_run
+          schema:
+            type: boolean
       responses:
         "200":
           content:

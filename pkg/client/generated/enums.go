@@ -424,6 +424,24 @@ func (c CardDAVStatusResponseRepairReason) Validate() error {
 	}
 }
 
+type ContactMatchAutoActionAction string
+
+const (
+	Bind        ContactMatchAutoActionAction = "bind"
+	CloseLinked ContactMatchAutoActionAction = "close_linked"
+	Merge       ContactMatchAutoActionAction = "merge"
+)
+
+// Validate checks if the ContactMatchAutoActionAction value is valid
+func (c ContactMatchAutoActionAction) Validate() error {
+	switch c {
+	case Bind, CloseLinked, Merge:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid ContactMatchAutoActionAction value, got: %v", c))
+	}
+}
+
 type ContactMatchBuildResultCacheState string
 
 const (
@@ -461,17 +479,17 @@ func (c ContactMatchStatusBlockedReason) Validate() error {
 type ContactMatchStatusClassification string
 
 const (
-	Ambiguous     ContactMatchStatusClassification = "ambiguous"
-	Bind          ContactMatchStatusClassification = "bind"
-	Linked        ContactMatchStatusClassification = "linked"
-	Merge         ContactMatchStatusClassification = "merge"
-	SharedMailbox ContactMatchStatusClassification = "shared_mailbox"
+	Ambiguous                             ContactMatchStatusClassification = "ambiguous"
+	ContactMatchStatusClassificationBind  ContactMatchStatusClassification = "bind"
+	ContactMatchStatusClassificationMerge ContactMatchStatusClassification = "merge"
+	Linked                                ContactMatchStatusClassification = "linked"
+	SharedMailbox                         ContactMatchStatusClassification = "shared_mailbox"
 )
 
 // Validate checks if the ContactMatchStatusClassification value is valid
 func (c ContactMatchStatusClassification) Validate() error {
 	switch c {
-	case Ambiguous, Bind, Linked, Merge, SharedMailbox:
+	case Ambiguous, ContactMatchStatusClassificationBind, ContactMatchStatusClassificationMerge, Linked, SharedMailbox:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid ContactMatchStatusClassification value, got: %v", c))

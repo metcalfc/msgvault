@@ -2262,7 +2262,7 @@ Display names are never compared. Every subcommand goes through the daemon.
 msgvault person contact-matches list [--state candidate] [--limit <n>] [--offset <n>] [--json]
 msgvault person contact-matches accept <candidate-id> [--notes <text>] [--json]
 msgvault person contact-matches reject <candidate-id> [--notes <text>] [--json]
-msgvault person contact-matches build [--json]
+msgvault person contact-matches build [--dry-run] [--json]
 ```
 
 `list` names both sides and shows what accepting does now:
@@ -2291,18 +2291,26 @@ refresh:
 1. retires undecided matches that fail the `accept` checks;
 2. accepts pending matches that are already `linked`;
 3. decides exact matches: a `merge` or `bind` supported by an exact email,
-   where the contact matches only that identity cluster by email and the
-   cluster matches only that contact, is merged into the existing person or
-   linked to the contact through the ordinary person merge. The merge actor
-   is `rule:contact_match:email:<address>`, and the candidate is accepted by
-   `rule:contact_match`.
+   where the contact's emails reach only that identity cluster and the
+   cluster's emails reach only that contact (counting identities that are
+   never proposed), is merged into the existing person or linked to the
+   contact through the ordinary person merge. The merge actor is
+   `rule:contact_match:email:<address>`, and the candidate is accepted by
+   `rule:contact_match`. Decisions are applied 25 per transaction, each
+   re-checked first.
 
-Phone-only, `shared_mailbox`, `ambiguous`, and blocked matches, identities any
-classifier marks as not a person, and anything you rejected stay for review.
+Phone-only, `shared_mailbox`, `ambiguous`, and blocked matches, a contact
+whose phone belongs to a different person, a contact profile holding
+several cards or different names, identities any classifier marks as not a
+person, and pairs you rejected or split apart (at any time) stay for review.
 A `person split` of an automatic merge or link is remembered as your
 rejection, so the pair is never merged or proposed again. The output and
 `--json` report `auto_merged`, `auto_bound`, `linked_closed`, and
-`left_for_review` alongside the match counts.
+`left_for_review` alongside the match counts, and list each decision by
+candidate, contact person, participant, and surviving person ID.
+`--dry-run` reports the same without writing; it does not simulate
+retirement. With `[people] auto_merge_contact_matches = false`, `build` only
+proposes matches.
 
 ---
 

@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mattn/go-sqlite3"
@@ -94,8 +95,15 @@ type Store struct {
 	identityMatchAcceptBeforeDecisionHook func()
 	// personDuplicateRevalidateHook receives the participants a
 	// duplicate-person revalidation loaded; tests only.
-	personDuplicateRevalidateHook          func(participantIDs []int64)
-	contactMatchBindAfterPromoteHook       func()
+	personDuplicateRevalidateHook    func(participantIDs []int64)
+	contactMatchBindAfterPromoteHook func()
+	contactMatchAutoResolveHook      func() error
+	// contactMatchAutoDisabled turns off the exact contact match rule; see
+	// SetContactMatchAutoResolve.
+	contactMatchAutoDisabled atomic.Bool
+	// identityDatasetsRefresher rebuilds identity-derived analytics after a
+	// background identity change; see SetIdentityDatasetsRefresher.
+	identityDatasetsRefresher              atomic.Pointer[func(context.Context) error]
 	personEnrichmentReviewBeforeUpdateHook func(*loggedTx)
 	senderRepairMessageLockHook            func()
 	personOperationBeforeIdentityLockHook  func()

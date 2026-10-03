@@ -115,6 +115,13 @@ func (s *Service) refreshContactMatches(ctx context.Context) {
 			"auto_merged", result.AutoMerged, "auto_bound", result.AutoBound,
 			"linked_closed", result.LinkedClosed, "left_for_review", result.LeftForReview)
 	}
+	if result.AutoMerged > 0 || result.AutoBound > 0 {
+		// Automatic merges change people, so identity analytics are
+		// refreshed as after any other identity change.
+		if err := s.store.RefreshIdentityDatasetsAfterChange(ctx); err != nil {
+			slog.WarnContext(ctx, "CardDAV sync could not refresh identity analytics", "error", err)
+		}
+	}
 }
 
 func (s *Service) sync(ctx context.Context, options SyncOptions) (SyncResult, error) {

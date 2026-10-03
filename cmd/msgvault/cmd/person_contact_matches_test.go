@@ -71,7 +71,7 @@ func TestPersonContactMatchesCLIReviewsThroughTheDaemon(t *testing.T) {
 	adaContact := contactProfile(t, st, "card-ada", "Ada Contact", store.ContactAddressPhone, "+1 555 010 0181")
 	contactProfile(t, st, "card-bo", "Bo Contact", store.ContactAddressPhone, "+1 555 010 0182")
 	cyContact := contactProfile(t, st, "card-cy", "Cy Contact", store.ContactAddressEmail, "cy@example.test")
-	contactProfile(t, st, "card-dee", "Dee Contact", store.ContactAddressEmail, "dee@example.test")
+	deeContact := contactProfile(t, st, "card-dee", "Dee Contact", store.ContactAddressEmail, "dee@example.test")
 
 	srv := api.NewServerWithOptions(api.ServerOptions{
 		Config: &config.Config{},
@@ -84,7 +84,18 @@ func TestPersonContactMatchesCLIReviewsThroughTheDaemon(t *testing.T) {
 		Remote: config.RemoteConfig{URL: httpSrv.URL, AllowInsecure: true},
 	})
 
-	output, err := runContactMatchesCLI(ctx, "build")
+	output, err := runContactMatchesCLI(ctx, "build", "--dry-run")
+	require.NoError(err, output)
+	assert.Contains(output, "Dry run: nothing was written.")
+	assert.Contains(output, "Merged automatically: 1")
+	assert.Contains(output, fmt.Sprintf("merge: candidate 0, contact person %d", deeContact))
+	assert.Contains(output, fmt.Sprintf("into person %d", dee.ID))
+	assert.NotContains(output, "Dee", "dry-run output names no one")
+	pending, err := st.ListContactMatchCandidatesContext(t.Context(), nil, 100, 0)
+	require.NoError(err)
+	assert.Empty(pending, "a dry run writes nothing")
+
+	output, err = runContactMatchesCLI(ctx, "build")
 	require.NoError(err, output)
 	assert.Contains(output, "Matches: 4 (new 4, existing 0)")
 	assert.Contains(output, "Retired: 0")
