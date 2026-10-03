@@ -221,6 +221,14 @@ func (s *Store) SetContactMatchAutoResolveHookForTest(fn func() error) func() {
 	return func() { s.contactMatchAutoResolveHook = nil }
 }
 
+// SetContactMatchAutoBeforeApplyHookForTest runs after a contact-match
+// refresh commits its plan and before it applies the first batch, so a test
+// can change the archive in between through the store API.
+func (s *Store) SetContactMatchAutoBeforeApplyHookForTest(fn func()) func() {
+	s.contactMatchAutoBeforeApplyHook = fn
+	return func() { s.contactMatchAutoBeforeApplyHook = nil }
+}
+
 // SetPersonOperationBeforeIdentityLockHookForTest installs a per-Store barrier
 // immediately before merge and split transactions acquire the identity lock.
 // Concurrency tests use it to prove every competing transaction is open and at

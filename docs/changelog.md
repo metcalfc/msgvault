@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-10-02"
+last_edited: "2026-10-03"
 title: Changelog
 description: Release history for msgvault
 ---
@@ -16,18 +16,19 @@ All notable changes to msgvault, grouped by release.
   to a profile that already lists one of its addresses and otherwise
   creates a contact profile; the refresh after each successful sync then
   merges that profile into the person you already had. The merge uses the
-  ordinary person merge, adopts the card's name when the person's name came
-  from message headers, shows **Merged automatically: same email
+  ordinary person merge, adopts the card's name only when the person has
+  none or still has the name promotion picked, shows **Merged automatically: same email
   `<address>`** in merge history, and is undone with a split, which also
   stops the pair from being merged or proposed again. Pending matches that
   were already linked are closed. Phone-only matches, shared mailboxes,
   identities marked as not a person, ambiguous or blocked matches, contact
-  profiles holding several cards or names (family cards sharing an
-  address), and earlier rejections and splits still wait for review.
+  profiles holding several cards (family cards sharing an address), card
+  names that describe a different person than the archive person or its
+  header names, and earlier rejections and splits still wait for review.
   `msgvault person contact-matches build` and the build endpoint report
   `auto_merged`, `auto_bound`, `linked_closed`, `left_for_review`, and each
-  decision by IDs (API schema 2.51.0); `--dry-run` previews without
-  writing, and `[people] auto_merge_contact_matches = false` turns the
+  decision by IDs (API schema 2.51.0); `--dry-run` runs the same refresh
+  and rolls it back, and `[people] auto_merge_contact_matches = false` turns the
   rule off. See
   [match imported contacts](/docs/usage/people/#match-imported-contacts-to-your-archive).
 

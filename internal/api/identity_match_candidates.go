@@ -166,12 +166,14 @@ func (s *Server) registerIdentityMatchRoutes(api huma.API) {
 		"ordinary person merge, recorded with actor rule:contact_match:email:<address> and " +
 		"reversible by a person split. A shared mailbox, a phone-only match or a phone that " +
 		"points at another person, an identity that is not a person, more than one profile or " +
-		"cluster, a profile holding several cards or different names, a blocked merge, and any " +
+		"cluster, a profile holding several cards, names on the card and the archive side that " +
+		"describe different people, a blocked merge, and any " +
 		"earlier rejection or split stay for review; owner identities are never matched. Pending candidates that " +
 		"are already linked are accepted (linked_closed). Each decision is listed by IDs in " +
 		"actions. Resolutions run in batches of 25 per transaction, each re-checked first. " +
-		"With dry_run=true nothing is written and the response reports what would be decided " +
-		"(retirement is not simulated). When [people] auto_merge_contact_matches is false the " +
+		"With dry_run=true the whole refresh runs in a transaction that is rolled back, so the " +
+		"response reports what a refresh would do now, with candidate_id 0 for candidates it " +
+		"would create. When [people] auto_merge_contact_matches is false the " +
 		"refresh only proposes candidates. Refreshing is idempotent."
 	build.Parameters = append(build.Parameters,
 		queryBooleanParam("dry_run", "Report what the refresh would decide without writing"))
@@ -248,7 +250,7 @@ func (s *Server) handleBuildContactMatchCandidates(w http.ResponseWriter, r *htt
 		s.writeIdentityMatchError(w, err)
 		return
 	}
-	if result.AutoMerged > 0 || result.AutoBound > 0 {
+	if !result.DryRun && (result.AutoMerged > 0 || result.AutoBound > 0) {
 		// Automatic merges and links change people, so refresh the
 		// identity datasets like every other identity mutation endpoint.
 		result.CacheState = s.refreshIdentityCacheState(r.Context())

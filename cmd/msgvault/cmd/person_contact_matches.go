@@ -295,8 +295,9 @@ func newPersonContactMatchesBuildCommand() *cobra.Command {
 		Long: "Refresh contact matches now. The daemon also refreshes them after each\n" +
 			"successful CardDAV sync and in a daily contact-matches job. Each refresh\n" +
 			"merges or links the exact email matches it can decide, closes pending matches\n" +
-			"that are already linked, and leaves the rest for review. --dry-run reports\n" +
-			"what it would decide, by candidate and person IDs, without writing.",
+			"that are already linked, and leaves the rest for review. --dry-run runs the\n" +
+			"same refresh and rolls it back, reporting what it would decide by candidate\n" +
+			"and person IDs without writing.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, _, err := OpenHTTPStore(cmd.Context())

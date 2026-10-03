@@ -119,8 +119,21 @@ func (s *Store) FindContactMatchesContext(ctx context.Context) ([]ContactMatch, 
 
 func (s *Store) findContactMatchesTx(ctx context.Context, tx *loggedTx) ([]ContactMatch, error) {
 	points, err := contactOnlyContactPointsTx(ctx, tx)
-	if err != nil || len(points) == 0 {
-		return []ContactMatch{}, err
+	if err != nil {
+		return nil, err
+	}
+	return s.findContactMatchesForPointsTx(ctx, tx, points)
+}
+
+// findContactMatchesForPointsTx matches the given contact-only contact
+// points. The one-to-one evidence of each match counts only these points, so
+// a caller re-checking one pair passes every point that can change it (see
+// contactMatchPointsForPairTx).
+func (s *Store) findContactMatchesForPointsTx(
+	ctx context.Context, tx *loggedTx, points []contactMatchPoint,
+) ([]ContactMatch, error) {
+	if len(points) == 0 {
+		return []ContactMatch{}, nil
 	}
 	identifiers, err := contactMatchIdentifiersTx(ctx, tx, points)
 	if err != nil || len(identifiers) == 0 {
@@ -378,33 +391,105 @@ func sortContactMatchIdentifiers(identifiers []ContactMatchIdentifier) {
 	})
 }
 
-// contactOnlyContactPointsTx loads the active email and phone contact points
+// contactOnlyPointsSelect selects the active email and phone contact points
 // of persons that have no bound participant.
-func contactOnlyContactPointsTx(ctx context.Context, tx *loggedTx) ([]contactMatchPoint, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT cp.id, cp.person_id, cp.address_kind, cp.normalized_value
+const contactOnlyPointsSelect = `SELECT cp.id, cp.person_id, cp.address_kind, cp.normalized_value
 		FROM person_contact_points cp
 		WHERE cp.address_kind IN (?, ?)
 		  AND cp.active_until IS NULL AND cp.superseded_at IS NULL
 		  AND TRIM(cp.normalized_value) <> ''
 		  AND NOT EXISTS (
 			SELECT 1 FROM person_participants pp WHERE pp.person_id = cp.person_id
-		  )
-		ORDER BY cp.id`, ContactAddressEmail, ContactAddressPhone)
+		  )`
+
+func scanContactMatchPoint(rows *loggedRows) (contactMatchPoint, error) {
+	var point contactMatchPoint
+	if err := rows.Scan(&point.id, &point.personID, &point.kind, &point.value); err != nil {
+		return point, fmt.Errorf("scan contact-only contact point: %w", err)
+	}
+	return point, nil
+}
+
+// contactOnlyContactPointsTx loads the active email and phone contact points
+// of persons that have no bound participant.
+func contactOnlyContactPointsTx(ctx context.Context, tx *loggedTx) ([]contactMatchPoint, error) {
+	rows, err := tx.QueryContext(ctx, contactOnlyPointsSelect+` ORDER BY cp.id`,
+		ContactAddressEmail, ContactAddressPhone)
 	if err != nil {
 		return nil, fmt.Errorf("load contact-only contact points: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	points := []contactMatchPoint{}
 	for rows.Next() {
-		var point contactMatchPoint
-		if err := rows.Scan(&point.id, &point.personID, &point.kind, &point.value); err != nil {
-			return nil, fmt.Errorf("scan contact-only contact point: %w", err)
+		point, err := scanContactMatchPoint(rows)
+		if err != nil {
+			return nil, err
 		}
 		points = append(points, point)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate contact-only contact points: %w", err)
 	}
+	return points, nil
+}
+
+// contactMatchPointsForPairTx loads the contact-only points that decide one
+// contact profile and identity cluster pair: every point of the contact
+// (which identity clusters its emails and phones reach) and every email
+// point of any contact profile that lists one of the cluster's addresses
+// (which contacts reach the cluster).
+func contactMatchPointsForPairTx(
+	ctx context.Context, tx *loggedTx, contactPersonID int64, members []int64,
+) ([]contactMatchPoint, error) {
+	emails := []string{}
+	seenEmail := map[string]struct{}{}
+	collect := func(rows *loggedRows) error {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return fmt.Errorf("scan cluster email: %w", err)
+		}
+		if _, seen := seenEmail[email]; !seen && email != "" {
+			seenEmail[email] = struct{}{}
+			emails = append(emails, email)
+		}
+		return nil
+	}
+	if err := queryInChunksContext(ctx, tx, members, nil, `
+		SELECT LOWER(TRIM(email_address)) FROM participants
+		WHERE email_address IS NOT NULL AND id IN (%s)`, collect); err != nil {
+		return nil, fmt.Errorf("load cluster emails: %w", err)
+	}
+	if err := queryInChunksContext(ctx, tx, members, nil, `
+		SELECT LOWER(TRIM(identifier_value)) FROM participant_identifiers
+		WHERE identifier_type = 'email' AND participant_id IN (%s)`, collect); err != nil {
+		return nil, fmt.Errorf("load cluster email identifiers: %w", err)
+	}
+
+	points := []contactMatchPoint{}
+	seenPoint := map[int64]struct{}{}
+	add := func(rows *loggedRows) error {
+		point, err := scanContactMatchPoint(rows)
+		if err != nil {
+			return err
+		}
+		if _, seen := seenPoint[point.id]; !seen {
+			seenPoint[point.id] = struct{}{}
+			points = append(points, point)
+		}
+		return nil
+	}
+	if err := queryInChunksContext(ctx, tx, []int64{contactPersonID},
+		[]any{ContactAddressEmail, ContactAddressPhone},
+		contactOnlyPointsSelect+` AND cp.person_id IN (%s)`, add); err != nil {
+		return nil, fmt.Errorf("load contact profile points: %w", err)
+	}
+	if err := queryInChunksContext(ctx, tx, emails,
+		[]any{ContactAddressEmail, ContactAddressPhone, ContactAddressEmail},
+		contactOnlyPointsSelect+` AND cp.address_kind = ?
+		  AND LOWER(TRIM(cp.normalized_value)) IN (%s)`, add); err != nil {
+		return nil, fmt.Errorf("load contact points listing cluster emails: %w", err)
+	}
+	slices.SortFunc(points, func(a, b contactMatchPoint) int { return compareInt64(a.id, b.id) })
 	return points, nil
 }
 
@@ -822,48 +907,21 @@ func (s *Store) BuildContactMatchCandidatesWithOptionsContext(
 	ctx context.Context, options ContactMatchBuildOptions,
 ) (*ContactMatchBuildResult, error) {
 	if options.DryRun {
-		return s.planContactMatchBuildContext(ctx)
+		return s.dryRunContactMatchBuildContext(ctx)
 	}
 	result := &ContactMatchBuildResult{}
 	var plan []contactMatchAutoPlan
 	err := s.withTxContext(ctx, func(tx *loggedTx) error {
 		*result = ContactMatchBuildResult{}
-		plan = nil
-		if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
-			return err
-		}
-		retired, err := s.retireStaleContactMatchCandidatesTx(ctx, tx)
-		if err != nil {
-			return err
-		}
-		result.Retired = retired
-		closed, err := s.closeLinkedContactMatchCandidatesTx(ctx, tx)
-		if err != nil {
-			return err
-		}
-		result.LinkedClosed = len(closed)
-		result.Actions = append(result.Actions, closed...)
-		matches, err := s.findContactMatchesTx(ctx, tx)
-		if err != nil {
-			return err
-		}
-		existing, err := existingContactMatchCandidatesTx(ctx, tx)
-		if err != nil {
-			return err
-		}
-		written := make([]writtenContactMatch, 0, len(matches))
-		for _, match := range matches {
-			candidateID, err := s.writeContactMatchCandidateTx(ctx, tx, match, existing, result)
-			if err != nil {
-				return err
-			}
-			written = append(written, writtenContactMatch{match: match, candidateID: candidateID})
-		}
-		plan, err = s.planContactMatchAutoTx(ctx, tx, written)
+		var err error
+		plan, _, err = s.writeContactMatchCandidatesTx(ctx, tx, result)
 		return err
 	})
 	if err != nil {
 		return nil, err
+	}
+	if s.contactMatchAutoBeforeApplyHook != nil {
+		s.contactMatchAutoBeforeApplyHook()
 	}
 	if err := s.applyContactMatchAutoPlanContext(ctx, plan, result); err != nil {
 		return nil, err
@@ -877,6 +935,58 @@ func (s *Store) BuildContactMatchCandidatesWithOptionsContext(
 		return nil, err
 	}
 	return result, nil
+}
+
+// writeContactMatchCandidatesTx is the first phase of a refresh, under the
+// identity lock: it retires stale candidates, closes linked ones, writes a
+// candidate per match, and plans the exact matches to resolve. It returns
+// the plan and the IDs of the candidates it created.
+func (s *Store) writeContactMatchCandidatesTx(
+	ctx context.Context, tx *loggedTx, result *ContactMatchBuildResult,
+) ([]contactMatchAutoPlan, map[int64]struct{}, error) {
+	if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
+		return nil, nil, err
+	}
+	retired, err := s.retireStaleContactMatchCandidatesTx(ctx, tx)
+	if err != nil {
+		return nil, nil, err
+	}
+	result.Retired = retired
+	closed, err := s.closeLinkedContactMatchCandidatesTx(ctx, tx)
+	if err != nil {
+		return nil, nil, err
+	}
+	result.LinkedClosed = len(closed)
+	result.Actions = append(result.Actions, closed...)
+	matches, err := s.findContactMatchesTx(ctx, tx)
+	if err != nil {
+		return nil, nil, err
+	}
+	existing, err := existingContactMatchCandidatesTx(ctx, tx)
+	if err != nil {
+		return nil, nil, err
+	}
+	before := make(map[int64]struct{}, len(existing))
+	for _, id := range existing {
+		before[id] = struct{}{}
+	}
+	written := make([]writtenContactMatch, 0, len(matches))
+	created := map[int64]struct{}{}
+	for _, match := range matches {
+		candidateID, err := s.writeContactMatchCandidateTx(ctx, tx, match, existing, result)
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, existed := before[candidateID]; !existed {
+			created[candidateID] = struct{}{}
+		}
+		written = append(written, writtenContactMatch{match: match, candidateID: candidateID})
+	}
+	plan, err := s.planContactMatchAutoTx(ctx, tx, written)
+	if err != nil {
+		return nil, nil, err
+	}
+	return plan, created, nil
 }
 
 func countContactMatchClassification(match ContactMatch, result *ContactMatchBuildResult) {

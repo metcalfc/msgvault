@@ -592,36 +592,264 @@ func TestBuildResolvesManyMatchesInBatches(t *testing.T) {
 	}
 }
 
-func TestAutomaticMergeNamesSurvivorAfterTheCard(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
+// seededArchivePerson promotes a cluster of two identities whose headers
+// use different names, so promotion records the name it chose as the seed.
+func (f *contactMatchFixture) seededArchivePerson(email, name, otherEmail, otherName string) int64 {
+	f.t.Helper()
+	first := f.emailParticipant(email, name)
+	second := f.emailParticipant(otherEmail, otherName)
+	_, err := f.st.LinkParticipants(first, second)
+	require.NoError(f.t, err)
+	person, _, err := f.st.CreatePersonFromParticipantContext(f.t.Context(), first)
+	require.NoError(f.t, err)
+	return person.ID
+}
 
-	t.Run("header-derived name", func(t *testing.T) {
+func (f *contactMatchFixture) displayName(personID int64) string {
+	f.t.Helper()
+	person, err := f.st.GetPersonContext(f.t.Context(), personID)
+	require.NoError(f.t, err)
+	require.NotNil(f.t, person.DisplayName)
+	return *person.DisplayName
+}
+
+func TestAutomaticMergeNamesSurvivorAfterTheCard(t *testing.T) {
+	t.Run("name promotion chose", func(t *testing.T) {
 		f := newContactMatchFixture(t)
-		_, archiveID := f.archivePerson("m.orsolini@example.test", "M. Orsolini")
+		archiveID := f.seededArchivePerson("m.orsolini@example.test", "M. Orsolini",
+			"matt.o@example.test", "Matt O.")
 		f.importCards(f.card("card-mo", "Matt Orsolini", []string{"m.orsolini@example.test"}, nil))
-		require.Equal(1, f.build().AutoMerged)
+		require.Equal(t, 1, f.build().AutoMerged)
+		assert.Equal(t, "Matt Orsolini", f.displayName(archiveID))
+	})
+
+	t.Run("header variant the user picked", func(t *testing.T) {
+		f := newContactMatchFixture(t)
+		archiveID := f.seededArchivePerson("ann@example.test", "Ann Lee",
+			"ann.lee@example.test", "Annie Lee")
 		archive, err := f.st.GetPersonContext(t.Context(), archiveID)
-		require.NoError(err)
-		require.NotNil(archive.DisplayName)
-		assert.Equal("Matt Orsolini", *archive.DisplayName)
+		require.NoError(t, err)
+		require.NotNil(t, archive.DisplayName)
+		picked := "Ann Lee"
+		if *archive.DisplayName == picked {
+			picked = "Annie Lee"
+		}
+		_, err = f.st.UpdatePersonDisplayNameContext(t.Context(), archiveID, archive.Revision, &picked)
+		require.NoError(t, err)
+		f.importCards(f.card("card-ann", "Ann B. Lee", []string{"ann@example.test"}, nil))
+		require.Equal(t, 1, f.build().AutoMerged)
+		assert.Equal(t, picked, f.displayName(archiveID), "a header name the user picked is kept")
 	})
 
 	t.Run("user-set name", func(t *testing.T) {
 		f := newContactMatchFixture(t)
 		_, archiveID := f.archivePerson("n.orsolini@example.test", "N. Orsolini")
 		archive, err := f.st.GetPersonContext(t.Context(), archiveID)
-		require.NoError(err)
+		require.NoError(t, err)
 		chosen := "Nico"
 		_, err = f.st.UpdatePersonDisplayNameContext(t.Context(), archiveID, archive.Revision, &chosen)
-		require.NoError(err)
+		require.NoError(t, err)
 		f.importCards(f.card("card-no", "Nicola Orsolini", []string{"n.orsolini@example.test"}, nil))
-		require.Equal(1, f.build().AutoMerged)
-		archive, err = f.st.GetPersonContext(t.Context(), archiveID)
-		require.NoError(err)
-		require.NotNil(archive.DisplayName)
-		assert.Equal("Nico", *archive.DisplayName, "a name the user set is kept")
+		require.Equal(t, 1, f.build().AutoMerged)
+		assert.Equal(t, "Nico", f.displayName(archiveID), "a name the user set is kept")
 	})
+
+	t.Run("single header name", func(t *testing.T) {
+		f := newContactMatchFixture(t)
+		_, archiveID := f.archivePerson("p.orsolini@example.test", "P. Orsolini")
+		f.importCards(f.card("card-po", "Paola Orsolini", []string{"p.orsolini@example.test"}, nil))
+		require.Equal(t, 1, f.build().AutoMerged)
+		assert.Equal(t, "P. Orsolini", f.displayName(archiveID),
+			"without a promotion seed nothing proves the user never chose the name")
+	})
+}
+
+func TestBuildComparesCardAndArchiveNames(t *testing.T) {
+	tests := []struct {
+		name        string
+		archiveName string
+		cardName    string
+		// bind leaves the identity without a person, so the card is
+		// compared with its header name only.
+		bind   bool
+		merged bool
+	}{
+		{name: "same name", archiveName: "Matt Orsolini", cardName: "Matt Orsolini", merged: true},
+		{name: "short form and order", archiveName: "Bob Smith", cardName: "Smith, Bob", merged: true},
+		{name: "first name only", archiveName: "Bob Smith", cardName: "Bob", merged: true},
+		{name: "nickname that is not a prefix", archiveName: "Robert Smith", cardName: "Bob Smith"},
+		{name: "different person", archiveName: "Jane Doe", cardName: "John Doe"},
+		{name: "bind same name", archiveName: "Matt Orsolini", cardName: "Matt Orsolini", bind: true, merged: true},
+		{name: "bind different person", archiveName: "Jane Doe", cardName: "John Doe", bind: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newContactMatchFixture(t)
+			const email = "p1@example.test"
+			if tt.bind {
+				f.emailParticipant(email, tt.archiveName)
+			} else {
+				f.archivePerson(email, tt.archiveName)
+			}
+			people := f.importCards(f.card("card-p1", tt.cardName, []string{email}, nil))
+
+			result := f.build()
+			decided := result.AutoMerged + result.AutoBound
+			if tt.merged {
+				assert.Equal(t, 1, decided)
+				assert.Zero(t, result.LeftForReview)
+				return
+			}
+			assert.Zero(t, decided)
+			assert.Equal(t, 1, result.LeftForReview, "the match waits for a decision")
+			assert.True(t, f.personExists(people["card-p1"]))
+		})
+	}
+}
+
+func TestBuildLeavesCardNamingAnotherPersonForReview(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	// Jane's profile holds her own address and the family address; John's
+	// card lists only the family address.
+	jane := f.emailParticipant("jane@example.test", "Jane Doe")
+	family := f.emailParticipant("family@example.test", "")
+	_, err := f.st.LinkParticipants(jane, family)
+	require.NoError(err)
+	archive, _, err := f.st.CreatePersonFromParticipantContext(t.Context(), jane)
+	require.NoError(err)
+	people := f.importCards(f.card("card-john", "John Doe", []string{"family@example.test"}, nil))
+
+	result := f.build()
+	assert.Zero(result.AutoMerged)
+	assert.Equal(1, result.LeftForReview)
+	assert.True(f.personExists(people["card-john"]), "John's card is not merged into Jane")
+	assert.Equal("Jane Doe", f.displayName(archive.ID), "Jane keeps her name")
+}
+
+func TestApplyRecountsMatchesChangedAfterPlanning(t *testing.T) {
+	tests := []struct {
+		name string
+		// change runs between planning and applying.
+		change func(f *contactMatchFixture, contactID, otherID int64)
+	}{
+		{
+			name: "a second contact lists the address",
+			change: func(f *contactMatchFixture, _, otherID int64) {
+				_, err := f.st.AddPersonContactPointContext(f.t.Context(), otherID, store.PersonContactPointInput{
+					AddressKind: store.ContactAddressEmail, OriginalValue: "kim@example.test",
+					Envelope: store.ValueEnvelopeInput{Source: store.ProvenanceUser},
+				})
+				require.NoError(f.t, err)
+			},
+		},
+		{
+			name: "the contact gains another person's phone",
+			change: func(f *contactMatchFixture, contactID, _ int64) {
+				_, err := f.st.AddPersonContactPointContext(f.t.Context(), contactID, store.PersonContactPointInput{
+					AddressKind: store.ContactAddressPhone, OriginalValue: "+1 555 010 0181",
+					Envelope: store.ValueEnvelopeInput{Source: store.ProvenanceUser},
+				})
+				require.NoError(f.t, err)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			f := newContactMatchFixture(t)
+			_, archiveID := f.archivePerson("kim@example.test", "Kim Park")
+			partner := f.phoneParticipant("+15550100181", "Pat Park")
+			_, _, err := f.st.CreatePersonFromParticipantContext(t.Context(), partner)
+			require.NoError(t, err)
+			people := f.importCards(
+				f.card("card-kim", "Kim Park", []string{"kim@example.test"}, nil),
+				f.card("card-kim-old", "Kim Park", []string{"kim.old@example.test"}, nil),
+			)
+			changed := false
+			restore := f.st.SetContactMatchAutoBeforeApplyHookForTest(func() {
+				changed = true
+				tt.change(f, people["card-kim"], people["card-kim-old"])
+			})
+			defer restore()
+
+			result := f.build()
+			require.True(t, changed, "the change lands between planning and applying")
+			assert.Zero(result.AutoMerged)
+			assert.Positive(result.LeftForReview)
+			assert.True(f.personExists(people["card-kim"]), "the contact profile is not absorbed")
+			assert.True(f.personExists(archiveID))
+		})
+	}
+}
+
+func TestBuildDryRunMatchesTheRealRun(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	f := newContactMatchFixture(t)
+
+	// A phone match waits for review, then the user merges the two by hand,
+	// so the refresh closes it as linked.
+	vic := f.phoneParticipant("+15550100190", "Vic Ray")
+	vicPerson, _, err := f.st.CreatePersonFromParticipantContext(t.Context(), vic)
+	require.NoError(err)
+	// A second phone match waits for review, then its identity becomes one
+	// of the owner's, so the refresh retires it.
+	own := f.emailParticipant("own@example.test", "Me")
+	_, err = f.st.LinkParticipants(own, f.phoneParticipant("+15550100191", "Me"))
+	require.NoError(err)
+	cards := []store.CardDAVRemoteResource{
+		f.card("card-vic", "Vic Ray", nil, []string{"+1 555 010 0190"}),
+		f.card("card-me", "Me", nil, []string{"+1 555 010 0191"}),
+	}
+	people := f.importCards(cards...)
+	require.Equal(2, f.build().LeftForReview)
+	f.mergeInto(vicPerson.ID, people["card-vic"])
+	source, err := f.st.GetOrCreateSource("gmail", "own@example.test")
+	require.NoError(err)
+	require.NoError(f.st.AddAccountIdentityContext(t.Context(), source.ID, "own@example.test", "manual"))
+	// New exact matches: one merges, one names another person.
+	_, yanID := f.archivePerson("yan@example.test", "Yan Wu")
+	f.archivePerson("zoe@example.test", "Zoe Li")
+	people = f.importCards(append(cards,
+		f.card("card-yan", "Yan Wu", []string{"yan@example.test"}, nil),
+		f.card("card-zoe", "Zara Li", []string{"zoe@example.test"}, nil),
+	)...)
+
+	before, err := f.st.ListContactMatchCandidatesContext(t.Context(), nil, 500, 0)
+	require.NoError(err)
+	existing := map[int64]bool{}
+	for _, candidate := range before {
+		existing[candidate.ID] = true
+	}
+	planned, err := f.st.BuildContactMatchCandidatesWithOptionsContext(t.Context(),
+		store.ContactMatchBuildOptions{DryRun: true})
+	require.NoError(err)
+	after, err := f.st.ListContactMatchCandidatesContext(t.Context(), nil, 500, 0)
+	require.NoError(err)
+	assert.Equal(before, after, "a dry run writes nothing")
+	assert.True(f.personExists(people["card-yan"]), "a dry run merges nothing")
+
+	applied := f.build()
+	require.Equal(1, applied.Retired)
+	require.Equal(1, applied.LinkedClosed)
+	require.Equal(1, applied.AutoMerged)
+	require.Equal(1, applied.LeftForReview)
+	assert.False(f.personExists(people["card-yan"]))
+	assert.True(f.personExists(yanID))
+
+	want := applied
+	want.DryRun = true
+	want.Actions = []store.ContactMatchAutoAction{}
+	for _, action := range applied.Actions {
+		if !existing[action.CandidateID] {
+			action.CandidateID = 0
+		}
+		want.Actions = append(want.Actions, action)
+	}
+	assert.Equal(want, *planned)
 }
 
 func TestAutoResolveRefusalLeavesReviewAndFaultFailsBuild(t *testing.T) {
@@ -639,6 +867,26 @@ func TestAutoResolveRefusalLeavesReviewAndFaultFailsBuild(t *testing.T) {
 		assert.Zero(result.AutoMerged)
 		assert.Equal(1, result.LeftForReview)
 		assert.True(f.personExists(people["card-ren"]))
+		assert.True(f.personExists(archiveID))
+	})
+
+	t.Run("enrichment dispatch in progress", func(t *testing.T) {
+		assert := assert.New(t)
+		f := newContactMatchFixture(t)
+		_, archiveID := f.archivePerson("tam@example.test", "Tam")
+		people := f.importCards(f.card("card-tam", "Tam", []string{"tam@example.test"}, nil))
+		restore := f.st.SetContactMatchAutoResolveHookForTest(func() error {
+			return fmt.Errorf("merge: %w", store.ErrPersonEnrichmentDispatchInProgress)
+		})
+
+		result := f.build()
+		restore()
+		assert.Zero(result.AutoMerged)
+		assert.Equal(1, result.LeftForReview, "the match waits for the next run")
+		assert.True(f.personExists(people["card-tam"]))
+
+		assert.Equal(1, f.build().AutoMerged, "the next run merges once the dispatch ends")
+		assert.False(f.personExists(people["card-tam"]))
 		assert.True(f.personExists(archiveID))
 	})
 

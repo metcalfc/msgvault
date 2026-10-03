@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-10-02"
+last_edited: "2026-10-03"
 title: CLI Reference
 description: Complete command reference for all msgvault commands.
 ---
@@ -2256,7 +2256,8 @@ shipped definitions and complete workflow.
 
 Review contact profiles that have no archive identity yet, such as imported
 address-book cards, whose exact email or phone matches an archive participant.
-Display names are never compared. Every subcommand goes through the daemon.
+Names never create a match; they can only leave an exact match for review.
+Every subcommand goes through the daemon.
 
 ```bash
 msgvault person contact-matches list [--state candidate] [--limit <n>] [--offset <n>] [--json]
@@ -2299,10 +2300,16 @@ refresh:
    `rule:contact_match`. Decisions are applied 25 per transaction, each
    re-checked first.
 
-Phone-only, `shared_mailbox`, `ambiguous`, and blocked matches, a contact
-whose phone belongs to a different person, a contact profile holding
-several cards or different names, identities any classifier marks as not a
-person, and pairs you rejected or split apart (at any time) stay for review.
+Each re-check recounts the match from the archive as it is then. Phone-only,
+`shared_mailbox`, `ambiguous`, and blocked matches, a contact whose phone
+belongs to a different person, a contact profile holding several cards,
+names that describe different people (the card's names against the
+person's display name and its identities' header names; initials, short
+forms, and name order count as one person), identities any classifier
+marks as not a person, and pairs you rejected or split apart (at any time)
+stay for review. A merge refused because enrichment is dispatching for the
+person waits for the next refresh. `--dry-run` runs the same refresh and
+rolls it back, reporting `candidate_id` 0 for candidates it would create.
 A `person split` of an automatic merge or link is remembered as your
 rejection, so the pair is never merged or proposed again. The output and
 `--json` report `auto_merged`, `auto_bound`, `linked_closed`, and

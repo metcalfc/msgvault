@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-10-02"
+last_edited: "2026-10-03"
 title: People and Profiles
 description: Find people across your archive, keep their details together, and understand your contact history.
 ---
@@ -456,9 +456,10 @@ When a CardDAV card arrives, the import binds it to an existing profile that
 already lists one of the card's email addresses or phone numbers. Otherwise
 the card becomes a new contact profile with no archive identity. Contact
 matching then compares that profile's exact email addresses and phone
-numbers with the identities in your archive. Display names are never
-compared. It runs after each successful CardDAV sync, in a daily job, and
-when you run `msgvault person contact-matches build`.
+numbers with the identities in your archive. Names never create a match;
+they only hold an automatic decision back (see below). It runs after each
+successful CardDAV sync, in a daily job, and when you run
+`msgvault person contact-matches build`.
 
 msgvault decides exact matches itself. When one of the contact's email
 addresses is an archive identity, and nothing else points elsewhere:
@@ -470,8 +471,10 @@ addresses is an archive identity, and nothing else points elsewhere:
 Both use the ordinary [person merge](#merge-duplicate-profiles-and-reverse-a-merge),
 so the card's details, notes, and CardDAV mapping move as they would if you
 merged by hand, and conflicting single-value attributes still wait for
-review. When the person's display name came from message headers rather
-than from you, it becomes the card's name. Merge history shows **Merged
+review. The person takes the card's name only when its display name is
+provably still the archive's: it has none, or it is still the name
+msgvault picked at promotion from several header names. A name you set or
+picked, including one of the header names, is kept. Merge history shows **Merged
 automatically: same email `<address>`**. A pending match whose identity
 already belongs to the contact is closed as accepted.
 
@@ -484,8 +487,13 @@ your archive** (or `msgvault person contact-matches list`):
 - an identity that you, a rule, or Jev marked as not a person;
 - a contact whose emails reach several identity clusters, or an identity
   that several contacts list, counting identities that are never proposed;
-- a contact profile that holds several cards, or names different people,
-  such as family members whose cards share one address;
+- a contact profile that holds several cards, such as family members whose
+  cards share one address;
+- names that describe different people: the card's names compared with the
+  person's display name and the names its identities use in message
+  headers. Initials, short forms, and name order count as the same person
+  ("Bob Smith", "Bob", "Smith, Bob"); a nickname such as "Bob" for "Robert"
+  does not, so that match waits for you;
 - an identity whose cluster spans several people;
 - a profile published to CardDAV or with an unresolved CardDAV conflict;
 - a match you rejected, or two people you split apart, including splits
@@ -498,7 +506,9 @@ split counts as your decision: contact matching never merges or proposes
 those two again.
 
 To see what a refresh would decide without changing anything, run
-`msgvault person contact-matches build --dry-run`. To turn automatic
+`msgvault person contact-matches build --dry-run`. It runs the same refresh,
+with every check, and rolls it back, so it lists what a real refresh would
+do now. To turn automatic
 decisions off, set `auto_merge_contact_matches = false` under
 [`[people]`](/docs/configuration/#people); matches then wait for review.
 

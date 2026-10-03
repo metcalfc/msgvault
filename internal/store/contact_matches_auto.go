@@ -185,17 +185,23 @@ func contactMatchAutoEmail(match ContactMatch) (string, bool) {
 	return "", false
 }
 
-// contactProfileHoldsSeveralPeopleTx reports whether a contact profile may
-// stand for more than one human: CardDAV import binds every card that lists
-// an address the profile already has, so a family's cards sharing one email
-// become one profile. Several bound cards, or current names that name
-// different people, leave the profile for review.
-func contactProfileHoldsSeveralPeopleTx(
-	ctx context.Context, tx *loggedTx, personID int64, email string,
+// contactMatchNamesSeveralPeopleTx reports whether a match may join
+// different humans. CardDAV import binds every card that lists an address
+// the profile already has, so a family's cards sharing one email become one
+// profile: several bound cards leave the match for review. So do names that
+// describe more than one person across both sides: the contact profile's
+// display name and current names, the surviving person's display name
+// (merge only), and the names the identities carry in message headers (the
+// matched cluster and, for a merge, every identity of the survivor). Names
+// that differ only by case, order, initials, or a short form ("Bob Smith",
+// "Bob", "Smith, Bob") are one person; a nickname that is not a prefix
+// ("Bob" for "Robert") is not, so it waits for review.
+func contactMatchNamesSeveralPeopleTx(
+	ctx context.Context, tx *loggedTx, contactPersonID, survivorID int64, members []int64, email string,
 ) (bool, error) {
 	var cards int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM carddav_resources WHERE person_id = ?`,
-		personID).Scan(&cards); err != nil {
+		contactPersonID).Scan(&cards); err != nil {
 		return false, fmt.Errorf("count contact profile cards: %w", err)
 	}
 	if cards > 1 {
@@ -203,24 +209,40 @@ func contactProfileHoldsSeveralPeopleTx(
 	}
 	names := []string{}
 	rows, err := tx.QueryContext(ctx, `SELECT display_name FROM persons
-		WHERE id = ? AND display_name IS NOT NULL
+		WHERE id IN (?, ?) AND display_name IS NOT NULL
 		UNION ALL
 		SELECT COALESCE(NULLIF(TRIM(formatted), ''), original_value) FROM person_names
-		WHERE person_id = ? AND active_until IS NULL AND superseded_at IS NULL`, personID, personID)
+		WHERE person_id = ? AND active_until IS NULL AND superseded_at IS NULL`,
+		contactPersonID, survivorID, contactPersonID)
 	if err != nil {
-		return false, fmt.Errorf("load contact profile names: %w", err)
+		return false, fmt.Errorf("load contact match names: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			return false, fmt.Errorf("scan contact profile name: %w", err)
+			return false, fmt.Errorf("scan contact match name: %w", err)
 		}
 		names = append(names, name)
 	}
 	if err := rows.Err(); err != nil {
-		return false, fmt.Errorf("iterate contact profile names: %w", err)
+		return false, fmt.Errorf("iterate contact match names: %w", err)
 	}
+	identities := slices.Clone(members)
+	if survivorID != 0 {
+		own, err := personParticipantIDsTx(ctx, tx, survivorID)
+		if err != nil {
+			return false, err
+		}
+		identities = append(identities, own...)
+		slices.Sort(identities)
+		identities = slices.Compact(identities)
+	}
+	headerNames, err := clusterDistinctDisplayNamesTx(ctx, tx, identities)
+	if err != nil {
+		return false, err
+	}
+	names = append(names, headerNames...)
 	return len(correspondentkind.DistinctPersonNames(email, names)) > 1, nil
 }
 
@@ -264,7 +286,8 @@ func (s *Store) planContactMatchAutoTx(
 				continue
 			}
 		}
-		several, err := contactProfileHoldsSeveralPeopleTx(ctx, tx, entry.contactPersonID, email)
+		several, err := contactMatchNamesSeveralPeopleTx(ctx, tx,
+			entry.contactPersonID, entry.survivorID, item.match.ClusterMembers, email)
 		if err != nil {
 			return nil, err
 		}
@@ -310,47 +333,61 @@ func (s *Store) applyContactMatchAutoPlanContext(
 ) error {
 	for start := 0; start < len(plan); start += contactMatchAutoBatchSize {
 		batch := plan[start:min(start+contactMatchAutoBatchSize, len(plan))]
-		applied := []contactMatchAutoPlan{}
+		var applied []contactMatchAutoPlan
 		err := s.withTxContext(ctx, func(tx *loggedTx) error {
-			applied = applied[:0]
-			if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
-				return err
-			}
-			checks, err := s.loadContactMatchAutoChecksTx(ctx, tx)
-			if err != nil {
-				return err
-			}
-			for _, item := range batch {
-				eligible, err := s.contactMatchAutoStillEligibleTx(ctx, tx, item, checks)
-				if err != nil {
-					return err
-				}
-				if !eligible {
-					continue
-				}
-				resolved, err := s.autoResolveContactMatchSavepointTx(ctx, tx, item)
-				if err != nil {
-					return err
-				}
-				if resolved {
-					applied = append(applied, item)
-				}
-			}
-			return nil
+			var err error
+			applied, err = s.applyContactMatchAutoBatchTx(ctx, tx, batch)
+			return err
 		})
 		if err != nil {
 			return err
 		}
-		for _, item := range applied {
-			if item.classification == ContactMatchBind {
-				result.AutoBound++
-			} else {
-				result.AutoMerged++
-			}
-			result.Actions = append(result.Actions, item.action())
-		}
+		recordContactMatchAutoApplied(result, applied)
 	}
 	return nil
+}
+
+// applyContactMatchAutoBatchTx re-validates and applies one batch under the
+// identity lock and returns the resolutions it applied.
+func (s *Store) applyContactMatchAutoBatchTx(
+	ctx context.Context, tx *loggedTx, batch []contactMatchAutoPlan,
+) ([]contactMatchAutoPlan, error) {
+	if err := s.lockIdentityMutationTxContext(ctx, tx); err != nil {
+		return nil, err
+	}
+	checks, err := s.loadContactMatchAutoChecksTx(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	applied := []contactMatchAutoPlan{}
+	for _, item := range batch {
+		eligible, err := s.contactMatchAutoStillEligibleTx(ctx, tx, item, checks)
+		if err != nil {
+			return nil, err
+		}
+		if !eligible {
+			continue
+		}
+		resolved, err := s.autoResolveContactMatchSavepointTx(ctx, tx, item)
+		if err != nil {
+			return nil, err
+		}
+		if resolved {
+			applied = append(applied, item)
+		}
+	}
+	return applied, nil
+}
+
+func recordContactMatchAutoApplied(result *ContactMatchBuildResult, applied []contactMatchAutoPlan) {
+	for _, item := range applied {
+		if item.classification == ContactMatchBind {
+			result.AutoBound++
+		} else {
+			result.AutoMerged++
+		}
+		result.Actions = append(result.Actions, item.action())
+	}
 }
 
 // contactMatchAutoChecks is archive-wide state re-validation reads once per
@@ -381,9 +418,11 @@ func (s *Store) loadContactMatchAutoChecksTx(
 
 // contactMatchAutoStillEligibleTx re-checks one planned resolution under
 // the identity lock: the candidate is still pending, the contact profile
-// still has no archive identity, the cluster still belongs to the expected
-// person (or to nobody), and no guard, classification, shared mailbox,
-// CardDAV block, split, or second card or name has appeared since planning.
+// still has no archive identity, and no accept guard fails. The match is
+// then found again from the archive as it is now, with its one-to-one email
+// counts, phone conflict, cluster persons, shared mailbox signal, CardDAV
+// block, and not-a-person classifications recomputed, and must pass the
+// same rule as at planning; so must the split and name checks.
 func (s *Store) contactMatchAutoStillEligibleTx(
 	ctx context.Context, tx *loggedTx, item contactMatchAutoPlan, checks *contactMatchAutoChecks,
 ) (bool, error) {
@@ -407,54 +446,54 @@ func (s *Store) contactMatchAutoStillEligibleTx(
 		return false, nil
 	}
 	members := sortedComponentMembers(item.participantID, checks.edges)
-	persons, err := personIDsForParticipantsTx(ctx, tx, members)
-	if err != nil {
-		return false, err
-	}
-	switch item.classification {
-	case ContactMatchMerge:
-		if len(persons) != 1 || persons[0] != item.survivorID {
-			return false, nil
-		}
-		if checks.separations.separated(item.contactPersonID, item.survivorID) {
-			return false, nil
-		}
-	default:
-		if len(persons) != 0 {
-			return false, nil
-		}
-	}
 	if err := s.contactMatchAcceptGuardsTx(ctx, tx, *candidate, members); err != nil {
 		if isContactMatchRetirement(err) {
 			return false, nil
 		}
 		return false, err
 	}
-	if slices.ContainsFunc(members, func(id int64) bool {
-		_, hidden := checks.notPeople[id]
-		return hidden
-	}) {
-		return false, nil
-	}
-	signals, err := s.sharedMailboxSignalsTx(ctx, tx, map[int64][]int64{0: members})
-	if err != nil {
+	match, found, err := s.currentContactMatchTx(ctx, tx, item.contactPersonID, item.participantID, members)
+	if err != nil || !found {
 		return false, err
 	}
-	if _, shared := signals[0]; shared {
+	if match.Classification != item.classification ||
+		!contactMatchAutoEligible(match, candidate.State, checks.notPeople) {
 		return false, nil
 	}
-	blocks, err := contactMatchBlockReasonsTx(ctx, tx, append(slices.Clone(persons), item.contactPersonID))
-	if err != nil {
-		return false, err
+	if item.classification == ContactMatchMerge {
+		if match.ClusterPersonIDs[0] != item.survivorID ||
+			checks.separations.separated(item.contactPersonID, item.survivorID) {
+			return false, nil
+		}
 	}
-	if len(blocks) > 0 {
-		return false, nil
-	}
-	several, err := contactProfileHoldsSeveralPeopleTx(ctx, tx, item.contactPersonID, item.email)
+	several, err := contactMatchNamesSeveralPeopleTx(ctx, tx,
+		item.contactPersonID, item.survivorID, members, item.email)
 	if err != nil {
 		return false, err
 	}
 	return !several, nil
+}
+
+// currentContactMatchTx finds the match between a contact profile and the
+// identity cluster holding participantID as the archive stands now,
+// counting every contact point that bears on the pair.
+func (s *Store) currentContactMatchTx(
+	ctx context.Context, tx *loggedTx, contactPersonID, participantID int64, members []int64,
+) (ContactMatch, bool, error) {
+	points, err := contactMatchPointsForPairTx(ctx, tx, contactPersonID, members)
+	if err != nil {
+		return ContactMatch{}, false, err
+	}
+	matches, err := s.findContactMatchesForPointsTx(ctx, tx, points)
+	if err != nil {
+		return ContactMatch{}, false, err
+	}
+	for _, match := range matches {
+		if match.ContactPersonID == contactPersonID && slices.Contains(match.ClusterMembers, participantID) {
+			return match, true, nil
+		}
+	}
+	return ContactMatch{}, false, nil
 }
 
 // isExpectedContactMatchRefusal reports whether a failed resolution is one
@@ -462,6 +501,7 @@ func (s *Store) contactMatchAutoStillEligibleTx(
 // which leaves the candidate for review. Anything else is a fault.
 func isExpectedContactMatchRefusal(err error) bool {
 	return errors.Is(err, ErrPersonCardDAVPublished) ||
+		errors.Is(err, ErrPersonEnrichmentDispatchInProgress) ||
 		errors.Is(err, ErrPersonRevisionConflict) ||
 		errors.Is(err, ErrPersonBindingConflict) ||
 		errors.Is(err, ErrPersonMergeLineageConflict) ||
@@ -565,9 +605,10 @@ func (s *Store) autoResolveContactMatchTx(
 
 // adoptContactDisplayNameTx names the survivor of an automatic merge after
 // the contact card, which the user curates, when the survivor's display
-// name is still one the archive derived: none, the name promotion chose, or
-// a name its identities carry in message headers. A name the user set is
-// never replaced.
+// name is provably still the archive's: none, or the name promotion chose
+// from several header names (its seed, which every rename deletes). A name
+// equal to a header name may be one the user picked, so it is kept, as is
+// every other name.
 func (s *Store) adoptContactDisplayNameTx(
 	ctx context.Context, tx *loggedTx, personID int64, contactName *string,
 ) error {
@@ -586,17 +627,6 @@ func (s *Store) adoptContactDisplayNameTx(
 	}
 	derived := current == nil || strings.TrimSpace(*current) == "" ||
 		(seeded != nil && *seeded == *current)
-	if !derived {
-		members, err := personParticipantIDsTx(ctx, tx, personID)
-		if err != nil {
-			return err
-		}
-		headerNames, err := clusterDistinctDisplayNamesTx(ctx, tx, members)
-		if err != nil {
-			return err
-		}
-		derived = slices.Contains(headerNames, *current)
-	}
 	if !derived {
 		return nil
 	}
@@ -710,71 +740,47 @@ func pendingContactMatchCountTx(ctx context.Context, tx *loggedTx) (int, error) 
 	return count, nil
 }
 
-// planContactMatchBuildContext is a dry run: it reports what a refresh
-// would decide, from one read snapshot, and writes nothing. Retirement is
-// not simulated.
-func (s *Store) planContactMatchBuildContext(ctx context.Context) (*ContactMatchBuildResult, error) {
-	result := &ContactMatchBuildResult{DryRun: true}
-	err := s.withReadSnapshotContext(ctx, func(tx *loggedTx) error {
-		*result = ContactMatchBuildResult{DryRun: true, Actions: []ContactMatchAutoAction{}}
-		pending, err := pendingContactMatchCountTx(ctx, tx)
+// errContactMatchDryRun rolls back a dry-run refresh.
+var errContactMatchDryRun = errors.New("contact match dry run")
+
+// dryRunContactMatchBuildContext runs the whole refresh (retirement,
+// linked closing, candidate writes, planning, and every batch with its
+// re-validation and merge guards) in one transaction that is rolled back, so
+// it reports exactly what a refresh would do now. Candidates the refresh
+// would create are reported with candidate ID zero.
+func (s *Store) dryRunContactMatchBuildContext(ctx context.Context) (*ContactMatchBuildResult, error) {
+	result := &ContactMatchBuildResult{}
+	err := s.withTxContext(ctx, func(tx *loggedTx) error {
+		*result = ContactMatchBuildResult{}
+		plan, created, err := s.writeContactMatchCandidatesTx(ctx, tx, result)
 		if err != nil {
 			return err
 		}
-		if s.contactMatchAutoResolveEnabled() {
-			linked, err := s.linkedContactMatchCandidatesTx(ctx, tx)
+		for start := 0; start < len(plan); start += contactMatchAutoBatchSize {
+			batch := plan[start:min(start+contactMatchAutoBatchSize, len(plan))]
+			applied, err := s.applyContactMatchAutoBatchTx(ctx, tx, batch)
 			if err != nil {
 				return err
 			}
-			result.LinkedClosed = len(linked)
-			result.Actions = append(result.Actions, linked...)
+			recordContactMatchAutoApplied(result, applied)
 		}
-		matches, err := s.findContactMatchesTx(ctx, tx)
+		result.LeftForReview, err = pendingContactMatchCountTx(ctx, tx)
 		if err != nil {
 			return err
 		}
-		existing, err := existingContactMatchCandidatesTx(ctx, tx)
-		if err != nil {
-			return err
-		}
-		written := make([]writtenContactMatch, 0, len(matches))
-		created := 0
-		for _, match := range matches {
-			countContactMatchClassification(match, result)
-			candidateID := int64(0)
-			for _, member := range match.ClusterMembers {
-				if id, ok := existing[participantPersonPair{
-					participantID: member, personID: match.ContactPersonID,
-				}]; ok {
-					candidateID = id
-					break
-				}
+		for i := range result.Actions {
+			if _, isNew := created[result.Actions[i].CandidateID]; isNew {
+				result.Actions[i].CandidateID = 0
 			}
-			if candidateID == 0 {
-				created++
-			} else {
-				result.Existing++
-			}
-			written = append(written, writtenContactMatch{match: match, candidateID: candidateID})
 		}
-		result.Created = created
-		plan, err := s.planContactMatchAutoTx(ctx, tx, written)
-		if err != nil {
-			return err
-		}
-		for _, item := range plan {
-			if item.classification == ContactMatchBind {
-				result.AutoBound++
-			} else {
-				result.AutoMerged++
-			}
-			result.Actions = append(result.Actions, item.action())
-		}
-		result.LeftForReview = max(0, pending+created-len(plan)-result.LinkedClosed)
-		return nil
+		return errContactMatchDryRun
 	})
-	if err != nil {
+	if !errors.Is(err, errContactMatchDryRun) {
+		if err == nil {
+			err = errors.New("contact match dry run was not rolled back")
+		}
 		return nil, err
 	}
+	result.DryRun = true
 	return result, nil
 }

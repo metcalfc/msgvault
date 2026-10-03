@@ -98,6 +98,9 @@ type Store struct {
 	personDuplicateRevalidateHook    func(participantIDs []int64)
 	contactMatchBindAfterPromoteHook func()
 	contactMatchAutoResolveHook      func() error
+	// contactMatchAutoBeforeApplyHook runs between planning and applying
+	// automatic contact match resolutions; tests only.
+	contactMatchAutoBeforeApplyHook func()
 	// contactMatchAutoDisabled turns off the exact contact match rule; see
 	// SetContactMatchAutoResolve.
 	contactMatchAutoDisabled atomic.Bool
