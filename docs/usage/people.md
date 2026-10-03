@@ -450,6 +450,45 @@ change its policy, recover stale consent after an upgrade, and inspect or pin
 automatic facts. [External enrichment](/docs/usage/people-enrichment/) has a
 separate setup for looking up public information.
 
+## Match imported contacts to your archive
+
+A contact imported from a CardDAV address book starts as a profile with no
+archive identity. Contact matching compares its exact email addresses and
+phone numbers with the identities in your archive. Display names are never
+compared. It runs after each successful CardDAV sync, in a daily job, and
+when you run `msgvault person contact-matches build`.
+
+msgvault decides exact matches itself. When one of the contact's email
+addresses is an archive identity, and nothing else points elsewhere:
+
+- if that identity already belongs to a person, the contact is merged into
+  that person, which keeps its ID, identities, and history;
+- if the identity has no person yet, it is linked to the contact.
+
+Both use the ordinary [person merge](#merge-duplicate-profiles-and-reverse-a-merge),
+so the card's details, notes, and CardDAV mapping move as they would if you
+merged by hand, and conflicting single-value attributes still wait for
+review. Merge history shows **Merged automatically: same email
+`<address>`**. A pending match whose identity already belongs to the contact
+is closed as accepted.
+
+Everything that needs a judgment stays in **Reviews → Contacts that match
+your archive** (or `msgvault person contact-matches list`):
+
+- a phone-only match, because households and offices share numbers;
+- an address that [looks like a shared mailbox](#shared-mailbox-suggestions);
+- an identity that is yours, or that you, a rule, or Jev marked as not a
+  person;
+- a contact that matches several identity clusters, or an identity that
+  several contacts match;
+- an identity whose cluster spans several people;
+- a profile published to CardDAV or with an unresolved CardDAV conflict;
+- a match you rejected before.
+
+To undo an automatic merge, split it from the person's merge history. The
+split counts as your decision: contact matching never merges or proposes
+those two again.
+
 ## Merge duplicate profiles and reverse a merge
 
 To find likely duplicates, run `msgvault person judge`. Identities that

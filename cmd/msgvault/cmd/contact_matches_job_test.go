@@ -18,7 +18,7 @@ func TestRegisterContactMatchJobRefreshesCandidatesDaily(t *testing.T) {
 	st := testutil.NewTestStore(t)
 	participantID, err := st.EnsureParticipant("dee@example.test", "Dee Sender", "example.test")
 	require.NoError(err)
-	personID := contactProfile(t, st, "card-dee", "Dee Contact", "dee@example.test")
+	personID := contactProfile(t, st, "card-dee", "Dee Contact", store.ContactAddressEmail, "dee@example.test")
 
 	sched := scheduler.New(func(context.Context, string) error { return nil })
 	t.Cleanup(func() { <-sched.Stop().Done() })
@@ -37,5 +37,9 @@ func TestRegisterContactMatchJobRefreshesCandidatesDaily(t *testing.T) {
 	require.Len(candidates, 1)
 	assert.Equal(participantID, candidates[0].LeftID)
 	assert.Equal(personID, candidates[0].RightID)
-	assert.Equal(store.IdentityMatchStateCandidate, candidates[0].State)
+	assert.Equal(store.IdentityMatchStateAccepted, candidates[0].State,
+		"the daily refresh links an exact email match")
+	person, err := st.GetPersonContext(t.Context(), personID)
+	require.NoError(err)
+	assert.Equal([]int64{participantID}, person.ParticipantIDs)
 }

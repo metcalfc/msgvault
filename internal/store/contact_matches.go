@@ -33,7 +33,9 @@ const (
 	// binds the cluster to the contact profile.
 	ContactMatchBind ContactMatchClassification = "bind"
 	// ContactMatchMerge means the matched cluster already belongs to exactly
-	// one other person: the two profiles must be merged by the user.
+	// one other person: the two profiles are one human. An exact-email match
+	// the rule can decide is merged automatically; any other waits for the
+	// user to merge.
 	ContactMatchMerge ContactMatchClassification = "merge"
 	// ContactMatchAmbiguous means the matched cluster spans two or more
 	// people, so no single merge resolves it.
@@ -715,6 +717,22 @@ type ContactMatchBuildResult struct {
 	Blocked       int `json:"blocked"`
 	// SharedMailbox counts matches through addresses that look shared.
 	SharedMailbox int `json:"shared_mailbox"`
+	// AutoMerged counts contact profiles merged into the one archive person
+	// that already has their exact email.
+	AutoMerged int `json:"auto_merged"`
+	// AutoBound counts unbound archive identity clusters linked to the one
+	// contact profile with their exact email.
+	AutoBound int `json:"auto_bound"`
+	// LinkedClosed counts pending candidates accepted because the archive
+	// identity already belonged to the contact profile.
+	LinkedClosed int `json:"linked_closed"`
+	// LeftForReview counts contact-match candidates still waiting for a
+	// decision after this refresh.
+	LeftForReview int `json:"left_for_review"`
+	// CacheState is set by the HTTP endpoint after it refreshes the identity
+	// datasets for automatic merges or links; it is omitted when the refresh
+	// changed no person.
+	CacheState string `json:"cache_state,omitempty" enum:"ready,stale"`
 }
 
 // BuildContactMatchCandidatesContext writes one reviewable identity match
@@ -724,7 +742,14 @@ type ContactMatchBuildResult struct {
 // confidence 1.0 (exact identifiers), and every matching contact point is
 // recorded as evidence. Reruns are idempotent: a cluster that already has a
 // contact-match candidate for the profile, in any state, gains only new
-// evidence. Nothing is accepted automatically.
+// evidence.
+//
+// Exact matches are then decided in code (see autoResolveContactMatchesTx):
+// a pending merge or bind supported by an exact email, between one contact
+// profile and one archive identity cluster with nothing blocking it, is
+// applied through the ordinary person merge path and recorded as accepted by
+// ContactMatchAutoActor. Pending candidates that are already linked are
+// closed. Everything else stays in the review queue.
 func (s *Store) BuildContactMatchCandidatesContext(
 	ctx context.Context,
 ) (*ContactMatchBuildResult, error) {
@@ -739,6 +764,11 @@ func (s *Store) BuildContactMatchCandidatesContext(
 			return err
 		}
 		result.Retired = retired
+		closed, err := s.closeLinkedContactMatchCandidatesTx(ctx, tx)
+		if err != nil {
+			return err
+		}
+		result.LinkedClosed = closed
 		matches, err := s.findContactMatchesTx(ctx, tx)
 		if err != nil {
 			return err
@@ -747,12 +777,19 @@ func (s *Store) BuildContactMatchCandidatesContext(
 		if err != nil {
 			return err
 		}
+		written := make([]writtenContactMatch, 0, len(matches))
 		for _, match := range matches {
-			if err := s.writeContactMatchCandidateTx(ctx, tx, match, existing, result); err != nil {
+			candidateID, err := s.writeContactMatchCandidateTx(ctx, tx, match, existing, result)
+			if err != nil {
 				return err
 			}
+			written = append(written, writtenContactMatch{match: match, candidateID: candidateID})
 		}
-		return nil
+		if err := s.autoResolveContactMatchesTx(ctx, tx, written, result); err != nil {
+			return err
+		}
+		result.LeftForReview, err = pendingContactMatchCountTx(ctx, tx)
+		return err
 	})
 	if err != nil {
 		return nil, err
@@ -763,7 +800,7 @@ func (s *Store) BuildContactMatchCandidatesContext(
 func (s *Store) writeContactMatchCandidateTx(
 	ctx context.Context, tx *loggedTx, match ContactMatch,
 	existing map[participantPersonPair]int64, result *ContactMatchBuildResult,
-) error {
+) (int64, error) {
 	result.Matches++
 	switch match.Classification {
 	case ContactMatchBind:
@@ -806,7 +843,7 @@ func (s *Store) writeContactMatchCandidateTx(
 			IdentityMatchParticipant, match.ParticipantID,
 			IdentityMatchPerson, match.ContactPersonID, nil, false)
 		if err != nil {
-			return fmt.Errorf("write contact match candidate: %w", err)
+			return 0, fmt.Errorf("write contact match candidate: %w", err)
 		}
 		candidateID = candidate.ID
 		existing[participantPersonPair{
@@ -827,13 +864,13 @@ func (s *Store) writeContactMatchCandidateTx(
 				EvidenceRef: &ref, Detail: &detail, Source: ProvenanceSystem,
 			})
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if inserted {
 			result.EvidenceAdded++
 		}
 	}
-	return nil
+	return candidateID, nil
 }
 
 // existingContactMatchCandidatesTx maps each contact-match candidate's

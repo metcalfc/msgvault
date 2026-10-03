@@ -105,7 +105,7 @@
   const identityEmptyDescriptions: Record<IdentityReviewOrigin, string> = {
     all: 'Choose another review state or return when new evidence is available.',
     contact_match:
-      'No contact profiles match archive identities in this state. Matches refresh after each contact sync and daily.',
+      'No contact profiles match archive identities in this state. Matches refresh after each contact sync and daily; exact email matches to one person are merged automatically.',
     person_duplicate:
       'No possible duplicate people in this state. Run msgvault person judge with the duplicate people Jev judgment on to look for them.'
   };

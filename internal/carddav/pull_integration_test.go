@@ -270,7 +270,7 @@ func TestETagOnlyChurnUpdatesLedgerWithoutDuplicatingPerson(t *testing.T) {
 	assert.Equal(before.MappingRevision+1, after.MappingRevision)
 }
 
-func TestSuccessfulSyncProposesContactMatchesForImportedCards(t *testing.T) {
+func TestSuccessfulSyncLinksExactContactMatchesForImportedCards(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -297,7 +297,53 @@ func TestSuccessfulSyncProposesContactMatchesForImportedCards(t *testing.T) {
 	require.Len(candidates, 1, "a successful sync refreshes contact matches")
 	assert.Equal(participantID, candidates[0].LeftID)
 	assert.Equal(*resource.PersonID, candidates[0].RightID)
-	assert.Equal(store.IdentityMatchStateCandidate, candidates[0].State)
+	assert.Equal(store.IdentityMatchStateAccepted, candidates[0].State,
+		"an exact email is linked without review")
+	person, err := st.GetPersonContext(t.Context(), *resource.PersonID)
+	require.NoError(err)
+	assert.Equal([]int64{participantID}, person.ParticipantIDs)
+}
+
+// A card whose exact email is an archive identity of one existing person
+// ends the sync on that person, not on a duplicate profile, and later syncs
+// of the same card keep it there.
+func TestSyncPutsCardOfExistingArchivePersonOnThatPerson(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	etag := `&quot;one&quot;`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeDAVXML(t, w, syncResponse(cardResponse("/books/personal/alice.vcf", etag, "alice"), "token"))
+	}))
+	t.Cleanup(server.Close)
+	service, st, book := newPullService(t, server, true)
+	participantID, err := st.EnsureParticipant("alice@example.test", "Alice Sender", "example.test")
+	require.NoError(err)
+	archive, _, err := st.CreatePersonFromParticipantContext(t.Context(), participantID)
+	require.NoError(err)
+
+	_, err = service.Sync(t.Context(), SyncOptions{Full: true})
+	require.NoError(err)
+	href := server.URL + "/books/personal/alice.vcf"
+	resource, err := st.GetCardDAVResourceContext(t.Context(), book.ID, href)
+	require.NoError(err)
+	require.NotNil(resource.PersonID)
+	assert.Equal(archive.ID, *resource.PersonID)
+	people, err := st.ListPersonsContext(t.Context())
+	require.NoError(err)
+	assert.Len(people, 1, "no duplicate profile is left behind")
+
+	etag = `&quot;two&quot;`
+	_, err = service.Sync(t.Context(), SyncOptions{Full: true})
+	require.NoError(err)
+	resource, err = st.GetCardDAVResourceContext(t.Context(), book.ID, href)
+	require.NoError(err)
+	require.NotNil(resource.PersonID)
+	assert.Equal(archive.ID, *resource.PersonID)
+	assert.Equal(`"two"`, resource.RemoteETag)
+	people, err = st.ListPersonsContext(t.Context())
+	require.NoError(err)
+	assert.Len(people, 1)
 }
 
 func TestSyncCanonicalizesEquivalentHrefSpellingsForUpdatesAndTombstones(t *testing.T) {

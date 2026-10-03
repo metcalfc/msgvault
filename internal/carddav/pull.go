@@ -97,18 +97,23 @@ func (s *Service) Sync(ctx context.Context, options SyncOptions) (result SyncRes
 	return result, err
 }
 
-// refreshContactMatches proposes archive identities for the contact profiles
-// this sync may have created. It runs only after a fully successful sync and
-// never fails it: the daily contact-match job retries any missed refresh.
+// refreshContactMatches matches the contact profiles this sync may have
+// created against archive identities. Exact email matches to one person are
+// merged or linked at once, so a card for someone already in the archive
+// ends the sync on that person; the rest wait for review. It runs only after
+// a fully successful sync and never fails it: the daily contact-match job
+// retries any missed refresh.
 func (s *Service) refreshContactMatches(ctx context.Context) {
 	result, err := s.store.BuildContactMatchCandidatesContext(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "CardDAV sync could not refresh contact matches", "error", err)
 		return
 	}
-	if result.Created > 0 {
-		slog.InfoContext(ctx, "CardDAV sync proposed contact matches",
-			"created", result.Created, "matches", result.Matches)
+	if result.Created > 0 || result.AutoMerged > 0 || result.AutoBound > 0 || result.LinkedClosed > 0 {
+		slog.InfoContext(ctx, "CardDAV sync refreshed contact matches",
+			"created", result.Created, "matches", result.Matches,
+			"auto_merged", result.AutoMerged, "auto_bound", result.AutoBound,
+			"linked_closed", result.LinkedClosed, "left_for_review", result.LeftForReview)
 	}
 }
 

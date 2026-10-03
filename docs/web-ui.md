@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-09-30"
+last_edited: "2026-10-02"
 title: Web UI
 description: Browse messages and files, maintain people, and monitor archive work from your browser.
 ---
@@ -421,6 +421,9 @@ accepting or rejecting a candidate. Decision notes are optional; choose
 - A contact match through an address that looks shared says **Looks like a
   shared mailbox** and cannot be linked until you choose **This is a person**
   on the card.
+- Contacts whose exact email belongs to one person are merged automatically
+  and never reach Reviews; see
+  [match imported contacts](/docs/usage/people/#match-imported-contacts-to-your-archive).
 - When the two identities already belong to different people, **Same
   person…** and accepting a match merge those people for you. The person with
   more identities, then the older one, is kept. Only if that merge fails does

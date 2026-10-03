@@ -424,6 +424,23 @@ func (c CardDAVStatusResponseRepairReason) Validate() error {
 	}
 }
 
+type ContactMatchBuildResultCacheState string
+
+const (
+	ContactMatchBuildResultCacheStateReady ContactMatchBuildResultCacheState = "ready"
+	ContactMatchBuildResultCacheStateStale ContactMatchBuildResultCacheState = "stale"
+)
+
+// Validate checks if the ContactMatchBuildResultCacheState value is valid
+func (c ContactMatchBuildResultCacheState) Validate() error {
+	switch c {
+	case ContactMatchBuildResultCacheStateReady, ContactMatchBuildResultCacheStateStale:
+		return nil
+	default:
+		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid ContactMatchBuildResultCacheState value, got: %v", c))
+	}
+}
+
 type ContactMatchStatusBlockedReason string
 
 const (

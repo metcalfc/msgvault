@@ -157,6 +157,7 @@ export * from "./confidenceInputs";
 export * from "./confirmPersonEnrichmentIdentityPathParameters";
 export * from "./consentSettingsPeopleInferenceProviderPathParameters";
 export * from "./contactMatchBuildResult";
+export * from "./contactMatchBuildResultCacheState";
 export * from "./contactMatchStatus";
 export * from "./contactMatchStatusBlockedReason";
 export * from "./contactMatchStatusClassification";

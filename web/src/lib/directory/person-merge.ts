@@ -19,6 +19,20 @@ export type PersonMergeSuccess = {
   responseETag: string | null;
 };
 
+const contactMatchActorPrefix = 'rule:contact_match:email:';
+
+/**
+ * Describes who recorded a merge. A merge the exact contact match rule made
+ * names the shared address; any other actor is shown as recorded.
+ */
+export function personMergeActorLabel(actor: string): string {
+  if (actor.startsWith(contactMatchActorPrefix)) {
+    const address = actor.slice(contactMatchActorPrefix.length).trim();
+    if (address) return `Merged automatically: same email ${address}`;
+  }
+  return `Recorded by ${actor}`;
+}
+
 export function isMatchingPersonETag(value: unknown, personID: number): value is string {
   return parsePersonETag(value)?.personID === personID;
 }

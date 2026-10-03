@@ -32,8 +32,8 @@ func TestContactMatchBindIsAllOrNothingWhenCancelledMidway(t *testing.T) {
 	assert := assert.New(t)
 	f := newContactMatchFixture(t)
 
-	participant := f.emailParticipant("rae@example.test", "Rae")
-	people := f.importCards(f.card("card-rae", "Rae Contact", []string{"rae@example.test"}, nil))
+	participant := f.phoneParticipant("+15550100133", "Rae")
+	people := f.importCards(f.card("card-rae", "Rae Contact", nil, []string{"+1 555 010 0133"}))
 	candidate := f.buildCandidate(people["card-rae"])
 	before := personCount(t, f.st)
 

@@ -26,10 +26,17 @@ func newPersonContactMatchesCommand() *cobra.Command {
 		Use:   "contact-matches",
 		Short: "Review contact profiles that match archive identities",
 		Long: "Contact profiles with no archive identity (for example, imported contacts)\n" +
-			"are matched to archive participants by exact email or phone. Each match is a\n" +
-			"reviewable candidate: accepting a bind links the archive identity to the\n" +
-			"contact profile, and a match whose identity belongs to another profile asks\n" +
-			"for an explicit person merge. Nothing is accepted automatically.",
+			"are matched to archive participants by exact email or phone.\n\n" +
+			"Exact matches are decided automatically: when an exact email joins one contact\n" +
+			"profile to one identity cluster, the profile is merged into the person who\n" +
+			"already has that identity, or the identity is linked to the profile when it\n" +
+			"has no person. Merge history records the actor rule:contact_match:email:<address>,\n" +
+			"and person split undoes it for good.\n\n" +
+			"Everything else waits for review: shared mailboxes, phone-only matches,\n" +
+			"identities that are not a person, more than one profile or identity, blocked\n" +
+			"merges, and anything you rejected or split before. Accepting a bind links the\n" +
+			"archive identity to the contact profile; a match whose identity belongs to\n" +
+			"another profile asks for an explicit person merge.",
 	}
 	command.AddCommand(newPersonContactMatchesListCommand(),
 		newPersonContactMatchesDecideCommand("accept"),
@@ -283,8 +290,9 @@ func newPersonContactMatchesBuildCommand() *cobra.Command {
 		Use:   "build",
 		Short: "Refresh contact matches now",
 		Long: "Refresh contact matches now. The daemon also refreshes them after each\n" +
-			"successful CardDAV sync and in a daily contact-matches job. Refreshing never\n" +
-			"accepts a match.",
+			"successful CardDAV sync and in a daily contact-matches job. Each refresh\n" +
+			"merges or links the exact email matches it can decide, closes pending matches\n" +
+			"that are already linked, and leaves the rest for review.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, _, err := OpenHTTPStore(cmd.Context())
@@ -305,9 +313,11 @@ func newPersonContactMatchesBuildCommand() *cobra.Command {
 			}
 			result := resp.JSON200
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-				"Matches: %d (new %d, existing %d)\nRetired: %d\nBind: %d\nMerge: %d\nAmbiguous: %d\nBlocked: %d\nEvidence added: %d\n",
+				"Matches: %d (new %d, existing %d)\nRetired: %d\nBind: %d\nMerge: %d\nAmbiguous: %d\nBlocked: %d\nEvidence added: %d\n"+
+					"Merged automatically: %d\nLinked automatically: %d\nAlready linked, closed: %d\nLeft for review: %d\n",
 				result.Matches, result.Created, result.Existing, result.Retired, result.Bind, result.Merge,
-				result.Ambiguous, result.Blocked, result.EvidenceAdded)
+				result.Ambiguous, result.Blocked, result.EvidenceAdded,
+				result.AutoMerged, result.AutoBound, result.LinkedClosed, result.LeftForReview)
 			return nil
 		},
 	}

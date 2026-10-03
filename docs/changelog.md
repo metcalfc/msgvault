@@ -8,6 +8,22 @@ All notable changes to msgvault, grouped by release.
 
 ## Unreleased
 
+- Exact contact matches are decided automatically. When an imported
+  contact's exact email is the archive identity of one person, and no other
+  contact or identity cluster is involved, the contact is merged into that
+  person (or the identity is linked to the contact when it has no person)
+  instead of waiting in **Reviews**. A CardDAV sync therefore ends with the
+  card on the person you already had. The merge uses the ordinary person
+  merge, shows **Merged automatically: same email `<address>`** in merge
+  history, and is undone with a split, which also stops the pair from being
+  merged or proposed again. Pending matches that were already linked are
+  closed. Phone-only matches, shared mailboxes, identities marked as not a
+  person, ambiguous or blocked matches, and earlier rejections still wait
+  for review. `msgvault person contact-matches build` and the build endpoint
+  report `auto_merged`, `auto_bound`, `linked_closed`, and
+  `left_for_review` (API schema 2.51.0). See
+  [match imported contacts](/docs/usage/people/#match-imported-contacts-to-your-archive).
+
 - Duplicate-people review asks about a common name once. An address name
   (the part before `@`) now pairs two identities only when it looks
   personal, such as `first.last`, `first_last`, or `jsmith42`, and only two

@@ -2282,11 +2282,27 @@ decision, so the same pair is not proposed again. `accept` re-checks the
 match first and refuses when the archive identity has since become one of the
 owner's identities, another identity in its cluster was rejected for this
 profile, the profile's addresses no longer match, the archive identity is
-marked as not a person, or the address looks like a shared mailbox. `build`
-retires undecided
-matches that fail the same checks and refreshes matches now;
-the daemon also refreshes them after each successful CardDAV sync and in a daily
-`contact-matches` job at 04:41. Nothing is accepted automatically.
+marked as not a person, or the address looks like a shared mailbox.
+
+`build` refreshes matches now; the daemon also refreshes them after each
+successful CardDAV sync and in a daily `contact-matches` job at 04:41. Each
+refresh:
+
+1. retires undecided matches that fail the `accept` checks;
+2. accepts pending matches that are already `linked`;
+3. decides exact matches: a `merge` or `bind` supported by an exact email,
+   where the contact matches only that identity cluster by email and the
+   cluster matches only that contact, is merged into the existing person or
+   linked to the contact through the ordinary person merge. The merge actor
+   is `rule:contact_match:email:<address>`, and the candidate is accepted by
+   `rule:contact_match`.
+
+Phone-only, `shared_mailbox`, `ambiguous`, and blocked matches, identities any
+classifier marks as not a person, and anything you rejected stay for review.
+A `person split` of an automatic merge or link is remembered as your
+rejection, so the pair is never merged or proposed again. The output and
+`--json` report `auto_merged`, `auto_bound`, `linked_closed`, and
+`left_for_review` alongside the match counts.
 
 ---
 

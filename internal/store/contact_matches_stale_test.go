@@ -13,13 +13,13 @@ func TestContactMatchWhoseAddressChangedIsRetiredAndRefused(t *testing.T) {
 	assert := assert.New(t)
 	f := newContactMatchFixture(t)
 
-	f.emailParticipant("tam@example.test", "Tam")
-	card := f.card("card-tam", "Tam Contact", []string{"tam@example.test"}, nil)
+	f.phoneParticipant("+15550100135", "Tam")
+	card := f.card("card-tam", "Tam Contact", nil, []string{"+1 555 010 0135"})
 	people := f.importCards(card)
 	candidate := f.buildCandidate(people["card-tam"])
 
 	// The address is corrected remotely; the card no longer matches.
-	corrected := f.card("card-tam", "Tam Contact", []string{"tam.new@example.test"}, nil)
+	corrected := f.card("card-tam", "Tam Contact", nil, []string{"+1 555 010 0136"})
 	corrected.RemoteETag = `"card-tam-2"`
 	corrected.SemanticHash = "semantic-card-tam-2"
 	f.importCards(corrected)

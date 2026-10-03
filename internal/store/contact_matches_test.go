@@ -74,6 +74,16 @@ func (f *contactMatchFixture) emailParticipant(email, name string) int64 {
 	return id
 }
 
+// phoneParticipant creates a chat identity known only by its phone number.
+// A phone match is never decided automatically, so tests of the manual
+// accept path use one.
+func (f *contactMatchFixture) phoneParticipant(phone, name string) int64 {
+	f.t.Helper()
+	id, err := f.st.EnsureParticipantByPhone(phone, name, "whatsapp")
+	require.NoError(f.t, err)
+	return id
+}
+
 func matchesByPerson(matches []store.ContactMatch) map[int64][]store.ContactMatch {
 	grouped := map[int64][]store.ContactMatch{}
 	for _, match := range matches {
@@ -142,8 +152,8 @@ func TestBuildContactMatchCandidatesWritesIdempotentSystemRowsWithEvidence(t *te
 	first, err := f.st.BuildContactMatchCandidatesContext(t.Context())
 	require.NoError(err)
 	assert.Equal(store.ContactMatchBuildResult{
-		Matches: 1, Created: 1, EvidenceAdded: 1, Bind: 1,
-	}, *first)
+		Matches: 1, Created: 1, EvidenceAdded: 1, Bind: 1, AutoBound: 1,
+	}, *first, "an exact email to an unbound identity is linked without review")
 
 	candidates, err := f.st.ListIdentityMatchCandidatesContext(t.Context(), nil, 100, 0)
 	require.NoError(err)
@@ -161,7 +171,11 @@ func TestBuildContactMatchCandidatesWritesIdempotentSystemRowsWithEvidence(t *te
 	assert.InDelta(1.0, *candidate.Confidence, 0)
 	require.NotNil(candidate.SourceRef)
 	assert.Equal(store.ContactMatchSourceRef, *candidate.SourceRef)
-	assert.Equal(store.IdentityMatchStateCandidate, candidate.State)
+	assert.Equal(store.IdentityMatchStateAccepted, candidate.State)
+	require.NotNil(candidate.DecidedBy)
+	assert.Equal(store.ContactMatchAutoActor, *candidate.DecidedBy)
+	require.NotNil(candidate.Notes)
+	assert.Equal("linked automatically: same email cy@example.test", *candidate.Notes)
 	require.Len(candidate.Evidence, 1)
 	assert.Equal(store.ContactMatchEvidenceKind, candidate.Evidence[0].EvidenceKind)
 	require.NotNil(candidate.Evidence[0].EvidenceRef)
@@ -169,9 +183,14 @@ func TestBuildContactMatchCandidatesWritesIdempotentSystemRowsWithEvidence(t *te
 	require.NotNil(candidate.Evidence[0].Detail)
 	assert.Contains(*candidate.Evidence[0].Detail, "participants.email_address=cy@example.test")
 
+	// The contact profile now has the archive identity, so a rerun finds
+	// nothing to match and changes nothing.
 	second, err := f.st.BuildContactMatchCandidatesContext(t.Context())
 	require.NoError(err)
-	assert.Equal(store.ContactMatchBuildResult{Matches: 1, Existing: 1, Bind: 1}, *second)
+	assert.Equal(store.ContactMatchBuildResult{}, *second)
+	contact, err := f.st.GetPersonContext(t.Context(), people["card-cy"])
+	require.NoError(err)
+	assert.Equal([]int64{participant}, contact.ParticipantIDs)
 	again, err := f.st.ListIdentityMatchCandidatesContext(t.Context(), nil, 100, 0)
 	require.NoError(err)
 	require.Len(again, 1)
@@ -211,10 +230,10 @@ func TestAcceptContactMatchBindPromotesClusterIntoContactProfile(t *testing.T) {
 	f := newContactMatchFixture(t)
 
 	first := f.emailParticipant("di@example.test", "Di")
-	second := f.emailParticipant("di.work@example.test", "Di")
+	second := f.phoneParticipant("+15550100131", "Di")
 	_, err := f.st.LinkParticipants(first, second)
 	require.NoError(err)
-	card := f.card("card-di", "Di Contact", []string{"di.work@example.test"}, nil)
+	card := f.card("card-di", "Di Contact", nil, []string{"+1 555 010 0131"})
 	people := f.importCards(card)
 	contactID := people["card-di"]
 	contactBefore, err := f.st.GetPersonContext(t.Context(), contactID)
@@ -256,10 +275,10 @@ func TestAcceptContactMatchMergeRequiresExplicitSurvivorChoice(t *testing.T) {
 	assert := assert.New(t)
 	f := newContactMatchFixture(t)
 
-	participant := f.emailParticipant("eve@example.test", "Eve")
+	participant := f.phoneParticipant("+15550100132", "Eve")
 	existing, _, err := f.st.CreatePersonFromParticipantContext(t.Context(), participant)
 	require.NoError(err)
-	people := f.importCards(f.card("card-eve", "Eve Contact", []string{"eve@example.test"}, nil))
+	people := f.importCards(f.card("card-eve", "Eve Contact", nil, []string{"+1 555 010 0132"}))
 	contactID := people["card-eve"]
 	candidate := f.buildCandidate(contactID)
 

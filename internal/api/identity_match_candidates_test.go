@@ -203,13 +203,15 @@ func TestListIdentityMatchCandidatesResolvesEndpointsAndFiltersContactMatches(t 
 	assert := assert.New(t)
 	srv, st := newIdentityLinkTestServer(t)
 	pair, _, _ := seedMatchCandidate(t, st, store.IdentityMatchServiceScopeUsername)
-	participant := st.mustParticipant(t, "casey@example.com", "Contact Sender", "example.com")
+	// A phone match is never decided automatically, so it stays listed.
+	participant, err := st.EnsureParticipantByPhone("+15550100190", "Contact Sender", "whatsapp")
+	require.NoError(err)
 	var personID int64
 	require.NoError(st.DB().QueryRow(
 		`INSERT INTO persons (vcard_uid, display_name) VALUES ('contact-card', 'Contact Card') RETURNING id`,
 	).Scan(&personID))
-	_, err := st.AddPersonContactPointContext(context.Background(), personID, store.PersonContactPointInput{
-		AddressKind: store.ContactAddressEmail, OriginalValue: "casey@example.com",
+	_, err = st.AddPersonContactPointContext(context.Background(), personID, store.PersonContactPointInput{
+		AddressKind: store.ContactAddressPhone, OriginalValue: "+1 555 010 0190",
 		Envelope: store.ValueEnvelopeInput{Source: store.ProvenanceCardDAVImport},
 	})
 	require.NoError(err)
@@ -236,13 +238,13 @@ func TestListIdentityMatchCandidatesResolvesEndpointsAndFiltersContactMatches(t 
 	assert.Equal(participant, sender.ID)
 	require.NotNil(sender.DisplayName)
 	assert.Equal("Contact Sender", *sender.DisplayName)
-	assert.Equal([]string{"casey@example.com"}, sender.Addresses)
+	assert.Equal([]string{"+15550100190"}, sender.Addresses)
 	assert.Nil(sender.PersonID)
 	card := byKind[store.IdentityMatchPerson]
 	assert.True(card.Found)
 	require.NotNil(card.DisplayName)
 	assert.Equal("Contact Card", *card.DisplayName)
-	assert.Equal([]string{"casey@example.com"}, card.Addresses)
+	assert.Equal([]string{"+1 555 010 0190"}, card.Addresses)
 
 	all := personRequest(t, srv, http.MethodGet, "/api/v1/identity/match-candidates", nil, "")
 	require.Equal(http.StatusOK, all.Code, all.Body.String())
@@ -308,12 +310,17 @@ func TestBuildContactMatchCandidatesReportsCounts(t *testing.T) {
 	assert.Equal("no-store", response.Header().Get("Cache-Control"))
 	var result store.ContactMatchBuildResult
 	require.NoError(json.Unmarshal(response.Body.Bytes(), &result), response.Body.String())
-	assert.Equal(store.ContactMatchBuildResult{Matches: 1, Created: 1, EvidenceAdded: 1, Bind: 1}, result)
+	assert.Equal(store.ContactMatchBuildResult{
+		Matches: 1, Created: 1, EvidenceAdded: 1, Bind: 1, AutoBound: 1, CacheState: "ready",
+	}, result, "an exact email is linked and the identity datasets are refreshed")
 
+	// The contact profile now owns the identity: nothing is left to match,
+	// and a refresh that changes no person reports no cache state.
 	again := personRequest(t, srv, http.MethodPost, "/api/v1/identity/contact-matches/build", nil, "")
 	require.Equal(http.StatusOK, again.Code, again.Body.String())
-	require.NoError(json.Unmarshal(again.Body.Bytes(), &result), again.Body.String())
-	assert.Equal(store.ContactMatchBuildResult{Matches: 1, Existing: 1, Bind: 1}, result)
+	var rerun store.ContactMatchBuildResult
+	require.NoError(json.Unmarshal(again.Body.Bytes(), &rerun), again.Body.String())
+	assert.Equal(store.ContactMatchBuildResult{}, rerun)
 }
 
 func TestRejectIdentityMatchCandidateRetainsTheRow(t *testing.T) {

@@ -9,6 +9,7 @@
     PersonMergeHistoryController,
     type PersonSplitCommittedContext
   } from '../../directory/person-merge-history-controller.svelte';
+  import { personMergeActorLabel } from '../../directory/person-merge';
   import PersonSplitModal from './PersonSplitModal.svelte';
 
   interface Props {
@@ -151,7 +152,7 @@
   {:else if controller.detail}
     <section class="merge-detail" aria-labelledby={`merge-${controller.detail.merge.id}-detail-heading`}>
       <div class="section-heading">
-        <div><h4 id={`merge-${controller.detail.merge.id}-detail-heading`}>Merge {controller.detail.merge.id} detail</h4><p>Recorded by {controller.detail.merge.actor} at <time datetime={controller.detail.merge.created_at}>{formatTimestamp(controller.detail.merge.created_at)}</time>.</p></div>
+        <div><h4 id={`merge-${controller.detail.merge.id}-detail-heading`}>Merge {controller.detail.merge.id} detail</h4><p>{personMergeActorLabel(controller.detail.merge.actor)} at <time datetime={controller.detail.merge.created_at}>{formatTimestamp(controller.detail.merge.created_at)}</time>.</p></div>
         {#if controller.canOfferSplit}<Button label="Split merged profile" tone="info" onclick={openSplit} />
         {:else if !controller.detail.merge.current_person_id}<p>No current source profile is recorded, so this merge cannot be split.</p>{/if}
       </div>

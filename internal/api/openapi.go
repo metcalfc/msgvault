@@ -425,7 +425,12 @@ import (
 // response: the other pending duplicate-person candidates with the same
 // shared name between the same two identity clusters, rejected in the same
 // decision. Additive (minor bump).
-const APISchemaVersion = "2.50.0"
+// 2.51.0 makes POST /identity/contact-matches/build decide exact matches:
+// an exact email joining one contact profile to one person is merged or
+// linked through the person merge path and accepted by rule:contact_match.
+// ContactMatchBuildResult gains auto_merged, auto_bound, linked_closed,
+// left_for_review, and an optional cache_state. Additive (minor bump).
+const APISchemaVersion = "2.51.0"
 
 // OpenAPIDocument builds the API schema from the same Huma route registration
 // used by the daemon. It binds no socket and needs no database.

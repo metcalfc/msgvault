@@ -146,7 +146,9 @@ func (s *Store) acceptParticipantPersonMatchTx(
 		if _, blocked := blocks[contactPersonID]; blocked {
 			return nil, ErrPersonCardDAVPublished
 		}
-		if err := s.bindClusterIntoPersonTx(ctx, tx, candidate.ID, candidate.LeftID, contactPersonID); err != nil {
+		if err := s.bindClusterIntoPersonTx(
+			ctx, tx, candidate.ID, candidate.LeftID, contactPersonID, contactMatchMergeActor,
+		); err != nil {
 			return nil, err
 		}
 	case ContactMatchLinked:
@@ -326,8 +328,10 @@ func contactMatchAddressKey(kind, value string) (string, bool) {
 
 // bindClusterIntoPersonTx promotes the participant's unbound cluster and
 // merges the new profile into the survivor, inside the caller's transaction.
+// The actor is recorded on the merge: the user for an explicit accept, the
+// exact contact match rule for an automatic one.
 func (s *Store) bindClusterIntoPersonTx(
-	ctx context.Context, tx *loggedTx, candidateID, participantID, survivorID int64,
+	ctx context.Context, tx *loggedTx, candidateID, participantID, survivorID int64, actor string,
 ) error {
 	promoted, created, err := s.createPersonFromParticipantTx(ctx, tx, participantID)
 	if err != nil {
@@ -354,7 +358,7 @@ func (s *Store) bindClusterIntoPersonTx(
 		ExpectedSurvivorRevision: survivor.Revision,
 		ExpectedAbsorbedRevision: promoted.Revision,
 		IdempotencyKey:           fmt.Sprintf("identity-match-%d-bind-%d", candidateID, promoted.ID),
-		Actor:                    contactMatchMergeActor,
+		Actor:                    actor,
 	}
 	if err := request.validate(); err != nil {
 		return err

@@ -329,6 +329,11 @@ func (s *Store) splitPersonMergeOnce(
 				return fmt.Errorf("close fully split merge lineage: %w", err)
 			}
 		}
+		if err := s.rememberContactProfileSplitTx(
+			ctx, tx, request.SourcePersonID, newPersonID, request.Actor,
+		); err != nil {
+			return err
+		}
 		identityRevision, err := s.bumpIdentityRevisionContext(ctx, tx)
 		if err != nil {
 			return err

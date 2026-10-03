@@ -112,10 +112,12 @@ func (s *Server) registerIdentityMatchRoutes(api huma.API) {
 	list := rawAPIV1Operation("listIdentityMatchCandidates", http.MethodGet,
 		"/identity/match-candidates", "List reviewable identity match candidates")
 	list.Description = "Candidates are evidence-backed suggestions, never applied links. " +
-		"Only a repeated stable provider or Beeper user ID, or two addresses that deliver " +
-		"to the same mailbox (basis email_equivalence), is confirmed automatically; a " +
-		"username, phone, email, dot-only address variant (email_dot_variant), display " +
-		"name, or shared conversation is evidence and waits for an explicit decision."
+		"Only a repeated stable provider or Beeper user ID, two addresses that deliver " +
+		"to the same mailbox (basis email_equivalence), or a contact match whose exact email " +
+		"joins one contact profile to one person (decided_by rule:contact_match) is " +
+		"confirmed automatically; a username, phone, other email evidence, dot-only address " +
+		"variant (email_dot_variant), display name, or shared conversation is evidence and " +
+		"waits for an explicit decision."
 	list.Responses = jsonResponsesFor[IdentityMatchCandidatesResponse](api)
 	addErrorResponses(api, list.Responses, http.StatusServiceUnavailable)
 	registerRawHumaRoute(api, list, s.handleListIdentityMatchCandidates)
@@ -155,8 +157,15 @@ func (s *Server) registerIdentityMatchRoutes(api huma.API) {
 		"/identity/contact-matches/build", "Refresh contact-match candidates")
 	build.Description = "Matches the exact email and phone contact points of profiles with no " +
 		"archive identity (for example, imported contacts) against archive participants and " +
-		"writes one reviewable candidate per matched identity cluster. Refreshing is " +
-		"idempotent and never accepts a match."
+		"writes one candidate per matched identity cluster. Exact matches are decided in code: " +
+		"when an exact email joins one contact profile to one identity cluster, and the cluster " +
+		"belongs to one other person or to nobody, the profile is merged into that person " +
+		"(auto_merged) or the cluster is linked to the profile (auto_bound) through the " +
+		"ordinary person merge, recorded with actor rule:contact_match:email:<address> and " +
+		"reversible by a person split. A shared mailbox, a phone-only match, an identity that " +
+		"is not a person or belongs to the owner, more than one profile or cluster, a blocked " +
+		"merge, and any earlier rejection or split stay for review. Pending candidates that " +
+		"are already linked are accepted (linked_closed). Refreshing is idempotent."
 	build.Responses = jsonResponsesFor[store.ContactMatchBuildResult](api)
 	addErrorResponses(api, build.Responses, http.StatusServiceUnavailable)
 	registerRawHumaRoute(api, build, s.handleBuildContactMatchCandidates)
@@ -223,6 +232,11 @@ func (s *Server) handleBuildContactMatchCandidates(w http.ResponseWriter, r *htt
 	if err != nil {
 		s.writeIdentityMatchError(w, err)
 		return
+	}
+	if result.AutoMerged > 0 || result.AutoBound > 0 {
+		// Automatic merges and links change people, so refresh the
+		// identity datasets like every other identity mutation endpoint.
+		result.CacheState = s.refreshIdentityCacheState(r.Context())
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, result)

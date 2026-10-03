@@ -2256,16 +2256,36 @@ type ConfidenceInputs struct {
 }
 
 type ContactMatchBuildResult struct {
-	Ambiguous     int64 `json:"ambiguous"`
-	Bind          int64 `json:"bind"`
-	Blocked       int64 `json:"blocked"`
-	Created       int64 `json:"created"`
-	EvidenceAdded int64 `json:"evidence_added"`
-	Existing      int64 `json:"existing"`
-	Matches       int64 `json:"matches"`
-	Merge         int64 `json:"merge"`
-	Retired       int64 `json:"retired"`
-	SharedMailbox int64 `json:"shared_mailbox"`
+	Ambiguous     int64                              `json:"ambiguous"`
+	AutoBound     int64                              `json:"auto_bound"`
+	AutoMerged    int64                              `json:"auto_merged"`
+	Bind          int64                              `json:"bind"`
+	Blocked       int64                              `json:"blocked"`
+	CacheState    *ContactMatchBuildResultCacheState `json:"cache_state,omitempty"`
+	Created       int64                              `json:"created"`
+	EvidenceAdded int64                              `json:"evidence_added"`
+	Existing      int64                              `json:"existing"`
+	LeftForReview int64                              `json:"left_for_review"`
+	LinkedClosed  int64                              `json:"linked_closed"`
+	Matches       int64                              `json:"matches"`
+	Merge         int64                              `json:"merge"`
+	Retired       int64                              `json:"retired"`
+	SharedMailbox int64                              `json:"shared_mailbox"`
+}
+
+func (c ContactMatchBuildResult) Validate() error {
+	var errors runtime.ValidationErrors
+	if c.CacheState != nil {
+		if v, ok := any(c.CacheState).(runtime.Validator); ok {
+			if err := v.Validate(); err != nil {
+				errors = errors.Append("CacheState", err)
+			}
+		}
+	}
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
 }
 
 type ContactMatchStatus struct {

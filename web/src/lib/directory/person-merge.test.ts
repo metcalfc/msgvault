@@ -4,8 +4,21 @@ import {
   isMatchingPersonETag,
   isMatchingPersonRevisionETag,
   isPersonMergeRevisionConflict,
+  personMergeActorLabel,
   validatePersonMergeRequired
 } from './person-merge';
+
+describe('personMergeActorLabel', () => {
+  it('names the shared address of an automatic contact match merge', () => {
+    expect(personMergeActorLabel('rule:contact_match:email:sam@example.test'))
+      .toBe('Merged automatically: same email sam@example.test');
+  });
+
+  it('shows any other actor as recorded', () => {
+    expect(personMergeActorLabel('user')).toBe('Recorded by user');
+    expect(personMergeActorLabel('rule:contact_match:email:')).toBe('Recorded by rule:contact_match:email:');
+  });
+});
 
 function person(id: number, revision: number, displayName: string) {
   return {

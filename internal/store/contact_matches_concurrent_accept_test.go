@@ -15,8 +15,8 @@ func TestConcurrentContactMatchAcceptsBindOnceAndStayAccepted(t *testing.T) {
 	assert := assert.New(t)
 	f := newContactMatchFixture(t)
 
-	participant := f.emailParticipant("sol@example.test", "Sol")
-	people := f.importCards(f.card("card-sol", "Sol Contact", []string{"sol@example.test"}, nil))
+	participant := f.phoneParticipant("+15550100134", "Sol")
+	people := f.importCards(f.card("card-sol", "Sol Contact", nil, []string{"+1 555 010 0134"}))
 	candidate := f.buildCandidate(people["card-sol"])
 
 	before := personCount(t, f.st)
