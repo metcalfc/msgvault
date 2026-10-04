@@ -145,11 +145,11 @@ describe('IdentityCandidateCard', () => {
     expect(screen.queryByRole('button', { name: 'Keep separate' })).toBeNull();
   });
 
-  it('offers both explicit candidate decisions and disables duplicates while pending', async () => {
+  it.each(['candidate', 'conflict'])('offers both explicit decisions on a %s and disables duplicates while pending', async (state) => {
     const onAccept = vi.fn();
     const onReject = vi.fn();
     const view = render(IdentityCandidateCard, {
-      candidate: completeCandidate(), names: labelledNames().names, pending: false, onAccept, onReject
+      candidate: completeCandidate(state), names: labelledNames().names, pending: false, onAccept, onReject
     });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Link identities' }));
@@ -157,7 +157,7 @@ describe('IdentityCandidateCard', () => {
     expect(onAccept).toHaveBeenCalledOnce();
     expect(onReject).toHaveBeenCalledOnce();
 
-    await view.rerender({ candidate: completeCandidate(), pending: true, onAccept, onReject });
+    await view.rerender({ candidate: completeCandidate(state), pending: true, onAccept, onReject });
     expect(screen.getByRole('button', { name: 'Link identities' })).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: 'Keep separate' })).toHaveProperty('disabled', true);
   });

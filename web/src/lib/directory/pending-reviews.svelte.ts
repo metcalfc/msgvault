@@ -16,6 +16,8 @@ export class PendingReviewsMonitor {
    * requests; tests of the dot turn it back on. */
   static autoStart = true;
   waiting = $state(false);
+  /** The queues with an item waiting, in Reviews order. */
+  kinds = $state<string[]>([]);
   private readonly client: APIClient;
   private readonly now: () => number;
   private readonly isHidden: () => boolean;
@@ -80,6 +82,7 @@ export class PendingReviewsMonitor {
       const { data } = await getPendingReviews({ ...this.client, signal: abort.signal });
       if (abort.signal.aborted || !data) return;
       this.waiting = data.pending === true;
+      this.kinds = data.kinds ?? [];
     } catch {
       // Keep the last answer; the next check tries again.
     } finally {

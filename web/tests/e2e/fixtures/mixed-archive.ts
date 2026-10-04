@@ -1045,11 +1045,12 @@ export async function installDirectoryReviewArchive(page: Page) {
   await page.route(/\/api\/v1\/identity\/match-candidates(?:\?.*)?$/, (route) => {
     requests.push(capture(route.request()));
     const url = new URL(route.request().url());
-    const state = url.searchParams.get('state') ?? 'candidate';
+    // The daemon accepts a comma-separated state list.
+    const states = (url.searchParams.get('state') ?? 'candidate').split(',');
     const offset = Number(url.searchParams.get('offset') ?? 0);
     const contactOnly = url.searchParams.get('origin') === 'contact_match';
     const listed = candidates.filter((candidate) =>
-      candidate.state === state && (!contactOnly || candidate.source_ref === 'contact_match'));
+      states.includes(candidate.state) && (!contactOnly || candidate.source_ref === 'contact_match'));
     return route.fulfill({
       json: {
         candidates: listed,

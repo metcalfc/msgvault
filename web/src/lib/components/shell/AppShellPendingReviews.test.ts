@@ -68,6 +68,41 @@ describe('AppShell pending reviews dot', () => {
   });
 });
 
+describe('AppShell Reviews navigation', () => {
+  it('opens the first queue with work on its waiting view, not a decided one', async () => {
+    window.history.replaceState(null, '', `/?explore=${encodeURIComponent(JSON.stringify({
+      workspace: 'everything', reviewKind: 'identity', identityState: 'rejected'
+    }))}`);
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      const path = new URL(request.url).pathname;
+      if (path === '/api/v1/reviews/pending') return Response.json({ pending: true, kinds: ['identity'] });
+      if (path === '/api/v1/identity/match-candidates') {
+        return Response.json({ candidates: [candidate(17, 'conflict')], limit: 100, offset: 0 });
+      }
+      return Response.json({});
+    });
+    const state = new ExploreState(window);
+    const rendered = render(AppShell, { client: createAPIClient(fetchFn), state, enabled: false });
+    const nav = screen.getByRole('navigation', { name: 'Primary' });
+
+    await focusAndClick(await within(nav).findByRole('button', { name: 'Reviews Items waiting' }));
+
+    await waitFor(() => expect(state.current).toMatchObject({
+      workspace: 'directory_review', reviewKind: 'identity', identityState: 'candidate'
+    }));
+    const card = await screen.findByRole('article', { name: 'Identity match 17' });
+    expect(within(card).getByRole('button', { name: 'Link identities' })).toBeDefined();
+    const lists = fetchFn.mock.calls
+      .map(([input]) => new URL(input instanceof Request ? input.url : String(input)))
+      .filter((url) => url.pathname === '/api/v1/identity/match-candidates');
+    expect(lists.at(-1)!.searchParams.get('state')).toBe('candidate,conflict');
+
+    rendered.unmount();
+    state.destroy();
+  });
+});
+
 describe('PendingReviewsMonitor', () => {
   beforeEach(() => {
     PendingReviewsMonitor.autoStart = true;

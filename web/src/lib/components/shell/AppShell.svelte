@@ -39,7 +39,9 @@
     PersonSummary,
     FileViewerTarget,
     FileSearchSort,
+    DirectoryReviewKind,
   } from '../../explore/models';
+  import { DIRECTORY_REVIEW_KINDS } from '../../explore/models';
   import { attachmentSelection, parseAttachmentSelection } from '../../explore/attachment-authority';
   import { filtersForGroup, parseGroupSelection } from '../../explore/group-context';
   import { ExploreLoader } from '../../explore/loader.svelte';
@@ -449,8 +451,19 @@
     else if (id === 'inbox') openInbox();
     else if (id === 'files') openWorkspaceTab('files');
     else if (id === 'meetings') openMeetings();
-    else if (id === 'reviews') openWorkspaceTab('directory_review');
+    else if (id === 'reviews') openReviews();
     else openWorkspaceTab('sources');
+  }
+  /** Reviews opens on work: the first queue with an item waiting, and the
+   * identity queue on its waiting view rather than a decided one. */
+  function openReviews(): void {
+    const waiting = pendingReviews.kinds.find((kind): kind is DirectoryReviewKind =>
+      (DIRECTORY_REVIEW_KINDS as readonly string[]).includes(kind));
+    beforeCommit();
+    exploreState.commitWorkspace('directory_review', {
+      identityState: 'candidate',
+      ...(waiting ? { reviewKind: waiting } : {}),
+    });
   }
   /** The Meetings list, keeping its filters. */
   function openMeetings(): void {

@@ -84,8 +84,7 @@
   };
   const reviewKindOptions = DIRECTORY_REVIEW_KINDS.map((kind) => ({ value: kind, label: reviewKindLabels[kind] }));
   const identityStateOptions = [
-    { value: 'candidate', label: 'Candidate' },
-    { value: 'conflict', label: 'Conflict' },
+    { value: 'candidate', label: 'Waiting' },
     { value: 'accepted', label: 'Accepted' },
     { value: 'rejected', label: 'Rejected' }
   ];

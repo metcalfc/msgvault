@@ -193,10 +193,9 @@ test('ordinary accept and reject keep keyboard focus connected as rows leave the
   await expect(page.getByRole('article', { name: 'Identity match 19' })).toBeFocused();
   await expect(page).toHaveURL(/\/reviews/);
 
-  const candidateFilter = page.getByRole('radio', { name: 'Candidate' });
-  await candidateFilter.focus();
-  await expect(candidateFilter).toBeFocused();
-  await page.keyboard.press('ArrowRight');
+  const waitingFilter = page.getByRole('radio', { name: 'Waiting' });
+  await waitingFilter.focus();
+  await expect(waitingFilter).toBeFocused();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('radio', { name: 'Accepted' })).toBeFocused();
   await expect(page.getByRole('radio', { name: 'Accepted' })).toBeChecked();

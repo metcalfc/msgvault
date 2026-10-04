@@ -182,22 +182,25 @@ describe('DirectoryReviewCentre', () => {
       const request = requestOf(input);
       requests.push(request);
       const state = new URL(request.url).searchParams.get('state') ?? 'candidate';
-      return page([candidate(state === 'conflict' ? 22 : 17, state)]);
+      return page([state === 'rejected' ? candidate(22, 'rejected') : candidate(17)]);
     });
     const controller = new DirectoryReviewController(createAPIClient(withEntityLabels(fetchFn, syntheticNames)), commit);
     await controller.loadIdentityPage();
     renderReview(controller);
 
+    // The waiting view lists conflicts beside candidates, as the dot counts them.
+    expect(new URL(requests[0]!.url).searchParams.get('state')).toBe('candidate,conflict');
     expect(screen.getByRole('radiogroup', { name: 'Review type' })).toBeDefined();
     expect(screen.getByRole('radiogroup', { name: 'Identity review state' })).toBeDefined();
-    await fireEvent.click(screen.getByRole('radio', { name: 'Conflict' }));
+    expect(screen.queryByRole('radio', { name: 'Conflict' })).toBeNull();
+    await fireEvent.click(screen.getByRole('radio', { name: 'Rejected' }));
 
     await screen.findByRole('heading', { name: 'Identity match 22' });
     expect(controller.reviewKind).toBe('identity');
-    expect(controller.identityState).toBe('conflict');
-    expect(commit).toHaveBeenLastCalledWith({ reviewKind: 'identity', identityState: 'conflict' });
+    expect(controller.identityState).toBe('rejected');
+    expect(commit).toHaveBeenLastCalledWith({ reviewKind: 'identity', identityState: 'rejected' });
     const last = requests.at(-1)!;
-    expect(new URL(last.url).searchParams.get('state')).toBe('conflict');
+    expect(new URL(last.url).searchParams.get('state')).toBe('rejected');
     expect(new URL(last.url).searchParams.get('offset')).toBe('0');
   });
 

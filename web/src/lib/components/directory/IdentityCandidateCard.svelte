@@ -53,6 +53,7 @@
   ]);
   const participants = $derived(endpoints.filter((endpoint) => endpoint.kind === 'participant'));
   const sharedMailbox = $derived(contactMatch?.classification === 'shared_mailbox' ? contactMatch.shared_mailbox : undefined);
+  // A conflict waits for the user's decision just like a candidate.
   const open = $derived(candidate.state === 'candidate' || candidate.state === 'conflict');
   // Notes are optional, so the field stays folded away unless a draft exists.
   let notesOpen = $state(untrack(() => note !== ''));
@@ -146,7 +147,7 @@
       {/if}
     </section>
 
-    {#if candidate.state === 'candidate' && onNoteInput && notesOpen}
+    {#if open && onNoteInput && notesOpen}
       <label class="notes">
         <span>Decision notes <small>(optional)</small></span>
         <textarea
@@ -160,9 +161,9 @@
       </label>
     {/if}
 
-    {#if open && (candidate.state === 'candidate' || (onNotAPerson && participants.length > 0))}
+    {#if open}
       <div class="actions">
-        {#if candidate.state === 'candidate' && onNoteInput && !notesOpen}
+        {#if onNoteInput && !notesOpen}
           <Button size="sm" surface="soft" label="Add a note" ariaLabel={`Add a note to identity match ${candidate.id}`}
             ariaExpanded={false} disabled={pending} onclick={() => void openNotes()} />
         {/if}
@@ -185,7 +186,7 @@
             </MenuContent>
           </Menu>
         {/if}
-        {#if candidate.state === 'candidate'}
+        {#if open}
           <Button label="Keep separate" size="sm" disabled={pending} onclick={onReject} />
           <Button label="Link identities" size="sm" tone="info" surface="solid"
             disabled={pending || !!blockedMessage || !!sharedMailbox} onclick={onAccept} />

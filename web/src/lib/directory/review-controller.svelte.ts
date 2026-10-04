@@ -231,7 +231,9 @@ export class DirectoryReviewController {
     try {
       const response = await generatedListIdentityMatchCandidates(
         {
-          state,
+          // Conflicts wait for a decision too, so the waiting view lists
+          // them beside ordinary candidates, as the Reviews dot counts them.
+          state: state === 'candidate' ? 'candidate,conflict' : state,
           limit: IDENTITY_REVIEW_PAGE_LIMIT,
           offset: targetOffset,
           ...(this.identityOrigin === 'all' ? {} : { origin: this.identityOrigin }),
