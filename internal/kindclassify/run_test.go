@@ -140,6 +140,40 @@ func TestRunAppliesDeterministicRulesWithoutJev(t *testing.T) {
 	assert.Equal(1, again.Candidates, "a material change brings the cluster back")
 }
 
+// A cluster Jev already judged is never sent to Jev again, but a rule added
+// since still decides it: here an unclear judgment on a bare phone number.
+func TestRulesOverruleAnEarlierJevJudgmentWithoutAskingAgain(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	a := newArchive(t)
+	phone, err := a.f.Store.EnsureParticipantByPhone("+15555550123", "", "phone")
+	require.NoError(err)
+	desk := a.participant("frontdesk@example.com", "Front Desk")
+	a.sendMany(5, mail{from: phone, to: a.owner, subject: "Running late"})
+	a.sendMany(5, mail{from: desk, to: a.owner, subject: "Visitor"})
+	_, err = a.f.Store.WriteDerivedCorrespondentKindsContext(t.Context(), []store.DerivedCorrespondentKind{
+		{ParticipantID: phone, Source: correspondentkind.SourceJev, Kind: correspondentkind.Unclear, Actor: "jev:test"},
+		{ParticipantID: desk, Source: correspondentkind.SourceJev, Kind: correspondentkind.Unclear, Actor: "jev:test"},
+	})
+	require.NoError(err)
+
+	report, err := kindclassify.Run(t.Context(), a.f.Store, kindclassify.Options{})
+	require.NoError(err)
+	assert.Zero(report.Candidates, "already-judged clusters are not new candidates")
+	assert.Equal(map[correspondentkind.Kind]int{correspondentkind.Person: 1}, report.Rule)
+	assert.Zero(report.Undecided)
+
+	record := a.kind(phone)
+	assert.Equal(correspondentkind.Person, record.Kind)
+	require.NotNil(record.Actor)
+	assert.Equal("rule:phone_number", *record.Actor)
+	assert.Equal(correspondentkind.Unclear, a.kind(desk).Kind, "no rule decides the email desk")
+	unclear, err := a.f.Store.ListCorrespondentKindsContext(t.Context(), store.CorrespondentKindListFilter{Kind: correspondentkind.Unclear})
+	require.NoError(err)
+	require.Len(unclear, 1)
+	assert.Equal(desk, unclear[0].CanonicalID)
+}
+
 func TestSameSizedMembershipChangeBringsAClusterBack(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

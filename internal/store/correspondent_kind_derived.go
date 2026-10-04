@@ -325,6 +325,11 @@ type CorrespondentKindCandidateQuery struct {
 	// rerun only visits clusters that source has not classified. Clusters
 	// with a user decision are always left out.
 	SkipSources []correspondentkind.Source
+	// RulesOnlySources returns clusters with a row from these sources (and
+	// none from a skipped source or the user) marked RulesOnly, so a newer
+	// deterministic rule can supersede an older judgment without asking
+	// again. They bypass the evaluation gate and Limit, and follow the rest.
+	RulesOnlySources []correspondentkind.Source
 	// RevisitUnchanged keeps clusters an earlier run evaluated without a
 	// decision even when nothing about them changed materially; a run that
 	// can ask Jev sets it. Either way, never-evaluated clusters come first
@@ -436,6 +441,9 @@ type CorrespondentKindCandidate struct {
 	Received    int64
 	Meetings    int64
 	ProviderBot bool
+	// RulesOnly marks a cluster an earlier source already judged: only the
+	// deterministic rules may decide it again.
+	RulesOnly bool
 }
 
 // botIdentifierTypes are participant identifier types a chat provider
@@ -497,6 +505,10 @@ func (s *Store) CorrespondentKindCandidatesContext(
 		if err != nil {
 			return err
 		}
+		rulesOnly, err := participantsWithSourceTx(ctx, tx, query.RulesOnlySources...)
+		if err != nil {
+			return err
+		}
 		byRoot := map[int64]*CorrespondentKindCandidate{}
 		add := func(counts map[int64]int64, field func(*CorrespondentKindCandidate) *int64) {
 			for id, count := range counts {
@@ -517,7 +529,11 @@ func (s *Store) CorrespondentKindCandidatesContext(
 			return err
 		}
 		for root, candidate := range byRoot {
-			if evaluation, ok := evaluations[root]; ok && !query.RevisitUnchanged &&
+			candidate.RulesOnly = slices.ContainsFunc(candidate.MemberIDs, func(id int64) bool {
+				_, judged := rulesOnly[id]
+				return judged
+			})
+			if evaluation, ok := evaluations[root]; ok && !candidate.RulesOnly && !query.RevisitUnchanged &&
 				!evaluation.changedMaterially(candidate.Sent+candidate.Received, candidate.MemberIDs) {
 				delete(byRoot, root)
 				continue
@@ -532,8 +548,13 @@ func (s *Store) CorrespondentKindCandidatesContext(
 			}
 		}
 		selected := make([]*CorrespondentKindCandidate, 0, len(byRoot))
+		var judged []*CorrespondentKindCandidate
 		for _, candidate := range byRoot {
-			selected = append(selected, candidate)
+			if candidate.RulesOnly {
+				judged = append(judged, candidate)
+			} else {
+				selected = append(selected, candidate)
+			}
 		}
 		// Never-evaluated clusters first, most active first; then evaluated
 		// ones, least recently evaluated first. A capped run therefore
@@ -558,6 +579,10 @@ func (s *Store) CorrespondentKindCandidatesContext(
 		if query.Limit > 0 && len(selected) > query.Limit {
 			selected = selected[:query.Limit]
 		}
+		slices.SortFunc(judged, func(a, b *CorrespondentKindCandidate) int {
+			return cmp.Compare(a.CanonicalID, b.CanonicalID)
+		})
+		selected = append(selected, judged...)
 		candidates = make([]CorrespondentKindCandidate, 0, len(selected))
 		for _, candidate := range selected {
 			if err := describeCandidateTx(ctx, tx, candidate); err != nil {

@@ -101,18 +101,38 @@ func Run(ctx context.Context, st Store, options Options) (Report, error) {
 	}
 	candidates, err := st.CorrespondentKindCandidatesContext(ctx, store.CorrespondentKindCandidateQuery{
 		MinMessages: options.MinMessages, Limit: options.Limit,
-		SkipSources:      []correspondentkind.Source{correspondentkind.SourceRule, correspondentkind.SourceJev},
+		SkipSources: []correspondentkind.Source{correspondentkind.SourceRule},
+		// A cluster Jev already judged is never sent again, but a rule added
+		// since may decide it: rules outrank Jev.
+		RulesOnlySources: []correspondentkind.Source{correspondentkind.SourceJev},
 		RevisitUnchanged: options.Judge != nil,
 	})
 	if err != nil {
 		return report, fmt.Errorf("list correspondent kind candidates: %w", err)
 	}
-	report.Candidates = len(candidates)
+	for _, candidate := range candidates {
+		if !candidate.RulesOnly {
+			report.Candidates++
+		}
+	}
 	var decided []store.DerivedCorrespondentKind
 	var remaining []pending
 	for _, candidate := range candidates {
 		if err := ctx.Err(); err != nil {
 			return report, err
+		}
+		if candidate.RulesOnly {
+			// Only the identity rules, which read addresses alone, may
+			// overrule an earlier judgment; no evidence is gathered.
+			if decision, ok := correspondentkind.Classify(signalsFor(candidate, store.CorrespondentKindEvidence{})); ok {
+				decided = append(decided, store.DerivedCorrespondentKind{
+					ParticipantID: candidate.CanonicalID, Source: correspondentkind.SourceRule,
+					Kind: decision.Kind, Actor: "rule:" + string(decision.Reason), ExpectedMembers: candidate.MemberIDs,
+				})
+				report.Rule[decision.Kind]++
+				report.RuleByWhy[decision.Reason]++
+			}
+			continue
 		}
 		evidence, err := st.CorrespondentKindEvidenceContext(ctx, candidate.MemberIDs, store.CorrespondentKindEvidenceOptions{
 			HeaderSample: DefaultHeaderSample, SubjectsFromThem: maxSubjectsFromThem, SubjectsFromOwner: maxSubjectsFromOwner,

@@ -443,7 +443,11 @@ steps:
    least three messages, whose messages were not relayed by a list. The
    Gmail Promotions category also needs a bulk header, ten messages, and a
    non-freemail address, so a person Gmail files under Promotions is left
-   for Jev. Rules write `automated` or `mailing_list`.
+   for Jev. An identity known only by full phone numbers is a `person`: a
+   bare number gives Jev nothing to judge. Rules write `automated`,
+   `mailing_list`, or `person`. Each run also applies these address rules
+   to identities Jev judged before, without asking Jev again, so a newer
+   rule replaces an older judgment.
 2. **Jev, only with consent.** The rest are asked one Choice each, ten
    identities per request. Code maps the answer:
 

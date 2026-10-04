@@ -8,6 +8,10 @@ All notable changes to msgvault, grouped by release.
 
 ## Unreleased
 
+- `kinds build` classifies an identity known only by full phone numbers as
+  a person by rule instead of asking Jev, which could only answer
+  unclear. Earlier Jev judgments get the address rules on the next run,
+  so bare phone numbers leave **Reviews → Unclear correspondents**.
 - Exact contact matches are decided automatically. When an imported
   contact's exact email is the archive identity of one person, and no other
   contact or identity cluster is involved, the contact is merged into that

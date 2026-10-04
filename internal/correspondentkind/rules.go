@@ -50,6 +50,7 @@ type Reason string
 const (
 	ReasonProviderBot        Reason = "provider_bot"
 	ReasonShortCode          Reason = "sms_short_code"
+	ReasonPhoneNumber        Reason = "phone_number"
 	ReasonNoReplyAddress     Reason = "noreply_address"
 	ReasonAutoSubmitted      Reason = "auto_submitted"
 	ReasonListAddress        Reason = "list_address"
@@ -69,8 +70,10 @@ const ruleMinimumSent = 3
 
 // Classify applies the deterministic rules in order and returns a decision
 // only when a signal is decisive. Identity rules (a provider bot flag, an SMS
-// short code, a no-reply address, the list's own address) decide on their
-// own. Volume rules need several messages, no message from the owner to the
+// short code, a full phone number, a no-reply address, the list's own
+// address) decide on their own. A cluster known only by full phone numbers
+// is a person: a bare number gives Jev nothing to judge, and texting from a
+// full number is how people write. Volume rules need several messages, no message from the owner to the
 // cluster, and no sign that the messages were relayed by a list, because a
 // person writing through a list or a newsletter tool carries the same
 // headers. Anything else is left for a person or Jev to decide.
@@ -81,6 +84,8 @@ func Classify(signals Signals) (Decision, bool) {
 	case len(signals.Emails) == 0 && len(signals.Phones) > 0 &&
 		!slices.ContainsFunc(signals.Phones, func(phone string) bool { return !IsShortCode(phone) }):
 		return Decision{Kind: Automated, Reason: ReasonShortCode}, true
+	case len(signals.Emails) == 0 && len(signals.Phones) > 0 && !slices.ContainsFunc(signals.Phones, IsShortCode):
+		return Decision{Kind: Person, Reason: ReasonPhoneNumber}, true
 	case len(signals.Emails) > 0 &&
 		!slices.ContainsFunc(signals.Emails, func(email string) bool { return !IsNoReplyAddress(email) }):
 		return Decision{Kind: Automated, Reason: ReasonNoReplyAddress}, true
