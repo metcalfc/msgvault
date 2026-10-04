@@ -1961,7 +1961,6 @@ func (p ParticipantCompletionHTTPRowKind) Validate() error {
 type PendingReviewsResponseKinds string
 
 const (
-	Correspondent                           PendingReviewsResponseKinds = "correspondent"
 	Identity                                PendingReviewsResponseKinds = "identity"
 	PendingReviewsResponseKindsEnrichment   PendingReviewsResponseKinds = "enrichment"
 	PendingReviewsResponseKindsOrganization PendingReviewsResponseKinds = "organization"
@@ -1971,7 +1970,7 @@ const (
 // Validate checks if the PendingReviewsResponseKinds value is valid
 func (p PendingReviewsResponseKinds) Validate() error {
 	switch p {
-	case Correspondent, Identity, PendingReviewsResponseKindsEnrichment, PendingReviewsResponseKindsOrganization, PendingReviewsResponseKindsRelationship:
+	case Identity, PendingReviewsResponseKindsEnrichment, PendingReviewsResponseKindsOrganization, PendingReviewsResponseKindsRelationship:
 		return nil
 	default:
 		return runtime.NewValidationErrorsFromString("Enum", fmt.Sprintf("must be a valid PendingReviewsResponseKinds value, got: %v", p))

@@ -98,8 +98,10 @@ All notable changes to msgvault, grouped by release.
   automatically when both already have profiles, keeping the one with more
   identities. The Web UI asks you to choose only when that merge fails.
 - Reviews has its own place in the Web UI's primary navigation, with a dot
-  when any review waits. `GET /api/v1/reviews/pending` answers which review
-  queues have an item waiting with one indexed lookup per queue. Deciding
+  when a review waits; clicking it opens the first queue with work.
+  Unclear correspondents are a backlog and do not light the dot.
+  `GET /api/v1/reviews/pending` answers which review queues have an item
+  waiting with one indexed lookup per queue. Deciding
   from Reviews keeps you in the queue, the not-a-person menu applies its
   choice at once with Undo, and merges preselect the survivor without a
   confirmation checkbox. Undoing an organization mark removes the

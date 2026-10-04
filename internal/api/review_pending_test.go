@@ -35,9 +35,8 @@ func TestPendingReviewsRouteReportsWaitingQueues(t *testing.T) {
 		ParticipantID: desk, Source: correspondentkind.SourceJev, Kind: correspondentkind.Unclear,
 	}})
 	require.NoError(err)
-	assert.Equal(PendingReviewsResponse{
-		Pending: true, Kinds: []store.PendingReviewKind{store.PendingReviewCorrespondent},
-	}, read())
+	// Unclear correspondents are a backlog the dot does not announce.
+	assert.Equal(PendingReviewsResponse{Pending: false, Kinds: []store.PendingReviewKind{}}, read())
 }
 
 func TestClearCorrespondentKindRemovesTheOrganizationItCreated(t *testing.T) {

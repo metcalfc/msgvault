@@ -10,5 +10,4 @@ export const PendingReviewsResponseKindsItem = {
   relationship: "relationship",
   enrichment: "enrichment",
   organization: "organization",
-  correspondent: "correspondent",
 } as const;

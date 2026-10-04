@@ -1,10 +1,7 @@
 package store
 
 import (
-	"context"
-	"fmt"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -68,17 +65,12 @@ func TestPendingReviewKindsFollowEachQueue(t *testing.T) {
 	require.NoError(err)
 	assert.Empty(pendingKinds(t, st))
 
-	// Unclear correspondent: a Jev judgment waits until the user decides.
+	// Unclear correspondent: a Jev judgment is a backlog, not a dot.
 	desk, err := st.EnsureParticipant("desk@example.test", "Front Desk", "example.test")
 	require.NoError(err)
 	_, err = st.WriteDerivedCorrespondentKindsContext(t.Context(), []DerivedCorrespondentKind{{
 		ParticipantID: desk, Source: correspondentkind.SourceJev, Kind: correspondentkind.Unclear,
 	}})
-	require.NoError(err)
-	assert.Equal([]PendingReviewKind{PendingReviewCorrespondent}, pendingKinds(t, st))
-	_, err = st.SetCorrespondentKindContext(t.Context(), SetCorrespondentKindInput{
-		ParticipantID: desk, Kind: correspondentkind.Person,
-	})
 	require.NoError(err)
 	assert.Empty(pendingKinds(t, st))
 
@@ -95,73 +87,6 @@ func TestPendingReviewKindsFollowEachQueue(t *testing.T) {
 	assert.Empty(pendingKinds(t, st))
 }
 
-// The Unclear correspondents queue resolves clusters, so a user decision on
-// one linked member settles a Jev judgment on another. The dot agrees.
-func TestPendingUnclearCorrespondentFollowsTheClusterDecision(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	st := newPendingReviewStore(t)
-	desk, err := st.EnsureParticipant("desk@example.test", "Front Desk", "example.test")
-	require.NoError(err)
-	deskAlias, err := st.EnsureParticipant("frontdesk@example.test", "Front Desk", "example.test")
-	require.NoError(err)
-	_, err = st.LinkParticipants(desk, deskAlias)
-	require.NoError(err)
-	_, err = st.WriteDerivedCorrespondentKindsContext(t.Context(), []DerivedCorrespondentKind{{
-		ParticipantID: deskAlias, Source: correspondentkind.SourceJev, Kind: correspondentkind.Unclear,
-	}})
-	require.NoError(err)
-	assert.Equal([]PendingReviewKind{PendingReviewCorrespondent}, pendingKinds(t, st))
-
-	// The decision lands on the other member of the cluster.
-	_, err = st.db.ExecContext(t.Context(), st.Rebind(`INSERT INTO correspondent_kinds
-		(participant_id, source, kind, actor) VALUES (?, 'user', 'shared_mailbox', 'user')`), desk)
-	require.NoError(err)
-	assert.Empty(pendingKinds(t, st))
-	unclear, err := st.ListCorrespondentKindsContext(t.Context(), CorrespondentKindListFilter{Kind: correspondentkind.Unclear})
-	require.NoError(err)
-	assert.Empty(unclear, "the queue and the dot agree")
-}
-
-// The dot resolves only the clusters of unclear candidates: other
-// classified or linked identities in the archive are never loaded.
-func TestPendingUnclearCorrespondentResolvesOnlyCandidateClusters(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	st := newPendingReviewStore(t)
-	for i := range 5 {
-		other, err := st.EnsureParticipant(fmt.Sprintf("other-%d@example.test", i), "", "example.test")
-		require.NoError(err)
-		alias, err := st.EnsureParticipant(fmt.Sprintf("other-alias-%d@example.test", i), "", "example.test")
-		require.NoError(err)
-		_, err = st.LinkParticipants(other, alias)
-		require.NoError(err)
-		_, err = st.SetCorrespondentKindContext(t.Context(), SetCorrespondentKindInput{
-			ParticipantID: other, Kind: correspondentkind.Automated,
-		})
-		require.NoError(err)
-	}
-	desk, err := st.EnsureParticipant("desk@example.test", "Front Desk", "example.test")
-	require.NoError(err)
-	_, err = st.WriteDerivedCorrespondentKindsContext(t.Context(), []DerivedCorrespondentKind{{
-		ParticipantID: desk, Source: correspondentkind.SourceJev, Kind: correspondentkind.Unclear,
-	}})
-	require.NoError(err)
-
-	orig := resolveUnclearCandidateClustersTx
-	t.Cleanup(func() { resolveUnclearCandidateClustersTx = orig })
-	var seeds [][]int64
-	resolveUnclearCandidateClustersTx = func(
-		ctx context.Context, tx *loggedTx, ids []int64, notPersonOnly bool,
-	) ([]correspondentKindCluster, error) {
-		seeds = append(seeds, slices.Clone(ids))
-		return orig(ctx, tx, ids, notPersonOnly)
-	}
-
-	assert.Equal([]PendingReviewKind{PendingReviewCorrespondent}, pendingKinds(t, st))
-	assert.Equal([][]int64{{desk}}, seeds, "only the unclear candidate's cluster is resolved")
-}
-
 func TestPendingReviewKindsReportsUncertainEnrichment(t *testing.T) {
 	f := uncertainEnrichmentFixture(t)
 	assert.Equal(t, []PendingReviewKind{PendingReviewEnrichment}, pendingKinds(t, f.store))
@@ -172,11 +97,10 @@ func TestPendingReviewKindsReportsUncertainEnrichment(t *testing.T) {
 func TestPendingReviewProbesUseIndexesSQLite(t *testing.T) {
 	st := newPendingReviewStore(t)
 	wantIndex := map[PendingReviewKind]string{
-		PendingReviewIdentity:      "idx_identity_match_candidates_state",
-		PendingReviewEnrichment:    "person_enrichment_attempts_next_action",
-		PendingReviewOrganization:  "idx_organization_match_reviews_pending",
-		PendingReviewCorrespondent: "idx_correspondent_kinds_kind",
-		PendingReviewRelationship:  "idx_person_relationship_reviews_status",
+		PendingReviewIdentity:     "idx_identity_match_candidates_state",
+		PendingReviewEnrichment:   "person_enrichment_attempts_next_action",
+		PendingReviewOrganization: "idx_organization_match_reviews_pending",
+		PendingReviewRelationship: "idx_person_relationship_reviews_status",
 	}
 	for _, probe := range pendingReviewQueries() {
 		t.Run(string(probe.kind), func(t *testing.T) {

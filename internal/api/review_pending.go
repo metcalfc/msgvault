@@ -17,7 +17,7 @@ type PendingReviewStore interface {
 // PendingReviewsResponse says whether anything waits in Reviews.
 type PendingReviewsResponse struct {
 	Pending bool                      `json:"pending" doc:"True when at least one Reviews queue has an item waiting."`
-	Kinds   []store.PendingReviewKind `json:"kinds" enum:"identity,relationship,enrichment,organization,correspondent" doc:"The queues with an item waiting, in Reviews order."`
+	Kinds   []store.PendingReviewKind `json:"kinds" enum:"identity,relationship,enrichment,organization" doc:"The queues with an item waiting, in Reviews order."`
 }
 
 func (s *Server) registerPendingReviewRoutes(api huma.API) {
@@ -25,11 +25,10 @@ func (s *Server) registerPendingReviewRoutes(api huma.API) {
 		"/reviews/pending", "Check whether any review is waiting")
 	pending.Description = "Answers whether any Reviews queue has an item waiting, and which: " +
 		"identity (open identity match candidates, including contact matches and possible " +
-		"duplicate people), relationship (imported relationships), enrichment (uncertain enrichment identities), organization " +
-		"(organization names to confirm), and correspondent (identities Jev could not classify). " +
-		"It reports presence, not counts: each queue costs one indexed lookup, so a client can " +
-		"poll it for a navigation hint. Unclear correspondents also resolve identity clusters " +
-		"the way that queue does, but only when an unclear judgment exists."
+		"duplicate people), relationship (imported relationships), enrichment (uncertain enrichment identities), " +
+		"and organization (organization names to confirm). Unclear correspondents are not counted: " +
+		"they are a backlog to work through when convenient. It reports presence, not counts: each " +
+		"queue costs one indexed lookup, so a client can poll it for a navigation hint."
 	pending.Responses = jsonResponsesFor[PendingReviewsResponse](api)
 	addErrorResponses(api, pending.Responses, http.StatusServiceUnavailable)
 	registerRawHumaRoute(api, pending, s.handleGetPendingReviews)
