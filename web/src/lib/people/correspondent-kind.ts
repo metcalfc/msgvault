@@ -113,6 +113,15 @@ function failure(error: unknown, status: number): { ok: false; status: number; m
 }
 
 /** Marks the cluster containing participantID. */
+/** The organization name a marked identity gets: its display name, else
+ * its email domain. The user can rename the organization later. */
+export function suggestedOrganizationName(displayName: string | undefined, addresses: readonly string[]): string {
+  const name = displayName?.trim();
+  if (name && !name.includes('@')) return name;
+  const address = addresses.find((value) => value.includes('@')) ?? '';
+  return address ? address.slice(address.lastIndexOf('@') + 1) : '';
+}
+
 export async function setKind(
   client: APIClient,
   participantID: number,

@@ -27,7 +27,7 @@
   import CorrespondentKindReviewQueue from './CorrespondentKindReviewQueue.svelte';
   import { CorrespondentReviewController } from '../../directory/correspondent-review-controller.svelte';
   import type { PersonMergeSuccess, ValidatedPersonMergeRequired } from '../../directory/person-merge';
-  import type { NotAPersonKind } from '../../people/correspondent-kind';
+  import { suggestedOrganizationName, type NotAPersonKind } from '../../people/correspondent-kind';
   import { endpointLabel } from '../../directory/identity-endpoints';
   import { focusReviewCard, nextReviewIndex, reviewPosition, type ReviewPosition } from '../../directory/review-focus';
 
@@ -148,14 +148,9 @@
     return reviewPosition(controller.rows, (row) => row.id, candidateID);
   }
 
-  // The organization name a marked identity gets: its display name, else
-  // its email domain. The user can rename the organization later.
   function suggestedOrganization(participantID: number): string {
     const summary = controller.endpointFor('participant', participantID);
-    const name = summary?.display_name?.trim();
-    if (name && !name.includes('@')) return name;
-    const address = summary?.addresses?.find((value) => value.includes('@')) ?? '';
-    return address ? address.slice(address.lastIndexOf('@') + 1) : '';
+    return suggestedOrganizationName(summary?.display_name, summary?.addresses ?? []);
   }
 
   // The card's menu already names the kind, so it applies at once; the

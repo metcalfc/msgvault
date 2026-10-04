@@ -27,6 +27,7 @@
   }
 
   const decisions: readonly { kind: CorrespondentKind; label: string }[] = [
+    { kind: 'organization', label: 'Organization' },
     { kind: 'shared_mailbox', label: 'Shared mailbox' },
     { kind: 'mailing_list', label: 'Mailing list' },
     { kind: 'automated', label: 'Automated sender' },

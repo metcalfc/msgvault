@@ -66,4 +66,30 @@ describe('CorrespondentKindReviewQueue', () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('article', { name: 'desk-two@example.com' })));
     expect(onOpenPerson).toHaveBeenCalledOnce();
   });
+
+  it.each([
+    { record: unclear, name: 'Front Desk', organization: 'Front Desk' },
+    { record: unnamed, name: 'desk-two@example.com', organization: 'example.com' }
+  ])('marks $name as an organization named after it', async ({ record, name, organization }) => {
+    const puts: unknown[] = [];
+    const fetchFn = vi.fn<typeof fetch>(async (input) => {
+      const request = input instanceof Request ? input : new Request(input);
+      if (request.method === 'PUT') {
+        puts.push(await request.json());
+        return Response.json({
+          record: { ...record, kind: 'organization', source: 'user', organization_id: 7, organization_name: organization },
+          resolved_candidates: 0, restored_candidates: 0, organization_created: true
+        });
+      }
+      return Response.json({ records: [record] });
+    });
+    const controller = new CorrespondentReviewController(createAPIClient(fetchFn));
+    render(CorrespondentKindReviewQueue, { controller });
+
+    const card = await screen.findByRole('article', { name });
+    await focusAndClick(within(card).getByRole('button', { name: `Mark ${name} as organization` }));
+
+    expect(await screen.findByText(`${name} marked as organization (${organization}).`)).toBeDefined();
+    expect(puts).toEqual([{ kind: 'organization', organization_name: organization }]);
+  });
 });
