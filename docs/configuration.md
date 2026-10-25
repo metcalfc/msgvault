@@ -762,6 +762,15 @@ raising these limits in `config.toml`. Restart the daemon to apply the change,
 then retry the query. The limits cap resource use; they do not reserve memory
 or disk space. Cache builds have separate `builder_*` limits.
 
+The relationship cache stores one fact per message and its direct sender or
+recipient edges. Group-chat builds join the full member roster once per logical
+conversation entry. Earlier messages retain their direct edges and owner
+presence for relationship scores. Large groups therefore keep every member in
+people searches without multiplying every message by the whole roster.
+Direct chats and meetings retain their per-message participant attribution.
+The `[activity].max_direct_counterparts` broadcast threshold continues to govern
+the activity projection; changing it does not change relationship membership.
+
 The daemon starts HTTP health and API routing before analytics cache
 maintenance. With `engine = "duckdb"`, analytics remain unavailable until a
 usable cache is ready. If no usable cache can be built or opened, `msgvault serve`
