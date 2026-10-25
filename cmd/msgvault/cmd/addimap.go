@@ -160,6 +160,9 @@ Examples:
 
 			// Auto-default-identity must run BEFORE the legacy migration
 			// retry — see comment in account_identity.go.
+			if err := setDefaultIdentityOptOut(cmd, s, source, flags.noDefaultIdentityAddImap); err != nil {
+				return err
+			}
 			if !flags.noDefaultIdentityAddImap {
 				confirmDefaultIdentity(cmd.OutOrStdout(), s, source.ID, flags.imapUsername, flags.imapUsername, "account-identifier", state.logger)
 			}
@@ -182,7 +185,7 @@ Examples:
 	cmd.Flags().String("username", "", "IMAP username / email address (required)")
 	cmd.Flags().Bool("no-tls", false, "Disable TLS (plain connection, not recommended)")
 	cmd.Flags().Bool("starttls", false, "Use STARTTLS instead of implicit TLS")
-	cmd.Flags().Bool("no-default-identity", false, noDefaultIdentityHelp)
+	cmd.Flags().Bool("no-default-identity", false, savedDefaultIdentityHelp)
 	return cmd
 }
 

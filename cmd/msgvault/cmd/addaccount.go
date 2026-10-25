@@ -514,6 +514,10 @@ func (options *addAccountOptions) runAddAccountLocal(cmd *cobra.Command, args []
 			}
 		}
 
+		if err := setDefaultIdentityOptOut(cmd, s, source, options.noDefaultIdentityAddAccount); err != nil {
+			return err
+		}
+
 		fmt.Printf("Account %s authorized via service account.\n", email)
 		fmt.Println("Next step: msgvault sync-full", email)
 		return nil
@@ -603,6 +607,9 @@ func (options *addAccountOptions) runAddAccountLocal(cmd *cobra.Command, args []
 		// [identity] block contains the same address. Reverse order
 		// would leave the source without its own account identifier
 		// because confirmDefaultIdentity skips on any existing rows.
+		if err := setDefaultIdentityOptOut(cmd, s, source, options.noDefaultIdentityAddAccount); err != nil {
+			return err
+		}
 		if !options.noDefaultIdentityAddAccount {
 			confirmDefaultIdentity(cmd.OutOrStdout(), s, source.ID, email, email, "account-identifier", state.logger)
 		}
@@ -659,6 +666,9 @@ func (options *addAccountOptions) runAddAccountLocal(cmd *cobra.Command, args []
 	}
 	// Auto-default-identity must run BEFORE the legacy migration
 	// retry — see comment on the token-reusable path above.
+	if err := setDefaultIdentityOptOut(cmd, s, source, options.noDefaultIdentityAddAccount); err != nil {
+		return err
+	}
 	if !options.noDefaultIdentityAddAccount {
 		confirmDefaultIdentity(cmd.OutOrStdout(), s, source.ID, email, email, "account-identifier", state.logger)
 	}
@@ -1045,7 +1055,7 @@ func (options *addAccountOptions) registerAddAccountFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&options.forceReauth, "force", false, "Delete existing token and re-authorize")
 	cmd.Flags().StringVar(&options.accountDisplayName, "display-name", "", "Display name for the account (e.g., \"Work\", \"Personal\")")
 	cmd.Flags().StringVar(&options.oauthAppName, "oauth-app", "", "Named OAuth app from config (for Google Workspace orgs)")
-	cmd.Flags().BoolVar(&options.noDefaultIdentityAddAccount, "no-default-identity", false, noDefaultIdentityHelp)
+	cmd.Flags().BoolVar(&options.noDefaultIdentityAddAccount, "no-default-identity", false, savedDefaultIdentityHelp)
 	cmd.Flags().BoolVar(&options.readonlyGrant, "readonly", false, "Request Gmail read-only access instead of read+write (refused if the account already holds write access)")
 	cmd.Flags().Bool(addAccountGrantDecidedFlag, false, "Internal: the grant decision was already applied by the frontend CLI")
 	if err := cmd.Flags().MarkHidden(addAccountGrantDecidedFlag); err != nil {

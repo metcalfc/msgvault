@@ -4,12 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/msgvault/internal/config"
@@ -636,7 +638,7 @@ func TestAddAccount_AutoDefaultIdentityFires(t *testing.T) {
 // TestAddAccount_NoDefaultIdentitySuppresses verifies that --no-default-identity
 // prevents the auto-identity write.
 func TestAddAccount_NoDefaultIdentitySuppresses(t *testing.T) {
-	require := require.New(t)
+	assert, require := assert.New(t), require.New(t)
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "msgvault.db")
 
@@ -680,7 +682,30 @@ func TestAddAccount_NoDefaultIdentitySuppresses(t *testing.T) {
 
 	ids, err := s.ListAccountIdentities(src.ID)
 	require.NoError(err, "ListAccountIdentities")
-	assert.Empty(t, ids, "expected 0 identity rows with --no-default-identity")
+	assert.Empty(ids, "expected 0 identity rows with --no-default-identity")
+
+	// The daemon's shared helper must honor the choice after the store reopens.
+	confirmDefaultIdentity(io.Discard, s, src.ID, "user@example.com", "user@example.com", "account-identifier", testDiscardLogger())
+	ids, err = s.ListAccountIdentities(src.ID)
+	require.NoError(err)
+	assert.Empty(ids, "the shared identity helper must preserve the opt-out")
+
+	// Use a new command, as a separate re-authorization invocation would.
+	rerunOptions := &addAccountOptions{}
+	rerun := &cobra.Command{Use: addAccountUse, RunE: rerunOptions.runAddAccountLocal}
+	rerunOptions.registerAddAccountFlags(rerun)
+	rerun.SetArgs([]string{"user@example.com"})
+	require.NoError(rerun.ExecuteContext(testInvocationContext(gmailProfileContext(t, "user@example.com"), cfg, invocationOptions{})))
+	ids, err = s.ListAccountIdentities(src.ID)
+	require.NoError(err)
+	assert.Empty(ids, "omitting the flag must preserve the saved choice")
+
+	root.SetArgs([]string{"add-account", "user@example.com", "--no-default-identity=false"})
+	require.NoError(root.ExecuteContext(testInvocationContext(gmailProfileContext(t, "user@example.com"), cfg, invocationOptions{})))
+	ids, err = s.ListAccountIdentities(src.ID)
+	require.NoError(err)
+	require.Len(ids, 1, "explicit false restores the default")
+	assert.Equal("user@example.com", ids[0].Address)
 }
 
 // TestAddAccount_DeferredLegacyIdentityMigrationFires verifies that legacy
