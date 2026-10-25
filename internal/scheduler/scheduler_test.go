@@ -219,6 +219,7 @@ func TestStartJobIsAsync(t *testing.T) {
 		assert := assert.New(t)
 
 		started := make(chan struct{})
+		var startedOnce sync.Once
 		release := make(chan struct{})
 		var releaseOnce sync.Once
 		releaseJob := func() { releaseOnce.Do(func() { close(release) }) }
@@ -232,7 +233,7 @@ func TestStartJobIsAsync(t *testing.T) {
 			Name:     "granola:default",
 			Schedule: "0 0 1 1 *",
 			Run: func(context.Context) error {
-				close(started)
+				startedOnce.Do(func() { close(started) })
 				<-release
 				ran.Add(1)
 				return nil
@@ -240,7 +241,10 @@ func TestStartJobIsAsync(t *testing.T) {
 		}), "AddJob")
 
 		returned := make(chan error, 1)
-		go func() { returned <- s.StartJob("granola:default") }()
+		go func() {
+			_, err := s.StartJob("granola:default")
+			returned <- err
+		}()
 
 		select {
 		case err := <-returned:
@@ -263,14 +267,20 @@ func TestStartJobIsAsync(t *testing.T) {
 		assert.True(status[0].Running, "job should be recorded as running while blocked")
 		assert.True(s.IsJobScheduled("granola:default"), "job remains scheduled while running")
 
-		// A second StartJob while the first is still running must be a no-op:
-		// no error, and it must not spawn a second concurrent run.
-		require.NoError(s.StartJob("granola:default"), "second StartJob while running")
+		// A second StartJob while the first is still running coalesces like a
+		// cron tick: it must not spawn a concurrent run, and it records one
+		// follow-up. A third merges into that follow-up.
+		disp, err := s.StartJob("granola:default")
+		require.NoError(err, "second StartJob while running")
+		assert.Equal(JobPending, disp)
+		disp, err = s.StartJob("granola:default")
+		require.NoError(err, "third StartJob while running")
+		assert.Equal(JobCoalesced, disp)
 
 		releaseJob()
 		synctest.Wait()
 		assert.False(s.JobStatus()[0].Running, "job finishes after release")
-		assert.Equal(int32(1), ran.Load(), "job body must run exactly once")
+		assert.Equal(int32(2), ran.Load(), "one run plus exactly one follow-up")
 	})
 }
 
@@ -2691,7 +2701,7 @@ func TestJobTickWhileExecutingQueuesOneFollowUp(t *testing.T) {
 		close(release)
 		synctest.Wait()
 		assert.Equal(int32(2), runs.Load())
-		require.NoError(s.StartJob("job"))
+		mustStartJob(t, s, "job")
 		synctest.Wait()
 		assert.Equal(int32(3), runs.Load(), "manual start still runs when idle")
 	})
@@ -2813,7 +2823,7 @@ func TestPreemptedDailyRunResumesBehindWaiter(t *testing.T) {
 					require.NoError(t, s.TriggerSync("daily@example.com"))
 				} else {
 					require.NoError(t, s.AddJob(Job{Name: "daily", Preemptible: true, Schedule: "0 0 * * *", Run: run}))
-					require.NoError(t, s.StartJob("daily"))
+					mustStartJob(t, s, "daily")
 				}
 				synctest.Wait()
 
@@ -2826,7 +2836,7 @@ func TestPreemptedDailyRunResumesBehindWaiter(t *testing.T) {
 					}
 					return nil
 				}}))
-				require.NoError(t, s.StartJob("waiter"))
+				mustStartJob(t, s, "waiter")
 				time.Sleep(preemptAfter + yieldPollInterval)
 				synctest.Wait()
 				require.ErrorIs(t, cause, ErrYieldedToWaiter)
@@ -2864,7 +2874,7 @@ func TestBoundedMaintenanceCompletesWithQueuedWork(t *testing.T) {
 		}}))
 
 		started := time.Now()
-		require.NoError(s.StartJob("maintenance"))
+		mustStartJob(t, s, "maintenance")
 		synctest.Wait()
 		require.NoError(s.TriggerSync("short@example.com"))
 		time.Sleep(90 * time.Second)
@@ -3106,9 +3116,9 @@ func TestBoundedJobReschedulesBehindWaiter(t *testing.T) {
 			order = append(order, "waiter")
 			return nil
 		}}))
-		require.NoError(s.StartJob("bounded"))
+		mustStartJob(t, s, "bounded")
 		synctest.Wait()
-		require.NoError(s.StartJob("waiter"))
+		mustStartJob(t, s, "waiter")
 		synctest.Wait()
 		close(finishPass)
 		synctest.Wait()
@@ -3184,7 +3194,7 @@ func TestRemoveAndReAddRunningJobKeepsReservation(t *testing.T) {
 				return ctx.Err()
 			}
 		}}))
-		require.NoError(s.StartJob("job"))
+		mustStartJob(t, s, "job")
 		synctest.Wait()
 		s.onJobTick("job")
 		assert.True(s.JobStatus()[0].Pending)
@@ -3197,7 +3207,7 @@ func TestRemoveAndReAddRunningJobKeepsReservation(t *testing.T) {
 		status := s.JobStatus()[0]
 		assert.True(status.Running, "re-registration keeps the active reservation")
 		assert.False(status.Pending, "removal drops the old pending run")
-		require.NoError(s.StartJob("job"))
+		mustStartJob(t, s, "job")
 		synctest.Wait()
 		assert.Zero(newRuns.Load(), "manual starts while active stay a no-op")
 		// A fresh tick should enqueue the newly registered callback.
@@ -3238,7 +3248,7 @@ func TestAccountAndJobWithSameNameHaveIndependentReservations(t *testing.T) {
 			}
 		}}))
 		require.NoError(s.TriggerSync(name))
-		require.NoError(s.StartJob(name))
+		mustStartJob(t, s, name)
 		synctest.Wait()
 		assert.Equal(int32(1), accounts.Load())
 		assert.Equal(int32(1), jobs.Load())
@@ -3308,4 +3318,11 @@ func TestDocumentVectorCronRemovalDropsPendingRun(t *testing.T) {
 		synctest.Wait()
 		assert.Equal(t, 1, calls)
 	})
+}
+
+func mustStartJob(t *testing.T, s *Scheduler, name string) JobDisposition {
+	t.Helper()
+	disp, err := s.StartJob(name)
+	require.NoError(t, err)
+	return disp
 }

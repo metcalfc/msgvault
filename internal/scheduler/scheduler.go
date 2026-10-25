@@ -231,17 +231,19 @@ func (s *Scheduler) onAccountTick(email string) {
 }
 
 // coalesceTickLocked records a tick that arrived while its job was active.
-// The caller holds s.mu.
-func (s *Scheduler) coalesceTickLocked(state *scheduledJob, kind, name string) {
+// The caller holds s.mu. It reports whether a new follow-up run was recorded;
+// false means an existing run or follow-up already covers the request.
+func (s *Scheduler) coalesceTickLocked(state *scheduledJob, kind, name string) bool {
 	if state.queued {
 		s.logger.Debug("scheduled tick dropped: previous run is still waiting to start", kind, name)
-		return
+		return false
 	}
 	if state.pending {
-		return
+		return false
 	}
 	state.pending = true
 	s.logger.Info("scheduled sync skipped: previous run still active; queued one follow-up run", kind, name)
+	return true
 }
 
 // AddAccountsFromConfig adds all enabled accounts from the config.
@@ -705,11 +707,11 @@ func (s *Scheduler) IsJobScheduled(name string) bool {
 // no gate held) and relies on running to completion before returning so
 // lastRun/lastErr are recorded synchronously.
 func (s *Scheduler) TriggerJob(name string) error {
-	run, ok, err := s.reserveGenericJob(name, false)
+	run, disp, err := s.reserveGenericJob(name, false)
 	if err != nil {
 		return err
 	}
-	if !ok {
+	if disp != JobStarted {
 		return nil
 	}
 	return s.runJob(name, run)
@@ -720,50 +722,77 @@ func (s *Scheduler) TriggerJob(name string) error {
 // callers (e.g. an HTTP handler) that may already hold the daemon's
 // operation gate, so the job's gate acquisition must happen after the
 // caller has had a chance to return and release it.
-func (s *Scheduler) StartJob(name string) error {
-	run, ok, err := s.reserveGenericJob(name, false)
+//
+// A request that arrives while the job is active coalesces like a cron tick:
+// at most one follow-up run is kept, and the returned disposition says
+// whether a run started, a follow-up was queued, or the request was merged
+// into one already pending.
+func (s *Scheduler) StartJob(name string) (JobDisposition, error) {
+	run, disp, err := s.reserveGenericJob(name, true)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if !ok {
-		return nil
+	if disp != JobStarted {
+		return disp, nil
 	}
 	go func() {
 		_ = s.runJob(name, run)
 	}()
-	return nil
+	return disp, nil
 }
+
+// JobDisposition says what a manual trigger of a generic job did.
+type JobDisposition string
+
+const (
+	// JobStarted: the job was idle and a run was started.
+	JobStarted JobDisposition = "started"
+	// JobPending: the job was running; one follow-up run was recorded. The
+	// value matches the "pending" field that job status reports for it.
+	JobPending JobDisposition = "pending"
+	// JobCoalesced: the job is waiting to start (its initial run is queued
+	// behind the operation gate) or a follow-up is already recorded, so this
+	// request added no run.
+	JobCoalesced JobDisposition = "coalesced"
+)
 
 // onJobTick handles one cron firing for a generic job, coalescing a tick
 // that arrives while the job is active like onAccountTick does.
 func (s *Scheduler) onJobTick(name string) {
-	run, ok, err := s.reserveGenericJob(name, true)
-	if err != nil || !ok {
+	run, disp, err := s.reserveGenericJob(name, true)
+	if err != nil || disp != JobStarted {
 		return
 	}
 	_ = s.runJob(name, run)
 }
 
 // reserveGenericJob validates and reserves the named generic job under the
-// lock, mirroring TriggerSync's reservation of an account sync. ok is false
-// when the job is already running (a no-op, not an error); a cron tick
-// (coalesce) is then remembered as one follow-up run.
-func (s *Scheduler) reserveGenericJob(name string, coalesce bool) (run func(context.Context) error, ok bool, err error) {
+// lock, mirroring TriggerSync's reservation of an account sync. The
+// disposition is JobStarted when the caller now owns a run. When the job is
+// already running it is JobPending or JobCoalesced if coalesce is set (one
+// follow-up run is remembered), and empty otherwise (a no-op, not an error).
+func (s *Scheduler) reserveGenericJob(name string, coalesce bool) (run func(context.Context) error, disp JobDisposition, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	state := s.genericJobs[name]
 	if state == nil || state.run == nil {
-		return nil, false, fmt.Errorf("job %q is not scheduled", name)
+		return nil, "", fmt.Errorf("job %q is not scheduled", name)
 	}
 	if s.stopped {
-		return nil, false, errors.New("scheduler is stopped")
+		return nil, "", errors.New("scheduler is stopped")
 	}
-	if !s.reserveRunLocked(state, "job", name, coalesce) {
-		return nil, false, nil
+	if state.running {
+		if !coalesce {
+			return nil, "", nil
+		}
+		if s.coalesceTickLocked(state, "job", name) {
+			return nil, JobPending, nil
+		}
+		return nil, JobCoalesced, nil
 	}
-	run = state.run
-	return run, true, nil
+	s.reserveRunLocked(state, "job", name, false)
+	return state.run, JobStarted, nil
 }
 
 // runJob executes an already-reserved generic job and records the result.

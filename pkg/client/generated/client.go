@@ -1164,7 +1164,7 @@ type ClientInterface interface {
 	GetTotalStatsWithResponse(ctx context.Context, options *GetTotalStatsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetTotalStatsResp, error)
 
 	// TriggerSync Trigger account sync
-	TriggerSync(ctx context.Context, options *TriggerSyncRequestOptions, reqEditors ...runtime.RequestEditorFn) (*TriggerSyncResponse, error)
+	TriggerSync(ctx context.Context, options *TriggerSyncRequestOptions, reqEditors ...runtime.RequestEditorFn) (*TriggerSyncResponseJSON, error)
 	TriggerSyncWithResponse(ctx context.Context, options *TriggerSyncRequestOptions, reqEditors ...runtime.RequestEditorFn) (*TriggerSyncResp, error)
 
 	// GetTextAggregates Get text aggregate rows
@@ -18652,7 +18652,7 @@ func (c *Client) GetTotalStats(ctx context.Context, options *GetTotalStatsReques
 }
 
 // TriggerSync Trigger account sync
-func (c *Client) TriggerSync(ctx context.Context, options *TriggerSyncRequestOptions, reqEditors ...runtime.RequestEditorFn) (*TriggerSyncResponse, error) {
+func (c *Client) TriggerSync(ctx context.Context, options *TriggerSyncRequestOptions, reqEditors ...runtime.RequestEditorFn) (*TriggerSyncResponseJSON, error) {
 	var err error
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/api/v1/sync/{account}",
@@ -18665,7 +18665,7 @@ func (c *Client) TriggerSync(ctx context.Context, options *TriggerSyncRequestOpt
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	responseParser := func(ctx context.Context, resp *runtime.Response) (*TriggerSyncResponse, error) {
+	responseParser := func(ctx context.Context, resp *runtime.Response) (*TriggerSyncResponseJSON, error) {
 		bodyBytes := resp.Content
 		if resp.StatusCode != 202 {
 			target := new(TriggerSyncErrorResponse)
@@ -18689,7 +18689,7 @@ func (c *Client) TriggerSync(ctx context.Context, options *TriggerSyncRequestOpt
 			return nil, runtime.NewClientAPIError(fmt.Errorf("API error (status %d): %v", resp.StatusCode, *target),
 				runtime.WithStatusCode(resp.StatusCode))
 		}
-		target := new(TriggerSyncResponse)
+		target := new(TriggerSyncResponseJSON)
 		// Handle empty response body gracefully
 		if len(bodyBytes) == 0 {
 			return target, nil
@@ -18699,7 +18699,7 @@ func (c *Client) TriggerSync(ctx context.Context, options *TriggerSyncRequestOpt
 				StatusCode:    resp.StatusCode,
 				ContentType:   resp.Headers.Get("Content-Type"),
 				ContentLength: len(bodyBytes),
-				TargetType:    "TriggerSyncResponse",
+				TargetType:    "TriggerSyncResponseJSON",
 				Body:          bodyBytes,
 				Err:           err,
 			}
