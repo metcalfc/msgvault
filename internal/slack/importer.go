@@ -227,13 +227,17 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportSum
 	}
 	imp = imp.scopedToSync(src.ID, syncID)
 	// Failures below must ASSIGN to err (never shadow it with :=) so this
-	// defer records them on the run — WITH the in-memory final state, so
+	// defer records them on the run, with the in-memory final state, so
 	// resume granularity is the failure instant, not the last throttled
 	// flush (best-effort on the way down: the failure may itself be a
-	// checkpoint write).
+	// checkpoint write). Scheduler handoffs stay resumable without being
+	// reported as provider failures.
 	defer func() {
 		if err != nil {
-			_ = imp.store.FailSyncWithCheckpoint(syncID, err.Error(), imp.failCheckpoint(state, sum))
+			if state.HistoryPass != nil && state.HistoryPass.FetchErrors > 0 && sum.FetchErrors == 0 {
+				err = errors.Join(err, fmt.Errorf("partial Slack sync: earlier attempts had %d fetch error(s)", state.HistoryPass.FetchErrors))
+			}
+			_ = imp.store.InterruptSyncWithCheckpoint(ctx, syncID, err, imp.failCheckpoint(state, sum))
 		}
 	}()
 
@@ -252,6 +256,15 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportSum
 		return sum, fmt.Errorf("refresh slack users: %w", err)
 	}
 	searchReplies := slices.Contains(imp.client.scopes, "search:read")
+	if searchReplies {
+		state.HistoryPass = nil
+	} else if state.HistoryPass == nil || state.HistoryPass.NoThreads != opts.NoThreads ||
+		state.HistoryPass.Maintenance != opts.Maintenance || state.HistoryPass.Limit != opts.Limit {
+		state.HistoryPass = &HistoryPass{
+			Visited: map[string]bool{}, NoThreads: opts.NoThreads,
+			Maintenance: opts.Maintenance, Limit: opts.Limit,
+		}
+	}
 	// File metadata still arrives with channel messages. Without files:read,
 	// keep it pending rather than attempting downloads the token cannot make.
 	if !slices.Contains(imp.client.scopes, "files:read") {
@@ -290,10 +303,14 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportSum
 	targets := map[string]sweepTarget{}
 	for idx := range convs {
 		c := &convs[idx]
+		if state.HistoryPass != nil && state.HistoryPass.Visited[c.ID] {
+			continue
+		}
 		if err = ctx.Err(); err != nil {
 			return sum, err
 		}
 		before := sum.MessagesProcessed
+		fetchErrors := sum.FetchErrors
 		if !searchReplies && !opts.NoThreads {
 			cs := state.EnsureConv(c.ID)
 			// Without search, revisit old roots for new replies on every
@@ -307,11 +324,21 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportSum
 			}
 		}
 		var cc *convScope
-		if cc, err = imp.syncConversation(ctx, syncID, src.ID, c, opts, state, sum); err != nil {
+		cc, err = imp.syncConversation(ctx, syncID, src.ID, c, opts, state, sum)
+		if state.HistoryPass != nil {
+			state.HistoryPass.FetchErrors += sum.FetchErrors - fetchErrors
+		}
+		if err != nil {
 			return sum, err
 		}
 		if cc.membershipReady && state.EnsureConv(c.ID).Done {
 			targets[c.ID] = sweepTarget{convID: cc.convID, toRecipients: cc.toRecipients}
+		}
+		if state.HistoryPass != nil {
+			// Failed visits still take their turn. Carry their errors until
+			// this pass ends, then retry them in the next pass so one broken
+			// channel cannot prevent healthy channels from refreshing.
+			state.HistoryPass.Visited[c.ID] = true
 		}
 		sum.ConversationsProcessed++
 		if opts.Progress != nil {
@@ -343,7 +370,11 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportSum
 	}
 	// A repair session ends only on a clean pass that leaves nothing owed
 	// among the conversations this run could actually reach.
-	if state.RepairPending && sum.FetchErrors == 0 {
+	fetchErrors := sum.FetchErrors
+	if state.HistoryPass != nil {
+		fetchErrors = state.HistoryPass.FetchErrors
+	}
+	if state.RepairPending && fetchErrors == 0 {
 		eligible := make(map[string]bool, len(convs))
 		for i := range convs {
 			eligible[convs[i].ID] = true
@@ -352,21 +383,29 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportSum
 			state.RepairPending = false
 		}
 	}
+	var fetchErr error
+	if fetchErrors > 0 {
+		// Retain the failure after clearing traversal state: cancellation of
+		// the final checkpoint must not turn this pass into a clean handoff.
+		fetchErr = fmt.Errorf("partial Slack sync: %d fetch error(s)", fetchErrors)
+		state.HistoryPass = nil
+	}
 	// Mid-run checkpoints are throttled, so persist the final counters before
 	// completing (CompleteSync only writes status and cursor).
-	if err = imp.checkpointNow(syncID, state, sum); err != nil {
+	if err = imp.checkpointNowContext(ctx, syncID, state, sum); err != nil {
+		err = errors.Join(err, fetchErr)
 		return sum, err
 	}
-	if sum.FetchErrors > 0 {
-		// Fetch failures are isolated so healthy conversations still sync,
-		// but the run must remain failed and caller-visible; the checkpoint
-		// above preserves all partial progress for the next attempt.
+	if fetchErr != nil {
+		// Keep per-channel debt for the next pass while reporting this failure.
 		sum.Duration = imp.now().Sub(start)
-		err = fmt.Errorf("partial Slack sync: %d fetch error(s)", sum.FetchErrors)
+		err = fetchErr
 		return sum, err
 	}
-	blob, _ := state.Marshal()
-	if err = imp.store.CompleteSync(syncID, blob); err != nil {
+	completedState := *state
+	completedState.HistoryPass = nil
+	blob, _ := completedState.Marshal()
+	if err = imp.store.CompleteSyncContext(ctx, syncID, blob); err != nil {
 		return sum, err
 	}
 	sum.Duration = imp.now().Sub(start)
@@ -1146,7 +1185,10 @@ func (imp *Importer) processMessage(ctx context.Context, cc *convScope, m *Messa
 	// from the (fatally-checked) message row and body, holes are detected
 	// by FTSNeedsBackfill's anti-join, and rebuild-fts repopulates them —
 	// the same policy every other importer follows.
-	if err := imp.store.UpsertFTS(messageID, "", text, imp.res.displayName(m.User), "", ""); err != nil {
+	if err := imp.store.UpsertFTSContext(ctx, messageID, "", text, imp.res.displayName(m.User), "", ""); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
 		sum.Errors++
 	}
 	if m.Edited != nil {
@@ -1306,11 +1348,16 @@ func (imp *Importer) checkpoint(syncID int64, state *SyncState, sum *ImportSumma
 // exist only in it until the run completes — and a silently lost checkpoint
 // would let an interrupted repair evaporate with no error ever surfaced.
 func (imp *Importer) checkpointNow(syncID int64, state *SyncState, sum *ImportSummary) error {
+	return imp.checkpointNowContext(context.Background(), syncID, state, sum)
+}
+
+// checkpointNowContext is checkpointNow honoring cancellation of ctx.
+func (imp *Importer) checkpointNowContext(ctx context.Context, syncID int64, state *SyncState, sum *ImportSummary) error {
 	blob, err := state.Marshal()
 	if err != nil {
 		return fmt.Errorf("marshal sync state: %w", err)
 	}
-	if err := imp.store.UpdateSyncCheckpoint(syncID, &store.Checkpoint{
+	if err := imp.store.UpdateSyncCheckpointContext(ctx, syncID, &store.Checkpoint{
 		PageToken:         blob,
 		MessagesProcessed: int64(sum.MessagesProcessed),
 		MessagesAdded:     int64(sum.MessagesAdded),
