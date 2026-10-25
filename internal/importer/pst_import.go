@@ -202,7 +202,7 @@ func ImportPst(
 				if err := json.Unmarshal([]byte(active.CursorBefore.String), &saved); err == nil {
 					sameFile := saved.File == absPath || saved.File == cpFile
 					if !sameFile && saved.File != "" {
-						if curInfo, err := os.Stat(absPath); err == nil {
+						if curInfo, err := os.Stat(absPath); err == nil { // #nosec G703 -- The local CLI caller selects the PST file to import.
 							if cpInfo, err := os.Stat(saved.File); err == nil && os.SameFile(curInfo, cpInfo) {
 								sameFile = true
 							}
@@ -621,7 +621,7 @@ func ImportPst(
 // distinguishes archives. Re-importing the same bytes yields the same
 // fingerprint regardless of path, preserving idempotence.
 func pstArchiveFingerprint(path string) (string, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G703 -- The local CLI caller selects the PST file to fingerprint.
 	if err != nil {
 		return "", err
 	}
