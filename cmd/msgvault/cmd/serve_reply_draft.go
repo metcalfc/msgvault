@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json/v2"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jhillyerd/enmime/v2"
 	"go.kenn.io/msgvault/internal/agentgrant"
 	"go.kenn.io/msgvault/internal/api"
 	"go.kenn.io/msgvault/internal/config"
@@ -228,12 +230,41 @@ func confirmedDraftIdentities(identities []store.AccountIdentity) (map[string]st
 
 func (a *storeAPIAdapter) selectDraftSender(
 	identities []store.AccountIdentity,
+	parentRecipients []store.MessageRecipient,
 	requested string,
 	grant *agentgrant.Grant,
 	source *store.Source,
 ) (string, []string, error) {
 	eligible, selfAddresses := confirmedDraftIdentities(identities)
 	ref := draftSourceRef(source)
+	if requested == "" {
+		matches := make(map[string]string)
+		for _, recipient := range parentRecipients {
+			_, key, err := parseDraftSender(recipient.EnvelopeAddress)
+			if err != nil {
+				continue
+			}
+			if value, ok := eligible[key]; ok {
+				matches[key] = value
+			}
+		}
+		if len(matches) > 1 && grant != nil {
+			for key := range matches {
+				if !grant.AllowsSender(agentgrant.PermissionDraftCreate, ref, key) {
+					delete(matches, key)
+				}
+			}
+			if len(matches) == 0 {
+				return "", nil, draftReplyNotPermitted(errors.New("the grant allows none of the parent's addressed identities"))
+			}
+		}
+		if len(matches) > 1 {
+			return "", nil, draftReplyError("from_ambiguous", errors.New("--from is required when the parent addresses multiple confirmed identities"))
+		}
+		for _, value := range matches {
+			requested = value
+		}
+	}
 	if requested != "" {
 		address, key, err := parseDraftSender(requested)
 		if err != nil {
@@ -267,8 +298,9 @@ func (a *storeAPIAdapter) selectDraftSender(
 	return candidates[0], selfAddresses, nil
 }
 
-// resolveDraftTarget performs source, grant, sender, policy, and provider
-// configuration checks before it reads an archived parent or opens IMAP.
+// resolveDraftTarget authorizes the parent and destination sources before it
+// reads parent recipients or original MIME, and it completes sender, policy,
+// and provider configuration checks before any IMAP or Gmail write.
 func (a *storeAPIAdapter) resolveDraftTarget(
 	ctx context.Context,
 	parentID *int64,
@@ -277,6 +309,7 @@ func (a *storeAPIAdapter) resolveDraftTarget(
 	sourceIDSet bool,
 	requestedFrom string,
 	grant *agentgrant.Grant,
+	inferReplySender bool,
 ) (draftReplyTarget, string, []string, error) {
 	var parentSource *store.Source
 	if parentID != nil {
@@ -320,7 +353,35 @@ func (a *storeAPIAdapter) resolveDraftTarget(
 	if err != nil {
 		return draftReplyTarget{}, "", nil, draftReplyError("invalid_from", fmt.Errorf("list identities for source %d: %w", source.ID, err))
 	}
-	from, selfAddresses, err := a.selectDraftSender(identities, requestedFrom, grant, source)
+	var parentRecipients []store.MessageRecipient
+	var raw []byte
+	if inferReplySender && parentID != nil && requestedFrom == "" {
+		for _, role := range []string{"to", "cc", "bcc"} {
+			recipients, err := a.store.GetMessageRecipientsContext(ctx, *parentID, role)
+			if err != nil {
+				return draftReplyTarget{}, "", nil, draftReplyError("invalid_parent", fmt.Errorf("load parent %s recipients: %w", role, err))
+			}
+			parentRecipients = append(parentRecipients, recipients...)
+		}
+		raw, err = a.store.GetMessageRawContext(ctx, *parentID)
+		if err != nil {
+			return draftReplyTarget{}, "", nil, draftReplyError("invalid_parent", fmt.Errorf("load raw MIME for message %d: %w", *parentID, err))
+		}
+		message, err := mail.ReadMessage(bytes.NewReader(raw))
+		if err != nil {
+			return draftReplyTarget{}, "", nil, draftReplyError("invalid_parent", fmt.Errorf("read parent headers: %w", err))
+		}
+		for _, role := range []string{"To", "Cc"} {
+			addresses, err := enmime.ParseAddressList(strings.Join(message.Header[role], ", "))
+			if err != nil {
+				continue
+			}
+			for _, address := range addresses {
+				parentRecipients = append(parentRecipients, store.MessageRecipient{EnvelopeAddress: address.Address})
+			}
+		}
+	}
+	from, selfAddresses, err := a.selectDraftSender(identities, parentRecipients, requestedFrom, grant, source)
 	if err != nil {
 		return draftReplyTarget{}, "", nil, err
 	}
@@ -364,9 +425,11 @@ func (a *storeAPIAdapter) resolveDraftTarget(
 		if !store.IsEmailMessageType(parent.MessageType) {
 			return draftReplyTarget{}, "", nil, draftReplyError("invalid_parent", errors.New("parent message is not an email"))
 		}
-		raw, err := a.store.GetMessageRawContext(ctx, parent.ID)
-		if err != nil {
-			return draftReplyTarget{}, "", nil, draftReplyError("invalid_parent", fmt.Errorf("load raw MIME for message %d: %w", parent.ID, err))
+		if raw == nil {
+			raw, err = a.store.GetMessageRawContext(ctx, parent.ID)
+			if err != nil {
+				return draftReplyTarget{}, "", nil, draftReplyError("invalid_parent", fmt.Errorf("load raw MIME for message %d: %w", parent.ID, err))
+			}
 		}
 		target.parent, target.raw = parent, raw
 	}
@@ -387,7 +450,7 @@ func (a *storeAPIAdapter) runCLIReplyDraft(
 	}
 	target, from, selfAddresses, err := a.resolveDraftTarget(
 		ctx, &intent.MessageID, intent.Account, intent.SourceID, intent.SourceIDSet,
-		intent.From, req.Grant,
+		intent.From, req.Grant, true,
 	)
 	if err != nil {
 		return err

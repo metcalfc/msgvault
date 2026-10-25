@@ -234,8 +234,9 @@ After adding an account, sync it with `msgvault sync-full`. IMAP accounts use th
 
 Create one reply draft from an archived message to an authorized IMAP
 destination, or reply within its original Gmail account. The daemon requires
-the matching operator grant. `--from` is optional when exactly one confirmed
-identity is eligible.
+the matching operator grant. Without `--from`, the reply uses the confirmed
+identity the parent was addressed to, or the source's only eligible identity.
+See [IMAP drafts](/docs/usage/imap/#drafts) for the full sender rules.
 
 ```bash
 msgvault draft-reply <message-id> --body <text>
@@ -438,6 +439,9 @@ Requires a `[microsoft]` section with `client_id` in `config.toml`. See the [OAu
 | `--headless` | `false` | Sign in with a device code instead of a local browser |
 | `--no-default-identity` | `false` | Do not auto-confirm the email address as this account's "me" identity |
 | `--graph` | `false` | Sync through the Microsoft Graph mail API instead of IMAP. Creates an `msmail` account. Needs the `Mail.Read` permission |
+| `--sign-in` | | Microsoft sign-in name and browser login hint when it differs from the mailbox address. IMAP only; mutually exclusive with `--graph` |
+
+IMAP checks Microsoft's `email` claim when present, otherwise `preferred_username`. A differing username requires `--sign-in`, including during re-authorization; msgvault previously accepted it with a warning. The flag permits that username only when `email` is absent. Failed checks preserve existing credentials.
 
 After adding the account, sync it with `msgvault sync-full`. For a `--graph`
 account, use `msgvault sync`. See
@@ -948,10 +952,10 @@ msgvault backfill-beeper-media --account signal
 
 Register a [Slack workspace](/docs/usage/slack/) as a `slack` source. Requires a
 user token (`xoxp-…`) from an internal Slack app you create (see the usage
-guide for the two-minute setup and scope list). The token is validated with
-`auth.test` plus a `search.messages` probe (thread-reply archiving needs the
-`search:read` scope, so an under-scoped token fails here rather than on
-every future sync) and stored at `tokens/slack_<team-id>_<user-id>.json`.
+guide for setup and scope choices). The token is validated with `auth.test`
+and stored at `tokens/slack_<team-id>_<user-id>.json`. Public-channel-only
+tokens need no search, file, or reaction permissions; sync revisits history
+for thread replies when `search:read` is absent.
 
 ```bash
 msgvault add-slack
@@ -993,20 +997,22 @@ msgvault import-slackdump --me U0123456789 --limit 100 /path/to/export.zip
 
 ## sync-slack
 
-Sync Slack conversations — channels you are a member of, group DMs, and 1:1
-DMs — for registered workspaces. The first run backfills full history and is
+Sync Slack conversations for registered workspaces. Public-channel-only tokens
+can archive all public channels, including unjoined ones. Broader tokens archive
+your channel memberships, group DMs, and 1:1 DMs. The first run backfills full history and is
 resumable; later runs are incremental and sweep for thread replies created
 since the last run (any thread age). Per-workspace failures do not stop the run: remaining workspaces
 still sync and the command exits non-zero listing the failures. The `[slack]`
 config `channels`/`exclude_channels` filters select which channels sync. The
-`dms`/`group_dms` settings select whether DMs and group DMs sync. See
+`private_channels`, `dms`, and `group_dms` settings independently select whether
+private channels, DMs, and group DMs sync. See
 [Slack](/docs/usage/slack/).
 
 ```bash
 msgvault sync-slack
 msgvault sync-slack T0123456789
 msgvault sync-slack --full
-msgvault sync-slack --dms=false --group-dms=false
+msgvault sync-slack --private-channels=false --dms=false --group-dms=false
 ```
 
 | Flag | Default | Description |
@@ -1015,6 +1021,7 @@ msgvault sync-slack --dms=false --group-dms=false
 | `--dms` | configured | Include one-to-one DMs for this run (`true` or `false`) |
 | `--full` | `false` | Start (or continue) a repair session: re-fetch every message, upserting in place (catches old thread replies and edits). Interrupted or --limit-scoped repairs resume across later runs of any kind until complete |
 | `--group-dms` | configured | Include group DMs for this run (`true` or `false`) |
+| `--private-channels` | configured | Include private channels for this run (`true` or `false`) |
 | `--no-threads` | `false` | Skip thread-reply fetching for this run (a later threaded run pays the debt automatically) |
 | `--maintenance` | `false` | Repair edits/reaction changes on recent messages (ignored by default after capture) |
 | `--no-media` | `false` | Skip file downloads for this run (files become pending markers; `backfill-slack-media` fetches them later) |

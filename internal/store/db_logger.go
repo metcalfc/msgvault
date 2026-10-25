@@ -226,6 +226,9 @@ type loggedTx struct {
 	*sql.Tx
 
 	beforeStatement func(query string)
+
+	// Set only after this transaction successfully fences a running sync run.
+	syncGenerationFenced bool
 }
 
 // Exec delegates to ExecContext. Transaction-scoped queries are

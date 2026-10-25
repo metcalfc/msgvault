@@ -72,6 +72,21 @@ type Attachment struct {
 	IsInline    bool
 }
 
+// DistinctAttachments drops the second copy of a part that enmime lists as
+// both an attachment and an inline; PartKey is the part's identity.
+func DistinctAttachments(parts []Attachment) []Attachment {
+	seen := make(map[string]bool, len(parts))
+	out := make([]Attachment, 0, len(parts))
+	for _, part := range parts {
+		if part.PartKey != "" && seen[part.PartKey] {
+			continue
+		}
+		seen[part.PartKey] = true
+		out = append(out, part)
+	}
+	return out
+}
+
 // Parse parses raw MIME data into a Message.
 func Parse(raw []byte) (*Message, error) {
 	root, err := envelopeParser.ReadParts(bytes.NewReader(raw))
@@ -125,6 +140,9 @@ func Parse(raw []byte) (*Message, error) {
 	msg.Attachments = append(msg.Attachments, processParts(env.Attachments, false)...)
 	msg.Attachments = append(msg.Attachments, processParts(env.Inlines, true)...)
 	msg.Attachments = append(msg.Attachments, processMalformedOtherParts(env.OtherParts)...)
+	// enmime can list one inline octet-stream part in both categories.
+	// Preserve physical occurrences so parsed evidence matches keyed storage.
+	msg.Attachments = DistinctAttachments(msg.Attachments)
 
 	// Collect any parsing errors
 	for _, e := range env.Errors {
@@ -538,8 +556,8 @@ func stripAddressDecorations(value string) string {
 
 // extractDomain extracts the domain from an email address.
 func extractDomain(email string) string {
-	if idx := strings.LastIndex(email, "@"); idx >= 0 {
-		return strings.ToLower(email[idx+1:])
+	if _, domain, ok := strings.CutLast(email, "@"); ok {
+		return strings.ToLower(domain)
 	}
 	return ""
 }
@@ -609,7 +627,7 @@ func makeAttachment(part *enmime.Part, isInline bool) Attachment {
 		Size:        len(content),
 		ContentHash: hex.EncodeToString(hash[:]),
 		Content:     content,
-		IsInline:    isInline,
+		IsInline:    isInline || disposition == "inline",
 	}
 }
 
