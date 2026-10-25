@@ -8,6 +8,15 @@ All notable changes to msgvault, grouped by release.
 
 ## Unreleased
 
+- Exa and Sixtyfour person enrichment collapse repeated values before committing
+  claims, so duplicate provider output no longer aborts the claim generation.
+  Exa identity mismatches are reported as `identity_rejected`.
+- Person enrichment retains queued lookups and refresh schedules when a provider
+  profile is disabled or removed. Work deleted by an earlier version is not
+  restored when that profile is re-enabled after upgrading. Request a
+  [manual lookup](cli-reference.md#person-enrichment) with a new idempotency key
+  to resume enrichment for an affected person; a later identity change or claim
+  expiry can also enqueue work.
 - `kinds build` classifies an identity known only by full phone numbers as
   a person by rule instead of asking Jev, which could only answer
   unclear. Earlier Jev judgments get the address rules on the next run,

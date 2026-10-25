@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"reflect"
 	"slices"
 	"sort"
@@ -24,6 +25,8 @@ type WorkerOptions struct {
 	Clock           func() time.Time
 	Jitter          func(time.Duration) time.Duration
 	ProviderConfigs map[string]ProviderConfig
+	// ProviderFingerprints binds retained work to the exact configured profile.
+	ProviderFingerprints map[string]string
 	// IdentityJudge, when set, is consulted after the exact identity rule
 	// declines a result in which exactly one of name and current company
 	// matched. A nil judge keeps the exact rule alone.
@@ -141,6 +144,9 @@ func NewWorker(
 		if name == "" || name != rawName || factory == nil {
 			return nil, errors.New("person enrichment provider factory map is invalid")
 		}
+		if !isSHA256Hex(options.ProviderFingerprints[name]) {
+			return nil, fmt.Errorf("person enrichment provider %q requires a configured profile fingerprint", name)
+		}
 		factoryCopy[name] = factory
 		names = append(names, name)
 	}
@@ -150,6 +156,7 @@ func NewWorker(
 		configCopy[name] = cloneWorkerProviderConfig(config)
 	}
 	options.ProviderConfigs = configCopy
+	options.ProviderFingerprints = maps.Clone(options.ProviderFingerprints)
 	return &Worker{
 		work: work, sink: sink, gate: gate, providers: factoryCopy,
 		providerNames: names, options: options,
@@ -177,7 +184,8 @@ func (w *Worker) RunOnce(ctx context.Context, runID int64) (processed bool, err 
 		}
 		lease, claimErr := w.work.ClaimWork(ctx, ClaimOptions{
 			RunID: runID, Owner: w.options.Owner, ProviderName: providerName,
-			Now: now, LeaseDuration: w.options.LeaseDuration,
+			ProfileFingerprint: w.options.ProviderFingerprints[providerName],
+			Now:                now, LeaseDuration: w.options.LeaseDuration,
 		})
 		if claimErr != nil {
 			return false, claimErr

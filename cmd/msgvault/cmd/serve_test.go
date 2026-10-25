@@ -78,7 +78,7 @@ func TestStoreAPIAdapterDeletePersonSuppressesCurrentIdentifiers(t *testing.T) {
 		DueAt:   now,
 	}))
 	lease, err := f.Store.ClaimWork(t.Context(), personenrichment.ClaimOptions{
-		RunID: run.ID, Owner: "disabled-deletion-worker", ProviderName: profile.Name,
+		RunID: run.ID, Owner: "disabled-deletion-worker", ProviderName: profile.Name, ProfileFingerprint: profile.Fingerprint,
 		Now: now, LeaseDuration: time.Minute,
 	})
 	require.NoError(err)
@@ -217,7 +217,7 @@ func TestStoreAPIAdapterDeletePersonRejectsRecordedAttemptKeyMismatch(t *testing
 		DueAt:   now,
 	}))
 	lease, err := f.Store.ClaimWork(t.Context(), personenrichment.ClaimOptions{
-		RunID: run.ID, Owner: "attempt-key-worker", ProviderName: profile.Name,
+		RunID: run.ID, Owner: "attempt-key-worker", ProviderName: profile.Name, ProfileFingerprint: profile.Fingerprint,
 		Now: now, LeaseDuration: time.Minute,
 	})
 	require.NoError(err)

@@ -69,7 +69,7 @@ func UncertainEnrichmentAttempt(t *testing.T, st *store.Store, email, name strin
 		DueAt:   now,
 	}))
 	lease, err := st.ClaimWork(ctx, personenrichment.ClaimOptions{
-		RunID: run.ID, Owner: "review-worker", ProviderName: profile.Name,
+		RunID: run.ID, Owner: "review-worker", ProviderName: profile.Name, ProfileFingerprint: profile.Fingerprint,
 		Now: now, LeaseDuration: 5 * time.Minute,
 	})
 	require.NoError(t, err)

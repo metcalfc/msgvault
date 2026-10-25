@@ -9,15 +9,16 @@ import (
 type FailureClass string
 
 const (
-	FailurePolicy            FailureClass = "policy"
-	FailureSuppressed        FailureClass = "suppressed"
-	FailureRateLimited       FailureClass = "rate_limited"
-	FailureTransient         FailureClass = "transient"
-	FailureInvalidOutput     FailureClass = "invalid_output"
-	FailureIdentityRejected  FailureClass = "identity_rejected"
-	FailureIdentityUncertain FailureClass = "identity_uncertain"
-	FailureTerminal          FailureClass = "terminal"
-	FailureUncertainStart    FailureClass = "uncertain_start"
+	FailurePolicy             FailureClass = "policy"
+	FailureProfileUnavailable FailureClass = "profile_unavailable"
+	FailureSuppressed         FailureClass = "suppressed"
+	FailureRateLimited        FailureClass = "rate_limited"
+	FailureTransient          FailureClass = "transient"
+	FailureInvalidOutput      FailureClass = "invalid_output"
+	FailureIdentityRejected   FailureClass = "identity_rejected"
+	FailureIdentityUncertain  FailureClass = "identity_uncertain"
+	FailureTerminal           FailureClass = "terminal"
+	FailureUncertainStart     FailureClass = "uncertain_start"
 )
 
 var (

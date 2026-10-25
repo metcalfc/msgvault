@@ -39,7 +39,7 @@ func TestPersonEnrichmentClaimRetriesSQLiteSnapshotContention(t *testing.T) {
 	result := make(chan claimOutcome, 1)
 	go func() {
 		lease, err := f.store.ClaimWork(t.Context(), personenrichment.ClaimOptions{
-			RunID: run.ID, Owner: "claim-worker", ProviderName: f.profile.Name,
+			RunID: run.ID, Owner: "claim-worker", ProviderName: f.profile.Name, ProfileFingerprint: f.profile.Fingerprint,
 			Now: f.now, LeaseDuration: time.Minute,
 		})
 		result <- claimOutcome{lease: lease, err: err}
@@ -299,7 +299,7 @@ func TestPersonEnrichmentRecoveryReconcilesUncertainStartCostOnce(t *testing.T) 
 	})
 	require.NoError(err)
 	lease, err := st.ClaimWork(t.Context(), personenrichment.ClaimOptions{
-		RunID: nextRun.ID, Owner: "post-recovery-worker", ProviderName: profile.Name,
+		RunID: nextRun.ID, Owner: "post-recovery-worker", ProviderName: profile.Name, ProfileFingerprint: profile.Fingerprint,
 		Now: recoveredAt, LeaseDuration: time.Minute,
 	})
 	require.NoError(err)

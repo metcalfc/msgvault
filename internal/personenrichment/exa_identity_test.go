@@ -62,7 +62,7 @@ func TestExaPartialMatchIsRejectedWithoutIdentityReview(t *testing.T) {
 	require.Error(err, "today's exact rule rejects an abbreviated surname at decode")
 	var providerErr *personenrichment.ProviderError
 	require.ErrorAs(err, &providerErr)
-	assert.Equal(personenrichment.FailureInvalidOutput, providerErr.Class)
+	assert.Equal(personenrichment.FailureIdentityRejected, providerErr.Class)
 	assert.Len(*queries, 1, "a partial match is not a missing entity, so no retry")
 }
 
@@ -156,7 +156,7 @@ func TestExaCarriesTheChargeOfABilledResponseItCannotUse(t *testing.T) {
 	})
 	var providerErr *personenrichment.ProviderError
 	require.ErrorAs(err, &providerErr)
-	assert.Equal(personenrichment.FailureInvalidOutput, providerErr.Class)
+	assert.Equal(personenrichment.FailureIdentityRejected, providerErr.Class)
 	assert.Equal(personenrichment.Cost{Currency: "USD", AmountMicros: 7000, Estimated: true}, providerErr.Cost,
 		"the billed response's charge travels with the validation failure")
 }
