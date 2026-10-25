@@ -73,6 +73,7 @@ Examples:
   msgvault add-o365 user@outlook.com
   msgvault add-o365 user@outlook.com --headless
   msgvault add-o365 user@company.com --tenant my-tenant-id
+  msgvault add-o365 user@company.com --sign-in jdoe@company.onmicrosoft.com
   msgvault add-o365 user@company.com --graph`,
 		Args: cobra.ExactArgs(1),
 		RunE: runAddO365Local,
@@ -83,6 +84,9 @@ Examples:
 	cmd.Flags().Bool("headless", false,
 		"Sign in with a device code instead of a local browser")
 	cmd.Flags().Bool("graph", false, "sync through the Microsoft Graph mail API instead of IMAP")
+	cmd.Flags().String("sign-in", "",
+		"Microsoft sign-in name and browser login hint when it differs from the mailbox address (IMAP only)")
+	cmd.MarkFlagsMutuallyExclusive("graph", "sign-in")
 	registerOAuthPreflightedFlag(cmd)
 	return cmd
 }
@@ -232,6 +236,9 @@ func authorizeO365(cmd *cobra.Command, email string) error {
 		if flags.o365Headless {
 			mgr.UseDeviceCode()
 		}
+		if flags.o365SignIn != "" {
+			mgr.UseSignInName(flags.o365SignIn)
+		}
 		err = mgr.Authorize(cmd.Context(), email)
 	}
 	if err != nil {
@@ -312,6 +319,7 @@ type addO365Options struct {
 	o365Graph                bool
 	o365Headless             bool
 	o365TenantID             string
+	o365SignIn               string
 }
 
 func readAddO365Options(cmd *cobra.Command) addO365Options {
@@ -320,5 +328,6 @@ func readAddO365Options(cmd *cobra.Command) addO365Options {
 	flags.o365Graph, _ = cmd.Flags().GetBool("graph")
 	flags.o365Headless, _ = cmd.Flags().GetBool("headless")
 	flags.o365TenantID, _ = cmd.Flags().GetString("tenant")
+	flags.o365SignIn, _ = cmd.Flags().GetString("sign-in")
 	return flags
 }
