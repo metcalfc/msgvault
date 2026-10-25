@@ -948,10 +948,10 @@ msgvault backfill-beeper-media --account signal
 
 Register a [Slack workspace](/docs/usage/slack/) as a `slack` source. Requires a
 user token (`xoxp-…`) from an internal Slack app you create (see the usage
-guide for the two-minute setup and scope list). The token is validated with
-`auth.test` plus a `search.messages` probe (thread-reply archiving needs the
-`search:read` scope, so an under-scoped token fails here rather than on
-every future sync) and stored at `tokens/slack_<team-id>_<user-id>.json`.
+guide for setup and scope choices). The token is validated with `auth.test`
+and stored at `tokens/slack_<team-id>_<user-id>.json`. Public-channel-only
+tokens need no search, file, or reaction permissions; sync revisits history
+for thread replies when `search:read` is absent.
 
 ```bash
 msgvault add-slack
@@ -993,20 +993,22 @@ msgvault import-slackdump --me U0123456789 --limit 100 /path/to/export.zip
 
 ## sync-slack
 
-Sync Slack conversations — channels you are a member of, group DMs, and 1:1
-DMs — for registered workspaces. The first run backfills full history and is
+Sync Slack conversations for registered workspaces. Public-channel-only tokens
+can archive all public channels, including unjoined ones. Broader tokens archive
+your channel memberships, group DMs, and 1:1 DMs. The first run backfills full history and is
 resumable; later runs are incremental and sweep for thread replies created
 since the last run (any thread age). Per-workspace failures do not stop the run: remaining workspaces
 still sync and the command exits non-zero listing the failures. The `[slack]`
 config `channels`/`exclude_channels` filters select which channels sync. The
-`dms`/`group_dms` settings select whether DMs and group DMs sync. See
+`private_channels`, `dms`, and `group_dms` settings independently select whether
+private channels, DMs, and group DMs sync. See
 [Slack](/docs/usage/slack/).
 
 ```bash
 msgvault sync-slack
 msgvault sync-slack T0123456789
 msgvault sync-slack --full
-msgvault sync-slack --dms=false --group-dms=false
+msgvault sync-slack --private-channels=false --dms=false --group-dms=false
 ```
 
 | Flag | Default | Description |
@@ -1015,6 +1017,7 @@ msgvault sync-slack --dms=false --group-dms=false
 | `--dms` | configured | Include one-to-one DMs for this run (`true` or `false`) |
 | `--full` | `false` | Start (or continue) a repair session: re-fetch every message, upserting in place (catches old thread replies and edits). Interrupted or --limit-scoped repairs resume across later runs of any kind until complete |
 | `--group-dms` | configured | Include group DMs for this run (`true` or `false`) |
+| `--private-channels` | configured | Include private channels for this run (`true` or `false`) |
 | `--no-threads` | `false` | Skip thread-reply fetching for this run (a later threaded run pays the debt automatically) |
 | `--maintenance` | `false` | Repair edits/reaction changes on recent messages (ignored by default after capture) |
 | `--no-media` | `false` | Skip file downloads for this run (files become pending markers; `backfill-slack-media` fetches them later) |
