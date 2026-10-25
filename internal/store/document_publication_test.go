@@ -978,3 +978,20 @@ func currentDocumentTexts(t *testing.T, f *storetest.Fixture, profileID, hash st
 	require.NoError(rows.Err())
 	return texts
 }
+
+func TestDocumentExtractionClaimNormalizesNonUTCTimeZone(t *testing.T) {
+	require := require.New(t)
+	f := storetest.New(t)
+	profile, hash := seedDocumentPublicationAuthority(t, f)
+	localZone := time.FixedZone("synthetic-west", -7*60*60)
+	leaseUntil := time.Now().UTC().In(localZone).Add(10 * time.Minute)
+	claim, err := f.Store.ClaimDocumentExtraction(t.Context(), documentClaimInputForHash(t, f, store.DocumentExtractionClaimInput{
+		ExtractionID: "extraction-local-zone", ProfileID: profile.ID,
+		CanonicalBlobHash: hash, ExtractionInputKey: "original",
+		LeaseOwner: "worker-local-zone", LeaseUntil: leaseUntil,
+		LocalBytes: 128, SourceSequence: 1,
+	}))
+	require.NoError(err)
+	assert.Equal(t, time.UTC, claim.LeaseUntil.Location())
+	require.NoError(f.Store.PublishDocumentExtraction(t.Context(), publicationFor(t, claim, "zone-safe lease", strings.Repeat("d", 64))))
+}

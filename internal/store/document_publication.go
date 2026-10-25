@@ -135,6 +135,7 @@ func (s *Store) ClaimDocumentExtraction(
 	ctx context.Context,
 	input DocumentExtractionClaimInput,
 ) (DocumentExtractionClaim, error) {
+	input.LeaseUntil = input.LeaseUntil.UTC()
 	if err := validateDocumentClaimInput(input); err != nil {
 		return DocumentExtractionClaim{}, err
 	}
@@ -214,11 +215,11 @@ func (s *Store) ClaimDocumentExtraction(
 		if _, err := q.Exec(`
 			INSERT INTO document_extractions
 				(id, profile_id, rebuild_id, canonical_blob_hash, extraction_input_key,
-				 source_media_type, state, lease_owner, lease_until, local_bytes, source_sequence)
-			VALUES (?, ?, ?, ?, ?, ?, 'staging', ?, ?, ?, ?)`,
+				 source_media_type, state, lease_owner, lease_until, local_bytes, source_sequence, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, 'staging', ?, ?, ?, ?, ?)`,
 			input.ExtractionID, input.ProfileID, nullIfEmpty(input.RebuildID), input.CanonicalBlobHash,
 			input.ExtractionInputKey, input.OccurrenceMIMEType, input.LeaseOwner, input.LeaseUntil,
-			input.LocalBytes, input.SourceSequence,
+			input.LocalBytes, input.SourceSequence, time.Now().UTC(),
 		); err != nil {
 			return fmt.Errorf("create staging document extraction: %w", err)
 		}
